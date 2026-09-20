@@ -35,9 +35,134 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::Command as ProcessCommand;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
+use cy_editor_commands::{Command, EffectClass, Metadata, Outcome, ParameterSpec, Registry};
+use cy_editor_core::observe::Revision as ObserveRevision;
 use cy_editor_core::problem::{Problem, Result};
+use cy_editor_core::value::{Value, ValueKind};
+
+/// Register provider-neutral source-control commands.
+pub fn register_commands(registry: &mut Registry) -> Result<()> {
+    registry.register(Command::new(
+        Metadata::new(
+            "source-control.refresh",
+            "Refresh Source Control",
+            "Source Control",
+            "Starts a background status refresh without blocking the editor interface.",
+            EffectClass::Read,
+        ),
+        |context, _| {
+            let summary = context
+                .source_control()
+                .ok_or_else(|| Problem::not_found("source control in this host"))?
+                .refresh()?;
+            Ok(Outcome::new(summary))
+        },
+    ))?;
+    registry.register(path_command(
+        "source-control.history",
+        "Show File History",
+        EffectClass::Read,
+        "history",
+    ))?;
+    registry.register(path_command(
+        "source-control.checkout",
+        "Check Out File",
+        EffectClass::IrreversibleMutation,
+        "checkout",
+    ))?;
+    registry.register(path_command(
+        "source-control.revert",
+        "Revert File",
+        EffectClass::IrreversibleMutation,
+        "revert",
+    ))?;
+    registry.register(path_command(
+        "source-control.lock",
+        "Lock File",
+        EffectClass::ExternalEffect,
+        "lock",
+    ))?;
+    registry.register(path_command(
+        "source-control.unlock",
+        "Unlock File",
+        EffectClass::ExternalEffect,
+        "unlock",
+    ))?;
+    registry.register(submit_command())?;
+    Ok(())
+}
+
+fn path_command(
+    id: &'static str,
+    label: &'static str,
+    effect: EffectClass,
+    operation: &'static str,
+) -> Command {
+    Command::new(
+        Metadata::new(
+            id,
+            label,
+            "Source Control",
+            format!(
+                "Runs provider-neutral {operation} for one project-relative file and reports \
+                 unsupported capabilities by provider name."
+            ),
+            effect,
+        )
+        .with(ParameterSpec::required(
+            "path",
+            ValueKind::Text,
+            "The project-relative file the provider operation acts on.",
+        )),
+        move |context, arguments| {
+            let path = arguments.text("path").unwrap_or_default();
+            let host = context
+                .source_control()
+                .ok_or_else(|| Problem::not_found("source control in this host"))?;
+            let summary = if operation == "history" {
+                host.history(path)?
+            } else {
+                host.operate(operation, path, "")?
+            };
+            Ok(Outcome::new(summary))
+        },
+    )
+}
+
+fn submit_command() -> Command {
+    Command::new(
+        Metadata::new(
+            "source-control.submit",
+            "Submit Files",
+            "Source Control",
+            "Submits one project-relative file with the supplied change description.",
+            EffectClass::ExternalEffect,
+        )
+        .with(ParameterSpec::required(
+            "path",
+            ValueKind::Text,
+            "The project-relative file to include in the submitted change.",
+        ))
+        .with(ParameterSpec::required(
+            "description",
+            ValueKind::Text,
+            "The change description recorded by the source-control provider.",
+        )),
+        |context, arguments| {
+            let path = arguments.text("path").unwrap_or_default();
+            let description = arguments.text("description").unwrap_or_default();
+            let summary = context
+                .source_control()
+                .ok_or_else(|| Problem::not_found("source control in this host"))?
+                .operate("submit", path, description)?;
+            Ok(Outcome::new(summary).with("path", Value::Text(path.to_string())))
+        },
+    )
+}
 
 /// One thing a provider can do.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -312,7 +437,7 @@ pub struct ProcessRunner;
 
 impl CommandRunner for ProcessRunner {
     fn run(&self, program: &str, arguments: &[String], working_directory: &Path) -> CommandOutput {
-        match Command::new(program)
+        match ProcessCommand::new(program)
             .args(arguments)
             .current_dir(working_directory)
             .output()
@@ -714,13 +839,26 @@ impl SourceControlProvider for PerforceSourceControl {
 /// switches source control systems THEN editor integration SHALL continue to work through the
 /// provider interface"*.
 pub struct SourceControlService {
-    provider: Box<dyn SourceControlProvider>,
+    provider: Arc<dyn SourceControlProvider>,
+    status: Arc<Mutex<StatusCache>>,
+    revision: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct StatusCache {
+    requested: Option<Vec<PathBuf>>,
+    pending: bool,
+    result: Option<Result<Vec<FileStatus>>>,
+    generation: u64,
+    history: Option<(PathBuf, Result<Vec<Revision>>)>,
 }
 
 impl Default for SourceControlService {
     fn default() -> Self {
         Self {
-            provider: Box::new(NullSourceControl),
+            provider: Arc::new(NullSourceControl),
+            status: Arc::default(),
+            revision: Arc::default(),
         }
     }
 }
@@ -730,6 +868,11 @@ impl std::fmt::Debug for SourceControlService {
         formatter
             .debug_struct("SourceControlService")
             .field("provider", &self.provider.name())
+            .field(
+                "status",
+                &self.status.lock().expect("source-control status lock"),
+            )
+            .field("revision", &self.revision())
             .finish()
     }
 }
@@ -738,18 +881,125 @@ impl SourceControlService {
     /// A service over `provider`.
     #[must_use]
     pub fn new(provider: Box<dyn SourceControlProvider>) -> Self {
-        Self { provider }
+        Self {
+            provider: Arc::from(provider),
+            status: Arc::default(),
+            revision: Arc::default(),
+        }
     }
 
     /// Replace the provider. Every caller keeps working because none of them named the old one.
     pub fn adopt(&mut self, provider: Box<dyn SourceControlProvider>) {
-        self.provider = provider;
+        self.provider = Arc::from(provider);
+        *self.status.lock().expect("source-control status lock") = StatusCache::default();
+        self.revision.fetch_add(1, Ordering::Release);
     }
 
     /// The provider in use.
     #[must_use]
     pub fn provider(&self) -> &dyn SourceControlProvider {
         self.provider.as_ref()
+    }
+
+    /// Revision of provider identity, pending state, or cached status.
+    #[must_use]
+    pub fn revision(&self) -> ObserveRevision {
+        ObserveRevision::from_u64(self.revision.load(Ordering::Acquire))
+    }
+
+    /// Ask for status in the background, once per distinct path set.
+    ///
+    /// Returns whether a provider process was started. Calling this on every interface frame is
+    /// therefore cheap: an unchanged path set starts nothing.
+    pub fn request_status(&self, paths: Vec<PathBuf>) -> bool {
+        let generation = {
+            let mut status = self.status.lock().expect("source-control status lock");
+            if status.requested.as_ref() == Some(&paths) {
+                return false;
+            }
+            status.requested = Some(paths.clone());
+            status.pending = true;
+            status.result = None;
+            status.generation += 1;
+            status.generation
+        };
+        self.revision.fetch_add(1, Ordering::Release);
+        let provider = Arc::clone(&self.provider);
+        let cache = Arc::clone(&self.status);
+        let revision = Arc::clone(&self.revision);
+        std::thread::Builder::new()
+            .name("cy-source-control-status".into())
+            .spawn(move || {
+                let result = provider.status(&paths);
+                let mut status = cache.lock().expect("source-control status lock");
+                if status.generation == generation {
+                    status.result = Some(result);
+                    status.pending = false;
+                    revision.fetch_add(1, Ordering::Release);
+                }
+            })
+            .expect("the source-control status worker can be started");
+        true
+    }
+
+    /// Invalidate the current request so the same paths are checked again.
+    pub fn request_refresh(&self, paths: Vec<PathBuf>) {
+        self.status
+            .lock()
+            .expect("source-control status lock")
+            .requested = None;
+        let _ = self.request_status(paths);
+    }
+
+    /// Refresh synchronously for headless callers and deterministic integration tests.
+    pub fn refresh_now(&self, paths: Vec<PathBuf>) {
+        let result = self.provider.status(&paths);
+        let mut status = self.status.lock().expect("source-control status lock");
+        status.requested = Some(paths);
+        status.pending = false;
+        status.result = Some(result);
+        status.generation += 1;
+        self.revision.fetch_add(1, Ordering::Release);
+    }
+
+    /// Cached status, when the background request has completed.
+    #[must_use]
+    pub fn status_snapshot(&self) -> Option<Result<Vec<FileStatus>>> {
+        self.status
+            .lock()
+            .expect("source-control status lock")
+            .result
+            .clone()
+    }
+
+    /// Whether status is currently being refreshed.
+    #[must_use]
+    pub fn status_pending(&self) -> bool {
+        self.status
+            .lock()
+            .expect("source-control status lock")
+            .pending
+    }
+
+    /// Fetch and retain history so the panel can render the command's result.
+    pub fn fetch_history(&self, path: &Path) -> Result<Vec<Revision>> {
+        let result = self.provider.history(path);
+        self.status
+            .lock()
+            .expect("source-control status lock")
+            .history = Some((path.to_path_buf(), result.clone()));
+        self.revision.fetch_add(1, Ordering::Release);
+        result
+    }
+
+    /// The most recently requested file history.
+    #[must_use]
+    pub fn history_snapshot(&self) -> Option<(PathBuf, Result<Vec<Revision>>)> {
+        self.status
+            .lock()
+            .expect("source-control status lock")
+            .history
+            .clone()
     }
 }
 
@@ -809,6 +1059,44 @@ mod tests {
                 stdout: Vec::new(),
                 stderr: format!("the transcript has no answer for `{line}`"),
             }
+        }
+    }
+
+    #[test]
+    fn an_idle_status_view_starts_no_provider_processes() {
+        let transcript = Transcript::answering(&[("git status", "")]);
+        let asked = transcript.log();
+        let service = SourceControlService::new(Box::new(GitSourceControl::with_runner(
+            ".",
+            Box::new(transcript),
+        )));
+        let paths = vec![PathBuf::from("worlds/city.cyworld")];
+        assert!(service.request_status(paths.clone()));
+        while service.status_pending() {
+            std::thread::yield_now();
+        }
+        assert!(!service.request_status(paths));
+        assert_eq!(
+            asked.lock().unwrap().len(),
+            1,
+            "an unchanged frame queried the provider again"
+        );
+    }
+
+    #[test]
+    fn source_control_commands_declare_their_actual_effects() {
+        let mut registry = Registry::new();
+        register_commands(&mut registry).unwrap();
+        for (id, effect) in [
+            ("source-control.refresh", EffectClass::Read),
+            ("source-control.history", EffectClass::Read),
+            ("source-control.checkout", EffectClass::IrreversibleMutation),
+            ("source-control.revert", EffectClass::IrreversibleMutation),
+            ("source-control.submit", EffectClass::ExternalEffect),
+            ("source-control.lock", EffectClass::ExternalEffect),
+            ("source-control.unlock", EffectClass::ExternalEffect),
+        ] {
+            assert_eq!(registry.metadata(id).unwrap().effect, effect, "{id}");
         }
     }
 

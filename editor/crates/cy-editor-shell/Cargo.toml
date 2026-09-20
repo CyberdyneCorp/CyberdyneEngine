@@ -52,6 +52,7 @@ publish.workspace = true
 layer = 5
 
 [dependencies]
+cy-editor-agent = { path = "../cy-editor-agent" }
 cy-editor-commands = { path = "../cy-editor-commands" }
 cy-editor-core = { path = "../cy-editor-core" }
 cy-editor-documents = { path = "../cy-editor-documents" }

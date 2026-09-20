@@ -26,9 +26,11 @@ use cy_editor_core::ids::NodeId;
 use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
+use cy_editor_protocol::{Message, Session, read_frame, write_frame};
 use cy_editor_services::builtin;
 use cy_editor_services::editor::Editor;
 use cy_editor_services::project::{BuildRequest, ModuleBuilder, ProjectService};
+use cy_editor_services::runtime::RuntimeSession;
 use cy_editor_viewport::gizmo::{
     Drag, DragInput, DragRequest, GizmoSpace, Pivot, TransformBinding,
 };
@@ -84,6 +86,24 @@ fn registry() -> Registry {
     let mut registry = Registry::new();
     builtin::register(&mut registry).expect("the built-in commands satisfy their own metadata");
     registry
+}
+
+fn source_write_arguments(editor: &Editor, path: &str, contents: &str) -> Arguments {
+    let expected = editor
+        .sources
+        .fingerprint(path)
+        .expect("the source path is project-relative")
+        .to_string();
+    let base = if expected == "missing" {
+        String::new()
+    } else {
+        editor.project.read_source(path).expect("the source base")
+    };
+    Arguments::new()
+        .with("path", Value::Text(path.into()))
+        .with("contents", Value::Text(contents.into()))
+        .with("expected_fingerprint", Value::Text(expected))
+        .with("base", Value::Text(base))
 }
 
 /// A document declaring the transform the gizmos edit, with one lamp two metres along X.
@@ -382,9 +402,7 @@ fn writing_a_script_is_a_transaction_that_undoes() {
             &registry,
             "source.write",
             &Scope::unrestricted(),
-            &Arguments::new()
-                .with("path", Value::Text("game/Player.swift".into()))
-                .with("contents", Value::Text("struct Player {}".into())),
+            &source_write_arguments(&editor, "game/Player.swift", "struct Player {}"),
         )
         .expect("the file is written");
     assert_eq!(
@@ -397,12 +415,7 @@ fn writing_a_script_is_a_transaction_that_undoes() {
             &registry,
             "source.write",
             &Scope::unrestricted(),
-            &Arguments::new()
-                .with("path", Value::Text("game/Player.swift".into()))
-                .with(
-                    "contents",
-                    Value::Text("struct Player { var hp = 3 }".into()),
-                ),
+            &source_write_arguments(&editor, "game/Player.swift", "struct Player { var hp = 3 }"),
         )
         .expect("the file is rewritten");
 
@@ -448,6 +461,86 @@ fn writing_a_script_is_a_transaction_that_undoes() {
 }
 
 #[test]
+fn a_stale_source_save_returns_three_way_conflict_without_overwriting_disk() {
+    let sandbox = Sandbox::new("source-conflict");
+    let path = sandbox.path().join("game/Player.swift");
+    std::fs::write(&path, "struct Player { var hp = 1 }").expect("a writable sandbox");
+    let registry = registry();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(sandbox.path()));
+
+    let base = "struct Player { var hp = 1 }";
+    let buffer = "struct Player { var hp = 2 }";
+    let expected = editor
+        .sources
+        .fingerprint("game/Player.swift")
+        .expect("the source path is valid")
+        .to_string();
+    std::fs::write(&path, "struct Player { var hp = 3 }").expect("an external edit succeeds");
+
+    let conflict = editor
+        .invoke(
+            &registry,
+            "source.write",
+            &Scope::unrestricted(),
+            &Arguments::new()
+                .with("path", Value::Text("game/Player.swift".into()))
+                .with("contents", Value::Text(buffer.into()))
+                .with("expected_fingerprint", Value::Text(expected.clone()))
+                .with("base", Value::Text(base.into())),
+        )
+        .expect("a conflict is a structured command result");
+
+    assert_eq!(conflict.values.get("conflict"), Some(&Value::Bool(true)));
+    assert_eq!(
+        conflict.values.get("expected_fingerprint"),
+        Some(&Value::Text(expected))
+    );
+    assert_eq!(conflict.values.get("base"), Some(&Value::Text(base.into())));
+    assert_eq!(
+        conflict.values.get("buffer"),
+        Some(&Value::Text(buffer.into()))
+    );
+    assert_eq!(
+        conflict.values.get("disk"),
+        Some(&Value::Text("struct Player { var hp = 3 }".into()))
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("the file remains readable"),
+        "struct Player { var hp = 3 }",
+        "a stale human buffer must not overwrite an external edit"
+    );
+    let document = editor
+        .documents
+        .ids()
+        .find_map(|id| editor.documents.get(id))
+        .expect("the command opened a source document");
+    assert!(
+        document.history().entries().is_empty(),
+        "a refused save must not leave a committed transaction"
+    );
+
+    let actual = match conflict.values.get("disk_fingerprint") {
+        Some(Value::Text(actual)) => actual.clone(),
+        other => panic!("missing disk fingerprint: {other:?}"),
+    };
+    let kept = editor
+        .invoke(
+            &registry,
+            "source.write",
+            &Scope::unrestricted(),
+            &Arguments::new()
+                .with("path", Value::Text("game/Player.swift".into()))
+                .with("contents", Value::Text(buffer.into()))
+                .with("expected_fingerprint", Value::Text(actual))
+                .with("base", Value::Text("struct Player { var hp = 3 }".into())),
+        )
+        .expect("explicitly keeping the buffer saves against the observed disk revision");
+    assert_eq!(kept.values.get("conflict"), Some(&Value::Bool(false)));
+    assert_eq!(std::fs::read_to_string(path).expect("written"), buffer);
+}
+
+#[test]
 fn a_source_write_carries_the_actor_and_the_intent_that_made_it() {
     let sandbox = Sandbox::new("actor");
     let registry = registry();
@@ -464,9 +557,7 @@ fn a_source_write_carries_the_actor_and_the_intent_that_made_it() {
             &registry,
             "source.write",
             &Scope::unrestricted(),
-            &Arguments::new()
-                .with("path", Value::Text("game/Player.swift".into()))
-                .with("contents", Value::Text("struct Player {}".into())),
+            &source_write_arguments(&editor, "game/Player.swift", "struct Player {}"),
         )
         .expect("the file is written");
 
@@ -496,7 +587,9 @@ fn the_effect_class_of_a_source_write_is_computed_from_whether_it_can_be_reverse
 
     let new_file = Arguments::new()
         .with("path", Value::Text("game/New.swift".into()))
-        .with("contents", Value::Text("// new".into()));
+        .with("contents", Value::Text("// new".into()))
+        .with("expected_fingerprint", Value::Text("missing".into()))
+        .with("base", Value::Text(String::new()));
     assert_eq!(
         registry
             .effect_of("source.write", &mut editor, &new_file)
@@ -509,7 +602,18 @@ fn the_effect_class_of_a_source_write_is_computed_from_whether_it_can_be_reverse
         .expect("a writable sandbox");
     let opaque = Arguments::new()
         .with("path", Value::Text("game/blob.bin".into()))
-        .with("contents", Value::Text("// replaced".into()));
+        .with("contents", Value::Text("// replaced".into()))
+        .with(
+            "expected_fingerprint",
+            Value::Text(
+                editor
+                    .sources
+                    .fingerprint("game/blob.bin")
+                    .unwrap()
+                    .to_string(),
+            ),
+        )
+        .with("base", Value::Text(String::new()));
     assert_eq!(
         registry
             .effect_of("source.write", &mut editor, &opaque)
@@ -551,9 +655,7 @@ fn a_connection_that_was_granted_one_directory_cannot_write_outside_it() {
             &registry,
             "source.write",
             &scope,
-            &Arguments::new()
-                .with("path", Value::Text("game/Player.swift".into()))
-                .with("contents", Value::Text("// fine".into())),
+            &source_write_arguments(&editor, "game/Player.swift", "// fine"),
         )
         .expect("inside the grant");
 
@@ -564,7 +666,9 @@ fn a_connection_that_was_granted_one_directory_cannot_write_outside_it() {
             &scope,
             &Arguments::new()
                 .with("path", Value::Text("secrets/keys.txt".into()))
-                .with("contents", Value::Text("// not fine".into())),
+                .with("contents", Value::Text("// not fine".into()))
+                .with("expected_fingerprint", Value::Text("missing".into()))
+                .with("base", Value::Text(String::new())),
         )
         .expect_err("outside the grant");
     assert!(refused.because.contains("scripts only"), "{refused}");
@@ -584,7 +688,9 @@ fn a_path_that_leaves_the_project_is_refused_before_anything_is_written() {
             &Scope::unrestricted(),
             &Arguments::new()
                 .with("path", Value::Text("../escaped.txt".into()))
-                .with("contents", Value::Text("no".into())),
+                .with("contents", Value::Text("no".into()))
+                .with("expected_fingerprint", Value::Text("missing".into()))
+                .with("base", Value::Text(String::new())),
         )
         .expect_err("a path that leaves the project");
     assert!(refused.remedy.is_some(), "{refused}");
@@ -660,6 +766,73 @@ fn a_build_runs_off_the_interface_thread_and_a_reload_then_finds_what_it_produce
             .contains("still be there"),
         "{refused}"
     );
+}
+
+#[test]
+fn reload_completion_reports_preserved_and_dropped_state() {
+    let sandbox = Sandbox::new("reload-report");
+    let registry = registry();
+    let mut editor = Editor::new(Actor::human("designer"))
+        .with_project(ProjectService::new(sandbox.path()).with_builder(Arc::new(Fake)));
+    editor
+        .invoke(
+            &registry,
+            "project.build",
+            &Scope::unrestricted(),
+            &Arguments::new(),
+        )
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while editor.project.built().is_err() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    editor.project.built().unwrap();
+
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    editor
+        .invoke(
+            &registry,
+            "project.reload",
+            &Scope::unrestricted(),
+            &Arguments::new(),
+        )
+        .unwrap();
+    assert_eq!(editor.reload_report.as_ref().unwrap().state, "pending");
+
+    let payload = read_frame(&mut runtime_reader).unwrap().unwrap();
+    let Message::Reload {
+        request,
+        module,
+        generation,
+        ..
+    } = Message::decode(&payload).unwrap()
+    else {
+        panic!("expected a reload request")
+    };
+    let response = Message::Reloaded {
+        request,
+        module,
+        generation,
+    };
+    write_frame(&mut runtime_writer, &response.encode()).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while editor
+        .reload_report
+        .as_ref()
+        .is_some_and(|report| report.state == "pending")
+        && std::time::Instant::now() < deadline
+    {
+        editor.pump();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    let report = editor.reload_report.as_ref().unwrap();
+    assert_eq!(report.state, "succeeded");
+    assert_eq!(report.preserved, ["live world state"]);
+    assert!(report.dropped.is_empty(), "nothing was silently dropped");
+    assert!(report.diagnostic.is_none());
 }
 
 #[test]

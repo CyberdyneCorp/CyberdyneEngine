@@ -20,11 +20,14 @@
 //! overrides — so a toggle here would be a control that does nothing, which `editor-ui-ux` treats as
 //! worse than an absent one. It arrives with the property, not before it.
 
+use cy_editor_commands::Arguments;
+use cy_editor_core::ids::NodeId;
+use cy_editor_core::value::Value;
 use cy_editor_interface::virtualise::{Viewport, Window, content_height};
 use cy_editor_visual::colour::Semantic;
 use cy_editor_visual::density::TextRole;
 
-use super::{Panels, nothing_here, row_background, search_field, secondary};
+use super::{Intent, Panels, nothing_here, row_background, search_field, secondary};
 use crate::theme;
 
 /// What a click on a row landed on.
@@ -33,6 +36,40 @@ enum Hit {
     Select,
     /// The disclosure triangle: expand or collapse it.
     Disclose,
+    /// Begin editing the author-facing name.
+    Rename,
+    /// Begin an identity-based reparent drag.
+    StartDrag,
+    /// Drop the held identity onto this node.
+    Drop,
+}
+
+#[derive(Default)]
+struct Interactions {
+    clicked: Option<(NodeId, cy_editor_viewmodels::SelectionIntent)>,
+    toggled: Option<NodeId>,
+    rename: Option<(NodeId, String)>,
+    drag_started: Option<NodeId>,
+    dropped_on: Option<NodeId>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RenameResolution {
+    Continue,
+    Commit,
+    Cancel,
+}
+
+const fn rename_resolution(lost_focus: bool, enter: bool, escape: bool) -> RenameResolution {
+    if escape {
+        RenameResolution::Cancel
+    } else if lost_focus && enter {
+        RenameResolution::Commit
+    } else if lost_focus {
+        RenameResolution::Cancel
+    } else {
+        RenameResolution::Continue
+    }
 }
 
 /// One row: its background, its disclosure, its problem marker and its label.
@@ -41,13 +78,14 @@ fn draw_row(
     ui: &mut egui::Ui,
     row: &cy_editor_viewmodels::HierarchyRow,
     rect: egui::Rect,
+    dragging: bool,
 ) -> Option<Hit> {
     let metrics = panels.shell.metrics();
     let body = egui::FontId::proportional(metrics.text(TextRole::Body));
     let response = ui.interact(
         rect,
         egui::Id::new(("hierarchy", row.node)),
-        egui::Sense::click(),
+        egui::Sense::click_and_drag(),
     );
     row_background(ui, panels.shell, rect, row.selected, response.hovered());
 
@@ -104,7 +142,13 @@ fn draw_row(
         colour,
     );
 
-    if hit.is_none() && response.clicked() {
+    if dragging && response.hovered() && ui.input(|input| input.pointer.any_released()) {
+        hit = Some(Hit::Drop);
+    } else if response.drag_started() {
+        hit = Some(Hit::StartDrag);
+    } else if response.double_clicked() {
+        hit = Some(Hit::Rename);
+    } else if hit.is_none() && response.clicked() {
         hit = Some(Hit::Select);
     }
     response.on_hover_text(row.node.to_string());
@@ -125,9 +169,36 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             .hierarchy
             .set_filter(panels.inputs.hierarchy_filter.clone());
     }
+    ui.horizontal(|ui| {
+        if ui.button("Create Empty Entity").clicked() {
+            panels.intents.push(Intent::Invoke(
+                "scene.create-entity".into(),
+                Arguments::new().with("template", Value::Text("empty".into())),
+            ));
+        }
+        let selected = panels.editor.selection.get().nodes().collect::<Vec<_>>();
+        if selected.len() == 1 && ui.button("Move to Root").clicked() {
+            panels.intents.push(Intent::Invoke(
+                "scene.reparent-entity".into(),
+                Arguments::new()
+                    .with("entity", Value::Text(selected[0].to_string()))
+                    .with("parent", Value::Text(String::new())),
+            ));
+        }
+        ui.label(secondary(
+            panels.shell,
+            "Double-click to rename · drag onto a parent",
+        ));
+    });
     ui.add_space(metrics.gap() * 0.5);
 
     panels.hierarchy.refresh(panels.editor);
+    if panels.inputs.hierarchy_rename.is_none()
+        && ui.input(|input| input.key_pressed(egui::Key::F2))
+        && let Some(row) = panels.hierarchy.rows().iter().find(|row| row.selected)
+    {
+        panels.inputs.hierarchy_rename = Some((row.node, row.label.clone(), false));
+    }
     let total = panels.hierarchy.rows().len();
     if total == 0 {
         nothing_here(
@@ -163,10 +234,18 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     ));
     ui.add_space(metrics.gap() * 0.5);
 
-    let row_height = metrics.row();
-    let mut clicked = None;
-    let mut toggled = None;
+    let interactions = draw_rows(panels, ui, total, metrics.row(), metrics.gap());
+    apply_interactions(panels, ui, interactions);
+}
 
+fn draw_rows(
+    panels: &mut Panels<'_>,
+    ui: &mut egui::Ui,
+    total: usize,
+    row_height: f32,
+    gap: f32,
+) -> Interactions {
+    let mut interactions = Interactions::default();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show_viewport(ui, |ui, visible| {
@@ -187,24 +266,134 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     ),
                     egui::vec2(ui.available_width(), row_height),
                 );
-                match draw_row(panels, ui, row, rect) {
-                    Some(Hit::Select) => clicked = Some(row.node),
-                    Some(Hit::Disclose) => toggled = Some(row.node),
+                if panels
+                    .inputs
+                    .hierarchy_rename
+                    .as_ref()
+                    .is_some_and(|(node, _, _)| *node == row.node)
+                {
+                    let (_, text, focused) = panels
+                        .inputs
+                        .hierarchy_rename
+                        .as_mut()
+                        .expect("the row was checked above");
+                    let response = ui.put(
+                        rect.shrink2(egui::vec2(gap, 1.0)),
+                        egui::TextEdit::singleline(text),
+                    );
+                    if !*focused {
+                        response.request_focus();
+                        *focused = true;
+                    }
+                    match rename_resolution(
+                        response.lost_focus(),
+                        ui.input(|input| input.key_pressed(egui::Key::Enter)),
+                        ui.input(|input| input.key_pressed(egui::Key::Escape)),
+                    ) {
+                        RenameResolution::Commit => {
+                            interactions.rename = Some((row.node, text.clone()));
+                            panels.inputs.hierarchy_rename = None;
+                        }
+                        RenameResolution::Cancel => panels.inputs.hierarchy_rename = None,
+                        RenameResolution::Continue => {}
+                    }
+                    continue;
+                }
+                match draw_row(
+                    panels,
+                    ui,
+                    row,
+                    rect,
+                    panels.inputs.hierarchy_drag.is_some(),
+                ) {
+                    Some(Hit::Select) => {
+                        let modifiers = ui.input(|input| input.modifiers);
+                        let intent = if modifiers.shift {
+                            cy_editor_viewmodels::SelectionIntent::VisibleRange
+                        } else if modifiers.command && row.selected {
+                            cy_editor_viewmodels::SelectionIntent::Subtract
+                        } else if modifiers.command {
+                            cy_editor_viewmodels::SelectionIntent::Add
+                        } else {
+                            cy_editor_viewmodels::SelectionIntent::Replace
+                        };
+                        interactions.clicked = Some((row.node, intent));
+                    }
+                    Some(Hit::Disclose) => interactions.toggled = Some(row.node),
+                    Some(Hit::Rename) => {
+                        panels.inputs.hierarchy_rename = Some((row.node, row.label.clone(), false));
+                    }
+                    Some(Hit::StartDrag) => interactions.drag_started = Some(row.node),
+                    Some(Hit::Drop) => interactions.dropped_on = Some(row.node),
                     None => {}
                 }
             }
         });
+    interactions
+}
 
+fn apply_interactions(panels: &mut Panels<'_>, ui: &egui::Ui, interactions: Interactions) {
     // Applied after the list is drawn: a selection change moves a revision, and rebuilding the rows
     // underneath the loop that is reading them is how an outliner draws a frame of the wrong tree.
-    if let Some(node) = toggled {
+    if let Some(node) = interactions.toggled {
         // The view model owns which nodes are expanded; this asks it to flip one, and the rows are
         // rebuilt on the next refresh. Nothing is written to the document — expansion is
         // presentation state, and `cy-editor-viewmodels` has a test that says so.
         let expanded = panels.hierarchy.is_expanded(node);
         panels.hierarchy.set_expanded(node, !expanded);
     }
-    if let Some(node) = clicked {
-        panels.hierarchy.select(panels.editor, node);
+    if let Some((node, intent)) = interactions.clicked {
+        panels.hierarchy.select(panels.editor, node, intent);
+    }
+    if let Some(node) = interactions.drag_started {
+        panels.inputs.hierarchy_drag = Some(node);
+    }
+    if let Some(parent) = interactions.dropped_on {
+        if let Some(node) = panels.inputs.hierarchy_drag.take() {
+            panels.intents.push(Intent::Invoke(
+                "scene.reparent-entity".into(),
+                Arguments::new()
+                    .with("entity", Value::Text(node.to_string()))
+                    .with("parent", Value::Text(parent.to_string())),
+            ));
+        }
+    } else if panels.inputs.hierarchy_drag.is_some()
+        && ui.input(|input| input.pointer.any_released())
+    {
+        panels.inputs.hierarchy_drag = None;
+    }
+    if let Some((node, name)) = interactions.rename {
+        panels.intents.push(Intent::Invoke(
+            "scene.rename-entity".into(),
+            Arguments::new()
+                .with("entity", Value::Text(node.to_string()))
+                .with("name", Value::Text(name)),
+        ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RenameResolution, rename_resolution};
+
+    #[test]
+    fn inline_rename_only_commits_an_explicit_enter() {
+        assert_eq!(
+            rename_resolution(true, true, false),
+            RenameResolution::Commit
+        );
+        assert_eq!(
+            rename_resolution(true, false, false),
+            RenameResolution::Cancel,
+            "focus loss must not create an accidental transaction"
+        );
+        assert_eq!(
+            rename_resolution(false, false, true),
+            RenameResolution::Cancel
+        );
+        assert_eq!(
+            rename_resolution(false, false, false),
+            RenameResolution::Continue
+        );
     }
 }

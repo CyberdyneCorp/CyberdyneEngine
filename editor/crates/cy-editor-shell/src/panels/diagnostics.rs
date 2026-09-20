@@ -153,7 +153,11 @@ pub(super) fn problems(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             }
         });
     if let Some(node) = focus {
-        panels.hierarchy.select(panels.editor, node);
+        panels.hierarchy.select(
+            panels.editor,
+            node,
+            cy_editor_viewmodels::SelectionIntent::Replace,
+        );
     }
 }
 

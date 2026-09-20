@@ -37,6 +37,7 @@
 
 use cy_editor_commands::{
     Availability, Command, CommandContext, EffectClass, Metadata, Outcome, ParameterSpec, Registry,
+    SourceWrite,
 };
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
@@ -179,11 +180,28 @@ fn source_write() -> Command {
             "contents",
             ValueKind::Text,
             "The whole new contents of the file. This is a replacement, not an append.",
+        ))
+        .with(ParameterSpec::required(
+            "expected_fingerprint",
+            ValueKind::Text,
+            "The fingerprint returned when the caller read its base. The save is refused as a \
+             structured conflict if disk no longer matches it; use `missing` for a new file.",
+        ))
+        .with(ParameterSpec::required(
+            "base",
+            ValueKind::Text,
+            "The exact source text the edit began from. Returned with buffer and disk text when a \
+             conflict requires reload, keep, or merge.",
         )),
         |context, arguments| {
             let path = path_of(arguments)?;
             within_scope(context, &path)?;
             let contents = arguments.text("contents").unwrap_or_default().to_string();
+            let expected = arguments
+                .text("expected_fingerprint")
+                .unwrap_or_default()
+                .to_string();
+            let base = arguments.text("base").unwrap_or_default().to_string();
 
             let project = host(context)?;
             let before = if project.source_exists(&path) {
@@ -191,10 +209,6 @@ fn source_write() -> Command {
             } else {
                 None
             };
-            if before.as_deref() == Some(contents.as_str()) {
-                return Ok(Outcome::new(format!("{path} already held that"))
-                    .with("path", Value::Text(path)));
-            }
 
             let document = context.open_document(&path)?;
             let actor = context.actor();
@@ -211,25 +225,62 @@ fn source_write() -> Command {
             // The record happens first and the write second, so a write that fails leaves no
             // history entry claiming it succeeded. The reverse order is the one that is wrong in a
             // way nobody notices until the file system is full.
-            let written = recorded.and_then(|()| host(context)?.put_source(&path, Some(&contents)));
+            let written = recorded
+                .and_then(|()| host(context)?.put_source_if_unchanged(&path, &contents, &expected));
             let scope = context
                 .document_mut(document)
                 .ok_or_else(|| Problem::not_found("the document standing for the file"))?;
             match written {
-                Ok(()) => {
+                Ok(SourceWrite::Written { fingerprint }) => {
+                    if before.as_deref() == Some(contents.as_str()) {
+                        scope.cancel()?;
+                        return Ok(Outcome::new(format!("{path} already held that"))
+                            .with("path", Value::Text(path))
+                            .with("fingerprint", Value::Text(fingerprint))
+                            .with("conflict", Value::Bool(false)));
+                    }
                     scope.commit()?;
+                    Ok(Outcome::new(format!("Wrote {path}"))
+                        .with("path", Value::Text(path))
+                        .with("created", Value::Bool(before.is_none()))
+                        .with("fingerprint", Value::Text(fingerprint))
+                        .with("conflict", Value::Bool(false)))
+                }
+                Ok(SourceWrite::Conflict { actual, disk }) => {
+                    scope.cancel()?;
+                    Ok(conflict_outcome(
+                        path, expected, base, contents, actual, disk,
+                    ))
                 }
                 Err(problem) => {
                     scope.cancel()?;
-                    return Err(problem);
+                    Err(problem)
                 }
             }
-            Ok(Outcome::new(format!("Wrote {path}"))
-                .with("path", Value::Text(path))
-                .with("created", Value::Bool(before.is_none())))
         },
     )
     .effect_when(effect_of_edit)
+}
+
+fn conflict_outcome(
+    path: String,
+    expected: String,
+    base: String,
+    buffer: String,
+    actual: String,
+    disk: Option<String>,
+) -> Outcome {
+    Outcome::new(format!(
+        "{path} changed on disk; choose reload, keep, or merge before saving"
+    ))
+    .with("path", Value::Text(path))
+    .with("conflict", Value::Bool(true))
+    .with("expected_fingerprint", Value::Text(expected))
+    .with("disk_fingerprint", Value::Text(actual))
+    .with("base", Value::Text(base))
+    .with("buffer", Value::Text(buffer))
+    .with("disk_exists", Value::Bool(disk.is_some()))
+    .with("disk", Value::Text(disk.unwrap_or_default()))
 }
 
 fn source_delete() -> Command {

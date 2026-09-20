@@ -32,10 +32,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, Write};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use cy_editor_agent::observe::Observation;
-use cy_editor_agent::session::{AgentSession, Confirmer, Reading};
+use cy_editor_agent::session::{AgentSession, Confirmer};
 use cy_editor_agent::tool::ToolDescriptor;
 use cy_editor_agent::transport::{AgentRequest, AgentResponse, AgentTransport};
 use cy_editor_commands::registry::Registry;
@@ -303,7 +303,7 @@ impl<W: Write> McpServer<W> {
         registry: &Registry,
         confirmer: &mut dyn Confirmer,
     ) -> Result<()> {
-        let request = match Self::as_request(message, registry) {
+        let request = match Self::as_request(message) {
             Ok(request) => request,
             Err(problem) => {
                 return self.connection.line(&rpc::error(
@@ -316,12 +316,20 @@ impl<W: Write> McpServer<W> {
         };
         self.connection.addressing(id.clone());
         let ticket = self.connection.submit(request.clone())?;
-        let response = self.answer(&request, editor, registry, confirmer);
+        let now = self.now();
+        let response = cy_editor_agent::execute(
+            &mut self.session,
+            &request,
+            editor,
+            registry,
+            confirmer,
+            now,
+        );
         self.connection.respond(ticket, response)
     }
 
     /// One request, turned into what the projection understands.
-    fn as_request(message: &Incoming, registry: &Registry) -> Result<AgentRequest> {
+    fn as_request(message: &Incoming) -> Result<AgentRequest> {
         match message.method.as_str() {
             "tools/list" => Ok(AgentRequest::ListTools),
             "resources/list" => Ok(AgentRequest::ListResources),
@@ -339,59 +347,11 @@ impl<W: Write> McpServer<W> {
                     Problem::new("call a tool", "no name was given")
                         .with_remedy("list the tools to see what there is")
                 })?;
-                let arguments = rendered(message.params.get("arguments"), command, registry)?;
+                let arguments = rendered(message.params.get("arguments"));
                 Ok(AgentRequest::Invoke {
                     command: command.to_string(),
                     arguments,
                 })
-            }
-        }
-    }
-
-    /// Answer one request out of the editor.
-    fn answer(
-        &mut self,
-        request: &AgentRequest,
-        editor: &mut Editor,
-        registry: &Registry,
-        confirmer: &mut dyn Confirmer,
-    ) -> AgentResponse {
-        let now = self.now();
-        match request {
-            AgentRequest::ListTools => AgentResponse::Tools(self.session.tools(registry)),
-            AgentRequest::ListResources => AgentResponse::Resources(
-                self.session
-                    .resources(editor)
-                    .into_iter()
-                    .map(|(uri, _, description)| (uri, description))
-                    .collect(),
-            ),
-            AgentRequest::ReadResource { uri } => match self.session.read(editor, uri, now) {
-                Ok(Reading::Text(resource)) => AgentResponse::Content(Box::new(resource)),
-                Ok(Reading::Image(observation)) => AgentResponse::Image(observation),
-                Err(problem) => refused(format!("read {uri}"), &problem),
-            },
-            AgentRequest::Observe(viewport) => match self.session.observe(editor, viewport, now) {
-                Ok(observation) => AgentResponse::Image(Box::new(observation)),
-                Err(problem) => refused("observe a viewport", &problem),
-            },
-            AgentRequest::Invoke { command, arguments } => {
-                let built = cy_editor_agent::tool::arguments(registry, command, arguments);
-                let outcome = built.and_then(|arguments| {
-                    self.session
-                        .invoke(editor, registry, confirmer, command, &arguments, now)
-                });
-                match outcome {
-                    Ok(outcome) => AgentResponse::Outcome {
-                        summary: outcome.summary,
-                        values: outcome
-                            .values
-                            .into_iter()
-                            .map(|(name, value)| (name, value.to_string()))
-                            .collect(),
-                    },
-                    Err(problem) => refused(format!("invoke {command}"), &problem),
-                }
             }
         }
     }
@@ -432,39 +392,20 @@ impl<W: Write> McpServer<W> {
     }
 }
 
-/// A refusal, in the shape `editor-agent-interface` requires: what, why, and what would help.
-fn refused(what: impl Into<String>, problem: &Problem) -> AgentResponse {
-    AgentResponse::Refused {
-        what: what.into(),
-        because: problem.because.clone(),
-        remedy: problem.remedy.clone(),
-    }
-}
-
 /// The `arguments` object of a `tools/call`, rendered for the seam.
 ///
 /// Every value becomes text, because that is what [`AgentRequest::Invoke`] carries and its own
 /// comment says why. The *kind* is looked up from the command's declared parameters so that a JSON
 /// number destined for a `Vec3` is rendered in the form the projection reads back — a caller may
 /// send `[1,2,3]` or `"(1, 2, 3)"` and both arrive as the same value.
-fn rendered(arguments: &Json, command: &str, registry: &Registry) -> Result<Vec<(String, String)>> {
+fn rendered(arguments: &Json) -> Vec<(String, String)> {
     let Some(members) = arguments.as_object() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    let metadata = registry.metadata(command).ok_or_else(|| {
-        Problem::not_found(format!("a command named {command:?}"))
-            .with_remedy("list the tools to see what there is")
-    })?;
-    let mut supplied = Vec::new();
-    for (name, value) in members {
-        let kind = metadata
-            .parameters
-            .iter()
-            .find(|parameter| parameter.name == *name)
-            .map(|parameter| parameter.kind);
-        supplied.push((name.clone(), flatten(value, kind)));
-    }
-    Ok(supplied)
+    members
+        .iter()
+        .map(|(name, value)| (name.clone(), flatten(value, None)))
+        .collect()
 }
 
 /// One JSON value as the text the projection reads back.
@@ -694,6 +635,168 @@ fn tool_entry(tool: &ToolDescriptor) -> Json {
             ]),
         ),
     ])
+}
+
+/// Serve MCP on transport threads while a desktop window owns the Editor.
+///
+/// The reader never touches Editor state. Each projected request enters the bounded desktop queue,
+/// and a small waiter forwards only its correlated response. This lets the reader keep applying
+/// backpressure while the UI drains a fixed number of requests per frame.
+pub fn serve_desktop<R, W>(
+    reader: R,
+    mut writer: W,
+    endpoint: &cy_editor_agent::DesktopAgentEndpoint,
+) -> Result<()>
+where
+    R: BufRead + Send + 'static,
+    W: Write,
+{
+    let (lines, replies) = std::sync::mpsc::channel::<String>();
+    let reader_endpoint = endpoint.clone();
+    std::thread::spawn(move || read_desktop(reader, &lines, &reader_endpoint));
+
+    for line in replies {
+        writeln!(writer, "{line}").map_err(|error| {
+            Problem::new("write to the desktop agent", error.to_string())
+                .with_remedy("the agent disconnected; the editor keeps running")
+        })?;
+        writer
+            .flush()
+            .map_err(|error| Problem::new("flush to the desktop agent", error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn read_desktop<R: BufRead>(
+    reader: R,
+    lines: &std::sync::mpsc::Sender<String>,
+    endpoint: &cy_editor_agent::DesktopAgentEndpoint,
+) {
+    let mut initialized = false;
+    for line in reader.lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(error) => {
+                let _ = lines.send(rpc::error(
+                    &Json::Null,
+                    rpc::INTERNAL_ERROR,
+                    &error.to_string(),
+                    Some("the agent disconnected; the editor keeps running"),
+                ));
+                break;
+            }
+        };
+        match rpc::decode(&line) {
+            Ok(None) => {}
+            Ok(Some(message)) => dispatch_desktop(&message, &mut initialized, lines, endpoint),
+            Err(problem) => {
+                let _ = lines.send(rpc::error(
+                    &Json::Null,
+                    rpc::INVALID_PARAMS,
+                    &problem.because,
+                    problem.remedy.as_deref(),
+                ));
+            }
+        }
+    }
+    endpoint.disconnect();
+}
+
+fn dispatch_desktop(
+    message: &Incoming,
+    initialized: &mut bool,
+    lines: &std::sync::mpsc::Sender<String>,
+    endpoint: &cy_editor_agent::DesktopAgentEndpoint,
+) {
+    let Some(id) = message.id.clone() else { return };
+    match message.method.as_str() {
+        "initialize" => {
+            *initialized = true;
+            let _ = lines.send(rpc::result(&id, McpServer::<Vec<u8>>::initialize_result()));
+        }
+        "ping" => {
+            let _ = lines.send(rpc::result(&id, Json::object([])));
+        }
+        "tools/list" | "tools/call" | "resources/list" | "resources/read" => {
+            dispatch_projected(message, *initialized, id, lines, endpoint);
+        }
+        other => {
+            let _ = lines.send(rpc::error(
+                &id,
+                rpc::METHOD_NOT_FOUND,
+                &format!("this server has no method {other:?}"),
+                Some(
+                    "it speaks initialize, ping, tools/list, tools/call, resources/list and resources/read",
+                ),
+            ));
+        }
+    }
+}
+
+fn dispatch_projected(
+    message: &Incoming,
+    initialized: bool,
+    id: Json,
+    lines: &std::sync::mpsc::Sender<String>,
+    endpoint: &cy_editor_agent::DesktopAgentEndpoint,
+) {
+    if !initialized {
+        let _ = lines.send(rpc::error(
+            &id,
+            rpc::INVALID_PARAMS,
+            "this connection has not been initialised",
+            Some("send initialize first, and read the protocol version it answers with"),
+        ));
+        return;
+    }
+    let request = match McpServer::<Vec<u8>>::as_request(message) {
+        Ok(request) => request,
+        Err(problem) => {
+            let _ = lines.send(rpc::error(
+                &id,
+                rpc::INVALID_PARAMS,
+                &problem.because,
+                problem.remedy.as_deref(),
+            ));
+            return;
+        }
+    };
+    let timeout = Duration::from_mins(2);
+    match endpoint.submit(request, timeout) {
+        Ok(ticket) => {
+            wait_for_desktop_response(endpoint.clone(), ticket, timeout, id, lines.clone());
+        }
+        Err(problem) => {
+            let _ = lines.send(rpc::error(
+                &id,
+                rpc::INTERNAL_ERROR,
+                &problem.because,
+                problem.remedy.as_deref(),
+            ));
+        }
+    }
+}
+
+fn wait_for_desktop_response(
+    endpoint: cy_editor_agent::DesktopAgentEndpoint,
+    ticket: u64,
+    timeout: Duration,
+    id: Json,
+    lines: std::sync::mpsc::Sender<String>,
+) {
+    std::thread::spawn(move || {
+        let response = endpoint.wait_response(ticket, timeout);
+        let line = match render(&response) {
+            Ok(result) => rpc::result(&id, result),
+            Err(problem) => rpc::error(
+                &id,
+                rpc::INTERNAL_ERROR,
+                &problem.because,
+                problem.remedy.as_deref(),
+            ),
+        };
+        let _ = lines.send(line);
+    });
 }
 
 /// The JSON Schema type a parameter's kind maps onto.

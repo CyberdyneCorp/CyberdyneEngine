@@ -753,6 +753,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cy-editor-json"
+version = "0.5.0"
+dependencies = [
+ "cy-editor-core",
+]
+
+[[package]]
 name = "cy-editor-mcp"
 version = "0.5.0"
 dependencies = [
@@ -760,6 +767,7 @@ dependencies = [
  "cy-editor-commands",
  "cy-editor-core",
  "cy-editor-documents",
+ "cy-editor-json",
  "cy-editor-protocol",
  "cy-editor-services",
  "cy-editor-viewport",
@@ -798,6 +806,7 @@ dependencies = [
  "cy-editor-documents",
  "cy-editor-protocol",
  "cy-editor-sdk",
+ "cy-editor-sourcekit",
  "cy-editor-viewport",
 ]
 
@@ -805,6 +814,7 @@ dependencies = [
 name = "cy-editor-shell"
 version = "0.5.0"
 dependencies = [
+ "cy-editor-agent",
  "cy-editor-commands",
  "cy-editor-core",
  "cy-editor-documents",
@@ -822,6 +832,13 @@ dependencies = [
  "egui_dock",
  "image",
  "wgpu",
+]
+
+[[package]]
+name = "cy-editor-sourcekit"
+version = "0.5.0"
+dependencies = [
+ "cy-editor-json",
 ]
 
 [[package]]

@@ -129,6 +129,39 @@ pub trait CommandContext {
         None
     }
 
+    /// Project settings and per-user preferences, when this host exposes them.
+    fn settings(&mut self) -> Option<&mut dyn SettingsHost> {
+        None
+    }
+
+    /// Provider-neutral source-control operations, when configured.
+    fn source_control(&mut self) -> Option<&mut dyn SourceControlHost> {
+        None
+    }
+
+    /// Prepare a semantic three-way merge from two provider revision identifiers.
+    fn start_semantic_merge(&mut self, base: &str, incoming: &str) -> Result<String> {
+        let _ = (base, incoming);
+        Err(cy_editor_core::problem::Problem::new(
+            "start a semantic merge",
+            "this host has no semantic merge service",
+        ))
+    }
+
+    /// Resolve one pending conflict and commit when every conflict has a decision.
+    fn resolve_semantic_merge(
+        &mut self,
+        index: usize,
+        choice: &str,
+        replacement: Option<Value>,
+    ) -> Result<String> {
+        let _ = (index, choice, replacement);
+        Err(cy_editor_core::problem::Problem::new(
+            "resolve a semantic merge",
+            "this host has no semantic merge service",
+        ))
+    }
+
     /// Open the document that stands for an asset, returning the one already open when there is
     /// one.
     ///
@@ -190,6 +223,25 @@ pub trait CommandContext {
         )
         .with_remedy("invoke this through the editor rather than a test double"))
     }
+}
+
+/// The mutation surface used by registered settings commands.
+pub trait SettingsHost {
+    /// Store a typed value in project, platform, or user scope.
+    fn set(&mut self, key: &str, platform: Option<&str>, user: bool, value: Value) -> Result<()>;
+
+    /// Remove an explicit value so the declaration's fallback is effective.
+    fn reset(&mut self, key: &str, platform: Option<&str>) -> Result<()>;
+}
+
+/// The operation surface used by registered source-control commands.
+pub trait SourceControlHost {
+    /// Start a background status refresh.
+    fn refresh(&mut self) -> Result<String>;
+    /// Format provider history for one project-relative path.
+    fn history(&mut self, path: &str) -> Result<String>;
+    /// Perform a provider-neutral mutation.
+    fn operate(&mut self, operation: &str, path: &str, description: &str) -> Result<String>;
 }
 
 /// A manipulation stated rather than dragged.
@@ -282,6 +334,12 @@ pub trait ProjectHost {
     /// When there is no such file, or the editor cannot read it as text.
     fn read_source(&self, path: &str) -> Result<String>;
 
+    /// Stable fingerprint of the bytes currently at a path, or `missing`.
+    ///
+    /// A caller carries this from read to save so an external editor or agent cannot be silently
+    /// overwritten between those two actions.
+    fn source_fingerprint(&self, path: &str) -> Result<String>;
+
     /// Whether the editor could capture this file's prior contents, and so reverse a write to it.
     ///
     /// True for a file that does not exist yet — creating one undoes to deleting it — and for one
@@ -299,6 +357,30 @@ pub trait ProjectHost {
     ///
     /// When the path leaves the project, or the write or the delete fails.
     fn put_source(&mut self, path: &str, contents: Option<&str>) -> Result<()>;
+
+    /// Compare the current fingerprint and write only when it still equals `expected`.
+    ///
+    /// # Errors
+    ///
+    /// When the fingerprint is malformed, the path leaves the project, or file I/O fails. A moved
+    /// disk state is a [`SourceWrite::Conflict`], not an I/O failure.
+    fn put_source_if_unchanged(
+        &mut self,
+        path: &str,
+        contents: &str,
+        expected: &str,
+    ) -> Result<SourceWrite>;
+
+    /// Fingerprint an asset together with its identity and import metadata sidecars.
+    fn asset_fingerprint(&self, path: &str) -> Result<String>;
+
+    /// Move an asset bundle only while it still matches `expected`.
+    fn move_asset_if_unchanged(
+        &mut self,
+        from: &str,
+        to: &str,
+        expected: &str,
+    ) -> Result<AssetMove>;
 
     /// Start a build of the project's script module, returning what a caller should watch.
     ///
@@ -342,6 +424,38 @@ pub trait ProjectHost {
 
     /// Which mode it is in: `in-editor`, `separate-process` or `remote-device`.
     fn play_mode(&self) -> String;
+}
+
+/// Result of a fingerprint-guarded source write.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum SourceWrite {
+    /// The file was written and now has `fingerprint`.
+    Written {
+        /// New disk fingerprint.
+        fingerprint: String,
+    },
+    /// Disk no longer matches the caller's base.
+    Conflict {
+        /// Fingerprint of the current disk state.
+        actual: String,
+        /// Current UTF-8 disk text, or `None` when externally removed.
+        disk: Option<String>,
+    },
+}
+
+/// Result of a fingerprint-guarded asset move.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum AssetMove {
+    /// Source and metadata moved together.
+    Moved {
+        /// Fingerprint of the bundle at its new path.
+        fingerprint: String,
+    },
+    /// The source or one of its sidecars changed after presentation.
+    Conflict {
+        /// Current fingerprint of the source bundle.
+        actual: String,
+    },
 }
 
 /// A viewport's own controls, addressed by name.

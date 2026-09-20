@@ -82,4 +82,4 @@ pub mod server;
 
 pub use json::Json;
 pub use rpc::{Incoming, PROTOCOL_VERSION};
-pub use server::{Connection, McpServer, SERVER_NAME, serve};
+pub use server::{Connection, McpServer, SERVER_NAME, serve, serve_desktop};

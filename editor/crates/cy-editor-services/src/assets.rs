@@ -45,21 +45,31 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cy_editor_commands::{
-    Arguments, AssetHost, AssetImportOutcome, AssetImportRequest, Command, CommandContext,
-    EffectClass, ImportedSubAsset, Metadata, Outcome, ParameterSpec, Registry,
+    Arguments, AssetHost, AssetImportOutcome, AssetImportRequest, AssetMove, Command,
+    CommandContext, EffectClass, ImportFormat, ImportSetting, ImportedSubAsset, Metadata, Outcome,
+    ParameterSpec, Registry,
 };
 use cy_editor_core::ids::{DocumentId, NodeId};
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
+use cy_editor_documents::operation::Operation;
 use cy_editor_documents::selection::Selection;
 use cy_editor_viewport::gizmo::Transform3;
 use cy_editor_viewport::math::Vec3;
 
-use crate::primitives::create_mesh_instance;
+use crate::primitives::{MeshBinding, create_mesh_instance, mesh_of};
 
-/// Register `asset.import`.
+/// Domain operation used to make a filesystem move eligible for ordinary undo/redo.
+pub const ASSET_MOVE_DOMAIN: &str = "asset.move";
+
+/// Register import, move, and drag/drop asset commands.
 pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(import())?;
+    registry.register(move_asset())?;
+    registry.register(rename_asset())?;
+    registry.register(place_asset())?;
+    registry.register(assign_asset())?;
+    registry.register(set_import_setting())?;
     Ok(())
 }
 
@@ -89,6 +99,11 @@ pub trait ImportRunner: Send + Sync {
     /// answer, which is a different thing from "none".
     fn extensions(&self) -> Vec<String>;
 
+    /// Importer-owned option schemas. Empty means this runner cannot present settings.
+    fn formats(&self) -> Vec<ImportFormat> {
+        Vec::new()
+    }
+
     /// Import one source out of `root`.
     ///
     /// # Errors
@@ -105,6 +120,7 @@ pub struct AssetImportService {
     /// What the runner reported, read once and kept: asking costs a process launch and the answer
     /// cannot change while this binary is running.
     extensions: Option<Vec<String>>,
+    formats: Option<Vec<ImportFormat>>,
 }
 
 impl AssetImportService {
@@ -120,6 +136,7 @@ impl AssetImportService {
             root,
             runner,
             extensions: None,
+            formats: None,
         }
     }
 
@@ -129,6 +146,7 @@ impl AssetImportService {
     pub fn with_runner(mut self, runner: Arc<dyn ImportRunner>) -> Self {
         self.runner = runner;
         self.extensions = None;
+        self.formats = None;
         self
     }
 
@@ -137,6 +155,7 @@ impl AssetImportService {
         self.root = root.into();
         self.runner = Arc::new(CliImportRunner::found_near(&self.root));
         self.extensions = None;
+        self.formats = None;
     }
 
     /// Where the project is.
@@ -164,6 +183,15 @@ impl AssetHost for AssetImportService {
 
     fn import_asset(&mut self, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
         self.runner.run(&self.root, request)
+    }
+
+    fn import_formats(&mut self) -> Vec<ImportFormat> {
+        if let Some(formats) = &self.formats {
+            return formats.clone();
+        }
+        let formats = self.runner.formats();
+        self.formats = Some(formats.clone());
+        formats
     }
 }
 
@@ -234,6 +262,19 @@ impl ImportRunner for CliImportRunner {
             return Vec::new();
         };
         parse_extensions(&String::from_utf8_lossy(&output.stdout))
+    }
+
+    fn formats(&self) -> Vec<ImportFormat> {
+        let Ok(tool) = self.tool() else {
+            return Vec::new();
+        };
+        let Ok(output) = std::process::Command::new(tool)
+            .arg("--list-importers")
+            .output()
+        else {
+            return Vec::new();
+        };
+        parse_formats(&String::from_utf8_lossy(&output.stdout))
     }
 
     fn run(&self, root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
@@ -316,6 +357,53 @@ fn parse_extensions(listing: &str) -> Vec<String> {
     found
 }
 
+fn parse_formats(listing: &str) -> Vec<ImportFormat> {
+    let mut formats = Vec::new();
+    let mut current: Option<ImportFormat> = None;
+    let lines = listing.lines().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < lines.len() {
+        let trimmed = lines[index].trim();
+        if !lines[index].starts_with(' ') && trimmed.contains(" (version ") {
+            if let Some(format) = current.take() {
+                formats.push(format);
+            }
+            current = Some(ImportFormat {
+                importer: trimmed
+                    .split(" (version ")
+                    .next()
+                    .unwrap_or_default()
+                    .to_string(),
+                ..ImportFormat::default()
+            });
+        } else if let Some(rest) = trimmed.strip_prefix("extensions:") {
+            if let Some(format) = &mut current {
+                format.extensions = rest
+                    .split_whitespace()
+                    .map(str::to_ascii_lowercase)
+                    .collect();
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("--set ")
+            && let Some((name, kind)) = rest.split_once("=<")
+        {
+            let description = lines.get(index + 1).copied().map_or("", str::trim);
+            if let Some(format) = &mut current {
+                format.settings.push(ImportSetting {
+                    name: name.to_string(),
+                    kind: kind.trim_end_matches('>').to_string(),
+                    description: description.to_string(),
+                });
+            }
+            index += 1;
+        }
+        index += 1;
+    }
+    if let Some(format) = current {
+        formats.push(format);
+    }
+    formats
+}
+
 // --- Reading what the tool said ------------------------------------------------------------------
 //
 // A hand-written reader for one document shape, rather than a JSON dependency in this crate. The
@@ -377,6 +465,357 @@ fn parse_json_outcome(text: &str) -> Option<AssetImportOutcome> {
 }
 
 // --- The command ---------------------------------------------------------------------------------
+
+/// Encode one endpoint of an asset move for undo/redo.
+pub fn encode_asset_move(path: &str, fingerprint: &str) -> Vec<u8> {
+    format!("{path}\n{fingerprint}").into_bytes()
+}
+
+/// Decode one endpoint of an asset move.
+pub fn decode_asset_move(bytes: &[u8]) -> Option<(String, String)> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let (path, fingerprint) = text.split_once('\n')?;
+    Some((path.to_string(), fingerprint.to_string()))
+}
+
+fn move_asset() -> Command {
+    move_command(
+        "asset.move",
+        "Move Asset",
+        "Moves an asset to a project-relative path together with its .meta and .import sidecars. \
+         It refuses traversal, collisions, and a source changed since the browser observed it; \
+         the successful move is one undoable transaction.",
+        false,
+    )
+}
+
+fn rename_asset() -> Command {
+    move_command(
+        "asset.rename",
+        "Rename Asset",
+        "Renames an asset in its current folder together with its .meta and .import sidecars. It \
+         preserves the extension and refuses collisions or a stale fingerprint.",
+        true,
+    )
+}
+
+fn move_command(id: &str, label: &str, description: &str, rename: bool) -> Command {
+    let destination_name = if rename { "name" } else { "to" };
+    Command::new(
+        Metadata::new(
+            id,
+            label,
+            "Asset",
+            description,
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "path",
+            ValueKind::Text,
+            "The current project-relative asset path.",
+        ))
+        .with(ParameterSpec::required(
+            destination_name,
+            ValueKind::Text,
+            if rename {
+                "The new file name in the current folder, including its unchanged extension."
+            } else {
+                "The new project-relative path, with the same extension."
+            },
+        ))
+        .with(ParameterSpec::required(
+            "expected_fingerprint",
+            ValueKind::Text,
+            "The source-and-metadata fingerprint presented by the asset catalogue.",
+        )),
+        move |context, arguments| run_move(context, arguments, rename),
+    )
+}
+
+fn run_move(
+    context: &mut dyn CommandContext,
+    arguments: &Arguments,
+    rename: bool,
+) -> Result<Outcome> {
+    let from = arguments
+        .text("path")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let expected = arguments
+        .text("expected_fingerprint")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let to = if rename {
+        let name = arguments.text("name").unwrap_or_default().trim();
+        if name.is_empty() || name.contains(['/', '\\']) {
+            return Err(
+                Problem::new("rename an asset", "the name must be one file name")
+                    .with_remedy("enter a name without a folder separator"),
+            );
+        }
+        Path::new(&from)
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map_or_else(
+                || name.to_string(),
+                |parent| parent.join(name).to_string_lossy().into(),
+            )
+    } else {
+        arguments.text("to").unwrap_or_default().trim().to_string()
+    };
+    if Path::new(&from).extension() != Path::new(&to).extension() {
+        return Err(Problem::new(
+            format!("move {from} to {to}"),
+            "an asset move cannot change its source format",
+        )
+        .with_remedy("keep the existing extension; conversion belongs to an importer"));
+    }
+    within_scope(context, &from)?;
+    within_scope(context, &to)?;
+    let document_id = active(context)?;
+    let actor = context.actor();
+    let document = context
+        .document_mut(document_id)
+        .ok_or_else(|| Problem::not_found("the active document"))?;
+    document.begin(format!("Move asset {from}"), actor);
+    document.record(Operation::Domain {
+        node: None,
+        kind: ASSET_MOVE_DOMAIN.to_string(),
+        before: encode_asset_move(&from, &expected),
+        after: encode_asset_move(&to, &expected),
+    })?;
+    let moved = context
+        .project()
+        .ok_or_else(|| Problem::not_found("the project"))?
+        .move_asset_if_unchanged(&from, &to, &expected);
+    let document = context
+        .document_mut(document_id)
+        .ok_or_else(|| Problem::not_found("the active document"))?;
+    match moved {
+        Ok(AssetMove::Moved { fingerprint }) => {
+            document.commit()?;
+            Ok(Outcome::new(format!("Moved {from} to {to}"))
+                .with("from", Value::Text(from))
+                .with("to", Value::Text(to))
+                .with("fingerprint", Value::Text(fingerprint))
+                .with("undo-eligible", Value::Bool(true))
+                .with("conflict", Value::Bool(false)))
+        }
+        Ok(AssetMove::Conflict { actual }) => {
+            document.cancel()?;
+            Ok(Outcome::new(format!(
+                "Did not move {from}: the asset or its metadata changed externally"
+            ))
+            .with("path", Value::Text(from))
+            .with("expected_fingerprint", Value::Text(expected))
+            .with("actual_fingerprint", Value::Text(actual))
+            .with("conflict", Value::Bool(true)))
+        }
+        Err(problem) => {
+            document.cancel()?;
+            Err(problem)
+        }
+    }
+}
+
+fn place_asset() -> Command {
+    Command::new(
+        Metadata::new(
+            "asset.place",
+            "Place Asset",
+            "Asset",
+            "Places an existing project asset into the active scene as one undoable transaction. \
+             This is the Content Browser's scene-drop intent and is automatically the MCP tool.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "path",
+            ValueKind::Text,
+            "The project-relative asset path.",
+        ))
+        .with(ParameterSpec::optional(
+            "at",
+            ValueKind::Vec3,
+            "World-space placement in metres; the origin when omitted.",
+            Value::Vec3([0.0; 3]),
+        ))
+        .with(ParameterSpec::optional(
+            "parent",
+            ValueKind::Text,
+            "Parent entity identity; a scene root when omitted.",
+            Value::Text(String::new()),
+        )),
+        |context, arguments| {
+            let path = arguments
+                .text("path")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            within_scope(context, &path)?;
+            if !context
+                .project()
+                .ok_or_else(|| Problem::not_found("the project"))?
+                .source_exists(&path)
+            {
+                return Err(Problem::not_found(format!("asset {path}")));
+            }
+            let node = place_imported(context, arguments, &path)?;
+            Ok(Outcome::new(format!("Placed {path}"))
+                .with("asset", Value::Text(path))
+                .with("entity", Value::Text(node.to_string())))
+        },
+    )
+}
+
+fn assign_asset() -> Command {
+    Command::new(
+        Metadata::new(
+            "asset.assign",
+            "Assign Asset",
+            "Asset",
+            "Assigns an existing asset to an entity's mesh field as one undoable transaction. \
+             This is the Inspector's asset-drop intent and is automatically the MCP tool.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "path",
+            ValueKind::Text,
+            "The project-relative asset path.",
+        ))
+        .with(ParameterSpec::required(
+            "entity",
+            ValueKind::Text,
+            "The stable identity of the entity receiving the asset.",
+        )),
+        |context, arguments| {
+            let path = arguments
+                .text("path")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            within_scope(context, &path)?;
+            if !context
+                .project()
+                .ok_or_else(|| Problem::not_found("the project"))?
+                .source_exists(&path)
+            {
+                return Err(Problem::not_found(format!("asset {path}")));
+            }
+            let id = active(context)?;
+            let node = parse_node(arguments.text("entity").unwrap_or_default())?
+                .ok_or_else(|| Problem::new("assign an asset", "no entity was named"))?;
+            let actor = context.actor();
+            let document = context
+                .document_mut(id)
+                .ok_or_else(|| Problem::not_found("the active document"))?;
+            let binding = MeshBinding::of_schema(document.schema()).ok_or_else(|| {
+                Problem::new("assign an asset", "the scene has no mesh asset field")
+                    .with_remedy("drop the asset into the scene to create a mesh entity first")
+            })?;
+            let before = mesh_of(document, node).ok_or_else(|| {
+                Problem::new("assign an asset", "the entity has no assignable mesh field")
+            })?;
+            document.with_transaction(format!("Assign {path}"), actor, |document| {
+                document.record(Operation::SetAssetReference {
+                    node,
+                    component: binding.component,
+                    field: binding.mesh,
+                    before,
+                    after: path.clone(),
+                })
+            })?;
+            Ok(Outcome::new(format!("Assigned {path}"))
+                .with("asset", Value::Text(path))
+                .with("entity", Value::Text(node.to_string())))
+        },
+    )
+}
+
+fn set_import_setting() -> Command {
+    Command::new(
+        Metadata::new(
+            "asset.import-setting.set",
+            "Set Import Setting",
+            "Asset",
+            "Changes one importer-declared setting and reimports the source. Unsupported formats \
+             and setting names are refused by name rather than ignored.",
+            EffectClass::IrreversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "path",
+            ValueKind::Text,
+            "The project-relative source asset.",
+        ))
+        .with(ParameterSpec::required(
+            "setting",
+            ValueKind::Text,
+            "The importer-declared setting name.",
+        ))
+        .with(ParameterSpec::required(
+            "value",
+            ValueKind::Text,
+            "The new value in the importer's declared type.",
+        )),
+        |context, arguments| {
+            let path = arguments
+                .text("path")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let setting = arguments
+                .text("setting")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let value = arguments.text("value").unwrap_or_default().to_string();
+            within_scope(context, &path)?;
+            let extension = Path::new(&path)
+                .extension()
+                .and_then(std::ffi::OsStr::to_str)
+                .map(|extension| format!(".{}", extension.to_ascii_lowercase()))
+                .unwrap_or_default();
+            let formats = host(context)?.import_formats();
+            let format = formats
+                .iter()
+                .find(|format| format.extensions.contains(&extension))
+                .ok_or_else(|| {
+                    Problem::new(
+                        format!("edit import settings for {path}"),
+                        format!("no importer with editable settings claims {extension}"),
+                    )
+                })?;
+            if !format
+                .settings
+                .iter()
+                .any(|candidate| candidate.name == setting)
+            {
+                let names = format
+                    .settings
+                    .iter()
+                    .map(|item| item.name.as_str())
+                    .collect::<Vec<_>>();
+                return Err(Problem::new(
+                    format!("set import setting {setting:?}"),
+                    format!("the {} importer declares no such setting", format.importer),
+                )
+                .with_remedy(format!("its settings are: {}", names.join(", "))));
+            }
+            let request = AssetImportRequest {
+                source: path.clone(),
+                options: BTreeMap::from([(setting.clone(), value.clone())]),
+                force: true,
+            };
+            let imported = host(context)?.import_asset(&request)?;
+            Ok(Outcome::new(format!("Set {setting}={value} for {path}"))
+                .with("asset", Value::Text(path))
+                .with("setting", Value::Text(setting))
+                .with("value", Value::Text(value))
+                .with("importer", Value::Text(imported.importer)))
+        },
+    )
+}
 
 /// The document a command with no explicit target acts on, or a refusal that says what to do.
 fn active(context: &dyn CommandContext) -> Result<DocumentId> {
@@ -743,11 +1182,21 @@ mod tests {
 
     #[test]
     fn the_extensions_come_from_the_tools_own_listing() {
-        let listing = "gltf (version 2)\n  Imports a glTF.\n  extensions: .gltf .glb\n\n\
+        let listing = "gltf (version 2)\n  Imports a glTF.\n  extensions: .gltf .glb\n\
+                       --set scale=<float>\n      Scale source positions.\n\n\
                        obj (version 1)\n  Imports an OBJ.\n  extensions: .OBJ\n\n";
         assert_eq!(
             parse_extensions(listing),
             vec![".gltf".to_string(), ".glb".to_string(), ".obj".to_string()]
+        );
+        let formats = parse_formats(listing);
+        assert_eq!(formats.len(), 2);
+        assert_eq!(formats[0].importer, "gltf");
+        assert_eq!(formats[0].settings[0].name, "scale");
+        assert_eq!(formats[0].settings[0].kind, "float");
+        assert_eq!(
+            formats[0].settings[0].description,
+            "Scale source positions."
         );
     }
 

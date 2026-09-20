@@ -73,6 +73,7 @@
 pub mod app;
 pub mod chrome;
 pub mod dock;
+pub mod documents;
 pub mod identity;
 pub mod keys;
 pub mod notify;
@@ -119,6 +120,12 @@ mod tests {
             "console",
             "profiler",
             "problems",
+            "undo-history",
+            "settings",
+            "source-control",
+            "agent-sessions",
+            "semantic-diff",
+            "semantic-merge",
         ] {
             let panel = cy_editor_interface::PanelId::new(kind).expect("a built-in panel");
             labels.push(panel_title(&panel).to_string());

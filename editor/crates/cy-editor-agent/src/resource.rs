@@ -170,7 +170,8 @@ impl Resources {
             (
                 "sources:".to_string(),
                 ResourceKind::Sources,
-                "The project's script sources. Read sources:<path> for one file's contents."
+                "The project's script sources and disk fingerprints. Read sources:<path> for one \
+                 file's contents."
                     .to_string(),
             ),
             (
@@ -419,7 +420,14 @@ impl Resources {
         if path.is_empty() {
             let mut content = String::new();
             for source in editor.project.source_paths() {
-                let _ = writeln!(content, "{source}");
+                match editor.sources.fingerprint(&source) {
+                    Ok(fingerprint) => {
+                        let _ = writeln!(content, "{source}\t{fingerprint}");
+                    }
+                    Err(problem) => {
+                        let _ = writeln!(content, "{source}\tunavailable: {}", problem.because);
+                    }
+                }
             }
             if content.is_empty() {
                 let _ = writeln!(
@@ -431,7 +439,9 @@ impl Resources {
             return Resource {
                 uri: "sources:".to_string(),
                 kind: ResourceKind::Sources,
-                description: "The project's script sources, in path order.".to_string(),
+                description: "The project's script sources and current fingerprints, in path \
+                              order. Pass the fingerprint as expected_fingerprint when saving."
+                    .to_string(),
                 content,
             };
         }

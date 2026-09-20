@@ -23,6 +23,7 @@
 //! every asset the open documents name, which is true, and it says so when that is empty.
 
 use cy_editor_interface::thumbnails::{Kind, Thumbnail};
+use cy_editor_interface::virtualise::{Viewport, Window, content_height};
 use cy_editor_visual::colour::{Semantic, Surface};
 use cy_editor_visual::density::TextRole;
 
@@ -32,37 +33,22 @@ use crate::theme;
 /// Draw the content browser.
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let metrics = panels.metrics();
-    search_field(
-        ui,
-        panels.shell,
-        "Search content",
-        &mut panels.inputs.browser_filter,
-    );
+    controls(panels, ui);
     ui.add_space(metrics.gap() * 0.5);
+    panels.asset_browser.refresh(&panels.editor.asset_catalogue);
+    let total = panels.asset_browser.rows().len();
 
-    let filter = panels.inputs.browser_filter.trim().to_lowercase();
-    let mut assets: Vec<String> = panels
-        .editor
-        .documents
-        .ids()
-        .filter_map(|id| panels.editor.documents.get(id))
-        .flat_map(|document| document.assets().to_vec())
-        .filter(|path| filter.is_empty() || path.to_lowercase().contains(&filter))
-        .collect();
-    assets.sort_unstable();
-    assets.dedup();
-
-    if assets.is_empty() {
+    if total == 0 {
         nothing_here(
             ui,
             panels.shell,
-            if filter.is_empty() {
-                "The open worlds name no assets."
+            if panels.inputs.browser_filter.trim().is_empty() {
+                "This folder contains no matching assets."
             } else {
                 "No asset matches this search."
             },
-            if filter.is_empty() {
-                "Open a world; its assets appear here."
+            if panels.inputs.browser_filter.trim().is_empty() {
+                "Navigate up or refresh after adding project files."
             } else {
                 "Clear the search to see all referenced assets."
             },
@@ -70,87 +56,166 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         return;
     }
 
-    ui.label(secondary(panels.shell, format!("{} items", assets.len())))
+    ui.label(secondary(panels.shell, format!("{total} items")))
         .on_hover_text(format!(
             "{} previews requested",
             panels.thumbnails.requests()
         ));
     ui.add_space(metrics.gap() * 0.5);
 
-    let tile = metrics.row() * 3.5;
-    let mut open = None;
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for path in &assets {
-                    if entry(panels, ui, path, tile) {
-                        open = Some(path.clone());
-                    }
-                }
-            });
-        });
-    if let Some(path) = open {
-        panels.intents.push(Intent::OpenAsset(path));
+    if let Some(row) = virtual_rows(panels, ui, total, metrics.row() * 1.75) {
+        if row.folder {
+            panels.asset_browser.navigate(&row.path);
+        } else {
+            panels.intents.push(Intent::OpenAsset(row.path));
+        }
     }
 }
 
-/// One asset tile: its preview or its typed placeholder, and its name.
-fn entry(panels: &mut Panels<'_>, ui: &mut egui::Ui, path: &str, tile: f32) -> bool {
-    let metrics = panels.metrics();
-    let kind = Kind::of_path(path);
-    let thumbnail = panels.thumbnails.thumbnail(path);
-    let theme = panels.shell.theme;
-
-    let response = ui
-        .allocate_ui(egui::vec2(tile, tile + metrics.row()), |ui| {
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(tile, tile), egui::Sense::click());
-            ui.painter().rect_filled(
-                rect,
-                egui::CornerRadius::same(3),
-                if response.hovered() {
-                    theme::lifted(theme, Surface::Sunken, 0.08)
-                } else {
-                    theme::surface(theme, Surface::Sunken)
-                },
-            );
-            // The placeholder says the kind, in a word. A picture that has not been rendered is a
-            // fact about the engine, not about the asset, and the entry stays identifiable meanwhile.
-            let (text, colour) = match thumbnail {
-                Thumbnail::Render(_) => (
-                    "Preview".to_string(),
-                    theme::role(theme, Semantic::PrimaryText),
-                ),
-                Thumbnail::Pending(kind) | Thumbnail::Typed(kind) => (
-                    kind.label().to_string(),
-                    theme::role(theme, Semantic::SecondaryText),
-                ),
-            };
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                text,
-                egui::FontId::proportional(metrics.text(TextRole::Secondary)),
-                colour,
-            );
-            ui.add_sized(
-                [tile, metrics.row()],
-                egui::Label::new(
-                    egui::RichText::new(name_of(path)).size(metrics.text(TextRole::Body)),
-                )
-                .truncate(),
-            );
-            response
-        })
-        .inner;
-
-    response
-        .on_hover_text(format!("{path}\n{}", kind.label()))
-        .double_clicked()
+fn controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    if search_field(
+        ui,
+        panels.shell,
+        "Search content",
+        &mut panels.inputs.browser_filter,
+    ) {
+        panels
+            .asset_browser
+            .set_name_filter(panels.inputs.browser_filter.clone());
+    }
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(
+                !panels.asset_browser.folder().is_empty(),
+                egui::Button::new("Up"),
+            )
+            .clicked()
+        {
+            panels.asset_browser.up();
+        }
+        ui.label(if panels.asset_browser.folder().is_empty() {
+            "Project"
+        } else {
+            panels.asset_browser.folder()
+        });
+        egui::ComboBox::from_id_salt("asset-kind")
+            .selected_text(if panels.inputs.browser_kind.is_empty() {
+                "All types"
+            } else {
+                panels.inputs.browser_kind.as_str()
+            })
+            .show_ui(ui, |ui| {
+                for kind in [
+                    "", "world", "prefab", "mesh", "material", "texture", "audio", "swift", "file",
+                ] {
+                    if ui
+                        .selectable_value(
+                            &mut panels.inputs.browser_kind,
+                            kind.to_string(),
+                            if kind.is_empty() { "All types" } else { kind },
+                        )
+                        .changed()
+                    {
+                        panels.asset_browser.set_kind_filter(if kind.is_empty() {
+                            None
+                        } else {
+                            Some(kind.to_string())
+                        });
+                    }
+                }
+            });
+        if ui.button("Refresh").clicked()
+            && let Err(problem) = panels.editor.asset_catalogue.refresh()
+        {
+            panels
+                .editor
+                .notifications
+                .post(cy_editor_services::Notification::error(
+                    problem.what.clone(),
+                    problem,
+                ));
+        }
+    });
 }
 
-/// The file name, which is what a tile has room for.
-fn name_of(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
+fn virtual_rows(
+    panels: &mut Panels<'_>,
+    ui: &mut egui::Ui,
+    total: usize,
+    row_height: f32,
+) -> Option<cy_editor_viewmodels::AssetRow> {
+    let mut activated = None;
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show_viewport(ui, |ui, visible| {
+            ui.set_height(content_height(total, row_height));
+            let window = Window::of(
+                total,
+                Viewport::new(visible.min.y, visible.height(), row_height),
+            );
+            let rows = window.slice(panels.asset_browser.rows()).to_vec();
+            let top = ui.min_rect().top() + row_height * crate::theme::points(window.first);
+            for (offset, row) in rows.iter().enumerate() {
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        ui.min_rect().left(),
+                        top + row_height * crate::theme::points(offset),
+                    ),
+                    egui::vec2(ui.available_width(), row_height),
+                );
+                if entry(panels, ui, row, rect) {
+                    activated = Some(row.clone());
+                }
+            }
+        });
+    activated
+}
+
+/// One virtualised asset row: its preview or typed placeholder, name, kind, and path.
+fn entry(
+    panels: &mut Panels<'_>,
+    ui: &mut egui::Ui,
+    row: &cy_editor_viewmodels::AssetRow,
+    rect: egui::Rect,
+) -> bool {
+    let metrics = panels.metrics();
+    let kind = Kind::of_path(&row.path);
+    let thumbnail = if row.folder {
+        Thumbnail::Typed(Kind::Other)
+    } else {
+        panels.thumbnails.thumbnail(&row.path)
+    };
+    let theme = panels.shell.theme;
+    let response = ui.interact(
+        rect,
+        egui::Id::new(("asset", &row.path)),
+        egui::Sense::click(),
+    );
+    ui.painter().rect_filled(
+        rect,
+        egui::CornerRadius::same(3),
+        if response.hovered() {
+            theme::lifted(theme, Surface::Sunken, 0.08)
+        } else {
+            theme::surface(theme, Surface::Sunken)
+        },
+    );
+    let preview = if row.folder {
+        "Folder"
+    } else {
+        match thumbnail {
+            Thumbnail::Render(_) => "Preview",
+            Thumbnail::Pending(kind) | Thumbnail::Typed(kind) => kind.label(),
+        }
+    };
+    ui.painter().text(
+        egui::pos2(rect.left() + metrics.gap(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        format!("{preview}   {}   · {}", row.name, row.kind),
+        egui::FontId::proportional(metrics.text(TextRole::Body)),
+        theme::role(theme, Semantic::PrimaryText),
+    );
+    response
+        .on_hover_text(format!("{}\n{}", row.path, kind.label()))
+        .double_clicked()
 }

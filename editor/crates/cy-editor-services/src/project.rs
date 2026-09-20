@@ -41,9 +41,12 @@
 //! person watches the same progress in the same panel.
 
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use cy_editor_core::observe::Revision;
 use cy_editor_core::problem::{Problem, Result};
+use cy_editor_core::progress::Operation as ProgressOperation;
 use cy_editor_documents::Document;
 use cy_editor_documents::operation::Operation;
 use cy_editor_documents::transaction::Transaction;
@@ -165,6 +168,7 @@ pub struct ProjectService {
     builder: Arc<dyn ModuleBuilder>,
     generation: u32,
     record: Arc<Mutex<BuildRecord>>,
+    build_revision: Arc<AtomicU64>,
 }
 
 impl Default for ProjectService {
@@ -194,6 +198,7 @@ impl ProjectService {
             builder,
             generation: 0,
             record: Arc::new(Mutex::new(BuildRecord::default())),
+            build_revision: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -257,6 +262,12 @@ impl ProjectService {
     #[must_use]
     pub fn record(&self) -> BuildRecord {
         self.locked().clone()
+    }
+
+    /// Observable revision of build progress and its last diagnostic.
+    #[must_use]
+    pub fn build_revision(&self) -> Revision {
+        Revision::from_u64(self.build_revision.load(Ordering::Acquire))
     }
 
     /// Resolve a project-relative path, refusing one that leaves the project.
@@ -367,7 +378,12 @@ impl ProjectService {
     /// Split from the starting so that this crate's one place for background work stays
     /// `OperationService` — a service that spawned its own thread would be a second answer to "where
     /// does long work go", and the two would eventually disagree about cancellation.
-    pub fn next_build(&mut self) -> Result<(String, impl FnOnce() + Send + 'static)> {
+    pub fn next_build(
+        &mut self,
+    ) -> Result<(
+        String,
+        impl FnOnce(&ProgressOperation) -> Result<()> + Send + 'static,
+    )> {
         let sources = self.root.join(&self.sources);
         if !sources.is_dir() {
             return Err(Problem::new(
@@ -385,6 +401,7 @@ impl ProjectService {
         };
         let builder = Arc::clone(&self.builder);
         let record = Arc::clone(&self.record);
+        let revision = Arc::clone(&self.build_revision);
         let label = format!("Build {} generation {}", self.module, self.generation);
         {
             let mut held = record
@@ -394,7 +411,9 @@ impl ProjectService {
             held.generation = request.generation;
             held.message = format!("building generation {}", request.generation);
         }
-        Ok((label, move || {
+        revision.fetch_add(1, Ordering::Release);
+        Ok((label, move |operation: &ProgressOperation| {
+            operation.report(Some(0.05), "Preparing Swift module build");
             let outcome = builder.build(&request);
             let mut held = record
                 .lock()
@@ -404,10 +423,16 @@ impl ProjectService {
                     held.state = BuildState::Succeeded;
                     held.message = format!("built {}", library.display());
                     held.library = Some(library);
+                    operation.report(Some(1.0), "Swift module built");
+                    revision.fetch_add(1, Ordering::Release);
+                    Ok(())
                 }
                 Err(problem) => {
                     held.state = BuildState::Failed;
                     held.message = problem.to_string();
+                    held.library = None;
+                    revision.fetch_add(1, Ordering::Release);
+                    Err(problem)
                 }
             }
         }))
@@ -724,7 +749,8 @@ mod tests {
         };
         assert!(label.contains("generation 1"), "{label}");
         assert_eq!(project.record().state, BuildState::Running);
-        work();
+        let operation = ProgressOperation::new("test build");
+        work(&operation).unwrap();
         let (library, generation) = project.built().unwrap();
         assert_eq!(generation, 1);
         assert!(library.to_string_lossy().contains("_g1."), "{library:?}");
@@ -733,7 +759,8 @@ mod tests {
         let Ok((_label, work)) = project.next_build() else {
             panic!("a project with sources queues a build")
         };
-        work();
+        let operation = ProgressOperation::new("test build");
+        work(&operation).unwrap();
         assert_eq!(project.built().unwrap().1, 2);
     }
 
@@ -757,7 +784,8 @@ mod tests {
         let Ok((_label, work)) = project.next_build() else {
             panic!("a project with sources queues a build")
         };
-        work();
+        let operation = ProgressOperation::new("test build");
+        assert!(work(&operation).is_err());
         let refused = project.built().unwrap_err();
         assert!(
             refused.because.contains("cannot find 'Vecter'"),

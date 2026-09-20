@@ -25,7 +25,10 @@ use std::sync::{Arc, Mutex};
 
 use cy_editor_commands::registry::{Arguments, Registry};
 use cy_editor_commands::scope::{DocumentScope, Scope};
-use cy_editor_commands::{AssetImportOutcome, AssetImportRequest, EffectClass, ImportedSubAsset};
+use cy_editor_commands::{
+    AssetImportOutcome, AssetImportRequest, EffectClass, ImportFormat, ImportSetting,
+    ImportedSubAsset,
+};
 use cy_editor_core::Actor;
 use cy_editor_core::ids::NodeId;
 use cy_editor_core::value::{Value, ValueKind};
@@ -87,6 +90,18 @@ impl ImportRunner for Recording {
 
     fn extensions(&self) -> Vec<String> {
         self.extensions.clone()
+    }
+
+    fn formats(&self) -> Vec<ImportFormat> {
+        vec![ImportFormat {
+            importer: "obj".into(),
+            extensions: vec![".obj".into()],
+            settings: vec![ImportSetting {
+                name: "scale".into(),
+                kind: "float".into(),
+                description: "Scale source positions before cooking.".into(),
+            }],
+        }]
     }
 
     fn run(
@@ -540,4 +555,154 @@ fn a_path_outside_the_connections_scope_is_refused_with_the_scope_as_the_reason(
         )
         .expect("inside the scope");
     assert_eq!(runner.calls().len(), 1);
+}
+
+#[test]
+fn asset_move_preserves_sidecars_and_is_one_undoable_transaction() {
+    let sandbox = Sandbox::new("asset-move");
+    std::fs::create_dir_all(sandbox.path().join("models")).unwrap();
+    std::fs::write(sandbox.path().join("models/chair.obj"), "mesh").unwrap();
+    std::fs::write(sandbox.path().join("models/chair.obj.meta"), "stable-id").unwrap();
+    std::fs::write(sandbox.path().join("models/chair.obj.import"), "scale=1").unwrap();
+    let registry = registry();
+    let mut editor = editor_with_a_world(&sandbox, Recording::new());
+    let fingerprint = editor
+        .asset_catalogue
+        .fingerprint("models/chair.obj")
+        .unwrap();
+
+    let outcome = invoke(
+        &mut editor,
+        &registry,
+        "asset.move",
+        &Arguments::new()
+            .with("path", Value::Text("models/chair.obj".into()))
+            .with("to", Value::Text("props/chair.obj".into()))
+            .with("expected_fingerprint", Value::Text(fingerprint)),
+    );
+    assert_eq!(
+        outcome.values.get("undo-eligible"),
+        Some(&Value::Bool(true))
+    );
+    assert_eq!(
+        std::fs::read_to_string(sandbox.path().join("props/chair.obj.meta")).unwrap(),
+        "stable-id"
+    );
+    assert!(sandbox.path().join("props/chair.obj.import").is_file());
+
+    invoke(&mut editor, &registry, "edit.undo", &Arguments::new());
+    assert!(sandbox.path().join("models/chair.obj").is_file());
+    assert!(sandbox.path().join("models/chair.obj.meta").is_file());
+    invoke(&mut editor, &registry, "edit.redo", &Arguments::new());
+    assert!(sandbox.path().join("props/chair.obj").is_file());
+
+    let fingerprint = editor
+        .asset_catalogue
+        .fingerprint("props/chair.obj")
+        .unwrap();
+    invoke(
+        &mut editor,
+        &registry,
+        "asset.rename",
+        &Arguments::new()
+            .with("path", Value::Text("props/chair.obj".into()))
+            .with("name", Value::Text("stool.obj".into()))
+            .with("expected_fingerprint", Value::Text(fingerprint)),
+    );
+    assert!(sandbox.path().join("props/stool.obj").is_file());
+    assert!(sandbox.path().join("props/stool.obj.meta").is_file());
+}
+
+#[test]
+fn scene_and_inspector_drops_use_registered_one_transaction_commands() {
+    let sandbox = Sandbox::new("asset-drop");
+    std::fs::create_dir_all(sandbox.path().join("models")).unwrap();
+    std::fs::write(sandbox.path().join("models/chair.obj"), "chair").unwrap();
+    std::fs::write(sandbox.path().join("models/table.obj"), "table").unwrap();
+    let registry = registry();
+    for command in ["asset.place", "asset.assign"] {
+        assert!(
+            registry.metadata(command).is_some(),
+            "{command} is registered"
+        );
+    }
+    let mut editor = editor_with_a_world(&sandbox, Recording::new());
+    let placed = invoke(
+        &mut editor,
+        &registry,
+        "asset.place",
+        &Arguments::new()
+            .with("path", Value::Text("models/chair.obj".into()))
+            .with("at", Value::Vec3([2.0, 0.0, 1.0])),
+    );
+    let node = match placed.values.get("entity") {
+        Some(Value::Text(node)) => node.clone(),
+        other => panic!("placement did not return an entity: {other:?}"),
+    };
+    invoke(
+        &mut editor,
+        &registry,
+        "asset.assign",
+        &Arguments::new()
+            .with("path", Value::Text("models/table.obj".into()))
+            .with("entity", Value::Text(node)),
+    );
+    let node = nodes(&editor)[0];
+    assert_eq!(
+        mesh_of(document(&editor), node).as_deref(),
+        Some("models/table.obj")
+    );
+    assert_eq!(document(&editor).history().entries().len(), 2);
+    invoke(&mut editor, &registry, "edit.undo", &Arguments::new());
+    assert_eq!(
+        mesh_of(document(&editor), node).as_deref(),
+        Some("models/chair.obj")
+    );
+}
+
+#[test]
+fn import_setting_edits_are_schema_driven_and_refuse_unknown_names() {
+    let sandbox = Sandbox::new("import-settings");
+    let registry = registry();
+    let runner = Recording::new();
+    let mut editor = editor_with_a_world(&sandbox, runner.clone());
+    invoke(
+        &mut editor,
+        &registry,
+        "asset.import-setting.set",
+        &Arguments::new()
+            .with("path", Value::Text("models/chair.obj".into()))
+            .with("setting", Value::Text("scale".into()))
+            .with("value", Value::Text("0.01".into())),
+    );
+    let calls = runner.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].options.get("scale").map(String::as_str),
+        Some("0.01")
+    );
+    assert!(calls[0].force);
+
+    let refused = refusal(
+        &mut editor,
+        &registry,
+        "asset.import-setting.set",
+        &Arguments::new()
+            .with("path", Value::Text("models/chair.obj".into()))
+            .with("setting", Value::Text("unknown-option".into()))
+            .with("value", Value::Text("x".into())),
+    );
+    assert!(refused.contains("unknown-option"), "{refused}");
+    assert!(refused.contains("obj importer"), "{refused}");
+
+    let refused = refusal(
+        &mut editor,
+        &registry,
+        "asset.import-setting.set",
+        &Arguments::new()
+            .with("path", Value::Text("textures/logo.blend".into()))
+            .with("setting", Value::Text("scale".into()))
+            .with("value", Value::Text("1".into())),
+    );
+    assert!(refused.contains(".blend"), "{refused}");
 }

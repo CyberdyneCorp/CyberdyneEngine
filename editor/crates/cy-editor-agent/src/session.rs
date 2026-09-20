@@ -36,6 +36,7 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::Value;
 use cy_editor_services::editor::Editor;
 
+use crate::audit::{AgentAuditKind, AgentAuditRecord, PrivacyClass};
 use crate::budget::{Budget, BudgetReport, Spending};
 use crate::conflict::{Claim, Conflict};
 use crate::observe::{Observation, ViewportRequest, observe};
@@ -115,6 +116,9 @@ pub struct Grant {
     pub effect: EffectClass,
     /// How many more invocations of that class it covers.
     pub remaining: u32,
+    /// Monotonic expiry for a desktop time-bounded grant. `None` is the legacy invocation-count
+    /// grant used by headless callers and tests.
+    pub expires_at_millis: Option<u64>,
 }
 
 /// What a read produced.
@@ -142,6 +146,9 @@ pub struct AgentSession {
     claim: Option<Claim>,
     viewport: Option<cy_editor_viewport::viewport::ViewportId>,
     running: Vec<std::sync::Arc<cy_editor_core::progress::Operation>>,
+    current_operation: Option<String>,
+    audit: Vec<AgentAuditRecord>,
+    published_audit: usize,
 }
 
 impl AgentSession {
@@ -161,7 +168,7 @@ impl AgentSession {
         now_millis: u64,
     ) -> Self {
         let intent = intent.into();
-        Self {
+        let mut session = Self {
             identity,
             recording: Recording::new(starting_revision, intent.clone()),
             intent,
@@ -173,7 +180,16 @@ impl AgentSession {
             claim: None,
             viewport: None,
             running: Vec::new(),
-        }
+            current_operation: None,
+            audit: Vec::new(),
+            published_audit: 0,
+        };
+        session.audit(
+            AgentAuditKind::Connection,
+            PrivacyClass::Public,
+            "connected",
+        );
+        session
     }
 
     /// Who is connected.
@@ -244,12 +260,107 @@ impl AgentSession {
     pub fn grant(&mut self, effect: EffectClass, invocations: u32) {
         if let Some(existing) = self.grants.iter_mut().find(|grant| grant.effect == effect) {
             existing.remaining = existing.remaining.saturating_add(invocations);
+            existing.expires_at_millis = None;
             return;
         }
         self.grants.push(Grant {
             effect,
             remaining: invocations,
+            expires_at_millis: None,
         });
+    }
+
+    /// Grant an effect class until an explicit monotonic deadline.
+    pub fn grant_for(&mut self, effect: EffectClass, now_millis: u64, duration_millis: u64) {
+        let expires = now_millis.saturating_add(duration_millis.max(1));
+        if let Some(existing) = self.grants.iter_mut().find(|grant| grant.effect == effect) {
+            existing.remaining = u32::MAX;
+            existing.expires_at_millis = Some(expires);
+            return;
+        }
+        self.grants.push(Grant {
+            effect,
+            remaining: u32::MAX,
+            expires_at_millis: Some(expires),
+        });
+    }
+
+    /// Remove every temporary grant immediately.
+    pub fn revoke_grants(&mut self) {
+        self.grants.clear();
+    }
+
+    /// Active grants at `now_millis`; expired grants are omitted.
+    #[must_use]
+    pub fn grants(&self, now_millis: u64) -> Vec<Grant> {
+        self.grants
+            .iter()
+            .copied()
+            .filter(|grant| {
+                grant.remaining > 0
+                    && grant
+                        .expires_at_millis
+                        .is_none_or(|expires| now_millis < expires)
+            })
+            .collect()
+    }
+
+    /// Describe the confirmation an invocation needs without charging or executing it.
+    ///
+    /// Desktop queues use this to leave the request pending while the window asks. The ordinary
+    /// synchronous path still checks again during execution, so approval never bypasses policy.
+    pub fn confirmation_for(
+        &self,
+        editor: &mut Editor,
+        registry: &Registry,
+        command: &str,
+        arguments: &Arguments,
+        now_millis: u64,
+    ) -> Result<Option<Confirmation>> {
+        if self.revoked {
+            return Err(Problem::new(
+                format!("invoke {command}"),
+                "this connection's access has been revoked",
+            ));
+        }
+        if self.paused {
+            return Err(Problem::new(
+                format!("invoke {command}"),
+                "this connection is paused",
+            ));
+        }
+        let metadata = registry.metadata(command).ok_or_else(|| {
+            Problem::not_found(format!("a command named {command:?}"))
+                .with_remedy("list the tools to see what there is")
+        })?;
+        if let Some(reason) = metadata.agent_exclusion() {
+            return Err(Problem::new(
+                format!("invoke {command}"),
+                format!("this command is not offered to agents: {reason}"),
+            ));
+        }
+        let effect = registry
+            .effect_of(command, editor, arguments)
+            .unwrap_or(metadata.effect);
+        self.scope.admit_effect(metadata, effect)?;
+        if !effect.needs_confirmation()
+            || self
+                .grants(now_millis)
+                .iter()
+                .any(|grant| grant.effect == effect)
+        {
+            return Ok(None);
+        }
+        Ok(Some(Confirmation {
+            agent: self.identity.agent.clone(),
+            command: command.to_string(),
+            effect,
+            what_happens: metadata.description.clone(),
+            what_is_lost: match effect {
+                EffectClass::IrreversibleMutation => "undo cannot put this back".to_string(),
+                _ => "this reaches outside the editor and cannot be taken back".to_string(),
+            },
+        }))
     }
 
     /// Stop the agent without disconnecting it.
@@ -277,8 +388,63 @@ impl AgentSession {
     /// "WHEN access is revoked mid-operation THEN the in-flight transaction SHALL be abandoned
     /// rather than half-applied." The abandonment is the caller's — it holds the document — and this
     /// is the half that makes every subsequent invocation refuse.
-    pub const fn revoke(&mut self) {
+    pub fn revoke(&mut self) {
         self.revoked = true;
+        for operation in &self.running {
+            if !operation.state().is_settled() {
+                operation.cancel();
+            }
+        }
+    }
+
+    /// The operation currently passing through the registry, when there is one.
+    #[must_use]
+    pub fn current_operation(&self) -> Option<&str> {
+        self.current_operation.as_deref().or_else(|| {
+            self.running
+                .iter()
+                .find(|operation| !operation.state().is_settled())
+                .map(|operation| operation.label())
+        })
+    }
+
+    /// Privacy-labelled activity retained for the session status and diagnostics panels.
+    #[must_use]
+    pub fn audit_records(&self) -> &[AgentAuditRecord] {
+        &self.audit
+    }
+
+    /// Publish every new audit record into the Editor's ordinary diagnostic stream.
+    pub fn publish_diagnostics(&mut self, editor: &mut Editor) {
+        for record in &self.audit[self.published_audit..] {
+            editor
+                .notifications
+                .post(cy_editor_services::Notification::info(format!(
+                    "Agent {} [{}] {} · privacy: {} · {}",
+                    record.agent,
+                    record.session,
+                    record.kind.name(),
+                    record.privacy.name(),
+                    record.summary
+                )));
+        }
+        self.published_audit = self.audit.len();
+    }
+
+    pub(crate) fn audit(
+        &mut self,
+        kind: AgentAuditKind,
+        privacy: PrivacyClass,
+        summary: impl Into<String>,
+    ) {
+        self.audit.push(AgentAuditRecord {
+            sequence: u64::try_from(self.audit.len()).unwrap_or(u64::MAX) + 1,
+            agent: self.identity.agent.clone(),
+            session: self.identity.session.clone(),
+            kind,
+            privacy,
+            summary: summary.into(),
+        });
     }
 
     /// Whether access has been revoked.
@@ -446,7 +612,24 @@ impl AgentSession {
             )
             .with_remedy("open a new connection; the human at the interface decides"));
         }
-        self.spending.charge_render(now_millis)?;
+        if let Err(problem) = self.spending.charge_render(now_millis) {
+            self.audit(
+                AgentAuditKind::Refusal,
+                PrivacyClass::Public,
+                "viewport render refused by budget",
+            );
+            return Err(problem);
+        }
+        self.audit(
+            AgentAuditKind::RenderRequest,
+            PrivacyClass::ProjectMetadata,
+            "viewport render requested",
+        );
+        self.audit(
+            AgentAuditKind::Cost,
+            PrivacyClass::Public,
+            "charged one viewport render",
+        );
         observe(editor, request, &mut self.viewport)
     }
 
@@ -477,7 +660,14 @@ impl AgentSession {
             })
             .collect();
 
+        self.current_operation = Some(command.to_string());
+        self.audit(
+            AgentAuditKind::Invocation,
+            PrivacyClass::ProjectMetadata,
+            format!("invoked {command}"),
+        );
         let result = self.attempt(editor, registry, confirmer, command, arguments, now_millis);
+        self.current_operation = None;
         let mut recorded = RecordedInvocation {
             command: command.to_string(),
             arguments: supplied,
@@ -501,7 +691,24 @@ impl AgentSession {
                     recorded.transactions.push(format!("{:?}", last.id));
                 }
             }
-            Err(problem) => recorded.refusal = Some(problem.because.clone()),
+            Err(problem) => {
+                recorded.refusal = Some(problem.because.clone());
+                self.audit(
+                    AgentAuditKind::Refusal,
+                    PrivacyClass::ProjectMetadata,
+                    format!("{command} was refused; the correlated response carries the reason"),
+                );
+            }
+        }
+        if !recorded.transactions.is_empty() {
+            self.audit(
+                AgentAuditKind::Transaction,
+                PrivacyClass::ProjectMetadata,
+                format!(
+                    "{command} committed {} transaction(s)",
+                    recorded.transactions.len()
+                ),
+            );
         }
         self.recording.record(recorded);
         result
@@ -589,6 +796,11 @@ impl AgentSession {
         self.scope.admit_effect(metadata, effect)?;
 
         self.spending.charge_invocation(now_millis)?;
+        self.audit(
+            AgentAuditKind::Cost,
+            PrivacyClass::Public,
+            "charged one invocation",
+        );
 
         // A concurrency slot is taken BEFORE the invocation and given back immediately if it turned
         // out to start no background work.
@@ -604,7 +816,7 @@ impl AgentSession {
             self.spending.begin_operation(now_millis)?;
         }
 
-        if effect.needs_confirmation() && !self.spend_grant(effect) {
+        if effect.needs_confirmation() && !self.spend_grant(effect, now_millis) {
             let confirmation = Confirmation {
                 agent: self.identity.agent.clone(),
                 command: command.to_string(),
@@ -681,12 +893,14 @@ impl AgentSession {
     }
 
     /// Spend one invocation of a deliberate grant, if there is one.
-    fn spend_grant(&mut self, effect: EffectClass) -> bool {
-        let Some(grant) = self
-            .grants
-            .iter_mut()
-            .find(|grant| grant.effect == effect && grant.remaining > 0)
-        else {
+    fn spend_grant(&mut self, effect: EffectClass, now_millis: u64) -> bool {
+        let Some(grant) = self.grants.iter_mut().find(|grant| {
+            grant.effect == effect
+                && grant.remaining > 0
+                && grant
+                    .expires_at_millis
+                    .is_none_or(|expires| now_millis < expires)
+        }) else {
             return false;
         };
         grant.remaining -= 1;

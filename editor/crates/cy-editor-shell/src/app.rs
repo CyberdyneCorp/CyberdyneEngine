@@ -39,13 +39,19 @@ use std::time::Instant;
 use cy_editor_commands::{Arguments, Registry, Scope};
 use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::Revision;
+use cy_editor_core::value::Value;
+use cy_editor_interface::notifications::{Choice, Modal};
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
 use cy_editor_interface::thumbnails::Thumbnails;
 use cy_editor_reflection::Catalogue;
-use cy_editor_services::Editor;
 use cy_editor_services::notifications::Notification;
-use cy_editor_viewmodels::HierarchyViewModel;
+use cy_editor_services::{CloseDecision, CloseOutcome, Editor, WorkspaceStore};
+use cy_editor_viewmodels::{
+    AssetBrowserViewModel, DiffViewModel, DocumentTabsViewModel, HierarchyViewModel,
+    HistoryViewModel, MergeViewModel, SettingsViewModel, SourceControlViewModel,
+    SourceWorkspaceViewModel,
+};
 use cy_editor_visual::colour::{Mode, Vision};
 use cy_editor_visual::density::{Density, Metrics, Scale};
 
@@ -54,7 +60,7 @@ use crate::palette::Palette;
 use crate::panels::{Inputs, Intent, Panels};
 use crate::view::ViewAction;
 use crate::viewport_link::ViewportLink;
-use crate::{chrome, dock, identity, theme};
+use crate::{chrome, dock, documents, identity, theme};
 
 /// How many thumbnails the content browser keeps.
 const THUMBNAIL_CACHE: usize = 512;
@@ -76,7 +82,16 @@ pub struct EditorWindow {
     pub scope: Scope,
 
     shell: Shell,
+    documents: DocumentTabsViewModel,
     hierarchy: HierarchyViewModel,
+    history: HistoryViewModel,
+    settings: SettingsViewModel,
+    source_control: SourceControlViewModel,
+    asset_browser: AssetBrowserViewModel,
+    source_workspace: SourceWorkspaceViewModel,
+    agent: Option<cy_editor_agent::DesktopAgentHost>,
+    diff: DiffViewModel,
+    merge_view: MergeViewModel,
     thumbnails: Thumbnails,
     titles: PanelTitles,
     dock: egui_dock::DockState<PanelKey>,
@@ -88,6 +103,10 @@ pub struct EditorWindow {
     /// What the inspector was last described from, so the catalogue is rebuilt when it moves and
     /// never at frame rate.
     described: Option<(DocumentId, Revision, usize)>,
+    /// The dirty document whose close decision is currently blocking input.
+    pending_close: Option<DocumentId>,
+    /// Per-user restart state. Absent for embedders and tests that did not choose a store.
+    workspace_store: Option<WorkspaceStore>,
     #[cfg(target_os = "linux")]
     last_attach: Option<Instant>,
     /// The device the window shares with the transport, when there is one.
@@ -105,11 +124,26 @@ impl EditorWindow {
     /// this crate is *below* the binary, and a render crate that named the binary's type would have
     /// inverted the workspace's dependency direction to save one line.
     pub fn new(
-        editor: Editor,
+        mut editor: Editor,
         registry: Registry,
         scope: Scope,
     ) -> cy_editor_core::problem::Result<Self> {
         let mut shell = Shell::new(&registry)?;
+        if let Err(problem) = editor.asset_catalogue.refresh() {
+            editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem));
+        }
+        if let Err(problem) = editor.sources.refresh() {
+            editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem));
+        }
+        if let Err(problem) = shell.restore_layout(&editor) {
+            editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem));
+        }
         bind_view_actions(&mut shell, &mut |problem| {
             // A conflict names both commands, and it is reported rather than swallowed: a binding
             // that silently lost is how a user learns their keymap is unreliable.
@@ -128,7 +162,16 @@ impl EditorWindow {
             registry,
             scope,
             shell,
+            documents: DocumentTabsViewModel::new(),
             hierarchy: HierarchyViewModel::new(),
+            history: HistoryViewModel::new(),
+            settings: SettingsViewModel::new(),
+            source_control: SourceControlViewModel::new(),
+            asset_browser: AssetBrowserViewModel::new(),
+            source_workspace: SourceWorkspaceViewModel::new(),
+            agent: None,
+            diff: DiffViewModel::new(),
+            merge_view: MergeViewModel::new(),
             thumbnails: Thumbnails::new(THUMBNAIL_CACHE),
             titles,
             dock,
@@ -138,11 +181,37 @@ impl EditorWindow {
             link: ViewportLink::idle(),
             identity: Identity::new(),
             described: None,
+            pending_close: None,
+            workspace_store: None,
             #[cfg(target_os = "linux")]
             last_attach: None,
             #[cfg(target_os = "linux")]
             gpu: None,
         })
+    }
+
+    /// Persist this window's restart state in the selected per-user store.
+    #[must_use]
+    pub fn with_workspace_store(mut self, store: WorkspaceStore) -> Self {
+        self.workspace_store = Some(store);
+        self
+    }
+
+    /// Host one MCP session alongside this window, drained on the interface owner.
+    #[must_use]
+    pub fn with_agent_host(mut self, agent: cy_editor_agent::DesktopAgentHost) -> Self {
+        self.agent = Some(agent);
+        self
+    }
+
+    fn persist_workspace(&mut self) {
+        self.capture_layout();
+        self.shell.persist_layout(&mut self.editor);
+        if let Some(store) = &self.workspace_store
+            && let Err(problem) = store.write(&self.editor)
+        {
+            eprintln!("cyberdyne-editor: {problem}");
+        }
     }
 
     /// The window's title, which names the product and the world.
@@ -210,6 +279,110 @@ impl EditorWindow {
                             .post(Notification::error(problem.what.clone(), problem));
                     }
                 }
+                Intent::ActivateDocument(document) => {
+                    if let Err(problem) = self.documents.activate(&mut self.editor, document) {
+                        self.editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
+                Intent::CloseDocument(document) => self.close_document(document, None),
+                Intent::ResolveDocumentClose(document, decision) => {
+                    self.close_document(document, Some(decision));
+                }
+                Intent::OpenSource(path) => {
+                    if let Err(problem) = self.source_workspace.open(&self.editor.sources, &path) {
+                        self.editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
+                Intent::SaveSource => self.save_source(),
+                Intent::NavigateSource { path, line, column } => {
+                    if let Err(problem) =
+                        self.source_workspace
+                            .navigate(&self.editor.sources, &path, line, column)
+                    {
+                        self.editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
+                Intent::PauseAgent => {
+                    if let Some(agent) = self.agent.as_mut() {
+                        agent.pause();
+                    }
+                }
+                Intent::ResumeAgent => {
+                    if let Some(agent) = self.agent.as_mut() {
+                        agent.resume();
+                    }
+                }
+                Intent::RevokeAgent => {
+                    if let Some(agent) = self.agent.as_mut()
+                        && let Err(problem) = agent.revoke(&mut self.editor)
+                    {
+                        self.editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
+                Intent::DecideAgent {
+                    ticket,
+                    allow,
+                    grant_millis,
+                } => {
+                    if let Some(agent) = self.agent.as_mut() {
+                        agent.decide(
+                            ticket,
+                            if allow {
+                                cy_editor_agent::Decision::Allow
+                            } else {
+                                cy_editor_agent::Decision::Refuse
+                            },
+                            grant_millis.map(Duration::from_millis),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn sync_source_language(&mut self) {
+        let buffers: Vec<_> = self
+            .source_workspace
+            .buffers()
+            .iter()
+            .map(|buffer| {
+                (
+                    buffer.path().to_string(),
+                    buffer.text().to_string(),
+                    buffer.revision(),
+                )
+            })
+            .collect();
+        for (path, text, revision) in buffers {
+            self.editor
+                .source_language
+                .synchronize(&path, &text, revision);
+        }
+        self.editor.source_language.pump();
+        self.source_workspace
+            .refresh_diagnostics(&self.editor.source_language);
+    }
+
+    /// Apply one stage of the guarded close flow.
+    fn close_document(&mut self, document: DocumentId, decision: Option<CloseDecision>) {
+        match self.documents.close(&mut self.editor, document, decision) {
+            Ok(CloseOutcome::NeedsDecision) => self.pending_close = Some(document),
+            Ok(CloseOutcome::Closed | CloseOutcome::Cancelled) => self.pending_close = None,
+            Err(problem) => {
+                // Keep the decision open after a failed save. The document service guarantees the
+                // dirty document is still present, so retry, discard, and cancel are all possible.
+                self.pending_close = Some(document);
+                self.editor
+                    .notifications
+                    .post(Notification::error(problem.what.clone(), problem));
             }
         }
     }
@@ -232,6 +405,63 @@ impl EditorWindow {
                 .editor
                 .notifications
                 .post(Notification::info(outcome.summary.clone())),
+            Err(problem) => self
+                .editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem)),
+        }
+    }
+
+    fn save_source(&mut self) {
+        let Some(buffer) = self.source_workspace.active() else {
+            return;
+        };
+        let path = buffer.path().to_string();
+        let arguments = Arguments::new()
+            .with("path", Value::Text(path.clone()))
+            .with("contents", Value::Text(buffer.text().to_string()))
+            .with(
+                "expected_fingerprint",
+                Value::Text(buffer.base_fingerprint().to_string()),
+            )
+            .with("base", Value::Text(buffer.base().to_string()));
+        match self
+            .registry
+            .invoke("source.write", &self.scope, &mut self.editor, &arguments)
+        {
+            Ok(outcome) => {
+                let conflict = matches!(outcome.values.get("conflict"), Some(Value::Bool(true)));
+                if conflict {
+                    let disk = outcome
+                        .values
+                        .get("disk")
+                        .and_then(Value::as_text)
+                        .map(str::to_string);
+                    let exists =
+                        matches!(outcome.values.get("disk_exists"), Some(Value::Bool(true)));
+                    let fingerprint = outcome
+                        .values
+                        .get("disk_fingerprint")
+                        .and_then(Value::as_text)
+                        .and_then(|text| cy_editor_services::SourceFingerprint::parse(text).ok());
+                    if let (Some(buffer), Some(fingerprint)) =
+                        (self.source_workspace.active_mut(), fingerprint)
+                    {
+                        buffer.report_conflict(exists.then_some(disk).flatten(), fingerprint);
+                    }
+                } else if let Some(fingerprint) = outcome
+                    .values
+                    .get("fingerprint")
+                    .and_then(Value::as_text)
+                    .and_then(|text| cy_editor_services::SourceFingerprint::parse(text).ok())
+                    && let Some(buffer) = self.source_workspace.active_mut()
+                {
+                    buffer.saved(fingerprint);
+                }
+                self.editor
+                    .notifications
+                    .post(Notification::info(outcome.summary));
+            }
             Err(problem) => self
                 .editor
                 .notifications
@@ -311,6 +541,38 @@ impl EditorWindow {
     fn overlays(&mut self, ctx: &egui::Context, metrics: Metrics, intents: &mut Vec<Intent>) {
         use cy_editor_interface::palette::Action as Chosen;
 
+        if let Some(document) = self.pending_close {
+            let Some(open) = self.editor.documents.get(document) else {
+                self.pending_close = None;
+                return;
+            };
+            let asset = open
+                .assets()
+                .first()
+                .map_or_else(|| "this document".to_string(), Clone::clone);
+            let modal = Modal::decision(
+                format!("Save changes to {asset}?"),
+                format!(
+                    "Save writes the changes to {asset}. Discard permanently loses the unsaved changes."
+                ),
+                vec![
+                    Choice::new("Save"),
+                    Choice::destructive("Discard"),
+                    Choice::new("Cancel"),
+                ],
+            )
+            .expect("the close decision has three choices and a stated consequence");
+            if let Some(decision) = crate::notify::modal(ctx, &modal, self.shell.theme, metrics) {
+                let choice = match decision.choice {
+                    0 => CloseDecision::Save,
+                    1 => CloseDecision::Discard,
+                    _ => CloseDecision::Cancel,
+                };
+                intents.push(Intent::ResolveDocumentClose(document, choice));
+            }
+            return;
+        }
+
         let Some(action) = self
             .palette
             .show(ctx, &self.shell.palette, self.shell.theme, metrics)
@@ -322,7 +584,11 @@ impl EditorWindow {
                 intents.push(Intent::Invoke(id, Arguments::new()));
             }
             Chosen::OpenAsset(path) => intents.push(Intent::OpenAsset(path)),
-            Chosen::FocusNode(node) => self.hierarchy.select(&mut self.editor, node),
+            Chosen::FocusNode(node) => self.hierarchy.select(
+                &mut self.editor,
+                node,
+                cy_editor_viewmodels::SelectionIntent::Replace,
+            ),
             Chosen::OpenDocumentation(page) => self
                 .editor
                 .notifications
@@ -349,6 +615,17 @@ impl EditorWindow {
             .show(root, |ui| {
                 chrome::toolbar(ui, &self.shell, &self.editor, &self.registry, intents);
             });
+        egui::Panel::top("cy-document-tabs")
+            .frame(chrome::bar(&self.shell))
+            .show(root, |ui| {
+                documents::strip(
+                    ui,
+                    &self.documents,
+                    self.shell.theme,
+                    self.shell.metrics(),
+                    intents,
+                );
+            });
         egui::Panel::bottom("cy-footer")
             .frame(chrome::bar(&self.shell))
             .show(root, |ui| {
@@ -374,6 +651,14 @@ impl EditorWindow {
                     scope,
                     shell,
                     hierarchy,
+                    history,
+                    settings,
+                    source_control,
+                    asset_browser,
+                    source_workspace,
+                    agent,
+                    diff,
+                    merge_view,
                     thumbnails,
                     titles,
                     dock,
@@ -387,6 +672,14 @@ impl EditorWindow {
                     scope,
                     shell,
                     hierarchy,
+                    history,
+                    settings,
+                    source_control,
+                    asset_browser,
+                    source_workspace,
+                    agent: agent.as_mut(),
+                    diff,
+                    merge: merge_view,
                     thumbnails,
                     link,
                     titles,
@@ -406,7 +699,7 @@ impl EditorWindow {
 
     /// Run one frame's keyboard input.
     fn keyboard(&mut self, ctx: &egui::Context, intents: &mut Vec<Intent>) -> String {
-        if self.palette.is_open() {
+        if self.palette.is_open() || self.pending_close.is_some() {
             // The palette owns the keyboard while it is open, including `Escape`. A chord that was
             // half-typed is abandoned rather than completing behind a modal surface.
             self.keys.clear();
@@ -461,6 +754,21 @@ impl eframe::App for EditorWindow {
         // 3: what moved, rebuilt — and measured, which is what the Profiler panel reports.
         self.describe();
         self.shell.refresh(&self.editor);
+        self.documents.refresh(&self.editor);
+        self.history.refresh(&self.editor);
+        self.settings.refresh(&self.editor);
+        self.source_control
+            .refresh(&self.editor.source_control, &self.editor);
+        self.asset_browser.refresh(&self.editor.asset_catalogue);
+        self.source_workspace.refresh(&self.editor.sources);
+        self.source_workspace
+            .refresh_build(&self.editor.project, &self.editor.operations);
+        self.source_workspace.refresh_reload(
+            self.editor.reload_revision(),
+            self.editor.reload_report.as_ref(),
+        );
+        self.diff.refresh(&self.editor.semantic_merge);
+        self.merge_view.refresh(&self.editor.semantic_merge);
 
         // Both of egui's own themes are set to ours, because which one it would otherwise pick comes
         // from the host's preference and the editor's theme is the editor's own decision.
@@ -489,11 +797,17 @@ impl eframe::App for EditorWindow {
 
         // 5: everything the frame asked for, once, in order.
         self.apply(intents);
+        self.sync_source_language();
+        // Human intents are applied first. Agent work then receives a fixed slice of the frame, so
+        // a saturated client cannot turn the window into its worker thread.
+        if let Some(agent) = self.agent.as_mut() {
+            agent.pump(&mut self.editor, &self.registry, 4);
+        }
 
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
         // A viewport that is streaming frames needs a repaint every frame; one that is not still
         // needs a slow tick, because a runtime started after the editor must be noticed.
-        if self.link.is_attached() {
+        if self.link.is_attached() || self.agent.is_some() {
             ctx.request_repaint();
         } else {
             ctx.request_repaint_after(REATTACH_INTERVAL);
@@ -504,8 +818,13 @@ impl eframe::App for EditorWindow {
         // eframe's own persistence is deliberately not enabled; the layout is persisted through
         // `Workspace`, which is tested headlessly and is the editor's own format. This hook only
         // makes sure the arrangement on screen is the one that was written.
-        self.capture_layout();
-        self.shell.persist_layout(&mut self.editor);
+        self.persist_workspace();
+    }
+}
+
+impl Drop for EditorWindow {
+    fn drop(&mut self) {
+        self.persist_workspace();
     }
 }
 
@@ -594,6 +913,10 @@ pub fn run(window: EditorWindow) -> eframe::Result<()> {
 mod tests {
     use super::*;
     use cy_editor_core::Actor;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("cy-editor-shell-{name}-{}", std::process::id()))
+    }
 
     fn window() -> EditorWindow {
         let mut registry = Registry::new();
@@ -726,5 +1049,61 @@ mod tests {
         assert_ne!(window.shell.theme.mode, mode);
         assert!(window.shell.scale.factor() > scale);
         assert!(!window.editor.documents.any_dirty());
+    }
+
+    #[test]
+    fn cancelling_a_tab_close_preserves_the_dirty_document() {
+        let mut window = window();
+        let city = window.editor.open_document("worlds/city.cyworld").unwrap();
+        window
+            .editor
+            .documents
+            .get_mut(city)
+            .unwrap()
+            .with_transaction("Create", Actor::human("designer"), |document| {
+                document.create_node(None).map(|_| ())
+            })
+            .unwrap();
+
+        window.apply(vec![Intent::CloseDocument(city)]);
+        assert_eq!(window.pending_close, Some(city));
+        window.apply(vec![Intent::ResolveDocumentClose(
+            city,
+            CloseDecision::Cancel,
+        )]);
+
+        assert_eq!(window.pending_close, None);
+        assert!(window.editor.documents.get(city).unwrap().is_dirty());
+        assert_eq!(window.editor.workspace.active(), Some(city));
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_tab_open_and_the_close_decision_available() {
+        let directory = scratch("close-save-failure");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("worlds"), "not a directory").unwrap();
+        let mut window = window();
+        window.editor.documents.rooted_at(&directory);
+        let city = window.editor.open_document("worlds/city.cyworld").unwrap();
+        window
+            .editor
+            .documents
+            .get_mut(city)
+            .unwrap()
+            .with_transaction("Create", Actor::human("designer"), |document| {
+                document.create_node(None).map(|_| ())
+            })
+            .unwrap();
+
+        window.apply(vec![Intent::CloseDocument(city)]);
+        window.apply(vec![Intent::ResolveDocumentClose(
+            city,
+            CloseDecision::Save,
+        )]);
+
+        assert_eq!(window.pending_close, Some(city));
+        assert!(window.editor.documents.get(city).unwrap().is_dirty());
+        assert_eq!(window.editor.workspace.active(), Some(city));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

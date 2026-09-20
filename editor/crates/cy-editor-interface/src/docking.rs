@@ -267,6 +267,7 @@ impl Layout {
             0.70,
             panel("viewport"),
             Node::tabs(vec![
+                PanelId::new("swift-workspace").expect("a built-in panel identifier"),
                 PanelId::new("script-graph").expect("a built-in panel identifier"),
                 PanelId::new("animation").expect("a built-in panel identifier"),
             ]),
@@ -279,6 +280,12 @@ impl Layout {
                 PanelId::new("console").expect("a built-in panel identifier"),
                 PanelId::new("profiler").expect("a built-in panel identifier"),
                 PanelId::new("problems").expect("a built-in panel identifier"),
+                PanelId::new("undo-history").expect("a built-in panel identifier"),
+                PanelId::new("settings").expect("a built-in panel identifier"),
+                PanelId::new("source-control").expect("a built-in panel identifier"),
+                PanelId::new("semantic-diff").expect("a built-in panel identifier"),
+                PanelId::new("semantic-merge").expect("a built-in panel identifier"),
+                PanelId::new("agent-sessions").expect("a built-in panel identifier"),
             ]),
         );
         let composition = Composition::default();

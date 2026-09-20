@@ -1448,6 +1448,28 @@ which parts a person authored and which parts the sample's code assembles.
 requirement in two specifications, and whether the hosted runtime carries all three without a second
 world model is the question M5 seeded and nobody has asked since.
 
+### M11.b editor completion evidence (2026-09-19)
+
+The local, producer-independent editor work has advanced beyond the baseline described when this
+rung was written. This evidence does **not** mark M11.b or any capability row Complete: the closing
+game and the engine-owned dependencies below remain required.
+
+| Delivered in the editor | Evidence boundary | Still open dependency |
+|---|---|---|
+| Restored document tabs and view state, guarded dirty close, and attributed Undo History | Document/service, view-model and shell interaction tests cover activation, Save/Discard/Cancel, save failure, restart, missing assets and undo/redo presentation | Full project graph and plugin lifecycle remain `project-and-plugins` work |
+| Searchable Settings with project/platform overrides and per-user preferences; provider-neutral Source Control with Git, Perforce and null providers | Typed settings commands distinguish canonical project changes from preferences; status/history and capability-aware checkout/revert/submit/lock/unlock are command-backed | General build/cook/package/deploy and device installation remain `implement-m11d-desktop` work |
+| Stable-identity Hierarchy multi-selection, rename, reparent and template creation | Each persistent action uses the registered transaction path; cycle and invalid-name cases refuse; unsupported visibility/lock controls are not drawn | Visibility/lock require authoritative document/runtime fields |
+| Swift Workspace with buffered editing, fingerprint-safe save conflicts, SourceKit-LSP features, diagnostics navigation and Swift build/reload | Editing remains available without SourceKit; stale diagnostics are discarded; Save cannot silently replace an external edit | Shipping static configuration, full toolchain matrix and missing runtime ABI/lifecycle callbacks remain `swift-scripting` work |
+| Identity-keyed semantic Diff and three-way Merge | Typed conflicts require local, incoming or validated replacement; a resolved merge is one attributed transaction and undo restores the pre-merge document | Domain operations without a canonical format remain explicit refusals |
+| Desktop MCP alongside the window, bounded requests, confirmations/grants, Agent Sessions and privacy-labelled diagnostics | Desktop and `--mcp --headless` project the same command registry and resources; pause/revoke and disconnect clean up queued work | Remote-device session transport and its `EncodedStream` producer remain open |
+| Content Browser navigation/filtering, identity-safe asset move/rename with sidecars, scene/Inspector drops and importer-declared settings | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign` and `asset.import-setting.set` are registered commands and MCP tools; traversal, collision, external-change and unsupported cases are named | Renderer-produced thumbnails/previews, missing codecs/compressors and virtual-geometry cooking remain with their owning renderer/importer rows |
+
+Renderer and backend presentation is deliberately not inferred from authoring state. Native engine
+Metal/macOS frame transport, renderer/debugger/profiler and material-capture producers, encoded remote
+streaming, and specialised editors whose domains have no canonical writer remain open. The editor
+continues to show an explicit unavailable state rather than a fake frame, preview, capture or domain
+editor.
+
 ---
 
 ## M11.c — Image

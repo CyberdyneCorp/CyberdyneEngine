@@ -17,6 +17,28 @@ use cy_editor_documents::journal::Recovery;
 
 use crate::worldfile::{self, LoadReport};
 
+/// What the user chose after asking to close a dirty document.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CloseDecision {
+    /// Persist the document, then close it only if the write succeeds.
+    Save,
+    /// Close without persisting the document's dirty state.
+    Discard,
+    /// Keep the document open exactly as it is.
+    Cancel,
+}
+
+/// The observable result of a guarded close request.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CloseOutcome {
+    /// The document was removed from the service.
+    Closed,
+    /// The document is dirty and the caller has not supplied a decision yet.
+    NeedsDecision,
+    /// The caller cancelled; no state changed.
+    Cancelled,
+}
+
 /// Every open document.
 #[derive(Default)]
 pub struct DocumentService {
@@ -150,18 +172,62 @@ impl DocumentService {
         id
     }
 
-    /// Close a document, abandoning any open transaction.
+    /// Close a clean document, abandoning any open transaction.
     ///
     /// "An uncommitted transaction SHALL roll back automatically when its scope ends", and closing
-    /// a document is the end of every scope in it.
+    /// a document is the end of every scope in it. A dirty document is refused until the caller
+    /// supplies an explicit choice through [`DocumentService::request_close`].
     pub fn close(&mut self, id: DocumentId) -> Result<()> {
+        match self.request_close(id, None)? {
+            CloseOutcome::Closed => Ok(()),
+            CloseOutcome::NeedsDecision => {
+                Err(Problem::new("close the document", "it has unsaved changes")
+                    .with_remedy("save it, discard its changes explicitly, or cancel closing"))
+            }
+            CloseOutcome::Cancelled => unreachable!("no decision cannot cancel"),
+        }
+    }
+
+    /// Ask to close a document, applying an explicit dirty-document decision when supplied.
+    ///
+    /// The document remains in the service until save and transaction cancellation have both
+    /// succeeded. That ordering is what makes a failed save a failed *close*, rather than a closed
+    /// tab whose recoverable work the interface can no longer reach.
+    pub fn request_close(
+        &mut self,
+        id: DocumentId,
+        decision: Option<CloseDecision>,
+    ) -> Result<CloseOutcome> {
+        let document = self
+            .documents
+            .get(&id)
+            .ok_or_else(|| Problem::not_found("that document"))?;
+        if document.is_dirty() {
+            match decision {
+                None => return Ok(CloseOutcome::NeedsDecision),
+                Some(CloseDecision::Cancel) => return Ok(CloseOutcome::Cancelled),
+                Some(CloseDecision::Save | CloseDecision::Discard) => {}
+            }
+        }
+
+        if document.is_dirty() && decision == Some(CloseDecision::Save) {
+            let target = self.path_of(document);
+            self.documents
+                .get_mut(&id)
+                .expect("the document was checked above")
+                .save(|document| match &target {
+                    Some(path) => worldfile::write_to(document, path),
+                    None => Ok(()),
+                })?;
+        }
+
         let mut document = self
             .documents
             .remove(&id)
-            .ok_or_else(|| Problem::not_found("that document"))?;
+            .expect("the document was checked above");
         document.cancel_all()?;
         self.revision.update(|()| {});
-        Ok(())
+        Ok(CloseOutcome::Closed)
     }
 
     /// A document, for reading.
@@ -178,6 +244,15 @@ impl DocumentService {
     /// Every open document's identity.
     pub fn ids(&self) -> impl Iterator<Item = DocumentId> + '_ {
         self.documents.keys().copied()
+    }
+
+    /// Roll back every still-open transaction attributed to one revoked agent session.
+    pub fn cancel_agent_session(&mut self, session: &str) -> Result<usize> {
+        let mut cancelled = 0;
+        for document in self.documents.values_mut() {
+            cancelled += document.cancel_agent_session(session)?;
+        }
+        Ok(cancelled)
     }
 
     /// How many documents are open.
@@ -260,8 +335,102 @@ mod tests {
         document.create_node(None).unwrap();
         assert!(document.is_transaction_open());
 
-        service.close(id).unwrap();
+        assert_eq!(
+            service.request_close(id, None).unwrap(),
+            CloseOutcome::NeedsDecision
+        );
+        assert!(service.get(id).unwrap().is_transaction_open());
+        assert_eq!(
+            service
+                .request_close(id, Some(CloseDecision::Discard))
+                .unwrap(),
+            CloseOutcome::Closed
+        );
         assert!(service.is_empty());
+    }
+
+    #[test]
+    fn a_dirty_close_requires_save_discard_or_cancel() {
+        let mut service = DocumentService::new();
+        let (id, _) = service.open("worlds/city.cyworld").unwrap();
+        service
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Create", Actor::human("designer"), |document| {
+                document.create_node(None).map(|_| ())
+            })
+            .unwrap();
+
+        assert_eq!(
+            service.request_close(id, None).unwrap(),
+            CloseOutcome::NeedsDecision
+        );
+        assert!(service.close(id).unwrap_err().because.contains("unsaved"));
+        assert_eq!(
+            service
+                .request_close(id, Some(CloseDecision::Cancel))
+                .unwrap(),
+            CloseOutcome::Cancelled
+        );
+        let document = service.get(id).expect("cancel keeps it open");
+        assert!(document.is_dirty());
+        assert_eq!(document.history().entries().len(), 1);
+    }
+
+    #[test]
+    fn saving_a_dirty_document_closes_only_after_the_write_succeeds() {
+        let directory = scratch("close-save");
+        let mut service = DocumentService::new();
+        service.rooted_at(&directory);
+        let (id, _) = service.open("worlds/city.cyworld").unwrap();
+        service
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Create", Actor::human("designer"), |document| {
+                document.create_node(None).map(|_| ())
+            })
+            .unwrap();
+
+        assert_eq!(
+            service
+                .request_close(id, Some(CloseDecision::Save))
+                .unwrap(),
+            CloseOutcome::Closed
+        );
+        assert!(directory.join("worlds/city.cyworld").is_file());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_dirty_document_open() {
+        let directory = scratch("close-save-failure");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("worlds"), "not a directory").unwrap();
+        let mut service = DocumentService::new();
+        service.rooted_at(&directory);
+        let (id, _) = service.open("worlds/city.cyworld").unwrap();
+        service
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Create", Actor::human("designer"), |document| {
+                document.create_node(None).map(|_| ())
+            })
+            .unwrap();
+
+        let failure = service
+            .request_close(id, Some(CloseDecision::Save))
+            .expect_err("the target's parent is a file");
+        assert!(
+            failure.what.contains("write") || failure.what.contains("create"),
+            "{failure:?}"
+        );
+        assert!(
+            service
+                .get(id)
+                .expect("save failure keeps it open")
+                .is_dirty()
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

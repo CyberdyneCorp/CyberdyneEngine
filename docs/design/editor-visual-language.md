@@ -56,12 +56,12 @@ What this reference establishes, region by region:
 |---|---|
 | **Header** | The CyberEngine mark at far left — **the product, not the publisher** — then the application menus; then, right-aligned, the project, the open document and **whether a runtime is attached**, with a live pill. One row. The mark identifies; it does not dominate. |
 | **Toolbar** | Transform tools, undo/redo/save, play and the snap increment. The built editor's row, and thinner than the previous reference's: play, snapping and the viewport options are registered commands reachable from the menus and the palette, and only what is used constantly earns permanent width. |
-| **Left, upper** | The hierarchy: about thirty rows visible without crowding, permanent search at the top, per-row visibility toggles at the right edge. Dense enough for thousands of nodes, scannable at a glance. |
+| **Left, upper** | The hierarchy: about thirty rows visible without crowding and permanent search at the top. Dense enough for thousands of nodes, scannable at a glance. Visibility controls remain a reference target until the document model exposes visibility; the built editor must not draw a control that cannot act. |
 | **Centre** | The viewport takes roughly two thirds of the window. The view state — `Perspective · Lit · translate · World · Pivot · Snap` — floats **in** it. The performance overlay sits **top-left**, small and unobtrusive. The minimap overlays bottom-right. |
 | **Selection** | The harvester carries a thin gold outline. It reads instantly against sunlit sand, it does not glow, and the material underneath is still judgeable. |
 | **Gizmo** | Translation: three arrows, X red, Y green, Z blue, handles sized to grab without precision. |
 | **Orientation widget** | Top-right, three axes, nothing else — visually much quieter than the transform gizmo a few hundred pixels away. The two are never confusable. |
-| **Left, lower** | Content browser with **rendered thumbnails**. Every harvester, insectoid and structure is distinguishable *by its thumbnail* — this is what makes a large content library navigable, and it is why a grid of file icons is not a content browser. |
+| **Left, lower** | Content Browser with folder navigation, search and type filtering. **Rendered thumbnails** remain the target because they make a large library navigable; until the renderer supplies them, the built editor uses honest kind/file presentation rather than fabricated previews. |
 | **Right** | Inspector: Transform, Unit, Behaviour, Mesh instance and Rendering visible at once, sections collapsible, headers subtle, vector fields carrying the same X red / Y green / Z blue as the handles in the viewport. |
 | **Right, lower** | **Console · Profiler · Problems**, and a command input at its foot. Three tabs, all three the engine's own words. |
 | **Footer** | Saved state, problem count and runtime state. Ambient, interrupting nothing. |
@@ -396,6 +396,30 @@ Two more corrections from the older set, kept here because the reasoning outlive
    stay readable or degrade, and a reference that quietly dropped the hard case would stop stating
    the constraint.
 
+## Delivered workspace surfaces
+
+The M11.b editor completion pass extends the built workspace without changing the visual hierarchy
+above. These surfaces follow the same density, semantic-colour, disclosure and non-colour-state
+rules as the original panels:
+
+| Surface | Delivered presentation | Visual rule |
+|---|---|---|
+| Document tabs | Open order, active state, dirty cue and guarded Save/Discard/Cancel close; workspace and per-document view state restore across restart | Dirty and active are separate states; a missing restored asset is explained rather than replaced with an empty document |
+| Hierarchy | Permanent search, stable-identity multi-selection, inline rename, reparent drop and template creation | Filtering never changes identity into row position; no visibility or lock affordance is drawn while the model has no such field |
+| Settings | Category/search results, effective value, default, project/platform override, preference scope, validation and reset | Scope is written in text; modified state never relies on colour alone |
+| Source Control | Status, history, capability-aware actions, progress and failures for Git, Perforce and the null provider | An unsupported provider capability stays visible as unavailable and names why; it is never simulated |
+| Undo History | Attributed entries, agent intent, cursor, undo/redo availability and truncation | The active document remains authoritative; the panel is a view over history, not a second timeline |
+| Swift Workspace | File tree, source tabs, dirty/cursor/selection state, versioned diagnostics, build/reload progress and explicit Reload/Keep/Merge conflicts | Source text remains presentation state until Save; unavailable SourceKit features state their missing capability without disabling ordinary editing |
+| Diff and Merge | Identity-keyed rows, automatic changes, typed conflicts and local/incoming/replacement resolution | No serialized-file parsing occurs in the panel; the final merge is one attributed transaction |
+| Agent Sessions | Identity, intent, scope, budget, current operation, pause/revoke, pending confirmation and privacy-labelled activity | Irreversible/external work is visibly pending; reversible edits do not acquire warning theatre |
+| Content Browser | Folder navigation, name/type filters, move/rename, scene/Inspector drops and importer-declared settings | Changed-on-disk, collision and unsupported-format refusals stay named; rendered previews are not implied when no producer exists |
+
+The producer boundary remains visible. An unavailable engine frame is a stated viewport condition;
+Content Browser thumbnails remain kind/file representations; remote-device streaming, native/Swift
+stepping, GPU/material capture, full frame-profiler records and specialised domain previews remain
+open until their renderer, runtime, diagnostics or authoring-format owners expose stable data. Empty
+canvases and synthetic preview images do not count as those features.
+
 ## How these images are made
 
 The three references are **drawn**, by
@@ -488,4 +512,5 @@ are a separate workstream. This pass does not claim rendered-scene or thumbnail 
 
 Verified with the pinned Rust 1.95.0 toolchain: 212 shell/interface/app tests, shell Clippy with warnings
 denied, and rustfmt. Interactive checks covered toolbar and shortcut mode switching, dark/light themes,
-compact/comfortable density, no-result search guidance, and selection counts in a sample world. No renderer or roadmap status was changed.
+compact/comfortable density, no-result search guidance, and selection counts in a sample world. No
+renderer implementation or roadmap capability status was changed.

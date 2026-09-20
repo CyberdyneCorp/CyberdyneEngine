@@ -225,6 +225,14 @@ fn the_tool_list_is_the_registry_and_carries_every_effect_class() {
             .unwrap()
             .contains("project-relative"),
     );
+    for command in ["asset.place", "asset.assign"] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} is projected from the same registry onto MCP"
+        );
+    }
 }
 
 #[test]
@@ -514,7 +522,7 @@ fn the_whole_authoring_loop_runs_over_the_wire() {
         &[
             INITIALIZE,
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"scene.create-entity","arguments":{}}}"#,
-            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"source.write","arguments":{"path":"game/Player.swift","contents":"struct Player {}"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"source.write","arguments":{"path":"game/Player.swift","contents":"struct Player {}","expected_fingerprint":"missing","base":""}}}"#,
             r#"{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"sources:game/Player.swift"}}"#,
             r#"{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"build:"}}"#,
             r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"play.enter","arguments":{}}}"#,
@@ -561,4 +569,39 @@ fn the_whole_authoring_loop_runs_over_the_wire() {
     };
     assert!(budget.contains("invocations"), "{budget}");
     assert!(budget.contains("compose the opening scene"), "{budget}");
+}
+
+#[test]
+fn an_mcp_save_with_a_stale_fingerprint_reports_conflict_without_overwriting() {
+    let sandbox = Sandbox::new("source-conflict");
+    let path = sandbox.0.join("game/Player.swift");
+    let base = "struct Player { var hp = 1 }";
+    let disk = "struct Player { var hp = 3 }";
+    let buffer = "struct Player { var hp = 2 }";
+    std::fs::write(&path, base).expect("a writable temporary source");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    let expected = editor
+        .sources
+        .fingerprint("game/Player.swift")
+        .expect("the source path is valid")
+        .to_string();
+    std::fs::write(&path, disk).expect("an external editor can change the source");
+    let call = format!(
+        r#"{{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{{"name":"source.write","arguments":{{"path":"game/Player.swift","contents":"{buffer}","expected_fingerprint":"{expected}","base":"{base}"}}}}}}"#
+    );
+
+    let replies = converse(&[INITIALIZE, &call], &mut editor);
+    let result = result(&replies, 1);
+    assert_eq!(result.get("isError"), &Json::Bool(false));
+    let conflict = result.get("structuredContent");
+    assert_eq!(conflict.get("conflict").as_text(), Some("true"));
+    assert_eq!(conflict.get("base").as_text(), Some(base));
+    assert_eq!(conflict.get("buffer").as_text(), Some(buffer));
+    assert_eq!(conflict.get("disk").as_text(), Some(disk));
+    assert_eq!(
+        std::fs::read_to_string(path).expect("the source remains readable"),
+        disk,
+        "an MCP call must not silently replace an external edit"
+    );
 }

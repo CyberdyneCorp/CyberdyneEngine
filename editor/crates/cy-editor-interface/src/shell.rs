@@ -51,10 +51,17 @@ pub fn panel_title(panel: &PanelId) -> &str {
         "viewport" => "Viewport",
         "inspector" => "Inspector",
         "script-graph" => "Script Graph",
+        "swift-workspace" => "Swift Workspace",
+        "semantic-diff" => "Semantic Diff",
+        "semantic-merge" => "Semantic Merge",
         "animation" => "Animation",
         "console" => "Console",
         "profiler" => "Profiler",
         "problems" => "Problems",
+        "undo-history" => "Undo History",
+        "settings" => "Settings",
+        "source-control" => "Source Control",
+        "agent-sessions" => "Agent Sessions",
         other => other,
     }
 }

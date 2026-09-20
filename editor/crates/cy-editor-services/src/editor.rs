@@ -17,11 +17,13 @@ use cy_editor_core::observe::Revision;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
+use cy_editor_protocol::message::Message;
 use cy_editor_sdk::HostingMode;
 use cy_editor_viewport::play::{PlayMode, PlayState};
 
+use crate::asset_catalogue::AssetCatalogueService;
 use crate::assets::AssetImportService;
-use crate::documents::DocumentService;
+use crate::documents::{CloseDecision, CloseOutcome, DocumentService};
 use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
@@ -29,8 +31,32 @@ use crate::operations::OperationService;
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
+use crate::semantic_merge::SemanticMergeService;
+use crate::settings::SettingsService;
+use crate::source_control::SourceControlService;
+use crate::source_language::SourceLanguageService;
+use crate::source_workspace::SourceWorkspaceService;
 use crate::viewports::ViewportService;
 use crate::workspace::Workspace;
+
+/// Structured progress/result of the most recent script-module reload.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ReloadReport {
+    /// Runtime request identity.
+    pub request: u64,
+    /// Script module name.
+    pub module: String,
+    /// Hot-reload generation.
+    pub generation: u32,
+    /// `pending`, `succeeded`, or `failed`.
+    pub state: String,
+    /// State classes guaranteed preserved by the runtime protocol.
+    pub preserved: Vec<String>,
+    /// State classes explicitly dropped. Empty means none.
+    pub dropped: Vec<String>,
+    /// Actionable failure, when the runtime refused the reload.
+    pub diagnostic: Option<String>,
+}
 
 /// The editor's authoritative state.
 pub struct Editor {
@@ -63,6 +89,20 @@ pub struct Editor {
     /// the reason every other one is here: which importer ran, what it produced and what the cache
     /// said are things a panel shows and an agent asks about.
     pub imports: AssetImportService,
+    /// Deterministic project files shown by the Content Browser.
+    pub asset_catalogue: AssetCatalogueService,
+    /// Project settings and per-user preferences, with distinct persistence surfaces.
+    pub settings: SettingsService,
+    /// Provider-neutral source control with background status refresh.
+    pub source_control: SourceControlService,
+    /// One pending identity-keyed semantic comparison and its explicit conflict decisions.
+    pub semantic_merge: SemanticMergeService,
+    /// Project-relative Swift sources and their on-disk fingerprints.
+    pub sources: SourceWorkspaceService,
+    /// Optional SourceKit-LSP enrichment for Swift buffers.
+    pub source_language: SourceLanguageService,
+    /// Most recent structured module-reload report.
+    pub reload_report: Option<ReloadReport>,
     /// Where the runtime runs a play session. M11.b task 3.1.
     ///
     /// The runtime's, not a viewport's — two viewports showing frames from two machines would be
@@ -80,6 +120,8 @@ pub struct Editor {
     /// [`cy_editor_commands::CommandContext::permitted_paths`], because only the command knows which
     /// of its arguments is a path.
     permitted: (String, Vec<String>),
+    pending_reloads: std::collections::BTreeMap<u64, (String, u32)>,
+    reload_revision: Revision,
 }
 
 impl Default for Editor {
@@ -115,9 +157,18 @@ impl Editor {
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
             imports: AssetImportService::new(project.root()),
+            asset_catalogue: AssetCatalogueService::new(project.root()),
+            settings: SettingsService::default(),
+            source_control: SourceControlService::default(),
+            semantic_merge: SemanticMergeService::default(),
+            sources: SourceWorkspaceService::new(project.root()),
+            source_language: SourceLanguageService::new(project.root()),
+            reload_report: None,
             project,
             actor,
             permitted: unrestricted(),
+            pending_reloads: std::collections::BTreeMap::new(),
+            reload_revision: Revision::INITIAL,
         }
     }
 
@@ -137,6 +188,9 @@ impl Editor {
             self.documents.rooted_at(project.root());
         }
         self.imports.rooted_at(project.root());
+        self.asset_catalogue = AssetCatalogueService::new(project.root());
+        self.sources = SourceWorkspaceService::new(project.root());
+        self.source_language = SourceLanguageService::new(project.root());
         self.project = project;
         self
     }
@@ -198,6 +252,27 @@ impl Editor {
         Ok(id)
     }
 
+    /// Close a document and update the workspace only after the document service succeeds.
+    ///
+    /// This is the coordination point a tab, command, script, or agent uses. Keeping it here avoids
+    /// the two half-closed states a caller could otherwise produce: a document with no tab, or a tab
+    /// whose document was already removed after a failed save.
+    pub fn close_document(
+        &mut self,
+        id: DocumentId,
+        decision: Option<CloseDecision>,
+    ) -> Result<CloseOutcome> {
+        let was_active = self.workspace.active() == Some(id);
+        let outcome = self.documents.request_close(id, decision)?;
+        if outcome == CloseOutcome::Closed {
+            self.workspace.closed(id);
+            if was_active {
+                self.selection.set(Selection::new());
+            }
+        }
+        Ok(outcome)
+    }
+
     /// Invoke a command by identifier, under a scope.
     ///
     /// The one entry point. A menu, a shortcut, the palette, a script, a test and an agent are all
@@ -236,7 +311,23 @@ impl Editor {
         // engine's (`editor-viewport-and-gizmos`). Every other message is drained rather than
         // queued, which is what keeps the channel bounded in a build with no viewport.
         for message in &messages {
+            self.accept_reload_message(message);
             self.mirror.accept(message, self.viewports.focused());
+        }
+        if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
+            let pending = std::mem::take(&mut self.pending_reloads);
+            if let Some((request, (module, generation))) = pending.into_iter().next_back() {
+                self.reload_report = Some(ReloadReport {
+                    request,
+                    module,
+                    generation,
+                    state: "failed".into(),
+                    preserved: Vec::new(),
+                    dropped: Vec::new(),
+                    diagnostic: Some("the runtime stopped before reporting reload state".into()),
+                });
+                self.bump_reload_revision();
+            }
         }
         // WHERE THE CONTENT IS, once. A viewport opens at the origin looking down −Z, and the
         // runtime is the only side that knows where its world is; without this the first view is
@@ -263,6 +354,61 @@ impl Editor {
         self.operations.retain_running();
     }
 
+    fn accept_reload_message(&mut self, message: &Message) {
+        match message {
+            Message::Reloaded {
+                request,
+                module,
+                generation,
+            } => {
+                self.pending_reloads.remove(&request.as_u64());
+                self.reload_report = Some(ReloadReport {
+                    request: request.as_u64(),
+                    module: module.clone(),
+                    generation: *generation,
+                    state: "succeeded".into(),
+                    preserved: vec!["live world state".into()],
+                    dropped: Vec::new(),
+                    diagnostic: None,
+                });
+                self.notifications.post(Notification::info(format!(
+                    "Reloaded {module} generation {generation}; preserved: live world state; dropped: none"
+                )));
+                self.bump_reload_revision();
+            }
+            Message::Rejected {
+                request,
+                reason,
+                remedy,
+            } if self.pending_reloads.remove(&request.as_u64()).is_some() => {
+                let previous = self.reload_report.take();
+                self.reload_report = Some(ReloadReport {
+                    request: request.as_u64(),
+                    module: previous
+                        .as_ref()
+                        .map_or_else(String::new, |report| report.module.clone()),
+                    generation: previous.as_ref().map_or(0, |report| report.generation),
+                    state: "failed".into(),
+                    preserved: Vec::new(),
+                    dropped: Vec::new(),
+                    diagnostic: Some(format!("{reason}; {remedy}")),
+                });
+                self.bump_reload_revision();
+            }
+            _ => {}
+        }
+    }
+
+    fn bump_reload_revision(&mut self) {
+        self.reload_revision = Revision::from_u64(self.reload_revision.as_u64() + 1);
+    }
+
+    /// Observable revision of pending or completed module-reload state.
+    #[must_use]
+    pub const fn reload_revision(&self) -> Revision {
+        self.reload_revision
+    }
+
     /// A revision that moves when anything a status bar shows has moved.
     ///
     /// The sum of the parts, which is the honest thing for a summary view to watch: it rebuilds a
@@ -277,6 +423,117 @@ impl Editor {
                 + self.notifications.revision().as_u64()
                 + self.operations.revision().as_u64(),
         )
+    }
+
+    /// Prepare a semantic merge from provider revisions for the active authored document.
+    pub fn start_semantic_merge(&mut self, base: &str, incoming: &str) -> Result<String> {
+        let id = self.workspace.active().ok_or_else(|| {
+            Problem::new("start a semantic merge", "no authored document is active")
+                .with_remedy("open the document to merge")
+        })?;
+        let path = self
+            .documents
+            .get(id)
+            .and_then(|document| document.assets().first())
+            .cloned()
+            .ok_or_else(|| Problem::not_found("the active document's backing asset"))?;
+        let base_content = self
+            .source_control
+            .provider()
+            .content_at(std::path::Path::new(&path), base)?;
+        let incoming_content = self
+            .source_control
+            .provider()
+            .content_at(std::path::Path::new(&path), incoming)?;
+        let base_text = std::str::from_utf8(&base_content.content).map_err(|error| {
+            Problem::new(
+                format!("read {path} at {base}"),
+                format!("the authored document is not UTF-8: {error}"),
+            )
+        })?;
+        let incoming_text = std::str::from_utf8(&incoming_content.content).map_err(|error| {
+            Problem::new(
+                format!("read {path} at {incoming}"),
+                format!("the authored document is not UTF-8: {error}"),
+            )
+        })?;
+        let mut base_document = Document::new(&path);
+        crate::worldfile::load(
+            base_text,
+            &mut base_document,
+            Actor::system("semantic merge reader"),
+        )?;
+        let mut incoming_document = Document::new(&path);
+        crate::worldfile::load(
+            incoming_text,
+            &mut incoming_document,
+            Actor::system("semantic merge reader"),
+        )?;
+        let local = self
+            .documents
+            .get(id)
+            .ok_or_else(|| Problem::not_found("the active document"))?;
+        self.semantic_merge
+            .begin(local, &base_document, &incoming_document, base, incoming)?;
+        if self
+            .semantic_merge
+            .session()
+            .is_some_and(crate::semantic_merge::MergeSession::ready)
+        {
+            self.commit_ready_merge()?;
+            Ok(format!("Merged {incoming} into {path} without conflicts"))
+        } else {
+            let conflicts = self
+                .semantic_merge
+                .session()
+                .map_or(0, |session| session.conflicts().len());
+            Ok(format!(
+                "Compared {path}: {conflicts} conflict{} require an explicit decision",
+                if conflicts == 1 { "" } else { "s" }
+            ))
+        }
+    }
+
+    /// Record one decision and atomically commit the completed merge.
+    pub fn resolve_semantic_merge(
+        &mut self,
+        index: usize,
+        choice: &str,
+        replacement: Option<cy_editor_core::value::Value>,
+    ) -> Result<String> {
+        self.semantic_merge.resolve(index, choice, replacement)?;
+        if self
+            .semantic_merge
+            .session()
+            .is_some_and(crate::semantic_merge::MergeSession::ready)
+        {
+            let count = self.commit_ready_merge()?;
+            Ok(format!(
+                "Committed semantic merge as one transaction ({count} operations)"
+            ))
+        } else {
+            Ok(format!("Resolved merge conflict {index} as {choice}"))
+        }
+    }
+
+    fn commit_ready_merge(&mut self) -> Result<usize> {
+        let (document, operations) =
+            self.semantic_merge.resolved_operations().ok_or_else(|| {
+                Problem::new("commit a semantic merge", "conflicts remain unresolved")
+            })?;
+        let count = operations.len();
+        let actor = self.actor.clone();
+        self.documents
+            .get_mut(document)
+            .ok_or_else(|| Problem::not_found("the document receiving the merge"))?
+            .with_transaction("Resolve semantic merge", actor, |document| {
+                for operation in operations {
+                    document.record(operation)?;
+                }
+                Ok(())
+            })?;
+        self.semantic_merge.finish();
+        Ok(count)
     }
 }
 
@@ -321,6 +578,27 @@ impl CommandContext for Editor {
         Some(&mut self.imports)
     }
 
+    fn settings(&mut self) -> Option<&mut dyn cy_editor_commands::SettingsHost> {
+        Some(self)
+    }
+
+    fn source_control(&mut self) -> Option<&mut dyn cy_editor_commands::SourceControlHost> {
+        Some(self)
+    }
+
+    fn start_semantic_merge(&mut self, base: &str, incoming: &str) -> Result<String> {
+        Editor::start_semantic_merge(self, base, incoming)
+    }
+
+    fn resolve_semantic_merge(
+        &mut self,
+        index: usize,
+        choice: &str,
+        replacement: Option<cy_editor_core::value::Value>,
+    ) -> Result<String> {
+        Editor::resolve_semantic_merge(self, index, choice, replacement)
+    }
+
     fn open_document(&mut self, asset: &str) -> Result<DocumentId> {
         Editor::open_document(self, asset)
     }
@@ -336,6 +614,136 @@ impl CommandContext for Editor {
     fn manipulate(&mut self, request: &cy_editor_commands::Manipulation) -> Result<String> {
         manipulate::apply(self, request)
     }
+}
+
+impl cy_editor_commands::SettingsHost for Editor {
+    fn set(
+        &mut self,
+        key: &str,
+        platform: Option<&str>,
+        user: bool,
+        value: cy_editor_core::value::Value,
+    ) -> Result<()> {
+        let value = match value {
+            cy_editor_core::value::Value::Bool(value) => crate::SettingValue::Flag(value),
+            cy_editor_core::value::Value::Int(value) => crate::SettingValue::Whole(value),
+            cy_editor_core::value::Value::Double(value) => crate::SettingValue::Real(value),
+            cy_editor_core::value::Value::Text(value)
+                if self
+                    .settings
+                    .catalogue()
+                    .get(key)
+                    .is_some_and(|declaration| {
+                        matches!(declaration.default, crate::SettingValue::List(_))
+                    }) =>
+            {
+                crate::SettingValue::List(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect(),
+                )
+            }
+            cy_editor_core::value::Value::Text(value) => crate::SettingValue::Text(value),
+            other => {
+                return Err(Problem::new(
+                    format!("set {key}"),
+                    format!("{} is not a settings value", other.kind().name()),
+                )
+                .with_remedy("use a bool, integer, double, text, or comma-separated list"));
+            }
+        };
+        match (user, platform) {
+            (true, Some(_)) => Err(Problem::new(
+                format!("set {key}"),
+                "a user preference cannot also be a project platform override",
+            )
+            .with_remedy("choose user scope with no platform, or project scope with a platform")),
+            (true, None) => self.settings.set_user(key, value),
+            (false, Some(platform)) => self.settings.set_platform(platform, key, value),
+            (false, None) => self.settings.set_project(key, value),
+        }
+    }
+
+    fn reset(&mut self, key: &str, platform: Option<&str>) -> Result<()> {
+        match platform {
+            Some(platform) => self.settings.reset_platform(platform, key),
+            None => self.settings.reset(key),
+        }
+    }
+}
+
+impl cy_editor_commands::SourceControlHost for Editor {
+    fn refresh(&mut self) -> Result<String> {
+        let paths = source_control_paths(self);
+        self.source_control.request_refresh(paths);
+        Ok(format!(
+            "Refreshing status through {}",
+            self.source_control.provider().name()
+        ))
+    }
+
+    fn history(&mut self, path: &str) -> Result<String> {
+        let revisions = self
+            .source_control
+            .fetch_history(std::path::Path::new(path))?;
+        Ok(revisions
+            .into_iter()
+            .map(|revision| {
+                format!(
+                    "{} {} — {}",
+                    revision.id, revision.author, revision.description
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    fn operate(&mut self, operation: &str, path: &str, description: &str) -> Result<String> {
+        let paths = vec![std::path::PathBuf::from(path)];
+        let provider = self.source_control.provider();
+        let summary = match operation {
+            "checkout" => {
+                provider.check_out(&paths)?;
+                format!("Checked out {path}")
+            }
+            "revert" => {
+                provider.revert(&paths)?;
+                format!("Reverted {path}")
+            }
+            "submit" => {
+                let revision = provider.submit(&paths, description)?;
+                format!("Submitted {path} as {revision}")
+            }
+            "lock" => {
+                provider.lock(&paths)?;
+                format!("Locked {path}")
+            }
+            "unlock" => {
+                provider.unlock(&paths)?;
+                format!("Unlocked {path}")
+            }
+            other => {
+                return Err(Problem::not_found(format!(
+                    "source-control operation {other}"
+                )));
+            }
+        };
+        self.source_control.request_refresh(paths);
+        Ok(summary)
+    }
+}
+
+fn source_control_paths(editor: &Editor) -> Vec<std::path::PathBuf> {
+    editor
+        .documents
+        .ids()
+        .filter_map(|id| editor.documents.get(id))
+        .filter_map(|document| document.assets().first())
+        .map(std::path::PathBuf::from)
+        .collect()
 }
 
 /// What a human at the interface may touch: everything.
@@ -370,12 +778,62 @@ impl cy_editor_commands::ProjectHost for Editor {
         self.project.read_source(path)
     }
 
+    fn source_fingerprint(&self, path: &str) -> Result<String> {
+        self.sources
+            .fingerprint(path)
+            .map(|fingerprint| fingerprint.to_string())
+    }
+
     fn source_is_restorable(&self, path: &str) -> bool {
         self.project.source_is_restorable(path)
     }
 
     fn put_source(&mut self, path: &str, contents: Option<&str>) -> Result<()> {
-        self.project.put_source(path, contents)
+        self.project.put_source(path, contents)?;
+        self.sources.refresh()?;
+        Ok(())
+    }
+
+    fn put_source_if_unchanged(
+        &mut self,
+        path: &str,
+        contents: &str,
+        expected: &str,
+    ) -> Result<cy_editor_commands::SourceWrite> {
+        let expected = crate::SourceFingerprint::parse(expected)?;
+        match self.sources.save_if_unchanged(path, contents, expected)? {
+            crate::SourceSave::Written { fingerprint } => {
+                Ok(cy_editor_commands::SourceWrite::Written {
+                    fingerprint: fingerprint.to_string(),
+                })
+            }
+            crate::SourceSave::Conflict { actual, disk } => {
+                Ok(cy_editor_commands::SourceWrite::Conflict {
+                    actual: actual.to_string(),
+                    disk,
+                })
+            }
+        }
+    }
+
+    fn asset_fingerprint(&self, path: &str) -> Result<String> {
+        self.asset_catalogue.fingerprint(path)
+    }
+
+    fn move_asset_if_unchanged(
+        &mut self,
+        from: &str,
+        to: &str,
+        expected: &str,
+    ) -> Result<cy_editor_commands::AssetMove> {
+        match self.asset_catalogue.move_if_unchanged(from, to, expected)? {
+            crate::AssetMove::Moved { fingerprint } => {
+                Ok(cy_editor_commands::AssetMove::Moved { fingerprint })
+            }
+            crate::AssetMove::Conflict { actual } => {
+                Ok(cy_editor_commands::AssetMove::Conflict { actual })
+            }
+        }
     }
 
     fn build(&mut self) -> Result<String> {
@@ -383,10 +841,7 @@ impl cy_editor_commands::ProjectHost for Editor {
         // Off the interface thread, where every other long operation goes. "The editor stays usable
         // while an agent works" is not satisfiable by a build that blocks the caller, and an agent
         // reads the operations resource for progress exactly as a person reads the same panel.
-        let operation = self.operations.start(label.clone(), move |_| {
-            work();
-            Ok(())
-        });
+        let operation = self.operations.start(label.clone(), work);
         Ok(format!("{} — {}", label, operation.label()))
     }
 
@@ -404,8 +859,20 @@ impl cy_editor_commands::ProjectHost for Editor {
         let request = self
             .runtime
             .reload(&module, &library.display().to_string(), generation)?;
+        self.pending_reloads
+            .insert(request.as_u64(), (module.clone(), generation));
+        self.reload_report = Some(ReloadReport {
+            request: request.as_u64(),
+            module: module.clone(),
+            generation,
+            state: "pending".into(),
+            preserved: Vec::new(),
+            dropped: Vec::new(),
+            diagnostic: None,
+        });
+        self.bump_reload_revision();
         Ok(format!(
-            "Asked the runtime to load {module} generation {generation} (request {})",
+            "Reloading {module} generation {generation} (request {}); preservation report pending",
             request.as_u64()
         ))
     }
@@ -548,5 +1015,58 @@ mod tests {
             revision,
             "an idle editor costs nothing"
         );
+    }
+
+    #[test]
+    fn closing_documents_keeps_the_service_and_workspace_in_step() {
+        let mut editor = Editor::default();
+        let city = editor.open_document("worlds/city.cyworld").unwrap();
+        let forest = editor.open_document("worlds/forest.cyworld").unwrap();
+        assert_eq!(editor.workspace.active(), Some(forest));
+
+        assert_eq!(
+            editor.close_document(city, None).unwrap(),
+            CloseOutcome::Closed
+        );
+        assert!(editor.documents.get(city).is_none());
+        assert_eq!(editor.workspace.open_documents(), &[forest]);
+        assert_eq!(editor.workspace.active(), Some(forest));
+
+        assert_eq!(
+            editor.close_document(forest, None).unwrap(),
+            CloseOutcome::Closed
+        );
+        assert!(editor.documents.is_empty());
+        assert!(editor.workspace.open_documents().is_empty());
+        assert_eq!(editor.workspace.active(), None);
+    }
+
+    #[test]
+    fn a_cancelled_or_failed_close_changes_neither_half() {
+        let mut editor = Editor::default();
+        let id = editor.open_document("worlds/city.cyworld").unwrap();
+        editor
+            .documents
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Create", Actor::human("designer"), |document| {
+                document.create_node(None).map(|_| ())
+            })
+            .unwrap();
+
+        assert_eq!(
+            editor
+                .close_document(id, Some(CloseDecision::Cancel))
+                .unwrap(),
+            CloseOutcome::Cancelled
+        );
+        assert!(editor.documents.get(id).is_some());
+        assert_eq!(editor.workspace.open_documents(), &[id]);
+        assert_eq!(editor.workspace.active(), Some(id));
+
+        let missing = DocumentId::of_asset("worlds/missing.cyworld");
+        assert!(editor.close_document(missing, None).is_err());
+        assert!(editor.documents.get(id).is_some());
+        assert_eq!(editor.workspace.open_documents(), &[id]);
     }
 }

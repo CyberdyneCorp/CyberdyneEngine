@@ -44,9 +44,13 @@ pub mod metadata;
 pub mod registry;
 pub mod scope;
 
-pub use assets::{AssetHost, AssetImportOutcome, AssetImportRequest, ImportedSubAsset};
+pub use assets::{
+    AssetHost, AssetImportOutcome, AssetImportRequest, ImportFormat, ImportSetting,
+    ImportedSubAsset,
+};
 pub use context::{
-    CommandContext, Manipulation, ManipulationKind, Outcome, ProjectHost, ViewportControls,
+    AssetMove, CommandContext, Manipulation, ManipulationKind, Outcome, ProjectHost, SettingsHost,
+    SourceControlHost, SourceWrite, ViewportControls,
 };
 pub use metadata::{Availability, EffectClass, Metadata, ParameterSpec};
 pub use registry::{Arguments, Command, CommandId, Registry};

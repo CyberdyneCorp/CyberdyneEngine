@@ -22,14 +22,21 @@
 //! commands, and a panel has no way to reach it. That is enforced by what [`Panels`] borrows rather
 //! than by care.
 
+mod agents;
 mod browser;
 mod diagnostics;
 mod hierarchy;
+mod history;
 mod inspector;
 mod pending;
+mod semantic_merge;
+mod settings;
+mod source;
+mod source_control;
 mod viewport;
 
 use cy_editor_commands::{Arguments, Registry, Scope};
+use cy_editor_core::ids::DocumentId;
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::thumbnails::Thumbnails;
@@ -52,6 +59,40 @@ pub enum Intent {
     Invoke(String, Arguments),
     /// Open a document by asset path.
     OpenAsset(String),
+    /// Make an already-open document active.
+    ActivateDocument(DocumentId),
+    /// Begin closing an open document, asking for a decision when it is dirty.
+    CloseDocument(DocumentId),
+    /// Finish a dirty-document close after the user makes an explicit choice.
+    ResolveDocumentClose(DocumentId, cy_editor_services::CloseDecision),
+    /// Open a Swift source in an editor-owned buffer.
+    OpenSource(String),
+    /// Save the active Swift buffer through the registered conflict-safe command.
+    SaveSource,
+    /// Open a diagnostic source and move to its exact zero-based line and UTF-16 column.
+    NavigateSource {
+        /// Project-relative source path.
+        path: String,
+        /// Zero-based line.
+        line: u32,
+        /// Zero-based UTF-16 column.
+        column: u32,
+    },
+    /// Pause the connected desktop agent before its next invocation.
+    PauseAgent,
+    /// Resume a paused desktop agent.
+    ResumeAgent,
+    /// Permanently revoke the connected desktop agent.
+    RevokeAgent,
+    /// Resolve an irreversible or external request waiting at the desktop.
+    DecideAgent {
+        /// Correlated desktop queue ticket.
+        ticket: u64,
+        /// Whether the human accepted the request.
+        allow: bool,
+        /// Optional monotonic grant duration; absent means this request only.
+        grant_millis: Option<u64>,
+    },
 }
 
 /// The text a person has typed into a panel's own field.
@@ -63,10 +104,34 @@ pub enum Intent {
 pub struct Inputs {
     /// The outliner's permanent search.
     pub hierarchy_filter: String,
+    /// Inline hierarchy rename: node, text, and whether initial focus was requested.
+    pub hierarchy_rename: Option<(cy_editor_core::ids::NodeId, String, bool)>,
+    /// Stable identity currently being dragged for reparenting.
+    pub hierarchy_drag: Option<cy_editor_core::ids::NodeId>,
     /// The content browser's permanent search.
     pub browser_filter: String,
+    /// Asset type filter; empty means every kind.
+    pub browser_kind: String,
     /// The console's command line.
     pub console: String,
+    /// The Settings panel's permanent search.
+    pub settings_filter: String,
+    /// The platform whose overrides are being inspected.
+    pub settings_platform: String,
+    /// In-progress textual setting values.
+    pub settings_entries: std::collections::BTreeMap<String, String>,
+    /// Validation failures beside their fields.
+    pub settings_errors: std::collections::BTreeMap<String, String>,
+    /// Rows where platform override editing is selected.
+    pub settings_platform_overrides: std::collections::BTreeSet<String>,
+    /// Change description entered in Source Control.
+    pub source_control_description: String,
+    /// Source-control base revision entered in Diff/Merge.
+    pub merge_base_revision: String,
+    /// Source-control incoming revision entered in Diff/Merge.
+    pub merge_incoming_revision: String,
+    /// Typed replacement literals keyed by conflict index.
+    pub merge_replacements: std::collections::BTreeMap<usize, String>,
     /// The viewport's pointer and keyboard translation, which needs to know what happened last
     /// frame in order to report a movement rather than a position.
     pub viewport: crate::viewport_input::ViewportInput,
@@ -96,8 +161,26 @@ impl Default for Inputs {
     fn default() -> Self {
         Self {
             hierarchy_filter: String::new(),
+            hierarchy_rename: None,
+            hierarchy_drag: None,
             browser_filter: String::new(),
+            browser_kind: String::new(),
             console: String::new(),
+            settings_filter: String::new(),
+            settings_platform: if cfg!(target_os = "macos") {
+                "macos".into()
+            } else if cfg!(target_os = "windows") {
+                "windows".into()
+            } else {
+                "linux".into()
+            },
+            settings_entries: std::collections::BTreeMap::new(),
+            settings_errors: std::collections::BTreeMap::new(),
+            settings_platform_overrides: std::collections::BTreeSet::new(),
+            source_control_description: String::new(),
+            merge_base_revision: String::new(),
+            merge_incoming_revision: String::new(),
+            merge_replacements: std::collections::BTreeMap::new(),
             viewport: crate::viewport_input::ViewportInput::new(),
             transform_entry: None,
             no_world: Box::new(cy_editor_documents::Document::new("worlds/none.cyworld")),
@@ -118,6 +201,22 @@ pub struct Panels<'frame> {
     pub shell: &'frame mut Shell,
     /// The hierarchy's presentation state.
     pub hierarchy: &'frame mut HierarchyViewModel,
+    /// Attributed history for the active document.
+    pub history: &'frame mut cy_editor_viewmodels::HistoryViewModel,
+    /// Search and effective values for Settings.
+    pub settings: &'frame mut cy_editor_viewmodels::SettingsViewModel,
+    /// Cached provider state and capability availability.
+    pub source_control: &'frame mut cy_editor_viewmodels::SourceControlViewModel,
+    /// Deterministic Content Browser navigation and filters.
+    pub asset_browser: &'frame mut cy_editor_viewmodels::AssetBrowserViewModel,
+    /// Swift file tree and open source buffers.
+    pub source_workspace: &'frame mut cy_editor_viewmodels::SourceWorkspaceViewModel,
+    /// Desktop MCP session, when one was requested for this window.
+    pub agent: Option<&'frame mut cy_editor_agent::DesktopAgentHost>,
+    /// Semantic comparison rows for the current source-control revision inputs.
+    pub diff: &'frame mut cy_editor_viewmodels::DiffViewModel,
+    /// Pending typed conflicts and decisions.
+    pub merge: &'frame mut cy_editor_viewmodels::MergeViewModel,
     /// Asset previews, and typed placeholders until the engine has rendered one.
     pub thumbnails: &'frame mut Thumbnails,
     /// The viewport's link to the runtime's rendered image.
@@ -162,6 +261,13 @@ impl egui_dock::TabViewer for Panels<'_> {
             .inner_margin(egui::Margin::same(theme::margin(padding)))
             .show(ui, |ui| match tab.kind() {
                 "hierarchy" => hierarchy::show(self, ui),
+                "undo-history" => history::show(self, ui),
+                "settings" => settings::show(self, ui),
+                "source-control" => source_control::show(self, ui),
+                "agent-sessions" => agents::show(self, ui),
+                "swift-workspace" => source::show(self, ui),
+                "semantic-diff" => semantic_merge::show_diff(self, ui),
+                "semantic-merge" => semantic_merge::show_merge(self, ui),
                 "inspector" => inspector::show(self, ui),
                 "content-browser" => browser::show(self, ui),
                 "console" => diagnostics::console(self, ui),
@@ -242,13 +348,18 @@ pub(crate) fn status(ui: &mut egui::Ui, shell: &Shell, role: Semantic, text: &st
 /// state in this crate goes through here, and every one names the action that would fill it.
 pub(crate) fn nothing_here(ui: &mut egui::Ui, shell: &Shell, what: &str, remedy: &str) {
     ui.add_space(shell.metrics().gap());
-    ui.label(
-        egui::RichText::new(what)
-            .size(shell.metrics().text(TextRole::Body))
-            .color(theme::role(shell.theme, Semantic::PrimaryText)),
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(what)
+                .size(shell.metrics().text(TextRole::Body))
+                .color(theme::role(shell.theme, Semantic::PrimaryText)),
+        )
+        .sense(egui::Sense::focusable_noninteractive()),
     );
     ui.add_space(shell.metrics().gap() * 0.5);
-    ui.label(secondary(shell, remedy));
+    ui.add(
+        egui::Label::new(secondary(shell, remedy)).sense(egui::Sense::focusable_noninteractive()),
+    );
 }
 
 /// A row's background: resting, hovered, or selected.

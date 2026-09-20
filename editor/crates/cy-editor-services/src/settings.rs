@@ -43,7 +43,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use cy_editor_commands::{Command, EffectClass, Metadata, Outcome, ParameterSpec, Registry};
+use cy_editor_core::observe::{Revision, Versioned};
 use cy_editor_core::problem::{Problem, Result};
+use cy_editor_core::value::{Value, ValueKind};
 
 /// Which file a setting lives in.
 ///
@@ -78,7 +81,7 @@ pub enum SettingValue {
 impl SettingValue {
     /// The canonical text form. `{:?}` on the real, because `{}` drops the precision that makes a
     /// written-then-read file produce the same bytes.
-    fn write(&self) -> String {
+    pub fn display(&self) -> String {
         match self {
             SettingValue::Flag(value) => value.to_string(),
             SettingValue::Whole(value) => value.to_string(),
@@ -93,13 +96,25 @@ impl SettingValue {
     }
 
     /// Which shape this is, for the type check a write makes against the declaration.
-    fn shape(&self) -> &'static str {
+    pub const fn shape(&self) -> &'static str {
         match self {
             SettingValue::Flag(_) => "flag",
             SettingValue::Whole(_) => "whole number",
             SettingValue::Real(_) => "real number",
             SettingValue::Text(_) => "text",
             SettingValue::List(_) => "list",
+        }
+    }
+
+    /// Editable text for controls that are not native checkboxes.
+    #[must_use]
+    pub fn entry_text(&self) -> String {
+        match self {
+            SettingValue::Flag(value) => value.to_string(),
+            SettingValue::Whole(value) => value.to_string(),
+            SettingValue::Real(value) => value.to_string(),
+            SettingValue::Text(value) => value.clone(),
+            SettingValue::List(values) => values.join(", "),
         }
     }
 }
@@ -315,11 +330,135 @@ pub struct UserPreferences {
 }
 
 /// Project settings, user preferences and the catalogue that says which is which.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub struct SettingsService {
     catalogue: Catalogue,
     project: ProjectSettings,
     user: UserPreferences,
+    changed: Versioned<()>,
+}
+
+/// Register typed settings writes and reset.
+pub fn register(registry: &mut Registry) -> Result<()> {
+    registry.register(value_command(
+        "settings.set-flag",
+        "Set Flag Setting",
+        ValueKind::Bool,
+    ))?;
+    registry.register(value_command(
+        "settings.set-whole",
+        "Set Whole Number Setting",
+        ValueKind::Int,
+    ))?;
+    registry.register(value_command(
+        "settings.set-real",
+        "Set Real Number Setting",
+        ValueKind::Double,
+    ))?;
+    registry.register(value_command(
+        "settings.set-text",
+        "Set Text Setting",
+        ValueKind::Text,
+    ))?;
+    registry.register(value_command(
+        "settings.set-list",
+        "Set List Setting",
+        ValueKind::Text,
+    ))?;
+    registry.register(reset_command())?;
+    Ok(())
+}
+
+fn value_command(id: &str, label: &str, kind: ValueKind) -> Command {
+    Command::new(
+        Metadata::new(
+            id,
+            label,
+            "Settings",
+            "Writes one declared setting in project, platform, or user scope. List values are \
+             comma-separated text.",
+            EffectClass::IrreversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "key",
+            ValueKind::Text,
+            "The declared category.name key.",
+        ))
+        .with(ParameterSpec::required(
+            "value",
+            kind,
+            "The new value, in the declaration's shape.",
+        ))
+        .with(ParameterSpec::optional(
+            "scope",
+            ValueKind::Text,
+            "Whether to write shared project state or this machine's user preference.",
+            Value::Text("project".into()),
+        ))
+        .with(ParameterSpec::optional(
+            "platform",
+            ValueKind::Text,
+            "A project platform override; empty writes the ordinary value.",
+            Value::Text(String::new()),
+        )),
+        |context, arguments| {
+            let key = arguments.text("key").unwrap_or_default();
+            let value = arguments.get("value").cloned().unwrap_or_default();
+            let user = match arguments.text("scope").unwrap_or("project") {
+                "project" => false,
+                "user" => true,
+                other => {
+                    return Err(Problem::new(
+                        format!("set {key} in {other} scope"),
+                        "settings scope is project or user",
+                    )
+                    .with_remedy("pass scope=project or scope=user"));
+                }
+            };
+            let platform = arguments
+                .text("platform")
+                .filter(|platform| !platform.is_empty());
+            context
+                .settings()
+                .ok_or_else(|| Problem::not_found("settings in this host"))?
+                .set(key, platform, user, value)?;
+            Ok(Outcome::new(format!("Set {key}")))
+        },
+    )
+}
+
+fn reset_command() -> Command {
+    Command::new(
+        Metadata::new(
+            "settings.reset",
+            "Reset Setting",
+            "Settings",
+            "Removes an explicit setting or platform override so its fallback becomes effective.",
+            EffectClass::IrreversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "key",
+            ValueKind::Text,
+            "The declared category.name key.",
+        ))
+        .with(ParameterSpec::optional(
+            "platform",
+            ValueKind::Text,
+            "The platform override to remove; empty resets the ordinary value.",
+            Value::Text(String::new()),
+        )),
+        |context, arguments| {
+            let key = arguments.text("key").unwrap_or_default();
+            let platform = arguments
+                .text("platform")
+                .filter(|platform| !platform.is_empty());
+            context
+                .settings()
+                .ok_or_else(|| Problem::not_found("settings in this host"))?
+                .reset(key, platform)?;
+            Ok(Outcome::new(format!("Reset {key}")))
+        },
+    )
 }
 
 impl Default for SettingsService {
@@ -341,6 +480,7 @@ impl SettingsService {
             catalogue,
             project: ProjectSettings::default(),
             user: UserPreferences::default(),
+            changed: Versioned::new(()),
         }
     }
 
@@ -349,11 +489,50 @@ impl SettingsService {
         &self.catalogue
     }
 
+    /// A cheap input for settings view models.
+    #[must_use]
+    pub const fn revision(&self) -> Revision {
+        self.changed.revision()
+    }
+
+    /// An explicitly stored project value, before fallback.
+    #[must_use]
+    pub fn project_value(&self, key: &str) -> Option<&SettingValue> {
+        self.project.values.get(key)
+    }
+
+    /// An explicitly stored platform override.
+    #[must_use]
+    pub fn platform_value(&self, platform: &str, key: &str) -> Option<&SettingValue> {
+        self.project
+            .overrides
+            .get(&(platform.to_owned(), key.to_owned()))
+    }
+
+    /// An explicitly stored user preference, before fallback.
+    #[must_use]
+    pub fn user_value(&self, key: &str) -> Option<&SettingValue> {
+        self.user.values.get(key)
+    }
+
+    /// Platforms that currently have at least one override.
+    #[must_use]
+    pub fn platforms(&self) -> Vec<&str> {
+        self.project
+            .overrides
+            .keys()
+            .map(|(platform, _)| platform.as_str())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     /// Set a project setting. Refuses a key that is not declared, a value of the wrong shape, and
     /// a setting the catalogue says is this person's rather than the project's.
     pub fn set_project(&mut self, key: &str, value: SettingValue) -> Result<()> {
         self.declared(key, &value, Scope::Project)?;
         self.project.values.insert(key.to_owned(), value);
+        self.changed.update(|()| {});
         Ok(())
     }
 
@@ -373,6 +552,7 @@ impl SettingsService {
         self.project
             .overrides
             .insert((platform.to_owned(), key.to_owned()), value);
+        self.changed.update(|()| {});
         Ok(())
     }
 
@@ -380,6 +560,45 @@ impl SettingsService {
     pub fn set_user(&mut self, key: &str, value: SettingValue) -> Result<()> {
         self.declared(key, &value, Scope::User)?;
         self.user.values.insert(key.to_owned(), value);
+        self.changed.update(|()| {});
+        Ok(())
+    }
+
+    /// Return a setting to its declared default by removing the explicit value in its own scope.
+    pub fn reset(&mut self, key: &str) -> Result<()> {
+        let declaration = self
+            .catalogue
+            .get(key)
+            .ok_or_else(|| Problem::not_found(format!("a setting called {key}")))?;
+        match declaration.scope {
+            Scope::Project => {
+                self.project.values.remove(key);
+            }
+            Scope::User => {
+                self.user.values.remove(key);
+            }
+        }
+        self.changed.update(|()| {});
+        Ok(())
+    }
+
+    /// Remove one platform-specific override.
+    pub fn reset_platform(&mut self, platform: &str, key: &str) -> Result<()> {
+        let declaration = self
+            .catalogue
+            .get(key)
+            .ok_or_else(|| Problem::not_found(format!("a setting called {key}")))?;
+        if declaration.scope != Scope::Project || !declaration.per_platform {
+            return Err(Problem::new(
+                format!("reset {key} for {platform}"),
+                "that setting does not support platform overrides",
+            )
+            .with_remedy("reset its ordinary value instead"));
+        }
+        self.project
+            .overrides
+            .remove(&(platform.to_owned(), key.to_owned()));
+        self.changed.update(|()| {});
         Ok(())
     }
 
@@ -402,10 +621,10 @@ impl SettingsService {
                                      line, in key order.\n",
         );
         for (key, value) in &self.project.values {
-            let _ = writeln!(text, "{key} = {}", value.write());
+            let _ = writeln!(text, "{key} = {}", value.display());
         }
         for ((platform, key), value) in &self.project.overrides {
-            let _ = writeln!(text, "[{platform}] {key} = {}", value.write());
+            let _ = writeln!(text, "[{platform}] {key} = {}", value.display());
         }
         text
     }
@@ -417,7 +636,7 @@ impl SettingsService {
                                      not commit.\n",
         );
         for (key, value) in &self.user.values {
-            let _ = writeln!(text, "{key} = {}", value.write());
+            let _ = writeln!(text, "{key} = {}", value.display());
         }
         text
     }
@@ -551,9 +770,66 @@ impl Template {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_commands::{Arguments, Scope as CommandScope};
+    use cy_editor_core::Actor;
 
     fn service() -> SettingsService {
         SettingsService::default()
+    }
+
+    #[test]
+    fn typed_commands_write_and_reset_the_declared_scope() {
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        let mut editor = crate::Editor::new(Actor::human("designer"));
+        let scope = CommandScope::unrestricted();
+
+        registry
+            .invoke(
+                "settings.set-whole",
+                &scope,
+                &mut editor,
+                &Arguments::new()
+                    .with("key", Value::Text("rendering.target_frame_rate".into()))
+                    .with("value", Value::Int(30)),
+            )
+            .unwrap();
+        assert_eq!(
+            editor
+                .settings
+                .effective("rendering.target_frame_rate", "macos"),
+            Some(SettingValue::Whole(30))
+        );
+
+        let project_before_preference = editor.settings.write_project();
+        registry
+            .invoke(
+                "settings.set-text",
+                &scope,
+                &mut editor,
+                &Arguments::new()
+                    .with("key", Value::Text("editor.theme".into()))
+                    .with("value", Value::Text("light".into()))
+                    .with("scope", Value::Text("user".into())),
+            )
+            .unwrap();
+        assert_eq!(editor.settings.write_project(), project_before_preference);
+        assert!(editor.settings.write_user().contains("editor.theme"));
+
+        registry
+            .invoke(
+                "settings.reset",
+                &scope,
+                &mut editor,
+                &Arguments::new().with("key", Value::Text("rendering.target_frame_rate".into())),
+            )
+            .unwrap();
+        assert_eq!(
+            editor
+                .settings
+                .effective("rendering.target_frame_rate", "macos"),
+            Some(SettingValue::Whole(60))
+        );
     }
 
     #[test]

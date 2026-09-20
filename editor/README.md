@@ -70,6 +70,16 @@ appear in the editor's command, document, or view-model layers": the dependency 
 impossible rather than discouraged, and `crates/cy-editor-app/tests/gating.rs` checks that the
 transport stays optional, stays on by default, and stays named by nothing but the binary.
 
+`--mcp` now hosts that transport alongside the desktop window; `--mcp --headless` retains the
+stdio-only mode for automation. The Agent Sessions panel shows the connected identity, intent,
+scope, budget, current operation, pause/revoke controls, pending irreversible or external effects,
+and privacy-labelled activity. Reversible edits run without a prompt. A destructive/external
+request waits for Allow once, a five-minute grant, or Refuse; revocation drops queued work and rolls
+back any uncommitted transaction attributed to that session.
+Use `--agent-scope operator` only when the desktop human should be able to confirm irreversible or
+external work; `read` remains the default and `author` remains limited to undoable edits and
+`game/` source.
+
 The domain editors named by `editor-rust-application` arrive later. Their layer positions are
 already decided by the rule above.
 
@@ -101,6 +111,55 @@ it:
 | `dev` | Development | on | `development` |
 | `profile` | Profile | off | `profiling` |
 | `release` | Shipping | off | `shipping` |
+
+## Current authoring surfaces and command help
+
+The desktop now carries the local parts of the M11.b editor completion pass. Document tabs preserve
+open order, active document and per-document view state across restart; dirty tabs close only through
+Save, Discard or Cancel. The Hierarchy searches and selects by stable identity, supports additive,
+subtractive and visible-range selection, and routes rename, reparent and template creation through
+transactions. Settings separates canonical project/platform overrides from per-user preferences.
+Source Control presents status and history through Git, Perforce or the null provider and names a
+provider when checkout, revert, submit or locking is unavailable. Undo History attributes entries to
+the human or agent intent that produced them.
+
+The Swift Workspace discovers project Swift files, keeps edits in buffers until Save, and tracks
+cursor, selection, diagnostics and external-change conflicts. Save includes the fingerprint and base
+text the edit began from, so a human, agent or external tool cannot silently overwrite another edit;
+Reload, Keep and Merge remain explicit choices. SourceKit-LSP supplies diagnostics, navigation,
+completion, hover, symbols and rename only when the server advertises them. Editing, saving and the
+existing Swift build/reload loop remain usable when SourceKit-LSP is absent or terminates.
+
+Semantic Diff compares document operations by stable identity. Merge classifies independent changes
+and typed conflicts, accepts local, incoming or a validated replacement for each conflict, and
+commits the resolved merge as one attributed, undoable transaction. The Content Browser adds folder
+navigation, combined name/type filtering, identity-safe move/rename with sidecars, scene and Inspector
+drop intents, and importer-declared settings for supported formats.
+
+`cyberdyne-editor --list-commands` is the canonical command help: it prints every registered command
+with its typed parameters and effect class. The desktop palette, scripts and MCP tool listing are
+projections of that same registry, so these are not separate APIs:
+
+| Area | Registered commands added or completed by this pass |
+|---|---|
+| Hierarchy and history | `scene.rename-entity`, `scene.reparent-entity`, `scene.create-entity`, `edit.undo`, `edit.redo` |
+| Settings | `settings.set-flag`, `settings.set-whole`, `settings.set-real`, `settings.set-text`, `settings.set-list`, `settings.reset` |
+| Source control | `source-control.refresh`, `source-control.history`, `source-control.checkout`, `source-control.revert`, `source-control.submit`, `source-control.lock`, `source-control.unlock` |
+| Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
+| Semantic merge | `document.merge-start`, `document.merge-resolve` |
+| Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
+
+Conflict-sensitive commands deliberately require observed state. `source.write` requires
+`expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.
+`asset.move` and `asset.rename` require the catalogue's `expected_fingerprint` and move the source,
+`.meta` and `.import` sidecars together. Traversal, collision, changed-on-disk and unsupported
+format/setting cases are named refusals rather than best-effort mutations.
+
+This pass does not manufacture data that an engine producer does not expose. Rendered Content
+Browser thumbnails and previews, renderer/debugger/profiler captures, remote-device encoded
+streaming, general cook/package/deploy and device installation, and specialised domain editors
+without canonical authoring vocabularies remain open. The viewport continues to show an engine frame
+or an explicit reason that no frame is available.
 
 ## The dependencies, and the rule they arrived under
 

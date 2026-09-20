@@ -31,6 +31,8 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(create_entity())?;
     registry.register(delete_entity())?;
     registry.register(select())?;
+    registry.register(rename_entity())?;
+    registry.register(reparent_entity())?;
     registry.register(undo())?;
     registry.register(redo())?;
     registry.register(save())?;
@@ -52,7 +54,93 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
+    // Project settings and user preferences, through typed command parameters.
+    crate::settings::register(registry)?;
+    crate::source_control::register_commands(registry)?;
+    crate::merge_commands::register(registry)?;
     Ok(())
+}
+
+fn rename_entity() -> Command {
+    Command::new(
+        Metadata::new(
+            "scene.rename-entity",
+            "Rename Entity",
+            "Scene",
+            "Changes an entity's author-facing name in one undoable transaction without changing \
+             its stable identity.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "entity",
+            ValueKind::Text,
+            "The stable identity of the entity whose name changes.",
+        ))
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "The non-empty author-facing name to show in the hierarchy.",
+        )),
+        |context, arguments| {
+            let id = active(context)?;
+            let node = parse_node(arguments.text("entity").unwrap_or_default())?
+                .ok_or_else(|| Problem::new("rename an entity", "no entity was named"))?;
+            let name = arguments.text("name").unwrap_or_default().trim();
+            if name.is_empty() || name.chars().count() > 256 || name.chars().any(char::is_control) {
+                return Err(Problem::new(
+                    "rename an entity",
+                    "a name is 1 to 256 visible characters",
+                )
+                .with_remedy("enter a short, non-empty name with no control characters"));
+            }
+            let actor = context.actor();
+            context
+                .document_mut(id)
+                .ok_or_else(|| Problem::not_found("the active document"))?
+                .with_transaction("Rename entity", actor, |document| {
+                    document.set_name(node, name)
+                })?;
+            Ok(Outcome::new(format!("Renamed entity to {name}")))
+        },
+    )
+}
+
+fn reparent_entity() -> Command {
+    Command::new(
+        Metadata::new(
+            "scene.reparent-entity",
+            "Reparent Entity",
+            "Scene",
+            "Moves an entity under another stable entity identity, or to the world root, in one \
+             undoable transaction.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "entity",
+            ValueKind::Text,
+            "The stable identity of the entity to move.",
+        ))
+        .with(ParameterSpec::optional(
+            "parent",
+            ValueKind::Text,
+            "The stable identity of the new parent; empty moves to the root.",
+            Value::Text(String::new()),
+        )),
+        |context, arguments| {
+            let id = active(context)?;
+            let node = parse_node(arguments.text("entity").unwrap_or_default())?
+                .ok_or_else(|| Problem::new("reparent an entity", "no entity was named"))?;
+            let parent = parse_node(arguments.text("parent").unwrap_or_default())?;
+            let actor = context.actor();
+            context
+                .document_mut(id)
+                .ok_or_else(|| Problem::not_found("the active document"))?
+                .with_transaction("Reparent entity", actor, |document| {
+                    document.reparent_node(node, parent)
+                })?;
+            Ok(Outcome::new("Reparented entity"))
+        },
+    )
 }
 
 /// The document a command with no explicit target acts on, or a refusal that says what to do.
@@ -79,10 +167,25 @@ fn create_entity() -> Command {
              own result; omit it to create a root.",
             Value::Text(String::new()),
         ))
+        .with(ParameterSpec::optional(
+            "template",
+            ValueKind::Text,
+            "The registered entity template to instantiate. The built-in empty template is named \
+             `empty`; omit it for the same result.",
+            Value::Text("empty".into()),
+        ))
         .bound_to("Ctrl+Shift+N"),
         |context, arguments| {
             let id = active(context)?;
             let actor = context.actor();
+            let template = arguments.text("template").unwrap_or("empty");
+            if template != "empty" {
+                return Err(Problem::new(
+                    "create an entity from a template",
+                    format!("template `{template}` is not registered"),
+                )
+                .with_remedy("use the built-in `empty` template"));
+            }
             let parent = parse_node(arguments.text("parent").unwrap_or_default())?;
             let document = context
                 .document_mut(id)
@@ -392,7 +495,26 @@ fn apply_sources(
             _ => None,
         })
         .collect();
-    if wanted.is_empty() {
+    let moves: Vec<(String, String, String)> = transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } if kind == crate::assets::ASSET_MOVE_DOMAIN => {
+                let (from, expected) =
+                    crate::assets::decode_asset_move(if forward { before } else { after })?;
+                let (to, _) =
+                    crate::assets::decode_asset_move(if forward { after } else { before })?;
+                Some((from, to, expected))
+            }
+            _ => None,
+        })
+        .collect();
+    if wanted.is_empty() && moves.is_empty() {
         return;
     }
     let Some(project) = context.project() else {
@@ -403,6 +525,9 @@ fn apply_sources(
         // editor's history and the file system disagreeing with nothing able to say so. See
         // `crate::project::apply_domain`, which makes the same argument at greater length.
         let _ = project.put_source(&path, contents.as_deref());
+    }
+    for (from, to, expected) in moves {
+        let _ = project.move_asset_if_unchanged(&from, &to, &expected);
     }
 }
 
@@ -452,9 +577,12 @@ mod tests {
         // (`scene.create-primitive` and `asset.write-primitive`), `asset.import` in
         // `crate::assets`, and three body commands in `crate::bodies` (`scene.add-body`,
         // `scene.add-collider` and `scene.remove-body`).
+        // The editor-completion change adds identity-based rename/reparent, six typed settings
+        // commands, seven provider-neutral source-control commands, two semantic-merge commands,
+        // and five asset-browser operations.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(registry.len(), 6 + 37 + 3 + 7 + 2 + 1 + 3);
+        assert_eq!(registry.len(), 8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 5);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());
@@ -657,5 +785,143 @@ mod tests {
                 .effect
                 .needs_confirmation()
         );
+    }
+
+    #[test]
+    fn rename_and_reparent_are_transactional_identity_based_and_exactly_undoable() {
+        let (mut editor, registry) = editor_with_registry();
+        let document_id = editor.workspace.active().unwrap();
+        let (parent, child) = editor
+            .documents
+            .get_mut(document_id)
+            .unwrap()
+            .with_transaction("Build", Actor::human("designer"), |document| {
+                Ok((document.create_node(None)?, document.create_node(None)?))
+            })
+            .unwrap();
+        let scope = Scope::unrestricted();
+
+        editor
+            .invoke(
+                &registry,
+                "scene.rename-entity",
+                &scope,
+                &Arguments::new()
+                    .with("entity", Value::Text(child.to_string()))
+                    .with("name", Value::Text("Lamp".into())),
+            )
+            .unwrap();
+        editor
+            .invoke(
+                &registry,
+                "scene.reparent-entity",
+                &scope,
+                &Arguments::new()
+                    .with("entity", Value::Text(child.to_string()))
+                    .with("parent", Value::Text(parent.to_string())),
+            )
+            .unwrap();
+        let state = editor
+            .documents
+            .get(document_id)
+            .unwrap()
+            .content()
+            .node(child)
+            .unwrap();
+        assert_eq!(state.name, "Lamp");
+        assert_eq!(state.parent, Some(parent));
+
+        editor
+            .invoke(&registry, "edit.undo", &scope, &Arguments::new())
+            .unwrap();
+        assert_eq!(
+            editor
+                .documents
+                .get(document_id)
+                .unwrap()
+                .content()
+                .node(child)
+                .unwrap()
+                .parent,
+            None
+        );
+        editor
+            .invoke(&registry, "edit.undo", &scope, &Arguments::new())
+            .unwrap();
+        assert_eq!(
+            editor
+                .documents
+                .get(document_id)
+                .unwrap()
+                .content()
+                .node(child)
+                .unwrap()
+                .name,
+            ""
+        );
+    }
+
+    #[test]
+    fn hierarchy_authoring_refuses_invalid_targets_cycles_and_templates() {
+        let (mut editor, registry) = editor_with_registry();
+        let document_id = editor.workspace.active().unwrap();
+        let child = editor
+            .documents
+            .get_mut(document_id)
+            .unwrap()
+            .with_transaction("Build", Actor::human("designer"), |document| {
+                document.create_node(None)
+            })
+            .unwrap();
+        let scope = Scope::unrestricted();
+        let invalid = editor
+            .invoke(
+                &registry,
+                "scene.rename-entity",
+                &scope,
+                &Arguments::new()
+                    .with("entity", Value::Text(child.to_string()))
+                    .with("name", Value::Text("  ".into())),
+            )
+            .unwrap_err();
+        assert!(invalid.remedy.is_some());
+
+        let missing = NodeId::from_u128(u128::MAX);
+        let missing_error = editor
+            .invoke(
+                &registry,
+                "scene.rename-entity",
+                &scope,
+                &Arguments::new()
+                    .with("entity", Value::Text(missing.to_string()))
+                    .with("name", Value::Text("Missing".into())),
+            )
+            .unwrap_err();
+        assert!(
+            missing_error.because.contains("there is no"),
+            "{missing_error}"
+        );
+
+        let cycle = editor
+            .invoke(
+                &registry,
+                "scene.reparent-entity",
+                &scope,
+                &Arguments::new()
+                    .with("entity", Value::Text(child.to_string()))
+                    .with("parent", Value::Text(child.to_string())),
+            )
+            .unwrap_err();
+        assert!(cycle.because.contains("inside itself"), "{cycle}");
+
+        let unknown_template = editor
+            .invoke(
+                &registry,
+                "scene.create-entity",
+                &scope,
+                &Arguments::new().with("template", Value::Text("camera".into())),
+            )
+            .unwrap_err();
+        assert!(unknown_template.because.contains("not registered"));
     }
 }

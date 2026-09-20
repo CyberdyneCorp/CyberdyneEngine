@@ -66,8 +66,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audit;
 pub mod budget;
 pub mod conflict;
+pub mod connection;
+pub mod executor;
 pub mod observe;
 pub mod recording;
 pub mod resource;
@@ -75,8 +78,14 @@ pub mod session;
 pub mod tool;
 pub mod transport;
 
+pub use audit::{AgentAuditKind, AgentAuditRecord, PrivacyClass};
 pub use budget::{Budget, BudgetReport, Throttle};
 pub use conflict::{Claim, Conflict};
+pub use connection::{
+    AgentConnectionService, AgentSessionStatus, DesktopAgentEndpoint, DesktopAgentHost,
+    PendingAgentConfirmation, QueuedAgentRequest,
+};
+pub use executor::execute;
 pub use observe::{
     Observation, ObservationKind, SpatialQuery, SpatialResult, ViewportRequest, observe,
 };

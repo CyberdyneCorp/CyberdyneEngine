@@ -35,11 +35,29 @@
 
 #![forbid(unsafe_code)]
 
+pub mod assets;
+pub mod documents;
 pub mod hierarchy;
+pub mod history;
 pub mod inspector;
+pub mod semantic_merge;
+pub mod settings;
+pub mod source;
 pub mod source_control;
 pub mod status;
 
-pub use hierarchy::{HierarchyRow, HierarchyViewModel};
+pub use assets::{
+    AssetBrowserViewModel, AssetDropIntent, AssetRow, ImportSettingRow, ImportSettingsViewModel,
+};
+pub use documents::{DocumentTab, DocumentTabsViewModel};
+pub use hierarchy::{HierarchyRow, HierarchyViewModel, SelectionIntent};
+pub use history::{HistoryAttribution, HistoryRow, HistoryViewModel};
 pub use inspector::{InspectorRow, InspectorViewModel};
+pub use semantic_merge::{DiffRow, DiffViewModel, MergeConflictRow, MergeViewModel};
+pub use settings::{SettingRow, SettingsViewModel};
+pub use source::{
+    SourceBufferViewModel, SourceBuildPresentation, SourceConflict, SourceDiagnostic,
+    SourcePosition, SourceWorkspaceViewModel,
+};
+pub use source_control::{SourceControlHistoryRow, SourceControlRow, SourceControlViewModel};
 pub use status::StatusViewModel;

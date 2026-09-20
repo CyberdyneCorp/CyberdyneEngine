@@ -42,6 +42,19 @@ pub struct HierarchyRow {
     pub named: bool,
 }
 
+/// How a hierarchy selection intent combines with the current selection.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SelectionIntent {
+    /// Replace with one node.
+    Replace,
+    /// Add one node.
+    Add,
+    /// Remove one node.
+    Subtract,
+    /// Select the visible range from the anchor to one node.
+    VisibleRange,
+}
+
 /// The hierarchy panel's presentation state.
 #[derive(Debug, Default)]
 pub struct HierarchyViewModel {
@@ -53,6 +66,7 @@ pub struct HierarchyViewModel {
     document_watch: Watch,
     selection_watch: Watch,
     rebuilds: u64,
+    selection_anchor: Option<NodeId>,
 }
 
 impl HierarchyViewModel {
@@ -130,9 +144,34 @@ impl HierarchyViewModel {
     }
 
     /// Select a node. **Writes to the selection service and notifies nobody.**
-    pub fn select(&self, editor: &mut Editor, node: NodeId) {
-        let mut selection = Selection::new();
-        selection.add_node(node);
+    pub fn select(&mut self, editor: &mut Editor, node: NodeId, intent: SelectionIntent) {
+        let mut selection = editor.selection.get().clone();
+        match intent {
+            SelectionIntent::Replace => {
+                selection = Selection::new();
+                selection.add_node(node);
+                self.selection_anchor = Some(node);
+            }
+            SelectionIntent::Add => {
+                selection.add_node(node);
+                self.selection_anchor = Some(node);
+            }
+            SelectionIntent::Subtract => {
+                selection.remove_node(node);
+                self.selection_anchor = Some(node);
+            }
+            SelectionIntent::VisibleRange => {
+                let anchor = self.selection_anchor.unwrap_or(node);
+                let first = self.rows.iter().position(|row| row.node == anchor);
+                let last = self.rows.iter().position(|row| row.node == node);
+                if let (Some(first), Some(last)) = (first, last) {
+                    let range = first.min(last)..=first.max(last);
+                    selection.set_nodes(self.rows[range].iter().map(|row| row.node));
+                } else {
+                    selection.set_nodes([node]);
+                }
+            }
+        }
         editor.selection.set(selection);
     }
 
@@ -348,14 +387,14 @@ mod tests {
     #[test]
     fn selection_reaches_another_panel_through_the_service_and_not_through_a_call() {
         let (mut editor, root, _) = editor_with_a_tree();
-        let hierarchy = HierarchyViewModel::new();
+        let mut hierarchy = HierarchyViewModel::new();
         let mut inspector = InspectorViewModel::new();
         inspector.refresh(&editor);
         let before = inspector.rebuilds();
 
         // The hierarchy writes to the service. It holds no reference to the inspector and could
         // not call it if it wanted to — this crate's view models name each other nowhere.
-        hierarchy.select(&mut editor, root);
+        hierarchy.select(&mut editor, root, SelectionIntent::Replace);
 
         assert!(
             inspector.refresh(&editor),
@@ -400,7 +439,7 @@ mod tests {
         first.refresh(&editor);
         second.refresh(&editor);
 
-        first.select(&mut editor, root);
+        first.select(&mut editor, root, SelectionIntent::Replace);
         first.refresh(&editor);
         second.refresh(&editor);
 
@@ -408,6 +447,45 @@ mod tests {
         assert!(
             second.rows()[0].selected,
             "neither panel has its own idea of the selection"
+        );
+    }
+
+    #[test]
+    fn replace_add_subtract_and_visible_range_use_node_identities() {
+        let mut editor = Editor::default();
+        let id = editor.open_document("worlds/city.cyworld").unwrap();
+        let nodes = editor
+            .documents
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Build", Actor::human("designer"), |document| {
+                (0..4)
+                    .map(|index| {
+                        let node = document.create_node(None)?;
+                        document.set_name(node, format!("Item {index}"))?;
+                        Ok(node)
+                    })
+                    .collect::<cy_editor_core::problem::Result<Vec<_>>>()
+            })
+            .unwrap();
+        let mut hierarchy = HierarchyViewModel::new();
+        hierarchy.set_filter("Item");
+        hierarchy.refresh(&editor);
+
+        hierarchy.select(&mut editor, nodes[0], SelectionIntent::Replace);
+        hierarchy.select(&mut editor, nodes[2], SelectionIntent::Add);
+        assert_eq!(editor.selection.get().node_count(), 2);
+        hierarchy.select(&mut editor, nodes[0], SelectionIntent::Subtract);
+        assert_eq!(
+            editor.selection.get().nodes().collect::<Vec<_>>(),
+            vec![nodes[2]]
+        );
+        hierarchy.select(&mut editor, nodes[2], SelectionIntent::Replace);
+        hierarchy.select(&mut editor, nodes[3], SelectionIntent::VisibleRange);
+        assert_eq!(
+            editor.selection.get().nodes().collect::<Vec<_>>(),
+            vec![nodes[2], nodes[3]],
+            "the visible range converted rows back to stable identities"
         );
     }
 }

@@ -33,6 +33,7 @@ use std::process::ExitCode;
 use cy_editor_app::{Application, run_script};
 use cy_editor_core::Actor;
 use cy_editor_core::problem::{Problem, Result};
+use cy_editor_services::{Notification, WorkspaceStore};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -131,29 +132,55 @@ fn run(arguments: &[String]) -> Result<()> {
         );
     }
 
+    let opens_window = opens_window(&options);
+    let workspace_store = if opens_window {
+        match WorkspaceStore::for_user(application.editor.project.root()) {
+            Ok(store) => {
+                match store.restore(&mut application.editor) {
+                    Ok(report) => {
+                        if !report.missing.is_empty() {
+                            application.editor.notifications.post(Notification::warning(
+                                format!(
+                                    "Skipped {} missing document(s) from the previous workspace: {}",
+                                    report.missing.len(),
+                                    report.missing.join(", ")
+                                ),
+                            ));
+                        }
+                    }
+                    Err(problem) => application
+                        .editor
+                        .notifications
+                        .post(Notification::error(problem.what.clone(), problem)),
+                }
+                Some(store)
+            }
+            Err(problem) => {
+                eprintln!("cyberdyne-editor: {problem}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     for asset in &options.open {
         application.editor.open_document(asset)?;
     }
 
+    #[cfg(feature = "agent-interface")]
+    if options.mcp && options.headless {
+        return serve_agent(&mut application, &options);
+    }
+    #[cfg(not(feature = "agent-interface"))]
     if options.mcp {
         return serve_agent(&mut application, &options);
     }
 
     // The window, unless something was asked for that has no window in it. `--script` implies
     // headless because a script is a session that ends, and a window is a session that does not.
-    if !options.headless && options.script.is_none() {
-        let Application {
-            editor,
-            registry,
-            scope,
-        } = application;
-        let window = cy_editor_shell::EditorWindow::new(editor, registry, scope)?;
-        return cy_editor_shell::run(window).map_err(|error| {
-            Problem::new("open the editor window", error.to_string()).with_remedy(
-                "run with --headless to use the editor without a display, or check that a display \
-                 is available",
-            )
-        });
+    if opens_window {
+        return run_window(application, &options, workspace_store);
     }
 
     if let Some(path) = &options.script {
@@ -167,6 +194,38 @@ fn run(arguments: &[String]) -> Result<()> {
     application.pump();
     report(&mut application);
     Ok(())
+}
+
+fn opens_window(options: &Options) -> bool {
+    !options.headless && options.script.is_none()
+}
+
+fn run_window(
+    application: Application,
+    options: &Options,
+    workspace_store: Option<WorkspaceStore>,
+) -> Result<()> {
+    let Application {
+        editor,
+        registry,
+        scope,
+    } = application;
+    let mut window = cy_editor_shell::EditorWindow::new(editor, registry, scope)?;
+    if let Some(store) = workspace_store {
+        window = window.with_workspace_store(store);
+    }
+    #[cfg(not(feature = "agent-interface"))]
+    let _ = options;
+    #[cfg(feature = "agent-interface")]
+    if options.mcp {
+        window = window.with_agent_host(spawn_desktop_agent(options)?);
+    }
+    cy_editor_shell::run(window).map_err(|error| {
+        Problem::new("open the editor window", error.to_string()).with_remedy(
+            "run with --headless to use the editor without a display, or check that a display is \
+             available",
+        )
+    })
 }
 
 /// What the editor has to say, and one line about where the session ended up.
@@ -255,42 +314,8 @@ fn value(arguments: &[String], index: &mut usize, option: &str) -> Result<String
 /// deliberately, rather than a prompt they answer while reading something else.
 #[cfg(feature = "agent-interface")]
 fn serve_agent(application: &mut Application, options: &Options) -> Result<()> {
-    use cy_editor_agent::budget::Budget;
-    use cy_editor_agent::session::{AgentIdentity, AgentSession, RefuseEverything};
-    use cy_editor_commands::EffectClass;
-    use cy_editor_commands::scope::{DocumentScope, Scope};
-
-    let scope = match options.agent_scope.as_str() {
-        "read" => Scope::new("read", DocumentScope::All, [EffectClass::Read]),
-        "author" => Scope::new(
-            "author",
-            DocumentScope::All,
-            [EffectClass::Read, EffectClass::ReversibleMutation],
-        )
-        .with_directory("game/"),
-        other => {
-            return Err(Problem::new(
-                format!("read --agent-scope {other:?}"),
-                "there is no such scope",
-            )
-            .with_remedy(
-                "the scopes are: read (look at everything, change nothing) and author (also make \
-                 undoable changes, and write scripts under game/)",
-            ));
-        }
-    };
-
-    let session = AgentSession::new(
-        AgentIdentity {
-            agent: std::env::var("CY_AGENT").unwrap_or_else(|_| "agent".into()),
-            session: format!("cli-{}", std::process::id()),
-        },
-        options.agent_intent.clone(),
-        scope,
-        Budget::default(),
-        "unversioned",
-        0,
-    );
+    use cy_editor_agent::session::RefuseEverything;
+    let session = agent_session(options)?;
 
     eprintln!(
         "cyberdyne-editor: serving the agent interface on standard input; scope {:?}, {} command(s)",
@@ -305,6 +330,64 @@ fn serve_agent(application: &mut Application, options: &Options) -> Result<()> {
         &application.registry,
         &mut RefuseEverything,
     )
+}
+
+#[cfg(feature = "agent-interface")]
+fn agent_session(options: &Options) -> Result<cy_editor_agent::AgentSession> {
+    use cy_editor_commands::EffectClass;
+    use cy_editor_commands::scope::{DocumentScope, Scope};
+
+    let scope = match options.agent_scope.as_str() {
+        "read" => Scope::new("read", DocumentScope::All, [EffectClass::Read]),
+        "author" => Scope::new(
+            "author",
+            DocumentScope::All,
+            [EffectClass::Read, EffectClass::ReversibleMutation],
+        )
+        .with_directory("game/"),
+        "operator" => Scope::new("operator", DocumentScope::All, EffectClass::ALL)
+            .with_directory(String::new()),
+        other => {
+            return Err(Problem::new(
+                format!("read --agent-scope {other:?}"),
+                "there is no such scope",
+            )
+            .with_remedy(
+                "the scopes are: read (look only), author (undoable changes and game/ source), and \
+                 operator (all effects and project paths, with desktop confirmation for \
+                 irreversible or external work)",
+            ));
+        }
+    };
+    Ok(cy_editor_agent::AgentSession::new(
+        cy_editor_agent::AgentIdentity {
+            agent: std::env::var("CY_AGENT").unwrap_or_else(|_| "agent".into()),
+            session: format!("desktop-{}", std::process::id()),
+        },
+        options.agent_intent.clone(),
+        scope,
+        cy_editor_agent::Budget::default(),
+        "unversioned",
+        0,
+    ))
+}
+
+#[cfg(feature = "agent-interface")]
+fn spawn_desktop_agent(options: &Options) -> Result<cy_editor_agent::DesktopAgentHost> {
+    let (host, endpoint) = cy_editor_agent::DesktopAgentHost::new(agent_session(options)?, 64);
+    std::thread::Builder::new()
+        .name("cy-editor-mcp".into())
+        .spawn(move || {
+            if let Err(problem) = cy_editor_mcp::serve_desktop(
+                std::io::BufReader::new(std::io::stdin()),
+                std::io::stdout(),
+                &endpoint,
+            ) {
+                eprintln!("cyberdyne-editor: {problem}");
+            }
+        })
+        .map_err(|error| Problem::new("start the desktop MCP transport", error.to_string()))?;
+    Ok(host)
 }
 
 /// The refusal a build without the agent interface gives.
@@ -338,8 +421,8 @@ cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
 
     --open <asset>        open a document (repeatable)
     --headless            run without a window; the default is to open one
-    --mcp                 serve one agent over the Model Context Protocol on stdin and stdout
-    --agent-scope <name>  what that agent may do: read (the default) or author
+    --mcp                 host MCP alongside the window; combine with --headless for stdio-only
+    --agent-scope <name>  what it may do: read (default), author, or confirmed operator work
     --agent-intent <text> what it says it is trying to do; recorded on every change it makes
     --script <path>       run a script of commands, one per line
     --host <socket>       attach a hosted runtime over a Unix domain socket
@@ -347,3 +430,19 @@ cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
     --list-commands       print the command registry, with parameters and effect classes
     --version             print the editor and ABI versions
     --help                this";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_runs_with_the_window_unless_headless_is_explicit() {
+        let desktop = parse(&["--mcp".into()]).unwrap();
+        assert!(desktop.mcp);
+        assert!(opens_window(&desktop));
+
+        let headless = parse(&["--mcp".into(), "--headless".into()]).unwrap();
+        assert!(headless.mcp);
+        assert!(!opens_window(&headless));
+    }
+}

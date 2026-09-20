@@ -35,6 +35,28 @@ use std::collections::BTreeMap;
 
 use cy_editor_core::problem::Result;
 
+/// One editable option declared by an importer.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct ImportSetting {
+    /// Stable command-line name.
+    pub name: String,
+    /// `bool`, `int`, `float`, `text`, or `enum`.
+    pub kind: String,
+    /// Explanation supplied by the importer.
+    pub description: String,
+}
+
+/// The source formats and settings owned by one importer.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct ImportFormat {
+    /// Importer name.
+    pub importer: String,
+    /// Claimed lower-case extensions, including the dot.
+    pub extensions: Vec<String>,
+    /// Settings in declaration order.
+    pub settings: Vec<ImportSetting>,
+}
+
 /// One import, as a caller states it.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct AssetImportRequest {
@@ -117,6 +139,11 @@ pub trait AssetHost {
     /// Empty when this build cannot reach an importer at all, which the command reports as such
     /// rather than as "that format is unsupported".
     fn importable_extensions(&mut self) -> Vec<String>;
+
+    /// Importer-owned option schemas for presentation and validation.
+    fn import_formats(&mut self) -> Vec<ImportFormat> {
+        Vec::new()
+    }
 
     /// Import one source.
     ///

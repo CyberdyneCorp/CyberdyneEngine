@@ -333,6 +333,18 @@ impl Document {
         Ok(())
     }
 
+    /// Abandon open scopes owned by one agent session, leaving human work untouched.
+    pub fn cancel_agent_session(&mut self, session: &str) -> Result<usize> {
+        let mut cancelled = 0;
+        while self.scopes.last().is_some_and(
+            |scope| matches!(&scope.actor, Actor::Agent { session: held, .. } if held == session),
+        ) {
+            self.cancel()?;
+            cancelled += 1;
+        }
+        Ok(cancelled)
+    }
+
     /// Run `edit` inside a transaction, committing on success and rolling back on failure.
     ///
     /// The form most callers want: an early return cannot leave a half-applied transaction, because
@@ -502,6 +514,23 @@ impl Document {
             node,
             before,
             after: name.into(),
+        })
+    }
+
+    /// Move a node under another node, or to the root, inside the open transaction.
+    pub fn reparent_node(&mut self, node: NodeId, parent: Option<NodeId>) -> Result<()> {
+        let before = self
+            .content
+            .node(node)
+            .ok_or_else(|| Problem::not_found("that node"))?
+            .parent;
+        if before == parent {
+            return Ok(());
+        }
+        self.record(Operation::Reparent {
+            node,
+            before,
+            after: parent,
         })
     }
 

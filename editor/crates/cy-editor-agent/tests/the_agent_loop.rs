@@ -595,12 +595,19 @@ fn a_reversible_source_write_is_not_confirmed_and_an_irreversible_one_is() {
             "source.write",
             &Arguments::new()
                 .with("path", Value::Text("game/Player.swift".into()))
-                .with("contents", Value::Text("struct Player {}".into())),
+                .with("contents", Value::Text("struct Player {}".into()))
+                .with("expected_fingerprint", Value::Text("missing".into()))
+                .with("base", Value::Text(String::new())),
             0,
         )
         .expect("creating a file undoes to deleting it, so nobody is asked");
 
     std::fs::write(sandbox.join("game/blob.bin"), [0xff, 0xfe, 0x00]).expect("a writable sandbox");
+    let blob_fingerprint = editor
+        .sources
+        .fingerprint("game/blob.bin")
+        .expect("the source path is project-relative")
+        .to_string();
     let refused = connection
         .invoke(
             &mut editor,
@@ -609,7 +616,9 @@ fn a_reversible_source_write_is_not_confirmed_and_an_irreversible_one_is() {
             "source.write",
             &Arguments::new()
                 .with("path", Value::Text("game/blob.bin".into()))
-                .with("contents", Value::Text("replaced".into())),
+                .with("contents", Value::Text("replaced".into()))
+                .with("expected_fingerprint", Value::Text(blob_fingerprint))
+                .with("base", Value::Text(String::new())),
             0,
         )
         .expect_err("the editor cannot put this one back");
@@ -686,7 +695,7 @@ fn background_work_holds_a_concurrency_slot_until_it_settles() {
     std::fs::create_dir_all(sandbox.join("game")).expect("a writable sandbox");
     let (mut editor, mut connection, release) = one_slot(&sandbox);
 
-    let mut build = |connection: &mut AgentSession, editor: &mut Editor| {
+    let build = |connection: &mut AgentSession, editor: &mut Editor| {
         connection.invoke(
             editor,
             &registry,

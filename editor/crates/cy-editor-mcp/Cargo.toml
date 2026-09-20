@@ -35,6 +35,7 @@ layer = 5
 cy-editor-agent = { path = "../cy-editor-agent" }
 cy-editor-commands = { path = "../cy-editor-commands" }
 cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-json = { path = "../cy-editor-json" }
 cy-editor-services = { path = "../cy-editor-services" }
 cy-editor-viewport = { path = "../cy-editor-viewport" }
 

@@ -1,0 +1,19 @@
+# Dependency-free JSON shared by editor wire protocols.
+[package]
+name = "cy-editor-json"
+description = "Dependency-free JSON values, parser, writer, and binary encoding for CyberEditor."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 1
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+
+[lints]
+workspace = true

@@ -53,6 +53,17 @@ pub struct SourceControlRow {
     pub locked_by: Option<String>,
 }
 
+/// One provider revision for the selected file.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SourceControlHistoryRow {
+    /// Provider-native revision or changelist identifier.
+    pub revision: String,
+    /// Author reported by the provider.
+    pub author: String,
+    /// Submitted description.
+    pub description: String,
+}
+
 /// The source-control panel's presentation state.
 #[derive(Debug, Default)]
 pub struct SourceControlViewModel {
@@ -62,7 +73,15 @@ pub struct SourceControlViewModel {
     lock: Availability,
     submit: Availability,
     history: Availability,
+    revert: Availability,
     problem: Option<String>,
+    pending: bool,
+    history_path: Option<String>,
+    history_rows: Vec<SourceControlHistoryRow>,
+    input: Option<(
+        cy_editor_core::observe::Revision,
+        cy_editor_core::observe::Revision,
+    )>,
 }
 
 impl Default for Availability {
@@ -80,20 +99,8 @@ impl SourceControlViewModel {
 
     /// Rebuild from the service and the open documents.
     ///
-    /// Unconditional rather than watched, because the state a provider reports moves for reasons
-    /// the editor never sees — somebody else's submit, a file touched by a build — so a revision
-    /// counter here would be a cache of something the editor is not the source of.
-    pub fn refresh(&mut self, source_control: &SourceControlService, editor: &Editor) {
-        let provider = source_control.provider();
-        self.provider = provider.name().to_string();
-        self.check_out = availability(provider, Capability::CheckOut);
-        self.lock = availability(provider, Capability::ExclusiveLock);
-        self.submit = availability(provider, Capability::Submit);
-        self.history = availability(provider, Capability::History);
-
-        // The document's PRIMARY ASSET, not the absolute path `DocumentService::path_of` builds:
-        // a provider spells a path relative to its own working root, and an absolute one would be
-        // a path no provider recognises on any other machine.
+    /// Provider work is requested once per path set and results arrive through the service revision.
+    pub fn refresh(&mut self, source_control: &SourceControlService, editor: &Editor) -> bool {
         let paths: Vec<std::path::PathBuf> = editor
             .documents
             .ids()
@@ -101,10 +108,27 @@ impl SourceControlViewModel {
             .filter_map(|document| document.assets().first().cloned())
             .map(std::path::PathBuf::from)
             .collect();
+        let _ = source_control.request_status(paths);
+        let input = (source_control.revision(), editor.documents.revision());
+        if self.input == Some(input) {
+            return false;
+        }
+        let provider = source_control.provider();
+        self.provider = provider.name().to_string();
+        self.check_out = availability(provider, Capability::CheckOut);
+        self.lock = availability(provider, Capability::ExclusiveLock);
+        self.submit = availability(provider, Capability::Submit);
+        self.history = availability(provider, Capability::History);
+        self.revert = availability(provider, Capability::Revert);
+
+        // The document's PRIMARY ASSET, not the absolute path `DocumentService::path_of` builds:
+        // a provider spells a path relative to its own working root, and an absolute one would be
+        // a path no provider recognises on any other machine.
         self.rows.clear();
         self.problem = None;
-        match provider.status(&paths) {
-            Ok(status) => {
+        self.pending = source_control.status_pending();
+        match source_control.status_snapshot() {
+            Some(Ok(status)) => {
                 for entry in status {
                     self.rows.push(SourceControlRow {
                         path: entry.path.to_string_lossy().into_owned(),
@@ -117,8 +141,29 @@ impl SourceControlViewModel {
             // A provider that could not answer is REPORTED rather than shown as a clean tree. A
             // panel that drew "unchanged" because the client failed to start would be the silent
             // fallback the whole provider interface exists to avoid.
-            Err(problem) => self.problem = Some(problem.to_string()),
+            Some(Err(problem)) => self.problem = Some(problem.to_string()),
+            None => {}
         }
+        self.history_path = None;
+        self.history_rows.clear();
+        if let Some((path, result)) = source_control.history_snapshot() {
+            self.history_path = Some(path.to_string_lossy().into_owned());
+            match result {
+                Ok(revisions) => {
+                    self.history_rows = revisions
+                        .into_iter()
+                        .map(|revision| SourceControlHistoryRow {
+                            revision: revision.id,
+                            author: revision.author,
+                            description: revision.description,
+                        })
+                        .collect();
+                }
+                Err(problem) => self.problem = Some(problem.to_string()),
+            }
+        }
+        self.input = Some(input);
+        true
     }
 
     /// The provider's name, for the panel's header.
@@ -157,10 +202,34 @@ impl SourceControlViewModel {
         &self.history
     }
 
+    /// The same for discarding local changes.
+    #[must_use]
+    pub const fn revert(&self) -> &Availability {
+        &self.revert
+    }
+
     /// What went wrong asking the provider, when something did.
     #[must_use]
     pub fn problem(&self) -> Option<&str> {
         self.problem.as_deref()
+    }
+
+    /// Whether a background provider request is in flight.
+    #[must_use]
+    pub const fn pending(&self) -> bool {
+        self.pending
+    }
+
+    /// Path whose provider history is shown.
+    #[must_use]
+    pub fn history_path(&self) -> Option<&str> {
+        self.history_path.as_deref()
+    }
+
+    /// Revisions returned by the latest history command.
+    #[must_use]
+    pub fn history_rows(&self) -> &[SourceControlHistoryRow] {
+        &self.history_rows
     }
 }
 
@@ -224,6 +293,7 @@ mod tests {
         let mut editor = Editor::default();
         editor.open_document("worlds/city.cyworld").unwrap();
         let service = SourceControlService::default();
+        service.refresh_now(vec![std::path::PathBuf::from("worlds/city.cyworld")]);
         let mut panel = SourceControlViewModel::new();
         panel.refresh(&service, &editor);
 
