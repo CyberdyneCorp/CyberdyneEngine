@@ -1257,7 +1257,7 @@ Expected<DescriptorSetLayoutHandle, Error> D3D12Device::create_descriptor_set_la
         binding.count = source.count == 0 ? kBindlessCapacity : source.count;
         if (source.kind == DescriptorKind::Sampler) {
             binding.sampler_offset = layout.sampler_count;
-            binding.shader_register = sampler_register;
+            binding.sampler_register = sampler_register;
             layout.sampler_count += binding.count;
             sampler_register += binding.count;
         } else {
