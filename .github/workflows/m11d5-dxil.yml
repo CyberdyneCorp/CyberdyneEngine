@@ -13,6 +13,7 @@ on:
       - src/core/memory/include/cy/core/memory/hash.h
       - src/core/memory/tests/test_containers.cpp
       - src/pcg/include/cy/pcg/dataset.h
+      - src/rendering/graph/src/visualise.cpp
       - tests/render/**
       - samples/03-first-light/shaders/first_light.slang
       - samples/03-first-light/shaders/first_light_dxil.h
