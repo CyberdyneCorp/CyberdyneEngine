@@ -84,7 +84,12 @@ change flow rather than through a backend. Everything else follows the interface
       `DXGI_ADAPTER_FLAG_SOFTWARE`**. Selection SHALL NOT trust that flag. It classifies from the
       adapter's reported identity and vendor against a table this engine owns, and an adapter it
       cannot classify is reported **unknown** rather than assumed hardware
-- [ ] 3.5 **The golden images on D3D12**, same rule as 2.6, with the adapter's identity in the result
+- [x] 3.5 **The golden images on D3D12**, same rule as 2.6, with the adapter's identity in the result.
+      Physical evidence: AMD Radeon RX 6900 XT (RDNA 2, vendor 0x1002, class hardware) at
+      `docs/design/images/m11d5-three-backends-d3d12.png` and its manifest. `unit.rhi_d3d12` and
+      `integration.rhi_d3d12` pass with the debug layer enabled; `render.golden_backends` writes
+      the row `backend=d3d12 ... outcome=matched ... max_delta=1`. First-light shaders compiled at
+      `sm_6_6` (the engine-wide floor) rather than the hosted-WARP `sm_6_2` compatibility payload
 
 ## 4. The device report, and the claim a Linux host can check
 
@@ -102,16 +107,30 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 5. The artefact — one scene, three backends, the same picture
 
-- [ ] 5.1 `just test-render --compare-backends vulkan metal d3d12`: the M3 golden images compared
+- [x] 5.1 `just test-render --compare-backends vulkan metal d3d12`: the M3 golden images compared
       across legs of the matrix within tolerance, in the same shape as the cross-leg digest job M11.a
       built. **It is the one claim no single leg can make**, which is why it moved here with its
-      subject rather than staying in M11.d
-- [ ] 5.2 **One committed screenshot per backend** under `docs/design/images/`, named
+      subject rather than staying in M11.d. Now green across three vendors:
+      `vulkan: NVIDIA GeForce RTX 5060 (delta 0)`,
+      `metal: Apple M3 Pro (delta 1)`,
+      `d3d12: AMD Radeon RX 6900 XT (delta 1)`;
+      `vulkan versus metal: within tolerance`, `vulkan versus d3d12: within tolerance`.
+      Adversarial pass performed (§7.2): scaling `sun_.color` from `1.05` to `1.25` in
+      `samples/03-first-light/scene.cpp` turned the D3D12 row red with 10,745 texels over
+      tolerance, 3,242 of them off any high-contrast edge, worst channel delta 17; restoring the
+      scalar returned the ledger to `matched`
+- [x] 5.2 **One committed screenshot per backend** under `docs/design/images/`, named
       `m11d5-three-backends-<backend>.png`, **each labelled with the backend and the device that
-      produced it**. A diagram is allowed and **SHALL be labelled one**
-- [ ] 5.3 **The artefact is honest about its own coverage on its own face**, the way M10's was about
+      produced it**. A diagram is allowed and **SHALL be labelled one**. All three backends now
+      committed: `m11d5-three-backends-vulkan.png` (NVIDIA GeForce RTX 5060),
+      `m11d5-three-backends-metal.png` (Apple M3 Pro),
+      `m11d5-three-backends-d3d12.png` (AMD Radeon RX 6900 XT)
+- [x] 5.3 **The artefact is honest about its own coverage on its own face**, the way M10's was about
       its 122 ms: which legs ran, which reported NOT EVALUATED and why, which device answered on each,
-      and the four deferrals of `design.md` §2 named rather than omitted
+      and the four deferrals of `design.md` §2 named rather than omitted. Each committed manifest
+      carries the row for its backend plus the `null` NOT-EVALUATED-no-image row; `vendor_id`,
+      `class` and `device` are populated from the RHI classifier and are non-empty on every
+      hardware row
 - [ ] 5.4 `rhi-and-render-graph` read **requirement by requirement at Complete grade** — satisfied,
       partial or unmet per requirement with the evidence in the module's README — the way M10 read
       `save-and-persistence`. The row has been Working since M3 over one backend and has never been
