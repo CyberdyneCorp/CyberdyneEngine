@@ -203,9 +203,11 @@ CY_TEST_CASE("D3D12 command lists submit under the debug layer") {
         fixture.device().acquire_command_buffer(cy::rhi::QueueKind::Graphics, false);
     CY_REQUIRE(command);
     CY_REQUIRE(fixture.device().begin_command_buffer(*command));
-    (*command)->begin_debug_label("debug-layer label regression");
-    (*command)->insert_debug_label("debug-layer point regression");
-    (*command)->end_debug_label();
+    cy::rhi::CommandBuffer* commands = fixture.device().command_buffer(*command);
+    CY_REQUIRE(commands != nullptr);
+    commands->begin_debug_label("debug-layer label regression");
+    commands->insert_debug_label("debug-layer point regression");
+    commands->end_debug_label();
     CY_REQUIRE(fixture.device().end_command_buffer(*command));
     cy::rhi::SubmitInfo submit;
     submit.command_buffers = {&*command, 1};
