@@ -80,7 +80,7 @@ pub fn header(
     intents: &mut Vec<Intent>,
 ) {
     let metrics = shell.metrics();
-    ui.horizontal(|ui| {
+    egui::MenuBar::new().ui(ui, |ui| {
         id.lockup(ui, shell.theme, metrics.row() * 1.35);
         ui.add_space(metrics.gap());
 
@@ -105,11 +105,16 @@ pub fn header(
                     .size(metrics.text(TextRole::Secondary)),
             );
             ui.separator();
-            ui.label(
-                egui::RichText::new(shell.header(editor))
-                    .size(metrics.text(TextRole::Body))
-                    .color(theme::role(shell.theme, Semantic::PrimaryText)),
-            );
+            let title = shell.header(editor);
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&title)
+                        .size(metrics.text(TextRole::Body))
+                        .color(theme::role(shell.theme, Semantic::SecondaryText)),
+                )
+                .truncate(),
+            )
+            .on_hover_text(title);
         });
     });
 }
@@ -214,6 +219,7 @@ pub fn toolbar(
 ) {
     let metrics = shell.metrics();
     ui.horizontal(|ui| {
+        ui.visuals_mut().button_frame = false;
         // The transform modes, in the order the gizmo reference fixes: Move W, Rotate E, Scale R,
         // Universal T. They are drawn only when the registry actually has them — the viewport's
         // interactive path is task 2.4 — because four buttons that report "no such command" teach a
@@ -236,8 +242,16 @@ pub fn toolbar(
                 available,
                 egui::Button::new(
                     egui::RichText::new(mode.label()).size(metrics.text(TextRole::Body)),
-                ),
+                )
+                .selected(active_transform(editor) == mode),
             );
+            if active_transform(editor) == mode {
+                ui.painter().hline(
+                    response.rect.x_range(),
+                    response.rect.bottom() - 1.0,
+                    egui::Stroke::new(2.0, theme::role(shell.theme, Semantic::Active)),
+                );
+            }
             if response
                 .on_hover_text(format!(
                     "{} — {}",
@@ -274,6 +288,17 @@ pub fn toolbar(
             }
         }
     });
+}
+
+/// Read the viewport mode instead of retaining a second toolbar selection.
+fn active_transform(editor: &Editor) -> GizmoMode {
+    use cy_editor_viewport::GizmoMode as Mode;
+    match editor.viewports.focused().gizmo_mode {
+        Mode::Translate => GizmoMode::Translate,
+        Mode::Rotate => GizmoMode::Rotate,
+        Mode::Scale => GizmoMode::Scale,
+        Mode::Universal => GizmoMode::Universal,
+    }
 }
 
 /// Draw the footer.
@@ -322,4 +347,29 @@ pub fn bar(shell: &Shell) -> egui::Frame {
             theme::margin(metrics.padding()),
             theme::margin(metrics.padding() * 0.4),
         ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cy_editor_commands::{Arguments, Scope};
+    use cy_editor_core::Actor;
+
+    #[test]
+    fn toolbar_selection_follows_the_commands_used_by_shortcuts() {
+        let mut editor = Editor::new(Actor::human("designer"));
+        let mut registry = Registry::new();
+        cy_editor_services::builtin::register(&mut registry).unwrap();
+        for mode in GizmoMode::ALL {
+            registry
+                .invoke(
+                    view::transform_command(mode),
+                    &Scope::unrestricted(),
+                    &mut editor,
+                    &Arguments::new(),
+                )
+                .unwrap();
+            assert_eq!(active_transform(&editor), mode);
+        }
+    }
 }

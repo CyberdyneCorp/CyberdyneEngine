@@ -32,7 +32,9 @@
 //! rather than unlikely.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 
 use cy_editor_commands::{Arguments, Registry, Scope};
 use cy_editor_core::ids::DocumentId;
@@ -86,6 +88,7 @@ pub struct EditorWindow {
     /// What the inspector was last described from, so the catalogue is rebuilt when it moves and
     /// never at frame rate.
     described: Option<(DocumentId, Revision, usize)>,
+    #[cfg(target_os = "linux")]
     last_attach: Option<Instant>,
     /// The device the window shares with the transport, when there is one.
     #[cfg(target_os = "linux")]
@@ -135,6 +138,7 @@ impl EditorWindow {
             link: ViewportLink::idle(),
             identity: Identity::new(),
             described: None,
+            #[cfg(target_os = "linux")]
             last_attach: None,
             #[cfg(target_os = "linux")]
             gpu: None,
@@ -175,25 +179,23 @@ impl EditorWindow {
     }
 
     /// Try to attach the viewport to a runtime, at most every [`REATTACH_INTERVAL`].
+    #[cfg(target_os = "linux")]
     fn attach_viewport(&mut self) {
-        #[cfg(target_os = "linux")]
-        {
-            let Some(gpu) = self.gpu.clone() else {
-                return;
-            };
-            if self.link.is_attached() {
-                return;
-            }
-            let now = Instant::now();
-            if self
-                .last_attach
-                .is_some_and(|last| now.duration_since(last) < REATTACH_INTERVAL)
-            {
-                return;
-            }
-            self.last_attach = Some(now);
-            self.link.attach(gpu);
+        let Some(gpu) = self.gpu.clone() else {
+            return;
+        };
+        if self.link.is_attached() {
+            return;
         }
+        let now = Instant::now();
+        if self
+            .last_attach
+            .is_some_and(|last| now.duration_since(last) < REATTACH_INTERVAL)
+        {
+            return;
+        }
+        self.last_attach = Some(now);
+        self.link.attach(gpu);
     }
 
     /// Apply everything the frame asked for.
@@ -390,6 +392,7 @@ impl EditorWindow {
                     titles,
                     inputs,
                     intents,
+                    tab_rects: Vec::new(),
                 };
                 egui_dock::DockArea::new(dock)
                     .style(style)
@@ -397,6 +400,7 @@ impl EditorWindow {
                     .show_leaf_collapse_buttons(false)
                     .show_add_buttons(false)
                     .show_inside(ui, &mut panels);
+                dock::paint_tab_selection(ui.ctx(), dock, &panels.tab_rects, panels.shell.theme);
             });
     }
 
@@ -444,6 +448,7 @@ impl eframe::App for EditorWindow {
 
         // 1 and 2: the editor's housekeeping, then the engine's newest frame.
         self.editor.pump();
+        #[cfg(target_os = "linux")]
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {
             // The focused viewport is handed in because claiming a frame and LEARNING that one
@@ -541,13 +546,17 @@ fn shared_device() -> (Option<Arc<()>>, Vec<String>) {
 ///
 /// The shared device is attempted first and the reason is logged either way, because "the viewport
 /// shows nothing" is a question whose answer is almost always in those lines.
-pub fn run(mut window: EditorWindow) -> eframe::Result<()> {
+pub fn run(window: EditorWindow) -> eframe::Result<()> {
     let (gpu, notes) = shared_device();
     for note in &notes {
         eprintln!("cyberdyne-editor: {note}");
     }
 
-    let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
+    #[cfg(target_os = "linux")]
+    let mut window = window;
+    let wgpu_options = egui_wgpu::WgpuConfiguration::default();
+    #[cfg(target_os = "linux")]
+    let mut wgpu_options = wgpu_options;
     #[cfg(target_os = "linux")]
     if let Some(gpu) = &gpu {
         wgpu_options.wgpu_setup = egui_wgpu::WgpuSetupExisting {
