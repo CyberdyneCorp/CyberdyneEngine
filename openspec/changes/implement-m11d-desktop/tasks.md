@@ -689,3 +689,93 @@ glob form: **satisfied, and re-pointed.** The insertion of M11.d.5 moved the han
 carries `m11d5-open` in that exact form and `m11d5.toml` carries `m11e-open`, so the chain
 m11d → m11d5 → m11e is unbroken. A handover check still naming M11.e here would have skipped a rung,
 which is the one thing a handover check exists to make impossible.
+
+## The close phase's second verdict — THE LEDGER RAN TO A NUMBER, AND M11.d STILL DOES NOT CLOSE
+
+Written by the close phase, which owns `gates.toml`, `ci.yml`, `status.yaml`, `capability-matrix.md`
+and `ROADMAP.md`. **No gate was flipped. No tier was written. `ci.yml`'s milestone job was not
+moved.** The verdict above stands and is not restated; what this section adds is the thing it did
+not have — **both ledgers run end to end, to a count**.
+
+### The two runs, and the conditions they were taken under
+
+| | `m11c` | `m11d` |
+|---|---|---|
+| command | `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c` | `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11d` |
+| window | 16:31 → 19:15, 9 824 s | 19:15 → 21:07, 6 744 s |
+| log | `/tmp/close-m11c.log` | `/tmp/close-m11d.log` |
+
+**HEAD was `b27669a` at the first line of the first run and at the last line of the second**, `git
+status` was clean at both ends, no `.tmp.<pid>.<hash>` file exists anywhere in the tree, and `ps` at
+every poll showed **no peer build, `ctest`, prover or second ledger alive**. Unlike the run the
+verdict above had to discard, nothing moved underneath these.
+
+### `M11D is not closed: 19 of 423 evaluated criteria failed.`
+
+| bucket | m11d | m11c, for comparison |
+|---|---|---|
+| declared | **428** (410 inherited, 18 new) | 440 |
+| evaluated on this host | **423** | 435 |
+| PASS | **377** | 397 |
+| FAIL (not a declared gap) | **19** | 10 |
+| declared gaps, still open | **27** | 28 |
+| declared gaps that NOW PASS (these DO block) | **0** | 0 |
+| NOT EVALUATED, legitimately | **5** | 5 |
+
+**READ THE 410 FIRST.** M11.c's gate is still `joins-on-close`, so **this ledger does not evaluate a
+single one of M11.c's criteria** — the flat ledger merges the criteria of every *green* gate below
+the target. A green `m11d` run today would therefore say nothing whatever about the fifteen image
+rows. That is a second reason, independent of its own 19, that this rung cannot close before the one
+beneath it does.
+
+**NINE OF THE 19 ARE THE INHERITED SET, AND EVERY ONE IS THIS RUNG'S OWN CODE**: `m0:lint`,
+`m0:test`, `m1:four-profiles`, `m3:sanitizers-render`, `m4:sanitizers`, `m6:open-world-artefact`,
+`m6:open-world-recipe`, `m8c:feature-options-off`, `m7:plan-consistency`. The three defects behind
+seven of them are run down to a line in `implement-m11c-image/tasks.md` under *THE CLOSE, THIRD
+ATTEMPT*; in one sentence each:
+
+1. **`cy_build` writes a manifest it cannot read back.** `main.cpp:256` puts
+   `describe_toolchain()`'s **five newline-terminated lines** into `provenance.toolchain_versions`;
+   `text::quote` (`text.cpp:92`) escapes `"` and `\` and not `\n`; `text::read` (`text.cpp:62`)
+   splits on `\n` before parsing — so every package manifest written since task 7.5 is unparseable.
+   Reproduced at the close: `cy_build install --package …/base.cypackage` → *"the package manifest
+   could not be parsed: unterminated quoted word"*, exit 1. **This is also
+   `m11d:ship-sample-on-desktop`, and it has regressed M6's closing artefact**, which had been green
+   since M6.
+2. **`src/backends/rhi/tests/test_interface_gaps.cpp:190-191` compares `const char*` by pointer** —
+   green in Development, red in Debug and under ASan/UBSan.
+3. **`samples/11-ship/card.cpp:222` (`-Werror=null-dereference`) and `present.cpp` (six
+   `-Werror=unused-function` with `CY_RENDERER_VULKAN=OFF`) do not compile** in the sanitizer and
+   feature-off configurations.
+
+### THE 18 NEW CRITERIA: 8 PASS, 10 FAIL
+
+**PASS** — `documentation-gate`, `full-gate-set`, `native-platform-backend`,
+`native-backend-runs-the-m0-sample`, `porting-surface-against-a-stub`, `shader-targets-emitted`,
+`ship-sample-exists`, `ship-sample-drawn`. The rung's headline claim — *a native `Platform` and
+`DisplayServer` that is neither SDL3's nor a stub, compiled, running the M0 sample, with a porting
+surface that builds against a stub* — **is green on a ledger run, not on a report**.
+
+**FAIL** — `rhi-interface-gaps-settled`, `null-backend-refuses-what-it-cannot-do`,
+`port-touches-no-engine-layer`, `developer-workflow-recipes`, `release-recipes-stop-refusing`,
+`content-audit-and-symbols`, `core-rows-at-complete-grade`, `ship-sample-on-desktop`,
+`roadmap-tiers`, `m11d5-open`. Nine of these ten are diagnosed in the verdict above and the diagnoses
+held on re-measurement; the tenth, `ship-sample-on-desktop`, now has defect 1 as its named cause
+rather than a symptom.
+
+### The sections that moved, verified rather than assumed
+
+`git show e39ddd3 -- tools/roadmap/milestones/m11d.toml` removes exactly
+`metal-backend-is-native`, `d3d12-backend-exists` and `golden-images-across-three-backends`, and
+`m11d5.toml` carries all three plus `rhi-row-at-complete-grade` and
+`three-backend-images-committed` — **moved, not deleted**, in one commit. `m11d`'s terminal criterion
+changed from `m11e-open` to `m11d5-open` in the same diff, so the chain is unbroken. Nothing in this
+close evaluated a Metal or a D3D12 claim, and nothing in `m11d.toml` asks it to.
+
+### What the reader decides, and what is not the closer's to decide
+
+Nothing was promoted and no gate moved, so there is nothing to walk back. **19 of M11.d's 46 tasks
+are unchecked** — sections 5 (MSAA and multi-view), 7.2, 7.4, 7.5, 7.6, all of 9 but 9.2, and all of
+10 — and `core-rows-at-complete-grade` at **0 of 71 requirements mapped** is the largest single
+piece of it. The three compile-and-test defects are minutes of work in files this phase may not
+touch; everything else on the list is a rung's work rather than a gate's.

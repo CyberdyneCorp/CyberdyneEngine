@@ -2135,3 +2135,100 @@ all three targets, and `fullscreenVertex` and `cyParticleVertex` take `SV_Vulkan
 refuses. The declaration is sized, measured and owned by the rung that takes the decision, which is
 what a gap is for — but a reader promoting `shader-system` to Complete should do so knowing it, not
 around it.
+
+### THE CLOSE, THIRD ATTEMPT — ONE COMPLETE LEDGER RUN, AND M11.c STILL DOES NOT CLOSE
+
+**This is the run the second attempt's successor never got.** The close phase that ran on 2026-09-19
+recorded, in `implement-m11d-desktop/tasks.md`, that its own `m11c` ledger *"FAILED ITS BUILD LEG ON
+A RACE"* at 1 249 s — `build/dev` configured before a peer added `cy::platform-stub` to
+`samples/03-first-light`'s link list — and that **M11.c's gate was therefore left at
+`joins-on-close` because no trustworthy full run existed**. One exists now.
+
+**THE RUN.** `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, backgrounded and polled by
+explicit PID, **16:31 → 19:15 on 2026-09-19, 9 824 s (2 h 44 m)**, log `/tmp/close-m11c.log`.
+`m0:build` was green this time (3 189 targets, 103.9 s). `git status` was clean at the first line and
+at the last; **HEAD did not move for the whole run** (`b27669a` at both ends); no `.tmp.<pid>.<hash>`
+file is anywhere in the tree; and `ps` showed no peer build, `ctest` or prover alive at any poll —
+this phase was alone on the machine.
+
+**`M11C is not closed: 10 of 435 evaluated criteria failed.`**
+
+| bucket | this run | the second attempt at `6eb0c08` |
+|---|---|---|
+| declared | **440** | 440 |
+| evaluated on this host | **435** | 435 |
+| PASS | **397** | 404 |
+| FAIL (not a declared gap) | **10** | 3 |
+| declared gaps, still open (do not block) | **28** | 28 |
+| declared gaps that NOW PASS (these DO block) | **0** | 0 |
+| NOT EVALUATED, legitimately | **5** | 5 |
+
+**ONE RED CLOSED AND EIGHT ARRIVED, AND NOT ONE OF THE EIGHT IS M11.c's.**
+`m11c:m11d-open` is **GREEN** — M11.d has 29 checked tasks outside its section 0, so the deliberate
+act the fourth closer refused to farm has been performed by the rung itself. What replaced it is
+**M11.d's in-flight code, which holds the rung below it shut**:
+
+| failed | belongs to | why |
+|---|---|---|
+| `m0:lint` | M11.d | 25 clang-tidy errors across 10 files, every one of them last modified 2026-09-19 and seven created that day |
+| `m0:test` | M11.d | `smoke.ship` **and** `smoke.open_world` |
+| `m1:four-profiles` | M11.d | Debug: `unit.rhi` red, plus the same two smokes |
+| `m3:sanitizers-render` | M11.d | `unit.rhi` red under ASan/UBSan |
+| `m4:sanitizers` | M11.d | the sanitizer build does not compile |
+| `m6:open-world-artefact` | M11.d | M6's closing artefact, green since M6, regressed |
+| `m6:open-world-recipe` | M11.d | *"open-world: the build did not install"* |
+| `m8c:feature-options-off` | M11.d | red **again**, from a different cause than the one the second attempt repaired |
+| `m7:plan-consistency` | M11.d / M11.d.5 | `falsifiability.toml` is stale against the two new ledgers |
+| `m11c:roadmap-tiers` | the closing change | the tiers, which a rung that does not close does not write |
+
+**THREE DEFECTS EXPLAIN SEVEN OF THE EIGHT, AND EACH WAS RUN DOWN TO A LINE.**
+
+1. **`cy_build` writes a package manifest it cannot read back.** `main.cpp:256` (M11.d task 7.5)
+   assigns `describe_toolchain(current_toolchain())` into `provenance.toolchain_versions`;
+   `toolchain.h:36` returns **five `\n`-terminated lines**; `package.cpp:183` emits it through
+   `text::quote`, which escapes `"` and `\` and **not** `\n` (`text.cpp:92`); and `text::read`
+   splits the document on `\n` *before* `split()` runs (`text.cpp:62`), so a quoted word can never
+   contain one — `text.cpp:47`, *"unterminated quoted word"*. **Reproduced at the close** against a
+   manifest this very ledger produced: `./build/m11c-final/tools/build/cy_build install --package
+   build/m11c-final/samples/06-open-world/run/base.cypackage` → exit 1, that message. **Before and
+   after in one directory**: `next.cypackage` (02:20) carries four provenance fields and parses;
+   `base.cypackage` (16:41) carries nine including the multi-line one and does not. This is
+   `m0:test`, both `m6:` rows, and `m11d:ship-sample-on-desktop`.
+2. **`src/backends/rhi/tests/test_interface_gaps.cpp:190-191` compares `const char*` by pointer.**
+   `CY_CHECK_EQ(image_use_name(ImageUse::Presentable), "Presentable")` prints
+   `CHECK_EQ( 0x57ad0de37720, Presentable )`. Lines 188-189 pass and 190-191 fail, which is literal
+   pooling differing between configurations: green in Development, **red in Debug and under
+   ASan/UBSan**. This is `m1:four-profiles` and `m3:sanitizers-render`.
+3. **`samples/11-ship/` does not build in two configurations.** `card.cpp:222:71` —
+   *"potential null pointer dereference [-Werror=null-dereference]"* stops the sanitizer build
+   (`m4:sanitizers`); `present.cpp` — six `-Werror=unused-function` errors with
+   `-D CY_RENDERER_VULKAN=OFF` (`m8c:feature-options-off`).
+
+**NOT ONE LINE OF ANY OF THE THREE WAS TOUCHED HERE**, for the reason the previous close phase gave
+and this one repeats: every file is a peer's, and a close-phase edit landing under an active author
+is the collision this project has already paid for. What the close owes instead is the line number,
+and it is above.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`tools/roadmap/gates.toml` is **unchanged** — `milestone-m11c` stays at `state = "joins-on-close"`.
+`.github/workflows/ci.yml` is **unchanged**, still pointing the nightly ledger at `m11b`.
+`docs/roadmap/status.yaml`, `capability-matrix.md` and `ROADMAP.md` are **unchanged**: all fifteen
+rows stay at Working. **This phase's diff to its own five files is empty, deliberately.**
+
+**AND THE REASON IS STILL NOT THAT A ROW FELL SHORT.** Every one of the fifteen rows' own criteria
+is green in this run, both Complete-grade criteria are green, and the five rows no criterion reads
+at Complete grade were measured by hand at the close — `just quality-requirements
+rendering-culling-and-lod atmosphere-sky-and-clouds rendering-architecture
+rendering-geometry-and-resources vfx-system` → **75 of 75, exit 0**. The gate is held shut by the
+rung above it and by the record it would itself write.
+
+**WHAT THE NEXT CLOSER MUST DO, AND IT IS SHORTER THAN LAST TIME.** Land the three defects above
+(minutes each, and they are somebody's named files rather than the closer's), re-run
+`just roadmap-falsify --record` on a quiet tree so `m7:plan-consistency` can pass — it must re-judge
+`m11c:m11d-open`, whose recorded verdict *"red in the tree"* stopped matching the moment M11.d was
+entered, and it must record `m11d5`'s 19 criteria, which have no entry at all — then one clean
+`just roadmap-milestone m11c`, then write the fifteen tiers. **The third Complete-grade criterion the
+second attempt asked for is still owed** and is still five row names in one `just
+quality-requirements` line; without it, five of the fifteen rows are promoted on a hand measurement
+rather than on a check, which is the thing this ladder refuses everywhere else.
