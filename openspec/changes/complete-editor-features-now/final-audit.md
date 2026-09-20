@@ -43,15 +43,16 @@ function above its applicable project target.
 - `openspec validate complete-editor-features-now --strict`: passed.
 - `python3 tools/editor/feature_scope.py`: passed, confirming no viewport transport, RHI, native
   Metal, renderer, or backend ownership paths entered this change.
+- The Editor requirement audit passed with 133 of 133 requirements mapped across all nine rows: 91
+  map to executable tests, proven criteria, or gates, and 42 are explicit M11.e deferrals with named
+  re-entry tests.
 - The 56-case theme/density/width accessibility matrix and pointer-free keyboard check passed for
   all seven new panels; the headless harness has no raster screenshot path, as recorded in the
   change README.
 - The SDK generator self-test passed 17/17 cases. The canonical `just build-editor-check` wrapper
-  then stopped at its existing macOS Bash 3.2 `mapfile` incompatibility. The exact failure was
-  reproduced on clean `main`; its underlying rustfmt, Clippy, and Cargo gates are the direct
-  commands above. The focused `just test-smoke -R editor_session` wrapper likewise stopped on an
-  existing Bash 3.2 array-syntax parse error reproduced on clean `main`; the Cargo runtime-crash,
-  authoring-loop, protocol, desktop/headless MCP, and installed-SourceKit integration cases passed.
+  now runs on macOS Bash 3.2 and passed rustfmt, Clippy with warnings denied, the full workspace test
+  suite, and doctests. The physical native-window smoke command also passed through
+  `just run-editor --smoke` and closed after its bounded three-frame draw.
 
 ## Dependencies intentionally left open
 

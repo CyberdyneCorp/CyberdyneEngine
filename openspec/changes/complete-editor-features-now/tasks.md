@@ -80,3 +80,4 @@
 - [x] 10.3 Exercise dark/light themes, compact/comfortable density, narrow windows, keyboard-only flows, and screen-reader labels for every new panel; capture matching screenshots where rendering is available.
 - [x] 10.4 Update `editor/README.md`, the visual-language documentation, command help, and roadmap evidence for the behavior actually delivered; keep renderer/backend dependencies explicitly open.
 - [x] 10.5 Re-audit every item from task 1.1 against code, tests, runtime behavior, and documentation, and leave no feature classified as locally implementable without a completed task or an evidence-backed dependency.
+- [x] 10.6 Map all 133 requirements in the nine Editor capability rows to executable evidence or an explicit M11.e deferral, and verify the coverage audit rejects missing, stale, or renamed evidence.

@@ -399,11 +399,131 @@ note = "Layering, unsafe, toolkit, graphics-API and headless-containment audits 
 
 [[coverage]]
 row = "editor-ui-ux"
+requirement = "Familiarity is a feature"
+evidence = "exempt:m11e"
+note = "The Unity keymap and conventional workspace are executable, but there is no first-hour usability study or permanent audit requiring every departure from convention to carry its measured justification. Re-enter with a scripted expert walkthrough, a distinct-identity visual review, and a repository check that rejects an undocumented interaction departure."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Docking and workspaces"
+evidence = "exempt:m11e"
+note = "Named layouts, reset, persistence and broken-layout recovery have tests, but panels cannot yet move between independent native windows and monitors. Re-enter with a two-window native test that moves a tab across windows, restarts the editor, restores both monitor-relative layouts, and resets a corrupt layout without closing documents."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Density over decoration"
+evidence = "rust:cy-editor-visual::density::tests::compact_shows_more_rows_than_comfortable_in_the_same_panel"
+note = "The density model also tests interface scaling, typographic hierarchy, icon floors and the rule that animation cannot delay input; this case proves the user-visible compact/comfortable distinction in an equal panel extent."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Command palette and search"
+evidence = "exempt:m11e"
+note = "Commands and aliases are searchable and the first-result latency is measured, but one incremental provider does not yet combine assets, entities, settings, documentation and recent items while indexing continues. Re-enter with a provider fan-out test that returns ranked partial results, shows each origin, and invokes one result of every required kind."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Keyboard-first operation"
+evidence = "exempt:m11e"
+note = "Configurable contextual chords, conflict reporting and keyboard focus for the new panels are tested. The universal claim over every non-spatial frequent workflow has no enumerated workflow audit. Re-enter with an accessibility script that completes open, edit, save, play, build and problem-navigation flows without pointer events and fails on any unreachable enabled action."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Inspector is generated from reflection"
+evidence = "rust:cy-editor-interface::the_inspector_is_generated::a_component_type_the_editor_never_registered_gets_an_inspector"
+note = "The generated-inspector suite adds reflected field-kind coverage, custom overrides, runtime type discovery and the no-per-type-special-case audit; inspector tests separately prove mixed multi-selection commits as one transaction."
+
+[[coverage]]
+row = "editor-ui-ux"
 requirement = "Every edit is a transaction"
 evidence = "rust:cy-editor-documents::transactions_are_the_only_write_path::document_content_has_no_public_mutator_that_does_not_take_a_write_token"
 note = "the public document surface is audited for mutation entry points and every one requires the token only a transaction supplies; a direct persistent edit therefore cannot be expressed."
 
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Errors, warnings, and validation surface where they belong"
+evidence = "rust:cy-editor-interface::problems::tests::one_report_reaches_the_row_the_hierarchy_entry_and_the_problems_view"
+note = "The problems suite also rejects messages without remedies, bounds high-rate input, filters the console and replaces stale import reports; this case proves one fault is projected at its object and in the aggregate view from the same report."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Long operations are visible and cancellable"
+evidence = "exempt:m11e"
+note = "The unified progress model covers running, failed and cancelled operations and core cancellation is cooperative. Imports, cooks, shaders, builds, world loads and deployment have not all been connected as producers with retained inputs and logs. Re-enter with one parameterised integration case that drives every producer through success, cancellation and failure while editing remains responsive."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Notifications do not interrupt"
+evidence = "rust:cy-editor-interface::notifications::tests::a_background_failure_does_not_interrupt_an_edit_in_progress"
+note = "The notification suite additionally proves history, dismissal, severity in words, recovery actions, bounded on-screen count and rejection of informational modals; this case protects the central no-focus-steal interaction."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Theming and accessibility"
+evidence = "exempt:m11e"
+note = "Dark/light themes, user-theme validation, scaling, semantic words and shapes, colour-blind palettes, AccessKit names and keyboard focus are tested. A native high-DPI and configurable-font-size matrix is still absent. Re-enter with physical displays at two scale factors and automated contrast, focus, font-size and non-colour-state assertions for every panel."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "The editor states its performance targets"
+evidence = "exempt:m11e"
+note = "Focused tests measure every declared interaction bound and virtualise a 100,000-asset browser, but they are not yet a required cross-platform continuous-integration job with stable percentile reporting. Re-enter with the interaction-target suite required on macOS, Windows and Linux, calibrated thresholds, retained measurements and a deliberate regression proving the job turns red."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Editing never silently loses work"
+evidence = "exempt:m11e"
+note = "Dirty-close decisions, failed-save retention, autosave records and external-change merge choices are individually tested. Crash recovery has not been exercised by killing the native editor during a real unsaved transaction and restarting it. Re-enter with that process-level case, plus an external-write race that proves neither side is overwritten before the user chooses."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Discoverability without documentation"
+evidence = "exempt:m11e"
+note = "Reflected metadata supplies labels, units, ranges and tooltips, and settings expose defaults and overrides. There is no audit across all generated controls requiring a meaningful tooltip and contextual documentation link. Re-enter with a schema fixture containing every field and setting kind, and reject any visible control missing units, bounds, default/reset state or its object-level help target."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Editor-specific diagnostics"
+evidence = "exempt:m11e"
+note = "Shell diagnostics attribute view-model rebuilds and slow frames to named parts, while bridge and operation models expose some timings. Protocol traffic, engine-call latency and background-operation duration are not joined into one trace. Re-enter with a deliberately slow panel, service, engine call and background job, each required to appear as a separately attributable span."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Forbidden editor interface patterns"
+evidence = "rust:cy-editor-interface::shell::tests::every_forbidden_interface_pattern_names_a_check"
+note = "The audit enumerates every forbidden interface pattern and names the executable check that rejects it, preventing a prohibition from remaining prose without an owner."
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Primitive creation"
+evidence = "rust:cy-editor-services::primitives_are_ordinary_mesh_instances::a_primitive_is_one_transaction_that_undoes_and_redoes_to_the_same_identity"
+note = "The same suite covers all five required shapes, editable source parameters, save/load, normal selection and placement, and equality of the generated and imported entity construction path; this case proves transaction identity across undo and redo."
+
 # --- editor-visual-language -----------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "The viewport is the subject"
+evidence = "rust:cy-editor-visual::chrome::tests::the_viewport_dominates_the_default_layout"
+note = "The default composition reserves the largest region for the scene while the semantic colour model and visual-rule audit reject decorative saturated chrome, preserving the specified reading order."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Cyberdyne identity, not an engine emblem"
+evidence = "exempt:m11e"
+note = "The shell uses CyberEngine product vocabulary and committed artwork exists, but the four required lockups are not validated in header, splash, monochrome and desktop-icon contexts. Re-enter with rendered native-window references for every lockup and an asset audit rejecting a redesigned or competing emblem and gradients outside the logo."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Surface system"
+evidence = "rust:cy-editor-visual::colour::tests::adjacent_surfaces_differ_enough_to_have_a_boundary_without_a_border"
+note = "The theme exposes the specified flat surface hierarchy without a shadow or gradient escape hatch; this case proves adjacent surfaces remain legible through luminance alone in every shipped theme."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Semantic colour"
+evidence = "rust:cy-editor-visual::colour::tests::no_shipped_theme_repurposes_a_hue"
+note = "Every shipped theme consumes the central semantic roles, and companion cases require a word and shape beside state colour and preserve meaning through the colour-blind palette."
 
 [[coverage]]
 row = "editor-visual-language"
@@ -411,13 +531,187 @@ requirement = "Axis colour is one language"
 evidence = "rust:cy-editor-interface::inspector::tests::a_vector_field_is_labelled_with_the_same_axis_language_as_the_viewport"
 note = "the generated inspector and viewport consume the same semantic X/Y/Z axis tokens and colours, preventing either surface from inventing a second axis language."
 
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Selection appearance"
+evidence = "rust:cy-editor-visual::selection::tests::the_shipped_appearances_pass_their_own_check"
+note = "The appearance validator enforces the thin gold editor outline, distinct dashed gameplay selection, legibility on bright content and rejection of glow, bloom, excessive width and unrelated hues."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Multi-selection is stated, not implied"
+evidence = "rust:cy-editor-interface::inspector::tests::a_multi_selection_states_its_count_and_composition"
+note = "The inspector names both selection count and composition rather than implying plurality from repeated controls; its mixed-value cases preserve the same explicit state at field level."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Gizmo legibility"
+evidence = "rust:cy-editor-visual::gizmo::tests::the_mode_is_readable_from_the_shape_alone"
+note = "Translate, rotate and scale use distinct forms independent of colour, and companion cases cover active-handle recession, axis semantics, universal-mode degradation and the correspondence between every form and behaviour."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "The orientation widget is not a manipulator"
+evidence = "rust:cy-editor-visual::orientation::tests::the_widget_is_not_mistaken_for_a_gizmo_by_form"
+note = "The widget model exposes only the three labelled axes, rejects rings and manipulator forms, remains visually quieter, and its interaction changes camera orientation without producing a document transaction."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Viewport chrome is overlay, not toolbar"
+evidence = "rust:cy-editor-visual::chrome::tests::adding_viewport_controls_costs_no_viewport_height"
+note = "The composition places viewport controls into overlay corners and this case proves adding them cannot reduce the scene rectangle, preventing a second toolbar from being introduced."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "The performance overlay is ambient"
+evidence = "rust:cy-editor-visual::rules::tests::the_overlay_does_not_become_a_profiler"
+note = "The visual-rule check limits the overlay to ambient performance state and directs investigation into the profiler, so detailed graphs cannot quietly grow over the scene."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Typography"
+evidence = "rust:cy-editor-visual::density::tests::primary_and_secondary_text_differ_by_weight_and_not_by_size"
+note = "The shared metrics also enforce non-oversized section headers, tabular numeric figures, scaling exactly once and an icon legibility floor; this case protects the compact hierarchy central to the requirement."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Iconography"
+evidence = "exempt:m11e"
+note = "Semantic icon roles and borrowed-icon rejection exist, but the shipped interface does not yet have a complete custom vector icon set with a light/dark and scale reference sheet. Re-enter with a catalogue rendering every command, asset type and status icon at supported sizes, plus an audit for text glyphs, emoji and copied engine symbols."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Default workspace composition"
+evidence = "rust:cy-editor-visual::chrome::tests::the_composition_covers_every_region_exactly_once"
+note = "The composition model assigns the required header, tool strip, hierarchy, viewport, inspector, browser, console and specialised-editor regions once, while its companion case proves the viewport remains dominant."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Spatial stability under context"
+evidence = "rust:cy-editor-interface::shell::tests::the_selection_changes_content_and_never_position"
+note = "The shell snapshots its layout across unlike selections and requires byte-identical panel positions while the inspector content changes, directly rejecting contextual rearrangement."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Progressive disclosure is the default state"
+evidence = "exempt:m11e"
+note = "Inspector sections and specialised editors have explicit disclosure models, but there is no interface-wide budget or test preventing new subsystem properties from accumulating in default views. Re-enter with golden accessibility trees for empty, typical and advanced selections and reject any advanced group expanded without a persisted user choice."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Status is ambient"
+evidence = "rust:cy-editor-interface::notifications::tests::an_informational_modal_is_refused_and_told_to_be_a_notification"
+note = "Informational state is structurally refused as a modal; notification and shell tests retain history, keep editing focused and render saved, connection and problem state in words in persistent chrome."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Asset thumbnails are renders"
+evidence = "rust:cy-editor-interface::thumbnails::tests::similar_units_are_distinguished_by_their_own_renders"
+note = "The thumbnail suite proves asynchronous placeholders, caching, invalidation, bounded memory and typed fallback only where no meaningful render exists; this case prevents similar assets collapsing to one file icon."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Graph surfaces are restrained"
+evidence = "exempt:m11e"
+note = "All graph domains share one canvas and engine-declared node types, but the visual layer lacks a rendered working-zoom reference proving category, connection type and topology remain readable without colour alone. Re-enter with material, VFX, AI and script graph goldens at representative zoom plus an accessibility-tree assertion for every wire type."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Engine vocabulary"
+evidence = "rust:cy-editor-interface::shell::tests::every_label_the_interface_draws_is_in_the_engines_vocabulary"
+note = "The shell audits visible labels against the engine vocabulary and the command audit does the same for labels and descriptions; aliases separately prove familiar search terms reach correctly named features."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "The design references are normative"
+evidence = "exempt:m11e"
+note = "Reference images are committed under docs/design and drove the current shell, but no review gate connects a visual-language code change to an updated image and stated rationale. Re-enter with a manifest of normative references, reproducible capture commands, and a changed semantic token required to fail until its reference and change note are updated."
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Forbidden visual patterns"
+evidence = "rust:cy-editor-visual::rules::tests::every_forbidden_pattern_names_a_check"
+note = "Every prohibited visual pattern is paired with an executable validator or structural check, and mutation cases cover decorative colour, card stacks, invented axes, borrowed icons and profiler-like overlays."
+
 # --- editor-viewport-and-gizmos -------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "The rendering responsibility split"
+evidence = "exempt:m11e"
+note = "The Rust editor owns view intent and transport data and its application audit forbids graphics APIs outside the viewport boundary, while native frames come from the engine. There is no permanent source audit proving editor crates never construct passes, targets, pipelines or draws. Re-enter with forbidden-API fixtures and a direct-versus-editor shipping-frame comparison on every backend."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Viewport transport"
+evidence = "exempt:m11e"
+note = "Local mailbox and macOS IOSurface transports carry frame identity, view state, pacing and degradation, and an encoded-frame model is measured. A production encoded remote transport with forwarded input is not connected. Re-enter with a physical remote device that navigates, picks and manipulates through the stream while frame-age and stale-state assertions remain active."
 
 [[coverage]]
 row = "editor-viewport-and-gizmos"
 requirement = "Multiple viewports and view states"
 evidence = "rust:cy-editor-viewport::viewport::tests::several_viewports_each_keep_their_own_view_state"
 note = "the case opens multiple independent viewports and verifies their camera, projection, view mode, visibility and focus state do not bleed between views."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Navigation"
+evidence = "exempt:m11e"
+note = "Orbit, pan, zoom, focus, axis snap, adaptive scale, presets and rebinding have focused tests, and the shell drives orbit through the visible panel. Fly and frame-all are not complete and camera persistence is not tested through document reopen while streaming. Re-enter with one native session covering every gesture during an asynchronous world load and restoring each viewport camera after restart."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Selection and picking"
+evidence = "exempt:m11e"
+note = "Pick requests are engine-side and frame-bound, with stable identity, overlap cycling, prefab granularity, transparent intent, type/lock filtering and rectangle selection tested. Lasso selection plus layer/tag filters and physical cases for virtual geometry, foliage, terrain and skinned meshes are missing. Re-enter with those render categories and a stream-out/in selection lifecycle."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Gizmos and manipulation"
+evidence = "exempt:m11e"
+note = "Translate, rotate, scale and universal manipulation use drag-start state, one cancellable transaction, numeric feedback, pivots, axis locks and plugin registration. Parent and arbitrary custom spaces plus engine-produced occlusion/depth geometry are not proven in a presented frame. Re-enter with backend image and picking cases for every space and a plugin gizmo over local and shared transports."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Snapping and precision"
+evidence = "exempt:m11e"
+note = "Grid, angle and scale snapping, modifiers, alignment, large-coordinate arithmetic and unit-aware expressions have tests. Vertex, surface and pivot snapping are deliberately declared as runtime work and have no device path. Re-enter with engine queries for each snap target, including streamed virtual geometry far from origin, and require the same exact result after undo and redo."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "View modes and debug visualisation"
+evidence = "exempt:m11e"
+note = "The editor list is checked against engine view-mode names, every mode explains itself and has a unique command, and unavailable modes are named rather than faked. Several required engine producers remain unavailable, including virtual-geometry, GI, virtual-texture, shadow-page, physics, navigation, audio and streaming explanations. Re-enter when each produces a real frame and causal drill-down."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Overlays and in-viewport interfaces"
+evidence = "rust:cy-editor-viewport::overlay::tests::a_capture_says_whether_overlays_were_in_it"
+note = "The overlay suite also proves individual toggles, dismissible obstructions, zero viewport-height cost, three-axis orientation without manipulator forms, camera-only widget dragging and exact capture restoration."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Editing while playing"
+evidence = "rust:cy-editor-viewport::play::tests::play_state_is_unmistakable_and_never_silent_about_persistence"
+note = "Play-state presentation names mode and persistence; companion cases prove document edits follow policy, paused state remains play state, camera detachment touches nothing else and every mode matches its transport capability."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Viewport performance and degradation"
+evidence = "rust:cy-editor-viewport::transport::tests::degradation_is_surfaced_rather_than_mistaken_for_the_projects_appearance"
+note = "Transport and budget cases prove non-blocking polling, stale-frame reporting, rate-before-quality degradation, resolution floors, hidden and unfocused costs, and explicit user-facing quality state."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Viewport determinism and reproduction"
+evidence = "exempt:m11e"
+note = "View state and captures round-trip camera, projection, mode, filters, frame identity and overlay inclusion, and a viewport can restore its capture. Time state and attachment to the common defect report and diagnostics trace are not wired. Re-enter with a report captured during animation, reopen it after restart, and compare both restored state bytes and the referenced presented frame."
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Forbidden viewport patterns"
+evidence = "exempt:m11e"
+note = "Focused tests reject accumulated gizmo deltas, blocking frame waits, unstable selection identity, dirty captures and transport-free assumptions. The repository-wide no-second-renderer and no-editor-draw prohibitions lack a source boundary check. Re-enter with forbidden fixtures for pass construction, render-target allocation, command encoding and editor-side picking, each required to fail the editor gate."
 
 # --- editor-documents-and-transactions -------------------------------------------------------------
 
