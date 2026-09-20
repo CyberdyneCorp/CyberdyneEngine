@@ -74,11 +74,11 @@ requires = "a Windows host with the MSVC build tools. Cross-compiling with clang
 [[target]]
 id = "ios"
 kind = "os"
-describe = "iOS — the mobile half of build-system-and-platforms."
-hosts = []
-state = "planned"
+describe = "iOS 17 or newer — UIKit lifecycle, touch input, and native Metal presentation."
+hosts = ["macos"]
+state = "buildable"
 owner = "m11e"
-requires = "a macOS host, an iOS SDK, a CMake toolchain file and a code-signing identity. `build-system-and-platforms`' cross-compilation and mobile targets are M11.e's; no port exists in this tree yet."
+requires = "a macOS host with Xcode 27 or newer. Building an installable device bundle also needs an Apple development team and matching provisioning profile."
 
 [[target]]
 id = "android"

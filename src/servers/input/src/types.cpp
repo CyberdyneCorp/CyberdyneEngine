@@ -113,22 +113,34 @@ constexpr NamedControl kGamepad[] = {
     {"rightTrigger", static_cast<u16>(GamepadControl::RightTrigger)},
 };
 
+constexpr NamedControl kTouch[] = {
+    {"primary", static_cast<u16>(TouchControl::Primary)},
+    {"positionX", static_cast<u16>(TouchControl::PositionX)},
+    {"positionY", static_cast<u16>(TouchControl::PositionY)},
+    {"pressure", static_cast<u16>(TouchControl::Pressure)},
+};
+
 struct ControlTable {
     const NamedControl* entries;
     usize count;
 };
 
+constexpr ControlTable kControlTables[] = {
+    {},
+    {kKeys, sizeof(kKeys) / sizeof(kKeys[0])},
+    {kMouse, sizeof(kMouse) / sizeof(kMouse[0])},
+    {kGamepad, sizeof(kGamepad) / sizeof(kGamepad[0])},
+    {kTouch, sizeof(kTouch) / sizeof(kTouch[0])},
+    {},
+    {},
+    {},
+};
+static_assert(sizeof(kControlTables) / sizeof(kControlTables[0]) ==
+              static_cast<usize>(DeviceKind::Count));
+
 ControlTable table_for(DeviceKind kind) {
-    switch (kind) {
-        case DeviceKind::Keyboard:
-            return ControlTable{kKeys, sizeof(kKeys) / sizeof(kKeys[0])};
-        case DeviceKind::Mouse:
-            return ControlTable{kMouse, sizeof(kMouse) / sizeof(kMouse[0])};
-        case DeviceKind::Gamepad:
-            return ControlTable{kGamepad, sizeof(kGamepad) / sizeof(kGamepad[0])};
-        default:
-            return ControlTable{nullptr, 0};
-    }
+    const usize index = static_cast<usize>(kind);
+    return index < static_cast<usize>(DeviceKind::Count) ? kControlTables[index] : ControlTable{};
 }
 
 DeviceKind device_kind_from_path(std::string_view text) {

@@ -38,13 +38,71 @@
       "displayName": "release — shipping optimisation, checks off",
       "description": "Release builds. CMake configuration Shipping, with link-time optimisation.",
       "cacheVariables": { "CY_PROFILE": "release" }
+    },
+    {
+      "name": "ios-base",
+      "hidden": true,
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"
+      },
+      "cacheVariables": {
+        "CY_PROFILE": "dev",
+        "CY_BUILD_TESTS": "OFF",
+        "CY_BUILD_TOOLS": "OFF",
+        "CY_BUILD_EDITOR": "OFF",
+        "CY_PHYSICS": "OFF",
+        "CY_NAVIGATION": "OFF",
+        "CY_AI": "OFF",
+        "CY_ML": "OFF",
+        "CY_ML_ONNXRUNTIME": "OFF",
+        "CY_AUDIO": "OFF",
+        "CY_AUDIO_STEAM_AUDIO": "OFF",
+        "CY_VFX": "OFF",
+        "CY_ANIMATION": "OFF",
+        "CY_UI": "OFF",
+        "CY_SHADER_SLANG": "OFF",
+        "CY_SHADER_DXIL": "OFF",
+        "CY_RENDERER_VULKAN": "OFF",
+        "CY_RENDERER_D3D12": "OFF",
+        "CY_RENDERER_METAL": "ON",
+        "CY_NETWORKING": "OFF",
+        "CY_PROFILING": "OFF",
+        "CY_VIRTUAL_GEOMETRY": "OFF",
+        "CY_XR": "OFF"
+      }
+    },
+    {
+      "name": "ios-device",
+      "inherits": "ios-base",
+      "displayName": "iOS device — native arm64 Metal application",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/ios-device.cmake"
+    },
+    {
+      "name": "ios-simulator",
+      "inherits": "ios-base",
+      "displayName": "iOS simulator — UIKit and Metal lifecycle check",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/ios-simulator.cmake"
     }
   ],
   "buildPresets": [
     { "name": "debug",   "configurePreset": "debug",   "displayName": "debug" },
     { "name": "dev",     "configurePreset": "dev",     "displayName": "dev" },
     { "name": "profile", "configurePreset": "profile", "displayName": "profile" },
-    { "name": "release", "configurePreset": "release", "displayName": "release" }
+    { "name": "release", "configurePreset": "release", "displayName": "release" },
+    {
+      "name": "ios-device",
+      "configurePreset": "ios-device",
+      "configuration": "Development",
+      "targets": ["cy_sample_ship_ios"]
+    },
+    {
+      "name": "ios-simulator",
+      "configurePreset": "ios-simulator",
+      "configuration": "Development",
+      "targets": ["cy_sample_ship_ios"]
+    }
   ],
   "testPresets": [
     {

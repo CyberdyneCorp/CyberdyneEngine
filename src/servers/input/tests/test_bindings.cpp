@@ -248,6 +248,10 @@ CY_TEST_CASE("input: a control path is parsed at cook time and its inverse recov
              gamepad_control(GamepadControl::LeftStickX));
     CY_CHECK(cy::input::cook::parse_control_path("mouse/moveX") ==
              mouse_control(MouseControl::MoveX));
+    CY_CHECK(cook::parse_control_path("touch/primary") == touch_control(TouchControl::Primary));
+    CY_CHECK(cook::parse_control_path("touch/positionX") == touch_control(TouchControl::PositionX));
+    CY_CHECK_EQ(std::string_view(cook::control_path(touch_control(TouchControl::Pressure))),
+                "pressure");
 
     CY_CHECK_FALSE(cook::parse_control_path("keyboard").is_valid());
     CY_CHECK_FALSE(cook::parse_control_path("keyboard/nonexistent").is_valid());

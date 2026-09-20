@@ -29,6 +29,7 @@
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <TargetConditionals.h>
 
 #include <cy/backends/rhi-metal/backend.h>
 #include <cy/backends/rhi-metal/mapping.h>
@@ -86,11 +87,13 @@ static_assert(static_cast<u32>(MTLPixelFormatBC7_RGBAUnorm_sRGB) == 153);
 
 static_assert(static_cast<u32>(MTLStorageModeShared) ==
               static_cast<u32>(MetalStorageMode::Shared));
+#if TARGET_OS_OSX
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 static_assert(static_cast<u32>(MTLStorageModeManaged) ==
               static_cast<u32>(MetalStorageMode::Managed));
 #pragma clang diagnostic pop
+#endif
 static_assert(static_cast<u32>(MTLStorageModePrivate) ==
               static_cast<u32>(MetalStorageMode::Private));
 static_assert(static_cast<u32>(MTLStorageModeMemoryless) ==
@@ -100,8 +103,10 @@ static_assert(static_cast<u32>(MTLBarrierScopeBuffers) ==
               static_cast<u32>(MetalBarrierScope::Buffers));
 static_assert(static_cast<u32>(MTLBarrierScopeTextures) ==
               static_cast<u32>(MetalBarrierScope::Textures));
+#if TARGET_OS_OSX
 static_assert(static_cast<u32>(MTLBarrierScopeRenderTargets) ==
               static_cast<u32>(MetalBarrierScope::RenderTargets));
+#endif
 
 static_assert(static_cast<u32>(MTLRenderStageVertex) ==
               static_cast<u32>(MetalRenderStage::Vertex));
@@ -2732,7 +2737,9 @@ public:
         layer.drawableSize = CGSizeMake(static_cast<CGFloat>(desc.extent.width),
                                         static_cast<CGFloat>(desc.extent.height));
         layer.maximumDrawableCount = desc.min_image_count >= 3 ? 3 : 2;
+#if TARGET_OS_OSX
         layer.displaySyncEnabled = desc.present_mode != PresentMode::Immediate;
+#endif
         layer.allowsNextDrawableTimeout = YES;
 
         MetalTexture texture;

@@ -579,6 +579,47 @@ headless pixel and control probes.
 
 Windows remains a supported target. Its CI workflow is currently the authoritative build recipe.
 
+## Building and running on iOS
+
+The iOS port uses UIKit for application lifecycle, `CADisplayLink` for frame pacing, and the native
+Metal RHI for presentation. The included mobile sample renders procedural open-world terrain with
+a moving day/night cycle and reports measured FPS both on screen and as `CY_IOS_FPS` log records.
+It requires Xcode 27 or newer and targets iOS 17 or newer.
+
+![The iOS open-world sample running through Metal on an iPhone 16](docs/design/images/ios-open-world-iphone.png)
+
+*Physical-device validation on an iPhone 16 reported the Apple A18 GPU and a median 17.30 FPS at
+2556 × 1179. The reproducible measurements and platform contract are recorded in the
+[physical-device evidence](openspec/changes/implement-ios-platform-support/evidence/physical-device.md).*
+
+![The iOS open-world sample running through Metal in the simulator](docs/design/images/ios-open-world-simulator.png)
+
+*The simulator is a lifecycle and presentation check; its 60 FPS overlay is not physical-device
+performance evidence.*
+
+Build and run the simulator lifecycle check:
+
+```bash
+just run-ios-simulator
+```
+
+For a physical device, supply the Apple development team and a bundle identifier covered by its
+provisioning profile. With the iPhone unlocked and connected, one command builds, installs, runs an
+eight-second sample, verifies the engine markers, records several FPS samples, and captures the
+screen:
+
+```bash
+CY_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+CY_IOS_BUNDLE_IDENTIFIER=com.example.cyberdyne \
+  just run-ios-device YOUR_DEVICE_UDID
+```
+
+The simulator verifies packaging, UIKit lifecycle, and Metal presentation. Performance evidence
+must come from a physical Apple GPU. The device recipe rejects simulators and fails unless it sees
+the platform contract, a native Metal device and swapchain, and at least three positive
+`CY_IOS_FPS` samples. It writes the raw log under `build/ios-device/` and the reviewable screenshot
+and evidence report into the source tree.
+
 ## Working on this
 
 Specifications are the source of truth and precede implementation. Changes flow through

@@ -5,6 +5,14 @@
 # a directory, a cy_add_module(NAME cy_sample_<name> ...) and one line here — there is no manifest
 # to keep in step.
 #
+# UIKit owns the iOS entry point and frame loop. Desktop samples carry `main()`, process drivers,
+# or host loops that do not belong in the mobile application graph. The ship sample declares the
+# dedicated iOS bundle and returns before those targets are considered.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_subdirectory(11-ship)
+    return()
+endif()
+
 # harness/ is not an artefact. It is what every artefact below reports THROUGH, and it is first
 # because both of the rules it carries were broken at M6 by artefacts that were otherwise careful:
 # a run that recorded a gap returned 0, and a run led with an extreme-value statistic that four

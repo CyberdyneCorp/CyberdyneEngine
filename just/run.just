@@ -64,6 +64,40 @@ run-sample *args:
     echo "==> run         ${name}  profile=${profile}"
     "${binaries[0]}" ${forwarded[@]+"${forwarded[@]}"}
 
+# Build, install, launch, and screenshot the Metal sample on a booted iOS simulator.
+# Usage: just run-ios-simulator [device-name-or-UDID]
+run-ios-simulator device="booted":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    export CY_IOS_BUNDLE_IDENTIFIER="${CY_IOS_BUNDLE_IDENTIFIER:-com.cyberdyne.engine.ship.simulator}"
+    just build-ios simulator
+    python3 samples/11-ship/ios/run_simulator.py \
+        --device "{{device}}" \
+        --bundle-id "${CY_IOS_BUNDLE_IDENTIFIER}" \
+        --app build/ios-simulator/samples/11-ship/ios/Development-iphonesimulator/cy_sample_ship_ios.app \
+        --log build/ios-simulator/ios-open-world.log \
+        --screenshot build/ios-simulator/ios-open-world.png
+
+# Build, install, measure, and capture the Metal sample on a physical iPhone.
+# Usage: CY_IOS_DEVELOPMENT_TEAM=... CY_IOS_BUNDLE_IDENTIFIER=... just run-ios-device <name-or-UDID>
+run-ios-device device:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    : "${CY_IOS_DEVELOPMENT_TEAM:?set CY_IOS_DEVELOPMENT_TEAM to the Apple development team ID}"
+    : "${CY_IOS_BUNDLE_IDENTIFIER:?set CY_IOS_BUNDLE_IDENTIFIER to the provisioned bundle ID}"
+    just build-ios device
+    python3 samples/11-ship/ios/run_device.py \
+        --device "{{device}}" \
+        --bundle-id "${CY_IOS_BUNDLE_IDENTIFIER}" \
+        --app build/ios-device/samples/11-ship/ios/Development-iphoneos/cy_sample_ship_ios.app \
+        --seconds 8 \
+        --minimum-samples 3 \
+        --log build/ios-device/ios-open-world.log \
+        --screenshot docs/design/images/ios-open-world-iphone.png \
+        --evidence openspec/changes/implement-ios-platform-support/evidence/physical-device.md
+
 # WHAT `run-editor` RUNS, AND WHAT IT DOES NOT.
 #
 # The editor is headless at M5 and that is a decision rather than an omission:

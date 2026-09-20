@@ -79,17 +79,19 @@ cy_add_module(
 # are: `RuntimeProcess` resolves the host "beside the calling executable", and the same rule has to
 # hold in a build tree and in an installed layout or the resolution would need to know which it is
 # looking at.
-cy_add_module(
-    NAME cy_play_runtime_host
-    LAYER runtime
-    TYPE EXECUTABLE
-    ALIAS cy::play-runtime-host
-    SOURCES host/main.cpp
-    PRIVATE_DEPENDENCIES cy::core-assets cy::core-memory cy::gameplay-play cy::physics-reference
-                         cy::platform-desktop-sdl3 cy::scene cy::scene-serialization)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    cy_add_module(
+        NAME cy_play_runtime_host
+        LAYER runtime
+        TYPE EXECUTABLE
+        ALIAS cy::play-runtime-host
+        SOURCES host/main.cpp
+        PRIVATE_DEPENDENCIES cy::core-assets cy::core-memory cy::gameplay-play cy::physics-reference
+                             cy::platform-desktop-sdl3 cy::scene cy::scene-serialization)
 
-set_target_properties(cy_play_runtime_host PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+    set_target_properties(cy_play_runtime_host PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+endif()
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

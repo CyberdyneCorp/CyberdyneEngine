@@ -309,12 +309,14 @@ function(_cy_host_platform out)
         set(${out} linux PARENT_SCOPE)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         set(${out} windows PARENT_SCOPE)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(${out} ios PARENT_SCOPE)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         set(${out} macos PARENT_SCOPE)
     else()
         message(FATAL_ERROR
             "CMAKE_SYSTEM_NAME is '${CMAKE_SYSTEM_NAME}', which is not a supported platform.\n"
-            "  Supported: Linux, Windows, Darwin. Planned: iOS, Android, visionOS, Web.")
+            "  Supported: Linux, Windows, Darwin, iOS. Planned: Android, visionOS, Web.")
     endif()
 endfunction()
 

@@ -118,6 +118,28 @@ build-all *args:
     @just build-engine {{args}}
     @just build-editor {{args}}
 
+# Cross-compile the native Metal iOS sample. Usage: just build-ios [simulator|device]
+build-ios target="simulator":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    case "{{target}}" in
+        simulator|device) ;;
+        *) echo "build-ios: target must be 'simulator' or 'device'" >&2; exit 2 ;;
+    esac
+    preset="ios-{{target}}"
+    configure=(--preset "${preset}")
+    if [ -n "${CY_IOS_BUNDLE_IDENTIFIER:-}" ]; then
+        configure+=(-D "CY_IOS_BUNDLE_IDENTIFIER=${CY_IOS_BUNDLE_IDENTIFIER}")
+    fi
+    if [ -n "${CY_IOS_DEVELOPMENT_TEAM:-}" ]; then
+        configure+=(-D "CY_IOS_DEVELOPMENT_TEAM=${CY_IOS_DEVELOPMENT_TEAM}")
+    fi
+    echo "==> configure   ${preset}"
+    cmake "${configure[@]}"
+    echo "==> build       cy_sample_ship_ios  configuration=Development"
+    cmake --build --preset "${preset}"
+
 # Build the engine's command-line tools and code generators. CY_BUILD_TOOLS is on by default.
 build-tools *args:
     #!/usr/bin/env bash

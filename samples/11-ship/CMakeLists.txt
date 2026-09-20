@@ -53,6 +53,11 @@
 # With `CY_BUILD_TOOLS=OFF` there is no `cy::build-graph`, and an artefact that reads an
 # installation has no installation to read. The target is NOT DECLARED and the configure says so in
 # one line — the same answer samples/06-open-world gives, and for the same reason.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_subdirectory(ios)
+    return()
+endif()
+
 if(NOT TARGET cy::build-graph)
     message(STATUS
         "samples/11-ship: the M11.d artefact launches from an installation and needs "
@@ -114,6 +119,11 @@ if(NOT Python3_Interpreter_FOUND)
     message(STATUS "samples/11-ship: python3 is absent, so smoke.ship is not declared.")
     return()
 endif()
+
+add_test(NAME unit.ios_device_runner
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/ios/run_device.py" --self-test
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(unit.ios_device_runner PROPERTIES LABELS "unit" TIMEOUT 30)
 
 get_directory_property(CY_SHIP_TIMEOUT DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                        DEFINITION CY_TEST_TIMEOUT_smoke)

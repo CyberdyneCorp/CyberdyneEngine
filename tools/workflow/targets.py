@@ -197,7 +197,7 @@ def selftest() -> int:
         ("a port every host builds", "stub", 0, ""),
         ("a target that needs another host", "macos", 2, "macOS SDK is not redistributable"),
         ("a target nobody has written", "android", 2, "Android NDK"),
-        ("the rung that owns an unwritten target", "ios", 2, "M11E"),
+        ("iOS needs its supported host", "ios", 2, "Xcode 27"),
         ("a misspelling", "macoss", 3, "there is no target"),
         ("an empty request is the host", "", 0, ""),
     ]

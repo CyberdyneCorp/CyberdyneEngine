@@ -208,6 +208,17 @@ enum class GamepadControl : u16 {
     Count,
 };
 
+/// A touchscreen's primary contact and its normalised position. These controls provide the
+/// portable pointer vocabulary used by ordinary actions and UI navigation.
+enum class TouchControl : u16 {
+    Unknown = 0,
+    Primary,
+    PositionX,
+    PositionY,
+    Pressure,
+    Count,
+};
+
 [[nodiscard]] constexpr Control key_control(Key key) noexcept {
     return Control{DeviceKind::Keyboard, static_cast<u16>(key)};
 }
@@ -217,6 +228,9 @@ enum class GamepadControl : u16 {
 [[nodiscard]] constexpr Control gamepad_control(GamepadControl control) noexcept {
     return Control{DeviceKind::Gamepad, static_cast<u16>(control)};
 }
+[[nodiscard]] constexpr Control touch_control(TouchControl control) noexcept {
+    return Control{DeviceKind::Touch, static_cast<u16>(control)};
+}
 
 /// The largest `code` any device class issues. Sizes the per-device control state array, so a
 /// backend cannot report a control the server has nowhere to put.
@@ -225,6 +239,7 @@ inline constexpr u16 kMaxControlCode = 128;
 static_assert(static_cast<u16>(Key::Count) <= kMaxControlCode);
 static_assert(static_cast<u16>(MouseControl::Count) <= kMaxControlCode);
 static_assert(static_cast<u16>(GamepadControl::Count) <= kMaxControlCode);
+static_assert(static_cast<u16>(TouchControl::Count) <= kMaxControlCode);
 
 // --- Actions -----------------------------------------------------------------------------------
 
