@@ -2,11 +2,21 @@
 // Direct3D 12 implementation records. Windows SDK types stay in this private header.
 
 #include <cy/backends/rhi/device.h>
+#include <cy/backends/rhi-d3d12/backend.h>
 #include <cy/core/memory/handle_pool.h>
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
+
+// WinBase and WinSpool publish these generic names as preprocessor macros. They collide with the
+// RHI's C++ types and would otherwise silently rewrite declarations in this private header.
+#ifdef DeviceCapabilities
+#    undef DeviceCapabilities
+#endif
+#ifdef MemoryBarrier
+#    undef MemoryBarrier
+#endif
 
 #include <mutex>
 
