@@ -148,18 +148,25 @@ struct DispatchResult {
                                 Span<const Mat4> skinning_matrices, u64 frame_index,
                                 DispatchResult& out) {
     if (!pass.upload(descriptor, skinning_matrices, frame_index).has_value()) {
+        std::fprintf(stderr, "skinning dispatch: upload failed\n");
         return false;
     }
-    if (!gpu.device().begin_frame().has_value()) {
+    auto begun = gpu.device().begin_frame();
+    if (!begun.has_value()) {
+        std::fprintf(stderr, "skinning dispatch: begin_frame failed: %s\n", begun.error().message);
         return false;
     }
     cy::rendering::RenderGraph graph(allocator());
-    if (!pass.declare(graph).has_value()) {
+    auto declared = pass.declare(graph);
+    if (!declared.has_value()) {
+        std::fprintf(stderr, "skinning dispatch: declare failed: %s\n", declared.error().message);
         return false;
     }
     cy::rendering::GraphExecutor executor(allocator(), gpu.device());
-    if (!executor.execute(graph, cy::rendering::CompileOptions{}, cy::rendering::ExecuteOptions{})
-             .has_value()) {
+    auto executed =
+        executor.execute(graph, cy::rendering::CompileOptions{}, cy::rendering::ExecuteOptions{});
+    if (!executed.has_value()) {
+        std::fprintf(stderr, "skinning dispatch: execute failed: %s\n", executed.error().message);
         return false;
     }
     if (!gpu.device().wait_idle().has_value()) {
@@ -553,6 +560,8 @@ CY_TEST_CASE(
     SkinPass fresh;
     CY_REQUIRE(fresh.create(allocator(), gpu.device(), description).has_value());
     CY_CHECK(!fresh.declare(graph).has_value());
+    fresh.destroy();
+    pass.destroy();
     CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }
 

@@ -194,6 +194,45 @@ Status validate_shader_module(const ShaderModuleDescription& desc, const DeviceC
     return ok();
 }
 
+Expected<ShaderModuleDescription, Error> select_shader_module(const ShaderModuleBundle& bundle,
+                                                              ShaderFormat format, const char* name,
+                                                              ShaderStage stage,
+                                                              ValidationMessage& message) noexcept {
+    ShaderModuleDescription selected;
+    selected.name = name;
+    selected.stage = stage;
+    switch (format) {
+        case ShaderFormat::Spirv:
+            selected.spirv = bundle.spirv;
+            selected.entry_point = bundle.spirv_entry_point;
+            break;
+        case ShaderFormat::Msl:
+            selected.native = bundle.msl;
+            selected.native_format = ShaderFormat::Msl;
+            selected.entry_point = bundle.msl_entry_point;
+            break;
+        case ShaderFormat::MetalLibrary:
+            selected.native = bundle.metal_library;
+            selected.native_format = ShaderFormat::MetalLibrary;
+            selected.entry_point = bundle.metal_library_entry_point;
+            break;
+        case ShaderFormat::Dxil:
+            selected.native = bundle.dxil;
+            selected.native_format = ShaderFormat::Dxil;
+            selected.entry_point = bundle.dxil_entry_point;
+            break;
+        case ShaderFormat::Count:
+            return fail(ErrorCode::InvalidArgument,
+                        message.format("shader module '%s': invalid native shader format", name));
+    }
+    if (selected.spirv.empty() && selected.native.empty()) {
+        return fail(ErrorCode::Unsupported,
+                    message.format("shader module '%s': package has no %s artefact", name,
+                                   shader_format_name(format)));
+    }
+    return selected;
+}
+
 Status validate_pipeline_layout(const PipelineLayoutDescription& desc,
                                 ValidationMessage& message) noexcept {
     if (desc.set_layouts.size() > kMaxDescriptorSets) {

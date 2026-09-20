@@ -66,6 +66,21 @@ struct ShaderModuleDescription {
     const char* entry_point = "main";
 };
 
+/// The shipping-side package for one shader entry point.
+///
+/// A cook produces one artefact per target. This non-owning view keeps those artefacts together so
+/// a renderer asks the device which one it consumes instead of branching on a backend name.
+struct ShaderModuleBundle {
+    Span<const u32> spirv;
+    Span<const u8> msl;
+    Span<const u8> metal_library;
+    Span<const u8> dxil;
+    const char* spirv_entry_point = "main";
+    const char* msl_entry_point = "main";
+    const char* metal_library_entry_point = "main";
+    const char* dxil_entry_point = "main";
+};
+
 /// One specialization constant, supplied at pipeline creation.
 ///
 /// `rhi-and-render-graph`, "Specialization over permutation": a feature that can be a

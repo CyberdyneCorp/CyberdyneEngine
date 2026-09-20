@@ -37,7 +37,8 @@ The chain of evidence is **paper → reference → dispatch → pixels**:
   worked out on paper — an elbow at (1, 0, 0), a quarter turn, a vertex at (2, 0, 0) landing at
   (1, 1, 0). It needs no GPU and runs in every profile.
 * `tests/test_skin_pass.cpp` checks the dispatch against the reference by comparing output buffers
-  vertex by vertex.
+  vertex by vertex. `render.skinning` executes SPIR-V through Vulkan and
+  `render.skinning_metal` executes MSL through native Metal from the same source.
 * `tests/test_skin_draw.cpp` binds those output buffers as vertex buffer 0 of a graphics pipeline and
   checks the covered pixels against addresses computed from the pose.
 

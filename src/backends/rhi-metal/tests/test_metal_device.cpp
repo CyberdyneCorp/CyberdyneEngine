@@ -108,8 +108,7 @@ CY_TEST_CASE("Metal textures and views preserve generational handle validity") {
     description.format = cy::rhi::Format::Rgba8Unorm;
     description.extent = {64, 64, 1};
     description.mip_levels = 2;
-    description.usage = cy::rhi::TextureUsage::ColorAttachment |
-                        cy::rhi::TextureUsage::Sampled;
+    description.usage = cy::rhi::TextureUsage::ColorAttachment | cy::rhi::TextureUsage::Sampled;
 
     const auto texture = device.create_texture(description);
     CY_REQUIRE(texture);
@@ -135,12 +134,17 @@ CY_TEST_CASE("Metal memoryless attachments allocate in tile memory on Apple-fami
     CY_REQUIRE(fixture.ok());
     cy::rhi::Device& device = fixture.device();
 
+    // An imported-resource-only graph asks for no heap. MTLHeap rejects size zero, so this must be
+    // handled before attempting allocation.
+    CY_CHECK(device.reserve_transient_memory(0, cy::rhi::MemoryPoolClass{}));
+    CY_CHECK_EQ(device.transient_pool_bytes(), 0U);
+
     cy::rhi::TextureDescription description;
     description.name = "memoryless depth";
     description.format = cy::rhi::Format::D32Sfloat;
     description.extent = {128, 128, 1};
-    description.usage = cy::rhi::TextureUsage::DepthStencilAttachment |
-                        cy::rhi::TextureUsage::TransientAttachment;
+    description.usage =
+        cy::rhi::TextureUsage::DepthStencilAttachment | cy::rhi::TextureUsage::TransientAttachment;
 
     const auto texture = device.create_transient_texture(description);
     CY_REQUIRE(texture);
@@ -169,8 +173,8 @@ CY_TEST_CASE("Metal placement heaps honor the render graph memory-pool meet") {
     texture_description.name = "aliased transient texture";
     texture_description.format = cy::rhi::Format::Rgba16Sfloat;
     texture_description.extent = {256, 256, 1};
-    texture_description.usage = cy::rhi::TextureUsage::ColorAttachment |
-                                cy::rhi::TextureUsage::Sampled;
+    texture_description.usage =
+        cy::rhi::TextureUsage::ColorAttachment | cy::rhi::TextureUsage::Sampled;
     const auto texture = device.create_transient_texture(texture_description);
     CY_REQUIRE(texture);
 
@@ -189,9 +193,8 @@ CY_TEST_CASE("Metal placement heaps honor the render graph memory-pool meet") {
         meet(texture_memory->pool_class, buffer_memory->pool_class);
     CY_CHECK_FALSE(common.empty());
 
-    const cy::u64 required = texture_memory->size > buffer_memory->size
-                                 ? texture_memory->size
-                                 : buffer_memory->size;
+    const cy::u64 required =
+        texture_memory->size > buffer_memory->size ? texture_memory->size : buffer_memory->size;
     CY_REQUIRE(device.reserve_transient_memory(required, common));
     CY_CHECK_EQ(device.transient_pool_bytes(), required);
     CY_REQUIRE(device.bind_transient(*texture, 0));
@@ -206,8 +209,8 @@ CY_TEST_CASE("Metal placement heaps honor the render graph memory-pool meet") {
     device.release_transient_resources();
     CY_CHECK_FALSE(device.is_valid(*texture));
     CY_CHECK_FALSE(device.is_valid(*buffer));
-    CY_CHECK_EQ(device.memory_report().live_bytes[
-                    static_cast<cy::u32>(cy::rhi::GpuMemoryCategory::Transient)],
+    CY_CHECK_EQ(device.memory_report()
+                    .live_bytes[static_cast<cy::u32>(cy::rhi::GpuMemoryCategory::Transient)],
                 required);
 }
 

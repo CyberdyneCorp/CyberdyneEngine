@@ -21,6 +21,8 @@
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/validation.h>
 
+#include <cstring>
+
 using cy::u32;
 using cy::u8;
 using cy::rhi::BackendKind;
@@ -132,6 +134,36 @@ CY_TEST_CASE("gap 1: the native form is checked against what the device says it 
     ShaderModuleDescription smuggled = msl;
     smuggled.native_format = ShaderFormat::Spirv;
     CY_CHECK_FALSE(validate_shader_module(smuggled, vulkan_like(), message));
+}
+
+CY_TEST_CASE("gap 1: a shader bundle selects exactly the device-native artefact") {
+    const u32 words[] = {kSpirvMagic, 0, 0, 0};
+    const u8 msl[] = {'m', 's', 'l'};
+    cy::rhi::ShaderModuleBundle bundle;
+    bundle.spirv = {words, 4};
+    bundle.msl = {msl, 3};
+    bundle.spirv_entry_point = "main";
+    bundle.msl_entry_point = "skin_vertices";
+    ValidationMessage message;
+
+    auto metal = cy::rhi::select_shader_module(bundle, ShaderFormat::Msl, "skin",
+                                               cy::rhi::ShaderStage::Compute, message);
+    CY_REQUIRE(metal.has_value());
+    CY_CHECK(metal->spirv.empty());
+    CY_CHECK_EQ(metal->native.size(), 3U);
+    CY_CHECK_EQ(metal->native_format, ShaderFormat::Msl);
+    CY_CHECK_EQ(std::strcmp(metal->entry_point, "skin_vertices"), 0);
+
+    auto vulkan = cy::rhi::select_shader_module(bundle, ShaderFormat::Spirv, "skin",
+                                                cy::rhi::ShaderStage::Compute, message);
+    CY_REQUIRE(vulkan.has_value());
+    CY_CHECK_EQ(vulkan->spirv.size(), 4U);
+    CY_CHECK(vulkan->native.empty());
+
+    auto missing = cy::rhi::select_shader_module(bundle, ShaderFormat::Dxil, "skin",
+                                                 cy::rhi::ShaderStage::Compute, message);
+    CY_CHECK_FALSE(missing.has_value());
+    CY_CHECK(std::strstr(message.text, "dxil") != nullptr);
 }
 
 CY_TEST_CASE("gap 1: SPIR-V's magic number is checked where every machine runs it") {

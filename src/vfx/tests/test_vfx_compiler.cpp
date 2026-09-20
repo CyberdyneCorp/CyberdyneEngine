@@ -289,7 +289,7 @@ CY_TEST_CASE("the generated unit is self-contained: it imports nothing and decla
     // the effect could only be built by reflecting the generated module, and `src/vfx/gpu/`'s one
     // descriptor set layout has to serve every effect and the fixed support dispatches at once.
     CY_CHECK_EQ(text.find("RWStructuredBuffer<uint> cyVfxAttr_"), std::string_view::npos);
-    CY_CHECK_NE(text.find("RWStructuredBuffer<uint> cyVfxParticles"), std::string_view::npos);
+    CY_CHECK_NE(text.find("ParameterBlock<CyVfxSet> cyVfxSet"), std::string_view::npos);
     CY_CHECK_NE(text.find("static const uint cyVfxBase_position"), std::string_view::npos);
     CY_CHECK_NE(text.find("cyVfxParticles[cyVfxBase_position"), std::string_view::npos);
 

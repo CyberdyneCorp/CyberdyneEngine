@@ -253,13 +253,13 @@ run a compiled kernel"*. `src/vfx/gpu/` is that dispatch. `device_dispatch_avail
 | | |
 |---|---|
 | `include/cy/vfx/gpu_layout.h` | the binding contract — nine bindings, one push block, the counter table, the GPU block's word arithmetic. In `cy::vfx-compiler`, because the *generator* must emit against it and a compiler may not name a device |
-| `gpu/shaders/vfx_support.slang` | the three dispatches that are the same for every effect: the reset, the compaction, the sort. Checked-in SPIR-V, like `gpu_culling`'s and `skinning`'s |
+| `gpu/shaders/vfx_support.slang` | the three dispatches that are the same for every effect: reset, compaction and sort. Checked-in SPIR-V and MSL selected from the device's native shader format |
 | `gpu/include/.../gpu_pass.h` | `VfxGpuPass`: the device, the pipelines, the buffers, and the graph declaration |
 
 **The simulation kernel is not embedded and cannot be**: it is generated per effect by
 `assemble_dispatch_unit`, and `VfxGpuPass::create` compiles it through `cy::shader`'s Slang front
 end. A build with `CY_SHADER_SLANG` off must be handed the module through
-`GpuPassDescription::kernel_spirv`, and `create()` fails naming the missing front end when it is
+`GpuPassDescription::kernel`, and `create()` fails naming the missing front end when it is
 given neither. **Nothing in this tree cooks that module yet** — the cook step is
 `asset-import-pipeline`'s — so a Profile or Shipping build can run this pass only once something
 cooks for it, and the error says so rather than a document.
@@ -278,6 +278,8 @@ cooks for it, and the error says so rather than a document.
 Every case runs one cooked effect **twice** — once through `SimulationWorld`'s CPU executor and once
 through `VfxGpuPass` — and compares the liveness array slot for slot and the attribute values
 particle by particle over 96 sub-steps, long enough that particles expire and their slots are reused.
+The same suite is registered as `render.vfx_gpu_metal` on Apple builds; it compiles the generated
+emitter to MSL and runs the fixed scheduler's checked-in MSL through native Metal.
 
 The liveness comparison is **exact**, which is why `vfx_compact` is a single workgroup with a
 shared-memory prefix scan rather than an atomic append: an atomic append produces whatever order the

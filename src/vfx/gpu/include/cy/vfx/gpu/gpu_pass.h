@@ -62,7 +62,7 @@
 //
 // That front end exists only where `CY_SHADER_SLANG` is on, which is not a Profile or Shipping
 // build — `shader-system` requires a shipping build to contain no Slang compiler. So `create()`
-// also accepts PRE-COOKED SPIR-V through `GpuPassDescription::kernel_spirv`, and fails naming the
+// also accepts PRE-COOKED SPIR-V through `GpuPassDescription::kernel`, and fails naming the
 // missing front end when it is given neither. The cook step that would fill a bundle with that
 // SPIR-V is `asset-import-pipeline`'s and is NOT in this tree: a shipping build can run this pass
 // only once something cooks for it, and `create()` says so in the error rather than a document.
@@ -108,9 +108,9 @@ struct GpuPassDescription {
     /// BLOCK is copied too, and that one is for the suite: it is a full copy of every attribute of
     /// every slot and a frame must never ask for it.
     bool read_back = false;
-    /// Pre-cooked SPIR-V for the generated kernel, for a build with no Slang front end. Empty means
-    /// "compile the generated source", which needs one.
-    Span<const u32> kernel_spirv;
+    /// Pre-cooked backend forms for the generated kernel, for a build with no Slang front end.
+    /// An entirely empty bundle means "compile the generated source", which needs one.
+    rhi::ShaderModuleBundle kernel;
 };
 
 /// What one GPU step reported, read out of the counter block ONE FRAME LATE.
@@ -189,7 +189,7 @@ public:
 
     /// Create the pipelines and the buffers for one emitter of one cooked system.
     ///
-    /// Compiles the emitter's generated dispatch unit unless `desc.kernel_spirv` supplies it. Fails
+    /// Compiles the emitter's generated dispatch unit unless `desc.kernel` supplies it. Fails
     /// naming the capability when the device cannot, naming the front end when the build has no
     /// Slang compiler and no pre-cooked module, and carrying the generated source's own diagnostics
     /// when the generated program does not compile — because "the generator emitted broken Slang"
@@ -295,7 +295,7 @@ private:
 
     [[nodiscard]] Status compile_kernel(const CompiledSystem& system,
                                         const GpuPassDescription& desc) noexcept;
-    [[nodiscard]] Status create_pipelines(Span<const u32> kernel_spirv) noexcept;
+    [[nodiscard]] Status create_pipelines(const rhi::ShaderModuleBundle& kernel) noexcept;
     [[nodiscard]] Status create_buffers() noexcept;
     [[nodiscard]] Status write_descriptors() noexcept;
     [[nodiscard]] Resources import_all(RenderGraph& graph) noexcept;

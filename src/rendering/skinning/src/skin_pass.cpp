@@ -2,7 +2,10 @@
 
 #include <cstring>
 
+#include "skin_msl.h"
 #include "skin_spirv.h"
+
+#include <cy/backends/rhi/validation.h>
 
 namespace cy::rendering::skinning {
 namespace {
@@ -70,7 +73,9 @@ SkinPass::~SkinPass() {
 }
 
 bool SkinPass::supported(const rhi::Device& device) noexcept {
-    return device.capabilities().has(rhi::Capability::ComputeShaders);
+    const rhi::ShaderFormat format = device.capabilities().native_shader_format();
+    return device.capabilities().has(rhi::Capability::ComputeShaders) &&
+           (format == rhi::ShaderFormat::Spirv || format == rhi::ShaderFormat::Msl);
 }
 
 Status SkinPass::create(Allocator& allocator, rhi::Device& device,
@@ -79,6 +84,10 @@ Status SkinPass::create(Allocator& allocator, rhi::Device& device,
         return fail(ErrorCode::InvalidArgument, "the skinning pass has already been created");
     }
     if (!supported(device)) {
+        if (device.capabilities().has(rhi::Capability::ComputeShaders)) {
+            return fail(ErrorCode::Unsupported,
+                        "skinning package has no shader for the device's native format");
+        }
         return fail(ErrorCode::Unsupported,
                     "skinning needs Capability::ComputeShaders; cpu_reference_skin computes the "
                     "same answer and is what a device without one would have to run");
@@ -108,14 +117,18 @@ Status SkinPass::create(Allocator& allocator, rhi::Device& device,
 }
 
 Status SkinPass::create_pipeline() noexcept {
-    rhi::ShaderModuleDescription module;
-    module.name = "skin vertices";
-    module.stage = rhi::ShaderStage::Compute;
-    // "main", not "skin_vertices": slangc names a single-entry SPIR-V module's entry point `main`
-    // whatever `-entry` said, and the name the RHI passes is the one in the module.
-    module.entry_point = "main";
-    module.spirv = Span<const u32>(kSkinVerticesSpirv, sizeof(kSkinVerticesSpirv) / sizeof(u32));
-    Expected<rhi::ShaderModuleHandle, Error> created = device_->create_shader_module(module);
+    rhi::ShaderModuleBundle bundle;
+    bundle.spirv = {kSkinVerticesSpirv, sizeof(kSkinVerticesSpirv) / sizeof(u32)};
+    bundle.msl = {reinterpret_cast<const u8*>(kSkinVerticesMsl), sizeof(kSkinVerticesMsl) - 1};
+    bundle.spirv_entry_point = "main";
+    bundle.msl_entry_point = "skin_vertices";
+    rhi::ValidationMessage message;
+    auto module = rhi::select_shader_module(bundle, device_->capabilities().native_shader_format(),
+                                            "skin vertices", rhi::ShaderStage::Compute, message);
+    if (!module.has_value()) {
+        return make_unexpected(module.error());
+    }
+    Expected<rhi::ShaderModuleHandle, Error> created = device_->create_shader_module(*module);
     if (!created.has_value()) {
         return make_unexpected(created.error());
     }
@@ -154,6 +167,7 @@ Status SkinPass::create_pipeline() noexcept {
     pipeline.name = "skin vertices";
     pipeline.layout = pipeline_layout_;
     pipeline.shader = shader_;
+    pipeline.workgroup_size[0] = kSkinGroupSize;
     Expected<rhi::ComputePipelineHandle, Error> pipeline_handle =
         device_->create_compute_pipeline(pipeline);
     if (!pipeline_handle.has_value()) {
@@ -307,15 +321,25 @@ void SkinPass::destroy() noexcept {
         buffers_.frames_readback,
     };
     for (rhi::BufferHandle handle : buffers) {
-        device_->destroy_buffer(handle);
+        if (handle) {
+            device_->destroy_buffer(handle);
+        }
     }
     buffers_ = Buffers{};
     active_shapes_ = 0;
     mesh_uploaded_ = false;
-    device_->destroy_compute_pipeline(pipeline_);
-    device_->destroy_pipeline_layout(pipeline_layout_);
-    device_->destroy_descriptor_set_layout(set_layout_);
-    device_->destroy_shader_module(shader_);
+    if (pipeline_) {
+        device_->destroy_compute_pipeline(pipeline_);
+    }
+    if (pipeline_layout_) {
+        device_->destroy_pipeline_layout(pipeline_layout_);
+    }
+    if (set_layout_) {
+        device_->destroy_descriptor_set_layout(set_layout_);
+    }
+    if (shader_) {
+        device_->destroy_shader_module(shader_);
+    }
     pipeline_ = {};
     pipeline_layout_ = {};
     set_layout_ = {};

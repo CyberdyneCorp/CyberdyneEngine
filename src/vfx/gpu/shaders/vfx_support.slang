@@ -52,32 +52,50 @@
 //          -entry vfx_compact -stage compute -o vfx_compact.spv
 //   slangc vfx_support.slang -target spirv -profile spirv_1_5 \
 //          -entry vfx_sort    -stage compute -o vfx_sort.spv
+//   Repeat each command with `-target metal` and a `.metal` output.
 //   python3 embed_spirv.py ../src/vfx_support_spirv.h \
 //          kVfxResetSpirv=vfx_reset.spv \
 //          kVfxCompactSpirv=vfx_compact.spv \
 //          kVfxSortSpirv=vfx_sort.spv
+//   python3 embed_msl.py ../src/vfx_support_msl.h \
+//          kVfxResetMsl=vfx_reset.metal \
+//          kVfxCompactMsl=vfx_compact.metal \
+//          kVfxSortMsl=vfx_sort.metal
 //   clang-format -i ../src/vfx_support_spirv.h
 
 // --- The binding set. `cy::vfx::GpuBinding`, and it is the SAME set the generated prelude
 //     declares — see src/vfx/src/emit_slang.cpp. A support dispatch reads what a kernel wrote and
 //     a kernel reads what a support dispatch wrote, so a second set would be a second thing to
 //     keep in step. ---
-[[vk::binding(0, 0)]] RWStructuredBuffer<uint> cyVfxParticles;
-[[vk::binding(1, 0)]] RWStructuredBuffer<uint> cyVfxAlive;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint> cyVfxIndices;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint> cyVfxCounts;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> cyVfxFree;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> cyVfxParamWords;
-[[vk::binding(6, 0)]] RWStructuredBuffer<uint> cyVfxKeys;
-
 struct CyVfxEvent {
     uint source;
     uint depth;
     float rank;
     float payload;
 };
-[[vk::binding(7, 0)]] RWStructuredBuffer<CyVfxEvent> cyVfxEvents;
-[[vk::binding(8, 0)]] RWStructuredBuffer<uint> cyVfxArgs;
+
+struct CyVfxSet {
+    RWStructuredBuffer<uint> particles;
+    RWStructuredBuffer<uint> alive;
+    RWStructuredBuffer<uint> indices;
+    RWStructuredBuffer<uint> counts;
+    RWStructuredBuffer<uint> free_list;
+    RWStructuredBuffer<uint> parameter_words;
+    RWStructuredBuffer<uint> keys;
+    RWStructuredBuffer<CyVfxEvent> events;
+    RWStructuredBuffer<uint> args;
+};
+[[vk::binding(0, 0)]] ParameterBlock<CyVfxSet> cyVfxSet;
+
+#define cyVfxParticles cyVfxSet.particles
+#define cyVfxAlive cyVfxSet.alive
+#define cyVfxIndices cyVfxSet.indices
+#define cyVfxCounts cyVfxSet.counts
+#define cyVfxFree cyVfxSet.free_list
+#define cyVfxParamWords cyVfxSet.parameter_words
+#define cyVfxKeys cyVfxSet.keys
+#define cyVfxEvents cyVfxSet.events
+#define cyVfxArgs cyVfxSet.args
 
 // `cy::vfx::GpuCountWord`.
 static const uint CY_VFX_COUNT_LIVE = 0u;

@@ -87,6 +87,10 @@ rungs, one row — `design.md` §2 — and the tier is not recordable until both
       predicts this row is the demotion; if the gate judges that a row cannot be Complete while the
       scenario naming its hardware has never run, **the row is demoted to Working with the mobile half
       deferred and its re-entry point recorded**, which is what a demotion is for
+- [ ] 2.4 **Compute workloads use the mobile backend too.** Package backend-native compute shaders
+      for GPU skinning and GPU VFX, run both through Metal on a physical Apple GPU, and compare their
+      outputs against the existing CPU reference paths. A forward-only mobile frame does not prove
+      that compute-driven geometry or effects can ship on the platform.
 
 ## 3. The dependency set and attribution — `thirdparty-dependencies` → C
 

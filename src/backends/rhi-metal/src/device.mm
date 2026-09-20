@@ -1706,6 +1706,12 @@ public:
             return fail(ErrorCode::InvalidArgument,
                         "the transient Metal heap has no common memory pool class");
         }
+        // A graph made only from imported resources needs no heap. Metal rejects a zero-sized
+        // MTLHeapDescriptor, so treating zero as an allocation request makes a compute-only graph
+        // fail before its first dispatch.
+        if (bytes == 0) {
+            return ok();
+        }
         if (bytes <= transient_bytes_ && transient_heap_ != nil) {
             return ok();
         }

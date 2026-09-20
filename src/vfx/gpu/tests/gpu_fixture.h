@@ -26,7 +26,11 @@
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/validation.h>
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#if defined(CY_TEST_VFX_METAL)
+#    include <cy/backends/rhi-metal/backend.h>
+#else
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
@@ -54,14 +58,20 @@ class DeviceFixture {
 public:
     explicit DeviceFixture(const char* name, bool async = true) noexcept
         : allocator_(system_allocator(MemoryDomain::Gpu)) {
+#if defined(CY_TEST_VFX_METAL)
+        (void)rhi::metal::register_metal_backend();
+        constexpr const char* backend = "metal";
+#else
         (void)rhi::vulkan::register_vulkan_backend();
+        constexpr const char* backend = "vulkan";
+#endif
         (void)rhi::null::register_null_backend();
         rhi::DeviceDescription description;
         description.application_name = name;
         description.enable_validation = true;
         description.enable_synchronisation_validation = true;
         description.request_async_compute = async;
-        device_ = rhi::create_device(allocator_, "vulkan", description, selection_);
+        device_ = rhi::create_device(allocator_, backend, description, selection_);
         if (device_.has_value()) {
             device_.value()->set_validation_callback(&count_validation, &validation_errors_);
         }
@@ -78,8 +88,12 @@ public:
     DeviceFixture& operator=(const DeviceFixture&) = delete;
 
     [[nodiscard]] bool has_gpu() const noexcept {
-        return device_.has_value() &&
-               device_.value()->capabilities().backend() == rhi::BackendKind::Vulkan;
+        return device_.has_value() && device_.value()->capabilities().backend() ==
+#if defined(CY_TEST_VFX_METAL)
+                                          rhi::BackendKind::Metal;
+#else
+                                          rhi::BackendKind::Vulkan;
+#endif
     }
     [[nodiscard]] rhi::Device& device() const noexcept { return *device_.value(); }
     [[nodiscard]] Allocator& gpu_allocator() const noexcept { return allocator_; }
@@ -87,7 +101,7 @@ public:
 
     void report_skip() const noexcept {
         std::fprintf(stderr,
-                     "no Vulkan device on this machine; the backend selected was '%s' because %s\n",
+                     "no requested GPU on this machine; the backend selected was '%s' because %s\n",
                      selection_.selected != nullptr ? selection_.selected : "(none)",
                      selection_.reason != nullptr ? selection_.reason : "(no reason given)");
     }
@@ -98,7 +112,7 @@ private:
         if (severity == rhi::ValidationSeverity::Error && user != nullptr) {
             ++*static_cast<u32*>(user);
         }
-        std::fprintf(stderr, "vulkan validation %s: %s\n",
+        std::fprintf(stderr, "GPU validation %s: %s\n",
                      severity == rhi::ValidationSeverity::Error ? "error" : "warning",
                      message != nullptr ? message : "");
     }

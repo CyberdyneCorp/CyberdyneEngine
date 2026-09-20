@@ -173,6 +173,32 @@ test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.renderi
 '''
 ci_job = "milestone-m11e"
 
+[[criterion]]
+id = "metal-compute-workloads"
+describe = "GPU skinning and GPU VFX execute through native MSL on a physical Apple GPU and compare against their existing CPU references. The check requires both Metal-specific suites by exact name, so a Vulkan-only pass or an unregistered Metal suite cannot satisfy it"
+source = "tasks 2.4, portable-compute-workloads, animation-and-skinning, vfx-system"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(render.skinning_metal|render.vfx_gpu_metal)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 2 Metal compute suite(s) registered"
+test "$registered" -eq 2 || { echo "the Metal skinning or VFX suite is absent"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+where = "ci"
+reason = "the suites require native Metal; physical Apple GPU evidence is recorded separately because hosted macOS exposes a paravirtual Tier 1 device"
+timeout_s = 7200
+ci_job = "milestone-m11e"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/skinning/tests/CMakeLists.txt"
+token = "CALL cy_skinning_declare_tests"
+note = "Removing the deferred skinning test registration leaves the implementation compiled but the exact Metal suite absent; the criterion must turn red on its 2-of-2 registration check rather than accepting the remaining VFX suite."
+
 # --- Section 2: the dependency set and attribution ----------------------------------------------------
 
 [[criterion]]

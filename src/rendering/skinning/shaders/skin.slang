@@ -57,7 +57,10 @@
 //
 //   slangc skin.slang -target spirv -profile spirv_1_5 \
 //          -entry skin_vertices -stage compute -o skin_vertices.spv
+//   slangc skin.slang -target metal \
+//          -entry skin_vertices -stage compute -o skin_vertices.metal
 //   python3 embed_spirv.py ../src/skin_spirv.h kSkinVerticesSpirv=skin_vertices.spv
+//   python3 embed_msl.py ../src/skin_msl.h skin_vertices.metal
 //   clang-format -i ../src/skin_spirv.h
 
 // --- The constants, matching `cy::render::geometry::GpuSkinConstants` word for word --------------
@@ -73,8 +76,6 @@ struct SkinConstants {
     uint active_blend_shapes;
 };
 
-[[vk::push_constant]] SkinConstants constants;
-
 static const uint kSkinWriteFrames = 1u << 0u;
 static const uint kSkinDualQuaternion = 1u << 1u;
 static const uint kSkinGroupSize = 64u;
@@ -83,23 +84,30 @@ static const uint kBlendShapeDeltaWords = 10u;
 
 /// Three `float4` rows per bone: `GpuBoneMatrix`, which is 48 bytes and a 3x4 affine in ROW-major
 /// order. `cy::Mat4` is column-major and `pack_bone_matrix` is the one transposition in the path.
-[[vk::binding(0, 0)]] StructuredBuffer<float4> bones;
-/// Bind-pose positions: three words per vertex.
-[[vk::binding(1, 0)]] StructuredBuffer<uint> in_positions;
-/// Bind-pose frames: two words per vertex, four 16-bit signed normalised components.
-[[vk::binding(2, 0)]] StructuredBuffer<uint> in_frames;
-/// `GpuSkinInfluence`: two words per block, one block per four influences.
-[[vk::binding(3, 0)]] StructuredBuffer<uint> influences;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> out_positions;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> out_frames;
-/// The same pose as dual quaternions: `GpuBoneDualQuaternion`, three `float4` rows per bone — the
-/// rotation, the dual part, and the uniform scale in x of the third. Read INSTEAD of `bones` when
-/// `kSkinDualQuaternion` is set.
-[[vk::binding(6, 0)]] StructuredBuffer<float4> bone_dual_quaternions;
-/// `BlendShapeDelta`: ten words per delta, sorted by vertex index within each shape.
-[[vk::binding(7, 0)]] StructuredBuffer<uint> blend_shape_deltas;
-/// `GpuActiveBlendShape`: first, count, weight (as a float), reserved.
-[[vk::binding(8, 0)]] StructuredBuffer<uint4> active_blend_shapes;
+struct SkinSet {
+    /// Three `float4` rows per bone: `GpuBoneMatrix`.
+    StructuredBuffer<float4> bones;
+    /// Bind-pose positions: three words per vertex.
+    StructuredBuffer<uint> in_positions;
+    /// Bind-pose frames: two words per vertex, four 16-bit signed normalised components.
+    StructuredBuffer<uint> in_frames;
+    /// `GpuSkinInfluence`: two words per block, one block per four influences.
+    StructuredBuffer<uint> influences;
+    RWStructuredBuffer<uint> out_positions;
+    RWStructuredBuffer<uint> out_frames;
+    /// The same pose as dual quaternions, read instead of `bones` when requested.
+    StructuredBuffer<float4> bone_dual_quaternions;
+    /// `BlendShapeDelta`: ten words per delta, sorted by vertex index within each shape.
+    StructuredBuffer<uint> blend_shape_deltas;
+    /// `GpuActiveBlendShape`: first, count, weight (as a float), reserved.
+    StructuredBuffer<uint4> active_blend_shapes;
+};
+
+/// One descriptor set in SPIR-V and one argument buffer in MSL. The Metal backend binds argument
+/// buffers at the descriptor-set index, so flattening these fields into nine Metal buffer slots
+/// would bypass the RHI's descriptor model.
+[[vk::binding(0, 0)]] ParameterBlock<SkinSet> skinSet;
+[[vk::push_constant]] SkinConstants constants;
 
 // --- The encodings, as `src/servers/render/src/mesh.cpp` writes them -----------------------------
 
@@ -185,7 +193,7 @@ uint find_delta(uint first, uint count, uint vertex) {
     while (low < high) {
         const uint middle = low + ((high - low) / 2u);
         const uint index = first + middle;
-        const uint at = blend_shape_deltas[index * kBlendShapeDeltaWords];
+        const uint at = skinSet.blend_shape_deltas[index * kBlendShapeDeltaWords];
         if (at == vertex) {
             return index;
         }
@@ -200,8 +208,8 @@ uint find_delta(uint first, uint count, uint vertex) {
 
 float3 delta_vector(uint index, uint component_offset) {
     const uint base = (index * kBlendShapeDeltaWords) + component_offset;
-    return float3(asfloat(blend_shape_deltas[base + 0u]), asfloat(blend_shape_deltas[base + 1u]),
-                  asfloat(blend_shape_deltas[base + 2u]));
+    return float3(asfloat(skinSet.blend_shape_deltas[base + 0u]), asfloat(skinSet.blend_shape_deltas[base + 1u]),
+                  asfloat(skinSet.blend_shape_deltas[base + 2u]));
 }
 
 // --- The dual-quaternion blend ----------------------------------------------------------------------
@@ -234,7 +242,7 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
     // unit and `tests/test_skin_pass.cpp` compares buffers rather than tolerances.
     uint weight_bytes = 0u;
     for (uint probe = 0u; probe < blocks; ++probe) {
-        const uint packed = influences[((in_index * blocks) + probe) * 2u + 1u];
+        const uint packed = skinSet.influences[((in_index * blocks) + probe) * 2u + 1u];
         weight_bytes += (packed & 0xFFu) + ((packed >> 8u) & 0xFFu) + ((packed >> 16u) & 0xFFu) +
                         ((packed >> 24u) & 0xFFu);
     }
@@ -243,22 +251,22 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
     const uint frame_base = in_index * 2u;
     const uint out_frame_base = out_index * 2u;
     if (!shapes && weight_bytes == 0u) {
-        out_positions[out_position_base + 0u] = in_positions[position_base + 0u];
-        out_positions[out_position_base + 1u] = in_positions[position_base + 1u];
-        out_positions[out_position_base + 2u] = in_positions[position_base + 2u];
+        skinSet.out_positions[out_position_base + 0u] = skinSet.in_positions[position_base + 0u];
+        skinSet.out_positions[out_position_base + 1u] = skinSet.in_positions[position_base + 1u];
+        skinSet.out_positions[out_position_base + 2u] = skinSet.in_positions[position_base + 2u];
         if (frames) {
-            out_frames[out_frame_base + 0u] = in_frames[frame_base + 0u];
-            out_frames[out_frame_base + 1u] = in_frames[frame_base + 1u];
+            skinSet.out_frames[out_frame_base + 0u] = skinSet.in_frames[frame_base + 0u];
+            skinSet.out_frames[out_frame_base + 1u] = skinSet.in_frames[frame_base + 1u];
         }
         return;
     }
 
     // --- The bind pose, with the active shapes applied ------------------------------------------
-    float3 rest = float3(asfloat(in_positions[position_base + 0u]),
-                         asfloat(in_positions[position_base + 1u]),
-                         asfloat(in_positions[position_base + 2u]));
-    const uint normal_word = in_frames[frame_base + 0u];
-    const uint tangent_word = in_frames[frame_base + 1u];
+    float3 rest = float3(asfloat(skinSet.in_positions[position_base + 0u]),
+                         asfloat(skinSet.in_positions[position_base + 1u]),
+                         asfloat(skinSet.in_positions[position_base + 2u]));
+    const uint normal_word = skinSet.in_frames[frame_base + 0u];
+    const uint tangent_word = skinSet.in_frames[frame_base + 1u];
     // The bitangent sign lives in the low bit of the tangent's x component, so it is cleared before
     // the decode and restored after the re-encode.
     const int tangent_x = low_half(tangent_word) & ~1;
@@ -271,7 +279,7 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
     }
 
     for (uint slot = 0u; slot < constants.active_blend_shapes; ++slot) {
-        const uint4 shape = active_blend_shapes[slot];
+        const uint4 shape = skinSet.active_blend_shapes[slot];
         const uint delta = find_delta(shape.x, shape.y, in_index);
         if (delta == 0xFFFFFFFFu) {
             continue;
@@ -298,8 +306,8 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
         bool have_pivot = false;
         for (uint block = 0u; block < blocks; ++block) {
             const uint base = (in_index * blocks + block) * 2u;
-            const uint packed_indices = influences[base];
-            const uint packed_weights = influences[base + 1u];
+            const uint packed_indices = skinSet.influences[base];
+            const uint packed_weights = skinSet.influences[base + 1u];
             for (uint lane = 0u; lane < 4u; ++lane) {
                 const float weight =
                     float((packed_weights >> (lane * 8u)) & 0xFFu) * (1.0f / 255.0f);
@@ -311,8 +319,8 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
                     bone = constants.bone_count - 1u;
                 }
                 const uint row = (constants.pose_offset + bone) * 3u;
-                const float4 real = bone_dual_quaternions[row + 0u];
-                const float4 dual_part = bone_dual_quaternions[row + 1u];
+                const float4 real = skinSet.bone_dual_quaternions[row + 0u];
+                const float4 dual_part = skinSet.bone_dual_quaternions[row + 1u];
                 if (!have_pivot) {
                     pivot = real;
                     have_pivot = true;
@@ -323,7 +331,7 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
                 const float signed_weight = dot(pivot, real) < 0.0f ? -weight : weight;
                 blend_real += real * signed_weight;
                 blend_dual += dual_part * signed_weight;
-                blend_scale += bone_dual_quaternions[row + 2u].x * weight;
+                blend_scale += skinSet.bone_dual_quaternions[row + 2u].x * weight;
                 weight_sum += weight;
             }
         }
@@ -344,8 +352,8 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
         float4 blended[3] = {float4(0, 0, 0, 0), float4(0, 0, 0, 0), float4(0, 0, 0, 0)};
         for (uint block = 0u; block < blocks; ++block) {
             const uint base = (in_index * blocks + block) * 2u;
-            const uint packed_indices = influences[base];
-            const uint packed_weights = influences[base + 1u];
+            const uint packed_indices = skinSet.influences[base];
+            const uint packed_weights = skinSet.influences[base + 1u];
             for (uint lane = 0u; lane < 4u; ++lane) {
                 const float weight =
                     float((packed_weights >> (lane * 8u)) & 0xFFu) * (1.0f / 255.0f);
@@ -359,9 +367,9 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
                     bone = constants.bone_count - 1u;
                 }
                 const uint row = (constants.pose_offset + bone) * 3u;
-                blended[0] += bones[row + 0u] * weight;
-                blended[1] += bones[row + 1u] * weight;
-                blended[2] += bones[row + 2u] * weight;
+                blended[0] += skinSet.bones[row + 0u] * weight;
+                blended[1] += skinSet.bones[row + 1u] * weight;
+                blended[2] += skinSet.bones[row + 2u] * weight;
                 weight_sum += weight;
             }
         }
@@ -381,9 +389,9 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
         }
     }
 
-    out_positions[out_position_base + 0u] = asuint(skinned.x);
-    out_positions[out_position_base + 1u] = asuint(skinned.y);
-    out_positions[out_position_base + 2u] = asuint(skinned.z);
+    skinSet.out_positions[out_position_base + 0u] = asuint(skinned.x);
+    skinSet.out_positions[out_position_base + 1u] = asuint(skinned.y);
+    skinSet.out_positions[out_position_base + 2u] = asuint(skinned.z);
     if (!frames) {
         return;
     }
@@ -394,6 +402,6 @@ void skin_vertices(uint3 thread: SV_DispatchThreadID) {
     if (bitangent_sign < 0.0f) {
         encoded_tangent |= 1u;
     }
-    out_frames[out_frame_base + 0u] = encoded_normal;
-    out_frames[out_frame_base + 1u] = encoded_tangent;
+    skinSet.out_frames[out_frame_base + 0u] = encoded_normal;
+    skinSet.out_frames[out_frame_base + 1u] = encoded_tangent;
 }

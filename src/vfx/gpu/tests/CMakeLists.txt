@@ -1,8 +1,8 @@
 # src/vfx/gpu/tests/ — the VFX compute dispatch's suite. M10 task 5.1 and 5.2.
 #
-# KIND render, and declared only when CY_RENDERER_VULKAN is on — for the reason tests/render/ gives:
-# a suite that always skips is a suite whose failure nobody would notice. With the backend compiled
-# in and no GPU it SKIPS LOUDLY, naming the backend that was selected instead.
+# KIND render, and declared only when its backend is on — for the reason tests/render/ gives: a
+# suite that always skips is a suite whose failure nobody would notice. With a backend compiled in
+# and no GPU it SKIPS LOUDLY, naming the backend that was selected instead.
 #
 # It compiles src/vfx/tests/effects.cpp so that the effect it runs is the SAME spark plume
 # `integration.vfx_compiler`, `integration.vfx` and `render.vfx` run. A second fixture would drift
@@ -17,7 +17,7 @@ set_property(GLOBAL PROPERTY CY_VFX_GPU_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set_property(GLOBAL PROPERTY CY_VFX_GPU_EFFECTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tests")
 
 function(cy_vfx_gpu_declare_tests)
-    if(NOT CY_RENDERER_VULKAN)
+    if(NOT CY_RENDERER_VULKAN AND NOT (APPLE AND CY_RENDERER_METAL))
         return()
     endif()
     get_property(tests_dir GLOBAL PROPERTY CY_VFX_GPU_TESTS_DIR)
@@ -36,14 +36,29 @@ function(cy_vfx_gpu_declare_tests)
     set(CY_TEST_BUDGET_render "${budget}")
     set(CY_TEST_TIMEOUT_render "${timeout}")
 
-    cy_add_test(
-        NAME vfx_gpu
-        KIND render
-        SOURCES
-            "${effects_dir}/effects.cpp"
-            "${tests_dir}/test_vfx_gpu_pass.cpp"
-        DEPENDENCIES cy::vfx cy::vfx-gpu cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
-    target_include_directories(cy_test_render_vfx_gpu PRIVATE "${tests_dir}" "${effects_dir}")
+    if(CY_RENDERER_VULKAN)
+        cy_add_test(
+            NAME vfx_gpu
+            KIND render
+            SOURCES
+                "${effects_dir}/effects.cpp"
+                "${tests_dir}/test_vfx_gpu_pass.cpp"
+            DEPENDENCIES cy::vfx cy::vfx-gpu cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
+        target_include_directories(cy_test_render_vfx_gpu PRIVATE "${tests_dir}" "${effects_dir}")
+    endif()
+
+    if(CY_RENDERER_METAL AND APPLE)
+        cy_add_test(
+            NAME vfx_gpu_metal
+            KIND render
+            SOURCES
+                "${effects_dir}/effects.cpp"
+                "${tests_dir}/test_vfx_gpu_pass.cpp"
+            DEPENDENCIES cy::vfx cy::vfx-gpu cy::rendering-graph cy::rhi-null cy::rhi-metal)
+        target_compile_definitions(cy_test_render_vfx_gpu_metal PRIVATE CY_TEST_VFX_METAL=1)
+        target_include_directories(cy_test_render_vfx_gpu_metal PRIVATE "${tests_dir}"
+                                                                         "${effects_dir}")
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_vfx_gpu_declare_tests)

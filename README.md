@@ -594,6 +594,12 @@ It requires Xcode 27 or newer and targets iOS 17 or newer.
 and [before/after comparison](openspec/changes/optimize-ios-mobile-rendering/evidence/physical-device-performance.md)
 record the reproducible measurements and platform contract.*
 
+The shared compute renderer is native on Metal as well: GPU skinning and GPU particle simulation
+pass their CPU/GPU parity suites on an Apple M3 Pro using MSL selected from the same shader package
+as Vulkan's SPIR-V. The [Apple GPU compute evidence](openspec/changes/port-compute-workloads-to-metal/evidence/apple-gpu-compute.md)
+records the workloads and numeric deltas. These engine results are separate from the terrain-only
+iPhone FPS measurement above; the combined iPhone scene remains a presentation integration task.
+
 ![The iOS open-world sample running through Metal in the simulator](docs/design/images/ios-open-world-simulator.png)
 
 *The simulator is a lifecycle and presentation check; its 60 FPS overlay is not physical-device

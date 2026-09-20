@@ -1,7 +1,9 @@
 #include <cy/vfx/gpu/gpu_pass.h>
 
+#include "vfx_support_msl.h"
 #include "vfx_support_spirv.h"
 
+#include <cy/backends/rhi/validation.h>
 #include <cy/core/memory/scope.h>
 
 #include <algorithm>
@@ -54,7 +56,9 @@ bool VfxGpuPass::supported(const rhi::Device& device) noexcept {
     // knows its device cannot do indirect dispatch declares
     // `DeviceCapability::indirect_dispatch` false and `decide_path` reports
     // `FallbackReason::DeviceLacksIndirectDispatch`; this class cannot discover it.
-    return device.capabilities().has(rhi::Capability::ComputeShaders);
+    const rhi::ShaderFormat format = device.capabilities().native_shader_format();
+    return device.capabilities().has(rhi::Capability::ComputeShaders) &&
+           (format == rhi::ShaderFormat::Spirv || format == rhi::ShaderFormat::Msl);
 }
 
 Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const CompiledSystem& system,
@@ -63,6 +67,10 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
         return fail(ErrorCode::InvalidArgument, "this VFX GPU pass has already been created");
     }
     if (!supported(device)) {
+        if (device.capabilities().has(rhi::Capability::ComputeShaders)) {
+            return fail(ErrorCode::Unsupported,
+                        "VFX GPU package has no shader for the device's native format");
+        }
         return fail(ErrorCode::Unsupported,
                     "a VFX GPU simulation needs Capability::ComputeShaders; `runtime.h`'s "
                     "FallbackReason::DeviceLacksCompute is what a caller reports instead");
@@ -117,11 +125,13 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
 
 Status VfxGpuPass::compile_kernel(const CompiledSystem& system,
                                   const GpuPassDescription& desc) noexcept {
-    if (!desc.kernel_spirv.empty()) {
+    const bool cooked = !desc.kernel.spirv.empty() || !desc.kernel.msl.empty() ||
+                        !desc.kernel.metal_library.empty() || !desc.kernel.dxil.empty();
+    if (cooked) {
         // THE SHIPPING PATH. A cooked bundle supplies the module and no front end is involved,
         // which is what `shader-system` requires of a shipping build: it contains no Slang
         // compiler. Nothing in this tree cooks one yet — see this header's closing note.
-        return create_pipelines(desc.kernel_spirv);
+        return create_pipelines(desc.kernel);
     }
 
     const CompiledEmitter& emitter = system.emitters()[desc.emitter];
@@ -153,7 +163,7 @@ Status VfxGpuPass::compile_kernel(const CompiledSystem& system,
     if (!handle.compiler->compiles_source()) {
         return fail(ErrorCode::Unsupported,
                     "the selected shader front end cannot compile source, so the generated VFX "
-                    "kernel cannot become a module; supply GpuPassDescription::kernel_spirv");
+                    "kernel cannot become a module; supply GpuPassDescription::kernel");
     }
 
     // `SourceOrigin::Generated` and a named generator, because `shader-system`'s "The boundary is
@@ -172,23 +182,41 @@ Status VfxGpuPass::compile_kernel(const CompiledSystem& system,
     request.stage = rhi::ShaderStage::Compute;
 
     shader::DiagnosticLog diagnostics(*allocator_);
-    auto compiled = handle.compiler->compile(request, diagnostics);
+    const rhi::ShaderFormat format = device_->capabilities().native_shader_format();
+    if (format == rhi::ShaderFormat::Spirv) {
+        auto compiled = handle.compiler->compile(request, diagnostics);
+        if (!compiled.has_value()) {
+            return make_unexpected(compiled.error());
+        }
+        rhi::ShaderModuleBundle bundle;
+        bundle.spirv = compiled->spirv();
+        return create_pipelines(bundle);
+    }
+    if (format != rhi::ShaderFormat::Msl) {
+        return fail(ErrorCode::Unsupported,
+                    "generated VFX kernels currently cook SPIR-V and MSL; this device requires a "
+                    "different native shader format");
+    }
+    auto compiled = handle.compiler->compile_for(request, shader::Target::Msl, diagnostics);
     if (!compiled.has_value()) {
         // The generated source stays in `source_` on failure, deliberately: `generated_source()` is
         // what an author or an editor is shown beside the diagnostic, and a compiler that threw the
         // text away would report a line number for a file nobody has.
         return make_unexpected(compiled.error());
     }
-    return create_pipelines(compiled.value().spirv());
+    rhi::ShaderModuleBundle bundle;
+    bundle.msl = compiled->bytes();
+    bundle.msl_entry_point = kVfxKernelEntryPoint;
+    return create_pipelines(bundle);
 #else
     return fail(ErrorCode::Unsupported,
                 "this build has no Slang front end (CY_SHADER_SLANG is off), so the generated VFX "
                 "kernel cannot be compiled here; a Profile or Shipping build must be given the "
-                "cooked module through GpuPassDescription::kernel_spirv");
+                "cooked module through GpuPassDescription::kernel");
 #endif
 }
 
-Status VfxGpuPass::create_pipelines(Span<const u32> kernel_spirv) noexcept {
+Status VfxGpuPass::create_pipelines(const rhi::ShaderModuleBundle& kernel) noexcept {
     // One set layout and one pipeline layout for all four pipelines, which is the whole point of
     // the fixed binding contract in <cy/vfx/gpu_layout.h>: a support dispatch reads what a kernel
     // wrote through the same descriptors, and there is no second set to keep in step.
@@ -221,28 +249,38 @@ Status VfxGpuPass::create_pipelines(Span<const u32> kernel_spirv) noexcept {
 
     struct Program {
         const char* name;
-        Span<const u32> spirv;
+        rhi::ShaderModuleBundle bundle;
+        u32 group_size;
         rhi::ShaderModuleHandle* module;
         rhi::ComputePipelineHandle* pipeline;
     };
+    rhi::ShaderModuleBundle reset;
+    reset.spirv = {kVfxResetSpirv, sizeof(kVfxResetSpirv) / sizeof(u32)};
+    reset.msl = {reinterpret_cast<const u8*>(kVfxResetMsl), sizeof(kVfxResetMsl) - 1};
+    reset.msl_entry_point = "vfx_reset";
+    rhi::ShaderModuleBundle compact;
+    compact.spirv = {kVfxCompactSpirv, sizeof(kVfxCompactSpirv) / sizeof(u32)};
+    compact.msl = {reinterpret_cast<const u8*>(kVfxCompactMsl), sizeof(kVfxCompactMsl) - 1};
+    compact.msl_entry_point = "vfx_compact";
+    rhi::ShaderModuleBundle sort;
+    sort.spirv = {kVfxSortSpirv, sizeof(kVfxSortSpirv) / sizeof(u32)};
+    sort.msl = {reinterpret_cast<const u8*>(kVfxSortMsl), sizeof(kVfxSortMsl) - 1};
+    sort.msl_entry_point = "vfx_sort";
     const Program programs[] = {
-        {"vfx kernel", kernel_spirv, &kernel_module_, &kernel_pipeline_},
-        {"vfx reset", Span<const u32>(kVfxResetSpirv, sizeof(kVfxResetSpirv) / sizeof(u32)),
-         &reset_module_, &reset_pipeline_},
-        {"vfx compact", Span<const u32>(kVfxCompactSpirv, sizeof(kVfxCompactSpirv) / sizeof(u32)),
-         &compact_module_, &compact_pipeline_},
-        {"vfx sort", Span<const u32>(kVfxSortSpirv, sizeof(kVfxSortSpirv) / sizeof(u32)),
-         &sort_module_, &sort_pipeline_},
+        {"vfx kernel", kernel, kGpuGroupSize, &kernel_module_, &kernel_pipeline_},
+        {"vfx reset", reset, kGpuGroupSize, &reset_module_, &reset_pipeline_},
+        {"vfx compact", compact, kGpuGroupSize, &compact_module_, &compact_pipeline_},
+        {"vfx sort", sort, kGpuSortGroupSize, &sort_module_, &sort_pipeline_},
     };
     for (const Program& program : programs) {
-        rhi::ShaderModuleDescription module;
-        module.name = program.name;
-        module.stage = rhi::ShaderStage::Compute;
-        // "main", not the entry name: slangc names a single-entry SPIR-V module's entry point
-        // `main` whatever `-entry` said, and the name the RHI passes is the one in the module.
-        module.entry_point = "main";
-        module.spirv = program.spirv;
-        auto created = device_->create_shader_module(module);
+        rhi::ValidationMessage message;
+        auto selected = rhi::select_shader_module(program.bundle,
+                                                  device_->capabilities().native_shader_format(),
+                                                  program.name, rhi::ShaderStage::Compute, message);
+        if (!selected.has_value()) {
+            return make_unexpected(selected.error());
+        }
+        auto created = device_->create_shader_module(*selected);
         if (!created.has_value()) {
             return make_unexpected(created.error());
         }
@@ -252,6 +290,7 @@ Status VfxGpuPass::create_pipelines(Span<const u32> kernel_spirv) noexcept {
         pipeline.name = program.name;
         pipeline.layout = pipeline_layout_;
         pipeline.shader = *created;
+        pipeline.workgroup_size[0] = program.group_size;
         auto pipeline_handle = device_->create_compute_pipeline(pipeline);
         if (!pipeline_handle.has_value()) {
             return make_unexpected(pipeline_handle.error());

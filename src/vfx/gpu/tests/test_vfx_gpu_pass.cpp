@@ -71,7 +71,7 @@ Allocator& allocator() noexcept {
 /// `VfxGpuPass::create` compiles the per-emitter kernel through `cy::shader`'s Slang front end, and
 /// that front end exists only where CY_SHADER_SLANG is on — which `shader-system` forbids in a
 /// shipping build, so cmake/features.cmake leaves it off in Profile and Shipping. The pass also
-/// accepts PRE-COOKED SPIR-V through `GpuPassDescription::kernel_spirv`, and gpu_pass.h says on its
+/// accepts PRE-COOKED SPIR-V through `GpuPassDescription::kernel`, and gpu_pass.h says on its
 /// own face that the cook step which would produce it belongs to `asset-import-pipeline` and is not
 /// in this tree. So in those two profiles there is no kernel for this suite to run — the same kind
 /// of structural absence as a machine with no GPU, and reported the same way rather than failing
@@ -93,7 +93,7 @@ void report_no_kernel_compiler() noexcept {
     std::fprintf(stderr,
                  "no Slang front end in this build (CY_SHADER_SLANG is off) and nothing has cooked "
                  "a kernel for this effect, so the generated dispatch cannot be built here; see "
-                 "GpuPassDescription::kernel_spirv\n");
+                 "GpuPassDescription::kernel\n");
 }
 
 /// MEASURED on this engine's reference machine against the plume's `position`, `velocity` and
@@ -778,7 +778,7 @@ TEST_CASE("the kernel is compiled where there is a front end, and refused where 
     }
     CookedPlume cooked;
     VfxGpuPass pass;
-    // kernel_spirv is left empty: the generated source is the only thing this pass is given, which
+    // kernel bundle is left empty: the generated source is the only thing this pass is given, which
     // is the configuration every other case in this file runs in.
     GpuPassDescription description;
     description.emitter = 0;
@@ -803,7 +803,7 @@ TEST_CASE("the kernel is compiled where there is a front end, and refused where 
             CHECK_EQ(static_cast<int>(created.error().code),
                      static_cast<int>(ErrorCode::Unsupported));
             // And the message names the way out, because a refusal that does not is a dead end.
-            CHECK(std::strstr(created.error().message, "kernel_spirv") != nullptr);
+            CHECK(std::strstr(created.error().message, "GpuPassDescription::kernel") != nullptr);
         }
     }
     CHECK_EQ(gpu.validation_errors(), 0U);

@@ -288,13 +288,33 @@ void cyVfxPackLane(inout uint word, uint lane, uint bits, uint width) {
 // --- The binding set. FIXED for every effect, which is what lets one descriptor set layout serve
 //     every generated kernel and the fixed support dispatches at the same time. The numbers are
 //     `cy::vfx::GpuBinding` in <cy/vfx/gpu_layout.h> and are spelled there once. ---
-[[vk::binding(0, 0)]] RWStructuredBuffer<uint> cyVfxParticles;
-[[vk::binding(1, 0)]] RWStructuredBuffer<uint> cyVfxAlive;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint> cyVfxIndices;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint> cyVfxCounts;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> cyVfxFree;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> cyVfxParamWords;
-[[vk::binding(6, 0)]] RWStructuredBuffer<uint> cyVfxKeys;
+struct CyVfxEvent {
+    uint source;
+    uint depth;
+    float rank;
+    float payload;
+};
+struct CyVfxSet {
+    RWStructuredBuffer<uint> particles;
+    RWStructuredBuffer<uint> alive;
+    RWStructuredBuffer<uint> indices;
+    RWStructuredBuffer<uint> counts;
+    RWStructuredBuffer<uint> free_list;
+    RWStructuredBuffer<uint> parameter_words;
+    RWStructuredBuffer<uint> keys;
+    RWStructuredBuffer<CyVfxEvent> events;
+    RWStructuredBuffer<uint> args;
+};
+[[vk::binding(0, 0)]] ParameterBlock<CyVfxSet> cyVfxSet;
+#define cyVfxParticles cyVfxSet.particles
+#define cyVfxAlive cyVfxSet.alive
+#define cyVfxIndices cyVfxSet.indices
+#define cyVfxCounts cyVfxSet.counts
+#define cyVfxFree cyVfxSet.free_list
+#define cyVfxParamWords cyVfxSet.parameter_words
+#define cyVfxKeys cyVfxSet.keys
+#define cyVfxEvents cyVfxSet.events
+#define cyVfxArgs cyVfxSet.args
 
 // The counter words, `cy::vfx::GpuCountWord`. Every one of them is written by a dispatch and read
 // by a dispatch: this is what "live particle counts MAINTAINED ON THE GPU" means as addresses.
@@ -363,14 +383,6 @@ float cyVfxCurve(float t) { return saturate(t); }
 // An event channel's record. The channel's declared maximum is enforced on the CPU side by
 // `EventRouter`; the GPU-side append below is bounded by BOTH that declaration and the ring's own
 // region, because a channel declared larger than the ring must not write past it.
-struct CyVfxEvent {
-    uint source;
-    uint depth;
-    float rank;
-    float payload;
-};
-[[vk::binding(7, 0)]] RWStructuredBuffer<CyVfxEvent> cyVfxEvents;
-
 // The kill sink the kill root assigns into. THE TWO COUNTERS ARE PART OF THE KILL, not bookkeeping
 // beside it.
 //

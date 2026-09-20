@@ -66,6 +66,11 @@ struct ValidationMessage {
 [[nodiscard]] Status validate_shader_module(const ShaderModuleDescription& desc,
                                             const DeviceCapabilities& caps,
                                             ValidationMessage& message) noexcept;
+/// Select exactly one payload from a checked-in multi-target bundle. Missing target data is an
+/// engine packaging error and is reported before a backend or driver sees the module.
+[[nodiscard]] Expected<ShaderModuleDescription, Error> select_shader_module(
+    const ShaderModuleBundle& bundle, ShaderFormat format, const char* name, ShaderStage stage,
+    ValidationMessage& message) noexcept;
 [[nodiscard]] Status validate_pipeline_layout(const PipelineLayoutDescription& desc,
                                               ValidationMessage& message) noexcept;
 [[nodiscard]] Status validate_graphics_pipeline(const GraphicsPipelineDescription& desc,

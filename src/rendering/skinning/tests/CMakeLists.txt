@@ -14,9 +14,9 @@
 # a machine with no GPU at all — so the chain paper → reference → dispatch has its first two links
 # gated everywhere and only the last one needs hardware.
 #
-# DECLARED ONLY WHEN CY_RENDERER_VULKAN IS ON, for the reason tests/render/CMakeLists.txt gives: a
-# suite that always skips is a suite whose failure nobody would notice. With the backend compiled in
-# and no GPU on the machine they SKIP LOUDLY, naming the backend that was selected instead.
+# DECLARED ONLY WHEN ITS BACKEND IS ON, for the reason tests/render/CMakeLists.txt gives: a suite
+# that always skips is a suite whose failure nobody would notice. With a backend compiled in and no
+# GPU on the machine it SKIPS LOUDLY, naming the backend that was selected instead.
 #
 # Declared with cy_add_test(), which tests/CMakeLists.txt defines — and the top-level CMakeLists.txt
 # adds tests/ *after* src/, so that function does not exist while this file is read. The declaration
@@ -25,7 +25,7 @@
 set_property(GLOBAL PROPERTY CY_SKINNING_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_skinning_declare_tests)
-    if(NOT CY_RENDERER_VULKAN)
+    if(NOT CY_RENDERER_VULKAN AND NOT (APPLE AND CY_RENDERER_METAL))
         return()
     endif()
     get_property(cy_skinning_tests_dir GLOBAL PROPERTY CY_SKINNING_TESTS_DIR)
@@ -42,31 +42,47 @@ function(cy_skinning_declare_tests)
     set(CY_TEST_BUDGET_render "${budget}")
     set(CY_TEST_TIMEOUT_render "${timeout}")
 
-    cy_add_test(
-        NAME skinning
-        KIND render
-        SOURCES "${cy_skinning_tests_dir}/test_skin_pass.cpp"
-        DEPENDENCIES cy::rendering-graph cy::rendering-skinning cy::rhi cy::rhi-null cy::rhi-vulkan
-                     cy::servers-render-geometry)
-    target_include_directories(cy_test_render_skinning PRIVATE "${cy_skinning_tests_dir}")
+    if(CY_RENDERER_VULKAN)
+        cy_add_test(
+            NAME skinning
+            KIND render
+            SOURCES "${cy_skinning_tests_dir}/test_skin_pass.cpp"
+            DEPENDENCIES cy::rendering-graph cy::rendering-skinning cy::rhi cy::rhi-null
+                         cy::rhi-vulkan cy::servers-render-geometry)
+        target_include_directories(cy_test_render_skinning PRIVATE "${cy_skinning_tests_dir}")
 
-    # The drawn case is its own suite rather than another case in the first, because it needs a
-    # graphics pipeline and the conventions suite's compiled shaders — and because "the dispatch
-    # computes the right vertices" and "something drew them" are different claims that should fail
-    # separately.
-    cy_add_test(
-        NAME skinned_draw
-        KIND render
-        SOURCES "${cy_skinning_tests_dir}/test_skin_draw.cpp"
-        DEPENDENCIES cy::rendering-graph cy::rendering-skinning cy::rhi cy::rhi-null cy::rhi-vulkan
-                     cy::servers-render-geometry)
-    # The suite includes "skin_fixture.h" and tests/render/shaders/conventions_spirv.h by relative
-    # path: the sources are compiled from the top-level binary directory, so a relative include
-    # finds nothing without both directories on the path. The shader pair is REUSED rather than
-    # rewritten, because a second vertex stage would be a second place for the clip convention to
-    # drift — which is the same argument tests/render/CMakeLists.txt makes about its own scene.
-    target_include_directories(cy_test_render_skinned_draw
-                               PRIVATE "${cy_skinning_tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
+        # The drawn case is its own suite rather than another case in the first, because it needs a
+        # graphics pipeline and the conventions suite's compiled shaders — and because "the
+        # dispatch computes the right vertices" and "something drew them" are different claims
+        # that should fail separately.
+        cy_add_test(
+            NAME skinned_draw
+            KIND render
+            SOURCES "${cy_skinning_tests_dir}/test_skin_draw.cpp"
+            DEPENDENCIES cy::rendering-graph cy::rendering-skinning cy::rhi cy::rhi-null
+                         cy::rhi-vulkan cy::servers-render-geometry)
+        # The suite includes "skin_fixture.h" and tests/render/shaders/conventions_spirv.h by
+        # relative path: the sources are compiled from the top-level binary directory, so a
+        # relative include finds nothing without both directories on the path. The shader pair is
+        # REUSED rather than rewritten, because a second vertex stage would be a second place for
+        # the clip convention to drift — which is the same argument tests/render/CMakeLists.txt
+        # makes about its own scene.
+        target_include_directories(cy_test_render_skinned_draw
+                                   PRIVATE "${cy_skinning_tests_dir}"
+                                           "${CMAKE_SOURCE_DIR}/tests/render")
+    endif()
+
+    if(CY_RENDERER_METAL AND APPLE)
+        cy_add_test(
+            NAME skinning_metal
+            KIND render
+            SOURCES "${cy_skinning_tests_dir}/test_skin_pass.cpp"
+            DEPENDENCIES cy::rendering-graph cy::rendering-skinning cy::rhi cy::rhi-null
+                         cy::rhi-metal cy::servers-render-geometry)
+        target_compile_definitions(cy_test_render_skinning_metal PRIVATE CY_TEST_SKINNING_METAL=1)
+        target_include_directories(cy_test_render_skinning_metal PRIVATE "${cy_skinning_tests_dir}")
+    endif()
+
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_skinning_declare_tests)
