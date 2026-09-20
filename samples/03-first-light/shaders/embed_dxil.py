@@ -24,7 +24,7 @@ def main() -> int:
             lines.append(f"    {chunk},")
         lines.append("};")
     lines.append("}  // namespace cy::sample::first_light")
-    Path(sys.argv[1]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    Path(sys.argv[1]).write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
     return 0
 
 

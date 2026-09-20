@@ -43,10 +43,15 @@ jobs:
             "kFirstLightForwardVertexDxil=$env:RUNNER_TEMP\forward.dxil" `
             "kFirstLightForwardFragmentDxil=$env:RUNNER_TEMP\fragment.dxil"
       - uses: extractions/setup-just@v3
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
       - name: Configure the native D3D12 backend
         shell: pwsh
         run: >-
           cmake --preset dev
+          -D CMAKE_C_COMPILER=cl
+          -D CMAKE_CXX_COMPILER=cl
           -D CY_RENDERER_D3D12=ON
           -D CY_RENDERER_VULKAN=OFF
           -D CY_RENDERER_METAL=OFF
