@@ -430,9 +430,11 @@ BudgetGuard::~BudgetGuard() {
         return;
     }
 
+    if constexpr (!kHaveCpuClock) {
+        return;
+    }
     const unsigned long long ceiling = stall_ceiling(budget_ns);
-    const StallVerdict verdict =
-        kHaveCpuClock ? stall_verdict(wall_ns, contended, ceiling) : StallVerdict::Fine;
+    const StallVerdict verdict = stall_verdict(wall_ns, contended, ceiling);
     if (verdict == StallVerdict::Fine) {
         return;
     }

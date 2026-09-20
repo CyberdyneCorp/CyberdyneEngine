@@ -14,6 +14,8 @@ on:
       - src/core/memory/tests/test_containers.cpp
       - src/pcg/include/cy/pcg/dataset.h
       - src/rendering/graph/src/visualise.cpp
+      - platform/stub/src/stub_display_server.cpp
+      - tests/harness/src/budget.cpp
       - tests/render/**
       - samples/03-first-light/shaders/first_light.slang
       - samples/03-first-light/shaders/first_light_dxil.h

@@ -34,6 +34,96 @@
 
 schema = 1
 
+# --- rhi-and-render-graph -------------------------------------------------------------------------
+#
+# Read at M11.d.5 after the native Metal and D3D12 implementations made this a three-backend row.
+# Each named case is the load-bearing entry point; its note names the adjacent cases in the same
+# declared suite that cover the rest of the requirement rather than pretending one assertion does.
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Explicit RHI"
+evidence = "test:unit.rhi"
+case = "a pipeline layout over the descriptor set limit is refused, naming the limit"
+note = "The suite also creates every resource family through descriptor structs and proves stale generational handles cannot alias replacements. This case pins the requirement's creation-time hard-limit scenario."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "No manual barriers in user-facing code"
+evidence = "test:render.null_frame"
+case = "render.null_frame: every barrier in the stream is the graph's"
+note = "The first-light renderer records a complete frame through the public command API; the case attributes every resulting barrier to the graph and leaves no renderer barrier entry point to call."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Render graph"
+evidence = "test:unit.render_graph"
+case = "a pass declares reads and writes, and the graph compiles them"
+note = "The same suite separately pins culling, write-after-read derivation, attachment stores, async scheduling, cross-queue semaphores and ownership halves. The scale suite pins alias edges and placement."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Parallel command recording"
+evidence = "test:smoke.vulkan_frame"
+case = "passes recorded on job workers reach the device with the same bytes"
+note = "The case records independent graph work on job workers, joins it before submission and compares the resulting bytes, so scheduling cannot change the command stream."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Resource lifetime and frames in flight"
+evidence = "test:render.golden"
+case = "render.golden: the frame survives more frames than the device holds in flight"
+note = "The run crosses the frame-slot ring more than twice and requires the final rendered image to remain identical, exercising fence-paced recycling and deferred resource visibility."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Shader modules and pipelines"
+evidence = "test:integration.rhi_pipeline_cache"
+case = "the pipeline cache round-trips through a path, and an absent one is a cold start"
+note = "The RHI unit suite separately validates native shader payload selection and format mismatch; this filesystem case owns persistence and cold-start behavior."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Descriptor management"
+evidence = "test:unit.rhi"
+case = "the global table reads through one sampler, and says so rather than replacing it"
+note = "The case drives the engine-shaped global table rather than a backend-specific binding model; neighbouring cases cover classic set layouts and capability-selected compatibility behavior."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Memory management"
+evidence = "test:unit.rhi"
+case = "GPU memory is accounted per category and reported as one figure"
+note = "The adjacent pressure case publishes the device heap through MemoryDomain::Gpu; backend conformance covers unified-memory mapping and render-graph tests cover transient placement and aliasing."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Backend capability model"
+evidence = "test:unit.rhi"
+case = "the ray-tracing capability reports the device: every answer is load-bearing"
+note = "The case mutates each device answer and requires the derived capability to change; the render-level companion configures the feature from that capability rather than backend identity."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Backend roadmap"
+evidence = "test:render.golden_backends"
+case = "render.golden_backends: every enabled backend is judged, and the answer names it"
+note = "Vulkan, native Metal and native D3D12 register through one RHI; each platform leg renders the same scene and records backend, device, vendor and evidence class for the cross-leg comparison."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Validation and debugging"
+evidence = "test:integration.render_graph_scale"
+case = "the plan dumps as readable text and as a Graphviz digraph"
+note = "The unit graph suite structurally asserts ownership and alias edges where validation is known to stay silent; device suites enable backend validation, while pass labels and breadcrumbs share the graph plan named here."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "Null backend"
+evidence = "test:render.null_frame"
+case = "render.null_frame: the sample's frame runs with no GPU at all"
+note = "The real first-light frame constructs, culls, schedules, records and submits through the null implementation, while the RHI unit suite preserves handle validation and comparable command streams."
+
 # WHAT IS HERE, AND WHAT IS DELIBERATELY NOT. Nine entries across two rows, written by reading those
 # two specifications requirement by requirement. The other fifteen requirements of those rows, and
 # every requirement of every other row the five criteria name, stay UNANSWERED and each run prints
