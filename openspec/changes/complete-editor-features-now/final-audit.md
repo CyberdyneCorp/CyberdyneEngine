@@ -55,6 +55,10 @@ function above its applicable project target.
   now runs on macOS Bash 3.2 and passed rustfmt, Clippy with warnings denied, the full workspace test
   suite, and doctests. The physical native-window smoke command also passed through
   `just run-editor --smoke` and closed after its bounded three-frame draw.
+- The editor SDK now loads the ABI fixture through the native Windows wide-character loader as well
+  as through the Unix loader. The generated-inspector integration suite therefore exercises the
+  real interface table, reflected catalogue, edit transaction, and engine-side value write on the
+  Windows editor leg instead of stopping at an unsupported-loader error.
 
 ## Dependencies intentionally left open
 

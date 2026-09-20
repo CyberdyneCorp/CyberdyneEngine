@@ -61,6 +61,11 @@ depends upward or sideways. Each crate declares its layer in `[package.metadata.
 `cy-editor-app` moved from layer 5 to 6 at M5.5, when the render crate arrived: the binary hands a
 built `Editor` to the window, so it has to sit above it.
 
+The SDK's embedded-runtime loader uses `dlopen`/`dlsym` on Linux and macOS and
+`LoadLibraryW`/`GetProcAddress` on Windows. The same generated ABI fixture and inspector integration
+tests run on all three platforms; Windows paths are passed to the loader as UTF-16 rather than being
+re-encoded through a narrow string.
+
 **The agent interface is a projection and a wire, and they are separate crates on purpose.**
 `cy-editor-agent` holds what an agent can see and do — the tools, which are the registry; the read
 surface, which is the services; the session, its scope, its budget and its claims. It names no
