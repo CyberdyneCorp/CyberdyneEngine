@@ -825,10 +825,10 @@ python3 tools/editor/import_contract.py "$tool" "$editor"
 ci_job = "milestone-m11b"
 
 [criterion.falsifies]
-mutate = "rename-token"
+mutate = "delete-lines"
 target = "editor/crates/cy-editor-services/src/assets.rs"
-token = "extensions:"
-note = "renaming the editor catalogue parser's extension marker leaves both programs buildable, but the independent comparison rejects the editor's now-empty extension sets"
+token = "format.extensions = extensions;"
+note = "deleting the assignment leaves both programs buildable, but the independent comparison rejects the editor's now-empty extension sets"
 
 # --- Section 4: the gameplay rows a game exercises by being played ---------------------------------
 

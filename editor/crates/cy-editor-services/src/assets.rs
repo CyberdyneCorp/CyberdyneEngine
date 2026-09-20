@@ -378,10 +378,11 @@ fn parse_formats(listing: &str) -> Vec<ImportFormat> {
             });
         } else if let Some(rest) = trimmed.strip_prefix("extensions:") {
             if let Some(format) = &mut current {
-                format.extensions = rest
+                let extensions = rest
                     .split_whitespace()
                     .map(str::to_ascii_lowercase)
                     .collect();
+                format.extensions = extensions;
             }
         } else if let Some(rest) = trimmed.strip_prefix("--set ")
             && let Some((name, kind)) = rest.split_once("=<")
