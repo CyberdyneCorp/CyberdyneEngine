@@ -280,16 +280,17 @@ _ctest kind *args:
     # And it SAYS SO. A flag that is accepted and quietly means something else is the same defect
     # this parse exists to fix, one layer down: the developer who typed `--platform stub` and read a
     # green host suite would have no way to tell it apart from a green stub suite.
+    suite=""
     case "${platform[1]:-}" in
-        stub)   suite="integration.stub_platform" ;;&
-        native) suite="integration.linux_native"   ;;&
-        stub|native)
-            echo "==> --platform ${platform[1]} names a PORT, not a target platform: building the host" >&2
-            echo "    and running this suite, which includes ${suite}. The port's own claim is" >&2
-            echo "    \`just build-engine --platform ${platform[1]}\`, which builds its closure alone." >&2
-            platform=()
-            ;;
+        stub)   suite="integration.stub_platform" ;;
+        native) suite="integration.linux_native" ;;
     esac
+    if [ -n "${suite}" ]; then
+        echo "==> --platform ${platform[1]} names a PORT, not a target platform: building the host" >&2
+        echo "    and running this suite, which includes ${suite}. The port's own claim is" >&2
+        echo "    \`just build-engine --platform ${platform[1]}\`, which builds its closure alone." >&2
+        platform=()
+    fi
 
     just build-engine --profile "${profile}" ${platform[@]+"${platform[@]}"}
 

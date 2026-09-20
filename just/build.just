@@ -86,9 +86,19 @@ build-engine *args:
     lock_dir="${CY_BUILD_DIR:-build/${profile}}"
     mkdir -p "${lock_dir}"
     exec 9>"${lock_dir}/.cy-build.lock"
-    if ! flock -n 9; then
-        echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
-        flock 9
+    if command -v flock >/dev/null 2>&1; then
+        if ! flock -n 9; then
+            echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
+            flock 9
+        fi
+    elif command -v lockf >/dev/null 2>&1; then
+        if ! lockf -s -t 0 9; then
+            echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
+            lockf -s 9
+        fi
+    else
+        echo "build-engine: neither flock nor lockf is available; cannot protect ${lock_dir}" >&2
+        exit 1
     fi
 
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"
@@ -197,7 +207,10 @@ build-editor-check *args:
     python3 tools/gen/rust/tests/run_tests.py
 
     echo "==> rustfmt     the editor's hand-written sources"
-    mapfile -t sources < <(just _editor-rust-files)
+    sources=()
+    while IFS= read -r source; do
+        sources+=("${source}")
+    done < <(just _editor-rust-files)
     rustfmt --edition 2024 --check "${sources[@]}"
     echo "rustfmt: ${#sources[@]} file(s) match editor/rustfmt.toml"
 
@@ -214,7 +227,10 @@ build-editor-format:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    mapfile -t sources < <(just _editor-rust-files)
+    sources=()
+    while IFS= read -r source; do
+        sources+=("${source}")
+    done < <(just _editor-rust-files)
     rustfmt --edition 2024 "${sources[@]}"
     echo "build-editor-format: formatted ${#sources[@]} file(s)"
 

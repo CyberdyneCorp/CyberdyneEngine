@@ -216,6 +216,47 @@ def _argument_loops(body: list[str]):
                 break
 
 
+def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
+    """Recipes exercised by macOS CI must parse in Apple's Bash 3.2.
+
+    `build-editor-check` used Bash 4's `mapfile`, so the macOS editor job stopped before rustfmt,
+    clippy or any test ran. The same investigation found Bash 4's `;;&` in `_ctest`, which stopped
+    the arm64 digest publisher before it could execute `determinism.cross_leg`. These tokens are
+    syntax or builtins the system shell cannot provide; keeping the check here makes both exact CI
+    paths fail locally before another hosted run is spent discovering them.
+    """
+    recipes: dict[str, tuple[pathlib.Path, list[str]]] = {}
+    for just_file in sorted((root / "just").glob("*.just")):
+        for name, body in _recipe_bodies(just_file.read_text(encoding="utf-8")):
+            recipes[name] = (just_file, body)
+
+    failures = []
+    forbidden = (
+        (r"\bmapfile\b", "mapfile"),
+        (r"\breadarray\b", "readarray"),
+        (r";;&|;&", "case fallthrough"),
+    )
+    for name in ("build-editor-check", "build-editor-format", "_ctest"):
+        just_file, body = recipes[name]
+        commands = "\n".join(line for line in body if not line.lstrip().startswith("#"))
+        for pattern, feature in forbidden:
+            if re.search(pattern, commands):
+                failures.append(
+                    f"{just_file.name}: `{name}` uses Bash 4 {feature}; macOS runs it with "
+                    "the system Bash 3.2"
+                )
+
+    build_file, build_body = recipes["build-engine"]
+    build_commands = "\n".join(
+        line for line in build_body if not line.lstrip().startswith("#")
+    )
+    if "command -v lockf" not in build_commands:
+        failures.append(
+            f"{build_file.name}: `build-engine` has no lockf path; macOS does not ship flock"
+        )
+    return failures
+
+
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
@@ -337,6 +378,7 @@ def main() -> int:
         "a recipe that disables an option disables what requires it": (
             a_recipe_that_disables_a_feature_disables_what_needs_it
         ),
+        "macOS CI recipes use system Bash syntax": macos_ci_recipes_use_system_bash_syntax,
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
         ),

@@ -256,7 +256,7 @@ source = "ROADMAP M5 (Editor headless tests run in continuous integration on all
 kind = "recipe"
 run = "just build-editor-check"
 where = "ci"
-reason = "this host runs one operating system; the other two are built only by the CI matrix, and neither has ever built this workspace"
+reason = "no single host runs all three operating systems, so the complete claim belongs to the CI matrix. macOS now has local Apple-hardware evidence from the exact recipe; Windows remains CI-only"
 ci_job = "editor"
 
 # --- The artefact --------------------------------------------------------------------------------------

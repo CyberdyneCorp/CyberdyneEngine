@@ -41,16 +41,17 @@
 # its question to this file, and this file has never answered one.
 #
 # WHAT IS FIXED HERE AND WHAT IS NOT. The package list is fixed, and `tools/ci/check_workflows.py`
-# now fails when it drifts from README.md's documented list again. THREE OTHER FAILURES ARE RECORDED
+# now fails when it drifts from README.md's documented list again. TWO OTHER FAILURES ARE RECORDED
 # AND NOT FIXED, because this host cannot run either operating system and a blind edit to a leg
 # nobody can execute is how this list got wrong in the first place:
 #   * `build windows-x86_64` / `windows-arm64`: swift-actions/setup-swift@v2 reports
 #     `Version "6.0" is not available` on the Windows images, while the Linux and macOS legs accept
 #     the same input.
-#   * `editor macos`: `mapfile: command not found` — the macOS image's bash is 3.2 and the recipe
-#     uses a bash 4 builtin.
 #   * `editor windows`: `rustfmt refused the generated src/generated/mod.rs`.
 # Each is a one-line finding with a named cause and none of them is verifiable from this machine.
+# The macOS editor finding was closed on real Apple hardware: `build-editor-check` now collects its
+# rustfmt inputs with Bash 3.2 syntax, shared test recipes avoid Bash 4 case fallthrough, and the
+# build lock uses macOS's `lockf` when GNU `flock` is absent. The editor job runs the exact recipe.
 # --------------------------------------------------------------------------------------------------
 #
 # The gate set is declared once, as data, in tools/roadmap/gates.toml — `just roadmap-gates` prints
@@ -1209,7 +1210,6 @@ jobs:
   # or not.
   cross-leg-publish:
     name: cross-leg digest — ${{ matrix.label }}
-    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -1222,6 +1222,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v3
+      # The publisher is independent of the aggregate six-platform build job: `test-determinism`
+      # builds the tree it executes. Depending on the whole build matrix would skip every digest
+      # when one unrelated platform leg fails, leaving two healthy architectures unobserved.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -1234,8 +1240,8 @@ jobs:
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
-      # The same cache key the `build` leg of this label wrote, so this job compiles what changed
-      # rather than the engine.
+      # Reuse a matching build-leg cache when one exists; otherwise the recipe below creates the
+      # tree itself. Correctness never depends on the aggregate build matrix completing first.
       - uses: actions/cache@v4
         with:
           path: build/dev
