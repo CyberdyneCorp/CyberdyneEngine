@@ -97,8 +97,29 @@ build-engine *args:
             lockf -s 9
         fi
     else
-        echo "build-engine: neither flock nor lockf is available; cannot protect ${lock_dir}" >&2
-        exit 1
+        # GitHub's macOS image has the lockf(2) API but no `lockf` executable. An atomic symlink
+        # carries the owner's PID, so a crashed build leaves a lock the next process can identify
+        # and reap instead of wedging the tree forever. The ownership check in the EXIT handler
+        # prevents one waiter from deleting a lock acquired by another.
+        fallback_lock="${lock_dir}/.cy-build.lock.pid"
+        announced=0
+        while ! ln -s "$$" "${fallback_lock}" 2>/dev/null; do
+            owner="$(readlink "${fallback_lock}" 2>/dev/null || true)"
+            if [[ "${owner}" =~ ^[0-9]+$ ]] && ! kill -0 "${owner}" 2>/dev/null; then
+                rm -f "${fallback_lock}"
+                continue
+            fi
+            if [ "${announced}" -eq 0 ]; then
+                echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
+                announced=1
+            fi
+            sleep 0.1
+        done
+        release_fallback_lock() {
+            [ "$(readlink "${fallback_lock}" 2>/dev/null || true)" != "$$" ] || \
+                rm -f "${fallback_lock}"
+        }
+        trap release_fallback_lock EXIT
     fi
 
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"

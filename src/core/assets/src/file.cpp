@@ -155,8 +155,8 @@ Expected<File, Error> File::open(const char* path, FileMode mode) noexcept {
     int handle = -1;
     // _sopen_s with _SH_DENYNO — same shape as ::open with default share access. _S_IREAD |
     // _S_IWRITE is the umask analogue for newly-created files.
-    const errno_t err = ::_sopen_s(&handle, path, win32_flags(mode), _SH_DENYNO,
-                                   _S_IREAD | _S_IWRITE);
+    const errno_t err =
+        ::_sopen_s(&handle, path, win32_flags(mode), _SH_DENYNO, _S_IREAD | _S_IWRITE);
     if (err != 0 || handle < 0) {
         errno = err;
         const ErrorCode code = err == ENOENT   ? ErrorCode::NotFound
@@ -252,8 +252,8 @@ Expected<usize, Error> File::read_at(u64 offset, void* destination, usize size) 
         return fail(ErrorCode::InvalidArgument, "read_at on a file that is not open");
     }
     // MSVC has no pread; use ReadFile with an OVERLAPPED offset via the underlying HANDLE. This is
-    // atomic with respect to concurrent read_ats on the same file: OVERLAPPED lets the kernel do the
-    // seek, and no shared cursor is disturbed.
+    // atomic with respect to concurrent read_ats on the same file: OVERLAPPED lets the kernel do
+    // the seek, and no shared cursor is disturbed.
     const HANDLE native = reinterpret_cast<HANDLE>(::_get_osfhandle(handle_));
     if (native == INVALID_HANDLE_VALUE) {
         return make_unexpected(from_errno(ErrorCode::Io, "the file handle is invalid"));
@@ -548,14 +548,13 @@ Expected<MappedFile, Error> MappedFile::map(const char* path, u64 offset, usize 
     // Windows requires two handles: one for the file, one for the mapping object. The file handle
     // is closed once the mapping is created — the mapping keeps its own reference, just like the
     // POSIX branch closes the descriptor.
-    const HANDLE file_handle =
-        ::CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                      FILE_ATTRIBUTE_NORMAL, nullptr);
+    const HANDLE file_handle = ::CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file_handle == INVALID_HANDLE_VALUE) {
         const DWORD gle = ::GetLastError();
-        const ErrorCode code =
-            gle == ERROR_FILE_NOT_FOUND || gle == ERROR_PATH_NOT_FOUND ? ErrorCode::NotFound
-                                                                       : ErrorCode::Io;
+        const ErrorCode code = gle == ERROR_FILE_NOT_FOUND || gle == ERROR_PATH_NOT_FOUND
+                                   ? ErrorCode::NotFound
+                                   : ErrorCode::Io;
         errno = gle == ERROR_FILE_NOT_FOUND ? ENOENT : EIO;
         return make_unexpected(from_errno(code, "the file could not be opened for mapping"));
     }
@@ -586,17 +585,15 @@ Expected<MappedFile, Error> MappedFile::map(const char* path, u64 offset, usize 
     const u64 aligned = offset - (offset % granularity);
     const auto slack = static_cast<usize>(offset - aligned);
     const usize base_span = span + slack;
-    const HANDLE mapping_handle =
-        ::CreateFileMappingA(file_handle, nullptr, PAGE_READONLY,
-                             static_cast<DWORD>((offset + span) >> 32),
-                             static_cast<DWORD>((offset + span) & 0xFFFFFFFFULL), nullptr);
+    const HANDLE mapping_handle = ::CreateFileMappingA(
+        file_handle, nullptr, PAGE_READONLY, static_cast<DWORD>((offset + span) >> 32),
+        static_cast<DWORD>((offset + span) & 0xFFFFFFFFULL), nullptr);
     ::CloseHandle(file_handle);
     if (mapping_handle == nullptr) {
         errno = EIO;
         return make_unexpected(from_errno(ErrorCode::Io, "the file could not be mapped"));
     }
-    void* view = ::MapViewOfFile(mapping_handle, FILE_MAP_READ,
-                                 static_cast<DWORD>(aligned >> 32),
+    void* view = ::MapViewOfFile(mapping_handle, FILE_MAP_READ, static_cast<DWORD>(aligned >> 32),
                                  static_cast<DWORD>(aligned & 0xFFFFFFFFULL), base_span);
     // Close the mapping handle: the view holds its own reference, and closing the handle here
     // keeps the shape symmetric with the POSIX branch that closes the fd.

@@ -38,6 +38,41 @@ test-render *args:
     fi
     exec just _ctest render ${argv[@]+"${argv[@]}"}
 
+# Build and validate the native D3D12 backend and its first-light capture. This is one recipe so
+# the Windows workflow and a developer machine exercise the same configuration, test selection and
+# evidence assertion. CY_GOLDEN_CAPTURE_DIR and CY_GOLDEN_LEDGER deliberately name the artefacts;
+# an unnamed temporary image cannot support the cross-backend comparison.
+test-d3d12-golden:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    capture_dir="${CY_GOLDEN_CAPTURE_DIR:?set CY_GOLDEN_CAPTURE_DIR to the evidence directory}"
+    ledger="${CY_GOLDEN_LEDGER:?set CY_GOLDEN_LEDGER to the evidence manifest}"
+    build_dir="${CY_BUILD_DIR:-build/dev}"
+    mkdir -p "${capture_dir}"
+    if [ "${CY_D3D12_REGENERATE_DXIL:-0}" = 1 ]; then
+        dxil_work="${CY_DXIL_WORK_DIR:-${RUNNER_TEMP:-${build_dir}/m11d5-dxil}}"
+        pwsh -NoProfile -File tools/ci/prepare_m11d5_dxil.ps1 \
+            -WorkDir "${dxil_work}" -Profile sm_6_2
+    fi
+    just build-engine --profile dev \
+        -D CMAKE_C_COMPILER=cl \
+        -D CMAKE_CXX_COMPILER=cl \
+        -D CY_RENDERER_D3D12=ON \
+        -D CY_RENDERER_VULKAN=OFF \
+        -D CY_RENDERER_METAL=OFF \
+        -D CY_SHADER_SLANG=OFF \
+        -D CY_SHADER_DXIL=OFF \
+        -D CY_BUILD_EDITOR=OFF
+    ctest --test-dir "${build_dir}" -C Development \
+        -R '^(unit.rhi_d3d12|integration.rhi_d3d12|render.golden_backends)$' \
+        --output-on-failure
+    if ! grep -Eq 'row backend=d3d12 .* outcome=matched ' "${ledger}"; then
+        cat "${ledger}" 2>/dev/null || true
+        echo "D3D12 produced no matched golden image" >&2
+        exit 1
+    fi
+
 # Determinism: reproducibility of simulation and replication. Ten seconds each.
 #
 # The kind `testing-and-quality` gives its own row and its own budget, and the one row of the

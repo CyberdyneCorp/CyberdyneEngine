@@ -35,71 +35,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Download the pinned Slang toolchain
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          Invoke-WebRequest -Uri "https://github.com/shader-slang/slang/releases/download/v2026.9.2/slang-2026.9.2-windows-x86_64.zip" -OutFile "$env:RUNNER_TEMP\slang.zip"
-          Expand-Archive "$env:RUNNER_TEMP\slang.zip" -DestinationPath "$env:RUNNER_TEMP\slang"
-          Invoke-WebRequest -Uri "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2602/dxc_2026_02_20.zip" -OutFile "$env:RUNNER_TEMP\dxc.zip"
-          Expand-Archive "$env:RUNNER_TEMP\dxc.zip" -DestinationPath "$env:RUNNER_TEMP\dxc"
-          Copy-Item "$env:RUNNER_TEMP\dxc\bin\x64\dxcompiler.dll" "$env:RUNNER_TEMP\slang\bin"
-          Copy-Item "$env:RUNNER_TEMP\dxc\bin\x64\dxil.dll" "$env:RUNNER_TEMP\slang\bin"
-      - name: Compile and embed DXIL
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $PSNativeCommandUseErrorActionPreference = $true
-          $slangc = "$env:RUNNER_TEMP\slang\bin\slangc.exe"
-          $source = "samples/03-first-light/shaders/first_light.slang"
-          # The hosted Basic Render Driver tops out at Shader Model 6.2. This compatibility scene
-          # uses no 6.6 feature; the engine-wide 6.6 floor remains intact for virtual geometry.
-          $profile = "sm_6_2"
-          & $slangc $source -target dxil -profile $profile -entry shadowVertex -stage vertex -o "$env:RUNNER_TEMP\shadow.dxil"
-          & $slangc $source -target dxil -profile $profile -entry forwardVertex -stage vertex -o "$env:RUNNER_TEMP\forward.dxil"
-          & $slangc $source -target dxil -profile $profile -entry forwardFragment -stage fragment -o "$env:RUNNER_TEMP\fragment.dxil"
-          python samples/03-first-light/shaders/embed_dxil.py "samples/03-first-light/shaders/first_light_dxil.h" `
-            "kFirstLightShadowVertexDxil=$env:RUNNER_TEMP\shadow.dxil" `
-            "kFirstLightForwardVertexDxil=$env:RUNNER_TEMP\forward.dxil" `
-            "kFirstLightForwardFragmentDxil=$env:RUNNER_TEMP\fragment.dxil"
       - uses: extractions/setup-just@v3
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-      - name: Configure the native D3D12 backend
-        shell: pwsh
-        run: >-
-          cmake --preset dev
-          -D CMAKE_C_COMPILER=cl
-          -D CMAKE_CXX_COMPILER=cl
-          -D CY_RENDERER_D3D12=ON
-          -D CY_RENDERER_VULKAN=OFF
-          -D CY_RENDERER_METAL=OFF
-          -D CY_SHADER_SLANG=OFF
-          -D CY_SHADER_DXIL=OFF
-          -D CY_BUILD_EDITOR=OFF
-      - name: Build D3D12, conformance and golden targets
-        shell: pwsh
-        run: >-
-          cmake --build --preset dev --target
-          cy_rhi_d3d12
-          cy_test_unit_rhi_d3d12
-          cy_test_integration_rhi_d3d12
-          cy_test_render_golden_backends
-          cy_sample_first-light
-      - name: Run the D3D12 debug-layer and golden suites
-        shell: pwsh
+      - name: Build and validate D3D12 through the repository recipe
         env:
+          CY_D3D12_REGENERATE_DXIL: '1'
+          CY_DXIL_WORK_DIR: ${{ runner.temp }}
           CY_GOLDEN_CAPTURE_DIR: ${{ runner.temp }}\golden
           CY_GOLDEN_LEDGER: ${{ runner.temp }}\golden\m11d5-three-backends-d3d12.manifest
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:CY_GOLDEN_CAPTURE_DIR" | Out-Null
-          ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|integration.rhi_d3d12|render.golden_backends)$" --output-on-failure
-          $matched = Select-String -Path "$env:CY_GOLDEN_LEDGER" -Pattern 'row backend=d3d12 .* outcome=matched ' -Quiet
-          if (-not $matched) {
-            Get-Content "$env:CY_GOLDEN_LEDGER"
-            throw "D3D12 produced no matched golden image"
-          }
+        run: just test-d3d12-golden
       - uses: actions/upload-artifact@v4
         if: always()
         with:
