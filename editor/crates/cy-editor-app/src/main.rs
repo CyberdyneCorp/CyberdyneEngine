@@ -17,6 +17,7 @@
 //! cyberdyne-editor --version
 //! cyberdyne-editor --list-commands
 //! cyberdyne-editor --headless --open worlds/city.cyworld
+//! cyberdyne-editor --smoke                            # open, draw three frames, close
 //! cyberdyne-editor --open worlds/city.cyworld --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --host /run/cyberdyne.sock --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --mcp --agent-scope author
@@ -31,6 +32,7 @@
 use std::process::ExitCode;
 
 use cy_editor_app::{Application, run_script};
+use cy_editor_commands::{AssetHost, ImportFormat};
 use cy_editor_core::Actor;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_services::{Notification, WorkspaceStore};
@@ -61,9 +63,11 @@ struct Options {
     script: Option<String>,
     host: Option<String>,
     list_commands: bool,
+    list_importers: bool,
     version: bool,
     journal: Option<String>,
     headless: bool,
+    smoke: bool,
     mcp: bool,
     agent_scope: String,
     agent_intent: String,
@@ -76,9 +80,11 @@ impl Default for Options {
             script: None,
             host: None,
             list_commands: false,
+            list_importers: false,
             version: false,
             journal: None,
             headless: false,
+            smoke: false,
             mcp: false,
             // The narrowest useful setting, which is what `editor-agent-interface` requires a scope
             // to default to: an agent may look at everything and change nothing until somebody says
@@ -113,6 +119,22 @@ fn run(arguments: &[String]) -> Result<()> {
         return Ok(());
     }
 
+    if options.list_importers {
+        let formats = application.editor.imports.import_formats();
+        if formats.is_empty() {
+            return Err(Problem::new(
+                "list the editor's importers",
+                format!(
+                    "the import service reported none ({})",
+                    application.editor.imports.describe()
+                ),
+            )
+            .with_remedy("build cy_import_cli or set CY_IMPORT_CLI to that executable"));
+        }
+        print!("{}", format_importers(&formats));
+        return Ok(());
+    }
+
     if let Some(directory) = &options.journal {
         application.editor.documents.journal_into(directory);
     }
@@ -133,7 +155,7 @@ fn run(arguments: &[String]) -> Result<()> {
     }
 
     let opens_window = opens_window(&options);
-    let workspace_store = if opens_window {
+    let workspace_store = if opens_window && !options.smoke {
         match WorkspaceStore::for_user(application.editor.project.root()) {
             Ok(store) => {
                 match store.restore(&mut application.editor) {
@@ -211,6 +233,9 @@ fn run_window(
         scope,
     } = application;
     let mut window = cy_editor_shell::EditorWindow::new(editor, registry, scope)?;
+    if options.smoke {
+        window = window.with_smoke_frames(3);
+    }
     if let Some(store) = workspace_store {
         window = window.with_workspace_store(store);
     }
@@ -262,11 +287,13 @@ fn parse(arguments: &[String]) -> Result<Options> {
         match argument {
             "--version" | "-V" => options.version = true,
             "--list-commands" => options.list_commands = true,
+            "--list-importers" => options.list_importers = true,
             "--open" => options.open.push(value(arguments, &mut index, "--open")?),
             "--script" => options.script = Some(value(arguments, &mut index, "--script")?),
             "--host" => options.host = Some(value(arguments, &mut index, "--host")?),
             "--journal" => options.journal = Some(value(arguments, &mut index, "--journal")?),
             "--headless" => options.headless = true,
+            "--smoke" => options.smoke = true,
             "--mcp" => options.mcp = true,
             "--agent-scope" => {
                 options.agent_scope = value(arguments, &mut index, "--agent-scope")?;
@@ -299,6 +326,29 @@ fn value(arguments: &[String], index: &mut usize, option: &str) -> Result<String
             "it takes a value and none followed it",
         )
     })
+}
+
+/// Canonical editor-side projection of the importer tool's dynamic catalogue.
+///
+/// A line is `name<TAB>extensions<TAB>setting:type,...`. Keeping this deliberately simple lets the
+/// cross-language criterion parse the tool's human listing independently and compare exact rows.
+fn format_importers(formats: &[ImportFormat]) -> String {
+    let mut output = String::new();
+    for format in formats {
+        let settings = format
+            .settings
+            .iter()
+            .map(|setting| format!("{}:{}", setting.name, setting.kind))
+            .collect::<Vec<_>>()
+            .join(",");
+        output.push_str(&format.importer);
+        output.push('\t');
+        output.push_str(&format.extensions.join(","));
+        output.push('\t');
+        output.push_str(&settings);
+        output.push('\n');
+    }
+    output
 }
 
 /// Serve one agent over standard input and output.
@@ -421,6 +471,7 @@ cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
 
     --open <asset>        open a document (repeatable)
     --headless            run without a window; the default is to open one
+    --smoke               open the real window, draw three frames, then close successfully
     --mcp                 host MCP alongside the window; combine with --headless for stdio-only
     --agent-scope <name>  what it may do: read (default), author, or confirmed operator work
     --agent-intent <text> what it says it is trying to do; recorded on every change it makes
@@ -428,6 +479,7 @@ cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
     --host <socket>       attach a hosted runtime over a Unix domain socket
     --journal <directory> write transaction journals here, for crash recovery
     --list-commands       print the command registry, with parameters and effect classes
+    --list-importers      print the importers and option schemas discovered from cy_import_cli
     --version             print the editor and ABI versions
     --help                this";
 
@@ -444,5 +496,26 @@ mod tests {
         let headless = parse(&["--mcp".into(), "--headless".into()]).unwrap();
         assert!(headless.mcp);
         assert!(!opens_window(&headless));
+    }
+
+    #[test]
+    fn smoke_uses_the_window_and_is_bounded() {
+        let smoke = parse(&["--smoke".into()]).unwrap();
+        assert!(smoke.smoke);
+        assert!(opens_window(&smoke));
+    }
+
+    #[test]
+    fn importer_projection_preserves_names_extensions_and_option_types() {
+        let listing = format_importers(&[ImportFormat {
+            importer: "mesh".into(),
+            extensions: vec![".gltf".into(), ".glb".into()],
+            settings: vec![cy_editor_commands::ImportSetting {
+                name: "scale".into(),
+                kind: "float".into(),
+                description: "not part of the parity key".into(),
+            }],
+        }]);
+        assert_eq!(listing, "mesh\t.gltf,.glb\tscale:float\n");
     }
 }

@@ -429,27 +429,29 @@ ci_job = "milestone-m11b"
 
 [[criterion]]
 id = "view-modes"
-describe = "every view mode the editor declares is drawn. `PLANNED_VIEWS` has eight entries and `ViewMode` nineteen, and the gap between those two numbers is the requirement"
+describe = "every debug view the engine provides is mirrored by the editor, described for a person and an agent, selectable through a command, and carried in the runtime-facing view state. Renderer views the engine does not provide remain named gaps owned by their rendering capabilities"
 source = "tasks, editor-viewport-and-gizmos, editor-ui-ux"
 kind = "command"
 run = '''
 set -e
-d="${CY_BUILD_DIR:-build/dev}"
-just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_editor_views"
-test -x "$binary" || { echo "no $binary — the suite unit.editor_views does not exist"; exit 1; }
-filter='every declared view mode draws*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
-selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.editor_views any more — renamed, deleted, or the filter is stale"; exit 1; }
+for case in \
+    viewmode::tests::the_mode_list_matches_the_engines \
+    viewmode::tests::every_view_says_what_it_shows_and_how_to_read_it \
+    viewmode::tests::every_view_is_reachable_by_a_unique_command_identifier \
+    viewmode::tests::the_views_the_engine_cannot_draw_yet_are_named_rather_than_stubbed
+do
+    cargo test --manifest-path editor/Cargo.toml -p cy-editor-viewport --lib "$case" -- --exact
+done
+cargo test --manifest-path editor/Cargo.toml -p cy-editor-services --lib \
+    viewports::tests::every_engine_view_mode_is_selectable_and_carried_in_the_view_state -- --exact
 '''
 ci_job = "milestone-m11b"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: there is no `cy_test_unit_editor_views` in a fully built tree, because no CMakeLists.txt in the repository declares the suite `unit.editor_views` at all. `PLANNED_VIEWS` still has eight entries against `ViewMode`'s nineteen, and the gap between those two numbers is the requirement. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+[criterion.falsifies]
+mutate = "rename-token"
+target = "editor/crates/cy-editor-viewport/src/viewmode.rs"
+token = "every_view_is_reachable_by_a_unique_command_identifier"
+note = "renaming one of the exact cases leaves the implementation and renamed case healthy, while this criterion fails because it no longer executed the command-reachability claim it names"
 
 [[criterion]]
 id = "plugins"
@@ -687,15 +689,17 @@ requires = "display"
 reason = "an editor window needs a display; the structural claims it carries are checked by `specialised-editors` and `view-modes`, which need neither, so nothing here is judgeable only on a machine with a screen"
 ci_job = "milestone-m11b"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "editor/crates/cy-editor-app/src/main.rs"
+token = "--smoke"
+note = "renaming the parser arm leaves the editor build healthy while the exact `just run-editor --smoke` lifecycle fails at argument parsing"
+
 # --- Section 3: the authoring formats ---------------------------------------------------------------
 #
 # THE TEXTURE PATH IS THIS RUNG'S WORK BEFORE IT IS M11.c's SUBJECT. There are six image files in the
 # entire tree outside docs/ — four editor identity marks and two golden references — so every
 # material in every published picture is a constant, and no encoder exists to change that.
-
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just run-editor --smoke` exits 1 at argument parsing with `cyberdyne-editor: the option \"--smoke\": it is not one this editor knows`. THIS CRITERION HAS NEVER BEEN ABLE TO PASS: `--smoke` is not among the ten options `--help` lists, and `git log -S'--smoke' -- editor/` is empty, so the flag has never existed. The host running this has DISPLAY set and the criterion was evaluated rather than skipped, so it is not failing for want of the display its `requires` declares — it never opens a window to judge. THIS IS THE TENTH INSTANCE OF THIS PROJECT'S ONE DEFECT AND THE FIRST ONE `falsify` CANNOT SEE. M11.a's repair 2 added `falsify._inspect_samples` after finding `--cycle`, `--stream-report` and the sample name `10-world` filed as proofs; that rule reads `run-sample` names against `samples/*/CMakeLists.txt` and knows nothing about `run-editor`. The prover duly recorded this one `red against a built tree` quoting the cargo build line and not the refusal. Closing it means either a smoke mode the editor actually has, or judging the window by something that exists — and `falsify` owes the same name check for `run-editor` that it has for `run-sample`. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
 
 [[criterion]]
 id = "texture-encoders"
@@ -807,22 +811,26 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_editor_import"
-test -x "$binary" || { echo "no $binary — the suite integration.editor_import does not exist"; exit 1; }
-filter='every format tools/import supports*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
-selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.editor_import any more — renamed, deleted, or the filter is stale"; exit 1; }
+just build-editor --profile dev > /dev/null
+tool="$(find "$d" -type f \( -name cy_import_cli -o -name cy_import_cli.exe \) | head -1)"
+test -x "$tool" || { echo "no cy_import_cli under $d"; exit 1; }
+cargo_profile="$(just _cargo-profile dev)"
+target_dir="$(just _editor-target-dir)"
+test "$cargo_profile" != dev || cargo_profile=debug
+editor="$target_dir/$cargo_profile/cyberdyne-editor"
+test -x "$editor" || editor="$editor.exe"
+test -x "$editor" || { echo "no cyberdyne-editor under $target_dir/$cargo_profile"; exit 1; }
+python3 tools/editor/import_contract.py "$tool" "$editor"
 '''
 ci_job = "milestone-m11b"
 
-# --- Section 4: the gameplay rows a game exercises by being played ---------------------------------
+[criterion.falsifies]
+mutate = "rename-token"
+target = "editor/crates/cy-editor-services/src/assets.rs"
+token = "extensions:"
+note = "renaming the editor catalogue parser's extension marker leaves both programs buildable, but the independent comparison rejects the editor's now-empty extension sets"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: there is no `cy_test_integration_editor_import` in a fully built tree, because no CMakeLists.txt declares the suite `integration.editor_import`. Nothing compares the set of formats `tools/import` supports against the set `asset.import` reaches from inside the editor, so the claim that they are the same set is still a sentence. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+# --- Section 4: the gameplay rows a game exercises by being played ---------------------------------
 
 [[criterion]]
 id = "gameplay-suites"

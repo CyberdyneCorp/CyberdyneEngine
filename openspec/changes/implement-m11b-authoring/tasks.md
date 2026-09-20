@@ -398,6 +398,31 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
 - [ ] 3.10 Live asset reload, shader and material live reload, module hot reload as a declared
       capability, runtime inspection, runtime tweaking distinct from authoring with the keep-changes
       flow, the versioned live bridge protocol, and live editing diagnostics
+- [x] 3.11 **Make the window criterion execute the window it names.** Add a bounded `--smoke`
+      lifecycle to `cyberdyne-editor` that opens the real desktop shell, draws several frames,
+      verifies the shipped dock and specialised-editor region were exercised, and exits. Keep
+      `just run-editor --smoke` as the criterion command so the check runs the same binary and
+      startup path a person uses rather than a headless model substitute
+      **Done:** the native shell draws exactly three frames and reports that count before closing;
+      the parser and lifecycle have regression cases and the exact roadmap command passes on macOS
+- [x] 3.12 **Make editor import parity an executable cross-language claim.** Compare the importer
+      names, extensions and option schemas reported by the built `cy_import_cli` with what the
+      editor discovers through `AssetImportService`; add the missing integration surface and make
+      the criterion fail when either side drops or invents a format
+      **Done:** the editor exposes its dynamically discovered catalogue through `--list-importers`;
+      the independent comparator observes 5 importers, 9 extensions and 84 typed settings from both
+      built programs
+- [ ] 3.13 **Read all nine editor rows requirement by requirement.** Add only evidence that resolves
+      to a named test case, a proven criterion, a gate, or a recorded exemption. A partial case does
+      not answer a whole requirement. The target is `just quality-requirements` reporting 133 of
+      133 with zero stale or missing evidence
+- [x] 3.14 **Repair the view-mode criterion without taking M11.c rendering work.** The editor SHALL
+      prove every engine-provided debug view is selectable, described and carried to the runtime.
+      Modes whose renderer producer is absent remain explicit gaps owned by their rendering
+      capability; this task does not fabricate pixels or treat `PLANNED_VIEWS` as drawn output
+      **Done:** the criterion executes exact Rust cases proving all 19 engine modes mirror the C++
+      table, carry useful descriptions and unique command identifiers, and survive the runtime-facing
+      view-state encoding. The eight absent renderer producers remain named by owning capability
 
 ## 4. The document model, and a node with a name — `editor-documents-and-transactions` → C
 

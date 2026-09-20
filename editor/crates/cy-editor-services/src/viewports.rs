@@ -684,6 +684,32 @@ mod tests {
     }
 
     #[test]
+    fn every_engine_view_mode_is_selectable_and_carried_in_the_view_state() {
+        let (mut editor, registry) = editor();
+        for mode in ALL_VIEW_MODES {
+            registry
+                .invoke(
+                    &mode.command_id(),
+                    &Scope::unrestricted(),
+                    &mut editor,
+                    &Arguments::new(),
+                )
+                .unwrap_or_else(|problem| panic!("{}: {problem}", mode.command_id()));
+
+            let state = &editor.viewports.focused().state;
+            assert_eq!(state.view_mode, mode, "{} was not selected", mode.label());
+            let received = cy_editor_viewport::state::ViewState::decode(&state.encode())
+                .expect("the runtime-facing view state decodes");
+            assert_eq!(
+                received.view_mode,
+                mode,
+                "{} did not survive the runtime-facing capture",
+                mode.label()
+            );
+        }
+    }
+
+    #[test]
     fn an_unknown_value_is_refused_with_the_list_of_what_is_accepted() {
         let mut service = ViewportService::new();
         let problem = service

@@ -140,6 +140,14 @@ drop intents, and importer-declared settings for supported formats.
 with its typed parameters and effect class. The desktop palette, scripts and MCP tool listing are
 projections of that same registry, so these are not separate APIs:
 
+Two bounded discovery paths support release and roadmap checks without replacing the desktop:
+
+- `just run-editor --smoke` opens the native editor window, draws three frames through the shipped
+  shell and dock layout, and closes successfully.
+- `cyberdyne-editor --list-importers` prints the importer names, extensions and typed settings the
+  editor discovered from `cy_import_cli`. `tools/editor/import_contract.py` compares that projection
+  with the tool's own catalogue so a format cannot disappear from either side unnoticed.
+
 | Area | Registered commands added or completed by this pass |
 |---|---|
 | Hierarchy and history | `scene.rename-entity`, `scene.reparent-entity`, `scene.create-entity`, `edit.undo`, `edit.redo` |
