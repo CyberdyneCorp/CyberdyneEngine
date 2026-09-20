@@ -240,16 +240,22 @@ ci_job = "milestone-m11e"
 
 [[criterion]]
 id = "release-recipes-produce-artefacts"
-describe = "version, changelog, artefacts and publish are produced by the RECIPES rather than by hand. All four refuse today, and this is ROADMAP.md's last M11 exit criterion in its own words"
+describe = "version, changelog and five provenance-bearing distribution archives are produced by the release recipes, rebuilt through the Shipping toolchains, verified before publication, and covered by their negative regression cases"
 source = "tasks 4, developer-workflow-and-just, build-and-packaging, ROADMAP M11.e exit criteria"
 kind = "command"
-run = "just release-version && just release-changelog && just release-artefacts && just release-publish --dry-run"
+run = "just release-test && just release-check"
 timeout_s = 7200
 ci_job = "milestone-m11e"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/release/release.py"
+token = "COMPONENTS ="
+note = "Removing the declared five-component inventory leaves the assembler unable to produce a release, so the criterion must turn red before any archive can be mistaken for a complete distribution."
+
 [[criterion]]
 id = "no-recipe-refuses-with-a-dead-milestone"
-describe = "no recipe refuses naming a milestone that is not on the ladder, or one whose gate is already green. FOUR RECIPES IN `just/release.just` REFUSE NAMING 'M12 — build-and-packaging' TODAY, a milestone that does not exist on a ladder whose `record.MILESTONES` ends at m11e, and two more name rungs elsewhere. A refusal is a statement of the plan presented to a user as the current one"
+describe = "no recipe refuses naming a milestone that is not on the ladder, or one whose gate is already green. The release recipes once named 'M12 — build-and-packaging', which does not exist; this check keeps that stale plan from returning anywhere in just/"
 source = "tasks 4, delivery-roadmap (A recipe that refuses names a rung that exists)"
 kind = "command"
 run = '''

@@ -581,7 +581,10 @@ _doctor-host-tools platform:
         printf '  %-9s %-13s %-12s %s\n' "$1" "$2" "$3" "$4"
     }
 
-    mapfile -t declared < <(CY_DOCTOR_PLATFORM='{{platform}}' python3 - <<'DECLARED'
+    declared=()
+    while IFS= read -r declaration; do
+        declared[${#declared[@]}]="${declaration}"
+    done < <(CY_DOCTOR_PLATFORM='{{platform}}' python3 - <<'DECLARED'
     import os
     import sys
 

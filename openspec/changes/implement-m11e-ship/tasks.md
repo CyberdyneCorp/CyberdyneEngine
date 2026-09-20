@@ -126,14 +126,14 @@ tier.
       are **tool-time only**, and a shipped game containing any of them is a failure the attribution
       query can now see
 
-## 4. Distribution — four recipes that refuse, naming a milestone that does not exist
+## 4. Distribution — versioned release recipes and artefacts
 
-- [ ] 4.1 **`release-version`, `release-changelog`, `release-artefacts` and `release-publish` stop
+- [x] 4.1 **`release-version`, `release-changelog`, `release-artefacts` and `release-publish` stop
       refusing.** All four are `_not-implemented` stubs naming *"M12 — build-and-packaging"*, and
       **there is no M12**: `record.MILESTONES` is fifteen entries ending at `m11`. M11's exit criteria
       include *"Version, changelog and artefacts are produced by the release recipes"*, so a stub is
       a failing exit criterion and not a deferral
-- [ ] 4.2 **Distribution artefacts, as the requirement enumerates them**: the editor application,
+- [x] 4.2 **Distribution artefacts, as the requirement enumerates them**: the editor application,
       runtime libraries for embedding, the C ABI headers and ABI description, the `CyberdyneKit` Swift
       package, runtime templates per platform and configuration, and the tools — build service,
       cooker, packager, shader compiler. **Names encode platform, architecture, configuration and

@@ -927,6 +927,8 @@ jobs:
       # wearing three exit codes — which is what `_resolve-target` was until this rung.
       - name: Target selection's own refusals
         run: just env-targets --selftest
+      - name: Release assembly regressions
+        run: just release-test
       - name: The workflow itself
         run: just ci-check
       # clang-tidy needs the flags every file is compiled with, so the build comes first.

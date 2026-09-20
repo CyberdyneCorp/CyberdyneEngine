@@ -28,7 +28,7 @@ include(profiles)
 cy_declare_build_configurations()
 
 project(CyberdyneEngine
-    VERSION 0.0.0
+    VERSION 0.5.0
     DESCRIPTION "A C++20 game engine"
     HOMEPAGE_URL "https://github.com/cyberdyne-engine/CyberdyneEngine"
     LANGUAGES C CXX)

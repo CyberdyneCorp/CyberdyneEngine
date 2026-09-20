@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 211 proven, 442 not yet shown able to fail.
+# 212 proven, 441 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1146,6 +1146,14 @@ digest = "5cd78f1302b398ca"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): M4 build-system-and-platforms: working planned, seed recorded … 4 cell(s) over closed milestones exceed the status record"
+
+[[proof]]
+ledger = "m11e"
+criterion = "release-recipes-produce-artefacts"
+digest = "34e51a28d10b8c4b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'COMPONENTS =' in tools/release/release.py (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 1: error: recipe `release-check` failed on line 25 with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11e"
@@ -2738,14 +2746,6 @@ digest = "388483f34e425433"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: no mobile toolchain on this host; `porting-surface-against-a-stub` in M11.d's ledger carries the half that can be judged anywhere — CI job 'milestone-m11e'"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "release-recipes-produce-artefacts"
-digest = "7078c698f79a51cd"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just release'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"

@@ -1,24 +1,29 @@
 # just/release.just — Release: version, changelog, artefacts, publication.
 #
-# Nothing here is implemented at M0. The engine has no release process yet because it has nothing to
-# release; the category exists so that the first release does not invent one in a shell history.
-#
-# When it lands, the shape is already fixed by the specifications it will have to satisfy: a release
-# is a `release` profile build whose identity the diagnostics record and whose artefacts the
-# packaging capability produces. None of that is a decision this milestone gets to make early.
+# The recipes are thin wrappers over tools/release/release.py. CMake and Cargo remain the build
+# systems and cy_build remains the project package engine; this layer selects the public outputs,
+# records their provenance and creates deterministic component archives.
 
-# Report or set the engine version. No release process exists before M12.
+# Report or set the engine and editor version together.
 release-version *args:
-    @just _not-implemented release-version 'M12 — build-and-packaging'
+    @python3 "{{root}}/tools/release/release.py" version {{args}}
 
-# Assemble the changelog for a version from the changes that landed in it. No release before M12.
+# Assemble the changelog for a version from first-parent Git history.
 release-changelog *args:
-    @just _not-implemented release-changelog 'M12 — build-and-packaging'
+    @python3 "{{root}}/tools/release/release.py" changelog {{args}}
 
-# Build the release artefacts for every supported platform. No release before M12.
+# Build and assemble versioned editor, runtime, SDK, tools and template archives for this platform.
 release-artefacts *args:
-    @just _not-implemented release-artefacts 'M12 — build-and-packaging'
+    @python3 "{{root}}/tools/release/release.py" artifacts {{args}}
 
-# Publish a built release. Irreversible: it will confirm before it does anything. Not before M12.
+# Verify a release and print its draft GitHub publication; --execute requires --confirm v<version>.
 release-publish *args:
-    @just _not-implemented release-publish 'M12 — build-and-packaging'
+    @python3 "{{root}}/tools/release/release.py" publish {{args}}
+
+# Build a complete release in a temporary directory and verify its dry-run publication.
+release-check:
+    @python3 "{{root}}/tools/release/release.py" check
+
+# Test release versioning, reproducible archives, verification and safe publication defaults.
+release-test:
+    @python3 "{{root}}/tools/release/test_release.py"
