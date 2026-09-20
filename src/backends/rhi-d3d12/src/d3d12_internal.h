@@ -396,6 +396,8 @@ public:
     void report_validation(ValidationSeverity severity, const char* message) noexcept;
 
 private:
+    void configure_capabilities(const AdapterIdentity& identity) noexcept;
+    void probe_format_features() noexcept;
     [[nodiscard]] Status create_descriptor_heaps() noexcept;
     [[nodiscard]] Status create_queues() noexcept;
     [[nodiscard]] Status create_bindless_table() noexcept;

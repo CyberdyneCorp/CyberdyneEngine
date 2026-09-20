@@ -565,6 +565,18 @@ Status D3D12Device::initialize() noexcept {
         return fail(ErrorCode::Unavailable, "D3D12CreateDevice failed at feature level 12_0");
     }
 
+    configure_capabilities(identity);
+    probe_format_features();
+    if (Status status = create_queues(); !status) {
+        return status;
+    }
+    if (Status status = create_descriptor_heaps(); !status) {
+        return status;
+    }
+    return create_bindless_table();
+}
+
+void D3D12Device::configure_capabilities(const AdapterIdentity& identity) noexcept {
     capabilities_.set_backend(BackendKind::D3D12);
     capabilities_.set_native_shader_format(ShaderFormat::Dxil);
     capabilities_.set_device_name(identity.name);
@@ -621,7 +633,9 @@ Status D3D12Device::initialize() noexcept {
     limits.optimal_buffer_copy_offset_alignment = D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
     limits.non_coherent_atom_size = 1;
     limits.max_sampler_anisotropy = D3D12_MAX_MAXANISOTROPY;
+}
 
+void D3D12Device::probe_format_features() noexcept {
     for (u32 index = 1; index < static_cast<u32>(Format::Count); ++index) {
         const Format format = static_cast<Format>(index);
         D3D12_FEATURE_DATA_FORMAT_SUPPORT support{dxgi_format(format)};
@@ -647,17 +661,6 @@ Status D3D12Device::initialize() noexcept {
         }
         capabilities_.set_format_features(format, features);
     }
-
-    if (Status status = create_queues(); !status) {
-        return status;
-    }
-    if (Status status = create_descriptor_heaps(); !status) {
-        return status;
-    }
-    if (Status status = create_bindless_table(); !status) {
-        return status;
-    }
-    return ok();
 }
 
 Status D3D12Device::create_queues() noexcept {

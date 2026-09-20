@@ -6,6 +6,7 @@ on:
       - src/backends/rhi-d3d12/**
       - src/backends/rhi/**
       - src/core/diagnostics/src/crash_handler_windows.cpp
+      - src/core/determinism/src/hash.cpp
       - src/core/jobs/src/schedule.cpp
       - src/core/memory/include/cy/core/memory/hash.h
       - src/core/memory/tests/test_containers.cpp
