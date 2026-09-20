@@ -28,7 +28,15 @@ test-smoke *args:
 # without a rendering backend — so this recipe is green on a continuous integration machine with no
 # device, and says so, which is the only arrangement under which anybody leaves it in the set.
 test-render *args:
-    @just _ctest render {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    argv=({{args}})
+    if [ "${argv[0]:-}" = "--compare-backends" ]; then
+        python3 tools/ci/compare_backend_goldens.py --selftest
+        exec python3 tools/ci/compare_backend_goldens.py "${argv[@]:1}"
+    fi
+    exec just _ctest render ${argv[@]+"${argv[@]}"}
 
 # Determinism: reproducibility of simulation and replication. Ten seconds each.
 #
