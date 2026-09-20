@@ -171,8 +171,12 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
 
     cy::render_test::set_field(row.device, sizeof(row.device),
                                device.value()->capabilities().device_name());
-    row.device_class =
-        cy::render_test::classify(row.device, device.value()->capabilities().backend());
+    const cy::rhi::DeviceIdentity identity =
+        cy::rhi::classify_device_identity(row.device, device.value()->capabilities().vendor_id(),
+                                          device.value()->capabilities().backend());
+    row.vendor_id = identity.vendor_id;
+    cy::render_test::set_field(row.vendor, sizeof(row.vendor), identity.vendor);
+    row.device_class = identity.classification;
 
     if (!answered_itself) {
         row.outcome = Outcome::NoDevice;
@@ -300,30 +304,34 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
 // as the D3D12 backend it will judge.
 CY_TEST_CASE(
     "render.golden_backends: a device is never called hardware because nothing said it was not") {
-    using cy::render_test::classify;
     using cy::rhi::BackendKind;
+    using cy::rhi::classify_device_identity;
 
     // Every string here was OBSERVED — the three Linux ones on the machine M11.d was worked on, the
     // two hosted-runner ones by the spike's probe workflow on macos-14 and windows-2022.
-    CY_CHECK(classify("llvmpipe (LLVM 17.0.6, 256 bits)", BackendKind::Vulkan) ==
-             DeviceClass::Software);
-    CY_CHECK(classify("Microsoft Basic Render Driver", BackendKind::D3D12) ==
-             DeviceClass::Software);
-    CY_CHECK(classify("Apple Paravirtual device", BackendKind::Metal) == DeviceClass::Paravirtual);
-    CY_CHECK(classify("", BackendKind::Null) == DeviceClass::NullBackend);
+    CY_CHECK(classify_device_identity("llvmpipe (LLVM 17.0.6, 256 bits)", 0, BackendKind::Vulkan)
+                 .classification == DeviceClass::Software);
+    CY_CHECK(classify_device_identity("Microsoft Basic Render Driver", 0, BackendKind::D3D12)
+                 .classification == DeviceClass::Software);
+    CY_CHECK(classify_device_identity("Apple Paravirtual device", 0, BackendKind::Metal)
+                 .classification == DeviceClass::Paravirtual);
+    CY_CHECK(classify_device_identity("", 0, BackendKind::Null).classification ==
+             DeviceClass::NullBackend);
 
-    // THE CASE THIS EXISTS FOR. An unknown name is `Unattested`, never `Hardware`. A classifier
+    // THE CASE THIS EXISTS FOR. An unknown name is `Unknown`, never `Hardware`. A classifier
     // that defaulted to hardware would relabel the exact device the spike caught the moment its
-    // reported name changed by one word.
-    // The RTX 5060 this host actually has: the name matches no software fragment, and NOTHING
-    // in the interface attests that it is hardware, so the honest label is "unattested".
-    CY_CHECK(classify("NVIDIA GeForce RTX 5060", BackendKind::Vulkan) == DeviceClass::Unattested);
-    CY_CHECK(classify("Some Future Adapter", BackendKind::D3D12) == DeviceClass::Unattested);
-    CY_CHECK(classify(nullptr, BackendKind::Vulkan) == DeviceClass::Unattested);
+    // reported name changed by one word. A known vendor ID does attest the real adapter.
+    CY_CHECK(classify_device_identity("NVIDIA GeForce RTX 5060", 0x10DEU, BackendKind::Vulkan)
+                 .classification == DeviceClass::Hardware);
+    CY_CHECK(classify_device_identity("Some Future Adapter", 0xFFFFU, BackendKind::D3D12)
+                 .classification == DeviceClass::Unknown);
+    CY_CHECK(classify_device_identity(nullptr, 0, BackendKind::Vulkan).classification ==
+             DeviceClass::Unknown);
 
-    // And the row a reader sees says one of four words, never an empty string.
-    for (const DeviceClass kind : {DeviceClass::Software, DeviceClass::Paravirtual,
-                                   DeviceClass::NullBackend, DeviceClass::Unattested}) {
+    // And the row a reader sees says one of five words, never an empty string.
+    for (const DeviceClass kind :
+         {DeviceClass::Hardware, DeviceClass::Software, DeviceClass::Paravirtual,
+          DeviceClass::NullBackend, DeviceClass::Unknown}) {
         CY_CHECK(cy::render_test::describe(kind)[0] != '\0');
     }
     for (const Outcome outcome :

@@ -568,6 +568,7 @@ Status D3D12Device::initialize() noexcept {
     capabilities_.set_backend(BackendKind::D3D12);
     capabilities_.set_native_shader_format(ShaderFormat::Dxil);
     capabilities_.set_device_name(identity.name);
+    capabilities_.set_vendor_id(identity.vendor_id);
     capabilities_.set_driver_version("DXGI");
     capabilities_.set_needs_queue_ownership_transfer(false);
     capabilities_.set(Capability::ComputeShaders, true);
