@@ -15,6 +15,7 @@
 #include <cy/core/base/assert.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <new>
 
@@ -181,7 +182,7 @@ bool SystemSchedule::reaches(SystemId from, SystemId to) const noexcept {
         for (u32 word = 0; word < kEdgeWords; ++word) {
             u64 bits = edges_[current][word] & ~visited[word];
             while (bits != 0) {
-                const u32 bit = static_cast<u32>(__builtin_ctzll(bits));
+                const u32 bit = static_cast<u32>(std::countr_zero(bits));
                 bits &= bits - 1;
                 const SystemId next = (word * 64) + bit;
                 if (next == to) {
