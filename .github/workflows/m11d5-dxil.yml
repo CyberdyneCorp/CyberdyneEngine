@@ -21,11 +21,18 @@ jobs:
       - name: Download the pinned Slang toolchain
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri "https://github.com/shader-slang/slang/releases/download/v2026.9.2/slang-2026.9.2-windows-x86_64.zip" -OutFile "$env:RUNNER_TEMP\slang.zip"
           Expand-Archive "$env:RUNNER_TEMP\slang.zip" -DestinationPath "$env:RUNNER_TEMP\slang"
+          Invoke-WebRequest -Uri "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2602/dxc_2026_02_20.zip" -OutFile "$env:RUNNER_TEMP\dxc.zip"
+          Expand-Archive "$env:RUNNER_TEMP\dxc.zip" -DestinationPath "$env:RUNNER_TEMP\dxc"
+          Copy-Item "$env:RUNNER_TEMP\dxc\bin\x64\dxcompiler.dll" "$env:RUNNER_TEMP\slang\bin"
+          Copy-Item "$env:RUNNER_TEMP\dxc\bin\x64\dxil.dll" "$env:RUNNER_TEMP\slang\bin"
       - name: Compile and embed DXIL
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           $slangc = "$env:RUNNER_TEMP\slang\bin\slangc.exe"
           $source = "samples/03-first-light/shaders/first_light.slang"
           & $slangc $source -target dxil -profile sm_6_6 -entry shadowVertex -stage vertex -o "$env:RUNNER_TEMP\shadow.dxil"
