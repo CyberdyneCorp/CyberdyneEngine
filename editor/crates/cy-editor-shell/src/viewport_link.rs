@@ -280,8 +280,8 @@ mod elsewhere {
         pub fn idle() -> Self {
             Self {
                 condition: Condition::new(
-                    "The viewport transport is implemented for Linux only. This build shows no \
-                     engine image, and draws no approximation of one.",
+                    "The viewport transport is not ready on this platform. You can still edit \
+                     documents; engine frames currently require the Linux transport.",
                     Semantic::Warning,
                 ),
             }
@@ -312,6 +312,12 @@ mod elsewhere {
             false
         }
 
+        /// No image until this platform has a viewport transport.
+        #[must_use]
+        pub fn texture(&self) -> Option<egui::TextureId> {
+            None
+        }
+
         /// Never an image, and so never a frame for the viewport model to learn about.
         ///
         /// The signature matches the Linux one, `Viewport` included, so the window's frame loop is
@@ -326,6 +332,10 @@ mod elsewhere {
 
         /// Nowhere to publish it to. The signature matches the Linux one so the panel does not
         /// have to know which platform it is on.
+        #[expect(
+            clippy::needless_pass_by_value,
+            reason = "matches the transport's platform-independent interface"
+        )]
         pub fn publish_view_state(&mut self, state: cy_editor_viewport::state::ViewState) {
             let _ = state;
         }
@@ -404,6 +414,7 @@ mod tests {
         let link = ViewportLink::idle();
         assert!(!link.is_attached());
         assert!(!link.is_live());
+        assert_eq!(link.texture(), None);
         assert!(
             !link.condition().message.is_empty(),
             "there is always a sentence instead of an image"

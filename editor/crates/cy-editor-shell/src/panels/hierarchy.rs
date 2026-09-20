@@ -87,6 +87,8 @@ fn draw_row(
     let has_problem = panels.shell.problems.at_node(row.node).next().is_some();
     let colour = if has_problem {
         theme::role(panels.shell.theme, Semantic::Error)
+    } else if row.selected {
+        theme::role(panels.shell.theme, Semantic::Selection)
     } else {
         theme::role(panels.shell.theme, Semantic::PrimaryText)
     };
@@ -136,7 +138,11 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             } else {
                 "No entity matches this search."
             },
-            "Create Entity (Ctrl+Shift+N), or open a world.",
+            if panels.inputs.hierarchy_filter.trim().is_empty() {
+                "Open a world, then use Create Entity in the Scene menu."
+            } else {
+                "Clear the search to see the scene."
+            },
         );
         return;
     }
@@ -147,9 +153,13 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     ui.label(secondary(
         panels.shell,
         format!(
-            "{total} entities · {} rebuilds",
-            panels.hierarchy.rebuilds()
+            "{total} visible · {} selected",
+            panels.editor.selection.get().nodes().count()
         ),
+    ))
+    .on_hover_text(format!(
+        "{} hierarchy rebuilds",
+        panels.hierarchy.rebuilds()
     ));
     ui.add_space(metrics.gap() * 0.5);
 

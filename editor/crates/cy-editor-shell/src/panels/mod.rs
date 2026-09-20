@@ -126,6 +126,8 @@ pub struct Panels<'frame> {
     pub titles: &'frame PanelTitles,
     /// The text a person has typed into a panel's own field, which survives across frames.
     pub inputs: &'frame mut Inputs,
+    /// Tab rectangles collected for selection underlines after docking interaction resolves.
+    pub tab_rects: Vec<(PanelKey, egui::Rect, egui::LayerId)>,
     /// What the panels asked for, applied after the frame is drawn.
     pub intents: &'frame mut Vec<Intent>,
 }
@@ -147,6 +149,11 @@ impl egui_dock::TabViewer for Panels<'_> {
 
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
         self.titles.title(tab).into()
+    }
+
+    fn on_tab_button(&mut self, tab: &mut Self::Tab, response: &egui::Response) {
+        self.tab_rects
+            .push((tab.clone(), response.rect, response.layer_id));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
@@ -235,7 +242,11 @@ pub(crate) fn status(ui: &mut egui::Ui, shell: &Shell, role: Semantic, text: &st
 /// state in this crate goes through here, and every one names the action that would fill it.
 pub(crate) fn nothing_here(ui: &mut egui::Ui, shell: &Shell, what: &str, remedy: &str) {
     ui.add_space(shell.metrics().gap());
-    ui.label(secondary(shell, what));
+    ui.label(
+        egui::RichText::new(what)
+            .size(shell.metrics().text(TextRole::Body))
+            .color(theme::role(shell.theme, Semantic::PrimaryText)),
+    );
     ui.add_space(shell.metrics().gap() * 0.5);
     ui.label(secondary(shell, remedy));
 }
@@ -275,6 +286,11 @@ pub(crate) fn search_field(
 ) -> bool {
     let response = ui.add(
         egui::TextEdit::singleline(text)
+            .margin(egui::vec2(
+                shell.metrics().gap(),
+                shell.metrics().gap() * 0.5,
+            ))
+            .background_color(theme::surface(shell.theme, Surface::Raised))
             .hint_text(secondary(shell, hint))
             .desired_width(f32::INFINITY),
     );

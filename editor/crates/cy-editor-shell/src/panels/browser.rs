@@ -61,19 +61,20 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             } else {
                 "No asset matches this search."
             },
-            "Open a world; its assets appear here.",
+            if filter.is_empty() {
+                "Open a world; its assets appear here."
+            } else {
+                "Clear the search to see all referenced assets."
+            },
         );
         return;
     }
 
-    ui.label(secondary(
-        panels.shell,
-        format!(
-            "{} items · {} previews requested",
-            assets.len(),
+    ui.label(secondary(panels.shell, format!("{} items", assets.len())))
+        .on_hover_text(format!(
+            "{} previews requested",
             panels.thumbnails.requests()
-        ),
-    ));
+        ));
     ui.add_space(metrics.gap() * 0.5);
 
     let tile = metrics.row() * 3.5;

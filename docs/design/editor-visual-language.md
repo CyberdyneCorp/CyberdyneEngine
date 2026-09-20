@@ -465,3 +465,27 @@ Three rules bind earlier than the capability does — cheap now, expensive to re
 - [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) — viewport behaviour
 - [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) — why the toolkit is an implementation detail
 - [The roadmap](../ROADMAP.md) — when the editor is built
+
+
+## Workspace polish on macOS (2026-09-19)
+
+The first shell polish pass brings resting menus and transform controls closer to the strategy
+reference. The active transform uses blue with a persistent underline and exposes its selected state
+to accessibility. Each selected dock tab has a gold underline, including in floating regions.
+Hierarchy rows use gold text for selection while retaining error priority. Search fields use the
+raised surface, and empty states separate the primary message from the next step. Hierarchy summaries
+show visible and selected counts; browser summaries show item counts. Rebuild and preview-request
+counters remain available on hover.
+
+| Before | After |
+|---|---|
+| ![Before](images/editor-polish-before-macos.png) | ![After](images/editor-polish-after-macos.png) |
+
+These are actual macOS editor captures with no world or runtime, at matching window dimensions and
+compact density. The baseline includes only the missing non-Linux `texture()` adapter method needed
+to compile main on macOS. The empty viewport is expected: native engine Metal and macOS frame transport
+are a separate workstream. This pass does not claim rendered-scene or thumbnail parity.
+
+Verified with the pinned Rust 1.95.0 toolchain: 212 shell/interface/app tests, shell Clippy with warnings
+denied, and rustfmt. Interactive checks covered toolbar and shortcut mode switching, dark/light themes,
+compact/comfortable density, no-result search guidance, and selection counts in a sample world. No renderer or roadmap status was changed.

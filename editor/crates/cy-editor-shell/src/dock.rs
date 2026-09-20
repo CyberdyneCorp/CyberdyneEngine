@@ -226,9 +226,58 @@ pub fn style(theme: cy_editor_visual::Theme, base: &egui::Style) -> egui_dock::S
     style
 }
 
+/// Paint on each tab's own layer, including tabs in floating dock windows.
+pub(crate) fn paint_tab_selection(
+    ctx: &egui::Context,
+    state: &DockState<PanelKey>,
+    tabs: &[(PanelKey, egui::Rect, egui::LayerId)],
+    theme: cy_editor_visual::Theme,
+) {
+    let selected = active_tabs(state);
+    for (key, rect, layer) in tabs {
+        if selected.contains(key) {
+            ctx.layer_painter(*layer).hline(
+                rect.x_range(),
+                rect.bottom() - 1.0,
+                egui::Stroke::new(
+                    2.0,
+                    crate::theme::role(theme, cy_editor_visual::Semantic::Selection),
+                ),
+            );
+        }
+    }
+}
+
+fn active_tabs(state: &DockState<PanelKey>) -> Vec<PanelKey> {
+    state
+        .iter_all_nodes()
+        .filter_map(|(_, node)| {
+            let egui_dock::Node::Leaf(leaf) = node else {
+                return None;
+            };
+            leaf.tabs.get(leaf.active.0).cloned()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tab_selection_tracks_each_leaf_including_floating_windows() {
+        let first = PanelKey::new("console").unwrap();
+        let second = PanelKey::new("problems").unwrap();
+        let floating = PanelKey::new("inspector").unwrap();
+        let mut state = DockState::new(vec![first.clone(), second.clone()]);
+        state.add_window(vec![floating.clone()]);
+        assert_eq!(active_tabs(&state), vec![first, floating.clone()]);
+        let egui_dock::Node::Leaf(leaf) = &mut state.main_surface_mut()[NodeIndex::root()] else {
+            panic!("the root is a leaf");
+        };
+        leaf.active = egui_dock::TabIndex(1);
+        assert_eq!(active_tabs(&state), vec![second, floating]);
+    }
 
     #[test]
     fn a_layout_survives_the_round_trip_through_the_toolkit() {
