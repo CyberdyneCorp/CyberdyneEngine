@@ -129,6 +129,17 @@ def main(argv: list[str]) -> int:
         print(f"no such build directory: {arguments.build_dir}", file=sys.stderr)
         return 2
 
+    # Windows: this project ships no Swift toolchain support on Windows — bindings/swift/
+    # CMakeLists.txt says as much and does not register the swift_reload or swift_package suites
+    # here. The engine's binaries are PE, not ELF, and this check's ELF scan finds none. The claim
+    # under test ("no Swift runtime is linked") holds by construction, and asserting it via a PE
+    # scan would only make Windows the one platform that can regress this via a tool change. Skip
+    # cleanly, and say so.
+    if sys.platform == "win32":
+        print("==> swift runtime  not applicable on Windows (engine binaries are PE, "
+              "not ELF; no Swift toolchain in this build tree)")
+        return 0
+
     allowed = list(DEFAULT_ALLOWED) + arguments.allow
     inspected, skipped = candidates(arguments.build_dir, allowed)
 

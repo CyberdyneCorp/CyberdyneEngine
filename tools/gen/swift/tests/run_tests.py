@@ -51,14 +51,14 @@ def case(name: str, body) -> None:
 
 def describe_edited(replacement: tuple[str, str] | None = None) -> dict:
     """The ABI description, optionally with one edit applied to the header first."""
-    text = HEADER.read_text()
+    text = HEADER.read_text(encoding="utf-8")
     if replacement is not None:
         old, new = replacement
         assert old in text, f"the header no longer contains {old!r}; this case needs rewriting"
         text = text.replace(old, new, 1)
     with tempfile.TemporaryDirectory() as scratch:
         edited = pathlib.Path(scratch) / "cy_abi.h"
-        edited.write_text(text)
+        edited.write_text(text, encoding="utf-8", newline="\n")
         return cli.load_description(edited)
 
 
@@ -81,7 +81,8 @@ def unedited_header_generates_and_matches_what_is_committed() -> None:
     for name, text in files.items():
         committed = PACKAGE / name
         assert committed.exists(), f"{name} is not committed"
-        assert committed.read_text() == text, f"{name} differs from what regeneration produces"
+        assert committed.read_text(encoding="utf-8") == text, \
+            f"{name} differs from what regeneration produces"
 
 
 # --- determinism -----------------------------------------------------------------------------------
@@ -209,7 +210,8 @@ def a_stale_committed_file_is_detected_and_named() -> None:
         shutil.copytree(PACKAGE, copy,
                         ignore=shutil.ignore_patterns(".build", "*.so", "modules"))
         target = copy / "Sources" / "CyberdyneCore" / "Generated" / "Enums.swift"
-        target.write_text(target.read_text() + "\n// an edit nobody regenerated\n")
+        target.write_text(target.read_text(encoding="utf-8") + "\n// an edit nobody regenerated\n",
+                          encoding="utf-8", newline="\n")
         files = cli.outputs(cli.load_description(HEADER), HEADER)
         assert cli._check(copy, files) == 1, "an edited generated file was reported as current"
         # And the control: the unedited copy is current.
