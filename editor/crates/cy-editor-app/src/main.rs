@@ -156,32 +156,7 @@ fn run(arguments: &[String]) -> Result<()> {
 
     let opens_window = opens_window(&options);
     let workspace_store = if opens_window && !options.smoke {
-        match WorkspaceStore::for_user(application.editor.project.root()) {
-            Ok(store) => {
-                match store.restore(&mut application.editor) {
-                    Ok(report) => {
-                        if !report.missing.is_empty() {
-                            application.editor.notifications.post(Notification::warning(
-                                format!(
-                                    "Skipped {} missing document(s) from the previous workspace: {}",
-                                    report.missing.len(),
-                                    report.missing.join(", ")
-                                ),
-                            ));
-                        }
-                    }
-                    Err(problem) => application
-                        .editor
-                        .notifications
-                        .post(Notification::error(problem.what.clone(), problem)),
-                }
-                Some(store)
-            }
-            Err(problem) => {
-                eprintln!("cyberdyne-editor: {problem}");
-                None
-            }
-        }
+        restore_workspace(&mut application)
     } else {
         None
     };
@@ -216,6 +191,35 @@ fn run(arguments: &[String]) -> Result<()> {
     application.pump();
     report(&mut application);
     Ok(())
+}
+
+fn restore_workspace(application: &mut Application) -> Option<WorkspaceStore> {
+    let store = match WorkspaceStore::for_user(application.editor.project.root()) {
+        Ok(store) => store,
+        Err(problem) => {
+            eprintln!("cyberdyne-editor: {problem}");
+            return None;
+        }
+    };
+
+    match store.restore(&mut application.editor) {
+        Ok(report) if !report.missing.is_empty() => {
+            application
+                .editor
+                .notifications
+                .post(Notification::warning(format!(
+                    "Skipped {} missing document(s) from the previous workspace: {}",
+                    report.missing.len(),
+                    report.missing.join(", ")
+                )));
+        }
+        Ok(_) => {}
+        Err(problem) => application
+            .editor
+            .notifications
+            .post(Notification::error(problem.what.clone(), problem)),
+    }
+    Some(store)
 }
 
 fn opens_window(options: &Options) -> bool {
