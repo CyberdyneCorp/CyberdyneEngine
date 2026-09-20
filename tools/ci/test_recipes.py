@@ -221,10 +221,11 @@ def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
 
     `build-editor-check` used Bash 4's `mapfile`, so the macOS editor job stopped before rustfmt,
     clippy or any test ran. The same investigation found Bash 4's `;;&` in `_ctest`, which stopped
-    the arm64 digest publisher before it could execute `determinism.cross_leg`, and another
-    `mapfile` in `_doctor-host-tools`, which broke `ci-check` on the same host. These tokens are
-    syntax or builtins the system shell cannot provide; keeping the check here makes the exact CI
-    paths fail locally before another hosted run is spent discovering them.
+    the arm64 digest publisher before it could execute `determinism.cross_leg`, another `mapfile`
+    in `_doctor-host-tools`, which broke `ci-check`, and more in sample, formatting, lint, identity,
+    and generation recipes. These tokens are syntax or builtins the system shell cannot provide;
+    keeping the check here makes the exact macOS paths fail locally before another run is spent
+    discovering them.
     """
     recipes: dict[str, tuple[pathlib.Path, list[str]]] = {}
     for just_file in sorted((root / "just").glob("*.just")):
@@ -237,7 +238,19 @@ def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
         (r"\breadarray\b", "readarray"),
         (r";;&|;&", "case fallthrough"),
     )
-    for name in ("build-editor-check", "build-editor-format", "_ctest", "_doctor-host-tools"):
+    for name in (
+        "build-editor-check",
+        "build-editor-format",
+        "_ctest",
+        "_doctor-host-tools",
+        "run-sample",
+        "quality-format",
+        "quality-format-check",
+        "quality-lint",
+        "quality-identity",
+        "generate-headers",
+        "generate-check",
+    ):
         just_file, body = recipes[name]
         commands = "\n".join(line for line in body if not line.lstrip().startswith("#"))
         for pattern, feature in forbidden:

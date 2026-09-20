@@ -4,19 +4,13 @@
 // WHAT THIS SHADER IS AND IS NOT
 // ================================================================================================
 //
-// IT IS NOT THE ENGINE'S MATERIAL SYSTEM. Nothing here is compiled by `cy::material`, nothing here
-// samples a virtual texture page, and nothing here samples an `environment` field through
-// `environment::build_field_image()`'s buffer layout. M10 shipped no `.slang` module for a field,
-// for a terrain material, for a water surface or for a cloud march — six of this milestone's agents
-// each recorded that gap against their own row, and this file closes none of them.
+// IT IS NOT THE ENGINE'S MATERIAL SYSTEM. Nothing here is compiled by `cy::material` and nothing
+// samples a virtual texture page. The compute module beside it samples environment field images and
+// prepares the colour stream; this raster pipeline only consumes that stream.
 //
-// WHAT IT IS: a Lambert term over a per-vertex colour, and the colour is the interesting half. Every
-// colour this shader receives was computed on the PROCESSOR by the module that owns it — terrain's
-// material layer composed with `environment::FieldStore::sample_deterministic()`'s wetness and snow,
-// water's own foam and absorption, foliage's species tint, and for the sky dome the radiance
-// `rendering::sky::compose_sky()` answered for that direction. The shader interpolates them and
-// applies one light. That division is deliberate and it is what makes the picture honest: the
-// modelling is the engine's, the pixels are a rasteriser's.
+// WHAT IT IS: a Lambert term over a per-vertex colour. Device compute passes produce terrain, sky,
+// and water colours; the processor still produces foliage colours. This shader interpolates those
+// streams and applies one light.
 //
 // ================================================================================================
 // WHY THE MATRIX IS FOUR EXPLICIT ROWS
@@ -49,7 +43,12 @@
 //   python3 embed_spirv.py world_spirv.h \
 //          kWorldVertexSpirv=world_vertex.spv \
 //          kWorldFragmentSpirv=world_fragment.spv
-//   clang-format -i world_spirv.h
+//   slangc world.slang -target metal -entry worldVertex -stage vertex -o world_vertex.metal
+//   slangc world.slang -target metal -entry worldFragment -stage fragment -o world_fragment.metal
+//   python3 embed_msl.py world_msl.h \
+//          kWorldVertexMsl=world_vertex.metal \
+//          kWorldFragmentMsl=world_fragment.metal
+//   clang-format -i world_spirv.h world_msl.h
 
 struct WorldPush
 {
@@ -79,10 +78,8 @@ struct VertexInput
     // every frame for water and foliage.
     [[vk::location(0)]] float3 position : POSITION;
     [[vk::location(1)]] float3 normal : NORMAL;
-    // Binding 1, stride 12: the per-vertex colour every producer computed on the processor. A
-    // SEPARATE binding because terrain's positions never change and its colours change every frame
-    // — one buffer uploaded once and one uploaded per frame, rather than a hundred and fifty
-    // thousand positions re-sent so that a snowfall can be seen.
+    // Binding 1, stride 12: the per-vertex colour stream. A separate binding lets compute rewrite
+    // terrain colours without resending a hundred and fifty thousand positions.
     [[vk::location(2)]] float3 color : COLOR;
 };
 
@@ -124,8 +121,8 @@ float4 worldFragment(VertexOutput input) : SV_Target
 {
     if (push.eye.w > 0.5)
     {
-        // The sky dome: the colour IS the radiance `compose_sky()` answered, already divided by the
-        // frame's exposure on the processor. Nothing is lit, because a sky is not a surface.
+        // The sky dome is already scene-linear output from its device producer. Nothing is lit,
+        // because a sky is not a surface.
         return float4(tonemap(input.color), 1.0);
     }
 

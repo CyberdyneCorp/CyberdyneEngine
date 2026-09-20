@@ -15,7 +15,10 @@ quality-format *paths:
     set -euo pipefail
     cd "{{root}}"
     formatter="$(just _tool clang-format "${CY_CLANG_FORMAT:-}")"
-    mapfile -t files < <(just _cpp-files {{paths}})
+    files=()
+    while IFS= read -r file; do
+        files[${#files[@]}]="${file}"
+    done < <(just _cpp-files {{paths}})
     if [ ${#files[@]} -eq 0 ]; then
         echo "quality-format: no C++ sources under $(just _cpp-roots {{paths}})"
         exit 0
@@ -29,7 +32,10 @@ quality-format-check *paths:
     set -euo pipefail
     cd "{{root}}"
     formatter="$(just _tool clang-format "${CY_CLANG_FORMAT:-}")"
-    mapfile -t files < <(just _cpp-files {{paths}})
+    files=()
+    while IFS= read -r file; do
+        files[${#files[@]}]="${file}"
+    done < <(just _cpp-files {{paths}})
     if [ ${#files[@]} -eq 0 ]; then
         echo "quality-format-check: no C++ sources under $(just _cpp-roots {{paths}})"
         exit 0
@@ -63,7 +69,10 @@ quality-lint *args:
 
     # Lint what the build actually compiles, restricted to the engine's own sources: a fetched
     # dependency's translation units are in the database too, and they are not this project's to fix.
-    mapfile -t files < <(just _lint-files "${database}" ${paths})
+    files=()
+    while IFS= read -r file; do
+        files[${#files[@]}]="${file}"
+    done < <(just _lint-files "${database}" ${paths})
     if [ ${#files[@]} -eq 0 ]; then
         echo "quality-lint: the compile database contains no engine sources yet." >&2
         exit 1
@@ -117,7 +126,10 @@ quality-identity *args:
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     reflect_inputs="$(just _reflect-inputs "${build_dir}")"
-    mapfile -t reflect_args <<< "${reflect_inputs}"
+    reflect_args=()
+    while IFS= read -r reflect_arg; do
+        reflect_args[${#reflect_args[@]}]="${reflect_arg}"
+    done <<< "${reflect_inputs}"
     echo "==> identity    identity/manifest.toml against the tree and against git"
     python3 tools/gen/reflect_gen.py --source-root . "${reflect_args[@]}" \
         --cache "${build_dir}/generated/cy_reflect_gate.json" --gate ${rest}
@@ -430,4 +442,3 @@ _lint-files database *paths:
             seen.add(path)
             print(path)
     PY
-

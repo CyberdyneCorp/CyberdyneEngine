@@ -37,7 +37,10 @@ run-sample *args:
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     # samples/<nn>-<name>/cy_sample_<name>: the sample's number orders the directory listing and is
     # not part of its name, so the binary is found by pattern rather than by a table kept in step.
-    mapfile -t binaries < <(compgen -G "${build_dir}/samples/*/cy_sample_${name}" || true)
+    binaries=()
+    while IFS= read -r binary; do
+        binaries[${#binaries[@]}]="${binary}"
+    done < <(compgen -G "${build_dir}/samples/*/cy_sample_${name}" || true)
     # A SAMPLE MAY BE NAMED WITH ITS DIRECTORY'S NUMBER. `samples/00-empty/` builds
     # `cy_sample_empty`, and both spellings are things a reader of the tree would type — M11.d's
     # ledger says `just run-sample 00-empty` because that is what the directory is called. The
@@ -45,7 +48,10 @@ run-sample *args:
     # than kept in a table that would have to stay in step.
     if [ "${#binaries[@]}" -eq 0 ] && [[ "${name}" =~ ^[0-9]+[a-z]?- ]]; then
         name="${name#*-}"
-        mapfile -t binaries < <(compgen -G "${build_dir}/samples/*/cy_sample_${name}" || true)
+        binaries=()
+        while IFS= read -r binary; do
+            binaries[${#binaries[@]}]="${binary}"
+        done < <(compgen -G "${build_dir}/samples/*/cy_sample_${name}" || true)
     fi
     if [ "${#binaries[@]}" -eq 0 ]; then
         echo "run-sample: no sample '${name}' in ${build_dir}/samples/." >&2

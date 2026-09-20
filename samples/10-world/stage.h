@@ -9,15 +9,14 @@
 // Five runs per frame through ONE graphics pipeline of this file's own, recorded into the OPAQUE
 // stage of `cy::rendering::assembly::FrameAssembly`'s frame, in this order:
 //
-//   the sky      a dome of triangles around the eye, each vertex carrying the radiance
-//                `rendering::sky::compose_sky()` answered for its direction — the engine's own
-//                atmosphere, its own multiple-scattering table, its own volumetric cloud march and
-//                its own stars, evaluated on the processor once per dome vertex.
+//   the sky      a dome of triangles around the eye. A compute pass shades its vertices on the
+//                device from the current sun and cloud state before this draw reads them.
 //   the terrain  `terrain::mesh_tile()`'s output for every level-0 tile. Positions and normals are
-//                uploaded ONCE; the colours are re-uploaded every frame, because they are the
-//                environment substrate re-sampled and that is what makes a snowfall visible.
+//                uploaded once; a compute pass samples four packed field images through
+//                `cy/field.slang` and writes its device-resident colour stream.
 //   the water    `water::OceanSurface::build()`'s camera-relative patch, regenerated every frame
-//                from the spectral model weather's wind drives.
+//                from the spectral model weather's wind drives. A ping-pong compute pass evolves
+//                visual foam and writes the water colours.
 //   the foliage  one procedural proxy per plant: a three-sided trunk and an eight-sided crown, with
 //                the crown displaced by `foliage::evaluate_response()`'s answer for a vertex at the
 //                top of the canopy.
@@ -45,8 +44,9 @@
 // ================================================================================================
 //
 // **The geometry is this file's and not the renderer's.** The world is not in a mesh table, its
-// vertices are not the render server's three streams, and its shading is still per-vertex colour
-// computed on the processor. It is drawn INSIDE the engine's frame through `FrameSinks::passes`,
+// vertices are not the render server's three streams, and its shading is still per-vertex colour.
+// The terrain, sky, and water colours are now produced by device passes. It is drawn INSIDE the
+// engine's frame through `FrameSinks::passes`,
 // which is the seam `ForwardFrame` documents — "ForwardFrame knows the frame STRUCTURE and the
 // caller knows how to draw" — and not through the pipeline layer's own draw path.
 //
@@ -57,10 +57,8 @@
 // this frame runs is the three unconditional stages and the manifest says three.
 //
 // **No visibility buffer, no virtual geometry, no material system.** No terrain material page is
-// bound, no environment field is sampled through `environment::build_field_image()`'s GPU layout,
-// no water surface is published into the GPU scene, and no grass blade is expanded on the device.
-// Every one of those is a gap M10's own module READMEs record against their own rows, and an
-// artefact that implied otherwise would be the false green this milestone's brief forbids.
+// bound, no water surface is published into the GPU scene, and no grass blade is expanded on the
+// device. The sample directly binds packed field images rather than the GPU scene's bindless table.
 //
 // The foliage proxies in particular are THIS FILE'S geometry and not an asset: `foliage` stores 16
 // bytes an instance and names a species, and what a species' mesh looks like is the project's. A
@@ -103,9 +101,12 @@ static_assert(sizeof(Vertex) == 24, "binding 0's stride is declared as 24 in cre
 
 /// What one frame cost and produced, measured rather than claimed.
 struct StageReport {
-    /// Vulkan validation errors seen since the device was created. Any non-zero number is a defect
+    /// RHI validation errors seen since the device was created. Any non-zero number is a defect
     /// and the artefact prints it rather than burying it in a log.
     u32 validation_errors = 0;
+    u32 terrain_dispatches = 0;
+    u32 cloud_dispatches = 0;
+    u32 foam_dispatches = 0;
     u32 sky_triangles = 0;
     u32 terrain_triangles = 0;
     u32 water_triangles = 0;
@@ -148,6 +149,8 @@ public:
     [[nodiscard]] bool available() const noexcept { return available_; }
     /// Why no device answered, for the message a machine without one prints.
     [[nodiscard]] const char* absence() const noexcept;
+    [[nodiscard]] const char* backend_name() const noexcept;
+    [[nodiscard]] const char* device_name() const noexcept;
 
     /// Upload everything that never changes: the terrain's positions and normals, and the sky
     /// dome's index list. Once, not per frame.
@@ -157,6 +160,13 @@ public:
     /// when that is not null.
     [[nodiscard]] Status shoot(const World& world, const WorldVec3d& eye, const WorldVec3d& target,
                                const char* png_path, StageReport& out) noexcept;
+    /// Compare the staged terrain compute result with `World`'s CPU reference after a warmup
+    /// dispatch. Refuses missing vertices and any channel outside the declared tolerance.
+    [[nodiscard]] Status verify_terrain_agreement(const World& world, f32& worst_error,
+                                                  u32& compared) const noexcept;
+    [[nodiscard]] Status verify_cloud_agreement(const World& world, f32& worst_error,
+                                                u32& compared) const noexcept;
+    [[nodiscard]] Status verify_foam_output(u32& active_cells) const noexcept;
 
     /// Write the frame's own stage list beside a still. `rendering-post-processing`: "a published
     /// capture SHALL be accompanied by that stage list, and where a caption states that a stage
@@ -178,15 +188,17 @@ private:
     struct Device;
 
     [[nodiscard]] Status create_pipeline() noexcept;
+    [[nodiscard]] Status create_visual_pipelines() noexcept;
     /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
     /// writes. M11.c task 3.1.
     [[nodiscard]] Status create_frame() noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
-    /// Refill the per-frame streams: the sky dome's vertices, the water patch and the foliage
-    /// proxies. Everything here is CPU work over what `World::advance()` produced.
+    /// Refill geometry and CPU-authored foliage streams. Device passes replace the terrain, sky,
+    /// and water colour ranges before the opaque draw consumes them.
     [[nodiscard]] Status build_dynamic(const World& world, const WorldVec3d& eye,
                                        StageReport& out) noexcept;
-    [[nodiscard]] Status upload_dynamic() noexcept;
+    [[nodiscard]] Status upload_dynamic(const World& world, f32& field_origin_x,
+                                        f32& field_origin_z) noexcept;
 
     Allocator* allocator_;
     Device* device_ = nullptr;
@@ -200,6 +212,12 @@ private:
     /// The static half: terrain geometry, uploaded once.
     u32 terrain_vertices_ = 0;
     u32 terrain_indices_ = 0;
+    u32 dynamic_capacity_ = 0;
+    u32 sky_vertices_ = 0;
+    u32 water_first_vertex_ = 0;
+    u32 water_vertices_ = 0;
+    u32 visual_frame_index_ = 0;
+    u64 field_image_bytes_[4] = {};
 
     /// The dynamic half, rebuilt every frame. Held as members so the arrays keep their capacity
     /// between frames and the per-frame cost is a memcpy rather than an allocation.

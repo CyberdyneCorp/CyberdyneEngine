@@ -37,12 +37,9 @@
 // WHAT IT DOES NOT CLAIM
 // ================================================================================================
 //
-// Every producer in this world runs on the PROCESSOR. M10 shipped no `.slang` module for a field,
-// for a terrain material, for a water surface, for grass expansion or for a cloud march — six
-// separate agents each recorded that gap against their own row, and this artefact does not close
-// any of them. What the renderer beside this file draws is geometry and per-vertex colour that
-// these modules produced on the CPU. README.md says so at length and so does the report the program
-// prints, because a picture that implied otherwise would be the worst outcome available to it.
+// Authoritative simulation stays on the processor. The rendered path uploads its field images and
+// dispatches terrain shading, cloud composition, and visual foam on the device; headless execution
+// omits those presentation-only producers. Foliage response and ocean geometry remain CPU work.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -50,6 +47,7 @@
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/environment/field.h>
+#include <cy/environment/gpu.h>
 #include <cy/environment/store.h>
 #include <cy/foliage/instance.h>
 #include <cy/foliage/placement.h>
@@ -104,8 +102,8 @@ struct WorldOptions {
     /// Cloud march steps. The quality lever, carried here because the sky's cost across a day is
     /// what task 7.3 asks to be measured as a curve.
     u32 cloud_steps = 24;
-    /// Sky dome vertices are coloured by `sky::compose_sky()`, which marches clouds per direction.
-    /// This is the dome's resolution in rings and segments.
+    /// Sky dome vertices are coloured by the device cloud pass. This is the dome's resolution in
+    /// rings and segments; `cloud_steps` remains the CPU lighting reference's quality lever.
     u32 sky_rings = 56;
     u32 sky_segments = 112;
 };
@@ -182,16 +180,15 @@ struct FrameCosts {
     /// which a curve of milliseconds alone cannot show.
     u64 field_points = 0;
     bool field_publication_throttled = false;
-    /// The water simulation: the spectrum re-derived from the wind, the clock, and the foam
-    /// field's advection and decay over its whole grid.
+    /// Authoritative water clock and spectrum updates. Rendered visual foam evolves on the device.
     f64 water_ms = 0.0;
     /// Regenerating the camera-relative ocean patch. Separated because it is the half that scales
     /// with the patch's vertex count and the other is the half that scales with the foam grid, and
     /// a budget curve that could not tell them apart would send a reader to the wrong lever.
     f64 ocean_ms = 0.0;
     f64 sky_ms = 0.0;
-    /// Re-sampling the substrate for every terrain vertex's colour — the consumer side of wetness
-    /// and snow, and the reason a terrain goes white when it snows.
+    /// CPU terrain shading reference cost. Zero in the shipping frame path, where the device reads
+    /// the packed field images.
     f64 terrain_shade_ms = 0.0;
     f64 foliage_ms = 0.0;
 
@@ -200,11 +197,11 @@ struct FrameCosts {
     }
 };
 
-/// One terrain tile, meshed once and re-shaded every frame.
+/// One terrain tile, meshed once and shaded from packed field images on the device.
 ///
 /// `mesh.positions` are LOCAL to the tile's minimum corner (`terrain::TerrainMesh`'s own
 /// convention); `origin` is that corner in absolute metres. The colours are recomputed each frame
-/// from the environment fields, which is what makes snow and wetness visible.
+/// from the same environment fields, which is what makes snow and wetness visible.
 struct TerrainPatch {
     terrain::TerrainMesh mesh;
     WorldVec3d origin;
@@ -246,7 +243,7 @@ struct PlantDraw {
     PlantKind kind = PlantKind::Tree;
 };
 
-/// One vertex of the sky dome: a direction, and the radiance `sky::compose_sky()` answered for it.
+/// One vertex of the sky dome: a direction and the radiance written by the visual cloud pass.
 struct SkyVertex {
     Vec3 direction{0.0F, 1.0F, 0.0F};
     Vec3 radiance{0.0F, 0.0F, 0.0F};
@@ -334,6 +331,9 @@ public:
     /// reads. One frame is one simulated tick of every module in it, and there is no wall clock in
     /// the loop, so frame N of two runs is the same world.
     [[nodiscard]] Status advance(FrameCosts& costs) noexcept;
+    /// Rebuild the CPU terrain colours for one-time device agreement validation. This is excluded
+    /// from the measured frame path.
+    [[nodiscard]] Status shade_terrain_reference() noexcept { return shade_terrain(); }
 
     /// A deformation and a save, for M10 tasks.md 7.2. Craters the terrain at a position, records
     /// the delta into `world::PersistenceOverlay`, drops the delta store, restores it from the
@@ -386,6 +386,10 @@ public:
     [[nodiscard]] const water::OceanSurface& ocean() const noexcept { return ocean_; }
     [[nodiscard]] const Lighting& lighting() const noexcept { return lighting_; }
     [[nodiscard]] const WorldState& state() const noexcept { return state_; }
+    /// Field images consumed by the device terrain pass: water distance, wetness, snow and
+    /// vegetation, in that order.
+    [[nodiscard]] Expected<environment::FieldGpuImage, Error> terrain_field_image(
+        u32 index) const noexcept;
     [[nodiscard]] const WorldOptions& options() const noexcept { return options_; }
     /// The centre of the world, which is what f32 rendering coordinates are relative to.
     [[nodiscard]] WorldVec3d centre() const noexcept;
@@ -412,7 +416,7 @@ private:
     [[nodiscard]] Status build_sky_dome() noexcept;
 
     [[nodiscard]] Status shade_terrain() noexcept;
-    [[nodiscard]] Status shade_sky() noexcept;
+    [[nodiscard]] Status shade_sky(bool shade_visual_dome) noexcept;
     [[nodiscard]] Status update_plants() noexcept;
     [[nodiscard]] Status publish_shoreline() noexcept;
 

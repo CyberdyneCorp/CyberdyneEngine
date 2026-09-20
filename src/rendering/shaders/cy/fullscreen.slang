@@ -9,9 +9,40 @@
 
 module fullscreen;
 
-import cy.globals;
 import cy.tonemap;
 import cy.color;
+
+struct FullscreenGlobalsData
+{
+    float timeSeconds;
+    float deltaSeconds;
+    float exposureStops;
+    float windStrength;
+    float4 windDirectionAndSpeed;
+};
+
+struct FullscreenGlobalSet
+{
+    ConstantBuffer<FullscreenGlobalsData> data;
+};
+
+[[vk::binding(0, 0)]] ParameterBlock<FullscreenGlobalSet> globalSet;
+
+// Set 1 is retained in this entry point so Metal's argument-buffer indices stay equal to the
+// engine's set indices. The extent is already present at view binding 0; the impossible branch
+// makes it a real read without changing a legal frame.
+struct FullscreenViewData
+{
+    float4 rows[10];
+    uint4 words[4];
+};
+
+struct FullscreenViewSet
+{
+    ConstantBuffer<FullscreenViewData> frame;
+};
+
+[[vk::binding(0, 1)]] ParameterBlock<FullscreenViewSet> viewSet;
 
 public struct FullscreenVertex
 {
@@ -39,10 +70,13 @@ public FullscreenVertex fullscreenVertex(uint vertexId: SV_VulkanVertexID)
 }
 
 /// Pass-specific resources are set 2 by the descriptor set convention.
-[[vk::binding(0, 2)]]
-Texture2D<float4> sceneColor;
-[[vk::binding(1, 2)]]
-SamplerState linearClamp;
+struct FullscreenPassSet
+{
+    Texture2D<float4> sceneColor;
+    SamplerState linearClamp;
+};
+
+[[vk::binding(0, 2)]] ParameterBlock<FullscreenPassSet> passSet;
 
 /// Which curve to apply. A specialization constant, not a preprocessor permutation: changing the
 /// tonemapper is a quality setting, and `shader-system` requires a quality change to produce a new
@@ -57,8 +91,8 @@ static const int kTonemapAces = 2;
 [shader("fragment")]
 public float4 fullscreenResolve(FullscreenVertex input) : SV_Target
 {
-    let scene = sceneColor.Sample(linearClamp, input.uv).rgb;
-    let exposed = applyExposure(scene, cyGlobals.exposureStops);
+    let scene = passSet.sceneColor.Sample(passSet.linearClamp, input.uv).rgb;
+    let exposed = applyExposure(scene, globalSet.data.exposureStops);
 
     float3 mapped = exposed;
     if (kTonemapOperator == kTonemapReinhard)
@@ -72,5 +106,7 @@ public float4 fullscreenResolve(FullscreenVertex input) : SV_Target
     // The swapchain is an sRGB format, so the hardware applies the transfer function on write and
     // this shader must not apply it a second time. `linearToSrgb` exists for the targets that are
     // not — a readback, a UNORM capture — and is deliberately not called here.
+    if (viewSet.frame.rows[9].x < 0.0)
+        mapped = -mapped;
     return float4(mapped, 1.0);
 }

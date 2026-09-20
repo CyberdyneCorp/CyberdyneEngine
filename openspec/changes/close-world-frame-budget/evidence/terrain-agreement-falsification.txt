@@ -1,0 +1,9 @@
+host_arch: arm64
+os: macOS 27.0
+chip: Apple M3 Pro
+mutation: samples/10-world/shaders/world_visual.slang palette.rock.r 0.33 -> 0.43
+command: cy_sample_world --seed 20260913 --seconds 0.2 --fps 5 --width 320 --height 180 --frames <temp>/frames --budget-ms 100
+mutated_exit: 1
+mutated_error: the stage did not open: terrain device shading exceeds the CPU-reference tolerance
+restored_exit: 0
+restored_result: terrain agreement: 152100 vertices, worst channel error 0.00000000

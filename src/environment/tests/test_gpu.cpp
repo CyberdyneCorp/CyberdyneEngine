@@ -43,6 +43,7 @@
 
 #include "fixtures.h"
 
+using cy::environment::build_deterministic_field_image;
 using cy::environment::build_field_image;
 using cy::environment::FieldDeclaration;
 using cy::environment::FieldGpuImage;
@@ -221,6 +222,33 @@ CY_TEST_CASE("a quantised scalar agrees across the tile table") {
     CY_CHECK_NE(
         sample_field_image(image->words.span(), left_local.x, left_local.y, left_local.z).x(),
         sample_field_image(image->words.span(), right_local.x, right_local.y, right_local.z).x());
+}
+
+CY_TEST_CASE("the deterministic image uses the declaration's gameplay level") {
+    FieldRegistry registry(test::allocator());
+    const cy::world::PartitionConfig partition = test::partition();
+    FieldStore store(test::allocator(), registry, partition);
+    const FieldDeclaration moisture = test::moisture_like();
+    CY_REQUIRE(registry.declare(moisture).has_value());
+    cy::Expected<ProducerToken, cy::Error> token =
+        registry.claim(moisture.id(), "terrain.hydrology", ProducerKind::System);
+    CY_REQUIRE(token.has_value());
+
+    CY_REQUIRE(write_pattern(store, *token, moisture, test::tile_at(moisture.id(), 0, 0, 0), 0.15F)
+                   .has_value());
+    CY_REQUIRE(write_pattern(store, *token, moisture, test::tile_at(moisture.id(), 2, 0, 0), 0.85F)
+                   .has_value());
+
+    cy::Expected<FieldGpuImage, cy::Error> image =
+        build_deterministic_field_image(store, moisture.id());
+    CY_REQUIRE(image.has_value());
+    CY_CHECK(image->level == FieldResidency::Macro);
+
+    const cy::world::WorldVec3d at = test::at(65.0, 65.0);
+    const FieldImageLocal local = image_local(*image, at);
+    const FieldValue gpu = sample_field_image(image->words.span(), local.x, local.y, local.z);
+    CY_CHECK_EQ(gpu.x(), store.sample_deterministic(moisture.id(), at).value.x());
+    CY_CHECK_NE(gpu.x(), store.sample_at(moisture.id(), at, FieldResidency::Local).value.x());
 }
 
 CY_TEST_CASE("a volumetric vector field agrees, column by column") {

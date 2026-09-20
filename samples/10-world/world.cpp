@@ -1487,9 +1487,10 @@ Status World::advance(FrameCosts& costs) noexcept {
     if (Status driven = water_.drive_ocean_from_wind(sea_, sample.wind.authoritative()); !driven) {
         return driven;
     }
-    if (Status ticked_water = water_.tick(static_cast<f32>(step), camera_focus_); !ticked_water) {
-        return ticked_water;
-    }
+    // The persistent foam cache is visual frame data and is evolved by the world stage's device
+    // pass. The authoritative water clock remains on the processor because queries, saves and
+    // replay all consume it.
+    water_.set_time(water_.time() + step);
     const water::DisplacementModel* model = water_.model_of(sea_);
     if (model == nullptr) {
         return fail(ErrorCode::Internal, "the sea lost its displacement model");
@@ -1527,16 +1528,14 @@ Status World::advance(FrameCosts& costs) noexcept {
     celestial_ = sky::solve_celestial(celestial_model_, time_of_day);
     state_.day_fraction = time_of_day.fraction;
 
-    if (Status shaded = shade_sky(); !shaded) {
+    if (Status shaded = shade_sky(false); !shaded) {
         return shaded;
     }
     costs.sky_ms = now_millis() - mark;
 
-    mark = now_millis();
-    if (Status shaded = shade_terrain(); !shaded) {
-        return shaded;
-    }
-    costs.terrain_shade_ms = now_millis() - mark;
+    // Terrain substrate colour is produced by the stage's device pass. `shade_terrain()` remains
+    // the deterministic reference used by agreement coverage; it is not part of a shipping frame.
+    costs.terrain_shade_ms = 0.0;
 
     mark = now_millis();
     if (Status updated = update_plants(); !updated) {
@@ -1569,7 +1568,7 @@ Status World::advance(FrameCosts& costs) noexcept {
     return ok();
 }
 
-Status World::shade_sky() noexcept {
+Status World::shade_sky(bool shade_visual_dome) noexcept {
     sky::SkyCompositionInputs inputs;
     inputs.atmosphere = &atmosphere_;
     inputs.tables = &tables_;
@@ -1583,18 +1582,16 @@ Status World::shade_sky() noexcept {
     inputs.time_seconds = seconds_;
     inputs.view = sky::planetary_view(atmosphere_, camera_focus_);
 
-    Vec3 mean{0.0F, 0.0F, 0.0F};
     state_.thickest_cloud = 1.0F;
-    for (SkyVertex& vertex : sky_dome_.span()) {
-        const sky::SkyCompositionSample composed = sky::compose_sky(inputs, vertex.direction);
-        vertex.radiance = composed.radiance;
-        mean = mean + composed.radiance;
-        state_.thickest_cloud = composed.cloud_transmittance < state_.thickest_cloud
-                                    ? composed.cloud_transmittance
-                                    : state_.thickest_cloud;
+    if (shade_visual_dome) {
+        for (SkyVertex& vertex : sky_dome_.span()) {
+            const sky::SkyCompositionSample composed = sky::compose_sky(inputs, vertex.direction);
+            vertex.radiance = composed.radiance;
+            state_.thickest_cloud = composed.cloud_transmittance < state_.thickest_cloud
+                                        ? composed.cloud_transmittance
+                                        : state_.thickest_cloud;
+        }
     }
-    const f32 count = sky_dome_.empty() ? 1.0F : static_cast<f32>(sky_dome_.size());
-    mean = Vec3{mean.x / count, mean.y / count, mean.z / count};
 
     // THE LIGHT EVERYTHING ELSE IS SHADED BY comes from the same composition the background does,
     // which is what stops a scene lit for a clear noon from being drawn under a storm. The stars
@@ -1603,6 +1600,7 @@ Status World::shade_sky() noexcept {
     sky::SkyCompositionInputs lit = inputs;
     lit.stars = &stars_;
     const sky::SkyLighting lighting = sky::compose_sky_lighting(lit, 12);
+    state_.thickest_cloud = lighting.cloud_transmittance;
     lighting_.sun_travel = sky::light_travel_direction(celestial_.sun);
     lighting_.cloud_transmittance = lighting.cloud_transmittance;
 
@@ -1730,6 +1728,27 @@ Status World::shade_terrain() noexcept {
         }
     }
     return ok();
+}
+
+Expected<environment::FieldGpuImage, Error> World::terrain_field_image(u32 index) const noexcept {
+    environment::FieldId field;
+    switch (index) {
+        case 0:
+            field = water_distance_field_;
+            break;
+        case 1:
+            field = wetness_field_;
+            break;
+        case 2:
+            field = snow_field_;
+            break;
+        case 3:
+            field = vegetation_field_;
+            break;
+        default:
+            return fail(ErrorCode::OutOfRange, "world terrain field index is outside [0, 4)");
+    }
+    return environment::build_deterministic_field_image(fields_, field);
 }
 
 Status World::update_plants() noexcept {

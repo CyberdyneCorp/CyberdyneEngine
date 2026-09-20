@@ -130,8 +130,16 @@ inline constexpr u32 kFramePassKindCount = static_cast<u32>(FramePassKind::Count
 
 /// A caller's record callback for one stage.
 struct FramePassCallback {
+    FramePassCallback() = default;
+    FramePassCallback(RecordFn function, void* context,
+                      Span<const ResourceId> resources = {}) noexcept
+        : record(function), user(context), vertex_reads(resources) {}
+
     RecordFn record = nullptr;
     void* user = nullptr;
+    /// Device buffers read by commands recorded through this callback. Declaring them here lets
+    /// the graph derive compute-to-vertex barriers for caller-owned geometry producers.
+    Span<const ResourceId> vertex_reads;
 };
 
 /// The resources one frame declares. `kInvalidResource` for anything the feature set left out —

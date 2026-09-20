@@ -1,0 +1,26 @@
+host_arch: arm64
+os: macOS 27.0
+chip: Apple M3 Pro
+command: cy_sample_world --seed 20260913 --seconds 0.2 --fps 5 --width 320 --height 180 --frames <temp>/frames --budget-ms 100
+
+terrain mutation: palette.rock.r 0.33 -> 0.43
+mutated exit: 1
+mutated error: terrain device shading exceeds the CPU-reference tolerance
+
+cloud mutation: clear-sky blue 0.92 -> 0.82
+mutated exit: 1
+mutated error: cloud device shading exceeds the CPU-reference tolerance
+
+foam mutation: injected foam multiplied by zero
+mutated exit: 1
+mutated error: foam device output contains no active cell
+
+restored exit: 0
+restored terrain: 152100 vertices, worst channel error 0.00000000
+restored cloud: 6384 vertices, worst channel error 0.00000221
+restored foam: 1651 active cells after warmup
+
+default-seed residency regression: the first implementation always built Local field images while
+the CPU reference sampled each declaration's gameplay level. The default seed failed at 0.38000000
+channel error. `build_deterministic_field_image()` now selects the declared gameplay level; the
+default-seed Metal take compares 152100 vertices at 0.00000006 worst error and completes 64 frames.

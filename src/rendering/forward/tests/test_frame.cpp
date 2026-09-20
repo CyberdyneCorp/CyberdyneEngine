@@ -11,6 +11,8 @@
 #include <cy/rendering/forward/diagnostics.h>
 #include <cy/rendering/forward/frame.h>
 
+#include <cstring>
+
 namespace {
 
 using cy::rendering::ForwardFrame;
@@ -230,6 +232,54 @@ CY_TEST_CASE("the declared frame compiles into a plan with no device at all") {
     // Aliasing has something to work with, and reports both numbers so the saving is a measurement.
     CY_CHECK_GT(plan->memory.naive_bytes, 0U);
     CY_CHECK_LE(plan->memory.heap_bytes, plan->memory.naive_bytes);
+}
+
+CY_TEST_CASE("an opaque callback declares compute-produced vertex inputs") {
+    RenderGraph graph(allocator());
+    cy::rendering::BufferRequest request;
+    request.name = "device-produced colours";
+    request.size = 4096;
+    request.extra_usage = cy::rhi::BufferUsage::Storage | cy::rhi::BufferUsage::Vertex;
+    const cy::rendering::ResourceId colours =
+        graph.import_buffer(request, cy::rhi::BufferHandle::from_slot(0, 1));
+    graph.add_pass("shade vertices", cy::rhi::QueueKind::Graphics)
+        .write(colours, cy::rhi::Access::ComputeStorageWrite);
+
+    ForwardFrame frame(allocator());
+    FrameDescription description = make_description();
+    description.callbacks[static_cast<cy::usize>(FramePassKind::Opaque)].vertex_reads =
+        cy::Span<const cy::rendering::ResourceId>(&colours, 1);
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    bool opaque_reads_colours = false;
+    for (const cy::rendering::Use& use : graph.pass_uses(frame.pass_of(FramePassKind::Opaque))) {
+        opaque_reads_colours |= use.resource == colours;
+    }
+    CY_REQUIRE(opaque_reads_colours);
+
+    cy::Expected<cy::rendering::CompiledGraph, cy::Error> plan = graph.compile(compile_options());
+    CY_REQUIRE(plan.has_value());
+
+    bool compute_to_vertex_dependency = false;
+    bool producer_scheduled = false;
+    for (const cy::rendering::Submit& submit : plan->submits) {
+        for (const cy::rendering::ScheduledPass& scheduled : submit.passes) {
+            producer_scheduled |=
+                std::strcmp(graph.pass_name(scheduled.pass), "shade vertices") == 0;
+            if (std::strcmp(graph.pass_name(scheduled.pass), "opaque") != 0) {
+                continue;
+            }
+            for (const cy::rhi::MemoryBarrier& barrier : scheduled.pre.memory) {
+                if (barrier.src_stage == cy::rhi::Stage::ComputeShader &&
+                    barrier.src_access == cy::rhi::AccessFlags::ShaderStorageWrite &&
+                    barrier.dst_stage == cy::rhi::Stage::VertexInput &&
+                    barrier.dst_access == cy::rhi::AccessFlags::VertexAttributeRead) {
+                    compute_to_vertex_dependency = true;
+                }
+            }
+        }
+    }
+    CY_REQUIRE(producer_scheduled);
+    CY_REQUIRE(compute_to_vertex_dependency);
 }
 
 CY_TEST_CASE("the same frame compiles to the same plan twice") {

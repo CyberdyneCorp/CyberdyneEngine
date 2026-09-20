@@ -35,7 +35,8 @@
 // setup is derived from an `AssemblyDescription` — the formats, the sample count and the feature
 // set are already somebody else's decisions by the time they reach here.
 //
-// **It does not compile shaders.** The SPIR-V is committed (`shaders/frame_spirv.h`), because
+// **It does not compile shaders.** The SPIR-V and MSL are committed (`shaders/frame_spirv.h` and
+// `shaders/frame_msl.h`), because
 // `CY_SHADER_SLANG` is off by default and off in Profile and Shipping, and because `shader-system`
 // states outright that "a shipping build SHALL contain compiled backend-native shader artefacts and
 // no Slang compiler". `src/rendering/shaders/cy/frame.slang` is the source and its header comment

@@ -42,14 +42,12 @@
 # carries the rest of the list.
 #
 # ================================================================================================
-# THE VULKAN BACKEND IS A LINK-TIME CHOICE AND NOT A COMPILE-TIME ONE
+# THE NATIVE BACKEND IS A LINK-TIME CHOICE
 # ================================================================================================
 #
-# Exactly as samples/03-first-light, 07-fidelity, 08-vertical-slice and 09b-animated-character
-# arrange it: with `-D CY_RENDERER_VULKAN=OFF` the program still builds, asks `cy::rhi` for a
-# device, reports that none answered, and still runs the whole world headless — which is the mode
-# `--headless` selects on purpose, because every producer in this artefact runs on the processor and
-# only the picture needs a device.
+# Apple builds link and select native Metal; other supported desktop builds select Vulkan. Turning
+# either backend off still leaves the headless authoritative simulation available, while a request
+# for rendered frames fails when no native device answers.
 
 cy_add_module(
     NAME cy_sample_world
@@ -82,7 +80,9 @@ target_include_directories(cy_sample_world
 
 if(CY_RENDERER_VULKAN)
     target_link_libraries(cy_sample_world PRIVATE cy::rhi-vulkan)
-    target_compile_definitions(cy_sample_world PRIVATE CY_SAMPLE_WORLD_VULKAN=1)
+endif()
+if(CY_RENDERER_METAL)
+    target_link_libraries(cy_sample_world PRIVATE cy::rhi-metal)
 endif()
 
 # ================================================================================================

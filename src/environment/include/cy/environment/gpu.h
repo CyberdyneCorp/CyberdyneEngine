@@ -98,6 +98,12 @@ struct FieldGpuImage {
                                                                FieldId field,
                                                                FieldResidency level) noexcept;
 
+/// Build the image at the declaration's deterministic gameplay level. Use this for a GPU path that
+/// must agree with `FieldStore::sample_deterministic()`; choosing a residency level independently
+/// can silently bind different field contents from the authoritative CPU path.
+[[nodiscard]] Expected<FieldGpuImage, Error> build_deterministic_field_image(
+    const FieldStore& store, FieldId field) noexcept;
+
 /// The position a shader would be handed, in metres relative to the image's origin. The f64
 /// subtraction happens here, once, on the CPU.
 struct FieldImageLocal {

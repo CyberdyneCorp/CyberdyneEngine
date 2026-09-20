@@ -23,15 +23,11 @@
 // `samples/10-world/frame.cypost` commits. The stage list the frame ran is written beside the still
 // as `<still>.manifest.txt`, so a caption claiming a stage is a claim something can check.
 //
-// IT STILL DOES NOT CLAIM the engine's own forward SHADING. Every producer above runs on the
-// PROCESSOR, this program's geometry is its own rather than the render server's mesh table, and the
-// colour it draws is per-vertex colour those producers computed. There is no terrain material page
-// bound on a device, no environment field sampled through its GPU image, no water surface published
-// into the GPU scene, no grass expanded on the device and no cloud marched per pixel — six of M10's
-// modules each recorded exactly that gap against their own row, and this artefact closes none of
-// them. AND THERE IS NO ANTI-ALIASING: nothing in this tree records `FramePassKind::Temporal`, so
-// the chain this frame runs is exposure, tone mapping and output encoding, and the manifest says
-// three. README.md says so, the report below says so, and the video's caption says so.
+// IT STILL DOES NOT CLAIM the engine's mesh/material forward path. The geometry is this sample's,
+// while three render-graph compute passes now shade terrain from packed field images, compose the
+// sky, and evolve visual foam before the opaque draw. There is no temporal anti-aliasing: nothing
+// records `FramePassKind::Temporal`, so the chain remains exposure, tone mapping and output
+// encoding, and the manifest says three.
 //
 // ================================================================================================
 // THE TIMESTEP IS FIXED, AND THAT IS A REPRODUCIBILITY CLAIM
@@ -47,8 +43,10 @@
 #include "stage.h"
 #include "world.h"
 
+#include <cy/core/determinism/hash.h>
 #include <cy/core/memory/system_allocator.h>
 
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -367,10 +365,36 @@ struct Take {
     Array<f32> rain;
     Array<f32> day;
     u32 validation_errors = 0;
+    u64 authoritative_digest = 0xCBF29CE484222325ULL;
 };
+
+[[nodiscard]] u64 fold_f32(u64 digest, f32 value) noexcept {
+    return cy::determinism::fold_hash(digest, value == 0.0F ? 0U : std::bit_cast<u32>(value));
+}
+
+[[nodiscard]] u64 fold_f64(u64 digest, f64 value) noexcept {
+    return cy::determinism::fold_hash(digest, value == 0.0 ? 0ULL : std::bit_cast<u64>(value));
+}
+
+void fold_authoritative_state(Take& take, const WorldState& state) noexcept {
+    u64 digest = fold_f64(take.authoritative_digest, state.seconds);
+    digest = fold_f32(digest, state.day_fraction);
+    digest = fold_f32(digest, state.sun_elevation_degrees);
+    digest = fold_f32(digest, state.temperature_celsius);
+    digest = fold_f32(digest, state.wind_speed_mps);
+    digest = fold_f32(digest, state.precipitation_mm_per_hour);
+    digest = fold_f32(digest, state.cloud_coverage);
+    digest = fold_f32(digest, state.wetness);
+    digest = fold_f32(digest, state.snow_depth_metres);
+    digest = fold_f32(digest, state.snow_depth_west_metres);
+    digest = fold_f32(digest, state.significant_wave_height);
+    digest = fold_f32(digest, state.cloud_transmittance);
+    take.authoritative_digest = digest;
+}
 
 [[nodiscard]] bool record_frame(Take& take, const WorldState& state, const FrameCosts& cost,
                                 const StageReport& stage) {
+    fold_authoritative_state(take, state);
     return take.costs.push_back(cost) && take.drawn.push_back(stage) &&
            take.sun.push_back(state.sun_elevation_degrees) &&
            take.rain.push_back(state.precipitation_mm_per_hour) &&
@@ -510,7 +534,7 @@ struct Band {
 /// a mean inside 16.7 ms with a worst at 40 is a scene that hitches once a second.
 /// `m10:world-frame- budget` judges the worst for the same reason and this reproduces its
 /// arithmetic.
-[[nodiscard]] bool judge_budget(const Take& take, f32 budget_ms) {
+[[nodiscard]] bool judge_budget(const Take& take, f32 budget_ms, bool require_visual_dispatches) {
     if (take.costs.empty()) {
         std::fprintf(stderr,
                      "--budget-ms was given and the take recorded no frame at all, so there is "
@@ -519,6 +543,21 @@ struct Band {
         return false;
     }
     const auto frames = static_cast<f64>(take.costs.size());
+    if (require_visual_dispatches) {
+        for (usize frame = 0; frame < take.drawn.size(); ++frame) {
+            const StageReport& report = take.drawn[frame];
+            if (report.terrain_dispatches == 0 || report.cloud_dispatches == 0 ||
+                report.foam_dispatches == 0 || !report.manifest_valid) {
+                std::fprintf(stderr,
+                             "  visual workload audit failed at frame %llu: terrain=%u cloud=%u "
+                             "foam=%u rendered=%s\n",
+                             static_cast<unsigned long long>(frame), report.terrain_dispatches,
+                             report.cloud_dispatches, report.foam_dispatches,
+                             report.manifest_valid ? "yes" : "no");
+                return false;
+            }
+        }
+    }
     f64 worst = 0.0;
     f64 mean = 0.0;
     usize worst_frame = 0;
@@ -577,7 +616,7 @@ struct Band {
 
 /// Open the device and upload what never changes. Absent-device is SUCCESS with `available()`
 /// false, and the caller decides what that means.
-[[nodiscard]] Status open_stage(Stage& stage, const World& world, const Options& options) {
+[[nodiscard]] Status open_stage(Stage& stage, World& world, const Options& options) {
     // THE GRADE IS READ BEFORE THE DEVICE IS OPENED, and a missing file stops the run. M11.c task
     // 3.3: the exposure this shot is tuned at is content — `samples/10-world/frame.cypost` — and a
     // program that fell back to a default when it could not find it would photograph an ungraded
@@ -593,7 +632,51 @@ struct Band {
     if (!stage.available()) {
         return ok();
     }
-    return stage.stage_world(world);
+    if (Status staged = stage.stage_world(world); !staged) {
+        return staged;
+    }
+    // Compile pipelines, populate driver caches and fault device buffers before the measured take.
+    // The budget is steady-state frame cost; charging one-time setup to frame zero makes the
+    // criterion a shader-cache benchmark and is especially noisy on Metal's source compiler.
+    const u64 frames = static_cast<u64>(options.seconds * static_cast<f32>(options.fps));
+    WorldVec3d eye;
+    WorldVec3d target;
+    world.camera_at(0, frames == 0 ? 1 : frames, eye, target);
+    StageReport warmup;
+    if (Status warmed = stage.shoot(world, eye, target, nullptr, warmup); !warmed) {
+        return warmed;
+    }
+    if (Status referenced = world.shade_terrain_reference(); !referenced) {
+        return referenced;
+    }
+    f32 worst_terrain_error = 0.0F;
+    u32 terrain_values_compared = 0;
+    if (Status agreed =
+            stage.verify_terrain_agreement(world, worst_terrain_error, terrain_values_compared);
+        !agreed) {
+        return agreed;
+    }
+    f32 worst_cloud_error = 0.0F;
+    u32 cloud_values_compared = 0;
+    if (Status agreed =
+            stage.verify_cloud_agreement(world, worst_cloud_error, cloud_values_compared);
+        !agreed) {
+        return agreed;
+    }
+    u32 active_foam_cells = 0;
+    if (Status produced = stage.verify_foam_output(active_foam_cells); !produced) {
+        return produced;
+    }
+    std::printf(
+        "\n=== graphics device ===\n  backend: %s  adapter: %s  build: Shipping  "
+        "resolution: %ux%u\n",
+        stage.backend_name(), stage.device_name(), options.width, options.height);
+    std::printf("  terrain agreement: %u vertices, worst channel error %.8f\n",
+                terrain_values_compared, static_cast<double>(worst_terrain_error));
+    std::printf("  cloud agreement: %u vertices, worst channel error %.8f\n", cloud_values_compared,
+                static_cast<double>(worst_cloud_error));
+    std::printf("  foam output: %u active cells after warmup\n", active_foam_cells);
+    return ok();
 }
 
 }  // namespace
@@ -659,12 +742,13 @@ int main(int argc, char** argv) {
             return 1;
         }
         if (!stage.available()) {
-            std::fprintf(stderr,
-                         "\nno graphics device answered (%s), so no frames were written.\n"
-                         "The world above was still generated, cooked, claimed and placed — every\n"
-                         "producer in this artefact runs on the processor and only the picture "
-                         "needs a device.\n",
-                         stage.absence());
+            std::fprintf(
+                stderr,
+                "\nno graphics device answered (%s), so no frames were written.\n"
+                "The world above was still generated, cooked, claimed and placed — every\n"
+                "authoritative producer runs on the processor and only the visual terrain, "
+                "cloud, foam, and picture need a device.\n",
+                stage.absence());
             // AND THAT IS A FAILURE WHEN A BUDGET WAS TO BE JUDGED WITH A DEVICE DRAWING.
             // `m11a:world-budget-on-a-device`'s whole subject is the submit-and-wait band that
             // only a device produces; returning 0 here would report "the budget held" for a run in
@@ -696,6 +780,8 @@ int main(int argc, char** argv) {
     }
 
     print_budget(take);
+    std::printf("  authoritative take digest 0x%016llX\n",
+                static_cast<unsigned long long>(take.authoritative_digest));
     // WHAT THIS ARTEFACT STREAMS, AT THE END OF THE TAKE RATHER THAN AT THE START, because eviction
     // is something a take does and not something a build reports. `m11a:world-streams` reads these
     // two numbers; both are zero and the criterion is RED, which is the honest state of
@@ -709,7 +795,8 @@ int main(int argc, char** argv) {
         !write_budget(options.budget, take.costs, take.day, take.sun, take.rain, take.drawn)) {
         return 1;
     }
-    const bool budget_held = options.budget_ms <= 0.0F || judge_budget(take, options.budget_ms);
+    const bool budget_held =
+        options.budget_ms <= 0.0F || judge_budget(take, options.budget_ms, wants_pictures);
 
     if (wants_pictures) {
         // WHAT THE FRAME RAN, READ OFF THE FRAME. M11.c task 3.2: the report names the post stages
@@ -733,7 +820,7 @@ int main(int argc, char** argv) {
                 "\n  NO anti-aliasing stage: nothing in this tree records the frame's "
                 "temporal pass.\n");
         }
-        std::printf("\n  %llu frames written to %s, vulkan validation errors: %u\n",
+        std::printf("\n  %llu frames written to %s, RHI validation errors: %u\n",
                     static_cast<unsigned long long>(frames), options.frames.c_str(),
                     take.validation_errors);
         if (take.validation_errors != 0) {

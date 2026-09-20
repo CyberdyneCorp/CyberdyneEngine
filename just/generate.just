@@ -59,7 +59,10 @@ generate-headers *args:
 
     echo "==> reflection  src/core/reflect/generated, identity/manifest.toml"
     reflect_inputs="$(just _reflect-inputs "${build_dir}")"
-    mapfile -t reflect_args <<< "${reflect_inputs}"
+    reflect_args=()
+    while IFS= read -r reflect_arg; do
+        reflect_args[${#reflect_args[@]}]="${reflect_arg}"
+    done <<< "${reflect_inputs}"
     python3 tools/gen/reflect_gen.py --source-root . "${reflect_args[@]}" \
         --cache "${build_dir}/generated/cy_reflect_cache.json" \
         ${reflect_only[@]+"${reflect_only[@]}"} ${passthrough[@]+"${passthrough[@]}"}
@@ -92,7 +95,10 @@ generate-check *args:
     # gate, not a local inconvenience: the identifiers in the generated code are the contract.
     echo "==> reflection  src/core/reflect/generated"
     reflect_inputs="$(just _reflect-inputs "${build_dir}")"
-    mapfile -t reflect_args <<< "${reflect_inputs}"
+    reflect_args=()
+    while IFS= read -r reflect_arg; do
+        reflect_args[${#reflect_args[@]}]="${reflect_arg}"
+    done <<< "${reflect_inputs}"
     python3 tools/gen/reflect_gen.py --source-root . "${reflect_args[@]}" \
         --cache "${scratch}/reflect-check.json" --check
 

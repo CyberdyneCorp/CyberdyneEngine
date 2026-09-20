@@ -1,0 +1,61 @@
+
+=== the world, as its producers reported it ===
+  pcg      576 regions, 9792 region-evaluations over 9 stages, 2416 points
+           2416 of those points became boulders in 455 foliage clusters through pcg::FoliageOutputAdapter — no entities
+           program digest 0x088C15E5ED6EB3B9, cacheable yes, 60 ms
+  terrain  49 tiles over 3 levels, 2245474 bytes resident, 294912 triangles meshed
+           elevation -1.1 m to 200.5 m, 0 vertices stitched to a coarser neighbour, 9 ms
+  water    significant height 2.03 m, peak wavelength 79.1 m, 4 cascades (3 authoritative + 1 visual-only)
+  foliage  41196 instances in 576 clusters of 4 species, 711072 bytes (17.3 bytes an instance), 1201 ms
+  fields   23 declared, 19 claimed by four different producers, 13312 bytes resident
+  sky      11264 directions integrated into the atmosphere tables, 5 ms
+  total    1277 ms to generate, cook, claim and place
+
+=== m10 task 7.2: a crater that survives a save ===
+  the gameplay surface dropped 9.00 m where the crater was stamped
+  recorded into world::PersistenceOverlay as 1 subsystem blob(s) over 1 cell(s), 2976 bytes
+  the delta store was cleared (the crater verified gone), then restored: restored
+  the surface is 9.00 m down again, and 0 of 289 probes over the crater disagree with the pre-save surface
+
+=== the take: 64 frames, one simulated day ===
+      0  04:41  sun  -22.8 deg    7.2 C  wind  8.7 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 0.000/0.026 m  sky    0.00000 nit  star 1.00
+      2  05:26  sun  -15.9 deg    7.2 C  wind  7.2 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.95 thickest 0.95  wet 1.00  snow 0.000/0.077 m  sky    0.00247 nit  star 0.83
+      4  06:11  sun   -9.0 deg    7.2 C  wind  4.1 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 0.000/0.128 m  sky    0.14721 nit  star 0.25
+      6  06:56  sun   -2.4 deg    7.2 C  wind  7.5 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.92 thickest 0.92  wet 1.00  snow 0.000/0.179 m  sky   71.47398 nit  star 0.00
+      8  07:41  sun   +4.0 deg    7.2 C  wind  6.7 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.98 thickest 0.98  wet 1.00  snow 0.000/0.230 m  sky  822.33905 nit  star 0.00
+     10  08:26  sun   +9.8 deg    7.2 C  wind  6.3 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.92 thickest 0.92  wet 1.00  snow 0.000/0.281 m  sky 1366.85986 nit  star 0.00
+     12  09:11  sun  +14.8 deg    7.2 C  wind  7.1 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 0.000/0.332 m  sky 1535.98462 nit  star 0.00
+     14  09:56  sun  +19.0 deg    7.2 C  wind  5.5 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 0.000/0.384 m  sky 1833.84949 nit  star 0.00
+     16  10:41  sun  +22.1 deg    7.2 C  wind  7.8 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 0.000/0.435 m  sky 1970.78845 nit  star 0.00
+     18  11:26  sun  +23.8 deg    7.2 C  wind  7.9 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.95 thickest 0.95  wet 1.00  snow 0.000/0.486 m  sky 2875.93481 nit  star 0.00
+     20  12:11  sun  +24.2 deg    7.2 C  wind  4.2 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 0.000/0.537 m  sky 1790.68909 nit  star 0.00
+     22  12:56  sun  +23.1 deg   -6.8 C  wind 15.3 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 1.00 thickest 1.00  wet 0.15  snow 0.252/0.588 m  sky 1763.63538 nit  star 0.00
+     24  13:41  sun  +20.6 deg   -6.8 C  wind 20.3 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 0.93 thickest 0.93  wet 0.15  snow 0.503/0.640 m  sky 1927.45178 nit  star 0.00
+     26  14:26  sun  +17.0 deg   -6.8 C  wind 13.0 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 0.94 thickest 0.94  wet 0.15  snow 0.755/0.691 m  sky 2263.62500 nit  star 0.00
+     28  15:11  sun  +12.3 deg   -6.8 C  wind 26.5 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 0.96 thickest 0.96  wet 0.15  snow 1.007/0.743 m  sky 1516.56140 nit  star 0.00
+     30  15:56  sun   +6.8 deg   -6.8 C  wind 22.9 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 1.00 thickest 1.00  wet 0.15  snow 1.259/0.794 m  sky 1053.40845 nit  star 0.00
+     32  16:41  sun   +0.7 deg   -6.8 C  wind 15.9 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 0.86 thickest 0.86  wet 0.15  snow 1.510/0.845 m  sky  445.36755 nit  star 0.00
+     34  17:26  sun   -5.8 deg   -6.8 C  wind 14.2 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 1.00 thickest 1.00  wet 0.15  snow 1.762/0.897 m  sky    5.45638 nit  star 0.00
+     36  18:11  sun  -12.6 deg   -6.8 C  wind 12.0 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 1.00 thickest 1.00  wet 0.15  snow 2.014/0.948 m  sky    0.01013 nit  star 0.55
+     38  18:56  sun  -19.5 deg   -6.8 C  wind 18.9 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 1.00 thickest 1.00  wet 0.15  snow 2.265/1.000 m  sky    0.00003 nit  star 1.00
+     40  19:41  sun  -26.4 deg   -6.8 C  wind 22.3 m/s  snow 33.3 mm/h  cloud 0.80 sun-t 1.00 thickest 1.00  wet 0.15  snow 2.517/1.051 m  sky    0.00000 nit  star 1.00
+     42  20:26  sun  -33.0 deg    7.2 C  wind 10.0 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.92 thickest 0.92  wet 1.00  snow 2.620/1.102 m  sky    0.00000 nit  star 1.00
+     44  21:11  sun  -39.2 deg    7.2 C  wind  7.5 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.96 thickest 0.96  wet 1.00  snow 2.574/1.153 m  sky    0.00000 nit  star 1.00
+     46  21:56  sun  -44.5 deg    7.2 C  wind  7.8 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.89 thickest 0.89  wet 1.00  snow 2.528/1.205 m  sky    0.00000 nit  star 1.00
+     48  22:41  sun  -48.7 deg    7.2 C  wind  7.2 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 2.482/1.256 m  sky    0.00000 nit  star 1.00
+     50  23:26  sun  -51.2 deg    7.2 C  wind  7.1 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.92 thickest 0.92  wet 1.00  snow 2.436/1.307 m  sky    0.00000 nit  star 1.00
+     52  00:11  sun  -51.7 deg    7.2 C  wind  6.5 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 2.391/1.358 m  sky    0.00000 nit  star 1.00
+     54  00:56  sun  -50.1 deg    7.2 C  wind  5.0 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 2.345/1.409 m  sky    0.00000 nit  star 1.00
+     56  01:41  sun  -46.7 deg    7.2 C  wind  4.9 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 2.299/1.460 m  sky    0.00000 nit  star 1.00
+     58  02:26  sun  -41.9 deg    7.2 C  wind  7.7 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.96 thickest 0.96  wet 1.00  snow 2.253/1.511 m  sky    0.00000 nit  star 1.00
+     60  03:11  sun  -36.0 deg    7.2 C  wind  6.8 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 0.92 thickest 0.92  wet 1.00  snow 2.207/1.563 m  sky    0.00000 nit  star 1.00
+     62  03:56  sun  -29.6 deg    7.2 C  wind  6.6 m/s  snow  0.0 mm/h  cloud 0.19 sun-t 1.00 thickest 1.00  wet 1.00  snow 2.161/1.614 m  sky    0.00000 nit  star 1.00
+
+=== m10 task 7.3: the frame budget across a full day/night cycle ===
+  5.31 ms best, 5.95 ms mean, 6.82 ms worst (frame 11, sun +12.4 deg)
+  substrate: 16 lattice point(s) published a frame, 0 frame(s) deferred by the field-update budget
+  the whole curve is in the CSV; the video's companion figure plots it.
+  authoritative take digest 0x796E233B79130401
+
+=== world-partition-and-streaming: what this artefact streams ===
+  tiles_cooked: 49  tiles_resident: 49  evicted: 0  stitched_vertices: 0

@@ -48,6 +48,8 @@ already produced two different answers on two machines.
 the range, the interpolation and the layer rule out of the image's own header and decodes the stored
 bytes with its own arithmetic. It calls neither `decode_value()` nor `combine_layers()`. Two
 implementations that agree are evidence; one implementation called twice is not.
+`build_deterministic_field_image()` selects the declaration's `gameplay_level`, so a renderer that
+must agree with `sample_deterministic()` cannot accidentally bind a finer residency level.
 
 **5. Nothing here is a parallel streaming or residency mechanism.** `FieldStreaming` is a registered
 consumer of `world::CellEventQueue` and a client of `residency::ResidencyServer`. It owns no budget,

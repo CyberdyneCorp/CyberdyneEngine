@@ -15,12 +15,20 @@
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/water/shading.h>
 
-#if defined(CY_SAMPLE_WORLD_VULKAN)
+#include <cy_features.h>
+
+#if defined(CY_RENDERER_VULKAN)
 #    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
+#if defined(CY_RENDERER_METAL)
+#    include <cy/backends/rhi-metal/backend.h>
 #endif
 
 #include "golden.h"
+#include "shaders/world_msl.h"
 #include "shaders/world_spirv.h"
+#include "shaders/world_visual_msl.h"
+#include "shaders/world_visual_spirv.h"
 
 #include <chrono>
 #include <cmath>
@@ -28,6 +36,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <utility>
 
 namespace cy::sample::world {
 namespace {
@@ -107,6 +116,51 @@ struct WorldPush {
 
 static_assert(sizeof(WorldPush) == 128,
               "the push block must fit the 128-byte portability limit exactly");
+
+struct VisualPush {
+    u32 terrain_count = 0;
+    u32 sky_start = 0;
+    u32 sky_count = 0;
+    u32 water_start = 0;
+    u32 water_count = 0;
+    u32 foam_resolution = 128;
+    u32 frame_index = 0;
+    u32 cloud_seed = 0;
+    f32 time_seconds = 0.0F;
+    f32 delta_seconds = 0.0F;
+    f32 wetness = 0.0F;
+    f32 snow_depth = 0.0F;
+    f32 cloud_coverage = 0.0F;
+    f32 sun_height = 0.0F;
+    f32 exposure = 1.0F;
+    f32 unused_float = 0.0F;
+    f32 field_origin[4] = {};
+};
+
+static_assert(sizeof(VisualPush) == 80);
+
+struct VisualPassState {
+    rhi::ComputePipelineHandle pipeline;
+    rhi::PipelineLayoutHandle layout;
+    rhi::DescriptorSetHandle descriptors;
+    VisualPush push;
+    u32 groups = 0;
+    u32* dispatches = nullptr;
+};
+
+void record_visual(const PassContext& context, void* user) noexcept {
+    auto* state = static_cast<VisualPassState*>(user);
+    context.commands->bind_compute_pipeline(state->pipeline);
+    context.commands->bind_descriptor_sets(
+        state->layout, 0, Span<const rhi::DescriptorSetHandle>(&state->descriptors, 1));
+    context.commands->push_constants(
+        state->layout, rhi::ShaderStage::Compute, 0,
+        Span<const u8>(reinterpret_cast<const u8*>(&state->push), sizeof(VisualPush)));
+    context.commands->dispatch(state->groups, 1, 1);
+    if (state->dispatches != nullptr) {
+        ++*state->dispatches;
+    }
+}
 
 void write_row(f32 (&out)[4], Vec4 row) noexcept {
     out[0] = row.x;
@@ -272,7 +326,7 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
     if (severity == rhi::ValidationSeverity::Error && user != nullptr) {
         ++*static_cast<u32*>(user);
     }
-    std::fprintf(stderr, "vulkan validation %s: %s\n",
+    std::fprintf(stderr, "RHI validation %s: %s\n",
                  severity == rhi::ValidationSeverity::Error ? "error" : "warning",
                  message != nullptr ? message : "");
 }
@@ -315,6 +369,115 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
     return value > 1.0F ? 1.0F : value;
 }
 
+struct U32x3 {
+    u32 x = 0;
+    u32 y = 0;
+    u32 z = 0;
+};
+
+[[nodiscard]] U32x3 hash_pcg3d(U32x3 value) noexcept {
+    U32x3 result{(value.x * 1664525U) + 1013904223U, (value.y * 1664525U) + 1013904223U,
+                 (value.z * 1664525U) + 1013904223U};
+    result.x += result.y * result.z;
+    result.y += result.z * result.x;
+    result.z += result.x * result.y;
+    result.x ^= result.x >> 16U;
+    result.y ^= result.y >> 16U;
+    result.z ^= result.z >> 16U;
+    result.x += result.y * result.z;
+    result.y += result.z * result.x;
+    result.z += result.x * result.y;
+    return result;
+}
+
+[[nodiscard]] f32 value_noise(Vec3 position) noexcept {
+    const Vec3 cell{std::floor(position.x), std::floor(position.y), std::floor(position.z)};
+    const Vec3 fraction = position - cell;
+    const Vec3 weight{fraction.x * fraction.x * (3.0F - (2.0F * fraction.x)),
+                      fraction.y * fraction.y * (3.0F - (2.0F * fraction.y)),
+                      fraction.z * fraction.z * (3.0F - (2.0F * fraction.z))};
+    const U32x3 base{static_cast<u32>(static_cast<i32>(cell.x) + 1024),
+                     static_cast<u32>(static_cast<i32>(cell.y) + 1024),
+                     static_cast<u32>(static_cast<i32>(cell.z) + 1024)};
+    f32 result = 0.0F;
+    for (u32 corner = 0; corner < 8U; ++corner) {
+        const U32x3 offset{corner & 1U, (corner >> 1U) & 1U, (corner >> 2U) & 1U};
+        const U32x3 hashed =
+            hash_pcg3d(U32x3{base.x + offset.x, base.y + offset.y, base.z + offset.z});
+        const f32 sample = static_cast<f32>(hashed.x >> 8U) * (1.0F / 16777216.0F);
+        const f32 blend_x = offset.x != 0U ? weight.x : 1.0F - weight.x;
+        const f32 blend_y = offset.y != 0U ? weight.y : 1.0F - weight.y;
+        const f32 blend_z = offset.z != 0U ? weight.z : 1.0F - weight.z;
+        result += sample * blend_x * blend_y * blend_z;
+    }
+    return result;
+}
+
+[[nodiscard]] f32 smoothstep(f32 low, f32 high, f32 value) noexcept {
+    const f32 t = clamp01((value - low) / (high - low));
+    return t * t * (3.0F - (2.0F * t));
+}
+
+[[nodiscard]] Vec3 blend(Vec3 from, Vec3 to, f32 amount) noexcept {
+    return Vec3{from.x + ((to.x - from.x) * amount), from.y + ((to.y - from.y) * amount),
+                from.z + ((to.z - from.z) * amount)};
+}
+
+[[nodiscard]] f32 cloud_fbm(Vec3 position, Vec3 seed_offset) noexcept {
+    const f32 coarse = value_noise(position + seed_offset);
+    const f32 detail = value_noise((position * 2.03F) + seed_offset + Vec3{17.0F, 31.0F, 47.0F});
+    return (coarse + (detail * 0.5F)) / 1.5F;
+}
+
+[[nodiscard]] f32 cloud_density_reference(Vec3 position, const VisualPush& visual,
+                                          Vec3 seed_offset) noexcept {
+    const f32 height_fraction = clamp01((position.y - 900.0F) / 3400.0F);
+    const f32 profile = smoothstep(0.0F, 0.18F, height_fraction) *
+                        (1.0F - smoothstep(0.68F, 1.0F, height_fraction));
+    const Vec3 advected =
+        position - Vec3{visual.time_seconds * 9.0F, 0.0F, visual.time_seconds * 2.5F};
+    const f32 base = cloud_fbm(advected / 5200.0F, seed_offset);
+    const f32 threshold = 0.70F - (visual.cloud_coverage * 0.38F);
+    f32 shape = clamp01((base - threshold) * 4.5F);
+    const f32 erosion = value_noise((advected / 780.0F) + seed_offset + Vec3{71.0F, 11.0F, 29.0F});
+    shape *= 0.62F + (erosion * 0.58F);
+    return shape * profile;
+}
+
+[[nodiscard]] Vec3 compose_cloud_reference(Vec3 direction, const VisualPush& visual) noexcept {
+    const f32 horizon = clamp01((direction.y * 0.5F) + 0.5F);
+    const f32 daylight = clamp01((visual.sun_height * 3.0F) + 0.25F);
+    Vec3 clear = blend(Vec3{0.002F, 0.005F, 0.018F}, Vec3{0.16F, 0.43F, 0.92F}, daylight);
+    clear = clear * (0.16F + (0.84F * horizon));
+    if (direction.y <= 0.025F) {
+        return clear;
+    }
+
+    const f32 seed = static_cast<f32>(visual.cloud_seed & 255U);
+    const Vec3 seed_offset{seed * 0.37F, seed * 0.19F, seed * 0.53F};
+    const Vec3 origin{visual.field_origin[2], 0.0F, visual.field_origin[3]};
+    const f32 start = 900.0F / direction.y;
+    const f32 step_length = 3400.0F / (direction.y * 12.0F);
+    f32 transmittance = 1.0F;
+    Vec3 scattering{0.0F, 0.0F, 0.0F};
+    for (u32 step = 0; step < 12U; ++step) {
+        const f32 distance = start + (step_length * (static_cast<f32>(step) + 0.5F));
+        const Vec3 position = origin + (direction * distance);
+        const f32 density = cloud_density_reference(position, visual, seed_offset);
+        const f32 extinction = 1.0F - std::exp(-density * 0.48F);
+        const f32 height_fraction = clamp01((position.y - 900.0F) / 3400.0F);
+        const Vec3 bright = Vec3{1.00F, 0.94F, 0.84F} * (0.30F + (daylight * 0.70F));
+        const Vec3 source =
+            blend(Vec3{0.14F, 0.17F, 0.22F}, bright, 0.25F + (height_fraction * 0.75F));
+        scattering = scattering + (source * (transmittance * extinction));
+        transmittance *= 1.0F - extinction;
+        if (transmittance < 0.015F) {
+            break;
+        }
+    }
+    return (clear * transmittance) + scattering;
+}
+
 [[nodiscard]] Vec3 normalised(Vec3 value) noexcept {
     const f32 magnitude =
         std::sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
@@ -344,12 +507,20 @@ struct Stage::Device {
     rhi::ShaderModuleHandle fragment;
     rhi::PipelineLayoutHandle layout;
     rhi::GraphicsPipelineHandle pipeline;
+    rhi::ShaderModuleHandle visual_shaders[3];
+    rhi::DescriptorSetLayoutHandle visual_set_layout;
+    rhi::PipelineLayoutHandle visual_layout;
+    rhi::ComputePipelineHandle visual_pipelines[3];
+    rhi::DescriptorSetHandle visual_set;
     rhi::BufferHandle static_vertices;
     rhi::BufferHandle static_colours;
     rhi::BufferHandle static_indices;
     rhi::BufferHandle dynamic_vertices;
     rhi::BufferHandle dynamic_colours;
     rhi::BufferHandle dynamic_indices;
+    rhi::BufferHandle foam_previous;
+    rhi::BufferHandle foam_next;
+    rhi::BufferHandle terrain_fields[4];
     rhi::BufferHandle readback;
 
     // --- THE ASSEMBLED FRAME. M11.c task 3.1. --------------------------------------------------
@@ -367,6 +538,7 @@ struct Stage::Device {
     rhi::TextureHandle output;
     /// The sun, as the frame's light list. One directional light, which is what this world has.
     cy::render::LightDescription sun;
+    VisualPush last_visual;
     bool frame_ready = false;
 };
 
@@ -397,6 +569,16 @@ const char* Stage::absence() const noexcept {
                                                       "found no driver";
 }
 
+const char* Stage::backend_name() const noexcept {
+    return device_ != nullptr ? device_->selection.selected : "none";
+}
+
+const char* Stage::device_name() const noexcept {
+    return device_ != nullptr && device_->handle.has_value()
+               ? device_->handle.value()->capabilities().device_name()
+               : "none";
+}
+
 Status Stage::open(u32 width, u32 height) noexcept {
     width_ = width;
     height_ = height;
@@ -404,8 +586,11 @@ Status Stage::open(u32 width, u32 height) noexcept {
     if (device_ == nullptr) {
         return fail(ErrorCode::OutOfMemory, "the stage did not allocate");
     }
-#if defined(CY_SAMPLE_WORLD_VULKAN)
+#if defined(CY_RENDERER_VULKAN)
     (void)rhi::vulkan::register_vulkan_backend();
+#endif
+#if defined(CY_RENDERER_METAL)
+    (void)rhi::metal::register_metal_backend();
 #endif
     (void)rhi::null::register_null_backend();
 
@@ -414,11 +599,17 @@ Status Stage::open(u32 width, u32 height) noexcept {
     // VALIDATION ON, AND ITS ERRORS REPORTED AS A NUMBER rather than as a log line nobody reads.
     description.enable_validation = true;
     description.enable_synchronisation_validation = true;
-    device_->handle = rhi::create_device(*allocator_, "vulkan", description, device_->selection);
+#if defined(__APPLE__) && defined(CY_RENDERER_METAL)
+    constexpr const char* backend = rhi::metal::kMetalBackendName;
+#else
+    constexpr const char* backend = "vulkan";
+#endif
+    device_->handle = rhi::create_device(*allocator_, backend, description, device_->selection);
     if (!device_->handle.has_value()) {
         return ok();
     }
-    if (device_->handle.value()->capabilities().backend() != rhi::BackendKind::Vulkan) {
+    const rhi::BackendKind selected = device_->handle.value()->capabilities().backend();
+    if (selected != rhi::BackendKind::Vulkan && selected != rhi::BackendKind::Metal) {
         return ok();
     }
     device_->handle.value()->set_validation_callback(&count_validation,
@@ -430,11 +621,20 @@ Status Stage::open(u32 width, u32 height) noexcept {
 Status Stage::create_pipeline() noexcept {
     rhi::Device& device = *device_->handle.value();
 
+    const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
+
     rhi::ShaderModuleDescription vertex;
     vertex.name = "world vertex";
     vertex.stage = rhi::ShaderStage::Vertex;
-    vertex.entry_point = "main";
-    vertex.spirv = Span<const u32>(kWorldVertexSpirv, sizeof(kWorldVertexSpirv) / sizeof(u32));
+    if (metal) {
+        vertex.entry_point = "worldVertex";
+        vertex.native = Span<const u8>(reinterpret_cast<const u8*>(kWorldVertexMsl),
+                                       sizeof(kWorldVertexMsl) - 1);
+        vertex.native_format = rhi::ShaderFormat::Msl;
+    } else {
+        vertex.entry_point = "main";
+        vertex.spirv = Span<const u32>(kWorldVertexSpirv, sizeof(kWorldVertexSpirv) / sizeof(u32));
+    }
     Expected<rhi::ShaderModuleHandle, Error> vertex_module = device.create_shader_module(vertex);
     if (!vertex_module) {
         return make_unexpected(vertex_module.error());
@@ -444,9 +644,16 @@ Status Stage::create_pipeline() noexcept {
     rhi::ShaderModuleDescription fragment;
     fragment.name = "world fragment";
     fragment.stage = rhi::ShaderStage::Fragment;
-    fragment.entry_point = "main";
-    fragment.spirv =
-        Span<const u32>(kWorldFragmentSpirv, sizeof(kWorldFragmentSpirv) / sizeof(u32));
+    if (metal) {
+        fragment.entry_point = "worldFragment";
+        fragment.native = Span<const u8>(reinterpret_cast<const u8*>(kWorldFragmentMsl),
+                                         sizeof(kWorldFragmentMsl) - 1);
+        fragment.native_format = rhi::ShaderFormat::Msl;
+    } else {
+        fragment.entry_point = "main";
+        fragment.spirv =
+            Span<const u32>(kWorldFragmentSpirv, sizeof(kWorldFragmentSpirv) / sizeof(u32));
+    }
     Expected<rhi::ShaderModuleHandle, Error> fragment_module =
         device.create_shader_module(fragment);
     if (!fragment_module) {
@@ -624,6 +831,106 @@ Status Stage::create_frame() noexcept {
     return ok();
 }
 
+Status Stage::create_visual_pipelines() noexcept {
+    rhi::Device& device = *device_->handle.value();
+    rhi::DescriptorBinding bindings[10] = {};
+    for (u32 index = 0; index < 10; ++index) {
+        bindings[index].binding = index;
+        bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
+        bindings[index].count = 1;
+        bindings[index].stages = rhi::ShaderStage::Compute;
+    }
+    rhi::DescriptorSetLayoutDescription set_description;
+    set_description.name = "world visual producers";
+    set_description.bindings = Span<const rhi::DescriptorBinding>(bindings, 10);
+    auto set_layout = device.create_descriptor_set_layout(set_description);
+    if (!set_layout) {
+        return make_unexpected(set_layout.error());
+    }
+    device_->visual_set_layout = *set_layout;
+
+    const rhi::PushConstantRange range{rhi::ShaderStage::Compute, 0, sizeof(VisualPush)};
+    rhi::PipelineLayoutDescription layout_description;
+    layout_description.name = "world visual layout";
+    layout_description.set_layouts =
+        Span<const rhi::DescriptorSetLayoutHandle>(&device_->visual_set_layout, 1);
+    layout_description.push_constants = Span<const rhi::PushConstantRange>(&range, 1);
+    auto layout = device.create_pipeline_layout(layout_description);
+    if (!layout) {
+        return make_unexpected(layout.error());
+    }
+    device_->visual_layout = *layout;
+
+    struct Request {
+        const char* name;
+        const char* entry;
+        const u32* spirv;
+        usize spirv_words;
+        const char* msl;
+        usize msl_bytes;
+    };
+    const Request requests[3] = {
+        {"world terrain visual", "shadeTerrain", kWorldShadeTerrainSpirv,
+         sizeof(kWorldShadeTerrainSpirv) / sizeof(u32), kWorldShadeTerrainMsl,
+         sizeof(kWorldShadeTerrainMsl) - 1},
+        {"world cloud visual", "shadeClouds", kWorldShadeCloudsSpirv,
+         sizeof(kWorldShadeCloudsSpirv) / sizeof(u32), kWorldShadeCloudsMsl,
+         sizeof(kWorldShadeCloudsMsl) - 1},
+        {"world foam visual", "evolveFoam", kWorldEvolveFoamSpirv,
+         sizeof(kWorldEvolveFoamSpirv) / sizeof(u32), kWorldEvolveFoamMsl,
+         sizeof(kWorldEvolveFoamMsl) - 1},
+    };
+    const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
+    for (u32 index = 0; index < 3; ++index) {
+        rhi::ShaderModuleDescription shader;
+        shader.name = requests[index].name;
+        shader.stage = rhi::ShaderStage::Compute;
+        if (metal) {
+            shader.entry_point = requests[index].entry;
+            shader.native = Span<const u8>(reinterpret_cast<const u8*>(requests[index].msl),
+                                           requests[index].msl_bytes);
+            shader.native_format = rhi::ShaderFormat::Msl;
+        } else {
+            shader.entry_point = "main";
+            shader.spirv = Span<const u32>(requests[index].spirv, requests[index].spirv_words);
+        }
+        auto module = device.create_shader_module(shader);
+        if (!module) {
+            return make_unexpected(module.error());
+        }
+        device_->visual_shaders[index] = *module;
+        rhi::ComputePipelineDescription pipeline;
+        pipeline.name = requests[index].name;
+        pipeline.layout = device_->visual_layout;
+        pipeline.shader = *module;
+        pipeline.workgroup_size[0] = 64;
+        auto created = device.create_compute_pipeline(pipeline);
+        if (!created) {
+            return make_unexpected(created.error());
+        }
+        device_->visual_pipelines[index] = *created;
+    }
+
+    auto descriptor_set = device.allocate_descriptor_set(device_->visual_set_layout, false);
+    if (!descriptor_set) {
+        return make_unexpected(descriptor_set.error());
+    }
+    device_->visual_set = *descriptor_set;
+    const rhi::BufferHandle resources[10] = {
+        device_->static_vertices,   device_->static_colours,    device_->dynamic_vertices,
+        device_->dynamic_colours,   device_->foam_previous,     device_->foam_next,
+        device_->terrain_fields[0], device_->terrain_fields[1], device_->terrain_fields[2],
+        device_->terrain_fields[3]};
+    rhi::DescriptorWrite writes[10] = {};
+    for (u32 index = 0; index < 10; ++index) {
+        writes[index].binding = index;
+        writes[index].kind = rhi::DescriptorKind::StorageBuffer;
+        writes[index].buffer = resources[index];
+    }
+    return device.update_descriptor_set(device_->visual_set,
+                                        Span<const rhi::DescriptorWrite>(writes, 10));
+}
+
 Status Stage::stage_world(const World& world) noexcept {
     if (!available_) {
         return fail(ErrorCode::Unavailable, "no graphics device answered");
@@ -664,7 +971,7 @@ Status Stage::stage_world(const World& world) noexcept {
     rhi::BufferDescription description;
     description.name = "world terrain geometry";
     description.size = vertices.size() * sizeof(Vertex);
-    description.usage = rhi::BufferUsage::Vertex;
+    description.usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage;
     description.memory = rhi::MemoryUse::Upload;
     Expected<rhi::BufferHandle, Error> buffer = device.create_buffer(description);
     if (!buffer) {
@@ -679,6 +986,7 @@ Status Stage::stage_world(const World& world) noexcept {
 
     description.name = "world terrain colours";
     description.size = vertices.size() * sizeof(Vec3);
+    description.usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage;
     buffer = device.create_buffer(description);
     if (!buffer) {
         return make_unexpected(buffer.error());
@@ -707,12 +1015,14 @@ Status Stage::stage_world(const World& world) noexcept {
     const u64 star_vertices = static_cast<u64>(world.stars().size() + 4'096) * 3;
     const u64 capacity = sky_vertices + water_vertices + star_vertices +
                          (static_cast<u64>(kMaxDrawnPlants) * kPlantVertices);
+    dynamic_capacity_ = static_cast<u32>(capacity);
+    sky_vertices_ = static_cast<u32>(sky_vertices);
     const u64 index_capacity = static_cast<u64>(world.sky_indices().size()) + (water_vertices * 6) +
                                star_vertices + (static_cast<u64>(kMaxDrawnPlants) * kPlantVertices);
 
     description.name = "world dynamic geometry";
     description.size = capacity * sizeof(Vertex);
-    description.usage = rhi::BufferUsage::Vertex;
+    description.usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage;
     buffer = device.create_buffer(description);
     if (!buffer) {
         return make_unexpected(buffer.error());
@@ -721,6 +1031,7 @@ Status Stage::stage_world(const World& world) noexcept {
 
     description.name = "world dynamic colours";
     description.size = capacity * sizeof(Vec3);
+    description.usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage;
     buffer = device.create_buffer(description);
     if (!buffer) {
         return make_unexpected(buffer.error());
@@ -736,13 +1047,56 @@ Status Stage::stage_world(const World& world) noexcept {
     }
     device_->dynamic_indices = *buffer;
 
+    constexpr u64 foam_cells = 128U * 128U;
+    description.name = "world foam previous";
+    description.size = foam_cells * sizeof(f32);
+    description.usage = rhi::BufferUsage::Storage;
+    description.memory = rhi::MemoryUse::Upload;
+    buffer = device.create_buffer(description);
+    if (!buffer) {
+        return make_unexpected(buffer.error());
+    }
+    device_->foam_previous = *buffer;
+    std::memset(device.buffer_mapped_pointer(*buffer), 0, static_cast<usize>(description.size));
+    description.name = "world foam next";
+    buffer = device.create_buffer(description);
+    if (!buffer) {
+        return make_unexpected(buffer.error());
+    }
+    device_->foam_next = *buffer;
+    std::memset(device.buffer_mapped_pointer(*buffer), 0, static_cast<usize>(description.size));
+
+    for (u32 index = 0; index < 4; ++index) {
+        auto image = world.terrain_field_image(index);
+        if (!image) {
+            return make_unexpected(image.error());
+        }
+        description.name = "world terrain field image";
+        description.size = image->words.size() * sizeof(u32);
+        description.usage = rhi::BufferUsage::Storage;
+        description.memory = rhi::MemoryUse::Upload;
+        buffer = device.create_buffer(description);
+        if (!buffer) {
+            return make_unexpected(buffer.error());
+        }
+        device_->terrain_fields[index] = *buffer;
+        field_image_bytes_[index] = description.size;
+        if (Status uploaded = upload_bytes(device, *buffer, image->words.data(), description.size);
+            !uploaded) {
+            return uploaded;
+        }
+    }
+
     if (Status reserved = dynamic_vertices_.reserve(capacity); !reserved) {
         return reserved;
     }
     if (Status reserved = dynamic_colours_.reserve(capacity); !reserved) {
         return reserved;
     }
-    return dynamic_indices_.reserve(index_capacity);
+    if (Status reserved = dynamic_indices_.reserve(index_capacity); !reserved) {
+        return reserved;
+    }
+    return create_visual_pipelines();
 }
 
 // ================================================================================================
@@ -840,6 +1194,8 @@ Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageRepo
     // --- THE OCEAN, as `water::OceanSurface::build()` generated it this frame.
     const water::OceanSurface& ocean = world.ocean();
     const u32 water_base = static_cast<u32>(dynamic_vertices_.size());
+    water_first_vertex_ = water_base;
+    water_vertices_ = static_cast<u32>(ocean.positions().size());
     water_first_index_ = static_cast<u32>(dynamic_indices_.size());
     const water::WaterOptics optics = water::clear_sea_optics();
     const Span<const Vec3> positions = ocean.positions();
@@ -959,25 +1315,67 @@ Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageRepo
     foliage_index_count_ = static_cast<u32>(dynamic_indices_.size()) - foliage_first_index_;
     out.foliage_triangles = foliage_index_count_ / 3;
 
-    // --- The terrain's colours, which are the only part of it that changes.
-    usize cursor = 0;
-    for (const TerrainPatch& patch : world.terrain_patches()) {
-        for (const Vec3& colour : patch.colours.span()) {
-            terrain_colours_[cursor] = colour;
-            ++cursor;
-        }
-    }
     out.terrain_triangles = terrain_indices_ / 3;
     return ok();
 }
 
-Status Stage::upload_dynamic() noexcept {
+Status Stage::upload_dynamic(const World& world, f32& field_origin_x,
+                             f32& field_origin_z) noexcept {
     rhi::Device& device = *device_->handle.value();
-    if (Status uploaded = upload_bytes(device, device_->static_colours, terrain_colours_.data(),
-                                       terrain_colours_.size() * sizeof(Vec3));
-        !uploaded) {
-        return uploaded;
+    f64 origin_x = 0.0;
+    f64 origin_z = 0.0;
+    for (u32 index = 0; index < 4; ++index) {
+        auto image = world.terrain_field_image(index);
+        if (!image) {
+            return make_unexpected(image.error());
+        }
+        const u64 bytes = image->words.size() * sizeof(u32);
+        if (bytes > field_image_bytes_[index]) {
+            // Gameplay fields can publish another tile after the stage is created. Every previous
+            // frame is idle before this function is entered, so grow the upload buffer here and
+            // move the persistent descriptor to it before the new frame is recorded.
+            rhi::BufferDescription description;
+            description.name = "world terrain field image";
+            description.size = bytes;
+            description.usage = rhi::BufferUsage::Storage;
+            description.memory = rhi::MemoryUse::Upload;
+            auto grown = device.create_buffer(description);
+            if (!grown) {
+                return make_unexpected(grown.error());
+            }
+            if (Status uploaded = upload_bytes(device, *grown, image->words.data(), bytes);
+                !uploaded) {
+                device.destroy_buffer(*grown);
+                return uploaded;
+            }
+            rhi::DescriptorWrite write;
+            write.binding = 6U + index;
+            write.kind = rhi::DescriptorKind::StorageBuffer;
+            write.buffer = *grown;
+            if (Status updated = device.update_descriptor_set(
+                    device_->visual_set, Span<const rhi::DescriptorWrite>(&write, 1));
+                !updated) {
+                device.destroy_buffer(*grown);
+                return updated;
+            }
+            device.destroy_buffer(device_->terrain_fields[index]);
+            device_->terrain_fields[index] = *grown;
+            field_image_bytes_[index] = bytes;
+        } else if (Status uploaded = upload_bytes(device, device_->terrain_fields[index],
+                                                  image->words.data(), bytes);
+                   !uploaded) {
+            return uploaded;
+        }
+        if (index == 0) {
+            origin_x = image->origin_x;
+            origin_z = image->origin_z;
+        } else if (image->origin_x != origin_x || image->origin_z != origin_z) {
+            return fail(ErrorCode::InvalidArgument,
+                        "terrain field images do not share one local origin");
+        }
     }
+    field_origin_x = static_cast<f32>(world.centre().x - origin_x);
+    field_origin_z = static_cast<f32>(world.centre().z - origin_z);
     if (Status uploaded = upload_bytes(device, device_->dynamic_vertices, dynamic_vertices_.data(),
                                        dynamic_vertices_.size() * sizeof(Vertex));
         !uploaded) {
@@ -1003,7 +1401,9 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     if (Status built = build_dynamic(world, eye, out); !built) {
         return built;
     }
-    if (Status uploaded = upload_dynamic(); !uploaded) {
+    f32 field_origin_x = 0.0F;
+    f32 field_origin_z = 0.0F;
+    if (Status uploaded = upload_dynamic(world, field_origin_x, field_origin_z); !uploaded) {
         return uploaded;
     }
     out.build_ms = now_millis() - mark;
@@ -1016,6 +1416,87 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     const u32 slot = *began;
 
     cy::rendering::RenderGraph graph(*allocator_);
+
+    const auto import_buffer = [&graph, &device](const char* name, rhi::BufferHandle handle,
+                                                 rhi::BufferUsage usage) noexcept {
+        cy::rendering::BufferRequest request;
+        request.name = name;
+        const rhi::BufferDescription* description = device.buffer_description(handle);
+        request.size = description != nullptr ? description->size : 0;
+        request.extra_usage = usage;
+        return graph.import_buffer(request, handle);
+    };
+    const ResourceId terrain_vertices =
+        import_buffer("world terrain visual input", device_->static_vertices,
+                      rhi::BufferUsage::Storage | rhi::BufferUsage::Vertex);
+    const ResourceId terrain_colours =
+        import_buffer("world terrain visual output", device_->static_colours,
+                      rhi::BufferUsage::Storage | rhi::BufferUsage::Vertex);
+    const ResourceId dynamic_vertices =
+        import_buffer("world dynamic visual input", device_->dynamic_vertices,
+                      rhi::BufferUsage::Storage | rhi::BufferUsage::Vertex);
+    const ResourceId dynamic_colours =
+        import_buffer("world dynamic visual output", device_->dynamic_colours,
+                      rhi::BufferUsage::Storage | rhi::BufferUsage::Vertex);
+    const ResourceId foam_previous =
+        import_buffer("world foam previous", device_->foam_previous, rhi::BufferUsage::Storage);
+    const ResourceId foam_next =
+        import_buffer("world foam next", device_->foam_next, rhi::BufferUsage::Storage);
+    ResourceId terrain_fields[4];
+    for (u32 index = 0; index < 4; ++index) {
+        terrain_fields[index] = import_buffer("world terrain field", device_->terrain_fields[index],
+                                              rhi::BufferUsage::Storage);
+    }
+
+    VisualPush visual;
+    visual.terrain_count = terrain_vertices_;
+    visual.sky_count = sky_vertices_;
+    visual.water_start = water_first_vertex_;
+    visual.water_count = water_vertices_;
+    visual.frame_index = visual_frame_index_++;
+    visual.time_seconds = static_cast<f32>(world.state().seconds);
+    visual.delta_seconds = 1.0F / 60.0F;
+    visual.wetness = world.state().wetness;
+    visual.snow_depth = world.state().snow_depth_metres;
+    visual.cloud_coverage = world.state().cloud_coverage;
+    visual.cloud_seed = static_cast<u32>(world.options().seed ^ (world.options().seed >> 32U));
+    visual.sun_height =
+        std::sin(world.state().sun_elevation_degrees * (std::numbers::pi_v<f32> / 180.0F));
+    visual.exposure = world.lighting().exposure;
+    visual.field_origin[0] = field_origin_x;
+    visual.field_origin[1] = field_origin_z;
+    visual.field_origin[2] = static_cast<f32>(eye.x);
+    visual.field_origin[3] = static_cast<f32>(eye.z);
+    device_->last_visual = visual;
+
+    VisualPassState terrain_visual{
+        device_->visual_pipelines[0],    device_->visual_layout, device_->visual_set, visual,
+        (terrain_vertices_ + 63U) / 64U, &out.terrain_dispatches};
+    VisualPassState cloud_visual{device_->visual_pipelines[1], device_->visual_layout,
+                                 device_->visual_set,          visual,
+                                 (sky_vertices_ + 63U) / 64U,  &out.cloud_dispatches};
+    const u32 foam_work = water_vertices_ > (128U * 128U) ? water_vertices_ : (128U * 128U);
+    VisualPassState foam_visual{device_->visual_pipelines[2], device_->visual_layout,
+                                device_->visual_set,          visual,
+                                (foam_work + 63U) / 64U,      &out.foam_dispatches};
+    graph.add_pass("world terrain substrate", QueueKind::Graphics)
+        .read(terrain_vertices, Access::ComputeStorageRead)
+        .read(terrain_fields[0], Access::ComputeStorageRead)
+        .read(terrain_fields[1], Access::ComputeStorageRead)
+        .read(terrain_fields[2], Access::ComputeStorageRead)
+        .read(terrain_fields[3], Access::ComputeStorageRead)
+        .write(terrain_colours, Access::ComputeStorageWrite)
+        .record(&record_visual, &terrain_visual);
+    graph.add_pass("world visual clouds", QueueKind::Graphics)
+        .read(dynamic_vertices, Access::ComputeStorageRead)
+        .write(dynamic_colours, Access::ComputeStorageWrite)
+        .record(&record_visual, &cloud_visual);
+    graph.add_pass("world visual foam", QueueKind::Graphics)
+        .read(dynamic_vertices, Access::ComputeStorageRead)
+        .read(foam_previous, Access::ComputeStorageRead)
+        .write(foam_next, Access::ComputeStorageWrite)
+        .write(dynamic_colours, Access::ComputeStorageWrite)
+        .record(&record_visual, &foam_visual);
 
     const WorldVec3d middle = world.centre();
     const Vec3 relative_eye{static_cast<f32>(eye.x - middle.x), static_cast<f32>(eye.y),
@@ -1149,8 +1630,10 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     // callback, which `ForwardFrame` calls "a legitimate frame": this program has no transparent
     // layer, no screen-space effects and no interface.
     FrameSinks sinks;
-    sinks.passes[static_cast<usize>(FramePassKind::Opaque)] =
-        cy::rendering::FramePassCallback{&record_draw, &state};
+    const ResourceId visual_inputs[4] = {terrain_vertices, terrain_colours, dynamic_vertices,
+                                         dynamic_colours};
+    sinks.passes[static_cast<usize>(FramePassKind::Opaque)] = cy::rendering::FramePassCallback{
+        &record_draw, &state, Span<const ResourceId>(visual_inputs, 4)};
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
 
@@ -1232,6 +1715,21 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     if (Status ended = device.end_frame(); !ended && frame) {
         frame = ended;
     }
+    if (frame) {
+        std::swap(device_->foam_previous, device_->foam_next);
+        rhi::DescriptorWrite foam_writes[2] = {};
+        foam_writes[0].binding = 4;
+        foam_writes[0].kind = rhi::DescriptorKind::StorageBuffer;
+        foam_writes[0].buffer = device_->foam_previous;
+        foam_writes[1].binding = 5;
+        foam_writes[1].kind = rhi::DescriptorKind::StorageBuffer;
+        foam_writes[1].buffer = device_->foam_next;
+        if (Status updated = device.update_descriptor_set(
+                device_->visual_set, Span<const rhi::DescriptorWrite>(foam_writes, 2));
+            !updated) {
+            frame = updated;
+        }
+    }
 
     // --- WHAT THE FRAME SAYS IT DID ------------------------------------------------------------
     //
@@ -1257,6 +1755,109 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
 
     out.validation_errors = device_->validation_errors;
     return frame;
+}
+
+Status Stage::verify_terrain_agreement(const World& world, f32& worst_error,
+                                       u32& compared) const noexcept {
+    worst_error = 0.0F;
+    compared = 0;
+    if (!available_ || device_ == nullptr || !device_->handle.has_value()) {
+        return fail(ErrorCode::Unavailable, "terrain agreement needs a graphics device");
+    }
+    const auto* device_colours = static_cast<const Vec3*>(
+        device_->handle.value()->buffer_mapped_pointer(device_->static_colours));
+    if (device_colours == nullptr) {
+        return fail(ErrorCode::Internal,
+                    "terrain agreement could not map the device colour stream");
+    }
+    constexpr f32 kTolerance = 0.0008F;
+    u32 cursor = 0;
+    for (const TerrainPatch& patch : world.terrain_patches()) {
+        if (patch.colours.size() != patch.mesh.positions.size()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "terrain reference did not shade every staged vertex");
+        }
+        for (const Vec3& reference : patch.colours.span()) {
+            if (cursor >= terrain_vertices_) {
+                return fail(ErrorCode::OutOfRange,
+                            "terrain reference contains more vertices than the device stream");
+            }
+            const Vec3 actual = device_colours[cursor++];
+            const f32 errors[3] = {std::abs(actual.x - reference.x),
+                                   std::abs(actual.y - reference.y),
+                                   std::abs(actual.z - reference.z)};
+            for (const f32 error : errors) {
+                worst_error = error > worst_error ? error : worst_error;
+            }
+        }
+    }
+    compared = cursor;
+    if (compared == 0 || compared != terrain_vertices_) {
+        return fail(ErrorCode::InvalidArgument,
+                    "terrain agreement did not compare the complete device stream");
+    }
+    if (!std::isfinite(worst_error) || worst_error > kTolerance) {
+        std::fprintf(stderr,
+                     "terrain agreement: %u vertices, worst channel error %.8f (tolerance %.8f)\n",
+                     compared, static_cast<double>(worst_error), static_cast<double>(kTolerance));
+        return fail(ErrorCode::InvalidArgument,
+                    "terrain device shading exceeds the CPU-reference tolerance");
+    }
+    return ok();
+}
+
+Status Stage::verify_cloud_agreement(const World&, f32& worst_error, u32& compared) const noexcept {
+    worst_error = 0.0F;
+    compared = 0;
+    if (!available_ || device_ == nullptr || !device_->handle.has_value()) {
+        return fail(ErrorCode::Unavailable, "cloud agreement needs a graphics device");
+    }
+    const auto* device_colours = static_cast<const Vec3*>(
+        device_->handle.value()->buffer_mapped_pointer(device_->dynamic_colours));
+    if (device_colours == nullptr || dynamic_vertices_.size() < sky_vertices_) {
+        return fail(ErrorCode::Internal, "cloud agreement could not read the complete sky stream");
+    }
+    constexpr f32 kTolerance = 0.002F;
+    for (u32 index = 0; index < sky_vertices_; ++index) {
+        const Vec3 direction = normalised(dynamic_vertices_[index].normal);
+        const Vec3 reference = compose_cloud_reference(direction, device_->last_visual);
+        const Vec3 actual = device_colours[index];
+        const f32 errors[3] = {std::abs(actual.x - reference.x), std::abs(actual.y - reference.y),
+                               std::abs(actual.z - reference.z)};
+        for (const f32 error : errors) {
+            worst_error = error > worst_error ? error : worst_error;
+        }
+    }
+    compared = sky_vertices_;
+    if (compared == 0 || !std::isfinite(worst_error) || worst_error > kTolerance) {
+        return fail(ErrorCode::InvalidArgument,
+                    "cloud device shading exceeds the CPU-reference tolerance");
+    }
+    return ok();
+}
+
+Status Stage::verify_foam_output(u32& active_cells) const noexcept {
+    active_cells = 0;
+    if (!available_ || device_ == nullptr || !device_->handle.has_value()) {
+        return fail(ErrorCode::Unavailable, "foam validation needs a graphics device");
+    }
+    const auto* foam = static_cast<const f32*>(
+        device_->handle.value()->buffer_mapped_pointer(device_->foam_previous));
+    if (foam == nullptr) {
+        return fail(ErrorCode::Internal, "foam validation could not map the output buffer");
+    }
+    constexpr u32 kCells = 128U * 128U;
+    for (u32 index = 0; index < kCells; ++index) {
+        if (!std::isfinite(foam[index])) {
+            return fail(ErrorCode::InvalidArgument,
+                        "foam device output contains a non-finite cell");
+        }
+        active_cells += foam[index] > 0.0F ? 1U : 0U;
+    }
+    if (active_cells == 0) {
+        return fail(ErrorCode::InvalidArgument, "foam device output contains no active cell");
+    }
+    return ok();
 }
 
 Status Stage::read_grade(const char* path) noexcept {
@@ -1354,6 +1955,22 @@ void Stage::close() noexcept {
             device.destroy_texture(device_->output);
             device_->output = rhi::TextureHandle{};
         }
+        for (u32 index = 0; index < 3; ++index) {
+            if (!device_->visual_pipelines[index].is_null()) {
+                device.destroy_compute_pipeline(device_->visual_pipelines[index]);
+            }
+        }
+        if (!device_->visual_layout.is_null()) {
+            device.destroy_pipeline_layout(device_->visual_layout);
+        }
+        if (!device_->visual_set_layout.is_null()) {
+            device.destroy_descriptor_set_layout(device_->visual_set_layout);
+        }
+        for (u32 index = 0; index < 3; ++index) {
+            if (!device_->visual_shaders[index].is_null()) {
+                device.destroy_shader_module(device_->visual_shaders[index]);
+            }
+        }
         device.destroy_graphics_pipeline(device_->pipeline);
         device.destroy_pipeline_layout(device_->layout);
         device.destroy_shader_module(device_->vertex);
@@ -1364,6 +1981,11 @@ void Stage::close() noexcept {
         device.destroy_buffer(device_->dynamic_vertices);
         device.destroy_buffer(device_->dynamic_colours);
         device.destroy_buffer(device_->dynamic_indices);
+        device.destroy_buffer(device_->foam_previous);
+        device.destroy_buffer(device_->foam_next);
+        for (u32 index = 0; index < 4; ++index) {
+            device.destroy_buffer(device_->terrain_fields[index]);
+        }
         device.destroy_buffer(device_->readback);
         rhi::destroy_device(*allocator_, device_->handle.value());
     }

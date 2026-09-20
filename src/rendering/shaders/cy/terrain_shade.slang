@@ -103,6 +103,23 @@ public CyTerrainSubstrate cyTerrainSampleSubstrate(CyTerrainFields fields, float
     return substrate;
 }
 
+/// The same substrate sample for a pass that binds four field images directly. Integrated sample
+/// passes use this form before their fields have been published into the GPU scene's bindless
+/// table; the sampling and shading arithmetic remains shared with the material path above.
+public CyTerrainSubstrate cyTerrainSampleSubstrateImages(
+    CyFieldImage waterDistance, CyFieldImage wetness, CyFieldImage snowDepth,
+    CyFieldImage vegetation, float x, float y, float z)
+{
+    CyTerrainSubstrate substrate;
+    const CyFieldSample shore = cyFieldSample(waterDistance, x, y, z);
+    substrate.waterDistanceMetres = shore.value.x;
+    substrate.shoreResolved = shore.resolved;
+    substrate.wetness = cyFieldSample(wetness, x, y, z).value.x;
+    substrate.snowDepthMetres = cyFieldSample(snowDepth, x, y, z).value.x;
+    substrate.vegetation = cyFieldSample(vegetation, x, y, z).value.x;
+    return substrate;
+}
+
 /// The colour those four samples produce, given the vertex's slope and altitude.
 ///
 /// `slope` is `1 - normal.y`, which is the sample's own definition; `altitudeMetres` is the vertex's
@@ -147,5 +164,15 @@ public float3 cyTerrainShadeAt(CyTerrainFields fields, CyTerrainPalette palette,
                                float z, float slope, float altitudeMetres, float alpineMetres)
 {
     const CyTerrainSubstrate substrate = cyTerrainSampleSubstrate(fields, x, y, z);
+    return cyTerrainShade(palette, substrate, slope, altitudeMetres, alpineMetres);
+}
+
+public float3 cyTerrainShadeAtImages(
+    CyFieldImage waterDistance, CyFieldImage wetness, CyFieldImage snowDepth,
+    CyFieldImage vegetation, CyTerrainPalette palette, float x, float y, float z, float slope,
+    float altitudeMetres, float alpineMetres)
+{
+    const CyTerrainSubstrate substrate = cyTerrainSampleSubstrateImages(
+        waterDistance, wetness, snowDepth, vegetation, x, y, z);
     return cyTerrainShade(palette, substrate, slope, altitudeMetres, alpineMetres);
 }

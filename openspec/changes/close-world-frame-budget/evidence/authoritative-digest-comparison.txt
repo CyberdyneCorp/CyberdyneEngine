@@ -1,0 +1,6 @@
+host_arch: arm64
+os: macOS 27.0
+chip: Apple M3 Pro
+headless: 0x796E233B79130401
+metal:    0x796E233B79130401
+result:   MATCH

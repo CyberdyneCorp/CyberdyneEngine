@@ -69,13 +69,13 @@ CRF = "22"
 #: a question about modules and not about function names.
 PRODUCERS = [
     ("weather_ms", "cy::weather — climate, cells, wind, fields"),
-    ("water_ms", "cy::water — spectrum, foam, clock"),
+    ("water_ms", "cy::water — authoritative spectrum and clock"),
     ("ocean_ms", "cy::water — the camera-relative surface patch"),
-    ("sky_ms", "cy::rendering::sky — atmosphere and the cloud march"),
-    ("terrain_shade_ms", "the substrate re-sampled for every terrain vertex"),
+    ("sky_ms", "cy::rendering::sky — authoritative lighting integral"),
+    ("terrain_shade_ms", "CPU terrain reference (zero while rendered)"),
     ("foliage_ms", "cy::foliage — wind response over every plant"),
     ("stage_build_ms", "the sample's own vertex streams"),
-    ("stage_submit_ms", "submit and wait for the device"),
+    ("stage_submit_ms", "device compute, draw, resolve, submit and wait"),
 ]
 
 
@@ -119,7 +119,7 @@ def plot_budget(csv_path: pathlib.Path, name: str) -> bool:
     cost_axes.set_ylabel("milliseconds per frame")
     cost_axes.set_title(
         "samples/10-world — where one frame goes, across a full day/night cycle\n"
-        "every producer on the processor; the device's share is the bottom band"
+        "authoritative simulation on the processor; visual terrain, clouds and foam on the device"
     )
     # THE LEGEND SITS OUTSIDE THE AXES, and that is not a matter of taste. Nine entries stacked
     # inside the plot cover about a fifth of it, and the fifth they cover is the quiet morning

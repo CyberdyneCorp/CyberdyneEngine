@@ -29,6 +29,11 @@ using FrameState = ForwardFrame::BuildState;
 void attach(PassBuilder& builder, const FrameDescription& description,
             FramePassKind kind) noexcept {
     const FramePassCallback& callback = description.callbacks[static_cast<u32>(kind)];
+    for (const ResourceId resource : callback.vertex_reads) {
+        if (valid(resource)) {
+            builder.read(resource, Access::VertexAttributeRead);
+        }
+    }
     if (callback.record != nullptr) {
         builder.record(callback.record, callback.user);
     }

@@ -20,5 +20,10 @@ public struct CyGlobalsData
     public float4 windDirectionAndSpeed;
 };
 
+public struct CyGlobalSet
+{
+    public ConstantBuffer<CyGlobalsData> data;
+};
+
 [[vk::binding(0, 0)]]
-public ConstantBuffer<CyGlobalsData> cyGlobals;
+public ParameterBlock<CyGlobalSet> cyGlobalSet;

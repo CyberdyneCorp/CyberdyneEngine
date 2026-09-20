@@ -2,6 +2,7 @@
 
 #include <cy/rendering/pipeline/frame_pipelines.h>
 
+#include "frame_msl.h"
 #include "frame_spirv.h"
 
 #include <cy/core/math/vec.h>
@@ -134,30 +135,46 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
     struct Request {
         const char* name;
         rhi::ShaderStage stage;
-        const char* entry;
+        const char* msl_entry;
         Span<const u32> spirv;
+        const char* msl;
+        usize msl_bytes;
         rhi::ShaderModuleHandle* out;
     };
     const Request requests[] = {
-        {"cy frame depth vertex", rhi::ShaderStage::Vertex, "main", words(kFrameDepthVertexSpirv),
+        {"cy frame depth vertex", rhi::ShaderStage::Vertex, "cyDepthVertex",
+         words(kFrameDepthVertexSpirv), kFrameDepthVertexMsl, sizeof(kFrameDepthVertexMsl) - 1,
          &depth_vertex_},
-        {"cy frame depth fragment", rhi::ShaderStage::Fragment, "main",
-         words(kFrameDepthFragmentSpirv), &depth_fragment_},
-        {"cy frame forward vertex", rhi::ShaderStage::Vertex, "main",
-         words(kFrameForwardVertexSpirv), &forward_vertex_},
-        {"cy frame forward fragment", rhi::ShaderStage::Fragment, "main",
-         words(kFrameForwardFragmentSpirv), &forward_fragment_},
-        {"cy frame resolve vertex", rhi::ShaderStage::Vertex, "main",
-         words(kFrameResolveVertexSpirv), &resolve_vertex_},
-        {"cy frame resolve fragment", rhi::ShaderStage::Fragment, "main",
-         words(kFrameResolveFragmentSpirv), &resolve_fragment_},
+        {"cy frame depth fragment", rhi::ShaderStage::Fragment, "cyDepthFragment",
+         words(kFrameDepthFragmentSpirv), kFrameDepthFragmentMsl,
+         sizeof(kFrameDepthFragmentMsl) - 1, &depth_fragment_},
+        {"cy frame forward vertex", rhi::ShaderStage::Vertex, "cyForwardVertex",
+         words(kFrameForwardVertexSpirv), kFrameForwardVertexMsl,
+         sizeof(kFrameForwardVertexMsl) - 1, &forward_vertex_},
+        {"cy frame forward fragment", rhi::ShaderStage::Fragment, "cyForwardFragment",
+         words(kFrameForwardFragmentSpirv), kFrameForwardFragmentMsl,
+         sizeof(kFrameForwardFragmentMsl) - 1, &forward_fragment_},
+        {"cy frame resolve vertex", rhi::ShaderStage::Vertex, "fullscreenVertex",
+         words(kFrameResolveVertexSpirv), kFrameResolveVertexMsl,
+         sizeof(kFrameResolveVertexMsl) - 1, &resolve_vertex_},
+        {"cy frame resolve fragment", rhi::ShaderStage::Fragment, "fullscreenResolve",
+         words(kFrameResolveFragmentSpirv), kFrameResolveFragmentMsl,
+         sizeof(kFrameResolveFragmentMsl) - 1, &resolve_fragment_},
     };
+    const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
     for (const Request& request : requests) {
         rhi::ShaderModuleDescription description;
         description.name = request.name;
         description.stage = request.stage;
-        description.entry_point = request.entry;
-        description.spirv = request.spirv;
+        if (metal) {
+            description.entry_point = request.msl_entry;
+            description.native =
+                Span<const u8>(reinterpret_cast<const u8*>(request.msl), request.msl_bytes);
+            description.native_format = rhi::ShaderFormat::Msl;
+        } else {
+            description.entry_point = "main";
+            description.spirv = request.spirv;
+        }
         Expected<rhi::ShaderModuleHandle, Error> module = device.create_shader_module(description);
         if (!module.has_value()) {
             return make_unexpected(module.error());

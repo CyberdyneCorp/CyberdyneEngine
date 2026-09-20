@@ -435,6 +435,15 @@ Expected<FieldGpuImage, Error> build_field_image(const FieldStore& store, FieldI
     return image;
 }
 
+Expected<FieldGpuImage, Error> build_deterministic_field_image(const FieldStore& store,
+                                                               FieldId field) noexcept {
+    const FieldDeclaration* declaration = store.registry().declaration(field);
+    if (declaration == nullptr) {
+        return fail(ErrorCode::NotFound, "environment: no such field is declared");
+    }
+    return build_field_image(store, field, declaration->gameplay_level);
+}
+
 FieldImageLocal image_local(const FieldGpuImage& image, const world::WorldVec3d& at) noexcept {
     FieldImageLocal local;
     local.x = static_cast<f32>(at.x - image.origin_x);

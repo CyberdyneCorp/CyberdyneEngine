@@ -64,47 +64,29 @@ one disappears if a producer is removed:
   visible, and it is the one thing in this picture a reader can check against a printed number,
   because the hour lines report the wind the response was evaluated from.
 
-## What this program does NOT claim
+## What the rendered path now does on the device
 
-**Every producer here runs on the processor.** M10 shipped no `.slang` module for an environment
-field, a terrain material, a water surface, grass expansion or a cloud march; six of its agents each
-recorded that gap against their own row, and this artefact closes none of them.
+The authoritative world simulation remains on the processor. The visual work that dominated the M10
+frame now runs as three render-graph compute passes before the opaque draw:
 
-So what the renderer beside `world.cpp` draws is geometry and per-vertex colour those modules
-computed on the CPU, through one pipeline with one Lambert term and a Blinn-Phong lobe for water.
-Specifically it is **not**:
+* terrain vertices sample the four packed environment field images through `cy/field.slang` and
+  `cy/terrain_shade.slang`, writing the device-resident terrain colour stream;
+* the sky dome is composed by `shadeClouds`, writing the dynamic colour stream;
+* a 128x128 foam field evolves in ping-pong buffers and shades the water vertices.
 
-* **since M11.c it IS assembled by `rendering::assembly`'s frame and resolved by
-  `rendering::pipeline`'s tone mapping** — the post chain decides the feature set, the temporal
-  framework advances a pinned jitter, the shadow cache spends its budget, the sky table updates, and
-  `cy/fullscreen.slang`'s resolve turns linear HDR scene colour into the image that is written out,
-  at the exposure `frame.cypost` commits. The stage list the frame ran is published beside the still
-  as `<still>.manifest.txt`. **It is still not `rendering::pipeline`'s forward SHADING**: the
-  geometry is this file's, drawn into the frame's opaque stage through `FrameSinks::passes`, not the
-  render server's mesh table drawn by the layer's own path. Not the visibility buffer, not virtual
-  geometry;
-* **not anti-aliased.** The frame declares `FramePassKind::Temporal` and nothing in this tree
-  records it — there is no temporal resolve shader under `src/rendering/` at all — so the chain is
-  exposure, tone mapping and output encoding, and the manifest says three stages. Switching
-  `temporal_antialiasing` on would put a stage in the manifest that no pass ran;
-* not the material system — no terrain material page is bound on a device, and
-  `terrain::MaterialPageCache` is not in the link line;
-* not `environment::build_field_image()`'s GPU field image — every field read here is
-  `FieldStore::sample_deterministic()` on the host;
-* not `water`'s surface published into the GPU scene, and not its underwater, caustic or reflection
-  passes;
-* not `foliage`'s GPU wind response or GPU grass expansion, and not its impostor or aggregate tiers —
-  the plant proxies are this sample's own cone and prism, drawn up to a declared cap with the number
-  actually drawn reported every frame;
-* not a per-pixel cloud march — the sky is a dome of 6 384 directions (56 rings of 112), each one a
-  real `sky::compose_sky()` call, and the rasteriser interpolates between them. **That is what the
-  straight-edged slabs in the still are.** Four degrees of sky per quad is enough for the
-  atmosphere's gradient and far too coarse for a cloud edge, so a cloud bank arrives as a faceted
-  wedge; the MODEL under it is the shipped march and the RESOLUTION is a dome. A sky shader would
-  draw the same clouds per pixel and this is the artefact of not having one;
-* not `rendering-post`'s AUTO-exposure — the exposure is the one `frame.cypost` commits, not a
-  metered one. `World::shade_sky()` still divides by the frame's own mean sky radiance before the
-  frame's own exposure and tonemap stages see it, and both say so.
+The opaque callback declares those colour streams as vertex reads, so the graph derives the
+compute-to-vertex dependency. The sample audits all three dispatches and the rendered manifest;
+`--budget-ms` fails if any is absent. Apple builds select native Metal and other supported desktop
+builds select Vulkan. SPIR-V and MSL are generated from the same Slang sources and embedded so a
+Shipping build does not need a shader compiler.
+
+The geometry path is still deliberately small. It uses this sample's terrain, dome, ocean, and
+foliage proxy streams rather than the renderer's mesh/material tables. It has no temporal
+anti-aliasing, virtual geometry, GPU grass expansion, underwater pass, caustics, or reflections.
+The cloud producer is a seeded layered density march over dome vertices rather than the full
+per-pixel spherical-shell march, and foliage wind response remains CPU work. The frame is assembled by
+`rendering::assembly` and resolved by `rendering::pipeline` through exposure, tone mapping, and
+output encoding; the emitted manifest records those stages.
 
 There is also no STREAMING: the whole world is resident, every terrain tile is meshed at level 0,
 and `MeshReport::stitched_vertices` is reported precisely so that a reader can see it is zero. The
@@ -153,52 +135,21 @@ collector plots it.
 
 ![the budget](../../docs/design/images/m10-world-budget.png)
 
-**The honest headline is that this does not hold a frame budget.** At 960x540 with 576 generated
-regions, 295 000 terrain triangles, 37 000 placed plants and up to 415 000 triangles drawn, one frame
-costs **about 122 ms on average and about 145 ms at worst** — seven times a 60 Hz budget.
+**The 60 Hz target now holds on the real Apple M3 Pro Metal path.** The exact Shipping take is 64
+frames at 960x540, seed `20260913`, with a 16.7 ms worst-frame gate. The committed evidence records
+12.08 ms mean and 14.93 ms worst, with zero RHI validation errors and all three visual dispatches in
+every rendered frame. Timing varies with host load, so the executable remains the authority and
+fails the run when any frame exceeds the threshold.
 
-**THOSE FIGURES ARE QUOTED LOOSELY ON PURPOSE, BECAUSE THE LAST DIGIT BELONGS TO THE MACHINE.** Six
-captures of the same seed on this host gave means of 121.57, 121.62, 121.75, 122.03, 122.16 and
-123.90 ms, and worst frames of 140.88, 143.41, 144.38, 144.82, 145.66 and 147.47 ms. The mean holds
-a 2.3 ms band and the worst a 6.6 ms one, and the one capture two milliseconds above the rest lifted
-the pure-arithmetic bands — the ocean patch 5.1 ms to 6.2 ms, the foliage response 1.04 ms to
-1.46 ms — rather than the band that waits on the device, which is what "the machine was busy" looks
-like from inside a frame. So the table below is ONE capture's, re-running `just capture-world` will
-move its tenths, and nothing in this document should be read as reproducible to better than a couple
-of per cent. What every capture agrees on is the SHAPE: the same three bands dominate in the same
-order in all six, and no rearrangement of them comes within a factor of seven of 16 ms.
+The three former CPU bands are absent from rendered `FrameCosts`: `terrain_shade_ms` is zero,
+`sky_ms` now covers only the small authoritative lighting integral, and `water_ms` advances the
+clock without evolving visual foam. Device submission is therefore the largest rendered band,
+followed by the camera-relative ocean patch and construction of the sample's vertex streams.
 
-The curve says where the mean goes, and every one of the three largest bands is something a
-shipping engine would not do on the processor at all:
-
-| band | mean in the capture above | what it is, and what would delete it |
-|---|---|---|
-| the substrate re-sampled per terrain vertex | 63.0 ms | four `sample_deterministic()` calls at each of 152 000 vertices, every frame, because that is what makes a snowfall and a beach visible without a material that samples the field on the device. `cy/field.slang` — the debt `src/environment/`'s README records — deletes this band |
-| the cloud march | 23.2 ms | 6 384 `compose_sky()` calls a frame, each marching the cloud slab and the atmosphere. A sky shader deletes this band |
-| water's simulation | 12.0 ms | mostly the foam field: its advection and decay touch every cell every tick and the cost is quadratic in the resolution. Measured at 47 ms a frame at 256 cells; it ships at 128 |
-| submit and wait | 11.4 ms | the device, and the only band in the table that is not the processor |
-| the ocean patch | 5.1 ms | 16 trains summed at each of ~4 000 camera-relative vertices |
-| the sample's vertex streams | 5.8 ms | this artefact's own cost, not the engine's |
-| `cy::weather` | 0.29 ms | the whole climate, the cell hierarchy, the wind composition and the field publication — **the smallest band in the table**, and the one that has a declared budget |
-| `cy::foliage` wind | 1.05 ms | one field sample per cluster and one `evaluate_response()` per drawn plant |
-
-The curve is otherwise NEARLY flat across the cycle, and where it is not, it moves for one reason
-only. Frame cost is 125.1 ms mean while the sun is up and 120.0 ms while it is down, and about three
-quarters of that 5 ms is the cloud march: `sky_ms` is 25.5 ms with the sun above the horizon and
-21.7 ms below it, and the step happens AT the horizon crossing rather than gradually — 23.1 ms in
-the last ten degrees before sunrise, 25.5 ms in the first ten after. A march with no sun above the
-horizon does no sun-lighting work through the slab, and that is the only band in the table whose
-cost knows what time it is. Every other producer is flat to within its own run-to-run noise: the
-substrate is 63.3 ms by day against 62.8 by night, and water is 12.0 ms either way. The sky's
-25.5/21.7 split came out the same in every capture measured, and the substrate's half-millisecond
-day/night difference had the same sign in each — the direction is the model's, the tenths are not.
-
-**The storm is nearly invisible in the cost**, which is the result worth taking away. Across the 239
-frames carrying more than 20 mm/h the frame is 122.9 ms against the take's own 122.0 ms mean, and
-`cy::weather`'s whole band — climate, the cell hierarchy, the wind composition, the field
-publication — has a mean of 0.29 ms in every capture and a worst single frame between 0.65 ms and
-1.76 ms across them, the transition into the front included. The thing this world cannot afford is
-DRAWING itself, not simulating itself.
+Headless has a narrower meaning now: it measures authoritative simulation and skips visual terrain,
+cloud, and foam work because there is no device to consume it. The same 64-frame take is committed
+separately as headless evidence. Save, replay, lockstep, PCG, and gameplay state do not depend on the
+visual buffers.
 
 ## Reading order
 
@@ -221,7 +172,8 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 |---|---|
 | `--frames <dir>` | write `frame_%04d.png` per frame |
 | `--still <path>` | write one frame a second time, for the committed image |
-| `--budget <path>` | write the per-frame, per-producer cost as a CSV — plus `field_points` and `field_throttled`, which are what the substrate publication DID, since weather publishes inside its own tick and the two halves cannot be timed apart |
+| `--budget <path>` | write the per-frame, per-producer cost as a CSV, including field publication and device-stage bands |
+| `--budget-ms <ms>` | fail when the worst frame exceeds the threshold, a required visual dispatch is absent, or a rendered frame has no manifest |
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |
 | `--fps <n>` | frames per second of the take. One frame is one simulated tick |
