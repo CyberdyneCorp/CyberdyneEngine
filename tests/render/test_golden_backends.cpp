@@ -95,6 +95,11 @@ constexpr cy::u32 kHeight = 108;
 /// truth and no comparison would ever fail."
 constexpr const char* kImage = "first_light";
 
+void print_validation(cy::rhi::ValidationSeverity severity, const char* message, void*) noexcept {
+    std::fprintf(stderr, "golden_backends: validation[%u]: %s\n", static_cast<unsigned>(severity),
+                 message != nullptr ? message : "");
+}
+
 const char* reference_path() noexcept {
     static char storage[1024];
     std::snprintf(storage, sizeof(storage), "%s/references/%s.png", CY_RENDER_TEST_DIR, kImage);
@@ -162,6 +167,7 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
         cy::render_test::set_field(row.reason, sizeof(row.reason), device.error().message);
         return row;
     }
+    device.value()->set_validation_callback(&print_validation, nullptr);
 
     // `create_device` falls back to the null backend rather than failing. A fallback answering for
     // the backend that was asked for would attribute one backend's image to another, which is the
@@ -273,6 +279,8 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
 
     // 2. Every backend that produced an image matched the one committed reference, and the failure
     //    NAMES THE BACKEND — which is the half of the M3 requirement that has never been testable.
+    const char* capture_directory = std::getenv("CY_GOLDEN_CAPTURE_DIR");
+    const bool capture_required = capture_directory != nullptr && capture_directory[0] != '\0';
     cy::u32 judged = 0;
     for (const LedgerRow& row : rows) {
         if (row.outcome == Outcome::Matched || row.outcome == Outcome::Differed) {
@@ -287,6 +295,9 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
                          row.image, row.differing, row.differing_off_edge, row.max_channel_delta);
         }
         CY_CHECK(row.outcome != Outcome::Differed);
+        if (capture_required && row.device_class != DeviceClass::NullBackend) {
+            CY_CHECK(row.outcome == Outcome::Matched);
+        }
     }
 
     // 3. Every enumerated backend produced a row, and a backend with no device is a row saying so
