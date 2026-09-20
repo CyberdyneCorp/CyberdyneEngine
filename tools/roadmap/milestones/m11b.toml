@@ -434,16 +434,29 @@ source = "tasks, editor-viewport-and-gizmos, editor-ui-ux"
 kind = "command"
 run = '''
 set -e
+run_case() {
+    package="$1"
+    case_name="$2"
+    out="$(cargo test --manifest-path editor/Cargo.toml -p "$package" --lib "$case_name" -- --exact 2>&1)" || {
+        echo "$out"
+        exit 1
+    }
+    echo "$out" | tail -4
+    echo "$out" | grep -q 'test result: ok. 1 passed;' || {
+        echo "the exact case $case_name did not run once"
+        exit 1
+    }
+}
 for case in \
     viewmode::tests::the_mode_list_matches_the_engines \
     viewmode::tests::every_view_says_what_it_shows_and_how_to_read_it \
     viewmode::tests::every_view_is_reachable_by_a_unique_command_identifier \
     viewmode::tests::the_views_the_engine_cannot_draw_yet_are_named_rather_than_stubbed
 do
-    cargo test --manifest-path editor/Cargo.toml -p cy-editor-viewport --lib "$case" -- --exact
+    run_case cy-editor-viewport "$case"
 done
-cargo test --manifest-path editor/Cargo.toml -p cy-editor-services --lib \
-    viewports::tests::every_engine_view_mode_is_selectable_and_carried_in_the_view_state -- --exact
+run_case cy-editor-services \
+    viewports::tests::every_engine_view_mode_is_selectable_and_carried_in_the_view_state
 '''
 ci_job = "milestone-m11b"
 
