@@ -504,6 +504,14 @@ function(cy__provide_xatlas source_dir)
     set_target_properties(xatlas PROPERTIES CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 endfunction()
 
+# PixEvents ships Visual Studio projects rather than a CMake project. The D3D12 backend only needs
+# its event encoder headers: command-buffer markers are written into the native command list and do
+# not call the CPU event-runtime ABI.
+function(cy__provide_pix_events source_dir)
+    add_library(cy_pix_events_headers INTERFACE)
+    target_include_directories(cy_pix_events_headers SYSTEM INTERFACE "${source_dir}/include")
+endfunction()
+
 # Everything that has to happen after the dependency's targets exist.
 # --- ONNX Runtime (M8.c) --------------------------------------------------------------------------
 #

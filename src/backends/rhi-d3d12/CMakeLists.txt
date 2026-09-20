@@ -18,10 +18,10 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
     PUBLIC_DEPENDENCIES cy::rhi
-    PRIVATE_DEPENDENCIES cy::core-memory)
+    PRIVATE_DEPENDENCIES cy::core-memory cy::dep::pix_events)
 
 target_link_libraries(cy_rhi_d3d12 PRIVATE d3d12 dxgi dxguid)
-target_compile_definitions(cy_rhi_d3d12 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(cy_rhi_d3d12 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX USE_PIX_RETAIL)
 
 if(CY_BUILD_TESTS)
     add_subdirectory(tests)

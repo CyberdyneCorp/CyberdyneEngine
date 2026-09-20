@@ -2,7 +2,7 @@
 
 #include "d3d12_internal.h"
 
-#include <cstring>
+#include <pix3.h>
 
 namespace cy::rhi::d3d12 {
 namespace {
@@ -365,17 +365,29 @@ void D3D12CommandBuffer::copy_texture_to_buffer(TextureHandle source_handle,
 }
 
 void D3D12CommandBuffer::begin_debug_label(const char* name) noexcept {
-    if (name != nullptr) {
-        list->BeginEvent(0, name, static_cast<UINT>(std::strlen(name)));
+    if (name == nullptr) {
+        return;
     }
+    UINT64 encoded[PixEventsLegacy::PIXEventsGraphicsRecordSpaceQwords]{};
+    const UINT64* end =
+        PixEventsLegacy::EncodeBeginEventForContext(encoded, PIX_COLOR_DEFAULT, name);
+    list->BeginEvent(D3D12_EVENT_METADATA, encoded,
+                     static_cast<UINT>(reinterpret_cast<const BYTE*>(end) -
+                                       reinterpret_cast<const BYTE*>(encoded)));
 }
 void D3D12CommandBuffer::end_debug_label() noexcept {
     list->EndEvent();
 }
 void D3D12CommandBuffer::insert_debug_label(const char* name) noexcept {
-    if (name != nullptr) {
-        list->SetMarker(0, name, static_cast<UINT>(std::strlen(name)));
+    if (name == nullptr) {
+        return;
     }
+    UINT64 encoded[PixEventsLegacy::PIXEventsGraphicsRecordSpaceQwords]{};
+    const UINT64* end =
+        PixEventsLegacy::EncodeSetMarkerForContext(encoded, PIX_COLOR_DEFAULT, name);
+    list->SetMarker(D3D12_EVENT_METADATA, encoded,
+                    static_cast<UINT>(reinterpret_cast<const BYTE*>(end) -
+                                      reinterpret_cast<const BYTE*>(encoded)));
 }
 
 void D3D12CommandBuffer::write_timestamp(QueryPoolHandle handle, u32 index) noexcept {

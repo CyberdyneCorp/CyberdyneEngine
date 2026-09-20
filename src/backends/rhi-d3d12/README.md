@@ -51,6 +51,10 @@ The render graph remains the only owner of barriers. Its engine-side `ImageUse` 
 are translated to D3D12 resource states in `command_buffer.cpp`. Queue timelines, binary
 semaphores and fences use `ID3D12Fence`; render, compute and copy work use native command lists.
 
+Render-graph pass labels use Microsoft's pinned PixEvents encoder. Raw strings passed to
+`ID3D12CommandList::BeginEvent` are an obsolete diagnostic format that the current D3D12 debug
+layer rejects; the encoded markers remain visible to PIX without requiring its CPU event runtime.
+
 `Capability::ParallelPassRecording` is false. D3D12 can record direct command lists concurrently,
 but the RHI's secondary form spans complete passes while graph barriers are recorded between them.
 Claiming the capability without changing that ordering contract would be incorrect.
