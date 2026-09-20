@@ -331,8 +331,7 @@ void print_report(const BuildReport& report) {
     // one would never appear in an artefact and the check would pass by construction.
     std::error_code cwd_error;
     const std::filesystem::path working = std::filesystem::current_path(cwd_error);
-    const std::string absolute_root =
-        cwd_error ? std::string("/") : working.generic_string();
+    const std::string absolute_root = cwd_error ? std::string("/") : working.generic_string();
     const Expected<BuildReport, Error> first =
         run_build(arguments, project, root + "/first", root + "/cache-first");
     const Expected<BuildReport, Error> second =

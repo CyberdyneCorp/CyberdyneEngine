@@ -97,12 +97,11 @@ void D3D12CommandBuffer::begin_rendering(const RenderingInfo& info) noexcept {
             dsv = view->dsv;
             depth = &dsv;
             if (info.depth_attachment.load == LoadOp::Clear) {
-                list->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-                                            info.depth_attachment.clear.depth_stencil.depth,
-                                            static_cast<UINT8>(
-                                                info.depth_attachment.clear.depth_stencil.stencil),
-                                            0,
-                                            nullptr);
+                list->ClearDepthStencilView(
+                    dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+                    info.depth_attachment.clear.depth_stencil.depth,
+                    static_cast<UINT8>(info.depth_attachment.clear.depth_stencil.stencil), 0,
+                    nullptr);
             }
         }
     }
@@ -249,7 +248,7 @@ void D3D12CommandBuffer::draw_indexed(u32 index_count, u32 instance_count, u32 f
 }
 
 void D3D12CommandBuffer::draw_indexed_indirect(BufferHandle handle, u64 offset_bytes,
-                                                u32 draw_count, u32 stride) noexcept {
+                                               u32 draw_count, u32 stride) noexcept {
     D3D12Buffer* buffer = device_->buffer(handle);
     if (buffer == nullptr || !buffer->resource || stride != sizeof(D3D12_DRAW_INDEXED_ARGUMENTS)) {
         device_->report_validation(ValidationSeverity::Error,

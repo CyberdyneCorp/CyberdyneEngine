@@ -78,8 +78,7 @@ const char* scratch_dir() {
         // which is what `static` above needs.
         char suffix[32] = {};
         std::snprintf(suffix, sizeof(suffix), "cy-reproduction-%016llx",
-                      static_cast<unsigned long long>(
-                          reinterpret_cast<std::uintptr_t>(&suffix)));
+                      static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(&suffix)));
         const std::filesystem::path directory = base / suffix;
         std::filesystem::create_directories(directory, ignored);
         return directory.generic_string();

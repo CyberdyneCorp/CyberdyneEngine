@@ -58,10 +58,9 @@ struct Cooked {
         return (static_cast<u64>(now.tv_sec) * 1000000000ULL) + static_cast<u64>(now.tv_nsec);
     }
 #endif
-    return static_cast<u64>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count());
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                .count());
 }
 
 [[nodiscard]] WorldDescription small_world() noexcept {

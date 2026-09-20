@@ -12,6 +12,7 @@ def main() -> int:
     lines = [
         "#pragma once",
         "// Compiled DXIL for samples/03-first-light. GENERATED — do not edit by hand.",
+        "// clang-format off",
         "#include <cy/core/base/types.h>",
         "namespace cy::sample::first_light {",
     ]

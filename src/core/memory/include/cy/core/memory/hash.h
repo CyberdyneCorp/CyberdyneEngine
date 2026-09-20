@@ -44,8 +44,7 @@ namespace detail {
     const u64 low_high = a_low * b_high;
     const u64 high_low = a_high * b_low;
     const u64 high_high = a_high * b_high;
-    const u64 middle = (low_low >> 32) + static_cast<u32>(low_high) +
-                       static_cast<u32>(high_low);
+    const u64 middle = (low_low >> 32) + static_cast<u32>(low_high) + static_cast<u32>(high_low);
     const u64 low = (middle << 32) | static_cast<u32>(low_low);
     const u64 high = high_high + (low_high >> 32) + (high_low >> 32) + (middle >> 32);
     return low ^ high;

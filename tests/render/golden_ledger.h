@@ -23,9 +23,9 @@
 //     THE LABEL HAS TO COME FROM THE ADAPTER'S IDENTITY, NOT FROM ITS FLAG.
 //
 // So the shared RHI classifier reads the device's reported name and vendor ID. Known physical
-// vendor IDs attest hardware, known software and paravirtual identities override that classification,
-// and anything it does not recognise stays `unknown`. A classifier that guessed "hardware" from
-// the missing software flag would relabel exactly the device the spike caught.
+// vendor IDs attest hardware, known software and paravirtual identities override that
+// classification, and anything it does not recognise stays `unknown`. A classifier that guessed
+// "hardware" from the missing software flag would relabel exactly the device the spike caught.
 //
 // ================================================================================================
 // THE RECORD IS A FILE, BECAUSE A CLAIM ABOUT A MACHINE NOBODY HERE OWNS HAS TO BE READABLE LATER

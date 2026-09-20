@@ -344,9 +344,7 @@ private:
     static constexpr u64 kPrime1 = 0xbf58476d1ce4e5b9ULL;
     static constexpr u64 kPrime2 = 0x94d049bb133111ebULL;
 
-    [[nodiscard]] static constexpr u64 fold(u64 a, u64 b) noexcept {
-        return cy::detail::mix(a, b);
-    }
+    [[nodiscard]] static constexpr u64 fold(u64 a, u64 b) noexcept { return cy::detail::mix(a, b); }
 
     u64 state_ = 0xcbf29ce484222325ULL;
 };

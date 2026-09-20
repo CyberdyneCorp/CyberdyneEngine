@@ -1,5 +1,6 @@
 #pragma once
 // Compiled DXIL for samples/03-first-light. GENERATED — do not edit by hand.
+// clang-format off
 #include <cy/core/base/types.h>
 namespace cy::sample::first_light {
 inline constexpr u8 kFirstLightShadowVertexDxil[] = {
