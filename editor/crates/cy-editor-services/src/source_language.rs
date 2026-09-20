@@ -399,11 +399,15 @@ mod tests {
 
     #[test]
     fn diagnostics_are_projected_with_exact_revision_line_and_column() {
+        let root = std::env::temp_dir().join("cy-language-diagnostics");
+        let uri = file_uri(&root.join("game/Game.swift"));
         let incoming = Arc::new(Mutex::new(VecDeque::from([
             Ok(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#.to_string()),
-            Ok(r#"{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///project/game/Game.swift","version":0,"diagnostics":[{"range":{"start":{"line":3,"character":7},"end":{"line":3,"character":12}},"severity":1,"message":"cannot find name"}]}}"#.to_string()),
+            Ok(format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{uri}","version":0,"diagnostics":[{{"range":{{"start":{{"line":3,"character":7}},"end":{{"line":3,"character":12}}}},"severity":1,"message":"cannot find name"}}]}}}}"#
+            )),
         ])));
-        let mut language = SourceLanguageService::new("/project");
+        let mut language = SourceLanguageService::new(root);
         language
             .connect_with(&Factory(incoming), Duration::from_millis(10))
             .unwrap();

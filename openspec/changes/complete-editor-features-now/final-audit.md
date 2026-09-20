@@ -58,7 +58,9 @@ function above its applicable project target.
 - The editor SDK now loads the ABI fixture through the native Windows wide-character loader as well
   as through the Unix loader. The generated-inspector integration suite therefore exercises the
   real interface table, reflected catalogue, edit transaction, and engine-side value write on the
-  Windows editor leg instead of stopping at an unsupported-loader error.
+  Windows editor leg instead of stopping at an unsupported-loader error. Asset-catalogue temporary
+  paths and SourceKit diagnostic URIs are also formed from the host platform's path syntax, so the
+  same service tests exercise their claims on Windows rather than relying on Unix-only fixtures.
 
 ## Dependencies intentionally left open
 

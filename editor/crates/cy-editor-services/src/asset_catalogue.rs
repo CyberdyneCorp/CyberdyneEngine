@@ -298,15 +298,21 @@ mod tests {
     use super::*;
 
     fn temporary() -> PathBuf {
-        // Windows refuses `:` in a filename, and Rust's default test thread name is the fully-
-        // qualified path with `::` between segments — so a raw name here (which works on Unix)
-        // is `InvalidFilename` on Windows. Sanitize the separators before joining.
-        let raw_name = std::thread::current().name().unwrap_or("test").to_string();
-        let name = raw_name.replace("::", "-");
+        let test = std::thread::current().name().unwrap_or("test").to_string();
+        let test = test
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                    character
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>();
         let path = std::env::temp_dir().join(format!(
             "cy-asset-catalogue-{}-{}",
             std::process::id(),
-            name
+            test
         ));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(path.join("art/props")).unwrap();
