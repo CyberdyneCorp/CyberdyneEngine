@@ -2,7 +2,8 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 
-#include <sys/stat.h>
+#include <filesystem>
+#include <system_error>
 
 namespace cy::build {
 namespace {
@@ -72,8 +73,14 @@ Expected<assets::ContentHash, Error> ArtefactStore::put(const void* data, usize 
     }
     // Read-only, so an accidental in-place write is refused by the operating system. A failure here
     // is not fatal — some filesystems refuse the mode change — and the digest check in `verify` is
-    // the mechanism that does not depend on the filesystem cooperating.
-    ::chmod(path.c_str(), S_IRUSR | S_IRGRP | S_IROTH);
+    // the mechanism that does not depend on the filesystem cooperating. `std::filesystem::permissions`
+    // is the portable spelling and gracefully degrades on Windows to the read-only file attribute.
+    std::error_code ignored;
+    std::filesystem::permissions(
+        path,
+        std::filesystem::perms::owner_read | std::filesystem::perms::group_read |
+            std::filesystem::perms::others_read,
+        std::filesystem::perm_options::replace, ignored);
 
     writes_.fetch_add(1, std::memory_order_relaxed);
     bytes_written_.fetch_add(size, std::memory_order_relaxed);

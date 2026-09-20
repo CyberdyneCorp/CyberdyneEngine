@@ -431,6 +431,13 @@ function(cy__configure_jolt)
     set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
     set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
     set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+    # MSVC only: Jolt defaults `USE_STATIC_MSVC_RUNTIME_LIBRARY` to ON, which builds it against the
+    # static CRT (/MT). The engine and every other dependency in the tree use the dynamic CRT (/MD)
+    # — mixing them fails at link with LNK2038 across every Jolt object file. Force Jolt onto the
+    # same runtime the rest of the tree already uses.
+    if(WIN32)
+        set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+    endif()
 endfunction()
 
 function(cy__configure_vma)

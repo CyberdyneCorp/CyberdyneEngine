@@ -6,6 +6,7 @@
 #include <cy/test/test.h>
 
 #include <cstdlib>
+#include <limits>
 #include <string_view>
 
 #include "fixtures.h"
@@ -126,12 +127,15 @@ CY_TEST_CASE("every float bit pattern the writer produces parses back to itself"
 
 CY_TEST_CASE("infinities and not-a-number have one spelling each and round-trip") {
     char text[kFloatTextCapacity] = {};
-    const f32 infinity = 1.0F / 0.0F;
+    // std::numeric_limits rather than `1.0F / 0.0F`: MSVC's constant folder refuses the divide at
+    // compile time under `/permissive-`, and the intent is to produce a non-finite value rather
+    // than to test the divisor.
+    const f32 infinity = std::numeric_limits<f32>::infinity();
     CY_REQUIRE(format_f32(infinity, text, sizeof(text)).has_value());
     CY_CHECK_EQ(std::string_view(text), std::string_view("inf"));
     CY_REQUIRE(format_f32(-infinity, text, sizeof(text)).has_value());
     CY_CHECK_EQ(std::string_view(text), std::string_view("-inf"));
-    CY_REQUIRE(format_f32(infinity - infinity, text, sizeof(text)).has_value());
+    CY_REQUIRE(format_f32(std::numeric_limits<f32>::quiet_NaN(), text, sizeof(text)).has_value());
     CY_CHECK_EQ(std::string_view(text), std::string_view("nan"));
 }
 

@@ -27,13 +27,13 @@
 #include <cy/core/reflect/registry.h>
 #include <cy/ecs/world.h>
 
-#include <unistd.h>
-
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <ranges>
 #include <string>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -329,9 +329,10 @@ void print_report(const BuildReport& report) {
     const std::string root = arguments.value("out", "build/derived/determinism");
     // What an artefact must never contain. Resolved to an absolute path here, because a relative
     // one would never appear in an artefact and the check would pass by construction.
-    char resolved[4096] = {};
-    const char* working = ::getcwd(resolved, sizeof(resolved));
-    const std::string absolute_root = working != nullptr ? std::string(working) : std::string("/");
+    std::error_code cwd_error;
+    const std::filesystem::path working = std::filesystem::current_path(cwd_error);
+    const std::string absolute_root =
+        cwd_error ? std::string("/") : working.generic_string();
     const Expected<BuildReport, Error> first =
         run_build(arguments, project, root + "/first", root + "/cache-first");
     const Expected<BuildReport, Error> second =

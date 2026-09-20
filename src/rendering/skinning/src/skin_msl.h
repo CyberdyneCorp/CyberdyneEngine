@@ -5,7 +5,8 @@
 
 namespace cy::rendering::skinning {
 
-inline constexpr char kSkinVerticesMsl[] = R"cy_msl(#include <metal_stdlib>
+inline constexpr char kSkinVerticesMsl[] =
+    R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
@@ -307,7 +308,8 @@ float round_half_away_0(float value_2)
 #line 118
         _S9 = - floor(- value_2 + 0.5);
 
-#line 118
+)cy_msl"
+    R"cy_msl(#line 118
     }
     else
     {
@@ -609,7 +611,8 @@ uint octahedral_encode_0(float3 unit_vector_0)
             break;
         }
 
-#line 282
+)cy_msl"
+    R"cy_msl(#line 282
         uint4 shape_0 = (&kernelContext_2)->skinSet_0->active_blend_shapes_1[slot_0];
 
 #line 282
@@ -912,7 +915,8 @@ uint octahedral_encode_0(float3 unit_vector_0)
 #line 307
             blend_dual_0 = blend_dual_1;
 
-#line 307
+)cy_msl"
+    R"cy_msl(#line 307
             blend_scale_0 = blend_scale_1;
 
 #line 307
@@ -1214,7 +1218,8 @@ uint octahedral_encode_0(float3 unit_vector_0)
 #line 402
         encoded_tangent_0 = encoded_tangent_1 | 1U;
 
-#line 402
+)cy_msl"
+    R"cy_msl(#line 402
     }
     else
     {
@@ -1230,6 +1235,7 @@ uint octahedral_encode_0(float3 unit_vector_0)
     *((&kernelContext_2)->skinSet_0->out_frames_0+(out_frame_base_0 + 1U)) = encoded_tangent_0;
     return;
 }
+
 
 )cy_msl";
 

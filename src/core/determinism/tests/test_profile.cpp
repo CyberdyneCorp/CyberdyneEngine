@@ -217,8 +217,10 @@ CY_TEST_CASE("determinism: a non-finite write to an authoritative field is detec
     CY_CHECK_EQ(guard.check(1.5F, "velocity.x"), 1.5F);
     CY_CHECK_EQ(guard.non_finite_writes(), 0U);
 
-    const f32 zero = 0.0F;
-    CY_CHECK(std::isnan(guard.check(zero / zero, "velocity.y")));
+    // std::numeric_limits rather than `0.0F / 0.0F`: MSVC's constant folder refuses the divide at
+    // compile time under `/permissive-`, and the intent is to produce a non-finite value rather
+    // than to test the divisor.
+    CY_CHECK(std::isnan(guard.check(std::numeric_limits<f32>::quiet_NaN(), "velocity.y")));
     CY_CHECK(std::isinf(guard.check(std::numeric_limits<f64>::infinity(), "mass")));
     CY_CHECK_EQ(guard.writes_checked(), 3U);
     CY_CHECK_EQ(guard.non_finite_writes(), 2U);

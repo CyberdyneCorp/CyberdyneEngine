@@ -2,9 +2,8 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 
-#include <unistd.h>
-
 #include <algorithm>
+#include <cstdlib>
 #include <ranges>
 #include <unordered_map>
 
@@ -64,11 +63,12 @@ constexpr int kHardInterruptStatus = 97;
     return interrupt.stage == stage;
 }
 
-/// Stop here. `_exit` rather than `exit`: no destructor runs, no stream is flushed, no temporary is
-/// removed. That is the point — a test that let the process tidy up would prove nothing about a
-/// power loss.
+/// Stop here. `std::_Exit` rather than `std::exit`: no destructor runs, no stream is flushed, no
+/// temporary is removed. That is the point — a test that let the process tidy up would prove
+/// nothing about a power loss. `std::_Exit` is the portable C++11 spelling; POSIX `_exit` and
+/// Windows `_exit` are its platform ancestors with the same semantics.
 [[noreturn]] void hard_stop() {
-    _exit(kHardInterruptStatus);
+    std::_Exit(kHardInterruptStatus);
 }
 
 }  // namespace

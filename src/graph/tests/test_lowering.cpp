@@ -290,7 +290,7 @@ struct RunRecord {
     record.last_event = host.last_event;
     record.last_field = host.last_field;
     record.suspended = state.suspended();
-    record.persisted = state.persisted().size();
+    record.persisted = static_cast<u32>(state.persisted().size());
     record.registers = register_digest(state);
     return record;
 }

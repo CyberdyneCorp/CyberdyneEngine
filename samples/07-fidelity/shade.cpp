@@ -511,8 +511,8 @@ private:
             ++report.unreconstructed;
             continue;
         }
-        const u32 column = pixel % capture.width;
-        const u32 row = pixel / capture.width;
+        const u32 column = static_cast<u32>(pixel % capture.width);
+        const u32 row = static_cast<u32>(pixel / capture.width);
         const Vec2 centre{static_cast<f32>(column) + 0.5F, static_cast<f32>(row) + 0.5F};
         Expected<rendering::vg::SurfaceAttributes, Error> attributes =
             rendering::vg::reconstruct_surface(

@@ -782,7 +782,8 @@ float4 cyFieldReadPoint_0(uint device* image_words_7, const CyFieldHeader_0 thre
 
 #line 426
             payload_1 = _S22;
-
+)cy_msl"
+    R"cy_msl(
 #line 426
         }
 
@@ -2145,7 +2146,8 @@ float3 composeClouds_0(float3 direction_0, KernelContext_0 thread* kernelContext
 
 #line 108
                     scattering_0 = scattering_3;
-
+)cy_msl"
+    R"cy_msl(
 #line 108
                     break;
                 }

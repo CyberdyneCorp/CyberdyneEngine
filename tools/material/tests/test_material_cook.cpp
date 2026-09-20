@@ -364,13 +364,21 @@ CY_TEST_CASE("material_stages: the command line and the library agree about the 
         // `src/runtime/tests/test_tick_loop.cpp` uses to run its probe. clang-tidy is right in
         // general and wrong here, and silencing it in the .clang-tidy would silence it for the
         // whole engine. NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+#if defined(_WIN32)
+        FILE* pipe = ::_popen(command.c_str(), "r");
+#else
         FILE* pipe = ::popen(command.c_str(), "r");
+#endif
         CY_REQUIRE(pipe != nullptr);
         char buffer[4096];
         while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
             printed += buffer;
         }
+#if defined(_WIN32)
+        CY_REQUIRE_EQ(::_pclose(pipe), 0);
+#else
         CY_REQUIRE_EQ(::pclose(pipe), 0);
+#endif
     }
     CY_REQUIRE_FALSE(printed.empty());
 
