@@ -65,7 +65,10 @@ function(cy_render_declare_tests)
     if(CY_RENDERER_METAL)
         list(APPEND cy_render_golden_backend_dependencies cy::rhi-metal)
     endif()
-    if(CY_RENDERER_VULKAN OR CY_RENDERER_METAL)
+    if(CY_RENDERER_D3D12)
+        list(APPEND cy_render_golden_backend_dependencies cy::rhi-d3d12)
+    endif()
+    if(CY_RENDERER_VULKAN OR CY_RENDERER_METAL OR CY_RENDERER_D3D12)
         cy_add_test(
             NAME golden_backends
             KIND render

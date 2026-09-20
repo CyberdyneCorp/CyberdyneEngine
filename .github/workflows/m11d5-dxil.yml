@@ -1,0 +1,63 @@
+name: m11d5-dxil
+
+on:
+  pull_request:
+    paths:
+      - samples/03-first-light/shaders/first_light.slang
+      - samples/03-first-light/shaders/first_light_dxil.h
+      - .github/workflows/m11d5-dxil.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the pinned Slang toolchain
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/shader-slang/slang/releases/download/v2026.9.2/slang-2026.9.2-windows-x86_64.zip" -OutFile "$env:RUNNER_TEMP\slang.zip"
+          Expand-Archive "$env:RUNNER_TEMP\slang.zip" -DestinationPath "$env:RUNNER_TEMP\slang"
+      - name: Compile and embed DXIL
+        shell: pwsh
+        run: |
+          $slangc = "$env:RUNNER_TEMP\slang\bin\slangc.exe"
+          $source = "samples/03-first-light/shaders/first_light.slang"
+          & $slangc $source -target dxil -profile sm_6_6 -entry shadowVertex -stage vertex -o "$env:RUNNER_TEMP\shadow.dxil"
+          & $slangc $source -target dxil -profile sm_6_6 -entry forwardVertex -stage vertex -o "$env:RUNNER_TEMP\forward.dxil"
+          & $slangc $source -target dxil -profile sm_6_6 -entry forwardFragment -stage fragment -o "$env:RUNNER_TEMP\fragment.dxil"
+          python samples/03-first-light/shaders/embed_dxil.py "samples/03-first-light/shaders/first_light_dxil.h" `
+            "kFirstLightShadowVertexDxil=$env:RUNNER_TEMP\shadow.dxil" `
+            "kFirstLightForwardVertexDxil=$env:RUNNER_TEMP\forward.dxil" `
+            "kFirstLightForwardFragmentDxil=$env:RUNNER_TEMP\fragment.dxil"
+      - uses: extractions/setup-just@v3
+      - name: Configure the native D3D12 backend
+        shell: pwsh
+        run: >-
+          cmake --preset dev
+          -D CY_RENDERER_D3D12=ON
+          -D CY_RENDERER_VULKAN=OFF
+          -D CY_RENDERER_METAL=OFF
+          -D CY_SHADER_SLANG=OFF
+          -D CY_SHADER_DXIL=OFF
+          -D CY_BUILD_EDITOR=OFF
+      - name: Build D3D12, conformance and golden targets
+        shell: pwsh
+        run: >-
+          cmake --build --preset dev --target
+          cy_rhi_d3d12
+          cy_test_unit_rhi_d3d12
+          cy_test_render_golden_backends
+          cy_sample_first-light
+      - name: Run the D3D12 debug-layer and golden suites
+        shell: pwsh
+        run: ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|render.golden_backends)$" --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: first-light-dxil
+          path: samples/03-first-light/shaders/first_light_dxil.h

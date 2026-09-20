@@ -60,6 +60,9 @@
 #if defined(CY_RENDERER_METAL)
 #    include <cy/backends/rhi-metal/backend.h>
 #endif
+#if defined(CY_RENDERER_D3D12)
+#    include <cy/backends/rhi-d3d12/backend.h>
+#endif
 
 #include "golden.h"
 #include "golden_ledger.h"
@@ -107,6 +110,9 @@ void register_everything() noexcept {
 #endif
 #if defined(CY_RENDERER_METAL)
     (void)cy::rhi::metal::register_metal_backend();
+#endif
+#if defined(CY_RENDERER_D3D12)
+    (void)cy::rhi::d3d12::register_d3d12_backend();
 #endif
     (void)cy::rhi::null::register_null_backend();
 }

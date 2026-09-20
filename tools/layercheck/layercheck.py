@@ -220,8 +220,8 @@ BARRIER_RE = re.compile(r'\b(' + "|".join(BARRIER_SYMBOLS) + r')\b')
 # goes to TRANSFER_DST to be written and back to SHADER_READ_ONLY_OPTIMAL because that is the layout
 # the editor is promised every image in. There is nothing there for a graph to derive them from, and
 # there is no renderer code in that directory for the rule to protect.
-BARRIER_ROOTS = ("src/backends/rhi/", "src/backends/rhi-metal/", "src/rendering/graph/",
-                 "src/backends/viewport/")
+BARRIER_ROOTS = ("src/backends/rhi/", "src/backends/rhi-metal/", "src/backends/rhi-d3d12/",
+                 "src/rendering/graph/", "src/backends/viewport/")
 
 # A line whose first non-space character starts a comment. Prose that names the barrier API — a
 # design note, a header comment explaining why the rule exists — is not a barrier call, and a gate

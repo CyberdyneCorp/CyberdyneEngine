@@ -350,7 +350,7 @@ set(CY_FEATURE_OPTIONS
     # built and off where it cannot, and the half that carries the seed's FINDINGS is not behind
     # this option at all (see src/backends/rhi-metal/CMakeLists.txt).
     "CY_RENDERER_METAL|APPLE|The Metal RHI backend (seeded M7, delivered M11). Default: on when building on Apple, off elsewhere — the platform half cannot compile without an Apple toolchain, and the seed's mapping tables and findings are built either way"
-    "CY_RENDERER_D3D12|OFF|The Direct3D 12 RHI backend (M11)"
+    "CY_RENDERER_D3D12|WINDOWS|The native Direct3D 12 RHI backend (M11.d.5). Default: on when targeting Windows and off elsewhere"
     CACHE INTERNAL "The CY_* feature options: NAME|DEFAULT|description")
 
 # --- Feature dependencies ---------------------------------------------------------------------
@@ -422,10 +422,18 @@ function(_cy_resolve_default name value out)
         endif()
         return()
     endif()
+    if(value STREQUAL "WINDOWS")
+        if(WIN32)
+            set(${out} ON PARENT_SCOPE)
+        else()
+            set(${out} OFF PARENT_SCOPE)
+        endif()
+        return()
+    endif()
     if(NOT value STREQUAL "DEVELOPMENT")
         message(FATAL_ERROR
             "cmake/features.cmake: ${name}'s default is `${value}`.\n"
-            "  A DEFAULT column is ON, OFF, DEVELOPMENT or APPLE and nothing else.")
+            "  A DEFAULT column is ON, OFF, DEVELOPMENT, APPLE or WINDOWS and nothing else.")
     endif()
     set(resolved OFF)
     if(CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE IN_LIST CY_DEVELOPMENT_CONFIGURATIONS)

@@ -21,6 +21,13 @@ add_subdirectory(rhi)
 # only its `src/device.mm` is gated by CY_RENDERER_METAL and APPLE.
 add_subdirectory(rhi-metal)
 
+# Native Direct3D 12. Unlike the Metal seed, this directory has no platform-neutral mapping half:
+# every source names a Windows SDK type, so an OFF option excludes the module completely and a
+# non-Windows ON is a configuration error in the module itself rather than a silent stub.
+if(CY_RENDERER_D3D12)
+    add_subdirectory(rhi-d3d12)
+endif()
+
 # The shader system: Slang in, SPIR-V out, and the caching, permutation and reflection-driven
 # binding built around somebody else's compiler. Read after rhi/ because cy::shader consumes the
 # RHI's descriptor and pipeline vocabulary — reflection produces rhi::DescriptorBinding directly,
