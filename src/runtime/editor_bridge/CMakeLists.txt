@@ -14,8 +14,8 @@
 # is what joins it to `cy::render::build_gizmo_layout` and to a world. A bridge that owned the
 # answers would be a bridge that owned the world.
 #
-# Linux, like the socket it is built on. Every host that links it is Linux-only for the same reason.
-if(NOT UNIX OR APPLE)
+# Unix, like the socket it is built on. Linux and macOS use the same byte protocol.
+if(NOT UNIX)
     message(STATUS "src/runtime/editor_bridge: the editor bridge is a Unix domain socket; the "
                    "module is not declared on this platform")
     return()

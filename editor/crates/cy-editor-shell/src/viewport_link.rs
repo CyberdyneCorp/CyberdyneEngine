@@ -13,17 +13,16 @@
 //!
 //! --- WHY IT IS A THIN WRAPPER AND NOT THE TRANSPORT ------------------------------------------------
 //!
-//! `cy-editor-viewport-transport` is the platform module: dma-buf import, Vulkan timeline
-//! semaphores, `memfd`, `SCM_RIGHTS`, and the bounded host wait that keeps a bad value from wedging
-//! the editor. It is a crate of its own so that the headless probe and this window run *the same*
-//! import and synchronisation code. What is left here is the toolkit half — registering the imported
-//! texture with egui's renderer, and re-registering it when the runtime hands back a different slot.
+//! `cy-editor-viewport-transport` is the platform module: dma-buf plus Vulkan timelines on Linux,
+//! IOSurface plus Metal completion/ownership on macOS, and the bounded waits that keep a bad value
+//! from wedging the editor. It is a crate of its own so that the headless probe and this window run
+//! *the same* import and synchronisation code. What is left here is the toolkit half — registering
+//! the imported texture with egui's renderer, and re-registering it for a different slot or runtime.
 //!
 //! --- AND WHY IT IS `cfg`-GATED ---------------------------------------------------------------------
 //!
-//! The mechanism is Linux's. On macOS and Windows this compiles to a structure with one variant that
-//! says so, which is the honest answer rather than a stub that pretends to connect. Those two
-//! platforms are unverified in this milestone in every respect; see the crate header.
+//! Linux and macOS have native implementations. Other platforms compile to a structure with one
+//! variant that says the transport is unavailable.
 
 use cy_editor_visual::colour::Semantic;
 
@@ -48,7 +47,10 @@ impl Condition {
 #[cfg(target_os = "linux")]
 pub use linux::ViewportLink;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+pub use macos::ViewportLink;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use elsewhere::ViewportLink;
 
 #[cfg(target_os = "linux")]
@@ -260,7 +262,173 @@ mod linux {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+mod macos {
+    use std::time::{Duration, Instant};
+
+    use cy_editor_viewport_transport::darwin::{Liveness, ViewportSession, monotonic_nanos};
+    use cy_editor_visual::colour::Semantic;
+
+    use super::Condition;
+
+    const REATTACH_INTERVAL: Duration = Duration::from_secs(1);
+
+    /// The macOS editor's IOSurface link to the hosted Metal runtime.
+    pub struct ViewportLink {
+        session: Option<ViewportSession>,
+        registered: Option<(u64, usize, egui::TextureId)>,
+        session_epoch: u64,
+        condition: Condition,
+        live: bool,
+        notes: Vec<String>,
+        last_attach: Option<Instant>,
+    }
+
+    impl ViewportLink {
+        /// Create a disconnected link that will attach from the first render frame.
+        #[must_use]
+        pub fn idle() -> Self {
+            Self {
+                session: None,
+                registered: None,
+                session_epoch: 0,
+                condition: Condition::new(
+                    "The transport is not ready: no Metal runtime has offered an IOSurface.",
+                    Semantic::SecondaryText,
+                ),
+                live: false,
+                notes: vec![
+                    "macOS viewport transport: Metal + IOSurface, zero-copy between processes"
+                        .to_owned(),
+                ],
+                last_attach: None,
+            }
+        }
+
+        /// Startup and import diagnostics shown by the editor.
+        #[must_use]
+        pub fn notes(&self) -> &[String] {
+            &self.notes
+        }
+
+        /// Whether a runtime session currently owns an imported ring.
+        #[must_use]
+        pub fn is_attached(&self) -> bool {
+            self.session.is_some()
+        }
+
+        /// Explanation shown when a live frame is unavailable.
+        #[must_use]
+        pub fn condition(&self) -> &Condition {
+            &self.condition
+        }
+
+        /// Whether the connected runtime is advancing.
+        #[must_use]
+        pub fn is_live(&self) -> bool {
+            self.live
+        }
+
+        /// Native texture currently registered with egui.
+        #[must_use]
+        pub fn texture(&self) -> Option<egui::TextureId> {
+            self.registered.map(|(_, _, id)| id)
+        }
+
+        fn attach(&mut self, device: &wgpu::Device) {
+            if self.session.is_some()
+                || self
+                    .last_attach
+                    .is_some_and(|last| last.elapsed() < REATTACH_INTERVAL)
+            {
+                return;
+            }
+            self.last_attach = Some(Instant::now());
+            match ViewportSession::connect(device) {
+                Ok(session) => {
+                    self.session_epoch = self.session_epoch.wrapping_add(1).max(1);
+                    self.notes.push(format!(
+                        "IOSurface ring imported in {:.2} ms",
+                        session.import_millis
+                    ));
+                    self.session = Some(session);
+                    self.condition = Condition::new(
+                        "Waiting for the Metal runtime's first frame.",
+                        Semantic::SecondaryText,
+                    );
+                }
+                Err(problem) => {
+                    self.condition = Condition::new(
+                        format!("The transport is not ready: {}", problem.because),
+                        Semantic::SecondaryText,
+                    );
+                }
+            }
+        }
+
+        /// Claim and register the newest completed Metal frame for this interface frame.
+        pub fn begin_frame(
+            &mut self,
+            render_state: &egui_wgpu::RenderState,
+            viewport: &mut cy_editor_viewport::viewport::Viewport,
+        ) -> Option<egui::TextureId> {
+            self.attach(&render_state.device);
+            let session = self.session.as_mut()?;
+            match session.liveness() {
+                Liveness::Live => self.live = true,
+                gone => {
+                    self.live = false;
+                    self.condition = Condition::new(gone.message(), Semantic::Warning);
+                    self.session = None;
+                    return self.registered.map(|(_, _, id)| id);
+                }
+            }
+
+            let (slot, _) = session.acquire(&render_state.device)?;
+            let wanted = (self.session_epoch, slot);
+            if self.registered.map(|(epoch, held, _)| (epoch, held)) != Some(wanted) {
+                let view = session.view(slot)?;
+                let mut renderer = render_state.renderer.write();
+                if let Some((_, _, old)) = self.registered.take() {
+                    renderer.free_texture(&old);
+                }
+                let id = renderer.register_native_texture(
+                    &render_state.device,
+                    view,
+                    wgpu::FilterMode::Linear,
+                );
+                self.registered = Some((self.session_epoch, slot, id));
+            }
+            viewport.pump(session, monotonic_nanos() / 1_000);
+            self.registered.map(|(_, _, id)| id)
+        }
+
+        /// Associate upcoming frames with the view requested by the editor.
+        pub fn publish_view_state(&mut self, state: cy_editor_viewport::state::ViewState) {
+            if let Some(session) = self.session.as_mut() {
+                session.set_view_state(state);
+            }
+        }
+
+        /// Human-readable transport counters for the viewport overlay.
+        #[must_use]
+        pub fn counters(&self) -> Option<String> {
+            let counters = self.session.as_ref()?.counters();
+            Some(format!(
+                "announced {} · skipped {} · GPU waits {} · wrong generation {}",
+                counters.announced, counters.skipped, counters.timed_out, counters.wrong_generation
+            ))
+        }
+    }
+
+    impl Default for ViewportLink {
+        fn default() -> Self {
+            Self::idle()
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod elsewhere {
     use cy_editor_visual::colour::Semantic;
 

@@ -121,8 +121,23 @@ pollster = "=0.4.0"
 # escape hatch that adds `VK_KHR_external_semaphore_fd` before `vkCreateDevice` is
 # `wgpu_hal::vulkan::Adapter::open_with_callback`, and there is no wgpu-level equivalent.
 wgpu = "=30.0.1"
-wgpu-hal = { version = "=30.0.1", features = ["vulkan"] }
+wgpu-hal = { version = "=30.0.1", features = ["vulkan", "metal"] }
 wgpu-types = "=30.0.1"
+objc2-io-surface = { version = "=0.3.2", default-features = false, features = [
+    "IOSurfaceRef",
+    "IOSurfaceTypes",
+    "objc2",
+    "objc2-core-foundation",
+] }
+objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["CFBase"] }
+objc2-metal = { version = "=0.3.2", default-features = false, features = [
+    "MTLAllocation",
+    "MTLDevice",
+    "MTLPixelFormat",
+    "MTLResource",
+    "MTLTexture",
+    "objc2-io-surface",
+] }
 
 # --- The profiles ---------------------------------------------------------------------------------
 #

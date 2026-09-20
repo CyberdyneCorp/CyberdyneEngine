@@ -57,7 +57,11 @@
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/null/null_device.h>
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#if defined(__APPLE__)
+#    include <cy/backends/rhi-metal/backend.h>
+#else
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
 #include <cy/backends/viewport/publisher.h>
 #include <cy/core/math/quat.h>
 #include <cy/core/memory/system_allocator.h>
@@ -1006,6 +1010,10 @@ void print_report(const Host& host, const WorldView& view_world,
                  static_cast<unsigned long long>(
                      host.received[static_cast<usize>(runtime::EditorMessage::Play)]),
                  static_cast<unsigned long long>(host.unknown_messages));
+    if (host.asked_width > 0 && host.asked_height > 0) {
+        std::fprintf(stdout, "%s: viewport  latest requested extent %ux%u\n", kTag,
+                     host.asked_width, host.asked_height);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -1017,18 +1025,24 @@ int main(int argc, char** argv) {
     Allocator& allocator = system_allocator(MemoryDomain::Gpu);
 
     (void)rhi::null::register_null_backend();
+#if defined(__APPLE__)
+    (void)rhi::metal::register_metal_backend();
+    constexpr const char* kViewportBackend = "metal";
+#else
     (void)rhi::vulkan::register_vulkan_backend();
+    constexpr const char* kViewportBackend = "vulkan";
+#endif
 
     rhi::DeviceDescription description;
     description.application_name = "cy_editor_window_runtime";
     description.enable_validation = options.validation;
     description.enable_synchronisation_validation = options.validation;
     rhi::BackendSelection selection;
-    // "vulkan" BY NAME, not the default. A fall-back to the null backend here would produce a
+    // The native backend BY NAME, not the default. A fall-back to null here would produce a
     // process that starts, publishes nothing and reports success — which is the shape of failure
     // this milestone exists to stop, so it is refused instead.
     const Expected<rhi::Device*, Error> device =
-        rhi::create_device(allocator, "vulkan", description, selection);
+        rhi::create_device(allocator, kViewportBackend, description, selection);
     if (!device) {
         report("device", device.error());
         return 1;

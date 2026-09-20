@@ -51,15 +51,16 @@
 //! and `cy-editor-app/tests/containment.rs` fails if any crate but that one and this one names a
 //! graphics API.
 
-// The one platform module of the editor's viewport: dma-buf, Vulkan and POSIX shared memory. The
+// The platform module of the editor's viewport: dma-buf/Vulkan on Linux and IOSurface/Metal on
+// macOS. The
 // workspace forbids `unsafe` everywhere else, and `cy-editor-app/tests/safety.rs` names this crate
 // with its reason so that widening the audit stays a decision rather than an edit.
 
 // --- WHY THE WHOLE CRATE IS BEHIND ONE `cfg` ------------------------------------------------------
 //
-// The mechanism is Linux's: dma-buf, DRM format modifiers, `memfd_create`, `SCM_RIGHTS`, and
-// `VK_KHR_external_semaphore_fd` over `OPAQUE_FD`. macOS has IOSurface and Windows has NT handles,
-// and both would be a different transport rather than this one compiled elsewhere.
+// Each native mechanism remains isolated: Linux uses dma-buf, DRM format modifiers, `memfd_create`,
+// and Vulkan timeline semaphores; macOS uses IOSurface and Metal. Windows still has no NT-handle
+// transport.
 //
 // The editor's workspace is built and tested on all three platforms, so this crate compiles to
 // nothing on the other two rather than being excluded from the workspace — a member that vanishes
@@ -68,9 +69,10 @@
 // treats a runtime that has not started: the viewport says so, and the editor keeps working.
 
 /// What the binaries print where the mechanism does not exist.
-pub const UNSUPPORTED: &str = "the editor's viewport transport is Linux-only: it is dma-buf, \
-                               memfd and OPAQUE_FD. On macOS and Windows the viewport needs a \
-                               different transport, which does not exist yet.";
+pub const UNSUPPORTED: &str = "the editor's viewport transport is unavailable on this platform";
+
+#[cfg(target_os = "macos")]
+pub mod darwin;
 
 #[cfg(target_os = "linux")]
 pub mod announce;

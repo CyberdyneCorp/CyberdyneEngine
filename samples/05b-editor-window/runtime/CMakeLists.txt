@@ -38,10 +38,15 @@
 # CY_RENDERER_VULKAN. The parent directory has already returned on a machine with no display; this
 # adds the two conditions that are about the device rather than about the window.
 
-if(NOT CY_RENDERER_VULKAN OR NOT LINUX)
-    message(STATUS "samples/05b-editor-window/runtime: the engine's viewport publisher needs a "
-                   "Vulkan device that can export a dma-buf; the target is not declared")
+if(NOT (LINUX AND CY_RENDERER_VULKAN) AND NOT (APPLE AND CY_RENDERER_METAL))
+    message(STATUS "samples/05b-editor-window/runtime: no native shared-texture renderer is "
+                   "enabled; the target is not declared")
     return()
+endif()
+
+set(CY_EDITOR_WINDOW_RHI cy::rhi-vulkan)
+if(APPLE)
+    set(CY_EDITOR_WINDOW_RHI cy::rhi-metal)
 endif()
 
 cy_add_module(
@@ -64,7 +69,7 @@ cy_add_module(
         cy::physics-reference
         cy::rhi
         cy::rhi-null
-        cy::rhi-vulkan)
+        ${CY_EDITOR_WINDOW_RHI})
 
 # Jolt, and the macro that tells main.cpp it is there. The two lines go together: `CY_PHYSICS` is a
 # CMake option and not a compile definition, so linking the backend without defining the macro would

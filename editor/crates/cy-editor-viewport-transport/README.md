@@ -8,11 +8,10 @@ Tasks 1.0.1, 1.0.1b, 1.0.1c, 1.0.1d, 1.0.2, 1.0.2b and 1.0.2c of M5.5.
 
 ## What it is
 
-Two programs and one ring of images. The runtime allocates three or four `VkImage`s with
-DRM-format-modifier tiling, exports each as a dma-buf descriptor, exports two timeline semaphores,
-creates a shared page, and hands all of it to the editor over a unix socket with `SCM_RIGHTS`. From
-then on the socket carries **liveness only**: per-frame state lives in the shared page under a
-seqlock, and the socket's EOF is how the editor learns the runtime died.
+Two programs and one ring of images. Linux shares dma-buf-backed Vulkan images and timeline
+semaphores. macOS shares IOSurface-backed Metal textures, announcing each frame only after its
+upload command completes. Both use a shared announcement page under a seqlock and a Unix socket
+whose EOF reports process death.
 
 | file | what it holds |
 |---|---|
@@ -24,6 +23,7 @@ seqlock, and the socket's EOF is how the editor learns the runtime died.
 | `ring.rs` | the runtime's side: which image the next frame may go into |
 | `publisher.rs` | the reference publisher, as a real second process |
 | `probe.rs` | the headless editor, so the window and the tests run the same code |
+| `darwin.rs` | IOSurface lookup, Metal import through wgpu-hal, bounded ownership, liveness, and the macOS headless probe |
 
 ## Running it
 
@@ -35,6 +35,41 @@ build/<label>/editor/shipping/cy-viewport-transport-probe --seconds 5 --rate 60 
 
 `--extensions` reports what wgpu enables with and without the patch, and is the first thing to run
 when the viewport shows nothing.
+
+On macOS, build the editor with `just build-editor --profile dev`, then launch the engine runtime
+and the two probes instead:
+
+```sh
+build/macos-metal/samples/05b-editor-window/runtime/cy_editor_window_runtime \
+  --socket /tmp/cy-metal-viewport.sock --host /tmp/cy-metal-control.sock \
+  --width 960 --height 540 --buffers 4 --rate 60
+CY_VIEWPORT_SOCKET=/tmp/cy-metal-viewport.sock \
+  build/editor/development/cy-viewport-transport-probe --seconds 4 --expect-frames 30
+build/editor/development/cy_editor_control_probe \
+  --host /tmp/cy-metal-control.sock --width 1183 --height 677
+```
+
+The root [README](../../../README.md#building-and-running-the-metal-editor-on-macos) has the full
+two-terminal engine and graphical-editor workflow.
+
+## macOS hardware evidence
+
+On Apple M3 Pro hardware running macOS 27.0, the headless Metal consumer received 240 distinct
+960x540 frames in four seconds, sampled a nonzero pixel, and reported zero skipped frames and zero
+bounded-wait timeouts. The real `cyberdyne-editor` stayed connected for 40 seconds while the runtime
+published 2,087 frames at 52.2 fps overall in a debug build, with zero full-ring drops and zero
+ownership vetoes. The mean producer cadence was 16.666 ms and the host staging/upload cost averaged
+0.537 ms per published frame.
+
+Disconnect/reconnect was exercised with two independent pixel consumers (180 and 181 nonzero
+frames) and two independent control sessions. The control probe sent viewport extents 721x413 and
+1183x677; the runtime answered both resize-aware gizmo intents, answered 17 frame-addressed picks,
+and returned stable identity `6025500999727375647` for a scene hit on the second extent.
+
+Metal synchronization uses CPU-observed producer completion plus the shared held/writing ownership
+flags. Before replacing a held texture, the consumer performs a bounded two-millisecond wgpu device
+wait; on timeout it repeats the prior complete frame. This is safe and measured, but it serializes
+the producer upload instead of using a cross-process `MTLSharedEvent`.
 
 ## The measurements
 
@@ -161,10 +196,13 @@ it was already showing. After it, no run has produced a newer-frame or torn read
 one render crate, and `cy-editor-app/tests/containment.rs` fails if any crate but that one and this
 one names a graphics API.
 
-**Not portable, and honest about it.** dma-buf, `memfd` and `OPAQUE_FD` are Linux's. On macOS and
-Windows the crate compiles to a constant, so the workspace still builds and tests on three
-platforms, and the viewport treats "there is no transport" exactly as it treats a runtime that has
-not started yet.
+**No Windows native transport yet.** Linux uses dma-buf/Vulkan and macOS uses IOSurface/Metal.
+Windows still compiles to the unavailable-platform answer until an NT-handle implementation exists.
+
+**The macOS handle broker is same-user, not hostile-boundary hardened.** wgpu 30 can import an
+IOSurface ID directly, so the current publisher uses deprecated global IOSurface lookup and guards
+discovery with a mode-0600 Unix socket. An XPC/Mach-port handoff remains the path for hostile
+multi-user isolation.
 
 **Not the engine's publisher.** `publisher.rs` is a reference implementation: it draws a tagged test
 pattern, not a scene. The engine's render server will publish against this same wire format, and

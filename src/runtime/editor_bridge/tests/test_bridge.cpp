@@ -19,6 +19,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <fcntl.h>
 #include <cstdio>
 
 #include <cstring>
@@ -97,8 +98,9 @@ public:
                             static_cast<int>(::getpid()));
         CY_REQUIRE(bridge_.listen(path_));
 
-        editor_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+        editor_ = ::socket(AF_UNIX, SOCK_STREAM, 0);
         CY_REQUIRE(editor_ >= 0);
+        (void)::fcntl(editor_, F_SETFD, FD_CLOEXEC);
         sockaddr_un address{};
         address.sun_family = AF_UNIX;
         std::memcpy(address.sun_path, path_, std::strlen(path_) + 1);

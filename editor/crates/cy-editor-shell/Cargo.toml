@@ -70,14 +70,13 @@ egui_dock = { workspace = true }
 image = { workspace = true }
 wgpu = { workspace = true }
 
-# The viewport's image comes from another process, and the mechanism that carries it is Linux's.
-# Elsewhere the viewport says so and shows nothing, which is `design.md` §2 rather than a stub.
+# The viewport's image comes from another process: dma-buf on Linux and IOSurface on macOS.
 # Test-only, and only for a frame identifier: the pump test in `viewport_link` names the frame the
 # window's overlay reported ("announced 1016") so that the test reads as the defect it stands for.
 [dev-dependencies]
 cy-editor-protocol = { path = "../cy-editor-protocol" }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 cy-editor-viewport-transport = { path = "../cy-editor-viewport-transport" }
 
 [lints]

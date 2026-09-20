@@ -80,9 +80,8 @@
 // THE EDITOR PROTOCOL. Picking, gizmo intent and transactions travel on a different socket, because
 // they are control and this is an image. `samples/05b-editor-window/runtime/` owns that half.
 //
-// LINUX. dma-buf, `memfd` and `SCM_RIGHTS` are Linux, and so is the editor's side. On every other
-// platform `create()` refuses with a sentence saying so rather than compiling to something that
-// cannot work.
+// PLATFORM HANDLES. Linux publishes dma-bufs with Vulkan timelines. macOS publishes IOSurfaces
+// after Metal completion and uses the same bounded held/writing ownership protocol for reuse.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -172,9 +171,8 @@ public:
     /// Create a publisher, its ring and its socket.
     ///
     /// Fails, naming the missing piece, when there is no Vulkan loader, no device that can export a
-    /// single-plane DRM-modifier image, or no socket to bind. Every one of those is a machine this
-    /// artefact cannot run on, and each gets its own sentence: "no GPU" and "this GPU cannot export
-    /// a dma-buf" send a reader to two different places.
+    /// shareable native image, or no socket to bind. Every one gets a specific error naming the
+    /// unavailable device, handle mechanism, or socket operation.
     [[nodiscard]] static Expected<UniquePtr<Publisher>, Error> create(
         const PublisherOptions& options) noexcept;
 
@@ -205,7 +203,7 @@ public:
     /// import fails, the two lines beside each other are the diagnosis.
     [[nodiscard]] const char* adapter_name() const noexcept;
 
-    /// The DRM format modifier the driver chose, for the same reason.
+    /// The DRM format modifier the driver chose on Linux; zero for IOSurface on macOS.
     [[nodiscard]] u64 modifier() const noexcept;
 
     [[nodiscard]] const PublisherStatistics& statistics() const noexcept;

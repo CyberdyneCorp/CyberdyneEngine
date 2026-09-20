@@ -25,23 +25,35 @@
 # `src/publisher.cpp`'s header states and guards: volk's dispatch tables are process-wide, so this
 # module uses a `VolkDeviceTable` of its own and never calls `volkLoadDevice`.
 #
-# --- LINUX --------------------------------------------------------------------------------------
+# --- NATIVE TRANSPORTS --------------------------------------------------------------------------
 #
-# dma-buf, `memfd` and `SCM_RIGHTS` are Linux, and so is the editor's side of this transport
-# (`editor/crates/cy-editor-viewport-transport/`, whose own manifest compiles to a constant on
-# macOS and Windows). The module is not declared elsewhere, so a host that links it fails to
-# configure rather than failing to import an image at run time.
+# Linux exports dma-bufs and Vulkan timelines. macOS exports IOSurfaces after Metal completion.
+# Both carry the announcement page over a Unix socket; Windows has no native implementation yet.
 
-if(NOT CY_RENDERER_VULKAN)
-    message(STATUS "src/backends/viewport: CY_RENDERER_VULKAN is off, so there is no device to "
-                   "publish a frame from; the module is not declared")
+if(NOT LINUX AND NOT APPLE)
+    message(STATUS "src/backends/viewport: no native shared-texture transport exists on this "
+                   "platform; the module is not declared")
     return()
 endif()
 
-if(NOT LINUX)
-    message(STATUS "src/backends/viewport: the viewport transport is dma-buf, memfd and SCM_RIGHTS, "
-                   "which this platform does not have; the module is not declared")
+if(LINUX AND NOT CY_RENDERER_VULKAN)
+    message(STATUS "src/backends/viewport: Linux needs CY_RENDERER_VULKAN for dma-buf export; "
+                   "the module is not declared")
     return()
+endif()
+
+if(APPLE AND NOT CY_RENDERER_METAL)
+    message(STATUS "src/backends/viewport: macOS needs CY_RENDERER_METAL for IOSurface export; "
+                   "the module is not declared")
+    return()
+endif()
+
+set(CY_VIEWPORT_PUBLISHER_SOURCE src/publisher.cpp)
+set(CY_VIEWPORT_PRIVATE_DEPENDENCIES cy::dep::vulkan_headers cy::dep::volk)
+if(APPLE)
+    set(CY_VIEWPORT_PUBLISHER_SOURCE src/publisher_metal.mm)
+    set(CY_VIEWPORT_PRIVATE_DEPENDENCIES "-framework Metal" "-framework IOSurface"
+        "-framework CoreFoundation" "-framework Foundation")
 endif()
 
 cy_add_module(
@@ -50,7 +62,7 @@ cy_add_module(
     ALIAS cy::backends-viewport
     TYPE STATIC
     SOURCES
-        src/publisher.cpp
+        ${CY_VIEWPORT_PUBLISHER_SOURCE}
         src/wire.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -58,7 +70,11 @@ cy_add_module(
     # PRIVATE, so no consumer inherits a Vulkan include directory. That is the same argument
     # src/backends/rhi/vulkan/ makes, and it is what keeps the `gpuapi` check a structural guarantee
     # rather than a convention.
-    PRIVATE_DEPENDENCIES cy::dep::vulkan_headers cy::dep::volk)
+    PRIVATE_DEPENDENCIES ${CY_VIEWPORT_PRIVATE_DEPENDENCIES})
+
+if(APPLE)
+    target_compile_options(cy_backends_viewport PRIVATE -fobjc-arc)
+endif()
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

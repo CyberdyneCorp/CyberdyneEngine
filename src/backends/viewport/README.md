@@ -1,7 +1,7 @@
 # `src/backends/viewport` — the engine's side of the editor's viewport
 
 The pixel half of the viewport transport: the engine's rendered frames, in memory the editor
-imports rather than copies. **M7 task 5b.1.**
+imports rather than copies. Linux uses dma-buf/Vulkan and macOS uses IOSurface/Metal.
 
 ## What was missing, in one paragraph
 
@@ -17,22 +17,27 @@ This module is that device-owning module.
 
 ## The wire is the editor's, and the editor did not change
 
-`editor/crates/cy-editor-viewport-transport/` is the consumer, and it is tested, measured and
-SIGKILL-proven against its own reference publisher — whose module comment says: *"The engine's
-render server will grow a publisher of its own against this same wire format; this file is what it
-has to match."* So this module matches it rather than negotiating with it:
+`editor/crates/cy-editor-viewport-transport/` is the consumer. Both native implementations share
+the handshake, announcement page, frame identities, generations, heartbeat and held/writing slot
+ownership. Their native handles and completion mechanisms differ:
 
 | | |
 |---|---|
 | socket | one Unix stream, one message at connection: the `Handshake` and every descriptor |
-| descriptors | `buffer_count` dma-bufs in slot order, then `render_done` and `release` as OPAQUE_FD timeline semaphores, then the announcement page's `memfd` |
+| Linux descriptors | `buffer_count` dma-bufs, two OPAQUE_FD timeline semaphores, then the announcement-page memfd |
+| macOS descriptors | one shared-page descriptor; IOSurface IDs occupy the handshake plane handle fields |
 | per frame | a 4 KiB shared page under a seqlock, plus a heartbeat and the two-flag slot reservation |
-| format | `R8G8B8A8_UNORM` with an explicit DRM format modifier the driver chose — **not** linear, which this hardware does not offer for a renderable image |
-| layout | every image handed over in `SHADER_READ_ONLY_OPTIMAL` |
+| format | `R8G8B8A8_UNORM`; Linux carries the DRM modifier and macOS carries IOSurface row/allocation sizes |
+| completion | Linux announces timeline values; macOS announces only after `MTLCommandBuffer` completion |
 
 Proven rather than asserted: `cy-viewport-transport-probe`, the editor's own headless consumer,
 imports this publisher's ring and shows **292 distinct runtime frames of 292 announced**, zero
 malformed and zero of the wrong generation, at 1280x720 with modifier `0x300000000606014`.
+
+On an **Apple M3 Pro**, macOS 27.0, the Metal probe imported a four-IOSurface 960x540 ring in
+11.169 ms on its first connection and 1.941 ms on reconnect. Two three-second consumers received
+180 and 181 distinct nonzero frames with zero skipped frames and zero bounded-wait timeouts. The
+runtime reported two connections, zero full-ring drops, and zero ownership vetoes.
 
 ## The ordering that makes a killed engine survivable
 
@@ -79,7 +84,8 @@ a driver whose device functions do not vary by device and does not on one with a
 | `include/cy/backends/viewport/publisher.h` | the whole public surface, naming no Vulkan type |
 | `src/wire.h` | the handshake, the announcement page and the ring's slot rule — **no Vulkan**, so every decision in them is testable on a machine with no GPU |
 | `src/wire.cpp` | those, implemented |
-| `src/publisher.cpp` | the only file that names Vulkan |
+| `src/publisher.cpp` | Linux Vulkan/dma-buf publisher |
+| `src/publisher_metal.mm` | macOS Metal/IOSurface publisher |
 
 ## What is not
 
@@ -90,9 +96,12 @@ decided what was in them would be a second renderer.
 (`src/runtime/editor_bridge/`), because they are control and this is an image. The two are joined
 only by the frame identifier they both carry.
 
-**Windows and macOS.** dma-buf, `memfd` and `SCM_RIGHTS` are Linux, and so is the editor's side.
-The module is not declared elsewhere, so a host that links it fails to configure rather than failing
-to import an image at run time.
+**Windows.** No NT-handle implementation exists yet, so the module is not declared there.
+
+**A hardened macOS broker.** The current wgpu 30 integration can import an IOSurface ID without an
+XPC object, so the publisher uses deprecated global IOSurface lookup. The socket is mode 0600 and
+same-user, but the IDs remain discoverable outside that socket. Replace the lookup with an XPC/Mach
+port handoff before treating the transport as a hostile multi-user boundary.
 
 ## Tests
 

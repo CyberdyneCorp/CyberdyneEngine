@@ -53,6 +53,7 @@ cy-editor-protocol = { path = "../cy-editor-protocol" }
 cy-editor-sdk = { path = "../cy-editor-sdk" }
 cy-editor-services = { path = "../cy-editor-services" }
 cy-editor-shell = { path = "../cy-editor-shell" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
 cy-editor-viewmodels = { path = "../cy-editor-viewmodels" }
 
 # The runtime stub is a separate PROCESS in the integration tests, not a linked dependency: the

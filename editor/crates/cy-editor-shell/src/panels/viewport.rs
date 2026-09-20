@@ -766,10 +766,15 @@ fn monotonic_micros() -> u64 {
     cy_editor_viewport_transport::session::monotonic_nanos() / 1_000
 }
 
+#[cfg(target_os = "macos")]
+fn monotonic_micros() -> u64 {
+    cy_editor_viewport_transport::darwin::monotonic_nanos() / 1_000
+}
+
 /// Elsewhere there is no transport and therefore no frame, so nothing is ever measured against
 /// this. It is the wall clock so that the function exists and compiles; a platform that grows a
 /// transport must give it that transport's clock.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn monotonic_micros() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -805,10 +810,13 @@ mod tests {
     /// written as a bound rather than an equality because the two readings are taken a few hundred
     /// nanoseconds apart, and as a bound far below the stale budget (50 ms) so that a failure means
     /// the epochs differ rather than that the machine hiccuped.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn a_frames_age_is_measured_on_the_clock_the_announcement_carries() {
+        #[cfg(target_os = "linux")]
         let announced = cy_editor_viewport_transport::session::monotonic_nanos() / 1_000;
+        #[cfg(target_os = "macos")]
+        let announced = cy_editor_viewport_transport::darwin::monotonic_nanos() / 1_000;
         let measured = super::monotonic_micros();
         let difference = measured.abs_diff(announced);
         assert!(

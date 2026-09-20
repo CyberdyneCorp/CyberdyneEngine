@@ -6,6 +6,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <fcntl.h>
 #include <cerrno>
 #include <cstring>
 
@@ -24,6 +25,19 @@ constexpr usize kHeaderBytes = 8;
 
 /// How much is read from the socket in one go.
 constexpr usize kReadChunk = 4096;
+
+[[nodiscard]] bool make_nonblocking(int descriptor) noexcept {
+    const int flags = ::fcntl(descriptor, F_GETFL, 0);
+    if (flags < 0 || ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != 0) {
+        return false;
+    }
+    (void)::fcntl(descriptor, F_SETFD, FD_CLOEXEC);
+#if defined(__APPLE__)
+    int no_sigpipe = 1;
+    (void)::setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
+    return true;
+}
 
 [[nodiscard]] u32 read_u32(const u8* bytes) noexcept {
     return static_cast<u32>(bytes[0]) | (static_cast<u32>(bytes[1]) << 8) |
@@ -303,9 +317,12 @@ Status EditorBridge::listen(const char* path) noexcept {
     std::memcpy(address.sun_path, path, length + 1);
     std::memcpy(path_, path, length + 1);
 
-    listener_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    listener_ = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (listener_ < 0) {
         return fail(ErrorCode::Unavailable, "creating the runtime socket", errno);
+    }
+    if (!make_nonblocking(listener_)) {
+        return fail(ErrorCode::Unavailable, "making the runtime socket non-blocking", errno);
     }
     (void)::unlink(path);
     if (::bind(listener_, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
@@ -329,8 +346,12 @@ void EditorBridge::service() noexcept {
     if (client_ >= 0 || listener_ < 0) {
         return;
     }
-    const int stream = ::accept4(listener_, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    const int stream = ::accept(listener_, nullptr, nullptr);
     if (stream < 0) {
+        return;
+    }
+    if (!make_nonblocking(stream)) {
+        (void)::close(stream);
         return;
     }
     client_ = stream;
@@ -438,8 +459,13 @@ Status EditorBridge::send(Span<const u8> payload) noexcept {
     }
     usize written = 0;
     while (written < framed.size()) {
+#if defined(MSG_NOSIGNAL)
+        constexpr int kSendFlags = MSG_NOSIGNAL;
+#else
+        constexpr int kSendFlags = 0;
+#endif
         const ssize_t sent =
-            ::send(client_, framed.data() + written, framed.size() - written, MSG_NOSIGNAL);
+            ::send(client_, framed.data() + written, framed.size() - written, kSendFlags);
         if (sent > 0) {
             written += static_cast<usize>(sent);
             continue;

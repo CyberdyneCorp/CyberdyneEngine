@@ -40,7 +40,9 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 > that define what is being built and why, and are the contract the implementation must satisfy.
 > Start at [the specification index](openspec/specs/README.md), then
 > [the roadmap](docs/ROADMAP.md) for the order they are built in, and
-> [Building on Linux](#building-on-linux) to compile it.
+> [Building on Linux](#building-on-linux) or
+> [building and running the Metal editor on macOS](#building-and-running-the-metal-editor-on-macos)
+> to compile it.
 
 ---
 
@@ -517,11 +519,65 @@ instead: `bash -lc '. ~/.local/share/swiftly/env.sh; swiftc …'`.
 **M5 · Authorable** — Rust for the editor, via [rustup](https://rustup.rs). The engine and the
 editor are separate builds; `just` drives both.
 
-### Other platforms
+## Building and running the Metal editor on macOS
 
-Windows and macOS are supported targets from M0 and are built in continuous integration on every
-change. Only Linux is documented here because it is the platform the engine is being developed on;
-the CI workflow files are the authoritative recipe for the other two.
+The native path uses the Metal RHI in the engine process and imports its IOSurface-backed frames
+into the Rust editor's wgpu Metal device. It needs a real Apple GPU; a hosted macOS runner does not
+exercise the Apple-family tile-memory or Tier 2 argument-buffer paths.
+
+Install Xcode Command Line Tools, CMake 3.28 or newer, Ninja, `just`, Python 3.10 or newer, and the
+repository's Rust toolchain. Then configure the engine and build the runtime and editor from the
+repository root:
+
+```bash
+xcode-select --install
+brew install cmake ninja just python
+# Install Rust with https://rustup.rs if `cargo --version` is unavailable.
+
+cmake -S . -B build/macos-metal -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCY_RENDERER_METAL=ON \
+  -DCY_RENDERER_VULKAN=OFF \
+  -DCY_RENDERER_D3D12=OFF \
+  -DCY_SHADER_DXIL=OFF \
+  -DCY_PHYSICS=OFF \
+  -DCY_AI=OFF \
+  -DCY_AUDIO=OFF \
+  -DCY_NAVIGATION=OFF
+cmake --build build/macos-metal --target cy_editor_window_runtime -j
+just build-editor --profile dev
+```
+
+Run the engine in the first terminal. The paths passed as `--project` and `--world` must match the
+project and document the editor opens:
+
+```bash
+build/macos-metal/samples/05b-editor-window/runtime/cy_editor_window_runtime \
+  --socket /tmp/cy-metal-viewport.sock \
+  --host /tmp/cy-metal-control.sock \
+  --project samples/05b-editor-window/project \
+  --world worlds/city.cyworld \
+  --width 960 --height 540 --buffers 4 --rate 60 \
+  --no-validation
+```
+
+Run the editor in a second terminal. Starting it in the sample project keeps the editor's document
+identity identical to the runtime's `--world` value:
+
+```bash
+cd samples/05b-editor-window/project
+CY_VIEWPORT_SOCKET=/tmp/cy-metal-viewport.sock \
+  ../../../build/editor/development/cyberdyne-editor \
+  --host /tmp/cy-metal-control.sock \
+  --open worlds/city.cyworld
+```
+
+The viewport should show the engine-rendered scene and remain interactive for resize, selection,
+and transform-gizmo input. Remove `--no-validation` when diagnosing Metal API use. The lower-level
+[viewport transport README](editor/crates/cy-editor-viewport-transport/README.md) documents the
+headless pixel and control probes.
+
+Windows remains a supported target. Its CI workflow is currently the authoritative build recipe.
 
 ## Working on this
 

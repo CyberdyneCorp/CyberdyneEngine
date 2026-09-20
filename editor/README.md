@@ -47,7 +47,7 @@ depends upward or sideways. Each crate declares its layer in `[package.metadata.
 | 2 | `cy-editor-commands` | The command registry, its machine-readable metadata, and connection scopes |
 | 2 | `cy-editor-testhost` | A test fixture that implements `cy_get_interface` in Rust, plus `cy-runtime-stub` |
 | 3 | `cy-editor-services` | Authoritative state: documents, selection, workspace, notifications, operations, runtime sessions |
-| 3 | `cy-editor-viewport-transport` | The engine's image across the process boundary: dma-buf import, timeline semaphores, the ring. **Linux only, and the only crate besides the render crate that may name a graphics API** |
+| 3 | `cy-editor-viewport-transport` | The engine's image across the process boundary: dma-buf/Vulkan on Linux, IOSurface/Metal on macOS, and the bounded ownership ring. **The only crate besides the render crate that may name a graphics API** |
 | 1 | `cy-editor-visual` | The visual language as data: semantic colour, the axis triad, density, gizmo and chrome rules, vocabulary |
 | 2 | `cy-editor-viewport` | The viewport model: camera, picking, gizmo geometry, snapping, view modes — headless |
 | 3 | `cy-editor-reflection` | One description of a type, whatever described it, and the input the generated inspector reads |

@@ -854,10 +854,11 @@ fn shared_device() -> (Option<Arc<cy_editor_viewport_transport::Gpu>>, Vec<Strin
 fn shared_device() -> (Option<Arc<()>>, Vec<String>) {
     (
         None,
-        vec![
-            "the viewport transport is implemented for Linux only; the interface uses its own device"
-                .to_string(),
-        ],
+        vec![if cfg!(target_os = "macos") {
+            "the macOS viewport imports IOSurfaces into the interface's Metal device".to_string()
+        } else {
+            "the viewport transport is unavailable; the interface uses its own device".to_string()
+        }],
     )
 }
 

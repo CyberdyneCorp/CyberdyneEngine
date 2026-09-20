@@ -56,12 +56,20 @@ cy-editor-core = { path = "../cy-editor-core" }
 cy-editor-protocol = { path = "../cy-editor-protocol" }
 cy-editor-viewport = { path = "../cy-editor-viewport" }
 
-# Only where the mechanism exists. See the `cfg` note at the top of src/lib.rs: on macOS and Windows
-# this crate compiles to a constant, and pulling wgpu and ash in there would make two platforms pay
-# a dependency tree for a transport they cannot use.
+# Only where each mechanism exists. See the `cfg` note at the top of src/lib.rs.
 [target.'cfg(target_os = "linux")'.dependencies]
 ash = { workspace = true }
 libc = { workspace = true }
+pollster = { workspace = true }
+wgpu = { workspace = true }
+wgpu-hal = { workspace = true }
+wgpu-types = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = { workspace = true }
+objc2-core-foundation = { workspace = true }
+objc2-io-surface = { workspace = true }
+objc2-metal = { workspace = true }
 pollster = { workspace = true }
 wgpu = { workspace = true }
 wgpu-hal = { workspace = true }

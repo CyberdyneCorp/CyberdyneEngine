@@ -7,10 +7,14 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
+#if defined(__linux__)
+#    include <sys/syscall.h>
+#endif
+
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 
@@ -69,9 +73,21 @@ AnnouncementPage::~AnnouncementPage() {
 
 Status AnnouncementPage::create() noexcept {
     CY_ASSERT_MSG(state_ == nullptr, "AnnouncementPage::create() twice");
+#if defined(__APPLE__)
+    char name[64] = {};
+    (void)::snprintf(name, sizeof(name), "/cy-viewport-%d-%p", static_cast<int>(::getpid()),
+                     static_cast<void*>(this));
+    const int raw = ::shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
+    if (raw >= 0) {
+        // The descriptor remains valid and can be passed with SCM_RIGHTS after the name is gone.
+        // Unlink immediately so a crashed runtime cannot leave a named object behind.
+        (void)::shm_unlink(name);
+    }
+#else
     const int raw = static_cast<int>(::syscall(SYS_memfd_create, "cy-viewport-announce", 0U));
+#endif
     if (raw < 0) {
-        return fail(ErrorCode::Unavailable, "memfd_create for the announcement page", errno);
+        return fail(ErrorCode::Unavailable, "creating the shared announcement page", errno);
     }
     if (::ftruncate(raw, static_cast<off_t>(kPageBytes)) != 0) {
         const int failure = errno;
@@ -265,7 +281,12 @@ Status send_descriptors(int socket, const int* descriptors, u32 count, const voi
     header->cmsg_len = CMSG_LEN(count * sizeof(int));
     std::memcpy(CMSG_DATA(header), descriptors, count * sizeof(int));
 
-    const ssize_t sent = ::sendmsg(socket, &message, MSG_NOSIGNAL);
+#if defined(MSG_NOSIGNAL)
+    constexpr int kSendFlags = MSG_NOSIGNAL;
+#else
+    constexpr int kSendFlags = 0;
+#endif
+    const ssize_t sent = ::sendmsg(socket, &message, kSendFlags);
     if (sent < 0) {
         return fail(ErrorCode::Unavailable, "sending the viewport handshake", errno);
     }
