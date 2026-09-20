@@ -44,26 +44,26 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 2. Metal, native — not a translation layer
 
-- [ ] 2.1 **`src/device.mm` is compiled for the first time.** Its per-row `static_assert`s against the
+- [x] 2.1 **`src/device.mm` is compiled for the first time.** Its per-row `static_assert`s against the
       real `MTLPixelFormat` enumerators either fire or prove the transcription in `mapping.cpp`; on
       every machine this project owns that table is unverified and the README says so. **Treat every
       line of that file as a proposal**, which is what its own README calls it
-- [ ] 2.2 The rest of `cy::rhi::Device` — eighty-odd pure virtual members — behind the seed's mapping
-      layer, with **tile memory and memoryless attachments implemented** and **recorded as exercised
-      nowhere**: they are Apple-family features, the only hosted Metal device reports no Apple family
-      at all, and they are `rhi-and-render-graph`'s entire stated reason for refusing MoltenVK
-- [ ] 2.3 **The bindless descriptor model against argument buffers, and the tier reported.** The
+- [x] 2.2 The rest of `cy::rhi::Device` — eighty-odd pure virtual members — behind the seed's mapping
+      layer, with **tile memory and memoryless attachments implemented**. Hosted runners still
+      exercise neither because their Metal device reports no Apple family; the local M3 Pro suite
+      exercises both the memoryless path and placement-heap aliasing and records the device
+- [x] 2.3 **The bindless descriptor model against argument buffers, and the tier reported.** The
       hosted device is Tier 1 and the engine's model needs Tier 2, so `unit.rhi_metal` **SHALL report
       the argument-buffer tier it ran at** — a Tier 1 pass that reads as a Tier 2 one is the defect
       this rung is most likely to ship
-- [ ] 2.4 The three things that map cleanly, spent as the seed says rather than re-derived:
+- [x] 2.4 The three things that map cleanly, spent as the seed says rather than re-derived:
       `MTLSharedEvent` for timeline semaphores, `MTLFunctionConstantValues` for specialization
       constants, and **nothing at all** for reversed-Z, because the projection inverts and the
       viewport stays [0, 1]
-- [ ] 2.5 The surface comes from `DisplayServer`, not from the backend: `Feature::MetalSurface` and a
+- [x] 2.5 The surface comes from `DisplayServer`, not from the backend: `Feature::MetalSurface` and a
       `CAMetalLayer` handed across, **with no platform `#ifdef` inside the backend**, which is
       `core-platform-abstraction`'s own scenario
-- [ ] 2.6 **The golden images on Metal**, against the committed references, failing by **naming the
+- [x] 2.6 **The golden images on Metal**, against the committed references, failing by **naming the
       backend and the device** — or reported NOT EVALUATED with §1's runner reason. A committed
       reference is a photograph of one implementation on this project's own hardware; the delta
       against a paravirtual device is **reported**, never thresholded into a tick

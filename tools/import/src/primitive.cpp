@@ -860,18 +860,18 @@ Status write_primitive_source(const PrimitiveSpec& spec, std::string& out) {
     switch (spec.shape) {
         case PrimitiveShape::Box:
             out.append("extent ")
-                .append(primitive_number(parameters.extent.x))
+                .append(primitive_number(static_cast<f64>(parameters.extent.x)))
                 .append(" ")
-                .append(primitive_number(parameters.extent.y))
+                .append(primitive_number(static_cast<f64>(parameters.extent.y)))
                 .append(" ")
-                .append(primitive_number(parameters.extent.z))
+                .append(primitive_number(static_cast<f64>(parameters.extent.z)))
                 .append("\n");
             break;
         case PrimitiveShape::Plane:
             out.append("extent ")
-                .append(primitive_number(parameters.extent.x))
+                .append(primitive_number(static_cast<f64>(parameters.extent.x)))
                 .append(" ")
-                .append(primitive_number(parameters.extent.z))
+                .append(primitive_number(static_cast<f64>(parameters.extent.z)))
                 .append("\n");
             out.append("subdivisions ")
                 .append(primitive_number(parameters.subdivisions_x))
@@ -880,18 +880,18 @@ Status write_primitive_source(const PrimitiveSpec& spec, std::string& out) {
                 .append("\n");
             break;
         case PrimitiveShape::Sphere:
-            number("radius", parameters.radius);
+            number("radius", static_cast<f64>(parameters.radius));
             number("segments", parameters.segments);
             number("rings", parameters.rings);
             break;
         case PrimitiveShape::Cylinder:
-            number("radius", parameters.radius);
-            number("height", parameters.height);
+            number("radius", static_cast<f64>(parameters.radius));
+            number("height", static_cast<f64>(parameters.height));
             number("segments", parameters.segments);
             break;
         case PrimitiveShape::Capsule:
-            number("radius", parameters.radius);
-            number("height", parameters.height);
+            number("radius", static_cast<f64>(parameters.radius));
+            number("height", static_cast<f64>(parameters.height));
             number("segments", parameters.segments);
             number("rings", parameters.rings);
             break;

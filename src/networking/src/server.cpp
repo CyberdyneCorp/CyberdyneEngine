@@ -108,8 +108,7 @@ const char* admission_refusal_name(AdmissionRefusal refusal) noexcept {
 
 DedicatedServer::DedicatedServer(Allocator& allocator, Transport& transport, NetworkMode mode,
                                  const CompatibilityScope& scope, u32 maximum_peers) noexcept
-    : allocator_(&allocator),
-      transport_(&transport),
+    : transport_(&transport),
       mode_(mode),
       scope_(scope),
       maximum_(maximum_peers),

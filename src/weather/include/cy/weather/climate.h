@@ -194,7 +194,6 @@ public:
 private:
     [[nodiscard]] ClimateSample fetch(i64 i, i64 k) const noexcept;
 
-    Allocator* allocator_;
     Array<ClimateSample> cells_;
     ClimateSample uniform_;
     ClimateSourceKind kind_ = ClimateSourceKind::Uniform;

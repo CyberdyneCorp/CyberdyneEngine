@@ -202,7 +202,6 @@ private:
                                      i64 lattice_x, i64 lattice_z, const ShorePoint& point,
                                      f32 wet_band) noexcept;
 
-    Allocator* allocator_;
     WaterFieldOptions options_;
     environment::FieldStore* store_ = nullptr;
 

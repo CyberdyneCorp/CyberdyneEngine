@@ -18,12 +18,6 @@ constexpr char kHexDigits[] = "0123456789abcdef";
     return out.push_back(value);
 }
 
-/// True when the wire type is written as a signed decimal.
-[[nodiscard]] constexpr bool is_signed_wire(WireType wire) noexcept {
-    return wire == WireType::I8 || wire == WireType::I16 || wire == WireType::I32 ||
-           wire == WireType::I64;
-}
-
 /// The wire type whose name is `text`, or `Count` when there is none.
 [[nodiscard]] WireType wire_type_from_name(std::string_view text) noexcept {
     for (u8 value = 0; value < static_cast<u8>(WireType::Count); ++value) {

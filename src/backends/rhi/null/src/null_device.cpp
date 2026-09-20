@@ -130,8 +130,7 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
       live_storage_buffers_(allocator),
       log_(allocator),
       bindless_free_(allocator),
-      barriers_(this),
-      validation_enabled_(desc.enable_validation) {
+      barriers_(this) {
     frames_in_flight_ = clamp_frames_in_flight(desc.frames_in_flight);
 
     capabilities_.set_backend(BackendKind::Null);

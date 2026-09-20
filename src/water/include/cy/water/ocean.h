@@ -187,7 +187,6 @@ public:
 private:
     [[nodiscard]] Status build_indices() noexcept;
 
-    Allocator* allocator_;
     OceanSurfaceParams params_;
     Array<Vec3> positions_;
     Array<Vec3> normals_;

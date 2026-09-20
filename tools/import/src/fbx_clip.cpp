@@ -562,11 +562,11 @@ Status import_fbx_animations(const ufbx_scene& scene, const FbxClipOptions& opti
     // must not cook to a clip whose first key sits at one second.
     ufbx_bake_opts bake_opts = {};
     bake_opts.trim_start_time = true;
-    bake_opts.resample_rate = options.sample_rate;
+    bake_opts.resample_rate = static_cast<double>(options.sample_rate);
     // A source already keyed at or above the requested rate is left alone rather than resampled a
     // second time — which is what every exporter that bakes its own output produces, Mixamo's
     // included.
-    bake_opts.minimum_sample_rate = options.sample_rate;
+    bake_opts.minimum_sample_rate = static_cast<double>(options.sample_rate);
     bake_opts.max_keyframe_segments = 32;
     bake_opts.key_reduction_enabled = options.key_reduction;
     // Rotations are stored hemisphere-aligned and sampled spherically by the clip codec, which is

@@ -1,0 +1,5 @@
+cygolden 1
+suite render.golden_backends
+rows 2
+row backend=null image=first_light device="null device" class=null-backend outcome=NOT-EVALUATED-no-image differing=0 off_edge=0 max_delta=0 reason="the null backend produces no readable colour; render.null_frame judges its structure"
+row backend=metal image=first_light device="Apple M3 Pro" class=unattested outcome=matched differing=0 off_edge=0 max_delta=1 reason=""

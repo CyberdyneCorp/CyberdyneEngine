@@ -82,7 +82,7 @@ Status install_crash_handler(CrashHandler handler, void* user) {
     struct sigaction action{};
     std::memset(&action, 0, sizeof(action));
     action.sa_handler = crash_signal_handler;
-    ::sigemptyset(&action.sa_mask);
+    sigemptyset(&action.sa_mask);
     // SA_NODEFER is deliberately absent: a fault inside the handler must not re-enter it.
     action.sa_flags = SA_RESTART;
 

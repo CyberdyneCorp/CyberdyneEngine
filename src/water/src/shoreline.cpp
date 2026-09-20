@@ -119,8 +119,7 @@ const char* wetness_owner_name(WetnessOwner owner) noexcept {
     return (owner == WetnessOwner::Water) ? "water" : "external";
 }
 
-WaterFields::WaterFields(Allocator& allocator) noexcept
-    : allocator_(&allocator), points_(allocator) {}
+WaterFields::WaterFields(Allocator& allocator) noexcept : points_(allocator) {}
 
 Status WaterFields::declare(environment::FieldRegistry& registry,
                             const WaterFieldOptions& options) noexcept {

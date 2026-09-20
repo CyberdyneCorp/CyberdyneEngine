@@ -38,6 +38,28 @@ Four readings, each of which changes what a criterion in this rung is allowed to
   first-hand; `ResourceHeapTier = 2` on the Windows device, which is a *hosted* answer to a question
   only *hardware* can answer, since Tier 1 hardware still ships.
 
+### 1.1 Apple-hardware evidence gathered during implementation
+
+The implementation machine is an Apple M3 Pro. Its native device reports Apple GPU family support
+and argument buffers Tier 2, so the two Metal deferrals above can be answered here even though a
+hosted runner cannot answer them. The backend suite reports that identity and tier, exercises a
+memoryless attachment, aliases a texture and buffer at offset zero of one placement heap, and reads
+a sampled colour through the device-owned 16,384-slot argument buffer.
+
+The shader toolchain required one measured correction. Slang 2026.9.2 emitted the existing
+runtime-sized global texture array as a direct MSL parameter; Apple's `metal` compiler rejected it
+because the flexible texture array was not the final struct member and carried an invalid address
+space. A fixed-capacity `ParameterBlock<T>` produced one argument-buffer parameter, compiled to both
+AIR and a metallib, and retained a descriptor set for SPIR-V. The permanent Slang fixture and the
+native runtime test now cover the compile-time and shader-readable halves separately.
+
+The M3 first-light scene now runs through the same renderer and committed reference as Vulkan. Its
+native MSL groups each descriptor set into a Slang `ParameterBlock`, matching Metal argument-buffer
+slots; vertex streams occupy a disjoint native buffer range and push constants follow the set
+buffers. On the M3 Pro the captured Metal image has zero differing texels against
+`tests/render/references/first_light.png` (maximum raw channel delta 1), and the generated ledger
+names `Apple M3 Pro`. The capture and ledger are committed under `docs/design/images/`.
+
 ## 2. What this rung may not claim, with re-entry points
 
 Four deferrals, each recorded here rather than expressed as a criterion a hosted leg could satisfy

@@ -232,7 +232,6 @@ public:
 
 private:
     Allocator* allocator_;
-    const SpeciesLibrary* library_;
     environment::ProducerToken token_;
     environment::FieldId vegetation_;
     environment::FieldId potential_;

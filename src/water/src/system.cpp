@@ -12,7 +12,6 @@ namespace cy::water {
 
 WaterSystem::WaterSystem(Allocator& allocator, const world::PartitionConfig& partition) noexcept
     : allocator_(&allocator),
-      partition_(&partition),
       registry_(allocator),
       rivers_(allocator),
       foam_(allocator),

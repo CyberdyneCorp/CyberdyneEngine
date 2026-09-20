@@ -235,7 +235,6 @@ public:
 private:
     [[nodiscard]] Status publish(WeatherTickReport& report) noexcept;
 
-    Allocator* allocator_;
     WeatherConfig config_;
     const ClimateMap* climate_ = nullptr;
     const SkyOcclusion* occlusion_ = nullptr;

@@ -310,7 +310,6 @@ public:
     [[nodiscard]] SpeciesProblem last_problem() const noexcept { return problem_; }
 
 private:
-    Allocator* allocator_;
     Array<SpeciesDeclaration> species_;
     HashMap<u64, usize> index_;
     SpeciesProblem problem_ = SpeciesProblem::None;

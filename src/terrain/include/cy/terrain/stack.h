@@ -213,7 +213,6 @@ private:
     void write_material(const Modifier& modifier, const TileCoord& coord,
                         TerrainTile& tile) const noexcept;
 
-    Allocator* allocator_;
     TileLayout layout_;
     u64 seed_;
     TerrainGenerator generator_;

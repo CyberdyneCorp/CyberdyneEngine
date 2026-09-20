@@ -13,11 +13,11 @@
 # unconditional link — the one place in this sample where the build's shape reaches the source, and
 # it is here rather than in the engine because a SAMPLE choosing among the backends its build
 # actually has is a consumer's decision. No engine layer gained an #ifdef for this.
-set(cy_sample_empty_definitions "")
+set(cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=0)
 set(cy_sample_empty_platforms cy::platform-headless cy::platform-desktop-sdl3 cy::platform-stub)
 if(TARGET cy_platform_linux_native)
     list(APPEND cy_sample_empty_platforms cy::platform-linux-native)
-    list(APPEND cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=1)
+    set(cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=1)
 endif()
 
 cy_add_module(

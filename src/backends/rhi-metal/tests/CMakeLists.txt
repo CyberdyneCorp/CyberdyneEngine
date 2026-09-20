@@ -14,19 +14,45 @@ function(cy_rhi_metal_declare_tests)
                            DEFINITION CY_TEST_BUDGET_unit)
     get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                            DEFINITION CY_TEST_TIMEOUT_unit)
-    if(NOT budget OR NOT timeout)
+    get_directory_property(integration_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_integration)
+    get_directory_property(integration_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_integration)
+    if(NOT budget OR NOT timeout OR NOT integration_budget OR NOT integration_timeout)
         message(FATAL_ERROR
-            "src/backends/rhi-metal/tests: the 'unit' entry of the test taxonomy could not be read "
+            "src/backends/rhi-metal/tests: the test taxonomy could not be read "
             "from tests/CMakeLists.txt.")
     endif()
     set(CY_TEST_BUDGET_unit "${budget}")
     set(CY_TEST_TIMEOUT_unit "${timeout}")
+    set(CY_TEST_BUDGET_integration "${integration_budget}")
+    set(CY_TEST_TIMEOUT_integration "${integration_timeout}")
 
     cy_add_test(
         NAME rhi_metal_seed
         KIND unit
         SOURCES "${tests_dir}/test_metal_seed.cpp"
         DEPENDENCIES cy::rhi-metal)
+
+    if(APPLE AND CY_RENDERER_METAL)
+        cy_add_test(
+            NAME rhi_metal
+            KIND unit
+            SOURCES "${tests_dir}/test_metal_device.cpp"
+            DEPENDENCIES cy::rhi-metal)
+        cy_add_test(
+            NAME rhi_metal_shader
+            KIND integration
+            SOURCES "${tests_dir}/test_metal_shader.cpp"
+            DEPENDENCIES cy::rhi-metal)
+        cy_add_test(
+            NAME rhi_metal_surface
+            KIND integration
+            SOURCES "${tests_dir}/test_metal_surface.mm"
+            DEPENDENCIES cy::rhi-metal)
+        set_source_files_properties("${tests_dir}/test_metal_surface.mm"
+                                    PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_rhi_metal_declare_tests)

@@ -586,7 +586,6 @@ public:
 private:
     [[nodiscard]] FieldRecord* find_mutable(FieldId field) noexcept;
 
-    Allocator* allocator_;
     Array<FieldRecord> records_;
     HashMap<u64, usize> index_;
     Array<ConsumerDeclaration> consumers_;

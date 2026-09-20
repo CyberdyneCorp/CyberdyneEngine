@@ -188,7 +188,6 @@ public:
     [[nodiscard]] const char* last_preset() const noexcept { return last_preset_; }
 
 private:
-    Allocator* allocator_;
     Transition transition_;
     Array<ScheduledChange> schedule_;
     f64 ticks_per_second_ = 60.0;

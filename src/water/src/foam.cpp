@@ -17,8 +17,7 @@ namespace {
 
 }  // namespace
 
-FoamField::FoamField(Allocator& allocator) noexcept
-    : allocator_(&allocator), coverage_(allocator), scratch_(allocator) {}
+FoamField::FoamField(Allocator& allocator) noexcept : coverage_(allocator), scratch_(allocator) {}
 
 Status FoamField::configure(const FoamParams& params) noexcept {
     if (params.resolution == 0 || params.cell_metres <= 0.0F || params.lifetime_seconds <= 0.0F) {

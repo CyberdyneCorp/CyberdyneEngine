@@ -67,7 +67,7 @@ CY_TEST_CASE("crossing the surface is a fraction, not a switch") {
     const cy::f32 radius = 0.2F;
     const UnderwaterState under = cy::water::underwater_state(sea, 0.0, -1.0, radius);
     const UnderwaterState half = cy::water::underwater_state(sea, 0.0, 0.0, radius);
-    const UnderwaterState quarter = cy::water::underwater_state(sea, 0.0, 0.1F, radius);
+    const UnderwaterState quarter = cy::water::underwater_state(sea, 0.0, 0.1, radius);
     const UnderwaterState above = cy::water::underwater_state(sea, 0.0, 1.0, radius);
 
     CY_CHECK_NEAR(under.submerged_fraction, 1.0F, 1e-5F);

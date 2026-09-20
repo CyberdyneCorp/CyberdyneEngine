@@ -133,8 +133,7 @@ TerrainBounds modifier_reach(const Modifier& modifier) noexcept {
 }
 
 ModifierStack::ModifierStack(Allocator& allocator, const TileLayout& layout, u64 seed) noexcept
-    : allocator_(&allocator),
-      layout_(layout),
+    : layout_(layout),
       seed_(seed),
       modifiers_(allocator),
       points_(allocator),

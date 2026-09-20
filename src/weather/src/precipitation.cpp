@@ -53,8 +53,7 @@ PrecipitationType precipitation_type_for(f32 temperature_celsius,
     return (temperature_celsius <= 0.4F) ? PrecipitationType::Snow : PrecipitationType::Rain;
 }
 
-SkyOcclusion::SkyOcclusion(Allocator& allocator) noexcept
-    : allocator_(&allocator), cells_(allocator) {}
+SkyOcclusion::SkyOcclusion(Allocator& allocator) noexcept : cells_(allocator) {}
 
 Status SkyOcclusion::configure(f32 cell_metres) noexcept {
     if (cell_metres <= 0.0F) {

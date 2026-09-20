@@ -1,8 +1,9 @@
 # `src/backends/rhi-metal/` — layer 3
 
-The Metal seed. **`src/device.mm` has never been compiled, on this machine or anywhere else** —
-there is no Apple toolchain here — and everything else in this module is built and tested by
-`just test-all` on Linux.
+The native Metal backend, under active implementation for M11.d.5. **`src/device.mm` first compiled
+on an Apple M3 Pro with AppleClang 21 and the macOS 27 SDK on 2026-09-19**; every transcribed Metal
+enumerator below passed its compile-time assertion. The platform-neutral mapping and gap records
+continue to build and run on every host through `just test-all`.
 
 **Governed by**: `rhi-and-render-graph`. `delivery-roadmap` seeds Metal at **M7** and delivers it at
 **M11**. Task 10.5.
@@ -141,7 +142,7 @@ the row rather than a wrong picture.**
 | | Linux / Windows | Apple |
 |---|---|---|
 | `mapping.{h,cpp}`, `backend.{h,cpp}` | built, tested | built, tested |
-| `src/device.mm` | not built | built when `CY_RENDERER_METAL` is on, which is its **default there** |
+| `src/device.mm` | not built | built when `CY_RENDERER_METAL` is on, which is its **default there**; first verified on an M3 Pro with the macOS 27 SDK |
 
 `CY_RENDERER_METAL`'s default column in `cmake/features.cmake` is `APPLE`, a keyword added for this
 module: on where the platform can build it, off where it cannot. The alternative — leaving a seeded
@@ -152,24 +153,45 @@ platform backend this engine will ever add.
 than registering a factory that would fail at the first call. A registration that exists and cannot
 work turns "asked for metal, ran null" into a runtime surprise instead of a configuration answer.
 
-## What `src/device.mm` is and is not
+## What `src/device.mm` contains today
 
-It implements the four things the M3 golden scene needs from Metal directly — a device, a command
-queue, a `CAMetalLayer`, and a render pass with a load and store action — as free functions with no
-inheritance, and stops.
+The seed's four free functions remain as transcription evidence, and a native `cy::rhi::Device`
+now owns the real Metal path being implemented for M11.d.5. The hardware suite on the M3 Pro has
+exercised:
 
-`cy::rhi::Device` has more than eighty pure virtual members. A skeleton overriding all of them that
-has never been compiled is eighty signatures that are probably slightly wrong, and it would look
-like progress while being worth less than nothing to whoever picks this up at M11 — by which time
-gaps 1 to 5 should have been closed, which will change several of those signatures anyway.
+* private and shared buffers, textures and texture views;
+* Apple-family memoryless attachments;
+* explicit-placement `MTLHeap` aliasing between a texture and a buffer at the same offset;
+* sampler states, MSL compilation, graphics and compute pipeline creation, and
+  `MTLFunctionConstantValues`;
+* Tier 2 argument buffers, including the device-owned 16,384-entry global texture table, its
+  single sampler, descriptor-set pipeline layouts and a compute shader that samples through the
+  table and returns the observed colour to shared memory;
+* render, blit and readback command encoding, including a pixel read back from a native draw; and
+* `MTLSharedEvent` queue timelines, fences and binary submission dependencies;
+* `CAMetalLayer` acquisition and presentation from a surface supplied through the platform seam,
+  with the acquired drawable cleared, read back and presented headlessly;
+* timestamp counter sampling on Apple GPUs through stage-boundary blit passes; and
+* `MTLBinaryArchive` persistence with verified warm hits for graphics and compute pipelines.
 
-**They have been, at M11.d**, so several of those signatures HAVE changed: `reserve_transient_memory`
-takes a `MemoryPoolClass`, `save_pipeline_cache` takes a path, `queue_family` is gone, and an
-`ImageBarrier` carries `ImageUse` and `QueueKind`s. Whoever writes the Metal device at M11.d.5 is
-writing it against the interface that was settled for it rather than against the one that made the
-seed necessary — which was the point.
+The first-light render golden also runs through this backend using committed MSL artefacts from the
+same Slang module as Vulkan's SPIR-V. Descriptor sets are emitted as `ParameterBlock` argument
+buffers, vertex streams use native slots 16–30, and the push-constant buffer follows the pipeline
+layout's set buffers. On the Apple M3 Pro the Metal capture matches the committed Vulkan reference
+with zero differing texels; `docs/design/images/m11d5-three-backends-metal.manifest` names the
+backend and device beside the captured PNG.
 
-**Nothing in that file has been compiled or run. Treat every line of it as a proposal.**
+The shader probe also found a boundary the earlier M11.c check did not exercise. Slang 2026.9.2
+emits the existing runtime-sized global texture array as a direct MSL entry-point parameter; Apple's
+compiler rejects that output because the flexible texture array is neither the last struct member
+nor valid in that address space. A fixed-capacity `ParameterBlock<T>` emits one argument buffer and
+compiles through both `metal` and `metallib`. The fixture in `tests/fixtures/` preserves that result;
+the runtime test uses the same ABI at the engine's full 16,384-slot capacity.
+
+The native conformance suite is registered as `unit.rhi_metal`; the driver compiler, GPU execution
+and presentation cases remain in `integration.rhi_metal_shader` and
+`integration.rhi_metal_surface` so their unavoidable driver waits are charged to the integration
+budget. The M11.d.5 criterion runs all three on Apple hosts.
 
 ## One change outside this directory
 

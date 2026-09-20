@@ -139,7 +139,6 @@ private:
     [[nodiscard]] const Entry* locate(NetworkId id, u32 schema) const noexcept;
     [[nodiscard]] Expected<u32, Error> obtain(NetworkId id, u32 schema, u32 size) noexcept;
 
-    const SchemaSet* schemas_;
     Array<Entry> entries_;
     /// Network id to the head of its entry chain.
     HashMap<u64, u32> by_id_;

@@ -183,7 +183,7 @@ StormContribution storm_contribution_at(const Storm& storm, f64 x, f64 z) noexce
 }
 
 StormRegistry::StormRegistry(Allocator& allocator) noexcept
-    : allocator_(&allocator), storms_(allocator), lightning_(allocator) {}
+    : storms_(allocator), lightning_(allocator) {}
 
 Status StormRegistry::spawn(const Storm& storm) noexcept {
     if (!storm.id.is_valid()) {

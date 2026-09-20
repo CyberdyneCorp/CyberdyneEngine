@@ -230,7 +230,6 @@ private:
     static void shoreline_water(void* user, const world::WorldVec3d& at, WaterSample& out) noexcept;
 
     Allocator* allocator_;
-    const world::PartitionConfig* partition_;
     WaterRegistry registry_;
     RiverNetwork rivers_;
     FoamField foam_;

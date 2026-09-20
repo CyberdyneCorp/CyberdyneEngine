@@ -18,9 +18,13 @@ namespace {
 #if defined(_MSC_VER)
     return _aligned_malloc(size, alignment);
 #else
+    // Darwin's aligned_alloc rejects alignments smaller than a pointer even though ordinary
+    // objects legitimately have alignof(T) equal to 1, 2 or 4. Raising those requests preserves
+    // their contract and gives every C library a valid fundamental alignment.
+    const usize effective_alignment = alignment < alignof(void*) ? alignof(void*) : alignment;
     // aligned_alloc requires a size that is a multiple of the alignment. Rounding up here rather
     // than asking the caller to is the whole of the difference between the two platforms.
-    return std::aligned_alloc(alignment, align_up(size, alignment));
+    return std::aligned_alloc(effective_alignment, align_up(size, effective_alignment));
 #endif
 }
 

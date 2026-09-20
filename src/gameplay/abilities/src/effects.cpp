@@ -83,8 +83,7 @@ const char* apply_outcome_name(ApplyOutcome outcome) noexcept {
 
 EffectSystem::EffectSystem(Allocator& allocator, AttributeStore& attributes,
                            const TagRegistry& tag_registry) noexcept
-    : allocator_(&allocator),
-      attributes_(&attributes),
+    : attributes_(&attributes),
       tags_(&tag_registry),
       definitions_(allocator),
       modifiers_(allocator),

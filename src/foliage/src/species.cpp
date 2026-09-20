@@ -225,7 +225,7 @@ DetailTier tier_for_pixels(const SpeciesDeclaration& declaration, f32 pixels) no
 }
 
 SpeciesLibrary::SpeciesLibrary(Allocator& allocator) noexcept
-    : allocator_(&allocator), species_(allocator), index_(allocator) {}
+    : species_(allocator), index_(allocator) {}
 
 Status SpeciesLibrary::declare(const SpeciesDeclaration& declaration) noexcept {
     problem_ = validate_species(declaration);

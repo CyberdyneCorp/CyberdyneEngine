@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // A real Swift game module, loaded and hot-reloaded by the engine's own loader.
 // Tasks 3.2, 3.5, 3.7.
 //

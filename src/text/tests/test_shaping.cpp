@@ -20,8 +20,6 @@ Allocator& allocator() noexcept {
 /// Arabic "سلام" — seen, lam, alef, meem. Written as escapes so the file's encoding cannot change
 /// what is tested.
 constexpr std::string_view kSalam = "\xD8\xB3\xD9\x84\xD8\xA7\xD9\x85";
-/// "لا" — lam followed by alef, the mandatory ligature.
-constexpr std::string_view kLamAlef = "\xD9\x84\xD8\xA7";
 /// Hebrew "שלום".
 constexpr std::string_view kShalom = "\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D";
 

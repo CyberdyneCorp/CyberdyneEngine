@@ -73,6 +73,14 @@ CY_TEST_CASE("allocation is attributable: every allocation carries a tag and a d
     CY_CHECK_EQ(cy::domain_stats(cy::MemoryDomain::Physics).live_bytes, before.live_bytes);
 }
 
+CY_TEST_CASE("system allocation accepts the natural alignment of small objects") {
+    cy::SystemAllocator& allocator = cy::system_allocator(cy::MemoryDomain::Gpu);
+    void* byte_aligned = allocator.allocate(257, alignof(cy::u8));
+    CY_REQUIRE(byte_aligned != nullptr);
+    CY_CHECK_EQ(reinterpret_cast<cy::usize>(byte_aligned) % alignof(void*), 0U);
+    allocator.deallocate(byte_aligned, 257, alignof(cy::u8));
+}
+
 CY_TEST_CASE("domains are hierarchical: a child reports into its parent's aggregate") {
     CY_CHECK_EQ(cy::domain_parent(cy::MemoryDomain::Gpu), cy::MemoryDomain::Renderer);
     CY_CHECK_EQ(cy::domain_parent(cy::MemoryDomain::Streaming), cy::MemoryDomain::Assets);

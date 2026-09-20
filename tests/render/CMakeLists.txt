@@ -55,6 +55,28 @@ function(cy_render_declare_tests)
         SOURCES "${cy_render_tests_dir}/test_xr_prerequisites.cpp"
         DEPENDENCIES cy::sample-first-light cy::rhi-null)
 
+    # EVERY ENABLED DRAWING BACKEND, AND WHICH ONE PRODUCED WHICH IMAGE. M11.d task 7.3 and
+    # M11.d.5 task 2.6. This suite is also the native Metal golden test on Apple hosts.
+    set(cy_render_golden_backend_dependencies
+        cy::sample-first-light cy::rhi-null)
+    if(CY_RENDERER_VULKAN)
+        list(APPEND cy_render_golden_backend_dependencies cy::rhi-vulkan)
+    endif()
+    if(CY_RENDERER_METAL)
+        list(APPEND cy_render_golden_backend_dependencies cy::rhi-metal)
+    endif()
+    if(CY_RENDERER_VULKAN OR CY_RENDERER_METAL)
+        cy_add_test(
+            NAME golden_backends
+            KIND render
+            SOURCES
+                "${cy_render_tests_dir}/golden.cpp"
+                "${cy_render_tests_dir}/test_golden_backends.cpp"
+            DEPENDENCIES ${cy_render_golden_backend_dependencies}
+            DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
+        target_include_directories(cy_test_render_golden_backends PRIVATE "${cy_render_tests_dir}")
+    endif()
+
     if(NOT CY_RENDERER_VULKAN)
         return()
     endif()
@@ -71,31 +93,6 @@ function(cy_render_declare_tests)
         # suite from its BINARY directory — so the source directory is compiled in rather than
         # reached by a relative path that would depend on where the run started.
         DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
-
-    # EVERY ENABLED BACKEND, AND WHICH ONE PRODUCED WHICH IMAGE. M11.d task 7.3.
-    #
-    # `rhi-and-render-graph` has required since M3 that the image comparison "run against every
-    # enabled backend and record which backend produced a failure", and the suite above answers it
-    # with `DeviceFixture("vulkan", ...)` because there has only ever been one backend that draws.
-    # This suite ENUMERATES the registry instead, judges every entry against the same committed
-    # reference, and writes a row per backend naming the device and what kind it is.
-    #
-    # ITS OWN SUITE rather than another case in `render.golden`, and the reason is what it is FOR:
-    # M11.d moved the Metal and D3D12 sections to a rung of their own, and moved
-    # `m11d:golden-images-across-three-backends` with them so that rung cannot close on "it compiles
-    # somewhere". The mechanism that rung is judged by has to exist BEFORE it, on a tree where it
-    # can be watched working — a suite written at the same time as the backends it judges is a
-    # suite whose red nobody has seen.
-    cy_add_test(
-        NAME golden_backends
-        KIND render
-        SOURCES
-            "${cy_render_tests_dir}/golden.cpp"
-            "${cy_render_tests_dir}/test_golden_backends.cpp"
-        DEPENDENCIES cy::sample-first-light cy::rhi-null cy::rhi-vulkan
-        DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
-    # For "golden_ledger.h" and "golden.h", included by relative path as every suite here does.
-    target_include_directories(cy_test_render_golden_backends PRIVATE "${cy_render_tests_dir}")
 
     # MANY FRAMES, task 1.3 of M4's carried-forward debt. Its own suite rather than another case in
     # `render.golden`, because it needs no reference image at all: it compares the run against

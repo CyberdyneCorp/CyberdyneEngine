@@ -52,12 +52,14 @@
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/validation.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy_features.h>
 
-// Unconditional, for the reason tests/render/device.h gives about itself: this suite is DECLARED
-// only when CY_RENDERER_VULKAN is on (tests/render/CMakeLists.txt), so a guard here would guard a
-// condition that is already true. On a build with the Vulkan backend off, the only enabled backend
-// is the null one and `render.null_frame` is what judges it.
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#if defined(CY_RENDERER_VULKAN)
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
+#if defined(CY_RENDERER_METAL)
+#    include <cy/backends/rhi-metal/backend.h>
+#endif
 
 #include "golden.h"
 #include "golden_ledger.h"
@@ -100,7 +102,12 @@ const char* reference_path() noexcept {
 /// `Backend capability model` requires the renderer to branch on capabilities and never on backend
 /// identity, and a suite that tested identity would teach the next backend the wrong pattern.
 void register_everything() noexcept {
+#if defined(CY_RENDERER_VULKAN)
     (void)cy::rhi::vulkan::register_vulkan_backend();
+#endif
+#if defined(CY_RENDERER_METAL)
+    (void)cy::rhi::metal::register_metal_backend();
+#endif
     (void)cy::rhi::null::register_null_backend();
 }
 
@@ -187,6 +194,19 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
         row.outcome = Outcome::NoDevice;
         cy::render_test::set_field(row.reason, sizeof(row.reason), drawn.error().message);
     } else {
+        if (const char* directory = std::getenv("CY_GOLDEN_CAPTURE_DIR");
+            directory != nullptr && directory[0] != '\0') {
+            char path[1024] = {};
+            std::snprintf(path, sizeof(path), "%s/m11d5-three-backends-%s.png", directory,
+                          registration.name);
+            if (const cy::Status written = cy::render_test::write_png(path, rendered); !written) {
+                row.outcome = Outcome::Differed;
+                cy::render_test::set_field(row.reason, sizeof(row.reason), written.error().message);
+                return row;
+            }
+            std::fprintf(stderr, "golden_backends: captured %s on device \"%s\"\n", path,
+                         row.device);
+        }
         const cy::render_test::Comparison comparison =
             cy::render_test::compare(reference, rendered);
         row.differing = comparison.differing;

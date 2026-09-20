@@ -10,7 +10,7 @@
 namespace cy::shader {
 
 ShaderHotReload::ShaderHotReload(Allocator& allocator) noexcept
-    : allocator_(&allocator), watcher_(allocator), pending_(allocator) {}
+    : watcher_(allocator), pending_(allocator) {}
 
 Status ShaderHotReload::start(SourceRegistry& sources, assets::VirtualFileSystem& files,
                               const HotReloadConfig& config) noexcept {

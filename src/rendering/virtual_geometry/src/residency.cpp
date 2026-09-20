@@ -36,12 +36,16 @@ namespace {
 }  // namespace
 
 PageTableEntry load_entry(const PageTableEntry& entry) noexcept {
+    // `atomic_ref` never mutates during a load, but its template argument must be non-const.
+    // The table owns mutable entries; this const view only prevents ordinary writes by callers.
+    PageTableEntry& mutable_entry = const_cast<PageTableEntry&>(entry);
     PageTableEntry copy;
-    copy.location = std::atomic_ref<const u32>(entry.location).load(std::memory_order_relaxed);
-    copy.bytes = std::atomic_ref<const u32>(entry.bytes).load(std::memory_order_relaxed);
-    copy.generation = std::atomic_ref<const u16>(entry.generation).load(std::memory_order_relaxed);
-    copy.flags = std::atomic_ref<const u8>(entry.flags).load(std::memory_order_relaxed);
-    copy.reserved = std::atomic_ref<const u8>(entry.reserved).load(std::memory_order_relaxed);
+    copy.location = std::atomic_ref<u32>(mutable_entry.location).load(std::memory_order_relaxed);
+    copy.bytes = std::atomic_ref<u32>(mutable_entry.bytes).load(std::memory_order_relaxed);
+    copy.generation =
+        std::atomic_ref<u16>(mutable_entry.generation).load(std::memory_order_relaxed);
+    copy.flags = std::atomic_ref<u8>(mutable_entry.flags).load(std::memory_order_relaxed);
+    copy.reserved = std::atomic_ref<u8>(mutable_entry.reserved).load(std::memory_order_relaxed);
     return copy;
 }
 

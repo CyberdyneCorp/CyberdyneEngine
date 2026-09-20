@@ -107,8 +107,7 @@ u32 TierBudgets::for_tier(SimulationTier tier) const noexcept {
 // ------------------------------------------------------------------------------------
 
 AudioServer::AudioServer(Allocator& allocator) noexcept
-    : allocator_(&allocator),
-      buses_(allocator),
+    : buses_(allocator),
       voices_(allocator),
       clips_(allocator),
       listeners_(allocator),

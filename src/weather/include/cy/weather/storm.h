@@ -179,7 +179,6 @@ private:
     [[nodiscard]] Status emit_strikes(const Storm& storm, determinism::SimulationPoint at,
                                       f32 seconds, u64 session_seed) noexcept;
 
-    Allocator* allocator_;
     Array<Storm> storms_;
     Array<LightningEvent> lightning_;
 };

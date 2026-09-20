@@ -67,11 +67,7 @@ const char* demotion_refusal_name(DemotionRefusal refusal) noexcept {
 
 PromotionRegistry::PromotionRegistry(Allocator& allocator, const SpeciesLibrary& library,
                                      u64 seed) noexcept
-    : allocator_(&allocator),
-      library_(&library),
-      seed_(seed),
-      promoted_(allocator),
-      index_(allocator) {}
+    : library_(&library), seed_(seed), promoted_(allocator), index_(allocator) {}
 
 void PromotionRegistry::begin_frame() noexcept {
     diagnostics_.promotions_this_frame = 0;

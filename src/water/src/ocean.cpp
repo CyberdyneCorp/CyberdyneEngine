@@ -157,11 +157,7 @@ Expected<DisplacementModel, Error> build_ocean_model(const OceanParams& params, 
 // --- The camera-relative surface ------------------------------------------------------------
 
 OceanSurface::OceanSurface(Allocator& allocator) noexcept
-    : allocator_(&allocator),
-      positions_(allocator),
-      normals_(allocator),
-      breaking_(allocator),
-      indices_(allocator) {}
+    : positions_(allocator), normals_(allocator), breaking_(allocator), indices_(allocator) {}
 
 Status OceanSurface::configure(const OceanSurfaceParams& params) noexcept {
     if (params.near_cell_metres <= 0.0F || params.rings == 0 || params.ring_quads < 2 ||

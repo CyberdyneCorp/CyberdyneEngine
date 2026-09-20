@@ -153,17 +153,17 @@ ci_job = "profiles"
 
 [[criterion]]
 id = "metal-backend-is-native"
-describe = "`src/backends/rhi-metal/` compiles and runs as a NATIVE backend rather than a translation layer. `device.mm` has never been compiled by this project's continuous integration and the seed's README names two gaps with no workaround; the check is that the backend builds and passes the RHI conformance suite. WHAT IT DOES NOT CLAIM, because the spike measured that no hosted runner can answer it: tile memory, memoryless attachments and argument buffers at Tier 2 — the Apple-family features that are `rhi-and-render-graph`'s entire stated reason for refusing MoltenVK"
+describe = "`src/backends/rhi-metal/` compiles and runs as a NATIVE backend rather than a translation layer. The check builds the backend, passes its RHI conformance suites, and renders the committed golden scene through native MSL and Metal argument buffers. Hosted CI still cannot claim Apple-family tile memory or Tier 2 argument buffers; the checked-in M3 Pro ledger supplies that hardware evidence separately and names the device that answered"
 source = "tasks 1, rhi-and-render-graph, moved from m11d tasks 2"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-pattern='^(unit.rhi_metal)$'
+pattern='^(unit.rhi_metal|integration.rhi_metal_shader|integration.rhi_metal_surface|render.golden_backends)$'
 registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
-echo "$registered of 1 suite(s) match $pattern"
-test "$registered" -ge 1 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+echo "$registered of 4 suite(s) match $pattern"
+test "$registered" -ge 4 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
 ctest --test-dir "$d" -R "$pattern" --output-on-failure
 '''
 where = "ci"

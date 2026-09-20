@@ -45,7 +45,7 @@ struct BlitState {
     u32 row_length = 0;
 };
 
-void record_blit(const rendering::PassContext& context, void* user) noexcept {
+[[maybe_unused]] void record_blit(const rendering::PassContext& context, void* user) noexcept {
     auto* state = static_cast<BlitState*>(user);
     rhi::BufferTextureCopy region;
     region.buffer_row_length = state->row_length;
@@ -55,7 +55,7 @@ void record_blit(const rendering::PassContext& context, void* user) noexcept {
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
 }
 
-void record_capture(const rendering::PassContext& context, void* user) noexcept {
+[[maybe_unused]] void record_capture(const rendering::PassContext& context, void* user) noexcept {
     auto* state = static_cast<BlitState*>(user);
     rhi::BufferTextureCopy region;
     region.buffer_row_length = state->row_length;
@@ -89,7 +89,7 @@ void record_capture(const rendering::PassContext& context, void* user) noexcept 
     return "hardware by name (this engine has no device-type query: M11.d finding, present.cpp)";
 }
 
-[[nodiscard]] const char* swapchain_format_name(rhi::Format format) noexcept {
+[[maybe_unused, nodiscard]] const char* swapchain_format_name(rhi::Format format) noexcept {
     switch (format) {
         case rhi::Format::Bgra8Srgb:
             return "Bgra8Srgb";
@@ -104,7 +104,7 @@ void record_capture(const rendering::PassContext& context, void* user) noexcept 
     }
 }
 
-[[nodiscard]] bool is_bgra(rhi::Format format) noexcept {
+[[maybe_unused, nodiscard]] bool is_bgra(rhi::Format format) noexcept {
     return format == rhi::Format::Bgra8Srgb || format == rhi::Format::Bgra8Unorm;
 }
 
@@ -114,7 +114,8 @@ void record_capture(const rendering::PassContext& context, void* user) noexcept 
 /// swapchain is a negotiation, and the honest answer is what it got" — and on this host it settles
 /// on BGRA. Swizzling here rather than asking for RGBA and hoping is the difference between a
 /// picture and a blue-and-red picture.
-void fill_staging(u8* destination, const Image& image, bool swap_red_and_blue) noexcept {
+[[maybe_unused]] void fill_staging(u8* destination, const Image& image,
+                                   bool swap_red_and_blue) noexcept {
     const usize texels = static_cast<usize>(image.width) * image.height;
     for (usize index = 0; index < texels; ++index) {
         const u8* source = image.pixels.data() + (index * 4U);
@@ -126,8 +127,8 @@ void fill_staging(u8* destination, const Image& image, bool swap_red_and_blue) n
     }
 }
 
-void read_photograph(Image& out, const u8* source, u32 width, u32 height, u32 row_length,
-                     bool swap_red_and_blue) noexcept {
+[[maybe_unused]] void read_photograph(Image& out, const u8* source, u32 width, u32 height,
+                                      u32 row_length, bool swap_red_and_blue) noexcept {
     out.width = width;
     out.height = height;
     out.pixels.assign(out.byte_size(), 255);

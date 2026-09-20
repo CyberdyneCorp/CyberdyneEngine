@@ -143,7 +143,6 @@ private:
     /// cannot be left with a socket that is half a conversation behind.
     [[nodiscard]] Status transport_failure(const char* message) noexcept;
 
-    Allocator* allocator_;
     Array<u8> scratch_;
     RemoteClientStats stats_{};
     int socket_ = -1;
@@ -209,7 +208,6 @@ private:
     void drop(usize index) noexcept;
 
     VirtualFileSystem* files_;
-    Allocator* allocator_;
     Array<int> clients_;
     Array<u8> scratch_;
     RemoteHostStats stats_{};

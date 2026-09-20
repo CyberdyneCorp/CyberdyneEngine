@@ -286,6 +286,11 @@ struct ComputePipelineDescription {
     PipelineLayoutHandle layout;
     ShaderModuleHandle shader;
     Span<const SpecializationConstant> specialization;
+    /// Reflected from the compute entry point's `[numthreads(x, y, z)]`. Vulkan consumes this from
+    /// SPIR-V itself; Metal requires it at dispatch time because MSL does not retain a fixed launch
+    /// size in the pipeline state. Keeping the reflected value here gives every backend the same
+    /// launch contract instead of making Metal guess from `threadExecutionWidth`.
+    u32 workgroup_size[3] = {1, 1, 1};
 };
 
 }  // namespace cy::rhi

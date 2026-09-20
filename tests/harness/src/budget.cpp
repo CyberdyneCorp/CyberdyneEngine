@@ -148,7 +148,9 @@ constexpr double kNominalReferenceNs = 900000.0;
 /// a reader can check against the table, and leaves the check live: a Debug case doing four times
 /// its intended work still fails, and the tier's real number — one millisecond — is enforced in the
 /// three configurations that are compiled the way a shipped game is. `four-profiles` runs all four.
+#if defined(CY_UNOPTIMISED)
 constexpr double kUnoptimisedAllowance = 4.0;
+#endif
 
 /// THE SLOWEST OF THREE, not the median, and the reason is the instrument's own worst case.
 ///

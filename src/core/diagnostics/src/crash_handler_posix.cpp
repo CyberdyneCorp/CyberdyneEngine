@@ -106,6 +106,7 @@ u32 g_module_count = 0;
 
 /// Copy the part of `path` after the last separator. The whole point of this file: a directory is
 /// never copied, so there is nothing to redact later.
+#ifdef CY_DIAG_HAVE_DL_ITERATE_PHDR
 void copy_basename(char* out, u32 capacity, const char* path) noexcept {
     const char* name = path;
     for (const char* cursor = path; *cursor != '\0'; ++cursor) {
@@ -126,7 +127,7 @@ void copy_basename(char* out, u32 capacity, const char* path) noexcept {
 /// installation, where reading a file is allowed — rather than left as `<unknown>`.
 void main_module_name(char* out, u32 capacity) noexcept {
     out[0] = '\0';
-#if defined(__linux__)
+#    if defined(__linux__)
     char resolved[512];
     const ssize_t length = ::readlink("/proc/self/exe", resolved, sizeof(resolved) - 1);
     if (length > 0) {
@@ -134,16 +135,17 @@ void main_module_name(char* out, u32 capacity) noexcept {
         copy_basename(out, capacity, resolved);
         return;
     }
-#elif defined(__APPLE__)
+#    elif defined(__APPLE__)
     char resolved[1024];
     uint32_t size = sizeof(resolved);
     if (::_NSGetExecutablePath(resolved, &size) == 0) {
         copy_basename(out, capacity, resolved);
         return;
     }
-#endif
+#    endif
     copy_basename(out, capacity, "main-executable");
 }
+#endif
 
 #ifdef CY_DIAG_HAVE_DL_ITERATE_PHDR
 /// One loaded object. Returns non-zero to stop the walk, which is how the table's bound is enforced
@@ -399,7 +401,7 @@ u32 platform_install_crash_handler() noexcept {
     struct sigaction action{};
     action.sa_flags = SA_SIGINFO | SA_ONSTACK;
     action.sa_sigaction = &handle_fault;
-    ::sigemptyset(&action.sa_mask);
+    sigemptyset(&action.sa_mask);
 
     u32 taken = 0;
     for (u32 index = 0; index < kFaultCount; ++index) {

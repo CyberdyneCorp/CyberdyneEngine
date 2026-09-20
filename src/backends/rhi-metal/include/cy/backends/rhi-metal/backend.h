@@ -26,6 +26,16 @@ inline constexpr const char* kMetalBackendName = "metal";
 /// false on Apple when the module was built without Metal.
 [[nodiscard]] bool metal_backend_available() noexcept;
 
+/// The native features observed on the device that answered. Kept separate from the portable
+/// capability set because the tier is evidence a conformance run prints, not a renderer branch.
+struct MetalRuntimeInfo {
+    char device_name[128] = {};
+    u32 argument_buffer_tier = 0;
+    bool apple_gpu_family = false;
+};
+
+[[nodiscard]] MetalRuntimeInfo metal_runtime_info() noexcept;
+
 /// Register the backend. On a build with no Metal this returns `ErrorCode::Unsupported` with a
 /// message naming the platform, rather than registering a factory that would fail at the first
 /// call — a registration that exists and cannot work makes "asked for metal, ran null" a runtime

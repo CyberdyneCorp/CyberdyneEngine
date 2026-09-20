@@ -40,7 +40,6 @@ bindings/swift/Tests/CyberdyneKitTests/ValueTests.swift
 bindings/swift/Tests/CyberdyneMacrosTests/MacroExpansionTests.swift
 bindings/swift/fixtures/reload/v1/Counter.swift
 bindings/swift/fixtures/reload/v2/Counter.swift
-bindings/swift/tests/test_swift_reload.cpp
 bindings/swift/tools/check_no_swift_runtime.py
 bindings/swift/tools/cy_swift_module.py
 editor/assets/identity/derive.py

@@ -62,6 +62,7 @@ import PackageDescription
 
 let package = Package(
     name: "{target}",
+    platforms: [.macOS(.v14)],
     products: [.library(name: "{target}", type: .dynamic, targets: ["{target}"])],
     dependencies: [.package(path: "{package}")],
     // A path dependency's package IDENTITY is its directory name, not the name in its manifest —
@@ -113,7 +114,13 @@ def build_generation(work: pathlib.Path, index: int, sources: pathlib.Path,
         sys.stderr.write(f"generation {index} did not build:\n{result.stdout}{result.stderr}")
         raise SystemExit(2)
 
-    built = work / ".build" / configuration / f"lib{target}.so"
+    suffix = ".dylib" if sys.platform == "darwin" else ".so"
+    bin_path = swift(["swift", "build", "-c", configuration, "--show-bin-path"], cwd=work)
+    if bin_path.returncode != 0:
+        sys.stderr.write(f"generation {index} did not report its binary path:\n"
+                         f"{bin_path.stdout}{bin_path.stderr}")
+        raise SystemExit(2)
+    built = pathlib.Path(bin_path.stdout.strip().splitlines()[-1]) / f"lib{target}{suffix}"
     if not built.exists():
         raise SystemExit(f"generation {index}: {built} was not produced")
     out.mkdir(parents=True, exist_ok=True)

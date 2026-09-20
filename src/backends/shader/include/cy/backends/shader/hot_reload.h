@@ -153,7 +153,6 @@ private:
                                                       const RebuildOptions& options,
                                                       DiagnosticLog& diagnostics) noexcept;
 
-    Allocator* allocator_;
     SourceRegistry* sources_ = nullptr;
     assets::FileWatcher watcher_;
     HotReloadConfig config_{};

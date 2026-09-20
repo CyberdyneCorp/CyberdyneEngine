@@ -13,8 +13,8 @@ namespace cy::pcg {
 
 FoliageOutputAdapter::FoliageOutputAdapter(Allocator& allocator, foliage::ClusterStore& store,
                                            const foliage::ClusterPolicy& policy,
-                                           foliage::SpeciesId species, u64 seed) noexcept
-    : allocator_(&allocator), store_(&store), policy_(policy), species_(species), seed_(seed) {}
+                                           foliage::SpeciesId species, u64) noexcept
+    : allocator_(&allocator), store_(&store), policy_(policy), species_(species) {}
 
 Status FoliageOutputAdapter::emit(const EmitContext& context, const PointSet& points) noexcept {
     if (points.empty()) {

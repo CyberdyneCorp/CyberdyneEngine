@@ -45,6 +45,7 @@
 
 namespace {
 
+#if defined(__linux__)
 /// Spin until told to stop, announcing readiness first.
 ///
 /// THE DEADLINE IS NOT SET IN ADVANCE, and the first version of this file got that wrong in a way
@@ -63,6 +64,7 @@ void spin_until_stopped(const std::atomic<bool>& stop, std::atomic<unsigned>& re
     }
     (void)sink;
 }
+#endif
 
 }  // namespace
 

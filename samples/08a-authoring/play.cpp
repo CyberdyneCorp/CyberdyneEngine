@@ -496,6 +496,10 @@ void report_number(const char* key, f64 value) noexcept {
     std::printf("%s: %s = %.4f\n", kTag, key, value);
 }
 
+void report_number(const char* key, f32 value) noexcept {
+    report_number(key, static_cast<f64>(value));
+}
+
 void report_count(const char* key, unsigned long long value) noexcept {
     std::printf("%s: %s = %llu\n", kTag, key, value);
 }

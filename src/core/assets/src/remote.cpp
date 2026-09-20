@@ -257,8 +257,7 @@ RemoteAddress parse_remote_address(const char* text) noexcept {
 
 // --- SocketFileProvider --------------------------------------------------------------------------
 
-SocketFileProvider::SocketFileProvider(Allocator& allocator) noexcept
-    : allocator_(&allocator), scratch_(allocator) {}
+SocketFileProvider::SocketFileProvider(Allocator& allocator) noexcept : scratch_(allocator) {}
 
 SocketFileProvider::~SocketFileProvider() {
     disconnect();
@@ -495,7 +494,7 @@ Status SocketFileProvider::list(const VirtualPath& directory, bool recursive,
 // --- FileServingHost -----------------------------------------------------------------------------
 
 FileServingHost::FileServingHost(VirtualFileSystem& files, Allocator& allocator) noexcept
-    : files_(&files), allocator_(&allocator), clients_(allocator), scratch_(allocator) {}
+    : files_(&files), clients_(allocator), scratch_(allocator) {}
 
 FileServingHost::~FileServingHost() {
     close();

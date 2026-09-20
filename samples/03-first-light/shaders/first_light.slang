@@ -55,7 +55,17 @@
 //          kFirstLightShadowVertexSpirv=first_light_shadow_vertex.spv \
 //          kFirstLightForwardVertexSpirv=first_light_forward_vertex.spv \
 //          kFirstLightForwardFragmentSpirv=first_light_forward_fragment.spv
-//   clang-format -i first_light_spirv.h
+//   slangc first_light.slang -target metal -entry shadowVertex -stage vertex \
+//          -o first_light_shadow_vertex.metal
+//   slangc first_light.slang -target metal -entry forwardVertex -stage vertex \
+//          -o first_light_forward_vertex.metal
+//   slangc first_light.slang -target metal -entry forwardFragment -stage fragment \
+//          -o first_light_forward_fragment.metal
+//   python3 embed_msl.py first_light_msl.h \
+//          kFirstLightShadowVertexMsl=first_light_shadow_vertex.metal \
+//          kFirstLightForwardVertexMsl=first_light_forward_vertex.metal \
+//          kFirstLightForwardFragmentMsl=first_light_forward_fragment.metal
+//   clang-format -i first_light_spirv.h first_light_msl.h
 
 struct FrameConstants
 {
@@ -81,13 +91,21 @@ struct FrameConstants
 // Set 0 is the global, per-frame set — `shader-system`'s fixed convention, which this sample
 // follows even though it has only one set: kSetGlobal is 0 and the first thing a reader of this
 // file should not have to wonder about is which set is which.
-[[vk::binding(0, 0)]] ConstantBuffer<FrameConstants> frame;
-[[vk::binding(1, 0)]] Texture2D<float4> albedoTexture;
-[[vk::binding(2, 0)]] SamplerState albedoSampler;
-[[vk::binding(3, 0)]] Texture2D<float> shadowMap;
-// A COMPARISON sampler, not an ordinary one: the hardware does the depth test and the bilinear
-// filter over its RESULT, which is what makes a 2x2 tap a soft edge rather than four hard ones.
-[[vk::binding(4, 0)]] SamplerComparisonState shadowSampler;
+// One descriptor set in SPIR-V and one argument buffer in Metal. Keeping the resources in a
+// ParameterBlock is part of the cross-backend ABI: direct global resources become independent
+// texture/sampler/buffer slots in MSL and cannot be bound through Device::bind_descriptor_sets.
+struct FirstLightGlobals
+{
+    ConstantBuffer<FrameConstants> frame;
+    Texture2D<float4> albedoTexture;
+    SamplerState albedoSampler;
+    Texture2D<float> shadowMap;
+    // A COMPARISON sampler, not an ordinary one: the hardware does the depth test and the bilinear
+    // filter over its RESULT, which is what makes a 2x2 tap a soft edge rather than four hard ones.
+    SamplerComparisonState shadowSampler;
+};
+
+[[vk::binding(0, 0)]] ParameterBlock<FirstLightGlobals> globals;
 
 struct ObjectPush
 {
@@ -151,8 +169,10 @@ float4 transform(float4 row0, float4 row1, float4 row2, float4 row3, float3 rela
 DepthOnlyOutput shadowVertex(VertexInput input)
 {
     DepthOnlyOutput output;
-    output.clip = transform(frame.lightViewProjectionRow0, frame.lightViewProjectionRow1,
-                            frame.lightViewProjectionRow2, frame.lightViewProjectionRow3,
+    output.clip = transform(globals.frame.lightViewProjectionRow0,
+                            globals.frame.lightViewProjectionRow1,
+                            globals.frame.lightViewProjectionRow2,
+                            globals.frame.lightViewProjectionRow3,
                             toCameraRelative(input.position));
     return output;
 }
@@ -164,8 +184,8 @@ ForwardVertexOutput forwardVertex(VertexInput input)
     output.positionRelativeToCamera = toCameraRelative(input.position);
     output.normal = rotateNormal(input.normal);
     output.uv = input.uv;
-    output.clip = transform(frame.viewProjectionRow0, frame.viewProjectionRow1,
-                            frame.viewProjectionRow2, frame.viewProjectionRow3,
+    output.clip = transform(globals.frame.viewProjectionRow0, globals.frame.viewProjectionRow1,
+                            globals.frame.viewProjectionRow2, globals.frame.viewProjectionRow3,
                             output.positionRelativeToCamera);
     return output;
 }
@@ -173,16 +193,18 @@ ForwardVertexOutput forwardVertex(VertexInput input)
 // How much of the sun reaches this point: 1 fully lit, 0 fully shadowed.
 float sunVisibility(float3 positionRelativeToCamera, float3 normal)
 {
-    if (frame.shadowControl.x < 0.5)
+    if (globals.frame.shadowControl.x < 0.5)
     {
         return 1.0;
     }
     // The normal offset. Moving the lookup point along the surface normal is what stops a surface
     // lit at a grazing angle from shadowing itself; a constant depth bias alone cannot, because the
     // error it corrects grows with the slope.
-    let offset = positionRelativeToCamera + (normal * frame.shadowControl.y);
-    let lightClip = transform(frame.lightViewProjectionRow0, frame.lightViewProjectionRow1,
-                              frame.lightViewProjectionRow2, frame.lightViewProjectionRow3, offset);
+    let offset = positionRelativeToCamera + (normal * globals.frame.shadowControl.y);
+    let lightClip = transform(globals.frame.lightViewProjectionRow0,
+                              globals.frame.lightViewProjectionRow1,
+                              globals.frame.lightViewProjectionRow2,
+                              globals.frame.lightViewProjectionRow3, offset);
     if (lightClip.w <= 0.0)
     {
         return 1.0;
@@ -196,19 +218,20 @@ float sunVisibility(float3 positionRelativeToCamera, float3 normal)
         return 1.0;
     }
     // ADDED, not subtracted: see the reversed-Z paragraph in the header comment.
-    let reference = ndc.z + frame.sunDirectionAndBias.w;
-    return shadowMap.SampleCmpLevelZero(shadowSampler, uv, reference);
+    let reference = ndc.z + globals.frame.sunDirectionAndBias.w;
+    return globals.shadowMap.SampleCmpLevelZero(globals.shadowSampler, uv, reference);
 }
 
 [shader("fragment")]
 float4 forwardFragment(ForwardVertexOutput input) : SV_Target
 {
     let normal = normalize(input.normal);
-    let albedo = albedoTexture.Sample(albedoSampler, input.uv).rgb * object.baseColor.rgb;
-    let lambert = max(dot(normal, frame.sunDirectionAndBias.xyz), 0.0);
+    let albedo = globals.albedoTexture.Sample(globals.albedoSampler, input.uv).rgb *
+                 object.baseColor.rgb;
+    let lambert = max(dot(normal, globals.frame.sunDirectionAndBias.xyz), 0.0);
     let visibility = sunVisibility(input.positionRelativeToCamera, normal);
-    let lit = albedo * ((frame.sunColorAndAmbient.rgb * lambert * visibility) +
-                        frame.sunColorAndAmbient.w);
+    let lit = albedo * ((globals.frame.sunColorAndAmbient.rgb * lambert * visibility) +
+                        globals.frame.sunColorAndAmbient.w);
     // The target is Rgba8Unorm rather than a floating-point one, so the transfer function is applied
     // here. A real frame's tonemapping is a post-process pass and `rendering-forward-clustered`'s
     // thirteenth stage; this is a sample, and the sample says which corner it cut.

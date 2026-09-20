@@ -82,7 +82,6 @@ private:
     foliage::ClusterPolicy policy_;
     foliage::SpeciesId species_;
     AttributeId species_attribute_;
-    u64 seed_ = 0;
     u64 instances_ = 0;
     u64 clusters_ = 0;
     foliage::ClusterBuildReport last_report_;

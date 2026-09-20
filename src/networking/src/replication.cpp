@@ -21,9 +21,8 @@ inline constexpr u32 kPeerGenerationBits = 32;
 
 // --- PeerBaseline --------------------------------------------------------------------------------
 
-PeerBaseline::PeerBaseline(Allocator& allocator, const SchemaSet& schemas) noexcept
-    : schemas_(&schemas),
-      entries_(allocator),
+PeerBaseline::PeerBaseline(Allocator& allocator, const SchemaSet&) noexcept
+    : entries_(allocator),
       by_id_(allocator),
       free_(allocator),
       bytes_(allocator),

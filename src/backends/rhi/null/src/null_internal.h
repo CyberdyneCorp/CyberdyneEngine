@@ -148,13 +148,9 @@ struct RecordedCounts {
 /// The recording interface. Every call appends to the device's log and returns; nothing executes.
 class NullCommandBuffer final : public CommandBuffer {
 public:
-    NullCommandBuffer(NullDevice* device, Allocator& allocator, QueueKind queue, bool secondary,
+    NullCommandBuffer(NullDevice* /*device*/, Allocator& allocator, QueueKind queue, bool secondary,
                       u32 frame_slot) noexcept
-        : device_(device),
-          log_(allocator),
-          queue_(queue),
-          secondary_(secondary),
-          frame_slot_(frame_slot) {}
+        : log_(allocator), queue_(queue), secondary_(secondary), frame_slot_(frame_slot) {}
 
     [[nodiscard]] CommandBufferHandle handle() const noexcept override { return handle_; }
     /// The pool issues the handle after the object exists, so it is set once, immediately, by
@@ -227,7 +223,6 @@ public:
     [[nodiscard]] Array<RecordedCommand>& mutable_log() noexcept { return log_; }
 
 private:
-    NullDevice* device_ = nullptr;
     Array<RecordedCommand> log_;
     RecordedCounts counts_;
     CommandBufferHandle handle_;
@@ -491,7 +486,6 @@ private:
     NullBarrierRecorder barriers_;
     ValidationCallback validation_callback_ = nullptr;
     void* validation_user_ = nullptr;
-    bool validation_enabled_ = false;
 };
 
 }  // namespace cy::rhi::null

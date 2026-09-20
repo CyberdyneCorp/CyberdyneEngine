@@ -47,7 +47,8 @@ endif()
 
 if(CY_RENDERER_METAL AND APPLE)
     # The three frameworks the seed names. Foundation for NSString and NSError, Metal for the
-    # device, QuartzCore for CAMetalLayer.
+    # device, QuartzCore for CAMetalLayer. The Objective-C++ source first compiled on macOS for
+    # M11.d.5; keep ARC local to it so the platform-neutral half retains ordinary C++ flags.
     target_link_libraries(cy_rhi_metal PRIVATE
         "-framework Foundation" "-framework Metal" "-framework QuartzCore")
     set_source_files_properties(src/device.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")

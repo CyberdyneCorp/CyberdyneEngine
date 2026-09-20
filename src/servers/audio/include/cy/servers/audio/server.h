@@ -308,7 +308,6 @@ private:
     void route_bus(BusHandle handle, const f32* buffer, usize count, u32 channels) noexcept;
     [[nodiscard]] f32* bus_buffer(u32 bus_index, u32 channels) noexcept;
 
-    Allocator* allocator_;
     AudioServerConfig config_;
     AudioFormat format_;
     AudioBackend* backend_ = nullptr;

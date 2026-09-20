@@ -143,7 +143,7 @@ ClimateSample derive_climate(const ClimateModel& model, const ClimateTerrain& te
     return out;
 }
 
-ClimateMap::ClimateMap(Allocator& allocator) noexcept : allocator_(&allocator), cells_(allocator) {}
+ClimateMap::ClimateMap(Allocator& allocator) noexcept : cells_(allocator) {}
 
 Status ClimateMap::set_uniform(const ClimateSample& climate) noexcept {
     cells_.clear();

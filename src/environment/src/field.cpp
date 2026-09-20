@@ -309,7 +309,7 @@ namespace {
 }  // namespace
 
 FieldRegistry::FieldRegistry(Allocator& allocator) noexcept
-    : allocator_(&allocator), records_(allocator), index_(allocator), consumers_(allocator) {}
+    : records_(allocator), index_(allocator), consumers_(allocator) {}
 
 Status FieldRegistry::declare(const FieldDeclaration& declaration) noexcept {
     const DeclarationProblem problem = validate_declaration(declaration);

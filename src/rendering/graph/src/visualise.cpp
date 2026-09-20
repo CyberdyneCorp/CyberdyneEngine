@@ -12,11 +12,19 @@ namespace {
 /// fails, and it stops rather than truncating silently, because a truncated plan dump read as a
 /// whole one is worse than no dump.
 // NOLINTNEXTLINE(cert-dcl50-cpp) — a formatting sink is variadic by nature; see .clang-tidy.
-bool append(Array<char>& out, const char* pattern, ...) noexcept {
+__attribute__((format(printf, 2, 3))) bool append(Array<char>& out, const char* pattern,
+                                                  ...) noexcept {
     char line[512];
     va_list arguments;
     va_start(arguments, pattern);
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
     const int written = std::vsnprintf(line, sizeof(line), pattern, arguments);
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#endif
     va_end(arguments);
     if (written <= 0) {
         return written == 0;

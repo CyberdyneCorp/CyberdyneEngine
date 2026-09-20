@@ -127,7 +127,6 @@ public:
     void reset_queries() const noexcept { queries_ = 0; }
 
 private:
-    Allocator* allocator_;
     HashMap<u64, SkyCoverCell> cells_;
     f32 cell_metres_ = 4.0F;
     mutable u64 queries_ = 0;

@@ -166,7 +166,6 @@ public:
     [[nodiscard]] bool everyone_ready() const noexcept;
 
 private:
-    Allocator* allocator_;
     Transport* transport_;
     NetworkMode mode_;
     CompatibilityScope scope_;

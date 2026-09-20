@@ -43,6 +43,9 @@ import PackageDescription
 
 let package = Package(
     name: "CyberdyneKit",
+    platforms: [
+        .macOS(.v14),
+    ],
     products: [
         .library(name: "CyberdyneKit", targets: ["CyberdyneKit"]),
     ],

@@ -291,8 +291,7 @@ bool Transition::complete(u64 tick) const noexcept {
     return true;
 }
 
-WeatherDirector::WeatherDirector(Allocator& allocator) noexcept
-    : allocator_(&allocator), schedule_(allocator) {}
+WeatherDirector::WeatherDirector(Allocator& allocator) noexcept : schedule_(allocator) {}
 
 void WeatherDirector::set_tick_rate(f64 ticks_per_second) noexcept {
     ticks_per_second_ = (ticks_per_second > 0.0) ? ticks_per_second : 60.0;

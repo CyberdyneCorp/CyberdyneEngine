@@ -244,7 +244,6 @@ public:
 private:
     [[nodiscard]] PromotedInstance* find_mutable(InstanceId identity) noexcept;
 
-    Allocator* allocator_;
     const SpeciesLibrary* library_;
     u64 seed_ = 0;
     PromotionBudget budget_;

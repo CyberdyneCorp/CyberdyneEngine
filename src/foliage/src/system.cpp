@@ -143,8 +143,8 @@ RegionalStateSample regional_state_at(const environment::FieldStore& fields,
 // --- FoliageSystem
 // -------------------------------------------------------------------------------
 
-FoliageSystem::FoliageSystem(Allocator& allocator, const SpeciesLibrary& library) noexcept
-    : allocator_(&allocator), library_(&library) {}
+FoliageSystem::FoliageSystem(Allocator& allocator, const SpeciesLibrary&) noexcept
+    : allocator_(&allocator) {}
 
 Status FoliageSystem::register_producer(environment::FieldRegistry& registry,
                                         const char* producer_name, f32 macro_cell_metres,

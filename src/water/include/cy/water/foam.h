@@ -102,7 +102,6 @@ private:
     /// caller checks; returning a flag here would put the bound in two places.
     void grid_of(const world::WorldVec3d& at, f32& x, f32& z) const noexcept;
 
-    Allocator* allocator_;
     FoamParams params_;
     Array<f32> coverage_;
     Array<f32> scratch_;

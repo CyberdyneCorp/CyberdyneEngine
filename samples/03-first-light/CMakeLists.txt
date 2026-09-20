@@ -43,12 +43,12 @@ cy_add_module(
 # and `golden_legs.py` runs two of them; `samples/00-empty/CMakeLists.txt` says the same thing about
 # the same four. The native backend is a conditional dependency and a compile definition rather than
 # an unconditional link, because it is built only where it can be.
-set(cy_sample_first_light_definitions "")
+set(cy_sample_first_light_definitions CY_SAMPLE_LINUX_NATIVE=0)
 set(cy_sample_first_light_platforms
     cy::platform-headless cy::platform-desktop-sdl3 cy::platform-stub)
 if(TARGET cy_platform_linux_native)
     list(APPEND cy_sample_first_light_platforms cy::platform-linux-native)
-    list(APPEND cy_sample_first_light_definitions CY_SAMPLE_LINUX_NATIVE=1)
+    set(cy_sample_first_light_definitions CY_SAMPLE_LINUX_NATIVE=1)
 endif()
 
 cy_add_module(
@@ -66,6 +66,9 @@ cy_add_module(
 
 if(CY_RENDERER_VULKAN)
     target_link_libraries(cy_sample_first-light PRIVATE cy::rhi-vulkan)
+endif()
+if(CY_RENDERER_METAL)
+    target_link_libraries(cy_sample_first-light PRIVATE cy::rhi-metal)
 endif()
 
 if(NOT CY_BUILD_TESTS)

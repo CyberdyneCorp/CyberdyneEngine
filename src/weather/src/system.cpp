@@ -92,8 +92,7 @@ void write_state(Array<u8>& out, const WeatherState& state, bool& ok_flag) noexc
 }  // namespace
 
 WeatherSystem::WeatherSystem(Allocator& allocator) noexcept
-    : allocator_(&allocator),
-      cells_(allocator),
+    : cells_(allocator),
       wind_(allocator),
       storms_(allocator),
       director_(allocator),

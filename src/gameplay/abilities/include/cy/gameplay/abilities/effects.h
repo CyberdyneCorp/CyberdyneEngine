@@ -239,7 +239,6 @@ private:
     void unbind_modifiers(u32 instance, ecs::Entity target) noexcept;
     void apply_period(const EffectDefinition& definition, ecs::Entity target, u16 stacks) noexcept;
 
-    Allocator* allocator_;
     AttributeStore* attributes_;
     const TagRegistry* tags_;
     Array<EffectDefinition> definitions_;

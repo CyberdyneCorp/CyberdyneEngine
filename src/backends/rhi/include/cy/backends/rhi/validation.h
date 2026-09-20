@@ -20,6 +20,7 @@
 #include <cy/backends/rhi/pipeline.h>
 #include <cy/backends/rhi/resources.h>
 #include <cy/backends/rhi/types.h>
+#include <cy/core/base/diagnostic_sink.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
 
@@ -33,7 +34,7 @@ struct ValidationMessage {
     /// `printf`-shaped. Returns `text`, so a caller writes
     /// `return fail(ErrorCode::InvalidArgument, message.format("..."));`
     // NOLINTNEXTLINE(cert-dcl50-cpp) — a diagnostic sink is variadic by nature; see .clang-tidy.
-    const char* format(const char* pattern, ...) noexcept;
+    const char* format(const char* pattern, ...) noexcept CY_PRINTF_FORMAT(2, 3);
 };
 
 /// Every limit check a backend must make before creating the thing. Each is independent so that a

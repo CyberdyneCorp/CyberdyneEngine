@@ -69,6 +69,9 @@
 #if defined(CY_RENDERER_VULKAN)
 #    include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #endif
+#if defined(CY_RENDERER_METAL)
+#    include <cy/backends/rhi-metal/backend.h>
+#endif
 
 #include "renderer.h"
 #include "scene.h"
@@ -393,6 +396,9 @@ int main(int argument_count, char** arguments) {
     (void)cy::rhi::null::register_null_backend();
 #if defined(CY_RENDERER_VULKAN)
     (void)cy::rhi::vulkan::register_vulkan_backend();
+#endif
+#if defined(CY_RENDERER_METAL)
+    (void)cy::rhi::metal::register_metal_backend();
 #endif
 
     cy::rhi::DeviceDescription description;
