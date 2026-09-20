@@ -26,6 +26,30 @@ constexpr u64 kTier1Buffers = 1ULL << 0U;
 constexpr u64 kTier1Textures = 1ULL << 1U;
 constexpr u64 kTier1RenderTargets = 1ULL << 2U;
 
+[[nodiscard]] D3D12_RENDER_TARGET_BLEND_DESC default_blend_attachment() noexcept {
+    D3D12_RENDER_TARGET_BLEND_DESC state{};
+    state.BlendEnable = FALSE;
+    state.LogicOpEnable = FALSE;
+    state.SrcBlend = D3D12_BLEND_ONE;
+    state.DestBlend = D3D12_BLEND_ZERO;
+    state.BlendOp = D3D12_BLEND_OP_ADD;
+    state.SrcBlendAlpha = D3D12_BLEND_ONE;
+    state.DestBlendAlpha = D3D12_BLEND_ZERO;
+    state.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    state.LogicOp = D3D12_LOGIC_OP_NOOP;
+    state.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    return state;
+}
+
+[[nodiscard]] D3D12_DEPTH_STENCILOP_DESC default_stencil_face() noexcept {
+    D3D12_DEPTH_STENCILOP_DESC state{};
+    state.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    state.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    state.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    state.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    return state;
+}
+
 [[nodiscard]] u64 align_to(u64 value, u64 alignment) noexcept {
     return (value + alignment - 1U) / alignment * alignment;
 }
@@ -1215,8 +1239,7 @@ void D3D12Device::release_transient_resources() noexcept {
 Expected<ShaderModuleHandle, Error> D3D12Device::create_shader_module(
     const ShaderModuleDescription& desc) {
     ValidationMessage validation;
-    if (Status valid = validate_shader_module(desc, capabilities_, validation);
-        !valid) {
+    if (Status valid = validate_shader_module(desc, capabilities_, validation); !valid) {
         return make_unexpected(valid.error());
     }
     D3D12ShaderModule module(*allocator_);
@@ -1674,6 +1697,9 @@ Expected<GraphicsPipelineHandle, Error> D3D12Device::create_graphics_pipeline(
     native.RasterizerState.SlopeScaledDepthBias = desc.rasterisation.depth_bias_slope;
     native.BlendState.AlphaToCoverageEnable = FALSE;
     native.BlendState.IndependentBlendEnable = TRUE;
+    for (D3D12_RENDER_TARGET_BLEND_DESC& blend : native.BlendState.RenderTarget) {
+        blend = default_blend_attachment();
+    }
     for (u32 index = 0; index < desc.color_attachments.size(); ++index) {
         const ColorAttachmentState& source = desc.color_attachments[index];
         D3D12_RENDER_TARGET_BLEND_DESC& blend = native.BlendState.RenderTarget[index];
@@ -1696,6 +1722,10 @@ Expected<GraphicsPipelineHandle, Error> D3D12Device::create_graphics_pipeline(
                                                   : D3D12_DEPTH_WRITE_MASK_ZERO;
     native.DepthStencilState.DepthFunc = compare_op(desc.depth_stencil.depth_compare);
     native.DepthStencilState.StencilEnable = desc.depth_stencil.stencil_test_enable;
+    native.DepthStencilState.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+    native.DepthStencilState.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
+    native.DepthStencilState.FrontFace = default_stencil_face();
+    native.DepthStencilState.BackFace = default_stencil_face();
     native.DSVFormat = dxgi_format(desc.depth_stencil.format);
 
     D3D12GraphicsPipeline pipeline;

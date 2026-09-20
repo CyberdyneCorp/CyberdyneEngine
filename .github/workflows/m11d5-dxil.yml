@@ -92,6 +92,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "$env:CY_GOLDEN_CAPTURE_DIR" | Out-Null
           ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|integration.rhi_d3d12|render.golden_backends)$" --output-on-failure
+          $matched = Select-String -Path "$env:CY_GOLDEN_LEDGER" -Pattern 'row backend=d3d12 .* outcome=matched ' -Quiet
+          if (-not $matched) {
+            Get-Content "$env:CY_GOLDEN_LEDGER"
+            throw "D3D12 produced no matched golden image"
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
