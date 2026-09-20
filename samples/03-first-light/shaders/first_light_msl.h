@@ -9,13 +9,13 @@
 
 namespace cy::sample::first_light {
 
-/// samples.03-first-light.shaders.first_light.shadowVertex.metal, 2861 bytes.
+/// shadow.metal, 2801 bytes.
 inline constexpr char kFirstLightShadowVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 60 "samples.03-first-light.shaders.first_light"
+#line 70 "samples/03-first-light/shaders/first_light.slang"
 struct FrameConstants_0
 {
     float4 viewProjectionRow0_0;
@@ -32,7 +32,7 @@ struct FrameConstants_0
 };
 
 
-#line 87
+#line 97
 struct FirstLightGlobals_default_0
 {
     FrameConstants_0 constant* frame_0;
@@ -43,7 +43,7 @@ struct FirstLightGlobals_default_0
 };
 
 
-#line 100
+#line 110
 struct ObjectPush_0
 {
     float4 modelRow0_0;
@@ -61,7 +61,7 @@ struct KernelContext_0
 };
 
 
-#line 134 "samples.03-first-light.shaders.first_light"
+#line 152 "samples/03-first-light/shaders/first_light.slang"
 float3 toCameraRelative_0(float3 objectPosition_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(objectPosition_0, 1.0);
@@ -69,7 +69,7 @@ float3 toCameraRelative_0(float3 objectPosition_0, KernelContext_0 thread* kerne
 }
 
 
-#line 152
+#line 170
 float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, float3 relative_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -77,56 +77,54 @@ float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, f
 }
 
 
-#line 155
+#line 173
 struct shadowVertex_Result_0
 {
     float4 clip_0 [[position]];
 };
 
 
-#line 113
+#line 173
 struct vertexInput_0
 {
     float3 position_0 [[attribute(0)]];
-    float3 normal_0 [[attribute(1)]];
-    float2 uv_0 [[attribute(2)]];
 };
 
 
-#line 128
+#line 146
 struct DepthOnlyOutput_0
 {
     float4 clip_1;
 };
 
 
-#line 128
+#line 146
 [[vertex]] shadowVertex_Result_0 shadowVertex(vertexInput_0 _S3 [[stage_in]], FirstLightGlobals_default_0 constant* globals_1 [[buffer(0)]], ObjectPush_0 constant* object_1 [[buffer(1)]])
 {
 
-#line 128
+#line 146
     thread KernelContext_0 kernelContext_1;
 
-#line 128
+#line 146
     (&kernelContext_1)->globals_0 = globals_1;
 
-#line 128
+#line 146
     (&kernelContext_1)->object_0 = object_1;
 
-#line 161
+#line 179
     thread DepthOnlyOutput_0 output_0;
 
-#line 161
+#line 179
     float3 _S4 = toCameraRelative_0(_S3.position_0, &kernelContext_1);
     (&output_0)->clip_1 = transform_0(globals_1->frame_0->lightViewProjectionRow0_0, globals_1->frame_0->lightViewProjectionRow1_0, globals_1->frame_0->lightViewProjectionRow2_0, globals_1->frame_0->lightViewProjectionRow3_0, _S4);
 
-#line 162
+#line 180
     thread shadowVertex_Result_0 _S5;
 
-#line 162
+#line 180
     (&_S5)->clip_0 = output_0.clip_1;
 
-#line 162
+#line 180
     return _S5;
 }
 
