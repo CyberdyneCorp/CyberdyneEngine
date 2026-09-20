@@ -171,7 +171,7 @@ CY_TEST_CASE("D3D12 descriptor writes stay clean under the debug layer") {
     writes[2].binding = 2;
     writes[2].kind = cy::rhi::DescriptorKind::Sampler;
     writes[2].sampler = *sampler;
-    CY_REQUIRE(fixture.device().update_descriptor_set(set, {writes, 3}));
+    CY_REQUIRE(fixture.device().update_descriptor_set(*set, {writes, 3}));
 
     // Submission drains the debug queue. The regression is specifically that descriptor creation
     // succeeds in the API yet the validation layer reports an invalid CBV or copy source later.
