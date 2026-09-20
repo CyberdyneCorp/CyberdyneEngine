@@ -1,0 +1,23 @@
+#pragma once
+// RHI adapter for the deterministic GPU PCG conformance workload. Kept out of cy::pcg so cooks
+// and dedicated servers retain the core module's no-device link graph.
+
+#include <cy/backends/rhi/device.h>
+#include <cy/pcg/gpu_conformance.h>
+
+namespace cy::pcg::gpu {
+
+struct AgreementReport {
+    GpuCandidateSummary cpu;
+    GpuCandidateSummary device;
+    u32 first_mismatch = ~0U;
+    bool all_records_equal = false;
+};
+
+/// Execute the canonical candidate workload and compare the readback with an independently
+/// evaluated CPU reference. `output` receives the device records for diagnostics and publication.
+[[nodiscard]] Expected<AgreementReport, Error> run_candidate_agreement(
+    rhi::Device& device, const GpuCandidateParameters& parameters,
+    Span<GpuCandidate> output) noexcept;
+
+}  // namespace cy::pcg::gpu

@@ -2,7 +2,7 @@
 # `procedural-content-generation` reaching Working.
 #
 # ================================================================================================
-# TWO TARGETS, AND THE SPLIT IS THE SPECIFICATION'S OWN DIRECTION OF DEPENDENCY
+# THREE TARGETS, AND THE SPLIT IS THE SPECIFICATION'S OWN DIRECTION OF DEPENDENCY
 # ================================================================================================
 #
 # `cy::pcg` is the generator: typed datasets, the graph compiler, the evaluator, regions and their
@@ -33,10 +33,14 @@
 # `cy::terrain`. src/terrain/CMakeLists.txt splits `cy::terrain-cook` off for the same reason and
 # src/foliage/CMakeLists.txt splits `cy::foliage-render`.
 #
-# LAYER. `scene` (4): the rung src/world/, src/environment/, src/terrain/, src/foliage/,
+# `cy::pcg-gpu` is the device adapter. It depends on the RHI and the canonical CPU workload in
+# `cy::pcg`; no dependency points back from the generator into the device path.
+#
+# LAYER. The first two targets use `scene` (4): the rung src/world/, src/environment/, src/terrain/, src/foliage/,
 # src/weather/, src/gameplay/, src/navigation/ and src/camera/ all chose, and for the same reason
 # each of them gives — there is no `pcg` rung in `engine-architecture`'s table and inventing one
 # would be a change to cmake/module.cmake that src/gameplay/CMakeLists.txt already declined to make.
+# The GPU adapter is `rendering` (also layer 4), matching every other RHI consumer at that layer.
 #
 # NO OPTION. `procedural-content-generation` gives no removal switch, and there is nothing coherent
 # to remove: M10's own artefact is a procedurally populated world. cmake/features.cmake is therefore
@@ -56,6 +60,7 @@ cy_add_module(
         src/diagnostics.cpp
         src/execute.cpp
         src/graph.cpp
+        src/gpu_conformance.cpp
         src/identity.cpp
         src/invalidation.cpp
         src/ops.cpp
@@ -75,6 +80,17 @@ cy_add_module(
     SOURCES src/foliage_adapter.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::foliage cy::pcg cy::terrain)
+
+# The execution adapter. Separate from cy::pcg because the canonical generator is used by cooks and
+# dedicated servers that must not acquire an RHI dependency merely to evaluate CPU stages.
+cy_add_module(
+    NAME cy_pcg_gpu
+    LAYER rendering
+    ALIAS cy::pcg-gpu
+    TYPE STATIC
+    SOURCES src/gpu_executor.cpp
+    PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::pcg cy::rhi)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

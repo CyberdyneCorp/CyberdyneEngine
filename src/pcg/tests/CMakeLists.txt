@@ -55,6 +55,7 @@ function(cy_pcg_declare_tests)
             "${cy_pcg_tests_dir}/test_cache.cpp"
             "${cy_pcg_tests_dir}/test_compile.cpp"
             "${cy_pcg_tests_dir}/test_dataset.cpp"
+            "${cy_pcg_tests_dir}/test_gpu_conformance.cpp"
             "${cy_pcg_tests_dir}/test_overrides.cpp"
             "${cy_pcg_tests_dir}/test_provenance.cpp"
         DEPENDENCIES cy::pcg)
@@ -84,6 +85,23 @@ function(cy_pcg_declare_tests)
         KIND integration
         SOURCES "${cy_pcg_tests_dir}/test_adapters.cpp"
         DEPENDENCIES cy::pcg cy::pcg-adapters)
+
+    if(APPLE AND CY_RENDERER_METAL)
+        cy_add_test(
+            NAME pcg_gpu_metal
+            KIND integration
+            SOURCES "${cy_pcg_tests_dir}/test_gpu_device.cpp"
+            DEPENDENCIES cy::pcg-gpu cy::rhi-metal
+            DEFINITIONS CY_PCG_TEST_METAL=1)
+    endif()
+
+    if(CY_RENDERER_VULKAN)
+        cy_add_test(
+            NAME pcg_gpu_vulkan
+            KIND integration
+            SOURCES "${cy_pcg_tests_dir}/test_gpu_device.cpp"
+            DEPENDENCIES cy::pcg-gpu cy::rhi-vulkan)
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_pcg_declare_tests)

@@ -19,6 +19,7 @@ it has, and each of them is a test in `tests/` before it is a sentence here.
 | `include/cy/pcg/identity.h` | `GeneratedId` and `derive_identity()` — seed, node, region, slot, through `substream` then `draw` |
 | `include/cy/pcg/ops.h` | The vocabulary a graph and a program share: the operator set, `NeighbourAccess`, `IterationPolicy`, `ExecutionDomain`, `GenerationBudget`, `DeterminismLevel` |
 | `include/cy/pcg/graph.h` | The authoring layer: `GraphNode`, `Graph`, subgraph instantiation with typed exposed parameters |
+| `include/cy/pcg/gpu_conformance.h` | The canonical integer-only candidate workload and digest shared with the GPU adapter |
 | `include/cy/pcg/program.h` | The typed IR, `compile()`, the four refusals, the optimisation passes and `CompileReport` |
 | `include/cy/pcg/execute.h` | `RegionState`, `GenerationWorld`, `SpatialQuery`, and `Generator` — the stage pipeline, the fixed point and the budgeted step |
 | `include/cy/pcg/invalidation.h` | `RegionSet`, `dilate()`, `InvalidationLedger` (why is this dirty) and `ReadLedger` (what did this region actually read) |
@@ -27,6 +28,7 @@ it has, and each of them is a test in `tests/` before it is a sentence here.
 | `include/cy/pcg/diagnostics.h` | `RegionProvenance` (why is this here / why is nothing here) and `GenerationProfile` |
 | `include/cy/pcg/adapters.h` | `OutputAdapter`, `OutputRegistry`, `FieldOutputAdapter`, `RecordingAdapter` |
 | `include/cy/pcg/foliage_adapter.h` | **The second target.** `FoliageOutputAdapter`, `TerrainStampAdapter`, `TerrainSpatialQuery` |
+| `include/cy/pcg/gpu_executor.h` | **The third target.** RHI dispatch for the portable candidate conformance workload; it links the device while `cy::pcg` does not |
 
 ## The four conditions, and where each one lives
 
@@ -104,13 +106,14 @@ materialised from the override record now, which is why `anchor_*` is recorded f
 
 These are gaps, not omissions by oversight. Each names the row that should close it.
 
-- **GPU EXECUTION IS CLASSIFIED AND NOT DISPATCHED.** `classify_gpu()` decides which nodes are
-  eligible and refuses them to a gameplay-deterministic generator, and `StageProfile::gpu_micros` is
-  always zero and says so in its own comment. There is no compute path, no buffer and no shader. The
-  criterion that would change this is `pcg-gpu-domain-agreement`, declared `where = "ci"` and
-  reported **NOT EVALUATED** — because this host has one GPU vendor and "the GPU domain reproduces
-  the CPU domain" measured against one driver is not that claim. **Owed by** whichever milestone
-  brings a second vendor into continuous integration.
+- **GPU EXECUTION HAS A CONFORMANCE SLICE, NOT YET A PROGRAM SCHEDULER.** `classify_gpu()` decides
+  which nodes are eligible and still refuses them to a gameplay-deterministic generator.
+  `cy::pcg-gpu` now dispatches an integer-only candidate-generation and density-filter workload,
+  reads every record back, and compares it with `cy::pcg`'s CPU reference and canonical digest. It
+  proves the RHI and shader path can reproduce one meaningful PCG operation; arbitrary compiled
+  stages are not scheduled yet, and `StageProfile::gpu_micros` therefore remains zero.
+  `pcg-gpu-domain-agreement` also remains **NOT EVALUATED** until the same executable agrees on two
+  GPU vendors. Apple evidence and the command for the NVIDIA leg are below.
 - **THE DERIVED DATA CACHE IS AN IN-PROCESS ONE.** `DerivationKey` is the complete key the
   specification asks for, and `RegionCache` honours it, but nothing binds it to
   `build-and-packaging`'s artefact store — so "continuous integration has generated a region, a
@@ -135,6 +138,32 @@ These are gaps, not omissions by oversight. Each names the row that should close
   measure the *properties* at the scale a test budget allows — a million points through one reserve,
   64 regions regenerated bit-exactly — and `benchmarks/` has no PCG entry. **Owed by** M10's own
   section 7 artefact or by the next milestone's performance work.
+
+## GPU agreement evidence
+
+The Apple leg was measured on an 18-core Apple M3 Pro, arm64, macOS 27.0 (26A428), through native
+Metal 4. For seed `0xc7b1d53a`, 4,096 candidates and threshold 24,576, the CPU and GPU matched all
+records: 1,518 accepted, 2,578 rejected, digest `0x9cd2af3b172f8888`. Seed `+1` also matched and
+changed the digest to `0xd89af118b7b412dc`.
+
+Run the Apple leg with:
+
+```bash
+cmake --build build/macos-metal --target cy_test_integration_pcg_gpu_metal -j
+build/macos-metal/cy_test_integration_pcg_gpu_metal -s \
+  -tc='GPU PCG candidates*'
+```
+
+The later NVIDIA leg runs the same C++ case and the same Slang source through Vulkan:
+
+```bash
+cmake --build build/dev --target cy_test_integration_pcg_gpu_vulkan -j
+build/dev/cy_test_integration_pcg_gpu_vulkan -s \
+  -tc='GPU PCG candidates*'
+```
+
+Agreement is closed only after that run reports `0x9cd2af3b172f8888` and its evidence is compared
+with this leg. A missing device fails the test; it never becomes an agreement by skipping.
 
 ## Reading order
 
