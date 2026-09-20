@@ -399,6 +399,12 @@ public:
     [[nodiscard]] ID3D12Device* raw_device() noexcept { return device_.Get(); }
     [[nodiscard]] ID3D12DescriptorHeap* resource_heap() noexcept { return resource_heap_.Get(); }
     [[nodiscard]] ID3D12DescriptorHeap* sampler_heap() noexcept { return sampler_heap_.Get(); }
+    [[nodiscard]] ID3D12CommandSignature* draw_indexed_signature() noexcept {
+        return draw_indexed_signature_.Get();
+    }
+    [[nodiscard]] ID3D12CommandSignature* dispatch_signature() noexcept {
+        return dispatch_signature_.Get();
+    }
     [[nodiscard]] D3D12_GPU_DESCRIPTOR_HANDLE resource_gpu(u32 index) const noexcept;
     [[nodiscard]] D3D12_GPU_DESCRIPTOR_HANDLE sampler_gpu(u32 index) const noexcept;
     void add_draw() noexcept { ++stats_.draws; }
@@ -409,12 +415,14 @@ private:
     void configure_capabilities(const AdapterIdentity& identity) noexcept;
     void probe_format_features() noexcept;
     [[nodiscard]] Status create_descriptor_heaps() noexcept;
+    [[nodiscard]] Status create_command_signatures() noexcept;
     [[nodiscard]] Status create_queues() noexcept;
     [[nodiscard]] Status create_bindless_table() noexcept;
     [[nodiscard]] u32 allocate_resource_descriptors(u32 count) noexcept;
     [[nodiscard]] u32 allocate_sampler_descriptors(u32 count) noexcept;
     void charge(GpuMemoryCategory category, u64 bytes) noexcept;
     void discharge(GpuMemoryCategory category, u64 bytes) noexcept;
+    [[nodiscard]] bool drain_validation_messages() noexcept;
 
     Allocator* allocator_ = nullptr;
     DeviceDescription description_{};
@@ -426,6 +434,7 @@ private:
     ComPtr<IDXGIFactory6> factory_;
     ComPtr<IDXGIAdapter1> adapter_;
     ComPtr<ID3D12Device> device_;
+    ComPtr<ID3D12InfoQueue> info_queue_;
     ComPtr<ID3D12CommandQueue> queues_[kQueueKindCount];
     ComPtr<ID3D12Fence> timelines_[kQueueKindCount];
     HANDLE timeline_events_[kQueueKindCount]{};
@@ -440,6 +449,8 @@ private:
     ComPtr<ID3D12DescriptorHeap> sampler_heap_;
     ComPtr<ID3D12DescriptorHeap> rtv_heap_;
     ComPtr<ID3D12DescriptorHeap> dsv_heap_;
+    ComPtr<ID3D12CommandSignature> draw_indexed_signature_;
+    ComPtr<ID3D12CommandSignature> dispatch_signature_;
     u32 resource_stride_ = 0;
     u32 sampler_stride_ = 0;
     u32 rtv_stride_ = 0;

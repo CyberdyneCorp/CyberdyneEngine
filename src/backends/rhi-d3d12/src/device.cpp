@@ -564,9 +564,15 @@ Status D3D12Device::initialize() noexcept {
     if (FAILED(D3D12CreateDevice(adapter_.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device_)))) {
         return fail(ErrorCode::Unavailable, "D3D12CreateDevice failed at feature level 12_0");
     }
+    if (description_.enable_validation && SUCCEEDED(device_.As(&info_queue_))) {
+        info_queue_->ClearStoredMessages();
+    }
 
     configure_capabilities(identity);
     probe_format_features();
+    if (Status status = create_command_signatures(); !status) {
+        return status;
+    }
     if (Status status = create_queues(); !status) {
         return status;
     }
@@ -574,6 +580,28 @@ Status D3D12Device::initialize() noexcept {
         return status;
     }
     return create_bindless_table();
+}
+
+Status D3D12Device::create_command_signatures() noexcept {
+    D3D12_INDIRECT_ARGUMENT_DESC argument{};
+    D3D12_COMMAND_SIGNATURE_DESC signature{};
+    signature.NumArgumentDescs = 1;
+    signature.pArgumentDescs = &argument;
+
+    argument.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
+    signature.ByteStride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+    if (FAILED(device_->CreateCommandSignature(&signature, nullptr,
+                                               IID_PPV_ARGS(&draw_indexed_signature_)))) {
+        return fail(ErrorCode::Unavailable, "D3D12 could not create the indexed-draw signature");
+    }
+
+    argument.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
+    signature.ByteStride = sizeof(D3D12_DISPATCH_ARGUMENTS);
+    if (FAILED(device_->CreateCommandSignature(&signature, nullptr,
+                                               IID_PPV_ARGS(&dispatch_signature_)))) {
+        return fail(ErrorCode::Unavailable, "D3D12 could not create the dispatch signature");
+    }
+    return ok();
 }
 
 void D3D12Device::configure_capabilities(const AdapterIdentity& identity) noexcept {
@@ -746,6 +774,42 @@ void D3D12Device::report_validation(ValidationSeverity severity, const char* mes
     if (validation_callback_ != nullptr) {
         validation_callback_(severity, message, validation_user_);
     }
+}
+
+bool D3D12Device::drain_validation_messages() noexcept {
+    if (!info_queue_) {
+        return false;
+    }
+    bool found_error = false;
+    const u64 count = info_queue_->GetNumStoredMessagesAllowedByRetrievalFilter();
+    for (u64 index = 0; index < count; ++index) {
+        SIZE_T bytes = 0;
+        if (FAILED(info_queue_->GetMessage(index, nullptr, &bytes)) || bytes == 0) {
+            continue;
+        }
+        Array<u8> storage(*allocator_);
+        if (Status sized = storage.resize(bytes); !sized) {
+            report_validation(ValidationSeverity::Error,
+                              "D3D12 could not allocate storage for a debug-layer message");
+            found_error = true;
+            continue;
+        }
+        auto* message = reinterpret_cast<D3D12_MESSAGE*>(storage.data());
+        if (FAILED(info_queue_->GetMessage(index, message, &bytes))) {
+            continue;
+        }
+        ValidationSeverity severity = ValidationSeverity::Info;
+        if (message->Severity == D3D12_MESSAGE_SEVERITY_WARNING) {
+            severity = ValidationSeverity::Warning;
+        } else if (message->Severity == D3D12_MESSAGE_SEVERITY_ERROR ||
+                   message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION) {
+            severity = ValidationSeverity::Error;
+            found_error = true;
+        }
+        report_validation(severity, message->pDescription);
+    }
+    info_queue_->ClearStoredMessages();
+    return found_error;
 }
 
 void D3D12Device::charge(GpuMemoryCategory category, u64 bytes) noexcept {
@@ -1151,8 +1215,7 @@ void D3D12Device::release_transient_resources() noexcept {
 Expected<ShaderModuleHandle, Error> D3D12Device::create_shader_module(
     const ShaderModuleDescription& desc) {
     ValidationMessage validation;
-    if (Status valid =
-            validate_shader_module(desc, capabilities_.native_shader_format(), validation);
+    if (Status valid = validate_shader_module(desc, capabilities_, validation);
         !valid) {
         return make_unexpected(valid.error());
     }
@@ -1959,6 +2022,9 @@ Status D3D12Device::wait_idle() {
         if (Status waited = wait_timeline(static_cast<QueueKind>(index), value, ~0ULL); !waited) {
             return waited;
         }
+    }
+    if (drain_validation_messages()) {
+        return fail(ErrorCode::Internal, "the D3D12 debug layer reported an error");
     }
     return ok();
 }

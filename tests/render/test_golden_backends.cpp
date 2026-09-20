@@ -200,9 +200,13 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
 
     cy::render_test::Image rendered(allocator);
     const cy::Status drawn = render_once(allocator, *device.value(), rendered);
+    const cy::Status idle = drawn ? device.value()->wait_idle() : cy::ok();
     if (!drawn) {
         row.outcome = Outcome::NoDevice;
         cy::render_test::set_field(row.reason, sizeof(row.reason), drawn.error().message);
+    } else if (!idle) {
+        row.outcome = Outcome::Differed;
+        cy::render_test::set_field(row.reason, sizeof(row.reason), idle.error().message);
     } else {
         if (const char* directory = std::getenv("CY_GOLDEN_CAPTURE_DIR");
             directory != nullptr && directory[0] != '\0') {

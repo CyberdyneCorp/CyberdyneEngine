@@ -99,7 +99,9 @@ void D3D12CommandBuffer::begin_rendering(const RenderingInfo& info) noexcept {
             if (info.depth_attachment.load == LoadOp::Clear) {
                 list->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
                                             info.depth_attachment.clear.depth_stencil.depth,
-                                            info.depth_attachment.clear.depth_stencil.stencil, 0,
+                                            static_cast<UINT8>(
+                                                info.depth_attachment.clear.depth_stencil.stencil),
+                                            0,
                                             nullptr);
             }
         }
@@ -246,9 +248,17 @@ void D3D12CommandBuffer::draw_indexed(u32 index_count, u32 instance_count, u32 f
     device_->add_draw();
 }
 
-void D3D12CommandBuffer::draw_indexed_indirect(BufferHandle, u64, u32, u32) noexcept {
-    device_->report_validation(ValidationSeverity::Error,
-                               "D3D12 indirect draw signature has not been created");
+void D3D12CommandBuffer::draw_indexed_indirect(BufferHandle handle, u64 offset_bytes,
+                                                u32 draw_count, u32 stride) noexcept {
+    D3D12Buffer* buffer = device_->buffer(handle);
+    if (buffer == nullptr || !buffer->resource || stride != sizeof(D3D12_DRAW_INDEXED_ARGUMENTS)) {
+        device_->report_validation(ValidationSeverity::Error,
+                                   "D3D12 indexed indirect arguments are invalid");
+        return;
+    }
+    list->ExecuteIndirect(device_->draw_indexed_signature(), draw_count, buffer->resource.Get(),
+                          offset_bytes, nullptr, 0);
+    device_->add_draw();
 }
 
 void D3D12CommandBuffer::dispatch(u32 x, u32 y, u32 z) noexcept {
@@ -256,9 +266,16 @@ void D3D12CommandBuffer::dispatch(u32 x, u32 y, u32 z) noexcept {
     device_->add_dispatch();
 }
 
-void D3D12CommandBuffer::dispatch_indirect(BufferHandle, u64) noexcept {
-    device_->report_validation(ValidationSeverity::Error,
-                               "D3D12 indirect dispatch signature has not been created");
+void D3D12CommandBuffer::dispatch_indirect(BufferHandle handle, u64 offset_bytes) noexcept {
+    D3D12Buffer* buffer = device_->buffer(handle);
+    if (buffer == nullptr || !buffer->resource) {
+        device_->report_validation(ValidationSeverity::Error,
+                                   "D3D12 dispatch indirect arguments are invalid");
+        return;
+    }
+    list->ExecuteIndirect(device_->dispatch_signature(), 1, buffer->resource.Get(), offset_bytes,
+                          nullptr, 0);
+    device_->add_dispatch();
 }
 
 void D3D12CommandBuffer::copy_buffer(BufferHandle source_handle, BufferHandle destination_handle,
