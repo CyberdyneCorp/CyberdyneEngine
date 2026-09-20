@@ -52,9 +52,12 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $slangc = "$env:RUNNER_TEMP\slang\bin\slangc.exe"
           $source = "samples/03-first-light/shaders/first_light.slang"
-          & $slangc $source -target dxil -profile sm_6_6 -entry shadowVertex -stage vertex -o "$env:RUNNER_TEMP\shadow.dxil"
-          & $slangc $source -target dxil -profile sm_6_6 -entry forwardVertex -stage vertex -o "$env:RUNNER_TEMP\forward.dxil"
-          & $slangc $source -target dxil -profile sm_6_6 -entry forwardFragment -stage fragment -o "$env:RUNNER_TEMP\fragment.dxil"
+          # The hosted Basic Render Driver tops out at Shader Model 6.2. This compatibility scene
+          # uses no 6.6 feature; the engine-wide 6.6 floor remains intact for virtual geometry.
+          $profile = "sm_6_2"
+          & $slangc $source -target dxil -profile $profile -entry shadowVertex -stage vertex -o "$env:RUNNER_TEMP\shadow.dxil"
+          & $slangc $source -target dxil -profile $profile -entry forwardVertex -stage vertex -o "$env:RUNNER_TEMP\forward.dxil"
+          & $slangc $source -target dxil -profile $profile -entry forwardFragment -stage fragment -o "$env:RUNNER_TEMP\fragment.dxil"
           python samples/03-first-light/shaders/embed_dxil.py "samples/03-first-light/shaders/first_light_dxil.h" `
             "kFirstLightShadowVertexDxil=$env:RUNNER_TEMP\shadow.dxil" `
             "kFirstLightForwardVertexDxil=$env:RUNNER_TEMP\forward.dxil" `

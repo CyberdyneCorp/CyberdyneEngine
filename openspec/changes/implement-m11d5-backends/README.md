@@ -27,11 +27,11 @@ The remaining Windows blocker is narrow and observable. The first-light golden t
 ID3D12Device::CreateVertexShader: Shader must be vs_6_2 ... Shader version provided: vs_6_6.
 ```
 
-The first-light workflow currently compiles its three shaders as `sm_6_6` in
-`.github/workflows/m11d5-dxil.yml`. Do not lower the engine-wide Shader Model 6.6 floor: virtual
-geometry needs it. Compile this compatibility scene at the highest shader model supported by the
-selected adapter, or provide a 6.2 first-light payload for the WARP evidence path. Keep the hardware
-path at 6.6 and record the actual adapter name, vendor, shader model and device class.
+The first-light workflow now compiles this compatibility scene as `sm_6_2` in
+`.github/workflows/m11d5-dxil.yml`, which is the highest model the hosted device accepts. This does
+not lower the engine-wide Shader Model 6.6 floor: virtual geometry needs it, and the checked-in
+physical-hardware payload remains 6.6. The physical Windows run must record the actual adapter name,
+vendor, shader model and device class.
 
 Use these checks on the Windows GPU machine:
 
