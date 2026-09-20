@@ -742,10 +742,10 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no gam
 [[proof]]
 ledger = "m11b"
 criterion = "view-modes"
-digest = "750daf17c31cf30d"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_editor_views — the suite unit.editor_views does not exist"
+digest = "02256b0721543421"
+verdict = "proven against a built tree"
+mutation = "rename-token 'every_view_is_reachable_by_a_unique_command_identifier' in editor/crates/cy-editor-viewport/src/viewmode.rs (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/dev (exit 1: the exact case viewmode::tests::every_view_is_reachable_by_a_unique_command_identifier did not run once), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
