@@ -51,6 +51,17 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Windows Python defaults stdout to cp1252, which cannot encode the arrow (→), em-dash and other
+# characters this project's artefact reports print freely. Reconfigure to UTF-8 with `replace` so a
+# stray glyph a font cannot show becomes `?` rather than a UnicodeEncodeError that fails the run.
+# `sys.stdout.reconfigure` is Python 3.7+ and a no-op on POSIX terminals that already emit UTF-8.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 __all__ = [
     "Absent",
     "Failed",

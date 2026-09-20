@@ -38,6 +38,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -131,9 +132,16 @@ def act_ship(tools: Tools, report: Report) -> None:
     # A COPY, and a cold cache. Act 4 edits a line of content, so a run that built out of the
     # committed project would edit the repository; and a first build that was served from a previous
     # run's cache would make "a cold build ran every node" a statement about nothing.
+    #
+    # Windows: rmtree fails with ERROR_ACCESS_DENIED on files with the read-only attribute set.
+    # Historical runs before the artefact store's Windows fix left such files behind, so clear the
+    # attribute on every entry we walk before deleting. `onexc` is Python 3.12+ (`onerror` in 3.11).
+    def _force_delete(func, path, _exc):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
     for directory in (tools.project, tools.cache, tools.artefacts, tools.install):
         if directory.exists():
-            shutil.rmtree(directory)
+            shutil.rmtree(directory, onexc=_force_delete)
     tools.work.mkdir(parents=True, exist_ok=True)
     shutil.copytree(SAMPLE / "project", tools.project)
 

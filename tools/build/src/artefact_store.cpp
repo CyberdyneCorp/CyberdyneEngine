@@ -74,14 +74,19 @@ Expected<assets::ContentHash, Error> ArtefactStore::put(const void* data, usize 
     // Read-only, so an accidental in-place write is refused by the operating system. A failure here
     // is not fatal — some filesystems refuse the mode change — and the digest check in `verify` is
     // the mechanism that does not depend on the filesystem cooperating.
-    // `std::filesystem::permissions` is the portable spelling and gracefully degrades on Windows to
-    // the read-only file attribute.
+    //
+    // Windows: the read-only file attribute is set by std::filesystem::permissions, but it also
+    // prevents ordinary delete — shutil.rmtree, `del` and `RemoveDirectory` all fail with
+    // ERROR_ACCESS_DENIED on a read-only file, and the store is meant to be swept between runs.
+    // The verify() digest check is the load-bearing defence anyway, so the lock is skipped here.
+#if !defined(_WIN32)
     std::error_code ignored;
     std::filesystem::permissions(path,
                                  std::filesystem::perms::owner_read |
                                      std::filesystem::perms::group_read |
                                      std::filesystem::perms::others_read,
                                  std::filesystem::perm_options::replace, ignored);
+#endif
 
     writes_.fetch_add(1, std::memory_order_relaxed);
     bytes_written_.fetch_add(size, std::memory_order_relaxed);

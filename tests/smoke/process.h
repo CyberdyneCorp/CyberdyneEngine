@@ -52,8 +52,19 @@ inline ProcessResult run(const std::string& command) {
     // The command is a build-generated path to the binary under test plus this test's own
     // arguments; running it is what a smoke test is. NOLINT because clang-tidy is right in general
     // and wrong here, and silencing it in the .clang-tidy would silence it for the whole engine.
+#if defined(_WIN32)
+    // Windows _popen hands the command to `cmd.exe /c <command>`. cmd.exe strips a matched pair of
+    // surrounding double quotes if the command both starts and ends with a `"`, which is exactly
+    // what `quoted(program) + " args ... " + quoted(path)` produces. The fix is a matching outer
+    // pair — cmd strips one, leaves the balanced quoting the child needs. Explicitly documented in
+    // the cmd.exe /c help text under the "1) 2) 3)" rule.
+    const std::string wrapped = "\"" + command + "\"";
+    // NOLINTNEXTLINE(bugprone-command-processor)
+    std::FILE* pipe = CY_SMOKE_POPEN(wrapped.c_str(), "r");
+#else
     // NOLINTNEXTLINE(bugprone-command-processor)
     std::FILE* pipe = CY_SMOKE_POPEN(command.c_str(), "r");
+#endif
     if (pipe == nullptr) {
         return result;
     }

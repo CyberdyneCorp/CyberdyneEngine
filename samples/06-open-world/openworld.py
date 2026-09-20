@@ -41,6 +41,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -166,9 +167,14 @@ def act_ship(tools: Tools, report: Report) -> dict[str, tuple[str, str]]:
     # RAN, or "a cold build and a cache-warm build produce byte-identical artefacts" is being checked
     # against two warm builds and says nothing. A previous run of this driver left both directories
     # full, and the first draft of this act duly reported four cache hits as a cold build.
+    # Windows: rmtree fails with ERROR_ACCESS_DENIED on read-only files. Clear the attribute on
+    # every entry it fails on. Same pattern as samples/11-ship/ship.py.
+    def _force_delete(func, path, _exc):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
     for directory in (tools.project, tools.cache, tools.artefacts, tools.install):
         if directory.exists():
-            shutil.rmtree(directory)
+            shutil.rmtree(directory, onexc=_force_delete)
     shutil.copytree(SAMPLE / "project", tools.project)
 
     built = tools.build(tools.work / "base.cypackage")
@@ -220,7 +226,10 @@ def act_ship(tools: Tools, report: Report) -> dict[str, tuple[str, str]]:
 def act_play(tools: Tools, report: Report, ticks: int) -> dict[str, float]:
     report.act("Act 2 — a world larger than memory, traversed continuously at speed")
     if tools.save.exists():
-        shutil.rmtree(tools.save)
+        def _force_delete(func, path, _exc):
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        shutil.rmtree(tools.save, onexc=_force_delete)
 
     started = time.monotonic()
     played = tools.play("traverse", ticks)

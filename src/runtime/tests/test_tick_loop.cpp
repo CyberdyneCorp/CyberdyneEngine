@@ -57,8 +57,17 @@ ProcessResult run(const std::string& command) {
     // The command is the build-generated path to the probe plus this test's own arguments. NOLINT
     // because clang-tidy is right in general and wrong here, and silencing it in the .clang-tidy
     // would silence it for the whole engine.
+#if defined(_WIN32)
+    // cmd.exe /c strips a matching pair of surrounding double quotes if the command both starts
+    // and ends with `"` — which is exactly what a quoted CY_TICK_LOOP_PROBE + quoted arguments
+    // produces. Wrap with an extra outer pair so the balance the child needs survives.
+    const std::string wrapped = "\"" + command + "\"";
+    // NOLINTNEXTLINE(bugprone-command-processor)
+    std::FILE* pipe = CY_TICK_LOOP_POPEN(wrapped.c_str(), "r");
+#else
     // NOLINTNEXTLINE(bugprone-command-processor)
     std::FILE* pipe = CY_TICK_LOOP_POPEN(command.c_str(), "r");
+#endif
     if (pipe == nullptr) {
         return result;
     }
@@ -72,7 +81,12 @@ ProcessResult run(const std::string& command) {
 }
 
 std::string probe(const char* arguments) {
-    return std::string(CY_TICK_LOOP_PROBE) + " " + arguments + " 2>/dev/null";
+#if defined(_WIN32)
+    // NUL rather than /dev/null; the probe binary path may contain spaces, so it is quoted.
+    return "\"" + std::string(CY_TICK_LOOP_PROBE) + "\" " + arguments + " 2>NUL";
+#else
+    return "\"" + std::string(CY_TICK_LOOP_PROBE) + "\" " + arguments + " 2>/dev/null";
+#endif
 }
 
 }  // namespace
