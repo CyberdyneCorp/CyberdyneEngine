@@ -6,6 +6,13 @@
 
 namespace cy::rhi::d3d12 {
 
+namespace {
+constexpr u64 kTier2Pool = ~0ULL;
+constexpr u64 kTier1Buffers = 1ULL << 0U;
+constexpr u64 kTier1Textures = 1ULL << 1U;
+constexpr u64 kTier1RenderTargets = 1ULL << 2U;
+}  // namespace
+
 Expected<Device*, Error> create_d3d12_device(Allocator& allocator,
                                              const DeviceDescription& desc) noexcept;
 void destroy_d3d12_device(Allocator& allocator, Device* device) noexcept;
@@ -48,6 +55,21 @@ const char* adapter_class_name(AdapterClass classification) noexcept {
             return "unknown";
     }
     return "unknown";
+}
+
+MemoryPoolClass memory_pool_class(u32 resource_heap_tier, HeapResourceClass resource) noexcept {
+    if (resource_heap_tier >= 2) {
+        return MemoryPoolClass{kTier2Pool};
+    }
+    switch (resource) {
+        case HeapResourceClass::Buffer:
+            return MemoryPoolClass{kTier1Buffers};
+        case HeapResourceClass::Texture:
+            return MemoryPoolClass{kTier1Textures};
+        case HeapResourceClass::RenderTarget:
+            return MemoryPoolClass{kTier1RenderTargets};
+    }
+    return MemoryPoolClass{};
 }
 
 bool d3d12_backend_available() noexcept {

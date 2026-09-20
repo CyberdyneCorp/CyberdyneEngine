@@ -65,6 +65,7 @@ jobs:
         shell: pwsh
         run: ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|render.golden_backends)$" --output-on-failure
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: first-light-dxil
           path: samples/03-first-light/shaders/first_light_dxil.h

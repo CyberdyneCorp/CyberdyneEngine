@@ -1041,14 +1041,13 @@ Expected<MemoryRequirements, Error> D3D12Device::texture_memory_requirements(
     }
     const D3D12_RESOURCE_DESC native = native_texture_desc(texture->desc);
     const D3D12_RESOURCE_ALLOCATION_INFO info = device_->GetResourceAllocationInfo(0, 1, &native);
-    u64 token = kTier2Pool;
-    if (heap_tier_ == D3D12_RESOURCE_HEAP_TIER_1) {
-        token = has_usage(texture->desc.usage, TextureUsage::ColorAttachment) ||
-                        has_usage(texture->desc.usage, TextureUsage::DepthStencilAttachment)
-                    ? kTier1RenderTargets
-                    : kTier1Textures;
-    }
-    return MemoryRequirements{info.SizeInBytes, info.Alignment, MemoryPoolClass{token}};
+    const HeapResourceClass resource_class =
+        has_usage(texture->desc.usage, TextureUsage::ColorAttachment) ||
+                has_usage(texture->desc.usage, TextureUsage::DepthStencilAttachment)
+            ? HeapResourceClass::RenderTarget
+            : HeapResourceClass::Texture;
+    return MemoryRequirements{info.SizeInBytes, info.Alignment,
+                              memory_pool_class(static_cast<u32>(heap_tier_), resource_class)};
 }
 
 Expected<MemoryRequirements, Error> D3D12Device::buffer_memory_requirements(
@@ -1059,8 +1058,9 @@ Expected<MemoryRequirements, Error> D3D12Device::buffer_memory_requirements(
     }
     const D3D12_RESOURCE_DESC native = native_buffer_desc(buffer->desc.size);
     const D3D12_RESOURCE_ALLOCATION_INFO info = device_->GetResourceAllocationInfo(0, 1, &native);
-    const u64 token = heap_tier_ == D3D12_RESOURCE_HEAP_TIER_1 ? kTier1Buffers : kTier2Pool;
-    return MemoryRequirements{info.SizeInBytes, info.Alignment, MemoryPoolClass{token}};
+    return MemoryRequirements{
+        info.SizeInBytes, info.Alignment,
+        memory_pool_class(static_cast<u32>(heap_tier_), HeapResourceClass::Buffer)};
 }
 
 Status D3D12Device::reserve_transient_memory(u64 bytes, MemoryPoolClass pool_class) {

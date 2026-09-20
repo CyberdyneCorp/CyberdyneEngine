@@ -77,6 +77,20 @@ that brings it back.
 pixel back are all real on a hosted leg, and a backend that does those four correctly is a backend
 whose remaining risk is a device away rather than a rewrite away.
 
+### 2.1 D3D12 memory decision
+
+The backend uses an engine-owned placed-resource allocator over `ID3D12Heap`; it adopts no new
+dependency. Persistent resources begin as committed allocations, while the render graph's
+transients use the placed heap where aliasing changes peak memory. This keeps the implementation
+behind the existing RHI memory report and pressure path and avoids introducing a second allocator
+policy beside `MemoryPoolClass`.
+
+Resource Heap Tier 2 reports one pool class for buffers and textures. Tier 1 reports distinct
+classes for buffers, non-render-target textures and render/depth textures. The graph meets those
+classes: compatible resources can share a heap, and an empty meet rejects an illegal mixed heap
+before execution. The classification and refusal are device-free; executing placed resources on
+Tier 1 remains the hardware deferral above.
+
 ## 3. What counts as a delivered backend, and what is reported instead
 
 Carried across from M11.d's design §3, because the decisions did not change when the rung did.
