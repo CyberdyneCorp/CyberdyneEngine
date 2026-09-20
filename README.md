@@ -608,6 +608,27 @@ frames in flight replace a per-frame device drain.
 See the [Apple GPU compute evidence](openspec/changes/port-compute-workloads-to-metal/evidence/apple-gpu-compute.md)
 and [combined iPhone evidence](openspec/changes/integrate-ios-compute-scene/evidence/physical-device.md).
 
+An opt-in RTS capacity scene raises that load to 500 GPU-skinned models and 100 independently
+resident GPU emitters. It skins 18,000 vertices in one batch and submits 400 VFX simulation
+dispatches plus 51,200 fixed-capacity particle instances per frame. On the same iPhone 16 it
+measured a **35.13 FPS median**, with a 30.08–37.50 FPS range. That is a 41.5% reduction from the
+60.09 FPS combined-scene baseline and corresponds to a 28.47 ms median frame interval.
+
+![The 500-model, 100-emitter RTS load on an iPhone 16](docs/design/images/ios-rts-load-iphone.png)
+
+Run the exact stress workload separately from the normal 55 FPS presentation gate:
+
+```bash
+CY_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+CY_IOS_BUNDLE_IDENTIFIER=com.example.cyberdyne \
+  just run-ios-rts-device YOUR_DEVICE_UDID
+```
+
+The [RTS physical-device evidence](openspec/changes/benchmark-ios-rts-load/evidence/physical-device.md)
+records the exact counts and raw FPS samples. The models share one five-bone animation pose while
+every copied vertex is processed by the skinning kernel. Each emitter has independent simulation
+buffers; the 400-dispatch result identifies cross-emitter batching as the next mobile VFX target.
+
 ![The iOS open-world sample running through Metal in the simulator](docs/design/images/ios-open-world-simulator.png)
 
 *The simulator is a lifecycle and presentation check; its 60 FPS overlay is not physical-device

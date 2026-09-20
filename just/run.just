@@ -98,6 +98,32 @@ run-ios-device device:
         --screenshot docs/design/images/ios-compute-scene-iphone.png \
         --evidence openspec/changes/integrate-ios-compute-scene/evidence/physical-device.md
 
+# Build and measure the 500-skin, 100-emitter RTS stress scene on a physical iPhone.
+# Usage: CY_IOS_DEVELOPMENT_TEAM=... CY_IOS_BUNDLE_IDENTIFIER=... just run-ios-rts-device <UDID>
+run-ios-rts-device device:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    : "${CY_IOS_DEVELOPMENT_TEAM:?set CY_IOS_DEVELOPMENT_TEAM to the Apple development team ID}"
+    : "${CY_IOS_BUNDLE_IDENTIFIER:?set CY_IOS_BUNDLE_IDENTIFIER to the provisioned bundle ID}"
+    cmake --preset ios-device \
+        -D "CY_IOS_DEVELOPMENT_TEAM=${CY_IOS_DEVELOPMENT_TEAM}" \
+        -D "CY_IOS_BUNDLE_IDENTIFIER=${CY_IOS_BUNDLE_IDENTIFIER}" \
+        -D CY_IOS_RTS_STRESS=ON
+    cmake --build --preset ios-device --target cy_sample_ship_ios
+    python3 samples/11-ship/ios/run_device.py \
+        --device "{{device}}" \
+        --bundle-id "${CY_IOS_BUNDLE_IDENTIFIER}" \
+        --app build/ios-device/samples/11-ship/ios/Development-iphoneos/cy_sample_ship_ios.app \
+        --seconds 20 \
+        --minimum-samples 8 \
+        --minimum-median-fps 0 \
+        --expected-skin-models 500 \
+        --expected-vfx-emitters 100 \
+        --log build/ios-device/ios-rts-load.log \
+        --screenshot docs/design/images/ios-rts-load-iphone.png \
+        --evidence openspec/changes/benchmark-ios-rts-load/evidence/physical-device.md
+
 # WHAT `run-editor` RUNS, AND WHAT IT DOES NOT.
 #
 # The editor is headless at M5 and that is a decision rather than an omission:

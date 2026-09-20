@@ -30,3 +30,20 @@ python3 src/vfx/gpu/shaders/embed_msl.py \
 
 Update `kMobileVfxSlangHash` and `kMobileVfxSlangBytes` from the copied source. The physical-device
 runner is the final check because it requires the combined workload marker from a presented frame.
+
+## RTS stress tier
+
+`CY_IOS_RTS_STRESS=ON` builds the opt-in capacity scene: 500 copies of the 36-vertex model are
+processed in one skin dispatch, and 100 `VfxGpuPass` instances retain independent 512-slot
+simulations. Use the repository recipe so the runner also checks the exact model and emitter
+counts:
+
+```bash
+CY_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+CY_IOS_BUNDLE_IDENTIFIER=com.example.cyberdyne \
+  just run-ios-rts-device YOUR_DEVICE_UDID
+```
+
+The stress recipe has no minimum FPS threshold because it measures capacity rather than replacing
+the normal scene's 55 FPS release gate. It still rejects missing frames, a substituted workload,
+CPU particle readback, simulator hardware, and incomplete evidence.

@@ -60,6 +60,7 @@
         "CY_AUDIO": "OFF",
         "CY_AUDIO_STEAM_AUDIO": "OFF",
         "CY_VFX": "ON",
+        "CY_IOS_RTS_STRESS": "OFF",
         "CY_ANIMATION": "OFF",
         "CY_UI": "OFF",
         "CY_SHADER_SLANG": "OFF",

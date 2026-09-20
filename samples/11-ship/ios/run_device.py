@@ -32,8 +32,9 @@ QUALITY = re.compile(
 )
 FPS = re.compile(r"CY_IOS_FPS fps=([0-9]+(?:\.[0-9]+)?) frames=(\d+) seconds=([0-9]+(?:\.[0-9]+)?)")
 COMPUTE = re.compile(
-    r"CY_IOS_COMPUTE skin_vertices=(\d+) skin_bones=(\d+) vfx_capacity=(\d+) "
-    r"vfx_dispatches=(\d+) gpu_particle_instances=(\d+) cpu_particle_readback=(\d+)"
+    r"CY_IOS_COMPUTE skin_models=(\d+) skin_vertices=(\d+) skin_bones=(\d+) "
+    r"vfx_emitters=(\d+) vfx_capacity=(\d+) vfx_dispatches=(\d+) "
+    r"gpu_particle_instances=(\d+) cpu_particle_readback=(\d+)"
 )
 
 
@@ -57,8 +58,10 @@ class Measurement:
     scale: float
     terrain_octaves: int
     march_steps: int
+    skin_models: int
     skin_vertices: int
     skin_bones: int
+    vfx_emitters: int
     vfx_capacity: int
     vfx_dispatches: int
     gpu_particle_instances: int
@@ -167,23 +170,34 @@ def parse_fps(
     return samples
 
 
-def parse_compute(lines: list[str]) -> tuple[int, int, int, int, int]:
+def parse_compute(
+    lines: list[str], expected_skin_models: int = 0, expected_vfx_emitters: int = 0
+) -> tuple[int, int, int, int, int, int, int]:
     marker = next((match for line in lines if (match := COMPUTE.search(line))), None)
     if marker is None:
         raise RuntimeError("the app never emitted CY_IOS_COMPUTE after presenting the combined scene")
-    values = tuple(int(marker.group(index)) for index in range(1, 7))
-    skin_vertices, skin_bones, capacity, dispatches, instances, readback = values
-    if min(skin_vertices, skin_bones, capacity, dispatches, instances) <= 0:
+    values = tuple(int(marker.group(index)) for index in range(1, 9))
+    models, skin_vertices, skin_bones, emitters, capacity, dispatches, instances, readback = values
+    if min(models, skin_vertices, skin_bones, emitters, capacity, dispatches, instances) <= 0:
         raise RuntimeError("the combined compute marker contains an empty workload")
+    if expected_skin_models and models != expected_skin_models:
+        raise RuntimeError(
+            f"the run reported {models} skin models; expected {expected_skin_models}"
+        )
+    if expected_vfx_emitters and emitters != expected_vfx_emitters:
+        raise RuntimeError(
+            f"the run reported {emitters} VFX emitters; expected {expected_vfx_emitters}"
+        )
     if instances != capacity:
         raise RuntimeError("GPU particle instance count must cover the device-resident capacity")
     if readback != 0:
         raise RuntimeError("the presentation path enabled CPU particle readback")
-    return skin_vertices, skin_bones, capacity, dispatches, instances
+    return models, skin_vertices, skin_bones, emitters, capacity, dispatches, instances
 
 
 def parse_measurement(
-    lines: list[str], minimum_samples: int, minimum_median_fps: float = 0.0
+    lines: list[str], minimum_samples: int, minimum_median_fps: float = 0.0,
+    expected_skin_models: int = 0, expected_vfx_emitters: int = 0,
 ) -> Measurement:
     """Require the platform, Metal, quality, and measured-frame evidence contracts."""
     if not any(CONTRACT in line for line in lines):
@@ -192,7 +206,9 @@ def parse_measurement(
     quality = parse_quality(lines)
     if (quality.drawable_width, quality.drawable_height) != (ready_width, ready_height):
         raise RuntimeError("CY_IOS_READY and CY_IOS_QUALITY disagree about drawable dimensions")
-    skin_vertices, skin_bones, capacity, dispatches, instances = parse_compute(lines)
+    models, skin_vertices, skin_bones, emitters, capacity, dispatches, instances = parse_compute(
+        lines, expected_skin_models, expected_vfx_emitters
+    )
     samples = parse_fps(lines, minimum_samples, minimum_median_fps)
     return Measurement(
         backend=backend,
@@ -204,8 +220,10 @@ def parse_measurement(
         scale=quality.scale,
         terrain_octaves=quality.terrain_octaves,
         march_steps=quality.march_steps,
+        skin_models=models,
         skin_vertices=skin_vertices,
         skin_bones=skin_bones,
+        vfx_emitters=emitters,
         vfx_capacity=capacity,
         vfx_dispatches=dispatches,
         gpu_particle_instances=instances,
@@ -268,6 +286,8 @@ def measure(
     seconds: float,
     minimum_samples: int,
     minimum_median_fps: float,
+    expected_skin_models: int,
+    expected_vfx_emitters: int,
     screenshot: Path,
     log: Path,
 ) -> Measurement:
@@ -296,7 +316,10 @@ def measure(
         lines = collect_console(process, received, seconds)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        measurement = parse_measurement(lines, minimum_samples, minimum_median_fps)
+        measurement = parse_measurement(
+            lines, minimum_samples, minimum_median_fps,
+            expected_skin_models, expected_vfx_emitters,
+        )
         if process.poll() is not None:
             raise RuntimeError("the app exited before its physical display could be captured")
         screenshot.parent.mkdir(parents=True, exist_ok=True)
@@ -330,9 +353,10 @@ def write_evidence(path: Path, screenshot: Path, device: Device, measurement: Me
                 f"- Linear render scale: {measurement.scale:.3f}",
                 f"- Terrain quality: {measurement.terrain_octaves} octaves, "
                 f"{measurement.march_steps} maximum march steps",
-                f"- GPU skinning: {measurement.skin_vertices} vertices, "
-                f"{measurement.skin_bones} animated bones",
-                f"- GPU VFX: {measurement.vfx_capacity} device-resident slots, "
+                f"- GPU skinning: {measurement.skin_models} models, "
+                f"{measurement.skin_vertices} vertices, {measurement.skin_bones} shared animated bones",
+                f"- GPU VFX: {measurement.vfx_emitters} independent emitters, "
+                f"{measurement.vfx_capacity} device-resident slots, "
                 f"{measurement.vfx_dispatches} simulation dispatches, "
                 f"{measurement.gpu_particle_instances} fixed-capacity draw instances",
                 "- CPU particle readback: disabled",
@@ -342,7 +366,7 @@ def write_evidence(path: Path, screenshot: Path, device: Device, measurement: Me
                 "- Contract: platform `ios`, one fullscreen window, desktop operations rejected, "
                 "Metal surface, four touch events",
                 "",
-                f"![Terrain, GPU-skinned character, and GPU VFX on {device.model}]({relative_screenshot})",
+                f"![iOS Metal compute presentation on {device.model}]({relative_screenshot})",
                 "",
             ]
         ),
@@ -374,21 +398,25 @@ def self_test() -> int:
         CONTRACT,
         "CY_IOS_READY backend=metal device=Apple A18 GPU size=1534x707",
         "CY_IOS_QUALITY native=2556x1179 drawable=1534x707 scale=0.600 terrain_octaves=4 march_steps=64",
-        "CY_IOS_COMPUTE skin_vertices=36 skin_bones=5 vfx_capacity=512 vfx_dispatches=4 "
-        "gpu_particle_instances=512 cpu_particle_readback=0",
+        "CY_IOS_COMPUTE skin_models=500 skin_vertices=18000 skin_bones=5 vfx_emitters=100 "
+        "vfx_capacity=51200 vfx_dispatches=400 gpu_particle_instances=51200 "
+        "cpu_particle_readback=0",
         "CY_IOS_FPS fps=59.80 frames=60 seconds=1.003",
         "CY_IOS_FPS fps=60.00 frames=60 seconds=1.000",
         "CY_IOS_FPS fps=59.90 frames=60 seconds=1.002",
     ]
-    parsed = parse_measurement(good, 3, 55.0)
+    parsed = parse_measurement(good, 3, 55.0, 500, 100)
     assert parsed.fps == (59.8, 60.0, 59.9)
     assert parsed.scale == 0.6 and parsed.terrain_octaves == 4 and parsed.march_steps == 64
-    assert parsed.skin_vertices == 36 and parsed.vfx_dispatches == 4
+    assert parsed.skin_models == 500 and parsed.skin_vertices == 18000
+    assert parsed.vfx_emitters == 100 and parsed.vfx_dispatches == 400
     broken_runs = (
         good[1:],
         [line for line in good if "CY_IOS_QUALITY" not in line],
         [line for line in good if "CY_IOS_COMPUTE" not in line],
-        [line.replace("skin_vertices=36", "skin_vertices=0") for line in good],
+        [line.replace("skin_models=500", "skin_models=499") for line in good],
+        [line.replace("vfx_emitters=100", "vfx_emitters=99") for line in good],
+        [line.replace("skin_vertices=18000", "skin_vertices=0") for line in good],
         [line.replace("cpu_particle_readback=0", "cpu_particle_readback=1") for line in good],
         [line.replace("drawable=1534x707", "drawable=2556x1179") for line in good],
         [line.replace("scale=0.600", "scale=1.000") for line in good],
@@ -398,7 +426,7 @@ def self_test() -> int:
     )
     for broken in broken_runs:
         try:
-            parse_measurement(broken, 3, 55.0)
+            parse_measurement(broken, 3, 55.0, 500, 100)
             raise AssertionError("invalid device evidence was accepted")
         except RuntimeError:
             pass
@@ -415,6 +443,8 @@ def main() -> int:
     parser.add_argument("--seconds", type=float, default=12.0)
     parser.add_argument("--minimum-samples", type=int, default=8)
     parser.add_argument("--minimum-median-fps", type=float, default=55.0)
+    parser.add_argument("--expected-skin-models", type=int, default=0)
+    parser.add_argument("--expected-vfx-emitters", type=int, default=0)
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -439,6 +469,8 @@ def main() -> int:
         args.seconds,
         args.minimum_samples,
         args.minimum_median_fps,
+        args.expected_skin_models,
+        args.expected_vfx_emitters,
         args.screenshot,
         args.log,
     )

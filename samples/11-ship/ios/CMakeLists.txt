@@ -2,6 +2,7 @@ set(CY_IOS_BUNDLE_IDENTIFIER "com.cyberdyne.engine.ship" CACHE STRING
     "Bundle identifier for the iOS device sample")
 set(CY_IOS_DEVELOPMENT_TEAM "" CACHE STRING
     "Apple development team used to sign the iOS device sample")
+option(CY_IOS_RTS_STRESS "Build the 500-model, 100-emitter iOS RTS benchmark" OFF)
 
 cy_add_module(
     NAME cy_sample_ship_ios
@@ -13,6 +14,8 @@ cy_add_module(
         cy::rendering-graph cy::rendering-skinning cy::vfx-gpu cy::vfx-compiler cy::graph
         "-framework UIKit" "-framework QuartzCore" "-framework Metal")
 set_source_files_properties(main.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+target_compile_definitions(cy_sample_ship_ios PRIVATE
+    CY_IOS_RTS_STRESS=$<BOOL:${CY_IOS_RTS_STRESS}>)
 
 set_target_properties(cy_sample_ship_ios PROPERTIES
     MACOSX_BUNDLE TRUE

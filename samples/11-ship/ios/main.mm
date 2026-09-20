@@ -141,18 +141,29 @@ fragment float4 world_fragment(Raster in [[stage_in]], constant Frame& frame [[b
 struct CharacterPush {
     float scale;
     float aspect;
-    float2 offset;
+    uint vertices_per_model;
+    uint total_vertices;
     float4 color;
+    uint model_count;
+    uint columns;
+    float2 padding;
 };
 
 struct CharacterInput { float3 position [[attribute(0)]]; };
 struct CharacterRaster { float4 position [[position]]; float4 color; };
 
-vertex CharacterRaster character_vertex(CharacterInput in [[stage_in]],
+vertex CharacterRaster character_vertex(CharacterInput in [[stage_in]], uint vertex_id [[vertex_id]],
                                           constant CharacterPush& draw [[buffer(0)]]) {
+    const uint local_vertex = vertex_id % draw.total_vertices;
+    const uint model = local_vertex / draw.vertices_per_model;
+    const uint column = model % draw.columns;
+    const uint row = model / draw.columns;
+    const float2 formation = float2(-0.92 + float(column) * (1.84 / 24.0),
+                                    -0.88 + float(row) * (1.30 / 19.0));
+    const float2 center = draw.model_count == 1u ? float2(0.45, -0.68) : formation;
     CharacterRaster out;
-    out.position = float4(draw.offset.x + in.position.x * draw.scale / draw.aspect,
-                          draw.offset.y + in.position.y * draw.scale, 0.1, 1.0);
+    out.position = float4(center.x + in.position.x * draw.scale / draw.aspect,
+                          center.y + in.position.y * draw.scale, 0.1, 1.0);
     out.color = draw.color;
     return out;
 }
@@ -163,6 +174,8 @@ struct ParticleSet { device uint* particles; device uint* alive; };
 struct ParticlePush {
     uint position_base_words;
     uint capacity;
+    uint emitter;
+    uint emitter_count;
     float aspect;
     float time;
 };
@@ -185,8 +198,12 @@ vertex ParticleRaster particle_vertex(uint vertex_id [[vertex_id]], uint instanc
                             as_type<float>(set->particles[base + 1u]),
                             as_type<float>(set->particles[base + 2u]));
     const float pulse = 0.012 + 0.006 * sin(draw.time * 5.0 + float(instance_id));
-    const float2 center = float2(-0.34 + p.x * 0.11 / draw.aspect,
-                                  -0.66 + p.y * 0.11);
+    const uint column = draw.emitter % 10u;
+    const uint row = draw.emitter / 10u;
+    const float2 formation = float2(-0.90 + float(column) * 0.20,
+                                    -0.82 + float(row) * 0.105);
+    const float2 origin = draw.emitter_count == 1u ? float2(-0.34, -0.66) : formation;
+    const float2 center = origin + float2(p.x * 0.025 / draw.aspect, p.y * 0.025);
     out.position = float4(center + float2(corners[vertex_id].x / draw.aspect,
                                           corners[vertex_id].y) * pulse, 0.05, 1.0);
     return out;
@@ -352,9 +369,11 @@ public:
             report("declare-skinning", status.error());
             return end_failed_frame();
         }
-        if (const cy::Status status = vfx_.declare(graph); !status) {
-            report("declare-vfx", status.error());
-            return end_failed_frame();
+        for (auto& emitter : vfx_) {
+            if (const cy::Status status = emitter.declare(graph); !status) {
+                report("declare-vfx", status.error());
+                return end_failed_frame();
+            }
         }
 
         const auto info = device_->swapchain_info(swapchain_);
@@ -374,11 +393,13 @@ public:
         state.width = info.extent.width;
         state.height = info.extent.height;
         state.time = seconds;
-        graph.add_pass("iOS terrain + skin + VFX", cy::rhi::QueueKind::Graphics)
-            .read(skin.positions_resource(), cy::rhi::Access::VertexAttributeRead)
-            .read(vfx_.particles_resource(), cy::rhi::Access::VertexStorageRead)
-            .read(vfx_.alive_resource(), cy::rhi::Access::VertexStorageRead)
-            .write(target, cy::rhi::Access::ColorAttachmentWrite)
+        auto draw = graph.add_pass("iOS RTS terrain + skin + VFX", cy::rhi::QueueKind::Graphics);
+        draw.read(skin.positions_resource(), cy::rhi::Access::VertexAttributeRead);
+        for (const auto& emitter : vfx_) {
+            draw.read(emitter.particles_resource(), cy::rhi::Access::VertexStorageRead)
+                .read(emitter.alive_resource(), cy::rhi::Access::VertexStorageRead);
+        }
+        draw.write(target, cy::rhi::Access::ColorAttachmentWrite)
             .record(&MobileWorldRenderer::record_scene, &state);
         graph.add_pass("iOS present", cy::rhi::QueueKind::Graphics)
             .read(target, cy::rhi::Access::Present)
@@ -403,11 +424,14 @@ public:
             ++frames_;
             if (!compute_reported_) {
                 std::printf(
-                    "CY_IOS_COMPUTE skin_vertices=%u skin_bones=%u vfx_capacity=%u "
-                    "vfx_dispatches=%u gpu_particle_instances=%u "
+                    "CY_IOS_COMPUTE skin_models=%u skin_vertices=%u skin_bones=%u "
+                    "vfx_emitters=%u vfx_capacity=%u vfx_dispatches=%u "
+                    "gpu_particle_instances=%u "
                     "cpu_particle_readback=0\n",
-                    character_vertices_, kCharacterBones, vfx_.block_capacity(),
-                    vfx_.report().dispatches, vfx_.block_capacity());
+                    kCharacterModels, character_vertices_, kCharacterBones, kVfxEmitters,
+                    kVfxEmitters * kVfxCapacityPerEmitter,
+                    kVfxEmitters * vfx_[0].report().dispatches,
+                    kVfxEmitters * kVfxCapacityPerEmitter);
                 std::fflush(stdout);
                 compute_reported_ = true;
             }
@@ -419,17 +443,30 @@ public:
 
 private:
     static constexpr cy::u32 kCharacterBones = 5;
-    static constexpr cy::u32 kVfxCapacity = 512;
+#if CY_IOS_RTS_STRESS
+    static constexpr cy::u32 kCharacterModels = 500;
+    static constexpr cy::u32 kVfxEmitters = 100;
+#else
+    static constexpr cy::u32 kCharacterModels = 1;
+    static constexpr cy::u32 kVfxEmitters = 1;
+#endif
+    static constexpr cy::u32 kVfxCapacityPerEmitter = 512;
 
     struct CharacterPush {
-        float scale = 0.38F;
+        float scale = kCharacterModels == 1 ? 0.38F : 0.035F;
         float aspect = 1.0F;
-        float offset[2] = {0.45F, -0.68F};
+        cy::u32 vertices_per_model = 0;
+        cy::u32 total_vertices = 0;
         float color[4] = {0.18F, 0.92F, 1.0F, 1.0F};
+        cy::u32 model_count = 0;
+        cy::u32 columns = 0;
+        float padding[2] = {0.0F, 0.0F};
     };
     struct ParticlePush {
         cy::u32 position_base_words = 0;
         cy::u32 capacity = 0;
+        cy::u32 emitter = 0;
+        cy::u32 emitter_count = 0;
         float aspect = 1.0F;
         float time = 0.0F;
     };
@@ -601,14 +638,21 @@ private:
     bool create_character() {
         std::vector<cy::Vec3> positions;
         std::vector<cy::render::geometry::GpuSkinInfluence> influences;
-        positions.reserve(42);
-        influences.reserve(42);
-        append_rectangle(positions, influences, -0.34F, 0.82F, 0.34F, 1.52F, 0);
-        append_rectangle(positions, influences, -0.23F, 1.52F, 0.23F, 1.96F, 0);
-        append_rectangle(positions, influences, -0.25F, 0.02F, -0.03F, 0.90F, 1);
-        append_rectangle(positions, influences, 0.03F, 0.02F, 0.25F, 0.90F, 2);
-        append_rectangle(positions, influences, -0.72F, 0.92F, -0.30F, 1.40F, 3);
-        append_rectangle(positions, influences, 0.30F, 0.92F, 0.72F, 1.40F, 4);
+        positions.reserve(kCharacterModels * 36U);
+        influences.reserve(kCharacterModels * 36U);
+        for (cy::u32 model = 0; model < kCharacterModels; ++model) {
+            const cy::usize first = positions.size();
+            append_rectangle(positions, influences, -0.34F, 0.82F, 0.34F, 1.52F, 0);
+            append_rectangle(positions, influences, -0.23F, 1.52F, 0.23F, 1.96F, 0);
+            append_rectangle(positions, influences, -0.25F, 0.02F, -0.03F, 0.90F, 1);
+            append_rectangle(positions, influences, 0.03F, 0.02F, 0.25F, 0.90F, 2);
+            append_rectangle(positions, influences, -0.72F, 0.92F, -0.30F, 1.40F, 3);
+            append_rectangle(positions, influences, 0.30F, 0.92F, 0.72F, 1.40F, 4);
+            if (model == 0) {
+                character_vertices_per_model_ =
+                    static_cast<cy::u32>(positions.size() - first);
+            }
+        }
         character_vertices_ = static_cast<cy::u32>(positions.size());
         cy::rendering::skinning::SkinPassDescription description;
         description.max_vertices = character_vertices_;
@@ -638,7 +682,8 @@ private:
         cy::graph::DiagnosticSink sink(*allocator_);
         cy::vfx::CompileReport compile_report(*allocator_);
         auto cooked = cy::ship_ios::cook_plume(*allocator_, sink, compile_report,
-                                               cy::vfx::CompileOptions{}, 1, kVfxCapacity);
+                                               cy::vfx::CompileOptions{}, 1,
+                                               kVfxCapacityPerEmitter);
         if (!cooked) {
             report("cook-mobile-vfx", cooked.error());
             return false;
@@ -650,12 +695,15 @@ private:
         description.kernel.msl = {reinterpret_cast<const cy::u8*>(cy::vfx::gpu::kMobileVfxMsl),
                                   sizeof(cy::vfx::gpu::kMobileVfxMsl) - 1};
         description.kernel.msl_entry_point = cy::vfx::kVfxKernelEntryPoint;
-        if (const cy::Status status = vfx_.create(*allocator_, *device_, *vfx_system_, description);
-            !status) {
-            report("create-vfx", status.error());
-            return false;
+        for (auto& emitter : vfx_) {
+            if (const cy::Status status =
+                    emitter.create(*allocator_, *device_, *vfx_system_, description);
+                !status) {
+                report("create-vfx", status.error());
+                return false;
+            }
         }
-        const auto generated = vfx_.generated_source();
+        const auto generated = vfx_[0].generated_source();
         if (generated.size() != cy::ship_ios::kMobileVfxSlangBytes ||
             cy::ship_ios::source_hash(generated) != cy::ship_ios::kMobileVfxSlangHash) {
             std::fprintf(stderr,
@@ -671,24 +719,27 @@ private:
             return false;
         }
         particle_position_base_words_ =
-            cy::vfx::gpu_array_base_words(emitter.layout(), *position, kVfxCapacity);
-        auto set = device_->allocate_descriptor_set(particle_set_layout_, false);
-        if (!set) {
-            report("allocate-particle-set", set.error());
-            return false;
-        }
-        particle_set_ = *set;
-        cy::rhi::DescriptorWrite writes[2] = {};
-        writes[0].binding = 0;
-        writes[0].kind = cy::rhi::DescriptorKind::StorageBuffer;
-        writes[0].buffer = vfx_.particles_buffer();
-        writes[1].binding = 1;
-        writes[1].kind = cy::rhi::DescriptorKind::StorageBuffer;
-        writes[1].buffer = vfx_.alive_buffer();
-        if (const cy::Status status = device_->update_descriptor_set(particle_set_, {writes, 2});
-            !status) {
-            report("write-particle-set", status.error());
-            return false;
+            cy::vfx::gpu_array_base_words(emitter.layout(), *position, kVfxCapacityPerEmitter);
+        for (cy::u32 index = 0; index < kVfxEmitters; ++index) {
+            auto set = device_->allocate_descriptor_set(particle_set_layout_, false);
+            if (!set) {
+                report("allocate-particle-set", set.error());
+                return false;
+            }
+            particle_sets_[index] = *set;
+            cy::rhi::DescriptorWrite writes[2] = {};
+            writes[0].binding = 0;
+            writes[0].kind = cy::rhi::DescriptorKind::StorageBuffer;
+            writes[0].buffer = vfx_[index].particles_buffer();
+            writes[1].binding = 1;
+            writes[1].kind = cy::rhi::DescriptorKind::StorageBuffer;
+            writes[1].buffer = vfx_[index].alive_buffer();
+            if (const cy::Status status =
+                    device_->update_descriptor_set(particle_sets_[index], {writes, 2});
+                !status) {
+                report("write-particle-set", status.error());
+                return false;
+            }
         }
         return true;
     }
@@ -698,10 +749,12 @@ private:
             return false;
         }
         cy::rendering::RenderGraph graph(*allocator_);
-        if (const cy::Status status = vfx_.declare_reset(graph); !status) {
-            report("reset-vfx", status.error());
-            (void)device_->end_frame();
-            return false;
+        for (auto& emitter : vfx_) {
+            if (const cy::Status status = emitter.declare_reset(graph); !status) {
+                report("reset-vfx", status.error());
+                (void)device_->end_frame();
+                return false;
+            }
         }
         cy::rendering::GraphExecutor executor(*allocator_, *device_);
         auto executed = executor.execute(graph, cy::rendering::CompileOptions{}, {});
@@ -749,15 +802,20 @@ private:
             controller.levers_for(vfx_system_->importance(), vfx_system_->scalability());
         inputs.levers.sorted = false;
         inputs.reserved_particles = vfx_system_->scalability().reserved_particles;
-        if (!vfx_parameters_uploaded_) {
-            inputs.parameters = {parameters, vfx_system_->parameters().size() * 4};
+        for (cy::u32 index = 0; index < kVfxEmitters; ++index) {
+            inputs.emitter_age = seconds + static_cast<float>(index) * 0.017F;
+            inputs.parameters = vfx_parameters_uploaded_[index]
+                                    ? cy::Span<const float>{}
+                                    : cy::Span<const float>{
+                                          parameters, vfx_system_->parameters().size() * 4};
+            const cy::Status status = vfx_[index].step(inputs);
+            if (!status) {
+                report("step-vfx", status.error());
+                return false;
+            }
+            vfx_parameters_uploaded_[index] = true;
         }
-        const cy::Status status = vfx_.step(inputs);
-        if (!status) {
-            report("step-vfx", status.error());
-        }
-        vfx_parameters_uploaded_ = status.has_value();
-        return status.has_value();
+        return true;
     }
 
     static void record_scene(const cy::rendering::PassContext& context, void* user) noexcept {
@@ -788,22 +846,32 @@ private:
         context.commands->bind_vertex_buffers(0, {&character_buffer, 1}, {&vertex_offset, 1});
         CharacterPush character;
         character.aspect = aspect;
+        character.vertices_per_model = self.character_vertices_per_model_;
+        character.total_vertices = self.character_vertices_;
+        character.model_count = kCharacterModels;
+        character.columns = kCharacterModels == 1 ? 1U : 25U;
         context.commands->push_constants(
             self.character_layout_, cy::rhi::ShaderStage::Vertex | cy::rhi::ShaderStage::Fragment,
             0, {reinterpret_cast<const cy::u8*>(&character), sizeof(character)});
         context.commands->draw(self.character_vertices_, 1, state->skin->vertex_offset(), 0);
 
         context.commands->bind_graphics_pipeline(self.particle_pipeline_);
-        context.commands->bind_descriptor_sets(self.particle_layout_, 0, {&self.particle_set_, 1});
-        ParticlePush particles;
-        particles.position_base_words = self.particle_position_base_words_;
-        particles.capacity = self.vfx_.block_capacity();
-        particles.aspect = aspect;
-        particles.time = state->time;
-        context.commands->push_constants(
-            self.particle_layout_, cy::rhi::ShaderStage::Vertex | cy::rhi::ShaderStage::Fragment, 0,
-            {reinterpret_cast<const cy::u8*>(&particles), sizeof(particles)});
-        context.commands->draw(6, self.vfx_.block_capacity(), 0, 0);
+        for (cy::u32 index = 0; index < kVfxEmitters; ++index) {
+            context.commands->bind_descriptor_sets(self.particle_layout_, 0,
+                                                   {&self.particle_sets_[index], 1});
+            ParticlePush particles;
+            particles.position_base_words = self.particle_position_base_words_;
+            particles.capacity = self.vfx_[index].block_capacity();
+            particles.emitter = index;
+            particles.emitter_count = kVfxEmitters;
+            particles.aspect = aspect;
+            particles.time = state->time;
+            context.commands->push_constants(
+                self.particle_layout_,
+                cy::rhi::ShaderStage::Vertex | cy::rhi::ShaderStage::Fragment, 0,
+                {reinterpret_cast<const cy::u8*>(&particles), sizeof(particles)});
+            context.commands->draw(6, self.vfx_[index].block_capacity(), 0, 0);
+        }
         context.commands->end_rendering();
     }
 
@@ -822,7 +890,9 @@ private:
             return;
         }
         (void)device_->wait_idle();
-        vfx_.destroy();
+        for (auto& emitter : vfx_) {
+            emitter.destroy();
+        }
         for (auto& skin : skins_) {
             skin.destroy();
         }
@@ -881,7 +951,7 @@ private:
     cy::rhi::ShaderModuleHandle particle_vertex_{};
     cy::rhi::ShaderModuleHandle particle_fragment_{};
     cy::rhi::DescriptorSetLayoutHandle particle_set_layout_{};
-    cy::rhi::DescriptorSetHandle particle_set_{};
+    std::array<cy::rhi::DescriptorSetHandle, kVfxEmitters> particle_sets_{};
     cy::rhi::PipelineLayoutHandle world_layout_{};
     cy::rhi::PipelineLayoutHandle character_layout_{};
     cy::rhi::PipelineLayoutHandle particle_layout_{};
@@ -890,14 +960,15 @@ private:
     cy::rhi::GraphicsPipelineHandle particle_pipeline_{};
     std::array<cy::rendering::skinning::SkinPass, cy::rhi::kDefaultFramesInFlight> skins_;
     cy::render::geometry::SkinningDescriptor skin_description_{};
-    cy::vfx::gpu::VfxGpuPass vfx_;
+    std::array<cy::vfx::gpu::VfxGpuPass, kVfxEmitters> vfx_;
     std::optional<cy::vfx::CompiledSystem> vfx_system_;
     std::chrono::steady_clock::time_point began_{};
     cy::u64 frames_ = 0;
     cy::u32 character_vertices_ = 0;
+    cy::u32 character_vertices_per_model_ = 0;
     cy::u32 particle_position_base_words_ = 0;
     bool compute_reported_ = false;
-    bool vfx_parameters_uploaded_ = false;
+    std::array<bool, kVfxEmitters> vfx_parameters_uploaded_{};
     bool started_ = false;
 };
 
@@ -1003,8 +1074,12 @@ private:
     _stats.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45];
     _stats.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
     _stats.numberOfLines = 3;
+#if CY_IOS_RTS_STRESS
+    _stats.text = @"Cyberdyne iOS • RTS load\n500 skins • 100 GPU emitters\nmeasuring…";
+#else
     _stats.text =
         @"Cyberdyne iOS • Metal\nTerrain • GPU skinning • GPU VFX\n42% render scale • measuring…";
+#endif
     [self.view addSubview:_stats];
 
     _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(drawFrame:)];
@@ -1038,10 +1113,16 @@ private:
     const CFTimeInterval elapsed = CACurrentMediaTime() - _sampleStart;
     if (elapsed >= 1.0) {
         const double fps = static_cast<double>(_sampleFrames) / elapsed;
+#if CY_IOS_RTS_STRESS
+        _stats.text = [NSString stringWithFormat:
+                                    @"Cyberdyne iOS • RTS load\n500 skins • 100 GPU emitters\n%.1f FPS",
+                                    fps];
+#else
         _stats.text = [NSString
             stringWithFormat:
                 @"Cyberdyne iOS • Metal\nTerrain • skinning • VFX\n%.1f FPS • 42%% render scale",
                 fps];
+#endif
         std::printf("CY_IOS_FPS fps=%.2f frames=%llu seconds=%.3f\n", fps,
                     static_cast<unsigned long long>(_sampleFrames), elapsed);
         std::fflush(stdout);
