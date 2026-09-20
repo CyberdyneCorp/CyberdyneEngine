@@ -378,7 +378,7 @@ fn parse_formats(listing: &str) -> Vec<ImportFormat> {
             });
         } else if let Some(rest) = trimmed.strip_prefix("extensions:") {
             if let Some(format) = &mut current {
-                let extensions = rest
+                let extensions: Vec<String> = rest
                     .split_whitespace()
                     .map(str::to_ascii_lowercase)
                     .collect();
