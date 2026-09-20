@@ -31,12 +31,12 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 1. The D3D12 memory decision, before the backend is half written
 
-- [ ] 1.1 **Memory is the first decision, not the last.** Vulkan's allocator is VMA, fetched through
+- [x] 1.1 **Memory is the first decision, not the last.** Vulkan's allocator is VMA, fetched through
       `deps/manifest.toml`; there is no equivalent in this tree for D3D12. Either a suballocator of
       the engine's own over `ID3D12Heap`, or an adopted dependency — and an adoption **"SHALL go
       through the OpenSpec change flow recording the evaluation against these criteria"**, so it is a
       change of its own against `thirdparty-dependencies`, decided before the backend exists
-- [ ] 1.2 **Whichever is chosen, it is written for Resource Heap Tier 1 as well as Tier 2.** Every
+- [x] 1.2 **Whichever is chosen, it is written for Resource Heap Tier 1 as well as Tier 2.** Every
       hosted image reports Tier 2 and Tier 1 hardware still ships; on Tier 1 a heap holds buffers *or*
       textures and never a mix, which is the same partition Vulkan spells as a bitmask and which the
       memory-pool class M11.d settled already expresses. The tier-1 path is the half that does not
@@ -70,16 +70,16 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 3. D3D12 — from nothing
 
-- [ ] 3.1 **There is no D3D12 backend and there is no D3D12 file.** The only three D3D12 things in the
+- [x] 3.1 **There is no D3D12 backend and there is no D3D12 file.** The only three D3D12 things in the
       tree are `BackendKind::D3D12`, `Feature::D3D12Surface` and `CY_RENDERER_D3D12|OFF` — three
       enumerators describing an API the engine does not have. The module is written from nothing,
       against the interface M11.d settled
-- [ ] 3.2 Descriptor heaps and bindless against the engine's descriptor model; a root signature derived
+- [x] 3.2 Descriptor heaps and bindless against the engine's descriptor model; a root signature derived
       from the engine's pipeline layout; **barriers derived from the access masks**, which is M11.d's
       interface change paying for itself a second time
-- [ ] 3.3 DXIL out of the shader pipeline: `SLANG_ENABLE_DXIL` on, DXC declared in the manifest with a
+- [x] 3.3 DXIL out of the shader pipeline: `SLANG_ENABLE_DXIL` on, DXC declared in the manifest with a
       licence identifier and a justification like every other integrated toolchain
-- [ ] 3.4 **Adapter selection, and the trap the spike found.** Every hosted Windows image presents two
+- [x] 3.4 **Adapter selection, and the trap the spike found.** Every hosted Windows image presents two
       adapters, both `Microsoft Basic Render Driver`, and **adapter 0 does not set
       `DXGI_ADAPTER_FLAG_SOFTWARE`**. Selection SHALL NOT trust that flag. It classifies from the
       adapter's reported identity and vendor against a table this engine owns, and an adapter it
@@ -88,10 +88,10 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 4. The device report, and the claim a Linux host can check
 
-- [ ] 4.1 **Every device report names the device that answered** — across all three backends, Vulkan
+- [x] 4.1 **Every device report names the device that answered** — across all three backends, Vulkan
       included, because the rule is the engine's and not a Windows workaround. Identity string,
       vendor, and the classification the engine derived: hardware, paravirtual, software, or unknown
-- [ ] 4.2 **The classification is tested where it can be tested**, which is here: `unit.rhi` carries
+- [x] 4.2 **The classification is tested where it can be tested**, which is here: `unit.rhi` carries
       *"a software device is labelled from its identity"* and *"a device report names the device that
       answered"*, both device-free, both red on this host until they are written. This is the rung's
       only fully judgeable claim and it is deliberately not pushed onto a runner
