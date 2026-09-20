@@ -9,6 +9,7 @@ on:
       - src/core/determinism/src/hash.cpp
       - src/core/determinism/include/cy/core/determinism/random.h
       - src/core/jobs/src/schedule.cpp
+      - src/core/jobs/include/cy/core/jobs/sync.h
       - src/core/memory/include/cy/core/memory/hash.h
       - src/core/memory/tests/test_containers.cpp
       - src/pcg/include/cy/pcg/dataset.h

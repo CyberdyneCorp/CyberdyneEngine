@@ -17,6 +17,9 @@
 #include <cy/core/jobs/types.h>
 
 #include <atomic>
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#    include <intrin.h>
+#endif
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -214,7 +217,9 @@ public:
 
     /// The architecture's "I am spinning" hint. A no-op where there is none.
     static void cpu_relax() noexcept {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+        _mm_pause();
+#elif defined(__x86_64__) || defined(__i386__)
         __builtin_ia32_pause();
 #elif defined(__aarch64__) || defined(__arm__)
         __asm__ __volatile__("yield" ::: "memory");
