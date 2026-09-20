@@ -26,12 +26,23 @@
 
 #if defined(__unix__) || defined(__APPLE__)
 #    define CY_ASSETS_POSIX_IO 1
+#    define CY_ASSETS_WIN32_IO 0
 #    include <fcntl.h>
 #    include <sys/mman.h>
 #    include <sys/stat.h>
 #    include <unistd.h>
+#elif defined(_WIN32)
+#    define CY_ASSETS_POSIX_IO 0
+#    define CY_ASSETS_WIN32_IO 1
+#    include <fcntl.h>
+#    include <io.h>
+#    include <sys/stat.h>
+#    define NOMINMAX
+#    define WIN32_LEAN_AND_MEAN
+#    include <windows.h>
 #else
 #    define CY_ASSETS_POSIX_IO 0
+#    define CY_ASSETS_WIN32_IO 0
 #endif
 
 namespace cy::assets {
@@ -71,6 +82,23 @@ int posix_flags(FileMode mode) noexcept {
             return O_RDWR;
     }
     return O_RDONLY;
+}
+#elif CY_ASSETS_WIN32_IO
+// MSVC's `<io.h>` provides POSIX-shaped file descriptors with `_open`, `_read`, `_write`,
+// `_lseeki64`, `_close`, and `_commit` (the `fsync` analogue). Using them keeps `File::handle_` an
+// `int` on every platform and lets the class members stay the same shape without a `void*` cast.
+int win32_flags(FileMode mode) noexcept {
+    switch (mode) {
+        case FileMode::Read:
+            return _O_RDONLY | _O_BINARY;
+        case FileMode::Write:
+            return _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY;
+        case FileMode::Append:
+            return _O_WRONLY | _O_CREAT | _O_APPEND | _O_BINARY;
+        case FileMode::ReadWrite:
+            return _O_RDWR | _O_BINARY;
+    }
+    return _O_RDONLY | _O_BINARY;
 }
 #endif
 
@@ -122,6 +150,23 @@ Expected<File, Error> File::open(const char* path, FileMode mode) noexcept {
     File file;
     file.handle_ = handle;
     return file;
+#elif CY_ASSETS_WIN32_IO
+    CY_ASSERT(path != nullptr);
+    int handle = -1;
+    // _sopen_s with _SH_DENYNO — same shape as ::open with default share access. _S_IREAD |
+    // _S_IWRITE is the umask analogue for newly-created files.
+    const errno_t err = ::_sopen_s(&handle, path, win32_flags(mode), _SH_DENYNO,
+                                   _S_IREAD | _S_IWRITE);
+    if (err != 0 || handle < 0) {
+        errno = err;
+        const ErrorCode code = err == ENOENT   ? ErrorCode::NotFound
+                               : err == EACCES ? ErrorCode::PermissionDenied
+                                               : ErrorCode::Io;
+        return make_unexpected(from_errno(code, "the file could not be opened"));
+    }
+    File file;
+    file.handle_ = handle;
+    return file;
 #else
     (void)path;
     (void)mode;
@@ -151,6 +196,27 @@ Expected<usize, Error> File::read(void* destination, usize size) noexcept {
         total += static_cast<usize>(got);
     }
     return total;
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "read on a file that is not open");
+    }
+    auto* cursor = static_cast<u8*>(destination);
+    usize total = 0;
+    while (total < size) {
+        // _read takes an unsigned int for the size — clamp per call to avoid overflow on
+        // multi-gigabyte reads. Same short-read semantics as POSIX.
+        const unsigned int chunk =
+            static_cast<unsigned int>(std::min<usize>(size - total, 0x40000000U));
+        const int got = ::_read(handle_, cursor + total, chunk);
+        if (got < 0) {
+            return make_unexpected(from_errno(ErrorCode::Io, "the file could not be read"));
+        }
+        if (got == 0) {
+            break;
+        }
+        total += static_cast<usize>(got);
+    }
+    return total;
 #else
     (void)destination;
     (void)size;
@@ -173,6 +239,40 @@ Expected<usize, Error> File::read_at(u64 offset, void* destination, usize size) 
             if (errno == EINTR) {
                 continue;
             }
+            return make_unexpected(from_errno(ErrorCode::Io, "the file could not be read"));
+        }
+        if (got == 0) {
+            break;
+        }
+        total += static_cast<usize>(got);
+    }
+    return total;
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "read_at on a file that is not open");
+    }
+    // MSVC has no pread; use ReadFile with an OVERLAPPED offset via the underlying HANDLE. This is
+    // atomic with respect to concurrent read_ats on the same file: OVERLAPPED lets the kernel do the
+    // seek, and no shared cursor is disturbed.
+    const HANDLE native = reinterpret_cast<HANDLE>(::_get_osfhandle(handle_));
+    if (native == INVALID_HANDLE_VALUE) {
+        return make_unexpected(from_errno(ErrorCode::Io, "the file handle is invalid"));
+    }
+    auto* cursor = static_cast<u8*>(destination);
+    usize total = 0;
+    while (total < size) {
+        const u64 at = offset + total;
+        OVERLAPPED overlapped = {};
+        overlapped.Offset = static_cast<DWORD>(at & 0xFFFFFFFFULL);
+        overlapped.OffsetHigh = static_cast<DWORD>((at >> 32) & 0xFFFFFFFFULL);
+        const DWORD chunk = static_cast<DWORD>(std::min<usize>(size - total, 0x40000000U));
+        DWORD got = 0;
+        if (!::ReadFile(native, cursor + total, chunk, &got, &overlapped)) {
+            const DWORD gle = ::GetLastError();
+            if (gle == ERROR_HANDLE_EOF) {
+                break;
+            }
+            errno = EIO;
             return make_unexpected(from_errno(ErrorCode::Io, "the file could not be read"));
         }
         if (got == 0) {
@@ -208,6 +308,22 @@ Status File::write(const void* source, usize size) noexcept {
         total += static_cast<usize>(put);
     }
     return ok();
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "write on a file that is not open");
+    }
+    const auto* cursor = static_cast<const u8*>(source);
+    usize total = 0;
+    while (total < size) {
+        const unsigned int chunk =
+            static_cast<unsigned int>(std::min<usize>(size - total, 0x40000000U));
+        const int put = ::_write(handle_, cursor + total, chunk);
+        if (put < 0) {
+            return make_unexpected(from_errno(ErrorCode::Io, "the file could not be written"));
+        }
+        total += static_cast<usize>(put);
+    }
+    return ok();
 #else
     (void)source;
     (void)size;
@@ -232,6 +348,21 @@ Expected<u64, Error> File::seek(i64 offset, SeekOrigin origin) noexcept {
         return make_unexpected(from_errno(ErrorCode::Io, "the file could not be sought"));
     }
     return static_cast<u64>(position);
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "seek on a file that is not open");
+    }
+    int whence = SEEK_END;
+    if (origin == SeekOrigin::Begin) {
+        whence = SEEK_SET;
+    } else if (origin == SeekOrigin::Current) {
+        whence = SEEK_CUR;
+    }
+    const __int64 position = ::_lseeki64(handle_, offset, whence);
+    if (position < 0) {
+        return make_unexpected(from_errno(ErrorCode::Io, "the file could not be sought"));
+    }
+    return static_cast<u64>(position);
 #else
     (void)offset;
     (void)origin;
@@ -249,6 +380,15 @@ Expected<u64, Error> File::tell() const noexcept {
         return make_unexpected(from_errno(ErrorCode::Io, "the file position could not be read"));
     }
     return static_cast<u64>(position);
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "tell on a file that is not open");
+    }
+    const __int64 position = ::_lseeki64(handle_, 0, SEEK_CUR);
+    if (position < 0) {
+        return make_unexpected(from_errno(ErrorCode::Io, "the file position could not be read"));
+    }
+    return static_cast<u64>(position);
 #else
     return fail(ErrorCode::Unsupported, "file access is not implemented for this platform");
 #endif
@@ -261,6 +401,15 @@ Expected<u64, Error> File::size() const noexcept {
     }
     struct ::stat information = {};
     if (::fstat(handle_, &information) != 0) {
+        return make_unexpected(from_errno(ErrorCode::Io, "the file size could not be read"));
+    }
+    return static_cast<u64>(information.st_size);
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "size on a file that is not open");
+    }
+    struct ::_stat64 information = {};
+    if (::_fstat64(handle_, &information) != 0) {
         return make_unexpected(from_errno(ErrorCode::Io, "the file size could not be read"));
     }
     return static_cast<u64>(information.st_size);
@@ -283,6 +432,18 @@ Status File::flush() noexcept {
         }
     }
     return ok();
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ < 0) {
+        return fail(ErrorCode::InvalidArgument, "flush on a file that is not open");
+    }
+    if (::_commit(handle_) != 0) {
+        // EINVAL on a handle whose underlying object does not support flushing — pipes, sockets.
+        // Same rationale as POSIX above: the data is already where it is going.
+        if (errno != EINVAL) {
+            return make_unexpected(from_errno(ErrorCode::Io, "the file could not be flushed"));
+        }
+    }
+    return ok();
 #else
     return fail(ErrorCode::Unsupported, "file access is not implemented for this platform");
 #endif
@@ -292,6 +453,11 @@ void File::close() noexcept {
 #if CY_ASSETS_POSIX_IO
     if (handle_ >= 0) {
         (void)::close(handle_);
+        handle_ = -1;
+    }
+#elif CY_ASSETS_WIN32_IO
+    if (handle_ >= 0) {
+        (void)::_close(handle_);
         handle_ = -1;
     }
 #endif
@@ -377,6 +543,74 @@ Expected<MappedFile, Error> MappedFile::map(const char* path, u64 offset, usize 
     mapped.data_ = static_cast<const u8*>(mapping) + slack;
     mapped.size_ = span;
     return mapped;
+#elif CY_ASSETS_WIN32_IO
+    CY_ASSERT(path != nullptr);
+    // Windows requires two handles: one for the file, one for the mapping object. The file handle
+    // is closed once the mapping is created — the mapping keeps its own reference, just like the
+    // POSIX branch closes the descriptor.
+    const HANDLE file_handle =
+        ::CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                      FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file_handle == INVALID_HANDLE_VALUE) {
+        const DWORD gle = ::GetLastError();
+        const ErrorCode code =
+            gle == ERROR_FILE_NOT_FOUND || gle == ERROR_PATH_NOT_FOUND ? ErrorCode::NotFound
+                                                                       : ErrorCode::Io;
+        errno = gle == ERROR_FILE_NOT_FOUND ? ENOENT : EIO;
+        return make_unexpected(from_errno(code, "the file could not be opened for mapping"));
+    }
+    LARGE_INTEGER total_li{};
+    if (!::GetFileSizeEx(file_handle, &total_li)) {
+        ::CloseHandle(file_handle);
+        errno = EIO;
+        return make_unexpected(from_errno(ErrorCode::Io, "the file size could not be read"));
+    }
+    const u64 total = static_cast<u64>(total_li.QuadPart);
+    if (offset > total) {
+        ::CloseHandle(file_handle);
+        return fail(ErrorCode::OutOfRange, "the mapping offset is past the end of the file");
+    }
+    const auto span = length == 0 ? static_cast<usize>(total - offset) : length;
+    if (span == 0) {
+        ::CloseHandle(file_handle);
+        return fail(ErrorCode::InvalidArgument, "an empty range cannot be mapped");
+    }
+    if (offset + span > total) {
+        ::CloseHandle(file_handle);
+        return fail(ErrorCode::OutOfRange, "the mapping extends past the end of the file");
+    }
+    // MapViewOfFile requires the offset to be a multiple of the allocation granularity, so the
+    // mapping starts at the boundary below and `data_` points into it. Same shape as the POSIX
+    // path above.
+    const usize granularity = memory_mapping_granularity();
+    const u64 aligned = offset - (offset % granularity);
+    const auto slack = static_cast<usize>(offset - aligned);
+    const usize base_span = span + slack;
+    const HANDLE mapping_handle =
+        ::CreateFileMappingA(file_handle, nullptr, PAGE_READONLY,
+                             static_cast<DWORD>((offset + span) >> 32),
+                             static_cast<DWORD>((offset + span) & 0xFFFFFFFFULL), nullptr);
+    ::CloseHandle(file_handle);
+    if (mapping_handle == nullptr) {
+        errno = EIO;
+        return make_unexpected(from_errno(ErrorCode::Io, "the file could not be mapped"));
+    }
+    void* view = ::MapViewOfFile(mapping_handle, FILE_MAP_READ,
+                                 static_cast<DWORD>(aligned >> 32),
+                                 static_cast<DWORD>(aligned & 0xFFFFFFFFULL), base_span);
+    // Close the mapping handle: the view holds its own reference, and closing the handle here
+    // keeps the shape symmetric with the POSIX branch that closes the fd.
+    ::CloseHandle(mapping_handle);
+    if (view == nullptr) {
+        errno = EIO;
+        return make_unexpected(from_errno(ErrorCode::Io, "the file could not be mapped"));
+    }
+    MappedFile mapped;
+    mapped.base_ = view;
+    mapped.base_size_ = base_span;
+    mapped.data_ = static_cast<const u8*>(view) + slack;
+    mapped.size_ = span;
+    return mapped;
 #else
     (void)path;
     (void)offset;
@@ -390,6 +624,10 @@ void MappedFile::unmap() noexcept {
     if (base_ != nullptr) {
         (void)::munmap(base_, base_size_);
     }
+#elif CY_ASSETS_WIN32_IO
+    if (base_ != nullptr) {
+        (void)::UnmapViewOfFile(base_);
+    }
 #endif
     base_ = nullptr;
     base_size_ = 0;
@@ -398,13 +636,20 @@ void MappedFile::unmap() noexcept {
 }
 
 bool memory_mapping_available() noexcept {
-    return CY_ASSETS_POSIX_IO != 0;
+    return CY_ASSETS_POSIX_IO != 0 || CY_ASSETS_WIN32_IO != 0;
 }
 
 usize memory_mapping_granularity() noexcept {
 #if CY_ASSETS_POSIX_IO
     const long page = ::sysconf(_SC_PAGESIZE);
     return page > 0 ? static_cast<usize>(page) : usize{4096};
+#elif CY_ASSETS_WIN32_IO
+    SYSTEM_INFO info = {};
+    ::GetSystemInfo(&info);
+    // MapViewOfFile aligns to dwAllocationGranularity (typically 64 KiB), NOT dwPageSize. That is
+    // what a caller must round to, so return the allocation granularity here.
+    return info.dwAllocationGranularity > 0 ? static_cast<usize>(info.dwAllocationGranularity)
+                                            : usize{65536};
 #else
     return 4096;
 #endif
@@ -574,6 +819,8 @@ Status write_atomic(const char* path, const void* data, usize size) noexcept {
                       static_cast<unsigned long long>(
 #if CY_ASSETS_POSIX_IO
                           ::getpid()
+#elif CY_ASSETS_WIN32_IO
+                          ::GetCurrentProcessId()
 #else
                           0
 #endif
