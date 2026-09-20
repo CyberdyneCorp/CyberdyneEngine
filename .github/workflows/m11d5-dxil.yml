@@ -3,8 +3,17 @@ name: m11d5-dxil
 on:
   pull_request:
     paths:
+      - src/backends/rhi-d3d12/**
+      - src/backends/rhi/**
+      - src/core/diagnostics/src/crash_handler_windows.cpp
+      - src/core/memory/include/cy/core/memory/hash.h
+      - src/core/memory/tests/test_containers.cpp
+      - tests/render/**
       - samples/03-first-light/shaders/first_light.slang
       - samples/03-first-light/shaders/first_light_dxil.h
+      - samples/03-first-light/src/renderer.cpp
+      - cmake/**
+      - CMakeLists.txt
       - .github/workflows/m11d5-dxil.yml
 
 permissions:
