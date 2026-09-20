@@ -486,10 +486,10 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requ
 [[proof]]
 ledger = "m11b"
 criterion = "editor-window"
-digest = "ae392617b0e6139c"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> cargo build profile=dev  cargo-profile=development  target=/home/leonardo/work/CyberdyneEngine/build/repair-1-4/editor"
+digest = "f3f2ef80c8bb917d"
+verdict = "proven against a built tree"
+mutation = "rename-token '--smoke' in editor/crates/cy-editor-app/src/main.rs (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/dev (exit 1: error: recipe `run-editor` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
