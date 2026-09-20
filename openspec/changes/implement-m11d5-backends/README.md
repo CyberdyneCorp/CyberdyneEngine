@@ -46,46 +46,42 @@ runtime signature, and is what produced the matching D3D12 golden image above. H
 unaffected: `.github/workflows/m11d5-dxil.yml` regenerates the header at `sm_6_2` in its own
 `Compile and embed DXIL` step before the build.
 
-## Windows handoff — 2026-09-20
+## Handoff to M11.e
 
-Continue from branch `feat/close-m11d5` and draft PR #2. The native D3D12 backend now compiles on
-`windows-2022`; its device-free heap-tier suite and its real-device integration suite both pass
-with the D3D12 debug layer enabled. Run
-[`35532341415`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/35532341415)
-identified the hosted adapter as `Microsoft Basic Render Driver` (`0x1414`, software) from its
-identity rather than the unreliable `DXGI_ADAPTER_FLAG_SOFTWARE` bit.
+M11.d.5 now has native Vulkan, Metal and D3D12 implementations rendering the same committed
+scene on NVIDIA, Apple and AMD hardware. The following hardware questions were declared before
+implementation and are now resolved: Apple-family memoryless/tile behavior, Tier 2 argument
+buffers, and hardware golden parity. Their device-labelled evidence remains in the committed
+manifests and backend suites.
 
-The remaining Windows blocker is narrow and observable. The first-light golden test reaches
-`CreateGraphicsPipelineState`, where the hosted WARP device rejects the generated vertex shader:
+One backend risk remains and is carried forward explicitly: **D3D12 Resource Heap Tier 1 execution
+has not run on a Tier 1 device**. Hosted WARP and the physical Radeon RX 6900 XT both report Tier 2.
+The allocator policy is implemented and its device-free regression test requires Tier 1 to separate
+buffers, ordinary textures and render/depth textures. Re-enter when a Tier 1 adapter is available,
+or when a D3D12 validation forcing mode can exercise the native placed-resource path. Do not infer
+Tier 1 execution from the policy test.
 
-```text
-ID3D12Device::CreateVertexShader: Shader must be vs_6_2 ... Shader version provided: vs_6_6.
-```
+The rung's gate remains open. A clean macOS build with Metal and D3D12 disabled succeeds, but its
+required `test-all` run currently reports 12 integration failures and 4 smoke failures in inherited,
+non-backend suites. The failures
+include Python 3.9 selecting code that requires `tomllib`, Vulkan device tests registering on a Mac
+without a Vulkan device, macOS crash-report module discovery, Swift/XCTest discovery, and unrelated
+math, denoise, networking, asset and editor-play cases. Task 4.3 and the full §7 gate stay unchecked
+until the renderer-off configuration passes its whole suite; the capability status therefore stays
+Working and `milestone-m11d5` stays `joins-on-close`.
 
-The first-light workflow now compiles this compatibility scene as `sm_6_2` in
-`.github/workflows/m11d5-dxil.yml`, which is the highest model the hosted device accepts. This does
-not lower the engine-wide Shader Model 6.6 floor: virtual geometry needs it, and the checked-in
-physical-hardware payload remains 6.6. The physical Windows run must record the actual adapter name,
-vendor, shader model and device class.
+M11.e receives no missing Metal or D3D12 implementation task from this rung. It receives
+the Tier 1 hardware exercise above, plus its own mobile, distribution, dependency and final-record
+work already listed in `implement-m11e-ship/tasks.md`.
 
-Use these checks on the Windows GPU machine:
+The other team's four review questions have concrete answers:
 
-```powershell
-cmake --preset dev -DCY_RENDERER_D3D12=ON -DCY_RENDERER_VULKAN=OFF -DCY_RENDERER_METAL=OFF
-cmake --build --preset dev --config Development --target cy_rhi_d3d12 cy_test_unit_rhi_d3d12 cy_test_integration_rhi_d3d12 cy_test_render_golden_backends
-ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|integration.rhi_d3d12|render.golden_backends)$" --output-on-failure
-```
-
-Set `CY_GOLDEN_CAPTURE_DIR` and `CY_GOLDEN_LEDGER` before the last command. A valid result contains
-`row backend=d3d12 ... outcome=matched`, writes the D3D12 PNG, and has no debug-layer error. Copy the
-PNG and manifest to `docs/design/images/m11d5-three-backends-d3d12.*`, then run:
-
-```text
-just test-render --compare-backends vulkan metal d3d12
-```
-
-The committed Vulkan image came from an NVIDIA GeForce RTX 5060. The committed Metal image came
-from a physical Apple M3 Pro and matches the reference with maximum raw channel delta 1. Finish by
-proving the golden criterion can fail through a visible scene mutation, restoring it to green, and
-recording both runs. D3D12 hardware evidence must name the physical adapter; WARP evidence remains
-software evidence and cannot close the hardware deferral.
+- Metal evidence came from a physical Apple M3 Pro. Hosted macOS evidence is not used for the
+  Apple-family, memoryless, Tier 2 argument-buffer or hardware-parity claims.
+- `cy::pcg::ExecutionDomain` still has no `Gpu` enumerator. The existing GPU conformance path does
+  not satisfy the execution-domain requirement; M11.e still owes that API and its two-vendor proof.
+- The PCG agreement gate needs a joint self-hosted Apple/NVIDIA artifact exchange. Hosted runners
+  cannot supply either physical-device leg.
+- `cross-compilation-works` and `porting-surface-against-a-real-non-desktop` in `m11e.toml` both run
+  `just build-ios simulator`. They state different claims but currently collect identical evidence,
+  so the latter needs its own porting-surface assertion before the M11.e gate can close.

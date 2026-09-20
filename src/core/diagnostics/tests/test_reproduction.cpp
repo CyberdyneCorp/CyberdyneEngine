@@ -76,7 +76,7 @@ const char* scratch_dir() {
         // process but never collides with a concurrent one — the same property `mkdtemp` provided
         // without pinning us to POSIX. `create_directories` is idempotent for the same process,
         // which is what `static` above needs.
-        char suffix[32] = {};
+        char suffix[40] = {};
         std::snprintf(suffix, sizeof(suffix), "cy-reproduction-%016llx",
                       static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(&suffix)));
         const std::filesystem::path directory = base / suffix;
