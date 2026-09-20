@@ -124,12 +124,11 @@ evidence = "test:render.null_frame"
 case = "render.null_frame: the sample's frame runs with no GPU at all"
 note = "The real first-light frame constructs, culls, schedules, records and submits through the null implementation, while the RHI unit suite preserves handle validation and comparable command streams."
 
-# WHAT IS HERE, AND WHAT IS DELIBERATELY NOT. Nine entries across two rows, written by reading those
-# two specifications requirement by requirement. The other fifteen requirements of those rows, and
-# every requirement of every other row the five criteria name, stay UNANSWERED and each run prints
-# them by title. Several of them have a case in the tree that answers PART of them — and a part
-# recorded as an answer is precisely the green tick that outlives its subject, so those are left for
-# whoever reads the requirement end to end.
+# WHAT IS HERE, AND WHAT IS DELIBERATELY NOT. Entries are added only after reading the complete
+# requirement and identifying a case or gate that carries all of it. A neighbouring case that
+# answers only one clause stays UNANSWERED; the remaining titles printed by the audit are work still
+# owed rather than a reason to weaken an entry. The RHI entries above preserve PR #2's complete
+# three-backend audit; the editor entries below add PR #3's independently reviewed coverage.
 
 # --- live-editing ----------------------------------------------------------------------------------
 #
@@ -207,6 +206,62 @@ row = "editor-architecture"
 requirement = "Specialised editors"
 evidence = "criterion:m11b:specialised-editors"
 note = "the editors the requirement enumerates against the ones registered, and the requirement's two prohibitions — one node-graph canvas, one curve surface — checked where they are decided rather than by a word search."
+
+# --- editor-rust-application ----------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-rust-application"
+requirement = "No peer dependencies between panels"
+evidence = "rust:cy-editor-app::layering::panels_do_not_depend_on_panels"
+note = "the crate graph is read mechanically and rejects every view-model or panel dependency on a peer panel, so coordination must continue through shared services, commands and models."
+
+# --- editor-ui-ux ---------------------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-ui-ux"
+requirement = "Every edit is a transaction"
+evidence = "rust:cy-editor-documents::transactions_are_the_only_write_path::document_content_has_no_public_mutator_that_does_not_take_a_write_token"
+note = "the public document surface is audited for mutation entry points and every one requires the token only a transaction supplies; a direct persistent edit therefore cannot be expressed."
+
+# --- editor-visual-language -----------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-visual-language"
+requirement = "Axis colour is one language"
+evidence = "rust:cy-editor-interface::inspector::tests::a_vector_field_is_labelled_with_the_same_axis_language_as_the_viewport"
+note = "the generated inspector and viewport consume the same semantic X/Y/Z axis tokens and colours, preventing either surface from inventing a second axis language."
+
+# --- editor-viewport-and-gizmos -------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-viewport-and-gizmos"
+requirement = "Multiple viewports and view states"
+evidence = "rust:cy-editor-viewport::viewport::tests::several_viewports_each_keep_their_own_view_state"
+note = "the case opens multiple independent viewports and verifies their camera, projection, view mode, visibility and focus state do not bleed between views."
+
+# --- editor-documents-and-transactions -------------------------------------------------------------
+
+[[coverage]]
+row = "editor-documents-and-transactions"
+requirement = "Transactions are the only path for persistent mutation"
+evidence = "rust:cy-editor-documents::transactions_are_the_only_write_path::document_content_has_no_public_mutator_that_does_not_take_a_write_token"
+note = "the compile-time API audit enumerates the document's public mutators and requires the write token created only by a transaction, including plugin and command callers."
+
+# --- editor-agent-interface -----------------------------------------------------------------------
+
+[[coverage]]
+row = "editor-agent-interface"
+requirement = "Tools are a projection of the command registry"
+evidence = "rust:cy-editor-agent::agent::a_command_registered_for_a_menu_is_an_agent_tool_with_no_further_work"
+note = "the case registers an ordinary editor command and observes it immediately through the agent tool projection, with metadata and invocation derived from the same registry entry."
+
+# --- project-and-plugins ---------------------------------------------------------------------------
+
+[[coverage]]
+row = "project-and-plugins"
+requirement = "Architectural layering is enforced"
+evidence = "gate:layering"
+note = "the permanent layering gate validates every declared module edge, rejects upward dependencies with both modules and layers named, and verifies shipping reachability excludes editor modules."
 
 # --- material-compiler ------------------------------------------------------------------------------
 #

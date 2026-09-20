@@ -416,6 +416,9 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       to a named test case, a proven criterion, a gate, or a recorded exemption. A partial case does
       not answer a whole requirement. The target is `just quality-requirements` reporting 133 of
       133 with zero stale or missing evidence
+      **Progress:** each of the seven previously empty rows now has at least one resolved, exact
+      evidence entry. The audit moved from 9/133 across two rows to 16/133 across all nine rows;
+      the remaining 117 titles stay visibly unanswered rather than borrowing partial cases
 - [x] 3.14 **Repair the view-mode criterion without taking M11.c rendering work.** The editor SHALL
       prove every engine-provided debug view is selectable, described and carried to the runtime.
       Modes whose renderer producer is absent remain explicit gaps owned by their rendering
