@@ -296,6 +296,7 @@ Status FrameScene::build(rhi::Device& device) noexcept {
     // The CPU cull path, deliberately: the device dispatch produces the same `CullResults` and this
     // suite is about what is RECORDED rather than about where the cull ran.
     description.gpu_culling = false;
+    description.post.temporal_antialiasing = true;
     if (Status made = assembly_.initialize(description); !made) {
         return made;
     }
@@ -307,6 +308,8 @@ Status FrameScene::build(rhi::Device& device) noexcept {
     setup.color_format = description.color_format;
     setup.depth_format = description.depth_format;
     setup.output_format = kOutputFormat;
+    setup.prepass_normal = true;
+    setup.prepass_velocity = true;
     if (Status made = pipelines_.initialize(device, setup); !made) {
         return made;
     }

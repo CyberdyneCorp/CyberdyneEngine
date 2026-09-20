@@ -401,6 +401,7 @@ public:
     [[nodiscard]] const ForwardFrame& frame() const noexcept { return frame_; }
     [[nodiscard]] const FrameResources& resources() const noexcept { return frame_.resources(); }
     [[nodiscard]] TemporalFramework& temporal() noexcept { return temporal_; }
+    [[nodiscard]] const TemporalFramework& temporal() const noexcept { return temporal_; }
     [[nodiscard]] ShadowPageCache& shadows() noexcept { return shadows_; }
     [[nodiscard]] const sky::SkyViewTable& sky() const noexcept { return sky_; }
     /// The ambient irradiance the sky contributes, for the frame's own ambient term.
@@ -474,6 +475,13 @@ private:
     vt::VirtualTextureFrame vt_frame_;
     bool vt_ready_ = false;
     bool vt_declared_ = false;
+
+    /// Two device images retained across frames. `temporal_read_` names the last successfully
+    /// completed history; the other image is this frame's write target.
+    rhi::TextureHandle temporal_images_[2];
+    u32 temporal_read_ = 0;
+    bool temporal_images_ready_ = false;
+    bool temporal_declared_ = false;
 
     u64 frame_index_ = 0;
 };

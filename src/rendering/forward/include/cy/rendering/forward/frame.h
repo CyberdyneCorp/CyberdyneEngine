@@ -156,12 +156,12 @@ struct FrameResources {
     ResourceId ambient_occlusion = kInvalidResource;
     ResourceId screen_space_gi = kInvalidResource;
     ResourceId reflections = kInvalidResource;
+    ResourceId temporal_previous = kInvalidResource;
     ResourceId temporal_history = kInvalidResource;
     ResourceId post_color = kInvalidResource;
     /// Where the frame ends up: the caller's imported swapchain image, or a frame-owned texture
     /// when the caller imported none.
     ResourceId output = kInvalidResource;
-
     /// The cluster grid's two buffers, and the light list the assignment reads.
     ResourceId cluster_headers = kInvalidResource;
     ResourceId cluster_indices = kInvalidResource;
@@ -196,6 +196,10 @@ struct FrameDescription {
     /// The swapchain image, imported by the caller. `kInvalidResource` makes the frame create its
     /// own target, which is what a headless test and an offscreen capture want.
     ResourceId output = kInvalidResource;
+    /// Device-backed temporal histories imported by the assembly. When absent, structural tests
+    /// receive graph-owned stand-ins so the pass remains inspectable without a device.
+    ResourceId temporal_previous = kInvalidResource;
+    ResourceId temporal_current = kInvalidResource;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;

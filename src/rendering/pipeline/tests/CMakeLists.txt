@@ -52,8 +52,15 @@ function(cy_pipeline_declare_tests)
         DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null)
     target_include_directories(cy_test_integration_render_pipeline PRIVATE "${tests_dir}")
 
-    if(NOT CY_RENDERER_VULKAN)
+    if(NOT CY_RENDERER_VULKAN AND NOT (APPLE AND CY_RENDERER_METAL))
         return()
+    endif()
+    if(CY_RENDERER_VULKAN)
+        set(device_backend cy::rhi-vulkan)
+        set(device_define CY_TEST_PIPELINE_VULKAN=1)
+    else()
+        set(device_backend cy::rhi-metal)
+        set(device_define CY_TEST_PIPELINE_METAL=1)
     endif()
     cy_add_test(
         NAME pipeline
@@ -62,9 +69,10 @@ function(cy_pipeline_declare_tests)
             "${tests_dir}/frame_scene.cpp"
             "${tests_dir}/test_pipeline_device.cpp"
             "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
-        DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null cy::rhi-vulkan)
+        DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null ${device_backend})
     target_include_directories(cy_test_render_pipeline
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
+    target_compile_definitions(cy_test_render_pipeline PRIVATE ${device_define})
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_pipeline_declare_tests)

@@ -108,6 +108,10 @@ public:
     /// Separate from `upload` because the view only exists once the graph has realised its
     /// transients, which is after `upload` and inside the record callback's own frame.
     [[nodiscard]] Status bind_scene_color(rhi::TextureViewHandle view) noexcept;
+    [[nodiscard]] Status bind_temporal(rhi::TextureViewHandle current,
+                                       rhi::TextureViewHandle history,
+                                       rhi::TextureViewHandle velocity,
+                                       rhi::TextureViewHandle depth) noexcept;
 
     /// The three sets, in the order a `bind_descriptor_sets(layout, 0, sets)` wants them.
     [[nodiscard]] Span<const rhi::DescriptorSetHandle> sets() const noexcept;

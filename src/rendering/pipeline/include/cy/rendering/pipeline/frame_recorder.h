@@ -16,8 +16,8 @@
 //                  `ForwardFrame` calls that pass "the only pass that writes them" and declares
 //                  `Access::TransferWrite` on both; a caller that recorded nothing left the
 //                  transfer barrier around a transfer that never happened.
-//   DepthPrepass   The opaque draws, position stream only, depth written and compared
-//                  GreaterOrEqual. `render::kDepthPassStreams` made structural.
+//   DepthPrepass   The opaque draws, depth written and compared GreaterOrEqual, plus normal and
+//                  camera motion outputs when the derived prepass mode requests them.
 //   Opaque         The same draws, three streams, depth compared EQUAL and not written, shaded
 //                  against the cluster's light list and the GPU material table.
 //   Transparent    The transparent layer, back to front as the sort produced it, alpha blended,
@@ -140,6 +140,7 @@ struct RecorderReport {
     /// is the honest number for "how many draws did a pass have to skip".
     u32 skipped_draws = 0;
     u32 extensions_run = 0;
+    u32 temporal_resolves = 0;
     /// Bytes copied by the Prepare pass into the frame's own buffers.
     u64 uploaded_bytes = 0;
 

@@ -206,6 +206,16 @@ void record_depth_prepass(const PassContext& context, void* user) noexcept {
     rhi::RenderingInfo info;
     info.render_area = rhi::Rect2D{0, 0, description.width, description.height};
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, true);
+    rhi::RenderAttachment colors[2];
+    u32 color_count = 0;
+    if (resources.normal_roughness != kInvalidResource) {
+        colors[color_count++] =
+            color_attachment(*context.executor, resources.normal_roughness, true);
+    }
+    if (resources.velocity != kInvalidResource) {
+        colors[color_count++] = color_attachment(*context.executor, resources.velocity, true);
+    }
+    info.color_attachments = Span<const rhi::RenderAttachment>(colors, color_count);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
     bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
@@ -266,6 +276,39 @@ void record_transparent(const PassContext& context, void* user) noexcept {
     ++recorder.mutable_report().passes;
 }
 
+/// Stage 10. Reproject the last completed history and write this frame's history image.
+void record_temporal(const PassContext& context, void* user) noexcept {
+    FrameRecorder& recorder = *recorder_of(user);
+    FrameAssembly& assembly = *recorder.assembly();
+    const FrameResources& resources = assembly.resources();
+    const AssemblyDescription& description = assembly.description();
+    FrameBindings& bindings = *recorder.bindings();
+
+    if (Status bound = bindings.bind_temporal(context.executor->view(resources.color),
+                                              context.executor->view(resources.temporal_previous),
+                                              context.executor->view(resources.velocity),
+                                              context.executor->view(resources.depth));
+        !bound) {
+        return;
+    }
+    const rhi::RenderAttachment color =
+        color_attachment(*context.executor, resources.temporal_history, true);
+    rhi::RenderingInfo info;
+    info.render_area = rhi::Rect2D{0, 0, description.width, description.height};
+    info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
+    context.commands->begin_rendering(info);
+    set_full_viewport(*context.commands, description.width, description.height);
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
+    context.commands->bind_graphics_pipeline(
+        recorder.pipelines()->pipeline(FramePipelineKind::Temporal));
+    context.commands->draw(3, 1, 0, 0);
+    record_extensions(recorder, context, FramePassKind::Temporal, description.width,
+                      description.height, true);
+    context.commands->end_rendering();
+    ++recorder.mutable_report().temporal_resolves;
+    ++recorder.mutable_report().passes;
+}
+
 /// Stage 11. `cy/fullscreen.slang`'s own resolve, straight into the frame's output.
 void record_post_process(const PassContext& context, void* user) noexcept {
     FrameRecorder& recorder = *recorder_of(user);
@@ -277,7 +320,10 @@ void record_post_process(const PassContext& context, void* user) noexcept {
     // The scene colour is a transient the graph realised a moment ago, so its view cannot be named
     // before this point. That is why the pass set is written here and the view set is written in
     // `upload`.
-    if (Status bound = bindings.bind_scene_color(context.executor->view(resources.color)); !bound) {
+    const ResourceId source = assembly.frame().pass_of(FramePassKind::Temporal) != kInvalidPass
+                                  ? resources.temporal_history
+                                  : resources.color;
+    if (Status bound = bindings.bind_scene_color(context.executor->view(source)); !bound) {
         return;
     }
     const rhi::RenderAttachment color = color_attachment(*context.executor, resources.output, true);
@@ -341,6 +387,17 @@ Status FrameRecorder::bind(FrameAssembly& assembly) noexcept {
                     "frame recorder: the pipelines were created for different attachment formats "
                     "than the frame declares");
     }
+    const PostChainConfig& post = description.post;
+    const bool wants_velocity =
+        post.temporal_antialiasing || post.temporal_upscaling || post.motion_blur;
+    const bool wants_normal =
+        wants_velocity || post.ambient_occlusion || post.screen_space_reflections;
+    if (pipelines_->setup().prepass_normal != wants_normal ||
+        pipelines_->setup().prepass_velocity != wants_velocity) {
+        return fail(ErrorCode::InvalidArgument,
+                    "frame recorder: the depth pipeline attachments do not match the frame's "
+                    "derived prepass mode");
+    }
     if (pipelines_->setup().sample_count != 1) {
         return fail(ErrorCode::NotImplemented,
                     "frame recorder: multisampled frames are not recorded by this layer — the "
@@ -360,6 +417,7 @@ FrameSinks FrameRecorder::sinks() noexcept {
     attach(FramePassKind::DepthPrepass, &record_depth_prepass);
     attach(FramePassKind::Opaque, &record_opaque);
     attach(FramePassKind::Transparent, &record_transparent);
+    attach(FramePassKind::Temporal, &record_temporal);
     attach(FramePassKind::PostProcess, &record_post_process);
     return sinks;
 }
@@ -373,7 +431,18 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
 
     FrameUpload upload;
     upload.globals = globals;
-    write_rows(relative_to_clip, upload.view.relative_to_clip);
+    Mat4 jittered = relative_to_clip;
+    if (description.width > 0 && description.height > 0) {
+        const f32 x = report.jitter.x * 2.0F / static_cast<f32>(description.width);
+        const f32 y = report.jitter.y * 2.0F / static_cast<f32>(description.height);
+        for (Vec4& column : jittered.columns) {
+            column.x += x * column.w;
+            column.y += y * column.w;
+        }
+    }
+    write_rows(jittered, upload.view.relative_to_clip);
+    write_rows(assembly.temporal().previous_view().view_projection(),
+               upload.view.previous_relative_to_clip);
     write_rows(relative_to_view, upload.view.relative_to_view);
     const Vec3 ambient = assembly.sky_irradiance();
     upload.view.ambient_and_occlusion[0] = ambient.x;
@@ -415,6 +484,14 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     for (u32 index = 0; index < 4U; ++index) {
         upload.view.material_offsets[index] = material_offsets[index];
     }
+    const HistoryResource* history = assembly.temporal().history(HistoryId{0});
+    upload.view.temporal_feedback[0] =
+        history != nullptr && history->valid && !report.temporal_invalidated ? 1.0F : 0.0F;
+    upload.view.temporal_feedback[1] = 0.9F;
+    upload.view.temporal_jitter[0] = report.jitter.x;
+    upload.view.temporal_jitter[1] = report.jitter.y;
+    upload.view.temporal_jitter[2] = assembly.temporal().jitter().previous().x;
+    upload.view.temporal_jitter[3] = assembly.temporal().jitter().previous().y;
 
     upload.lights = assembly.lights();
     upload.cluster_headers = clusters.headers.span();

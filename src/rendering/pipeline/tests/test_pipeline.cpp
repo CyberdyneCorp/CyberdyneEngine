@@ -84,10 +84,9 @@ CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks 
 
     rendering::assembly::AssemblyReport report;
     CY_REQUIRE(scene.render(RecordMode::None, report).has_value());
-    // Five stages: Prepare, DepthPrepass, Opaque, Transparent, PostProcess. A sixth would be a
-    // stage this layer decided to own and it would show here first.
+    // Six stages: Prepare, DepthPrepass, Opaque, Transparent, Temporal, PostProcess.
     auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
-    CY_CHECK_EQ(attached_callbacks(recorder.sinks()), 5U);
+    CY_CHECK_EQ(attached_callbacks(recorder.sinks()), 6U);
 }
 
 CY_TEST_CASE(
@@ -117,7 +116,8 @@ CY_TEST_CASE(
     CY_CHECK_EQ(recorded.passes_declared, blank.passes_declared);
     CY_CHECK_EQ(recorded.lights, blank.lights);
 
-    CY_CHECK_EQ(scene.recorded().passes, 5U);
+    CY_CHECK_EQ(scene.recorded().passes, 6U);
+    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
     // Every visible instance drawn twice — once into the depth prepass and once shaded — and the
     // prepass draws are not counted in `opaque_draws`, so this is the shaded count.
     CY_CHECK_EQ(scene.recorded().opaque_draws, recorded.draws);
@@ -167,7 +167,8 @@ CY_TEST_CASE("the ring turns over many frames and tears down with the device sti
     for (u32 frame = 0; frame < turns; ++frame) {
         rendering::assembly::AssemblyReport report;
         CY_REQUIRE(scene->render(RecordMode::CallbacksAndParticles, report).has_value());
-        CY_CHECK_EQ(scene->recorded().passes, 5U);
+        CY_CHECK_EQ(scene->recorded().passes, 6U);
+        CY_CHECK_EQ(scene->recorded().temporal_resolves, 1U);
         CY_CHECK_EQ(scene->recorded().skipped_draws, 0U);
     }
     // TEARDOWN UNDER LOAD: destroyed without a `wait_idle` of its own from the case. `release()`

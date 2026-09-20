@@ -106,11 +106,15 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         resources.opaque_color_copy = graph.create_texture(request);
     }
     if (description.features.temporal) {
-        request.name = "temporal";
+        request.name = "temporal previous";
         request.format = description.color_format;
-        request.extra_usage = rhi::TextureUsage::Storage;
-        resources.temporal_history = graph.create_texture(request);
-        request.extra_usage = rhi::TextureUsage::None;
+        resources.temporal_previous = valid(description.temporal_previous)
+                                          ? description.temporal_previous
+                                          : graph.create_texture(request);
+        request.name = "temporal current";
+        resources.temporal_history = valid(description.temporal_current)
+                                         ? description.temporal_current
+                                         : graph.create_texture(request);
     }
 
     // The output: the caller's imported swapchain image, or one the frame owns. A frame-owned
@@ -491,12 +495,13 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
     // 10. Temporal.
     if (features.temporal) {
         PassBuilder builder = graph.add_pass("temporal", QueueKind::Graphics);
-        builder.read(state.current_color, Access::ComputeSampledRead);
+        builder.read(state.current_color, Access::FragmentSampledRead);
+        builder.read(resources_.temporal_previous, Access::FragmentSampledRead);
         if (valid(resources_.velocity)) {
-            builder.read(resources_.velocity, Access::ComputeSampledRead);
+            builder.read(resources_.velocity, Access::FragmentSampledRead);
         }
-        builder.read(resources_.depth, Access::ComputeSampledRead);
-        builder.write(resources_.temporal_history, Access::ComputeStorageWrite);
+        builder.read(resources_.depth, Access::FragmentSampledRead);
+        builder.write(resources_.temporal_history, Access::ColorAttachmentWrite);
         attach(builder, description, FramePassKind::Temporal);
         stage(FramePassKind::Temporal, "temporal", builder.id());
         state.current_color = resources_.temporal_history;

@@ -23,9 +23,9 @@
 // WHAT IT OWNS, AND WHAT IT REFUSES TO OWN
 // ================================================================================================
 //
-// **It owns the pipelines and the bindings.** Four graphics pipelines — depth, opaque, transparent
-// and the tonemapping resolve — one pipeline layout, three descriptor set layouts on the engine's
-// own set convention, and one sampler.
+// **It owns the pipelines and the bindings.** Depth, opaque, transparent, temporal and tonemapping
+// graphics pipelines, one pipeline layout, three descriptor set layouts on the engine's own set
+// convention, and one sampler.
 //
 // **It owns no geometry.** A mesh's vertex and index buffers are the render server's, and this
 // module holds no copy: `frame_recorder.h`'s `GeometrySource` is the seam a caller fills, exactly
@@ -91,6 +91,10 @@ inline constexpr u32 kViewBindingCount = 7;
 
 inline constexpr u32 kPassBindingSceneColor = 0;
 inline constexpr u32 kPassBindingSampler = 1;
+inline constexpr u32 kPassBindingHistory = 2;
+inline constexpr u32 kPassBindingVelocity = 3;
+inline constexpr u32 kPassBindingDepth = 4;
+inline constexpr u32 kPassBindingCount = 5;
 
 /// The vertex stream bindings, in `render::VertexStream`'s own order.
 inline constexpr u32 kPositionStream = 0;
@@ -132,6 +136,8 @@ struct alignas(16) FrameViewData {
     /// not a matrix type: a matrix in a constant block has a layout that is a property of the
     /// compiler's flags rather than of either side.
     f32 relative_to_clip[16] = {};
+    /// Previous frame's unjittered camera-relative transform, used by the velocity prepass.
+    f32 previous_relative_to_clip[16] = {};
     /// Camera-relative to view. Only the third row is read — the cluster slice needs a view-space
     /// depth — and all four are carried so a later pass needs no second upload.
     f32 relative_to_view[16] = {};
@@ -154,16 +160,21 @@ struct alignas(16) FrameViewData {
     /// Word offsets into a material block: base colour, roughness, metallic, emission. DERIVED from
     /// the `MaterialProgram` the table was described with, never hardcoded.
     u32 material_offsets[4] = {0, 0, 0, 0};
+    /// x: history valid, y: history feedback. z/w reserved.
+    f32 temporal_feedback[4] = {};
+    /// current jitter in xy and previous jitter in zw, in pixel units.
+    f32 temporal_jitter[4] = {};
 };
 
-static_assert(sizeof(FrameViewData) == 224, "CyFrameData's std140 block is 224 bytes");
-static_assert(offsetof(FrameViewData, relative_to_view) == 64);
-static_assert(offsetof(FrameViewData, ambient_and_occlusion) == 128);
-static_assert(offsetof(FrameViewData, extent_and_inverse) == 144);
-static_assert(offsetof(FrameViewData, cluster_dimensions) == 160);
-static_assert(offsetof(FrameViewData, near_plane) == 176);
-static_assert(offsetof(FrameViewData, counts) == 192);
-static_assert(offsetof(FrameViewData, material_offsets) == 208);
+static_assert(sizeof(FrameViewData) == 320, "CyFrameData's std140 block is 320 bytes");
+static_assert(offsetof(FrameViewData, previous_relative_to_clip) == 64);
+static_assert(offsetof(FrameViewData, relative_to_view) == 128);
+static_assert(offsetof(FrameViewData, ambient_and_occlusion) == 192);
+static_assert(offsetof(FrameViewData, extent_and_inverse) == 208);
+static_assert(offsetof(FrameViewData, cluster_dimensions) == 224);
+static_assert(offsetof(FrameViewData, near_plane) == 240);
+static_assert(offsetof(FrameViewData, counts) == 256);
+static_assert(offsetof(FrameViewData, material_offsets) == 272);
 
 /// `cy/frame.slang`'s `CyInstanceTransform`: one instance's placement, model to CAMERA-RELATIVE.
 ///
@@ -188,8 +199,8 @@ struct DrawPush {
 // --- The pipelines ------------------------------------------------------------------------------
 
 /// What the pipelines are created for. Every field is a decision somebody else already made — the
-/// formats and the sample count come off an `AssemblyDescription`, and the two booleans come off
-/// the `FrameFeatures` the post chain derived.
+/// formats and the sample count come off an `AssemblyDescription`, and the feature booleans come
+/// off the `FrameFeatures` the post chain derived.
 struct PipelineSetup {
     rhi::Format color_format = rhi::Format::Rgba16Sfloat;
     rhi::Format depth_format = rhi::Format::D32Sfloat;
@@ -201,6 +212,9 @@ struct PipelineSetup {
     /// Create the tonemapping resolve. Off when `FrameFeatures::post_process` is off, in which case
     /// the frame's colour target never reaches the output through this module.
     bool tonemap = true;
+    /// The prepass attachments its shader writes. Velocity implies normal.
+    bool prepass_normal = false;
+    bool prepass_velocity = false;
 };
 
 /// Which pipeline a pass binds.
@@ -209,6 +223,7 @@ enum class FramePipelineKind : u8 {
     Opaque,
     Transparent,
     Resolve,
+    Temporal,
     Count,
 };
 
@@ -252,7 +267,7 @@ public:
     [[nodiscard]] rhi::SamplerHandle linear_clamp() const noexcept { return sampler_; }
 
     /// How many pipeline states were created. The number that separates "the layer is wired up"
-    /// from "the layer exists": a setup with transparency and tonemapping off creates two.
+    /// from "the layer exists": temporal resolve is retained even when a frame leaves it unused.
     [[nodiscard]] u32 created() const noexcept { return created_; }
 
 private:
@@ -263,6 +278,8 @@ private:
                                                   FramePipelineKind kind) noexcept;
     [[nodiscard]] Status create_resolve_pipeline(rhi::Device& device,
                                                  const PipelineSetup& setup) noexcept;
+    [[nodiscard]] Status create_temporal_pipeline(rhi::Device& device,
+                                                  const PipelineSetup& setup) noexcept;
 
     rhi::Device* device_ = nullptr;
     PipelineSetup setup_;
@@ -272,6 +289,7 @@ private:
     rhi::ShaderModuleHandle forward_fragment_;
     rhi::ShaderModuleHandle resolve_vertex_;
     rhi::ShaderModuleHandle resolve_fragment_;
+    rhi::ShaderModuleHandle temporal_fragment_;
     rhi::DescriptorSetLayoutHandle sets_[kSetCount];
     rhi::PipelineLayoutHandle layout_;
     rhi::SamplerHandle sampler_;

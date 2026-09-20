@@ -2,6 +2,7 @@
 
 #include <cy/rendering/particles/particle_renderer.h>
 
+#include "particle_msl.h"
 #include "particle_spirv.h"
 
 #include <cstring>
@@ -44,8 +45,16 @@ Status ParticleRenderer::create_pipeline(rhi::Device& device,
     rhi::ShaderModuleDescription vertex;
     vertex.name = "cy particle vertex";
     vertex.stage = rhi::ShaderStage::Vertex;
-    vertex.spirv =
-        Span<const u32>(kParticleVertexSpirv, sizeof(kParticleVertexSpirv) / sizeof(u32));
+    const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
+    if (metal) {
+        vertex.entry_point = "cyParticleVertex";
+        vertex.native = Span<const u8>(reinterpret_cast<const u8*>(kParticleVertexMsl),
+                                       sizeof(kParticleVertexMsl) - 1);
+        vertex.native_format = rhi::ShaderFormat::Msl;
+    } else {
+        vertex.spirv =
+            Span<const u32>(kParticleVertexSpirv, sizeof(kParticleVertexSpirv) / sizeof(u32));
+    }
     Expected<rhi::ShaderModuleHandle, Error> made = device.create_shader_module(vertex);
     if (!made.has_value()) {
         return make_unexpected(made.error());
@@ -55,8 +64,15 @@ Status ParticleRenderer::create_pipeline(rhi::Device& device,
     rhi::ShaderModuleDescription fragment;
     fragment.name = "cy particle fragment";
     fragment.stage = rhi::ShaderStage::Fragment;
-    fragment.spirv =
-        Span<const u32>(kParticleFragmentSpirv, sizeof(kParticleFragmentSpirv) / sizeof(u32));
+    if (metal) {
+        fragment.entry_point = "cyParticleFragment";
+        fragment.native = Span<const u8>(reinterpret_cast<const u8*>(kParticleFragmentMsl),
+                                         sizeof(kParticleFragmentMsl) - 1);
+        fragment.native_format = rhi::ShaderFormat::Msl;
+    } else {
+        fragment.spirv =
+            Span<const u32>(kParticleFragmentSpirv, sizeof(kParticleFragmentSpirv) / sizeof(u32));
+    }
     made = device.create_shader_module(fragment);
     if (!made.has_value()) {
         return make_unexpected(made.error());

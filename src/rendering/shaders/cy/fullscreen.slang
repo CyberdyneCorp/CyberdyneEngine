@@ -33,8 +33,10 @@ struct FullscreenGlobalSet
 // makes it a real read without changing a legal frame.
 struct FullscreenViewData
 {
-    float4 rows[10];
+    float4 rows[14];
     uint4 words[4];
+    float4 temporalFeedback;
+    float4 temporalJitter;
 };
 
 struct FullscreenViewSet
@@ -74,6 +76,9 @@ struct FullscreenPassSet
 {
     Texture2D<float4> sceneColor;
     SamplerState linearClamp;
+    Texture2D<float4> historyColor;
+    Texture2D<float2> velocity;
+    Texture2D<float> depth;
 };
 
 [[vk::binding(0, 2)]] ParameterBlock<FullscreenPassSet> passSet;
@@ -106,7 +111,43 @@ public float4 fullscreenResolve(FullscreenVertex input) : SV_Target
     // The swapchain is an sRGB format, so the hardware applies the transfer function on write and
     // this shader must not apply it a second time. `linearToSrgb` exists for the targets that are
     // not — a readback, a UNORM capture — and is deliberately not called here.
-    if (viewSet.frame.rows[9].x < 0.0)
+    if (viewSet.frame.rows[13].x < 0.0)
         mapped = -mapped;
     return float4(mapped, 1.0);
+}
+
+/// Temporal resolve in scene-linear space. History is clamped to the current 3x3 neighbourhood
+/// before blending, which bounds stale highlights and turns disocclusion into a local current-frame
+/// reconstruction instead of a trail. `rows[10]` and `rows[11]` are the two temporal float4s at
+/// the end of `CyFrameData`.
+[shader("fragment")]
+public float4 temporalResolve(FullscreenVertex input) : SV_Target
+{
+    let inverseExtent = viewSet.frame.rows[13].zw;
+    let feedback = viewSet.frame.temporalFeedback;
+    let jitter = viewSet.frame.temporalJitter;
+    let current = passSet.sceneColor.SampleLevel(passSet.linearClamp, input.uv, 0.0);
+
+    float3 minimum = current.rgb;
+    float3 maximum = current.rgb;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            let sampleUv = input.uv + float2(x, y) * inverseExtent;
+            let neighbour = passSet.sceneColor.SampleLevel(passSet.linearClamp, sampleUv, 0.0).rgb;
+            minimum = min(minimum, neighbour);
+            maximum = max(maximum, neighbour);
+        }
+    }
+
+    let motion = passSet.velocity.SampleLevel(passSet.linearClamp, input.uv, 0.0);
+    let surfaceDepth = passSet.depth.SampleLevel(passSet.linearClamp, input.uv, 0.0);
+    let jitterDelta = (jitter.zw - jitter.xy) * inverseExtent;
+    let historyUv = input.uv + motion + jitterDelta;
+    let inBounds = all(historyUv >= float2(0.0)) && all(historyUv <= float2(1.0));
+    let previous = passSet.historyColor.SampleLevel(passSet.linearClamp, historyUv, 0.0).rgb;
+    let clampedHistory = clamp(previous, minimum, maximum);
+    let historyWeight = (feedback.x > 0.5 && inBounds && surfaceDepth > 0.0) ? feedback.y : 0.0;
+    return float4(lerp(current.rgb, clampedHistory, historyWeight), current.a);
 }

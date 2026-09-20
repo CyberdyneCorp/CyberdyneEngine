@@ -106,6 +106,8 @@ const char* frame_pipeline_kind_name(FramePipelineKind kind) noexcept {
             return "transparent";
         case FramePipelineKind::Resolve:
             return "resolve";
+        case FramePipelineKind::Temporal:
+            return "temporal";
         case FramePipelineKind::Count:
             break;
     }
@@ -160,6 +162,9 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
         {"cy frame resolve fragment", rhi::ShaderStage::Fragment, "fullscreenResolve",
          words(kFrameResolveFragmentSpirv), kFrameResolveFragmentMsl,
          sizeof(kFrameResolveFragmentMsl) - 1, &resolve_fragment_},
+        {"cy frame temporal fragment", rhi::ShaderStage::Fragment, "temporalResolve",
+         words(kFrameTemporalFragmentSpirv), kFrameTemporalFragmentMsl,
+         sizeof(kFrameTemporalFragmentMsl) - 1, &temporal_fragment_},
     };
     const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
     for (const Request& request : requests) {
@@ -200,6 +205,9 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
     const rhi::DescriptorBinding pass[] = {
         view_binding(kPassBindingSceneColor, rhi::DescriptorKind::SampledTexture),
         view_binding(kPassBindingSampler, rhi::DescriptorKind::Sampler),
+        view_binding(kPassBindingHistory, rhi::DescriptorKind::SampledTexture),
+        view_binding(kPassBindingVelocity, rhi::DescriptorKind::SampledTexture),
+        view_binding(kPassBindingDepth, rhi::DescriptorKind::SampledTexture),
     };
 
     struct SetRequest {
@@ -209,7 +217,7 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
     const SetRequest sets[kSetCount] = {
         {"cy frame globals", Span<const rhi::DescriptorBinding>(globals, 1)},
         {"cy frame view", Span<const rhi::DescriptorBinding>(view, kViewBindingCount)},
-        {"cy frame pass", Span<const rhi::DescriptorBinding>(pass, 2)},
+        {"cy frame pass", Span<const rhi::DescriptorBinding>(pass, kPassBindingCount)},
     };
     for (u32 index = 0; index < kSetCount; ++index) {
         rhi::DescriptorSetLayoutDescription description;
@@ -267,18 +275,19 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     // and this is what makes that constant structural: a depth pass that declared three bindings
     // would need three buffers bound to draw, which is exactly the bandwidth the stream split
     // exists to avoid.
-    const usize stream_count = depth_only ? 1U : 3U;
+    const usize stream_count = depth_only ? 2U : 3U;
 
-    rhi::ColorAttachmentState color;
-    color.format = setup.color_format;
+    rhi::ColorAttachmentState colors[2];
+    colors[0].format = depth_only ? rhi::Format::Rgba16Sfloat : setup.color_format;
+    colors[1].format = rhi::Format::Rg16Sfloat;
     if (blended) {
         // `rendering-forward-clustered`: transparent draws are sorted back to front and composited
         // with source-alpha blending. The pipeline says so rather than the pass.
-        color.blend_enable = true;
-        color.source_color = rhi::BlendFactor::SourceAlpha;
-        color.destination_color = rhi::BlendFactor::OneMinusSourceAlpha;
-        color.source_alpha = rhi::BlendFactor::One;
-        color.destination_alpha = rhi::BlendFactor::OneMinusSourceAlpha;
+        colors[0].blend_enable = true;
+        colors[0].source_color = rhi::BlendFactor::SourceAlpha;
+        colors[0].destination_color = rhi::BlendFactor::OneMinusSourceAlpha;
+        colors[0].source_alpha = rhi::BlendFactor::One;
+        colors[0].destination_alpha = rhi::BlendFactor::OneMinusSourceAlpha;
     }
 
     rhi::GraphicsPipelineDescription description;
@@ -288,8 +297,9 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     description.fragment_shader = depth_only ? depth_fragment_ : forward_fragment_;
     description.vertex_bindings = Span<const rhi::VertexBinding>(bindings, stream_count);
     description.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, stream_count);
-    description.color_attachments = depth_only ? Span<const rhi::ColorAttachmentState>()
-                                               : Span<const rhi::ColorAttachmentState>(&color, 1);
+    const usize color_count =
+        depth_only ? (setup.prepass_velocity ? 2U : (setup.prepass_normal ? 1U : 0U)) : 1U;
+    description.color_attachments = Span<const rhi::ColorAttachmentState>(colors, color_count);
     description.sample_count = setup.sample_count;
     description.depth_stencil.format = setup.depth_format;
     description.depth_stencil.depth_test_enable = true;
@@ -345,6 +355,29 @@ Status FramePipelines::create_resolve_pipeline(rhi::Device& device,
     return ok();
 }
 
+Status FramePipelines::create_temporal_pipeline(rhi::Device& device,
+                                                const PipelineSetup& setup) noexcept {
+    rhi::ColorAttachmentState color;
+    color.format = setup.color_format;
+
+    rhi::GraphicsPipelineDescription description;
+    description.name = "temporal resolve";
+    description.layout = layout_;
+    description.vertex_shader = resolve_vertex_;
+    description.fragment_shader = temporal_fragment_;
+    description.color_attachments = Span<const rhi::ColorAttachmentState>(&color, 1);
+    description.rasterisation.cull_mode = rhi::CullMode::None;
+    description.depth_stencil.format = rhi::Format::Undefined;
+    Expected<rhi::GraphicsPipelineHandle, Error> created =
+        device.create_graphics_pipeline(description);
+    if (!created.has_value()) {
+        return make_unexpected(created.error());
+    }
+    pipelines_[static_cast<u32>(FramePipelineKind::Temporal)] = *created;
+    ++created_;
+    return ok();
+}
+
 Status FramePipelines::create_pipelines(rhi::Device& device, const PipelineSetup& setup) noexcept {
     if (Status made = create_geometry_pipeline(device, setup, FramePipelineKind::Depth); !made) {
         return made;
@@ -363,6 +396,9 @@ Status FramePipelines::create_pipelines(rhi::Device& device, const PipelineSetup
             return made;
         }
     }
+    if (Status made = create_temporal_pipeline(device, setup); !made) {
+        return made;
+    }
     return ok();
 }
 
@@ -377,6 +413,10 @@ Status FramePipelines::initialize(rhi::Device& device, const PipelineSetup& setu
         setup.depth_format == rhi::Format::Undefined) {
         return fail(ErrorCode::InvalidArgument,
                     "frame pipelines: the colour and depth formats must be the frame's");
+    }
+    if (setup.prepass_velocity && !setup.prepass_normal) {
+        return fail(ErrorCode::InvalidArgument,
+                    "frame pipelines: a velocity prepass also writes normal-roughness");
     }
     device_ = &device;
     setup_ = setup;
@@ -423,7 +463,8 @@ void FramePipelines::shutdown() noexcept {
         }
     }
     rhi::ShaderModuleHandle* modules[] = {&depth_vertex_,     &depth_fragment_, &forward_vertex_,
-                                          &forward_fragment_, &resolve_vertex_, &resolve_fragment_};
+                                          &forward_fragment_, &resolve_vertex_, &resolve_fragment_,
+                                          &temporal_fragment_};
     for (rhi::ShaderModuleHandle* handle : modules) {
         if (!handle->is_null()) {
             device.destroy_shader_module(*handle);

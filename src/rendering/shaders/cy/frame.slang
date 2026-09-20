@@ -94,6 +94,10 @@ public struct CyFrameData
     public float4 relativeToClipRow1;
     public float4 relativeToClipRow2;
     public float4 relativeToClipRow3;
+    public float4 previousRelativeToClipRow0;
+    public float4 previousRelativeToClipRow1;
+    public float4 previousRelativeToClipRow2;
+    public float4 previousRelativeToClipRow3;
     /// Camera-relative space to VIEW space. Only the third row is ever read — the cluster slice
     /// needs a view-space depth and nothing else does — but all four are carried so a pass that
     /// wants a view-space normal has them without a second upload.
@@ -118,6 +122,10 @@ public struct CyFrameData
     /// Word offsets into a material block: base colour, roughness, metallic, emission. Derived from
     /// the `MaterialProgram`; see the header comment.
     public uint4 materialOffsets;
+    /// x: previous history is valid. y: feedback weight.
+    public float4 temporalFeedback;
+    /// Current jitter in xy and previous jitter in zw, in pixel units.
+    public float4 temporalJitter;
 };
 
 /// `GpuDrawInstance` — 32 bytes, the per-draw indirection `first_instance` names.
@@ -231,23 +239,45 @@ Surface surfaceOf(uint material, float3 tint)
 public struct CyDepthVertex
 {
     public float4 position : SV_Position;
+    public float3 normal : TEXCOORD0;
+    public float4 currentClip : TEXCOORD1;
+    public float4 previousClip : TEXCOORD2;
 };
 
 [shader("vertex")]
-public CyDepthVertex cyDepthVertex(float3 modelPosition : POSITION)
+public CyDepthVertex cyDepthVertex(float3 modelPosition : POSITION, float4 packedNormal : NORMAL)
 {
     let draw = cyDrawInstances[cyDraw.drawIndex];
     let instance = cyInstances[draw.instanceSlot];
     CyDepthVertex output;
-    output.position = transformToClip(transformToRelative(instance, modelPosition));
+    let relative = transformToRelative(instance, modelPosition);
+    output.position = transformToClip(relative);
+    output.currentClip = output.position;
+    let point = float4(relative, 1.0);
+    output.previousClip = float4(dot(cyFrame.previousRelativeToClipRow0, point),
+                                 dot(cyFrame.previousRelativeToClipRow1, point),
+                                 dot(cyFrame.previousRelativeToClipRow2, point),
+                                 dot(cyFrame.previousRelativeToClipRow3, point));
+    output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     return output;
 }
 
-[shader("fragment")]
-public void cyDepthFragment(CyDepthVertex input)
+public struct CyDepthOutput
 {
-    // Nothing. The prepass writes depth and the depth is written by the fixed-function stage; an
-    // empty fragment shader is what makes the pipeline legal without a colour attachment.
+    public float4 normalRoughness : SV_Target0;
+    public float2 velocity : SV_Target1;
+};
+
+[shader("fragment")]
+public CyDepthOutput cyDepthFragment(CyDepthVertex input)
+{
+    CyDepthOutput output;
+    output.normalRoughness = float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
+    let currentNdc = input.currentClip.xy / input.currentClip.w;
+    let previousNdc = input.previousClip.xy / input.previousClip.w;
+    output.velocity = float2((previousNdc.x - currentNdc.x) * 0.5,
+                             (currentNdc.y - previousNdc.y) * 0.5);
+    return output;
 }
 
 // --- The forward pass ---------------------------------------------------------------------------

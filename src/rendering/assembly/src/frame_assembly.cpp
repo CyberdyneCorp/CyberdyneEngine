@@ -92,6 +92,14 @@ FrameAssembly::FrameAssembly(Allocator& allocator) noexcept
 FrameAssembly::~FrameAssembly() {
     vt_frame_.destroy();
     cull_pass_.destroy();
+    if (device_ != nullptr) {
+        for (rhi::TextureHandle& image : temporal_images_) {
+            if (!image.is_null()) {
+                device_->destroy_texture(image);
+                image = rhi::TextureHandle{};
+            }
+        }
+    }
 }
 
 Status FrameAssembly::initialize(const AssemblyDescription& description) noexcept {
@@ -179,6 +187,22 @@ Status FrameAssembly::attach_device(rhi::Device& device) noexcept {
                     "this device supports no depth-stencil format the frame can use");
     }
     description_.depth_format = supported;
+
+    if (description_.post.temporal_antialiasing || description_.post.temporal_upscaling) {
+        rhi::TextureDescription history;
+        history.name = "temporal history";
+        history.format = description_.color_format;
+        history.extent = rhi::Extent3D{description_.width, description_.height, 1};
+        history.usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::ColorAttachment;
+        for (rhi::TextureHandle& image : temporal_images_) {
+            Expected<rhi::TextureHandle, Error> created = device.create_texture(history);
+            if (!created.has_value()) {
+                return make_unexpected(created.error());
+            }
+            image = *created;
+        }
+        temporal_images_ready_ = true;
+    }
 
     if (!description_.gpu_culling || !gpu_culling::GpuCullPass::supported(device)) {
         // NOT AN ERROR. A device with no compute queue or no indirect drawing gets the CPU path,
@@ -617,6 +641,22 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.draw_instance_count = static_cast<u32>(draws_.instances.size());
     description.output = view.output;
     description.cluster_queue = description_.cluster_queue;
+    const bool temporal_images = features.temporal && temporal_images_ready_;
+    temporal_declared_ =
+        temporal_images &&
+        sinks.passes[static_cast<usize>(FramePassKind::Temporal)].record != nullptr;
+    if (temporal_images) {
+        TextureRequest history;
+        history.format = description_.color_format;
+        history.width = description_.width;
+        history.height = description_.height;
+        history.name = "temporal previous";
+        description.temporal_previous = graph.import_texture(
+            history, temporal_images_[temporal_read_], rhi::ImageUse::Undefined);
+        history.name = "temporal current";
+        description.temporal_current = graph.import_texture(
+            history, temporal_images_[temporal_read_ ^ 1U], rhi::ImageUse::Undefined);
+    }
     for (u32 kind = 0; kind < kFramePassKindCount; ++kind) {
         description.callbacks[kind] = sinks.passes[kind];
     }
@@ -705,6 +745,10 @@ Status FrameAssembly::execute(GraphExecutor& executor, RenderGraph& graph,
     }
     out.execution = *result;
     out.executed = true;
+    if (temporal_declared_) {
+        temporal_.mark_history_written(history_);
+        temporal_read_ ^= 1U;
+    }
 
     // The read-backs, after the submit. `GpuCullPass::read_back` says it MUST follow the frame's
     // fence; `execute` waits, which is what makes this legal here rather than a race that shows up

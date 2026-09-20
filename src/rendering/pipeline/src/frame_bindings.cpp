@@ -276,6 +276,29 @@ Status FrameBindings::bind_scene_color(rhi::TextureViewHandle view) noexcept {
                                           Span<const rhi::DescriptorWrite>(writes, 2));
 }
 
+Status FrameBindings::bind_temporal(rhi::TextureViewHandle current, rhi::TextureViewHandle history,
+                                    rhi::TextureViewHandle velocity,
+                                    rhi::TextureViewHandle depth) noexcept {
+    if (!ready_ || sets_[kPassSet].is_null()) {
+        return fail(ErrorCode::Unavailable, "frame bindings: no pass set to write");
+    }
+    rhi::DescriptorWrite writes[kPassBindingCount];
+    const rhi::TextureViewHandle views[] = {current, history, velocity, depth};
+    const u32 bindings[] = {kPassBindingSceneColor, kPassBindingHistory, kPassBindingVelocity,
+                            kPassBindingDepth};
+    for (u32 index = 0; index < 4; ++index) {
+        writes[index].binding = bindings[index];
+        writes[index].kind = rhi::DescriptorKind::SampledTexture;
+        writes[index].texture_view = views[index];
+        writes[index].use = rhi::ImageUse::SampledRead;
+    }
+    writes[4].binding = kPassBindingSampler;
+    writes[4].kind = rhi::DescriptorKind::Sampler;
+    writes[4].sampler = pipelines_->linear_clamp();
+    return device_->update_descriptor_set(
+        sets_[kPassSet], Span<const rhi::DescriptorWrite>(writes, kPassBindingCount));
+}
+
 void FrameBindings::shutdown() noexcept {
     if (device_ == nullptr) {
         return;

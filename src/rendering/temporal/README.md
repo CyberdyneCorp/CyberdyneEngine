@@ -64,13 +64,12 @@ consumer needs the product.
 
 ## What is here and what is not
 
-No device. The framework decides what the jitter **is**, what a motion vector **means**, **when**
-history becomes invalid and what each pixel's history state **is** — and those are the parts that go
-wrong. The textures themselves are the render graph's to allocate; `HistoryResource::bytes()` is the
-accounting figure `temporal-rendering`'s diagnostics requirement asks for ("history memory in use per
-consumer"), not an allocation.
+The framework itself owns no device. It decides what the jitter **is**, what a motion vector
+**means**, **when** history becomes invalid and what each pixel's history state **is**. The pipeline
+layer realizes that declaration as two persistent RGBA16F images and executes a fullscreen resolve
+in `FramePassKind::Temporal`; `FrameAssembly` imports, marks and swaps them only after successful
+execution. `HistoryResource::bytes()` remains the accounting figure for diagnostics.
 
-The per-pixel motion vector **pass** is likewise not here: `derive_surface_motion()` is the
-arithmetic one thread or one shader invocation performs, and the buffer it writes into belongs to
-the frame's prepass (`src/rendering/forward/`, whose `PrepassMode::DepthNormalVelocity` already
-exists for it).
+The per-pixel motion vector pass remains in the forward frame: the depth prepass derives camera
+motion from current and previous unjittered transforms and writes the velocity attachment that the
+temporal resolve reads.

@@ -25,16 +25,17 @@ This module is the layer that was missing.
 |---|---|
 | `FramePipelines` | the pipeline state objects, the three descriptor set layouts on the engine's own set convention, the pipeline layout and the sampler. Created once, never inside a frame. |
 | `FrameBindings` | the ring of per-frame buffers and the descriptor sets that name them. |
-| `FrameRecorder` | `sinks()` — the `FrameSinks` `FrameAssembly` has been asking for, with five real record callbacks in it. |
+| `FrameRecorder` | `sinks()` — the `FrameSinks` `FrameAssembly` has been asking for, with six real record callbacks in it. |
 
-## The five callbacks, and what each one closes
+## The six callbacks, and what each one closes
 
 | Stage | What it records |
 |---|---|
 | `Prepare` | the copy into the frame's OWN `lights` and `draw_instances` buffers. `ForwardFrame` calls that pass "the only pass that writes them"; before this, the graph derived a transfer barrier around a transfer that never happened |
-| `DepthPrepass` | the opaque draws, **position stream only** — `render::kDepthPassStreams` made structural rather than documented — depth written, compared GreaterOrEqual |
+| `DepthPrepass` | the opaque draws, with normal and derived camera motion when the temporal path requests them; depth is written and compared GreaterOrEqual |
 | `Opaque` | the same draws with three streams, depth compared **Equal** and not written, shaded against the cluster's light list and the **GPU material table** |
 | `Transparent` | the transparent layer in the sort's own order, alpha blended, depth tested and not written. Also where `PassExtension` consumers compose — `src/rendering/particles/` is the first |
+| `Temporal` | reprojects the previous completed RGBA16F history, clamps it to the current 3x3 neighbourhood, and writes the other retained history image before tone mapping |
 | `PostProcess` | `cy/fullscreen.slang`'s **own** resolve entry points: exposure, tonemap, straight into the frame's output |
 
 ## The pictures
@@ -75,8 +76,8 @@ is off by default and off in Profile and Shipping, and `shader-system` requires 
 
 | Suite | Kind | What it proves |
 |---|---|---|
-| `integration.render_pipeline` | integration | the sinks carry five callbacks and an empty `FrameSinks` carries none; a frame WITH them records five passes and every draw, and the identical frame WITHOUT them records nothing while the assembly's own numbers are unchanged; the particle extension runs once; the ring turns over `frames_in_flight × 4 + 1` times and tears down with the device busy |
-| `render.pipeline` | render | the same scene on Vulkan with validation and synchronisation validation on, the output copied back off the device, zero validation errors, and the three committed pictures written |
+| `integration.render_pipeline` | integration | the sinks carry six callbacks, including temporal resolve; a frame with them records every draw while an empty `FrameSinks` records nothing; the history and upload rings turn over beyond the frames-in-flight count |
+| `render.pipeline` | render | Vulkan compares captured pixels; Apple Metal creates native pipelines, executes the temporal pass on the GPU, and requires zero validation errors. The older fixture remains black on Metal with TAA disabled, so Metal is command-level evidence until that separate capture defect is fixed |
 
 Both go red when `FrameRecorder::sinks()` stops attaching callbacks — which was run, not assumed.
 
