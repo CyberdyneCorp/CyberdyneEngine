@@ -491,6 +491,20 @@ void adapter_name(const DXGI_ADAPTER_DESC1& desc, char (&out)[128]) noexcept {
     return D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 }
 
+[[nodiscard]] D3D12_SAMPLER_DESC native_sampler_desc(const SamplerDescription& desc) noexcept {
+    D3D12_SAMPLER_DESC native{};
+    native.Filter = sampler_filter(desc);
+    native.AddressU = address_mode(desc.address_u);
+    native.AddressV = address_mode(desc.address_v);
+    native.AddressW = address_mode(desc.address_w);
+    native.MipLODBias = desc.mip_lod_bias;
+    native.MaxAnisotropy = static_cast<UINT>(desc.max_anisotropy);
+    native.ComparisonFunc = compare_op(desc.compare_op);
+    native.MinLOD = desc.min_lod;
+    native.MaxLOD = desc.max_lod;
+    return native;
+}
+
 }  // namespace
 
 void StoredName::assign(const char* source) noexcept {
@@ -862,7 +876,13 @@ Expected<BufferHandle, Error> D3D12Device::create_buffer(const BufferDescription
     buffer.desc = desc;
     buffer.name.assign(desc.name);
     buffer.desc.name = buffer.name.text;
-    const D3D12_RESOURCE_DESC native = native_buffer_desc(desc.size);
+    // A CBV exposes a 256-byte-aligned range. The backing resource must cover that full range even
+    // when the engine's logical constant block is smaller (first-light is 176 bytes).
+    const u64 allocation_bytes =
+        has_usage(desc.usage, BufferUsage::Uniform)
+            ? align_to(desc.size, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT)
+            : desc.size;
+    const D3D12_RESOURCE_DESC native = native_buffer_desc(allocation_bytes);
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = heap_type(desc.memory);
     const HRESULT created = device_->CreateCommittedResource(
@@ -871,17 +891,17 @@ Expected<BufferHandle, Error> D3D12Device::create_buffer(const BufferDescription
     if (FAILED(created)) {
         return fail(ErrorCode::OutOfMemory, "D3D12 could not create a buffer");
     }
-    buffer.bytes = desc.size;
+    buffer.bytes = allocation_bytes;
     if (desc.memory == MemoryUse::Upload || desc.memory == MemoryUse::Readback) {
         const D3D12_RANGE read_range{
-            0, desc.memory == MemoryUse::Readback ? static_cast<SIZE_T>(desc.size) : 0};
+            0, desc.memory == MemoryUse::Readback ? static_cast<SIZE_T>(allocation_bytes) : 0};
         if (FAILED(buffer.resource->Map(0, &read_range, &buffer.mapped))) {
             return fail(ErrorCode::Unavailable, "D3D12 could not map a host-visible buffer");
         }
     }
     Expected<BufferHandle, Error> handle = buffers_.create(std::move(buffer));
     if (handle) {
-        charge(memory_category(desc.memory), desc.size);
+        charge(memory_category(desc.memory), allocation_bytes);
     }
     return handle;
 }
@@ -995,23 +1015,9 @@ Expected<TextureViewHandle, Error> D3D12Device::create_texture_view(
     const Format format = desc.format == Format::Undefined ? texture->desc.format : desc.format;
     if (has_usage(texture->desc.usage, TextureUsage::Sampled) ||
         has_usage(texture->desc.usage, TextureUsage::InputAttachment)) {
-        if (next_resource_descriptor_ >= kResourceDescriptorCapacity) {
-            return fail(ErrorCode::OutOfMemory, "D3D12 resource descriptor heap is full");
-        }
-        view.srv = resource_heap_->GetCPUDescriptorHandleForHeapStart();
-        view.srv.ptr += static_cast<SIZE_T>(next_resource_descriptor_++) * resource_stride_;
-        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
-        srv.Format = shader_resource_format(format);
-        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srv.ViewDimension = texture->desc.dimension == TextureDimension::Texture3D
-                                ? D3D12_SRV_DIMENSION_TEXTURE3D
-                                : D3D12_SRV_DIMENSION_TEXTURE2D;
-        srv.Texture2D.MostDetailedMip = desc.range.base_mip;
-        srv.Texture2D.MipLevels = desc.range.mip_count == 0
-                                      ? texture->desc.mip_levels - desc.range.base_mip
-                                      : desc.range.mip_count;
-        srv.Texture2D.ResourceMinLODClamp = 0.0F;
-        device_->CreateShaderResourceView(texture->resource.Get(), &srv, view.srv);
+        // The shader-visible heap is the final descriptor table, not CPU staging storage. D3D12
+        // forbids using a shader-visible descriptor as CopyDescriptorsSimple's source, so the SRV
+        // is materialised directly into each set when that set is updated.
         view.has_srv = true;
     }
     if (has_usage(texture->desc.usage, TextureUsage::ColorAttachment)) {
@@ -1056,25 +1062,8 @@ Expected<SamplerHandle, Error> D3D12Device::create_sampler(const SamplerDescript
     if (Status valid = validate_sampler(desc, capabilities_.limits(), validation); !valid) {
         return make_unexpected(valid.error());
     }
-    const u32 slot = allocate_sampler_descriptors(1);
-    if (slot == ~0U) {
-        return fail(ErrorCode::OutOfMemory, "D3D12 sampler descriptor heap is full");
-    }
     D3D12Sampler sampler;
     sampler.desc = desc;
-    sampler.descriptor = sampler_heap_->GetCPUDescriptorHandleForHeapStart();
-    sampler.descriptor.ptr += static_cast<SIZE_T>(slot) * sampler_stride_;
-    D3D12_SAMPLER_DESC native{};
-    native.Filter = sampler_filter(desc);
-    native.AddressU = address_mode(desc.address_u);
-    native.AddressV = address_mode(desc.address_v);
-    native.AddressW = address_mode(desc.address_w);
-    native.MipLODBias = desc.mip_lod_bias;
-    native.MaxAnisotropy = static_cast<UINT>(desc.max_anisotropy);
-    native.ComparisonFunc = compare_op(desc.compare_op);
-    native.MinLOD = desc.min_lod;
-    native.MaxLOD = desc.max_lod;
-    device_->CreateSampler(&native, sampler.descriptor);
     return samplers_.create(std::move(sampler));
 }
 
@@ -1509,8 +1498,8 @@ Status D3D12Device::update_descriptor_set(DescriptorSetHandle set_handle,
             destination.ptr += static_cast<SIZE_T>(set->sampler_base + binding->sampler_offset +
                                                    write.array_index) *
                                sampler_stride_;
-            device_->CopyDescriptorsSimple(1, destination, sampler_record->descriptor,
-                                           D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+            const D3D12_SAMPLER_DESC native = native_sampler_desc(sampler_record->desc);
+            device_->CreateSampler(&native, destination);
             continue;
         }
 
@@ -1525,13 +1514,29 @@ Status D3D12Device::update_descriptor_set(DescriptorSetHandle set_handle,
             if (buffer == nullptr || !buffer->resource) {
                 return fail(ErrorCode::NotFound, "D3D12 buffer descriptor is stale");
             }
+            if (write.buffer_offset > buffer->desc.size) {
+                return fail(ErrorCode::OutOfRange,
+                            "D3D12 buffer descriptor offset exceeds the buffer");
+            }
             const u64 remaining = buffer->desc.size - write.buffer_offset;
             const u64 bytes = write.buffer_range == 0 ? remaining : write.buffer_range;
+            if (bytes > remaining) {
+                return fail(ErrorCode::OutOfRange,
+                            "D3D12 buffer descriptor range exceeds the buffer");
+            }
             if (write.kind == DescriptorKind::UniformBuffer) {
+                if (write.buffer_offset % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT != 0) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "D3D12 constant-buffer offsets must be 256-byte aligned");
+                }
                 D3D12_CONSTANT_BUFFER_VIEW_DESC cbv{};
                 cbv.BufferLocation = buffer->resource->GetGPUVirtualAddress() + write.buffer_offset;
                 cbv.SizeInBytes = static_cast<UINT>(
                     align_to(bytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT));
+                if (write.buffer_offset + cbv.SizeInBytes > buffer->bytes) {
+                    return fail(ErrorCode::OutOfRange,
+                                "D3D12 aligned constant-buffer range exceeds its allocation");
+                }
                 device_->CreateConstantBufferView(&cbv, destination);
             } else {
                 D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
@@ -1548,8 +1553,27 @@ Status D3D12Device::update_descriptor_set(DescriptorSetHandle set_handle,
             if (texture_view == nullptr || !texture_view->has_srv) {
                 return fail(ErrorCode::NotFound, "D3D12 texture descriptor has no sampled view");
             }
-            device_->CopyDescriptorsSimple(1, destination, texture_view->srv,
-                                           D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            D3D12Texture* texture = textures_.resolve(texture_view->desc.texture);
+            if (texture == nullptr || !texture->resource) {
+                return fail(ErrorCode::NotFound,
+                            "D3D12 texture descriptor refers to a stale texture");
+            }
+            const Format format = texture_view->desc.format == Format::Undefined
+                                      ? texture->desc.format
+                                      : texture_view->desc.format;
+            D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+            srv.Format = shader_resource_format(format);
+            srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srv.ViewDimension = texture->desc.dimension == TextureDimension::Texture3D
+                                    ? D3D12_SRV_DIMENSION_TEXTURE3D
+                                    : D3D12_SRV_DIMENSION_TEXTURE2D;
+            srv.Texture2D.MostDetailedMip = texture_view->desc.range.base_mip;
+            srv.Texture2D.MipLevels =
+                texture_view->desc.range.mip_count == 0
+                    ? texture->desc.mip_levels - texture_view->desc.range.base_mip
+                    : texture_view->desc.range.mip_count;
+            srv.Texture2D.ResourceMinLODClamp = 0.0F;
+            device_->CreateShaderResourceView(texture->resource.Get(), &srv, destination);
         }
     }
     return ok();

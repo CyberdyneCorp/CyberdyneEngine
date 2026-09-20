@@ -1,8 +1,8 @@
 #pragma once
 // Direct3D 12 implementation records. Windows SDK types stay in this private header.
 
-#include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi-d3d12/backend.h>
+#include <cy/backends/rhi/device.h>
 #include <cy/core/memory/handle_pool.h>
 
 #include <d3d12.h>
@@ -51,7 +51,6 @@ struct D3D12Texture {
 
 struct D3D12TextureView {
     TextureViewDescription desc{};
-    D3D12_CPU_DESCRIPTOR_HANDLE srv{};
     D3D12_CPU_DESCRIPTOR_HANDLE rtv{};
     D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
     bool has_srv = false;
@@ -61,7 +60,6 @@ struct D3D12TextureView {
 
 struct D3D12Sampler {
     SamplerDescription desc{};
-    D3D12_CPU_DESCRIPTOR_HANDLE descriptor{};
 };
 
 struct D3D12ShaderModule {

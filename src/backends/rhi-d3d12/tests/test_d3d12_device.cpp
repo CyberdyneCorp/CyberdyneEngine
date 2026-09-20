@@ -120,6 +120,81 @@ CY_TEST_CASE("D3D12 textures, views and transient heap classes are native") {
     fixture.device().release_transient_resources();
 }
 
+CY_TEST_CASE("D3D12 descriptor writes stay clean under the debug layer") {
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+
+    cy::rhi::BufferDescription constants;
+    constants.name = "176-byte constant block";
+    constants.size = 176;
+    constants.usage = cy::rhi::BufferUsage::Uniform;
+    constants.memory = cy::rhi::MemoryUse::Upload;
+    const auto buffer = fixture.device().create_buffer(constants);
+    CY_REQUIRE(buffer);
+
+    cy::rhi::TextureDescription texture_description;
+    texture_description.name = "sampled descriptor texture";
+    texture_description.format = cy::rhi::Format::Rgba8Unorm;
+    texture_description.extent = {4, 4, 1};
+    texture_description.usage = cy::rhi::TextureUsage::Sampled;
+    const auto texture = fixture.device().create_texture(texture_description);
+    CY_REQUIRE(texture);
+    cy::rhi::TextureViewDescription view_description;
+    view_description.texture = *texture;
+    const auto view = fixture.device().create_texture_view(view_description);
+    CY_REQUIRE(view);
+    const auto sampler = fixture.device().create_sampler({});
+    CY_REQUIRE(sampler);
+
+    cy::rhi::DescriptorBinding bindings[3]{};
+    bindings[0] = {0, cy::rhi::DescriptorKind::UniformBuffer, 1, cy::rhi::ShaderStage::Vertex,
+                   false};
+    bindings[1] = {1, cy::rhi::DescriptorKind::SampledTexture, 1, cy::rhi::ShaderStage::Fragment,
+                   false};
+    bindings[2] = {2, cy::rhi::DescriptorKind::Sampler, 1, cy::rhi::ShaderStage::Fragment, false};
+    cy::rhi::DescriptorSetLayoutDescription layout_description;
+    layout_description.name = "debug-layer descriptor regression";
+    layout_description.bindings = {bindings, 3};
+    const auto layout = fixture.device().create_descriptor_set_layout(layout_description);
+    CY_REQUIRE(layout);
+    const auto set = fixture.device().allocate_descriptor_set(*layout, false);
+    CY_REQUIRE(set);
+
+    cy::rhi::DescriptorWrite writes[3]{};
+    writes[0].binding = 0;
+    writes[0].kind = cy::rhi::DescriptorKind::UniformBuffer;
+    writes[0].buffer = *buffer;
+    writes[0].buffer_range = 176;
+    writes[1].binding = 1;
+    writes[1].kind = cy::rhi::DescriptorKind::SampledTexture;
+    writes[1].texture_view = *view;
+    writes[2].binding = 2;
+    writes[2].kind = cy::rhi::DescriptorKind::Sampler;
+    writes[2].sampler = *sampler;
+    CY_REQUIRE(fixture.device().update_descriptor_set(set, {writes, 3}));
+
+    // Submission drains the debug queue. The regression is specifically that descriptor creation
+    // succeeds in the API yet the validation layer reports an invalid CBV or copy source later.
+    CY_REQUIRE(fixture.device().begin_frame());
+    const auto command =
+        fixture.device().acquire_command_buffer(cy::rhi::QueueKind::Graphics, false);
+    CY_REQUIRE(command);
+    CY_REQUIRE(fixture.device().begin_command_buffer(*command));
+    CY_REQUIRE(fixture.device().end_command_buffer(*command));
+    cy::rhi::SubmitInfo submit;
+    submit.command_buffers = {&*command, 1};
+    CY_REQUIRE(fixture.device().submit(submit));
+    CY_REQUIRE(fixture.device().end_frame());
+    CY_REQUIRE(fixture.device().wait_idle());
+    CY_CHECK_EQ(fixture.device().statistics().validation_errors, 0U);
+
+    fixture.device().destroy_descriptor_set_layout(*layout);
+    fixture.device().destroy_sampler(*sampler);
+    fixture.device().destroy_texture_view(*view);
+    fixture.device().destroy_texture(*texture);
+    fixture.device().destroy_buffer(*buffer);
+}
+
 CY_TEST_CASE("D3D12 command lists submit under the debug layer") {
     Fixture fixture;
     CY_REQUIRE(fixture.ok());
