@@ -144,8 +144,25 @@ env-doctor *args:
     }
 
     echo
+    # `clang-tidy` on PyPI ships no `win_arm64` wheel (verified against every version from 14.x
+    # through 22.1.8), so pip source-builds LLVM there — a ~40 min stall on the CI leg. `just
+    # quality-lint` runs only from the Ubuntu `quality` job, never from the windows-arm64 build or
+    # test legs, so the tool's absence on that one host is acceptable. Report it advisory here
+    # instead of missing, and skip the `check_pinned` version comparison that would otherwise fail
+    # the whole recipe with `status=1`.
+    host_arch="$(uname -m 2>/dev/null || echo unknown)"
+    tolerate_tidy_missing=0
+    if [ "${platform}" = windows ] && \
+       { [ "${host_arch}" = aarch64 ] || [ "${host_arch}" = arm64 ]; }; then
+        tolerate_tidy_missing=1
+    fi
     while IFS='|' read -r name purpose override_name; do
         [ -n "${name// /}" ] || continue
+        if [ "${name// /}" = clang-tidy ] && [ "${tolerate_tidy_missing}" = 1 ]; then
+            report advisory clang-tidy - \
+                "no PyPI wheel for windows-arm64; quality-lint runs on Ubuntu only"
+            continue
+        fi
         check_pinned "${name// /}" "$(echo "${purpose}" | sed 's/^ *//; s/ *$//')" \
                      "${override_name// /}"
     done <<< "${pinned}"
@@ -356,6 +373,10 @@ _doctor-hint tool platform purpose:
     #!/usr/bin/env bash
     set -euo pipefail
     # tool | linux | macos | windows
+    #
+    # Pure-bash parsing (no awk) so the recipe works on hosts whose awk triggers the Windows-arm64
+    # "wsl must be updated" app-execution redirect — the same reason `_version-at-least` moved off
+    # awk. See that recipe for the incident.
     hints='
     cmake        | sudo apt install cmake                | brew install cmake  | winget install Kitware.CMake
     ninja        | sudo apt install ninja-build          | brew install ninja  | winget install Ninja-build.Ninja
@@ -367,15 +388,25 @@ _doctor-hint tool platform purpose:
     clang-format | pip install clang-format=={{llvm_pin_version}} | pip install clang-format=={{llvm_pin_version}} | pip install clang-format=={{llvm_pin_version}}
     clang-tidy   | pip install clang-tidy=={{llvm_pin_version}}   | pip install clang-tidy=={{llvm_pin_version}}   | pip install clang-tidy=={{llvm_pin_version}}
     '
-    column=2
-    case '{{platform}}' in
-        linux)   column=2 ;;
-        macos)   column=3 ;;
-        windows) column=4 ;;
-    esac
-    fix="$(printf '%s\n' "${hints}" | awk -F'|' -v tool='{{tool}}' -v n="${column}" \
-        '{ key = $1; gsub(/[ \t]/, "", key) }
-         key == tool { v = $n; gsub(/^[ \t]+|[ \t]+$/, "", v); print v }')"
+    strip() {
+        local s="$1"
+        s="${s#"${s%%[![:space:]]*}"}"
+        s="${s%"${s##*[![:space:]]}"}"
+        printf '%s' "$s"
+    }
+    fix=
+    while IFS='|' read -r key linux_fix macos_fix windows_fix; do
+        key="$(strip "${key}")"
+        [ -n "${key}" ] || continue
+        if [ "${key}" = '{{tool}}' ]; then
+            case '{{platform}}' in
+                linux)   fix="$(strip "${linux_fix}")" ;;
+                macos)   fix="$(strip "${macos_fix}")" ;;
+                windows) fix="$(strip "${windows_fix}")" ;;
+            esac
+            break
+        fi
+    done <<< "${hints}"
     echo "             {{purpose}}."
     if [ -n "${fix}" ]; then
         echo "             install it with: ${fix}"
@@ -411,17 +442,15 @@ _host-compiler:
     echo "none - -"
 
 # True when version {{found}} is at least {{minimum}}. Dotted components, numerically, left to right.
+#
+# Uses python3 rather than awk. `awk` is not on PATH on the windows-arm64 GitHub image, and Windows
+# reacts to a missing `awk` by asking WSL to satisfy it — which prints "Windows Subsystem for Linux
+# must be updated" and exits non-zero, so every version check reads as "old" and env-doctor refuses
+# a machine whose tools are all fine. python3 is one of the tools env-doctor already requires, so
+# assuming its presence here is honest.
 [private]
 _version-at-least found minimum:
-    @awk -v a='{{found}}' -v b='{{minimum}}' 'BEGIN { \
-        na = split(a, x, "."); nb = split(b, y, "."); \
-        n = (na > nb ? na : nb); \
-        for (i = 1; i <= n; i++) { \
-            u = (i <= na ? x[i] + 0 : 0); v = (i <= nb ? y[i] + 0 : 0); \
-            if (u > v) exit 0; \
-            if (u < v) exit 1; \
-        } \
-        exit 0 }'
+    @python3 -c "import re,sys;p=lambda s:[int((re.match(r'\d+',c) or re.match(r'0','0')).group()) for c in s.split('.')];a=p('{{found}}');b=p('{{minimum}}');n=max(len(a),len(b));sys.exit(0 if a+[0]*(n-len(a))>=b+[0]*(n-len(b)) else 1)"
 
 # The Swift toolchain: whether it is present, which version, and — when it is installed but not on
 # PATH — why, which is the case this recipe exists for.
