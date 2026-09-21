@@ -82,7 +82,16 @@ when no runtime accepted the request, and losing an attached runtime returns all
 Editing while documents and unsaved history survive. Focused CLI, control-socket, and killed-process
 regressions cover those behaviors.
 
-The final connected macOS acceptance run remains open until the parallel Metal/backend change is on
-the branch. It must use the engine's `cy_editor_window_runtime`, receive an IOSurface frame, exercise
-Play/Pause/Stop, kill and restart the runtime, and retain the authored document. This is task 11.3;
-the local behavior above does not claim that integration evidence early.
+The branch is now rebased over the Metal/backend change and has been exercised on a physical Apple
+M3 Pro. `cy_editor_window_runtime` created the native Metal device, published a four-image IOSurface
+ring, and the editor displayed the engine's three-object scene. Play, Pause, and Stop reached the
+engine and received authoritative replies; the runtime reported one play session, one simulated
+tick, and a document identical after Stop. This run exposed and fixed a command-line defect where a
+script could exit after queueing those requests but before the writer delivered them. A real-socket
+regression now requires every scripted play transition to receive the runtime's reply.
+
+Task 11.3 remains open for one reason. Killing the physical Metal runtime left the editor process,
+open document, and authoring state alive, but starting the runtime again did not reconnect the
+existing editor session. The runtime created its device and sockets successfully and received no
+new editor attachment. Automatic reconnect or an explicit reconnect action, followed by the same
+physical restart run, is still required before this criterion can be checked.

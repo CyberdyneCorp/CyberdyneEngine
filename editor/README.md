@@ -106,6 +106,10 @@ just run-editor --project <directory> --open <asset> --script <path>
 just run-editor-runtime [<socket>] the hosted-runtime stub `--host` connects to
 ```
 
+Command-line scripts wait for an attached runtime to confirm each `play.enter`, `play.pause`, and
+`play.leave` request before continuing. Their summaries include the runtime's authoritative state
+and detail, so a script cannot exit after merely queueing a play request that the engine never saw.
+
 `--project` is resolved before workspace restoration, service discovery, and document opening. The
 directory must contain `project.json`; the editor refuses an arbitrary directory instead of making
 it writable project content. Without the option, the working directory remains the implicit root.
