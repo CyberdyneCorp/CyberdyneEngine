@@ -176,7 +176,7 @@ jobs:
         include:
           - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
-          - { label: macos-x86_64, os: macos-13, swift: action }
+          - { label: macos-x86_64, os: macos-15-intel, swift: action }
           - { label: macos-arm64, os: macos-14, swift: action }
           # Windows: swift-actions/setup-swift@v2 crashes on the Node 24 runtime GitHub Actions now
           # forces on Node-20 actions (verify() throws before any download starts), so this leg
@@ -235,8 +235,15 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install the pinned LLVM tooling
+      # clang-tidy's pip wheel has no win_arm64 build (checked every version 14.x through 22.1.8),
+      # so pip would source-build LLVM on that leg — a ~40 min stall we have measured. Skip it
+      # there; the quality-lint gate only runs on the Ubuntu `quality` job, which is not this leg.
+      - if: matrix.label != 'windows-arm64'
+        name: Install the pinned LLVM tooling
         run: pip install clang-format==22.1.8 clang-tidy==22.1.8
+      - if: matrix.label == 'windows-arm64'
+        name: Install the pinned LLVM tooling
+        run: pip install clang-format==22.1.8
       - name: Install the window-system headers SDL3 builds against
         if: runner.os == 'Linux'
         run: |
@@ -274,7 +281,7 @@ jobs:
         include:
           - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
-          - { label: macos-x86_64, os: macos-13, swift: action }
+          - { label: macos-x86_64, os: macos-15-intel, swift: action }
           - { label: macos-arm64, os: macos-14, swift: action }
           # `swift: none` on Windows — the twin comment on the `build` matrix has the reasoning.
           - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
@@ -921,8 +928,15 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install the pinned LLVM tooling
+      # clang-tidy's pip wheel has no win_arm64 build (checked every version 14.x through 22.1.8),
+      # so pip would source-build LLVM on that leg — a ~40 min stall we have measured. Skip it
+      # there; the quality-lint gate only runs on the Ubuntu `quality` job, which is not this leg.
+      - if: matrix.label != 'windows-arm64'
+        name: Install the pinned LLVM tooling
         run: pip install clang-format==22.1.8 clang-tidy==22.1.8
+      - if: matrix.label == 'windows-arm64'
+        name: Install the pinned LLVM tooling
+        run: pip install clang-format==22.1.8
       - name: Install the window-system headers
         run: |
           sudo apt-get update
