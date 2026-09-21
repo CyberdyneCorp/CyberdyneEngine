@@ -278,9 +278,17 @@ fn severity_name(severity: Option<DiagnosticSeverity>) -> &'static str {
 
 fn file_uri(path: &Path) -> String {
     let absolute = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let text = absolute.to_string_lossy();
+    // Windows paths use `\` as separator and may start with a drive letter (`C:\`) or with `\`; a
+    // file URI always uses `/` and always has a `/` after the authority. Normalise both so the URI
+    // matches the one SourceKit-LSP publishes back — a diagnostic is looked up by exact URI equality.
+    let raw = absolute.to_string_lossy().replace('\\', "/");
+    let normalised = if raw.starts_with('/') {
+        raw
+    } else {
+        format!("/{raw}")
+    };
     let mut uri = String::from("file://");
-    for byte in text.bytes() {
+    for byte in normalised.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~') {
             uri.push(char::from(byte));
         } else {
