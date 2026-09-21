@@ -176,11 +176,33 @@ jobs:
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
           - { label: macos-x86_64, os: macos-13, swift: preinstalled }
           - { label: macos-arm64, os: macos-14, swift: preinstalled }
-          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: action }
+          # Windows: swift-actions/setup-swift@v2 crashes on the Node 24 runtime GitHub Actions now
+          # forces on Node-20 actions (verify() throws before any download starts), so this leg
+          # cannot install Swift the same way linux-x86_64 does. Nothing this project builds on
+          # Windows needs Swift — CY_SHADER_SLANG and CY_SHADER_DXIL are off in the Windows preset
+          # and the Swift-package suites are gated on the toolchain being present — so `swift: none`
+          # is the honest state rather than a workaround.
+          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
           - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     steps:
       - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      # extractions/setup-just@v3 has no Windows-arm64 target ("failed to determine any valid
+      # targets; arch = arm64, platform = win32"), so on that one leg the binary is installed by
+      # hand from `just`'s own release page. Every other leg — including windows-x86_64 — uses the
+      # action, which does have a mapping for them.
+      - if: matrix.label != 'windows-arm64'
+        uses: extractions/setup-just@v3
+      - if: matrix.label == 'windows-arm64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '1.36.0'
+          $url = "https://github.com/casey/just/releases/download/$version/just-$version-aarch64-pc-windows-msvc.zip"
+          $zip = "$env:RUNNER_TEMP\just.zip"
+          $dir = "$env:RUNNER_TEMP\just"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -244,7 +266,8 @@ jobs:
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
           - { label: macos-x86_64, os: macos-13, swift: preinstalled }
           - { label: macos-arm64, os: macos-14, swift: preinstalled }
-          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: action }
+          # `swift: none` on Windows — the twin comment on the `build` matrix has the reasoning.
+          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
           - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     env:
       # The machine-readable results `testing-and-quality` requires of a continuous integration run.
@@ -252,7 +275,21 @@ jobs:
       CY_TEST_JUNIT: test-results.xml
     steps:
       - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      # setup-just@v3 has no Windows-arm64 target — see the `build` matrix's twin block for the
+      # manual install rationale.
+      - if: matrix.label != 'windows-arm64'
+        uses: extractions/setup-just@v3
+      - if: matrix.label == 'windows-arm64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '1.36.0'
+          $url = "https://github.com/casey/just/releases/download/$version/just-$version-aarch64-pc-windows-msvc.zip"
+          $zip = "$env:RUNNER_TEMP\just.zip"
+          $dir = "$env:RUNNER_TEMP\just"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
