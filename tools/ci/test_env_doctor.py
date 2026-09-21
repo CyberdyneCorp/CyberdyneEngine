@@ -114,6 +114,25 @@ def corrections_follow_failures(report: str) -> str | None:
     return None
 
 
+def check_emulated_runner_architecture(root: pathlib.Path) -> list[str]:
+    """The Windows ARM64 runner uses an emulated x64 Git Bash process."""
+    environment = dict(os.environ)
+    environment["RUNNER_ARCH"] = "ARM64"
+    result = subprocess.run(
+        ["just", "_host-architecture"],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip() == "arm64":
+        return []
+    return [
+        "RUNNER_ARCH=ARM64 was not normalized to arm64",
+        "--- report ---\n" + (result.stdout + result.stderr).rstrip(),
+    ]
+
+
 def check(case: Case, root: pathlib.Path) -> list[str]:
     with tempfile.TemporaryDirectory() as directory:
         binaries = sandbox(pathlib.Path(directory), case)
@@ -214,7 +233,18 @@ def main() -> int:
     root = arguments.root.resolve()
 
     failed = 0
+    total = 1
+    architecture_failures = check_emulated_runner_architecture(root)
+    if architecture_failures:
+        failed += 1
+        print("fail an emulated shell does not hide the runner architecture", file=sys.stderr)
+        for failure in architecture_failures:
+            print(f"       {failure}", file=sys.stderr)
+    else:
+        print("ok   an emulated shell does not hide the runner architecture")
+
     for case in cases():
+        total += 1
         failures = check(case, root)
         if failures:
             failed += 1
@@ -224,7 +254,6 @@ def main() -> int:
         else:
             print(f"ok   {case.name}")
 
-    total = len(cases())
     if failed:
         print(f"env-doctor selftest: {failed} of {total} cases failed", file=sys.stderr)
         return 1

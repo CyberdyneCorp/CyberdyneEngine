@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Compare the import catalogue exposed by cy_import_cli and CyberEditor."""
 
 from __future__ import annotations

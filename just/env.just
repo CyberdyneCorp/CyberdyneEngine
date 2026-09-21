@@ -80,7 +80,8 @@ env-doctor *args:
     }
 
     echo "CyberdyneEngine — environment report"
-    printf '  %-9s %s\n' host "${platform} $(uname -m 2>/dev/null || echo unknown)"
+    host_arch="$(just _host-architecture)"
+    printf '  %-9s %s\n' host "${platform} ${host_arch}"
     echo
 
     while IFS='|' read -r name binary minimum purpose; do
@@ -150,7 +151,6 @@ env-doctor *args:
     # test legs, so the tool's absence on that one host is acceptable. Report it advisory here
     # instead of missing, and skip the `check_pinned` version comparison that would otherwise fail
     # the whole recipe with `status=1`.
-    host_arch="$(uname -m 2>/dev/null || echo unknown)"
     tolerate_tidy_missing=0
     if [ "${platform}" = windows ] && \
        { [ "${host_arch}" = aarch64 ] || [ "${host_arch}" = arm64 ]; }; then
@@ -357,6 +357,21 @@ _host-platform:
         Darwin*)                    echo macos ;;
         MINGW* | MSYS* | CYGWIN*)   echo windows ;;
         *)                          echo unknown ;;
+    esac
+
+# The native runner architecture, even when the shell itself is an emulated x64 process. Git Bash
+# reports its own `x86_64` architecture on GitHub's Windows ARM64 runner, while RUNNER_ARCH reports
+# the machine that setup-python and the compiler toolchain target.
+[private]
+_host-architecture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    architecture="${RUNNER_ARCH:-${PROCESSOR_ARCHITECTURE:-}}"
+    [ -n "${architecture}" ] || architecture="$(uname -m 2>/dev/null || echo unknown)"
+    case "${architecture}" in
+        ARM64 | arm64 | aarch64)        echo arm64 ;;
+        X64 | x64 | AMD64 | amd64 | x86_64) echo x86_64 ;;
+        *)                              echo "${architecture}" ;;
     esac
 
 # The correction for a missing or too-old tool, for this host. Never merely "it is absent".
