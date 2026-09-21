@@ -139,7 +139,7 @@ static_assert(sizeof(kControlTables) / sizeof(kControlTables[0]) ==
               static_cast<usize>(DeviceKind::Count));
 
 ControlTable table_for(DeviceKind kind) {
-    const usize index = static_cast<usize>(kind);
+    const auto index = static_cast<usize>(kind);
     return index < static_cast<usize>(DeviceKind::Count) ? kControlTables[index] : ControlTable{};
 }
 

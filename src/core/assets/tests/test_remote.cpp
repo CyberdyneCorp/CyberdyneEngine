@@ -309,7 +309,7 @@ CY_TEST_CASE("the host refuses a path that does not normalise, rather than servi
     std::memcpy(header + 4, &version, 2);
     const cy::u16 op = 1;  // STAT
     std::memcpy(header + 6, &op, 2);
-    const cy::u16 length = static_cast<cy::u16>(hostile.size());
+    const auto length = static_cast<cy::u16>(hostile.size());
     std::memcpy(header + 12, &length, 2);
 
     CY_REQUIRE(::send(handle, header, sizeof(header), 0) == static_cast<ssize_t>(sizeof(header)));

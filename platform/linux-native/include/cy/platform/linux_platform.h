@@ -126,8 +126,8 @@ private:
     ProcessSlot* find_process(ProcessHandle process);
     const ProcessSlot* find_process(ProcessHandle process) const;
     /// Reaps the child if it has exited, recording its code. Non-blocking unless `block`.
-    void reap(ProcessSlot& slot, bool block);
-    void close_slot_descriptors(ProcessSlot& slot);
+    static void reap(ProcessSlot& slot, bool block);
+    static void close_slot_descriptors(ProcessSlot& slot);
 
     /// The user data directory with `suffix` appended, creating every component. The three user
     /// directories are derived here and nowhere else.

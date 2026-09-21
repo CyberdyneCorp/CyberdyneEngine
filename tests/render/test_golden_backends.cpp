@@ -78,7 +78,6 @@ namespace {
 using cy::render_test::DeviceClass;
 using cy::render_test::LedgerRow;
 using cy::render_test::Outcome;
-using cy::sample::first_light::Camera;
 using cy::sample::first_light::FrameReport;
 using cy::sample::first_light::Renderer;
 using cy::sample::first_light::RendererOptions;

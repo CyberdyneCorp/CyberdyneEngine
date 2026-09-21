@@ -356,7 +356,7 @@ Status SocketFileProvider::exchange(u16 op, const VirtualPath& path, u64 argumen
     if (Status sent = send_all(header_bytes, kHeaderBytes); !sent) {
         return sent;
     }
-    if (path.size() != 0) {
+    if (!path.empty()) {
         if (Status sent = send_all(path.c_str(), path.size()); !sent) {
             return sent;
         }

@@ -372,10 +372,13 @@ CY_TEST_CASE("material_stages: the command line and the library agree about the 
         // arguments — the same shape, and the same NOLINT, as
         // `src/runtime/tests/test_tick_loop.cpp` uses to run its probe. clang-tidy is right in
         // general and wrong here, and silencing it in the .clang-tidy would silence it for the
-        // whole engine. NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+        // whole engine. Both arms carry the NOLINT because `NOLINTNEXTLINE` does not survive an
+        // `#if` between the comment and the call.
 #if defined(_WIN32)
+        // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
         FILE* pipe = ::_popen(command.c_str(), "r");
 #else
+        // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
         FILE* pipe = ::popen(command.c_str(), "r");
 #endif
         CY_REQUIRE(pipe != nullptr);

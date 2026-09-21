@@ -346,7 +346,7 @@ std::vector<StageCost> stage_costs(const BuildGraph& graph, const BuildReport& r
     for (const NodeResult& node : report.nodes) {
         const NodeId id = graph.find(node.name);
         const NodeKind kind = id == NodeId::Invalid ? NodeKind::Unknown : graph.node(id).kind;
-        const usize index = static_cast<usize>(kind);
+        const auto index = static_cast<usize>(kind);
         if (index >= kKinds) {
             continue;
         }
@@ -429,7 +429,7 @@ std::vector<CategoryShare> category_shares(const BuildGraph& graph, const Packag
             // how a wrong report is caught.
             const NodeId id = graph.find(entry.node);
             const NodeKind kind = id == NodeId::Invalid ? NodeKind::Unknown : graph.node(id).kind;
-            const usize index = static_cast<usize>(kind);
+            const auto index = static_cast<usize>(kind);
             if (index >= kKinds) {
                 continue;
             }
