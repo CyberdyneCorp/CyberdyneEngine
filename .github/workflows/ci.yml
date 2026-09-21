@@ -202,12 +202,27 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc }}
-      # The `swift` column of the matrix above, applied. `preinstalled` and `none` install nothing:
-      # one because the image already has a toolchain, the other because none exists for the leg.
-      - if: matrix.swift == 'action'
+      # The `swift` column of the matrix above, applied. `none` installs nothing.
+      #
+      # On Linux, `swift-actions/setup-swift@v2` installs a Swift 6 toolchain from swift.org and
+      # puts it first on PATH — which is exactly what CMake's `find_program(swift)` needs.
+      #
+      # On macOS the same action installs Swift 6 into a hostedtoolcache directory and sets
+      # `TOOLCHAINS=swift 6.0.3`, but that never satisfies CMake — CMake's Swift detection resolves
+      # via `xcrun` against the SELECTED Xcode, whose default remains the image's shipped 15.4
+      # (Swift 5.10 on macos-14, 5.9 on macos-13). We saw exactly that failure: setup-swift green,
+      # then CMake reports `Apple Swift version 5.10` and the sample's `swift-tools-version: 6.0`
+      # manifest refuses. `maxim-lobanov/setup-xcode@v1` swaps the selected Xcode to 16.x (Swift 6),
+      # which changes what `xcrun` and every CMake probe finds. Both actions are unconditional on
+      # their host — a `swift: none` macOS leg does not exist.
+      - if: matrix.swift == 'action' && runner.os == 'Linux'
         uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0'
+      - if: matrix.swift == 'action' && runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
       - name: Install the tools the doctor requires
         run: npm install -g @fission-ai/openspec
       # The pinned LLVM tooling. `just env-doctor` requires it on every host — the format and lint
@@ -281,12 +296,27 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc }}
-      # The `swift` column of the matrix above, applied. `preinstalled` and `none` install nothing:
-      # one because the image already has a toolchain, the other because none exists for the leg.
-      - if: matrix.swift == 'action'
+      # The `swift` column of the matrix above, applied. `none` installs nothing.
+      #
+      # On Linux, `swift-actions/setup-swift@v2` installs a Swift 6 toolchain from swift.org and
+      # puts it first on PATH — which is exactly what CMake's `find_program(swift)` needs.
+      #
+      # On macOS the same action installs Swift 6 into a hostedtoolcache directory and sets
+      # `TOOLCHAINS=swift 6.0.3`, but that never satisfies CMake — CMake's Swift detection resolves
+      # via `xcrun` against the SELECTED Xcode, whose default remains the image's shipped 15.4
+      # (Swift 5.10 on macos-14, 5.9 on macos-13). We saw exactly that failure: setup-swift green,
+      # then CMake reports `Apple Swift version 5.10` and the sample's `swift-tools-version: 6.0`
+      # manifest refuses. `maxim-lobanov/setup-xcode@v1` swaps the selected Xcode to 16.x (Swift 6),
+      # which changes what `xcrun` and every CMake probe finds. Both actions are unconditional on
+      # their host — a `swift: none` macOS leg does not exist.
+      - if: matrix.swift == 'action' && runner.os == 'Linux'
         uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0'
+      - if: matrix.swift == 'action' && runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
       - name: Install the window-system headers SDL3 builds against
         if: runner.os == 'Linux'
         run: |
@@ -1258,6 +1288,13 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc }}
+      # samples/04-character declares `swift-tools-version: 6.0`, and the macos-14 image ships Xcode
+      # 15.4 (Swift 5.10) as the xcode-select default — so a build without a fresh Xcode fails at
+      # the sample. See the `build` matrix's twin block for why `setup-swift` alone doesn't do it.
+      - if: runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
       - name: Install the window-system headers SDL3 builds against
         if: runner.os == 'Linux'
         run: |
