@@ -138,9 +138,11 @@ jobs:
   # THE ANSWER IS: HARD WHERE A TOOLCHAIN EXISTS, OPTIONAL WHERE ONE DOES NOT, AND THE MATRIX SAYS
   # WHICH IS WHICH. The `swift` column below is that statement, one value per leg:
   #
-  #   action        the leg installs a toolchain through swift-actions/setup-swift.
-  #   preinstalled  the runner image already has one, from Xcode. Installing a second would be
-  #                 slower and would test a toolchain no macOS developer uses.
+  #   action        the leg installs a toolchain through swift-actions/setup-swift. macOS is here
+  #                 too now — Package.swift declares `swift-tools-version: 6.0` for the strict-
+  #                 concurrency mode `swift-scripting` requires, and the Xcode preinstalled on
+  #                 macos-13 (Swift 5.9) and macos-14 (Swift 5.10) both refuse it. Installing
+  #                 Swift 6 explicitly is now the honest state.
   #   none          no toolchain is obtainable on this leg today. The Swift suites and the M4
   #                 sample are NOT REGISTERED there — bindings/swift/CMakeLists.txt declines rather
   #                 than registering suites that skip — so the leg still builds and still runs every
@@ -174,8 +176,8 @@ jobs:
         include:
           - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
-          - { label: macos-x86_64, os: macos-13, swift: preinstalled }
-          - { label: macos-arm64, os: macos-14, swift: preinstalled }
+          - { label: macos-x86_64, os: macos-13, swift: action }
+          - { label: macos-arm64, os: macos-14, swift: action }
           # Windows: swift-actions/setup-swift@v2 crashes on the Node 24 runtime GitHub Actions now
           # forces on Node-20 actions (verify() throws before any download starts), so this leg
           # cannot install Swift the same way linux-x86_64 does. Nothing this project builds on
@@ -257,8 +259,8 @@ jobs:
         include:
           - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
-          - { label: macos-x86_64, os: macos-13, swift: preinstalled }
-          - { label: macos-arm64, os: macos-14, swift: preinstalled }
+          - { label: macos-x86_64, os: macos-13, swift: action }
+          - { label: macos-arm64, os: macos-14, swift: action }
           # `swift: none` on Windows — the twin comment on the `build` matrix has the reasoning.
           - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
           - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
