@@ -276,6 +276,27 @@ what makes 6.1 mandatory rather than advisory.
       milestone" is a schedule and not a reason; and **the condition that brings it back**, a state of
       the world rather than a date. `docs/roadmap/risks.md` already carries eleven deferrals in
       exactly this form and this rung extends that table rather than starting a second list
+- [ ] 6.1a **`navigation` AND `physics` ARE SWEPT FIRST, AND THEY ARE NAMED HERE BECAUSE THE GAME
+      STANDS ON THEM.** Both report **0 of 16 requirements** mapped to a test, a gate or a recorded
+      exemption, and in both cases the tests largely already exist — `navigation`, `navigation_build`,
+      `navigation_crowd`, `navigation_fields`; `physics_jolt`, `physics_bridge`, `physics_teardown`,
+      `physics_simulation`. So this is connecting evidence to requirements, not writing subsystems,
+      which is the cheapest sweep work on the ladder and the highest-value.
+      - [ ] The rows are on the critical path of the RTS this engine is about to be used for:
+        `navigation` carries A* with a funnel, Recast/Detour navmesh build, hierarchical queries,
+        crowd avoidance, and flow fields whose own header claims **"20,000 agents ordered to the same
+        destination"** guided by one field — which is the select-200-units-and-right-click problem
+        stated exactly. `physics` carries fixed-step integration, collision filtering, queries and a
+        character controller
+      - [ ] **`physics`' fixed-step integration is load-bearing for lockstep determinism.** An RTS
+        desyncs if it drifts, and it is currently a requirement nothing maps. Sweep it before the
+        game depends on it rather than after
+      - [ ] **Expect mappings that do not observe their requirement.** M11.c mutation-tested 27 of its
+        own and **5 survived** the deletion of the behaviour they named. A mapping is not done when it
+        is written; it is done when the behaviour has been deleted and the case went red
+      - [ ] Neither row may be recorded Complete on a count alone: `quality-requirements` reporting
+        16 of 16 is the floor, and the mutation evidence is the claim
+
 - [ ] 6.2 **Each row demoted by a rung above arrives with the reason that demoted it.** Six are named
       in advance — `save-and-persistence` and `audio` (M11.a), `ml-inference` and `swift-scripting`
       (M11.b), `rendering-culling-and-lod` (M11.c), `build-and-packaging` (M11.d) — and an unknown

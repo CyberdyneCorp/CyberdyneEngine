@@ -1676,6 +1676,15 @@ else in this rung is scoped.** One empty project, cross-compiled, packaged and r
 hosted runner. If it cannot be done, mobile is a deferral with a re-entry point and this rung is the
 distribution and record rung — a finding worth having on day one rather than at the gate.
 
+**The sweep starts with `navigation` and `physics`, by name.** Both report **0 of 16 requirements**
+mapped to a test, a gate or a recorded exemption, while the tests largely already exist — four
+suites each. So this is connecting evidence to requirements rather than writing subsystems: the
+cheapest sweep work on the ladder, and the highest-value, because both rows are on the critical path
+of the first game this engine will carry. `navigation` holds A\* with a funnel, Recast/Detour navmesh
+build, hierarchical queries, crowd avoidance and flow fields claiming *"20,000 agents ordered to the
+same destination"* guided by one field. `physics` holds fixed-step integration — **which a lockstep
+RTS desyncs without**, and which nothing currently maps. See tasks 6.1a.
+
 ---
 
 ## M12 — After 1.0
