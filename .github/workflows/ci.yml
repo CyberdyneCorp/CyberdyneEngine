@@ -187,14 +187,14 @@ jobs:
           - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
           - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     steps:
-      - uses: actions/checkout@v4
-      # extractions/setup-just@v3 has no Windows-arm64 target ("failed to determine any valid
+      - uses: actions/checkout@v5
+      # extractions/setup-just@v4 has no Windows-arm64 target ("failed to determine any valid
       # targets; arch = arm64, platform = win32"), so on that one leg the binary comes from the
       # `rust-just` PyPI wheel, which does ship a win_arm64 build and drops `just.exe` on PATH via
       # the Python Scripts directory. `pip install` is on the workflow gate's provisioning list, so
       # the check-workflows selftest accepts it. Every other leg uses the action.
       - if: matrix.label != 'windows-arm64'
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
       - if: matrix.label == 'windows-arm64'
         shell: pwsh
         run: pip install rust-just==1.36.0
@@ -232,7 +232,7 @@ jobs:
       #
       # setup-python is here so that `pip` means the same interpreter on all six legs of the matrix;
       # the Windows and macOS images do not agree about whether it is `pip`, `pip3` or neither.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install the pinned LLVM tooling
@@ -248,7 +248,7 @@ jobs:
       # Keyed on the dependency manifest, per task 2.4.3: a change to deps/manifest.toml is exactly
       # the change that invalidates the fetched sources, and nothing else does. The build tree rides
       # in the same cache so that the test job restores what this job produced.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -284,11 +284,11 @@ jobs:
       # The recipe already knows how to produce them; the job only says where to put them.
       CY_TEST_JUNIT: test-results.xml
     steps:
-      - uses: actions/checkout@v4
-      # setup-just@v3 has no Windows-arm64 target — see the `build` matrix's twin block for the
+      - uses: actions/checkout@v5
+      # setup-just@v4 has no Windows-arm64 target — see the `build` matrix's twin block for the
       # `pip install rust-just` rationale.
       - if: matrix.label != 'windows-arm64'
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
       - if: matrix.label == 'windows-arm64'
         shell: pwsh
         run: pip install rust-just==1.36.0
@@ -325,7 +325,7 @@ jobs:
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -335,7 +335,7 @@ jobs:
       - name: Unit, integration and smoke
         run: just test-all
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-results-${{ matrix.label }}
           path: test-results.xml
@@ -366,8 +366,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -426,8 +426,8 @@ jobs:
     # a hung suite hold a runner for a shift; the graduated recipes' own budgets are minutes.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -461,13 +461,13 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-world-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -522,13 +522,13 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-render-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -573,7 +573,7 @@ jobs:
         run: just test-render
       - name: Which backend produced which image, on this leg
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: golden-backends-ledger-linux-x86_64
           path: golden-backends.ledger
@@ -596,8 +596,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -608,7 +608,7 @@ jobs:
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0'
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-playable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -678,8 +678,8 @@ jobs:
           - { label: macos, os: macos-14 }
           - { label: windows, os: windows-2022 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       # THE MINIMUM SUPPORTED RUST VERSION, PINNED WHERE IT IS ACTUALLY USED.
       #
       # `editor/Cargo.toml` declares 1.95 and `rust-toolchain.toml` selects it; this step is what
@@ -694,7 +694,7 @@ jobs:
       - name: The toolchain the editor declares
         run: just build-editor-toolchain
         shell: bash
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/editor
           key: cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
@@ -709,7 +709,7 @@ jobs:
       # The viewport transport's dependencies — wgpu, ash, libc — are declared only for Linux, so
       # the macOS and Windows legs still resolve a small tree. That is a property of
       # `crates/cy-editor-viewport-transport/Cargo.toml` and the reason its `cfg` note gives.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index
@@ -726,13 +726,13 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-authorable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -780,13 +780,13 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-scale-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -857,15 +857,15 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - name: The toolchain the editor declares
         run: just build-editor-toolchain
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/editor
           key: cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
@@ -895,8 +895,8 @@ jobs:
     if: vars.CY_EDITOR_WINDOW_RUNNER == 'true'
     runs-on: [self-hosted, linux, x11]
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: The toolchain the editor declares
         run: just build-editor-toolchain
       - name: The window opens, is driven, and is photographed
@@ -909,8 +909,8 @@ jobs:
     name: quality
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the tools the doctor requires
         run: npm install -g @fission-ai/openspec
       # Ubuntu 24.04's `clang-format` and `clang-tidy` are 18.1.3, and this repository pins LLVM 22:
@@ -918,7 +918,7 @@ jobs:
       # installing the distribution package here would run a different gate from the one a developer
       # runs. The version is the justfile's `llvm_pin_version`, and `just env-doctor` prints this
       # exact command as the correction when the local tooling is not it.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install the pinned LLVM tooling
@@ -936,7 +936,7 @@ jobs:
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0'
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-quality-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -1002,8 +1002,8 @@ jobs:
     name: spec validation
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the OpenSpec CLI
         run: npm install -g @fission-ai/openspec
       - name: Validate
@@ -1014,8 +1014,8 @@ jobs:
     name: generated-code currency
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers
         run: |
           sudo apt-get update
@@ -1028,7 +1028,7 @@ jobs:
         run: |
           sudo apt-get install -y libclang1-18
           pip install --user clang==18.1.8
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-generated-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -1065,10 +1065,10 @@ jobs:
     steps:
       # The manifest gate diffs the identifiers against a revision, so it needs history rather than
       # the single commit actions/checkout fetches by default.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers
         run: |
           sudo apt-get update
@@ -1077,7 +1077,7 @@ jobs:
         run: |
           sudo apt-get install -y libclang1-18
           pip install --user clang==18.1.8
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-identity-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -1114,8 +1114,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -1130,7 +1130,7 @@ jobs:
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0'
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             build/debug
@@ -1276,12 +1276,12 @@ jobs:
           - { label: macos-arm64, os: macos-14 }
           - { label: windows-x86_64, os: windows-2022, msvc: x64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       # The publisher is independent of the aggregate six-platform build job: `test-determinism`
       # builds the tree it executes. Depending on the whole build matrix would skip every digest
       # when one unrelated platform leg fails, leaving two healthy architectures unobserved.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - if: matrix.msvc != ''
@@ -1305,7 +1305,7 @@ jobs:
         run: brew install ninja
       # Reuse a matching build-leg cache when one exists; otherwise the recipe below creates the
       # tree itself. Correctness never depends on the aggregate build matrix completing first.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: build/dev
           key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
@@ -1319,7 +1319,7 @@ jobs:
         env:
           CY_CROSS_LEG_LABEL: ${{ matrix.label }}
         run: just test-determinism --publish-digest cross-leg-digests/${{ matrix.label }}.digest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: cross-leg-digest-${{ matrix.label }}
           path: cross-leg-digests/${{ matrix.label }}.digest
@@ -1335,9 +1335,9 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: cross-leg-digest-*
           path: cross-leg-digests
@@ -1352,7 +1352,7 @@ jobs:
       # Published whether the legs agreed or not: a disagreement between two architectures is the
       # finding, and it is worth more downloaded than it is scrolled past in a log.
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cross-leg-comparison
           path: cross-leg-digests
@@ -1432,8 +1432,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 480
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -1458,15 +1458,15 @@ jobs:
     name: roadmap-status
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v3
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
       # `just roadmap-test`'s falsifiability sweep runs every check the milestone gates depend on,
       # so this job needs the same tools those checks need: openspec for the spec queries,
       # clang-format 22.1.8 for the format gate, and Pillow for the M11.c beauty-shot renders.
       # Without them the sweep reports every check as "was recorded as proven and is now red in the
       # tree" for tool-missing reasons the runner cannot verify against, and the whole job fails
       # for infrastructure rather than for drift.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install the tools the falsifiability sweep runs
