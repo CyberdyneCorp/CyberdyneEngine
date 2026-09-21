@@ -209,6 +209,13 @@ private:
                 out.mode = {};
             }
             return true;
+        case static_cast<u8>(EditorMessage::ServiceRequest):
+            out.kind = EditorMessage::ServiceRequest;
+            return reader.u64_value(out.request) && reader.u32_value(out.schema_version) &&
+                   reader.byte_span(out.operation) && reader.byte_span(out.payload);
+        case static_cast<u8>(EditorMessage::ServiceCancel):
+            out.kind = EditorMessage::ServiceCancel;
+            return reader.u64_value(out.request);
         default:
             // A tag this build does not know is REPORTED rather than closing the connection: the
             // editor is entitled to be newer, and a message a runtime cannot answer is a missing
@@ -256,6 +263,12 @@ const char* editor_message_name(EditorMessage message) noexcept {
             return "play";
         case EditorMessage::Playing:
             return "playing";
+        case EditorMessage::ServiceRequest:
+            return "service-request";
+        case EditorMessage::ServiceCancel:
+            return "service-cancel";
+        case EditorMessage::ServiceEvent:
+            return "service-event";
         case EditorMessage::Unknown:
             break;
     }
@@ -581,6 +594,28 @@ Status EditorBridge::send_playing(u64 request, const char* state, const char* mo
         return written;
     }
     return send(outgoing_.span());
+}
+
+Status EditorBridge::send_service_event(u64 request, ServiceEventKind kind, u32 schema_version,
+                                        Span<const u8> payload) noexcept {
+    Array<u8> message;
+    Writer writer(message);
+    if (Status written = writer.u8_value(static_cast<u8>(EditorMessage::ServiceEvent)); !written) {
+        return written;
+    }
+    if (Status written = writer.u64_value(request); !written) {
+        return written;
+    }
+    if (Status written = writer.u8_value(static_cast<u8>(kind)); !written) {
+        return written;
+    }
+    if (Status written = writer.u32_value(schema_version); !written) {
+        return written;
+    }
+    if (Status written = writer.bytes(payload); !written) {
+        return written;
+    }
+    return send(message.span());
 }
 
 Status EditorBridge::send_picked(u64 request, Span<const u8> candidates) noexcept {

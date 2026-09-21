@@ -20,7 +20,7 @@
 //! for what it does so that a reviewer seeing it on a UI path knows immediately that it is wrong.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -86,6 +86,7 @@ impl Cancellation {
 /// A long operation the interface can observe and cancel without blocking on it.
 #[derive(Debug)]
 pub struct Operation {
+    id: u64,
     label: String,
     state: RwLock<OperationState>,
     cancellation: Cancellation,
@@ -98,13 +99,21 @@ impl Operation {
     /// Begin an operation with a user-facing label.
     #[must_use]
     pub fn new(label: impl Into<String>) -> Arc<Self> {
+        static NEXT_OPERATION_ID: AtomicU64 = AtomicU64::new(1);
         Arc::new(Self {
+            id: NEXT_OPERATION_ID.fetch_add(1, Ordering::Relaxed),
             label: label.into(),
             state: RwLock::new(OperationState::Pending),
             cancellation: Cancellation::new(),
             started: Instant::now(),
             settled_after: Mutex::new(None),
         })
+    }
+
+    /// Stable identity used to correlate progress, cancellation and completion.
+    #[must_use]
+    pub const fn id(&self) -> u64 {
+        self.id
     }
 
     /// The user-facing label, for a progress row.
@@ -206,6 +215,14 @@ impl Operation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn operations_have_distinct_stable_request_identities() {
+        let first = Operation::new("first");
+        let second = Operation::new("second");
+        assert_ne!(first.id(), second.id());
+        assert_eq!(first.id(), first.id());
+    }
 
     #[test]
     fn an_operation_reports_progress_and_settles_once() {

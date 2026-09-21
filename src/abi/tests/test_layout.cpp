@@ -31,6 +31,8 @@ CY_TEST_CASE("every ABI struct has the size the header declares") {
     CY_CHECK_EQ(sizeof(CyComponentTypeDesc), 32U);
     CY_CHECK_EQ(sizeof(CyBehaviourVTable), 56U);
     CY_CHECK_EQ(sizeof(CyBorrow), 16U);
+    CY_CHECK_EQ(sizeof(CyServiceRequest), 40U);
+    CY_CHECK_EQ(sizeof(CyServiceEvent), 40U);
     CY_CHECK_EQ(sizeof(CyInterfaceHeader), 16U);
     CY_CHECK_EQ(sizeof(CyModuleInit), 40U);
 }
@@ -60,6 +62,10 @@ CY_TEST_CASE("every ABI struct has the offsets the description generator compute
     CY_CHECK_EQ(offsetof(CyInterfaceHeader, table_size), 12U);
     CY_CHECK_EQ(offsetof(CyModuleInit, initialize), 16U);
     CY_CHECK_EQ(offsetof(CyBorrow, epoch), 8U);
+    CY_CHECK_EQ(offsetof(CyServiceRequest, request_id), 8U);
+    CY_CHECK_EQ(offsetof(CyServiceRequest, operation), 16U);
+    CY_CHECK_EQ(offsetof(CyServiceEvent, request_id), 8U);
+    CY_CHECK_EQ(offsetof(CyServiceEvent, payload), 24U);
 }
 
 CY_TEST_CASE("the interface table starts with its header, which is what makes growth readable") {

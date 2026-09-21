@@ -579,10 +579,10 @@ mod tests {
         // `scene.add-collider` and `scene.remove-body`).
         // The editor-completion change adds identity-based rename/reparent, six typed settings
         // commands, seven provider-neutral source-control commands, two semantic-merge commands,
-        // and five asset-browser operations.
+        // and six asset-browser operations, including asynchronous external import.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(registry.len(), 8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 5);
+        assert_eq!(registry.len(), 8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

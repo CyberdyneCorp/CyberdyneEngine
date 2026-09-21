@@ -248,4 +248,29 @@ public struct Interface: @unchecked Sendable {
     public func worldChunks(world: CyWorld, component: CyComponentTypeId, into: UnsafeMutablePointer<CyChunk>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
         try check(table.pointee.world_chunks(world, component, into, capacity, count))
     }
+
+    @inlinable
+    public func serviceOpen(engine: CyEngine, into: UnsafeMutablePointer<CyServiceSession>?) throws {
+        try check(table.pointee.service_open(engine, into))
+    }
+
+    @inlinable
+    public func serviceClose(engine: CyEngine, session: CyServiceSession) {
+        table.pointee.service_close(engine, session)
+    }
+
+    @inlinable
+    public func serviceSubmit(engine: CyEngine, session: CyServiceSession, request: UnsafePointer<CyServiceRequest>?) throws {
+        try check(table.pointee.service_submit(engine, session, request))
+    }
+
+    @inlinable
+    public func serviceCancel(engine: CyEngine, session: CyServiceSession, requestId: UInt64) throws {
+        try check(table.pointee.service_cancel(engine, session, requestId))
+    }
+
+    @inlinable
+    public func servicePoll(engine: CyEngine, session: CyServiceSession, event: UnsafeMutablePointer<CyServiceEvent>?, hasEvent: UnsafeMutablePointer<Bool>?) throws {
+        try check(table.pointee.service_poll(engine, session, event, hasEvent))
+    }
 }

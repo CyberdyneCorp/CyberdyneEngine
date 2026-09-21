@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 1u
+#define CY_ABI_MINOR 2u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -103,6 +103,8 @@ extern "C" {
 typedef struct CyEngine_T* CyEngine;
 typedef struct CyWorld_T* CyWorld;
 typedef struct CyBehaviourType_T* CyBehaviourType;
+/* An editor-service session is owned by the registered backend and opaque to every consumer. */
+typedef struct CyServiceSession_T* CyServiceSession;
 
 /* An instance the *module* owns — a Swift object, a C struct, anything. The engine stores it and
  * hands it back to the module's own vtable; it never dereferences it. */
@@ -315,6 +317,38 @@ typedef struct CyChunk {
     uint32_t archetype;       /* which archetype this chunk belongs to, for grouping */
     uint64_t epoch;           /* the world's structural epoch when the chunk was taken */
 } CyChunk;
+
+/* --- Asynchronous editor services, added at 1.2 -----------------------------------------------
+ *
+ * Payloads use independently versioned schemas. They are borrowed only for the call (`Request`)
+ * or until the next poll on the same session (`Event`). Request ids are non-zero and unique within
+ * a session until a terminal event has been consumed. */
+typedef enum CyServiceEventKind {
+    CY_SERVICE_EVENT_ACCEPTED = 0,
+    CY_SERVICE_EVENT_PROGRESS = 1,
+    CY_SERVICE_EVENT_COMPLETED = 2,
+    CY_SERVICE_EVENT_FAILED = 3,
+    CY_SERVICE_EVENT_CANCELLED = 4
+} CyServiceEventKind;
+
+typedef struct CyServiceRequest {
+    uint32_t struct_size;
+    uint32_t schema_version;
+    uint64_t request_id;
+    const char* operation; /* stable UTF-8 operation identity; NUL-terminated */
+    const uint8_t* payload;
+    uint64_t payload_size;
+} CyServiceRequest;
+
+typedef struct CyServiceEvent {
+    uint32_t struct_size;
+    uint32_t kind; /* CyServiceEventKind */
+    uint64_t request_id;
+    uint32_t schema_version;
+    uint32_t reserved;
+    const uint8_t* payload;
+    uint64_t payload_size;
+} CyServiceEvent;
 
 /* --- Behaviours --------------------------------------------------------------------------------
  *
@@ -532,6 +566,17 @@ typedef struct CyInterface {
      * partial result the caller can use rather than an error that discards the work. */
     CyResult (*world_chunks)(CyWorld world, CyComponentTypeId component, CyChunk* out_chunks,
                              uint32_t capacity, uint32_t* out_count);
+
+    /* --- 1.2: asynchronous, cancellable editor backend services ------------------------------ */
+
+    CyResult (*service_open)(CyEngine engine, CyServiceSession* out_session);
+    void (*service_close)(CyEngine engine, CyServiceSession session);
+    CyResult (*service_submit)(CyEngine engine, CyServiceSession session,
+                               const CyServiceRequest* request);
+    CyResult (*service_cancel)(CyEngine engine, CyServiceSession session, uint64_t request_id);
+    /* Non-blocking. `out_has_event` is false when no event is ready; that is not an error. */
+    CyResult (*service_poll)(CyEngine engine, CyServiceSession session, CyServiceEvent* out_event,
+                             bool* out_has_event);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -612,6 +657,8 @@ CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 56, "CyBehaviourVTable is 56 b
 CY_ABI_STATIC_ASSERT(sizeof(CyBorrow) == 16, "CyBorrow is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentInfo) == 24, "CyComponentInfo is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyChunk) == 40, "CyChunk is 40 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyServiceRequest) == 40, "CyServiceRequest is 40 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyServiceEvent) == 40, "CyServiceEvent is 40 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyInterfaceHeader) == 16, "CyInterfaceHeader is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyModuleInit) == 40, "CyModuleInit is 40 bytes");
 

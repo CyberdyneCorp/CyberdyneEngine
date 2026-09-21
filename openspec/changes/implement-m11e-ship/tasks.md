@@ -209,7 +209,15 @@ green criterion on another rung's ledger by succeeding, and the caption in
 `docs/design/beauty-shot.md` is owed an update in the same change. That is the criterion working, not
 failing, and it is named here so that whoever lands 5a.1 is not surprised by it.
 
-- [ ] 5a.1 **`material.*` commands in `cy_editor_services`' registry**, so a material can be authored
+**Superseded ownership:** tasks 5a.1–5a.3 are now specified and implemented incrementally by
+`expose-material-graph-services`. That change replaces editor-side compiler knowledge and specialised
+control-socket commands with one versioned service contract over the C ABI and live protocol. These
+entries remain unchecked historical requirements until that change is complete; they MUST NOT be
+implemented independently here. Task 5a.4 remains separate because VFX GPU lowering is explicitly
+outside the first material vertical slice.
+
+- [ ] 5a.1 **SUPERSEDED by `expose-material-graph-services`: `material.*` commands in
+      `cy_editor_services`' registry**, so a material can be authored
       over the control socket the way `samples/08a-authoring` authors a scene. There are none today —
       measured, not assumed: `cyberdyne-editor --list-commands` prints the registry and no entry
       begins `material.`. Until they exist a person at a window cannot place a material node, and the
@@ -224,7 +232,8 @@ failing, and it is named here so that whoever lands 5a.1 is not surprised by it.
         `describe` says so in its own words. **Do not weaken it to keep it green** — the honest edit
         is the caption, which stops being an admission and becomes a record of how the shot was
         authored on the day it was authored
-- [ ] 5a.2 **The material graph front end, and the stage comparison that has been waiting for one.**
+- [ ] 5a.2 **SUPERSEDED by `expose-material-graph-services`: the material graph front end, and the
+      stage comparison that has been waiting for one.**
       M11.c task 1.3 asked that *every lowering stage `cy_material compile` prints be reachable
       through the editor's front end, and the two agree on the same graph*. The engine half is done —
       `stages.h`'s five stages, `dump_graph`/`dump_module`, `cy_material compile --stages`,
@@ -241,7 +250,8 @@ failing, and it is named here so that whoever lands 5a.1 is not surprised by it.
         and a preview is attempted with no compiler behind it. A front end that draws a thumbnail
         when the compiler is gone is the defect both rows' requirements name, and the control for it
         is written and proven red
-- [ ] 5a.3 **Writing `.cygraph` from Rust — the assignment this section is named after — is a
+- [ ] 5a.3 **SUPERSEDED by `expose-material-graph-services`: writing `.cygraph` from Rust — the
+      assignment this section is named after — is a
       decision to make, not a feature to add.** `specialised/graph.rs` forbids a second writer of the
       canonical format and gives the reason. The interchange M11.c built is one answer and it may be
       the right one permanently: the editor writes a source, the engine owns what it becomes, the way

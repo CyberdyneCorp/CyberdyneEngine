@@ -86,6 +86,18 @@ void text(cy::Array<u8>& out, const char* value) {
     return bytes;
 }
 
+[[nodiscard]] cy::Array<u8> service_request(u64 request, u32 schema, const char* operation) {
+    cy::Array<u8> bytes;
+    CY_REQUIRE(bytes.push_back(17));
+    little_endian(bytes, request, 8);
+    little_endian(bytes, schema, 4);
+    text(bytes, operation);
+    little_endian(bytes, 2, 4);
+    CY_REQUIRE(bytes.push_back(0xA0));
+    CY_REQUIRE(bytes.push_back(0xA1));
+    return bytes;
+}
+
 /// A bridge listening on a real socket, with an editor connected to it.
 ///
 /// A REAL LISTENER AND A REAL CONNECT, not a socket pair: `EditorBridge` has no entry point that
@@ -225,6 +237,56 @@ CY_TEST_CASE("a hello is decoded with the editor's ABI on it") {
     CY_CHECK_EQ(request.abi_major, 3U);
     CY_CHECK_EQ(request.abi_minor, 7U);
     CY_CHECK(std::strcmp(editor_message_name(request.kind), "hello") == 0);
+}
+
+CY_TEST_CASE("a versioned service request and cancellation cross the live boundary") {
+    Session session;
+    const cy::Array<u8> submit = service_request(41, 3, "material.compile");
+    cy::Array<u8> cancel;
+    CY_REQUIRE(cancel.push_back(18));
+    little_endian(cancel, 41, 8);
+    session.send({&submit, &cancel});
+
+    EditorRequest request;
+    CY_REQUIRE(session.next(request));
+    CY_CHECK(request.kind == EditorMessage::ServiceRequest);
+    CY_CHECK_EQ(request.request, 41U);
+    CY_CHECK_EQ(request.schema_version, 3U);
+    CY_CHECK(std::string_view(reinterpret_cast<const char*>(request.operation.data()),
+                              request.operation.size()) == "material.compile");
+    CY_REQUIRE_EQ(request.payload.size(), 2U);
+    CY_CHECK_EQ(request.payload[1], 0xA1U);
+
+    CY_REQUIRE(session.next(request));
+    CY_CHECK(request.kind == EditorMessage::ServiceCancel);
+    CY_CHECK_EQ(request.request, 41U);
+}
+
+CY_TEST_CASE("a service event has the byte layout the Rust protocol decodes") {
+    Session session;
+    const cy::Array<u8> message = hello(1, 2);
+    session.send({&message});
+    EditorRequest request;
+    CY_REQUIRE(session.next(request));
+    const u8 payload[] = {7, 8};
+    CY_REQUIRE(session.bridge().send_service_event(51, ServiceEventKind::Completed, 4,
+                                                   cy::Span<const u8>{payload, 2}));
+
+    u8 frame[64] = {};
+    const ssize_t count = ::recv(session.editor(), frame, sizeof(frame), 0);
+    CY_REQUIRE(count > 0);
+    u32 length = 0;
+    std::memcpy(&length, frame, 4);
+    CY_REQUIRE_EQ(length, 1U + 8U + 1U + 4U + 4U + 2U);
+    const u8* body = frame + 8;
+    CY_CHECK_EQ(body[0], 19U);
+    u64 answered = 0;
+    std::memcpy(&answered, body + 1, 8);
+    CY_CHECK_EQ(answered, 51U);
+    CY_CHECK_EQ(body[9], static_cast<u8>(ServiceEventKind::Completed));
+    u32 schema = 0;
+    std::memcpy(&schema, body + 10, 4);
+    CY_CHECK_EQ(schema, 4U);
 }
 
 CY_TEST_CASE("a message the caller reads after poll is still its own") {

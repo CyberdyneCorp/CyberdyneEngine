@@ -192,6 +192,49 @@ impl RuntimeSession {
         Ok(request)
     }
 
+    /// Submit one asynchronous engine-owned editor service operation.
+    pub fn service_request(
+        &self,
+        schema_version: u32,
+        operation: impl Into<String>,
+        payload: Vec<u8>,
+    ) -> Result<RequestId> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new("call an editor backend service", "no runtime is attached")
+                .with_remedy("start a runtime; authored documents remain available without it")
+        })?;
+        let operation = operation.into();
+        if schema_version == 0 || operation.is_empty() {
+            return Err(Problem::new(
+                "call an editor backend service",
+                "the schema version and operation identity must be non-zero and non-empty",
+            ));
+        }
+        let request = session.next_request();
+        session.send(&Message::ServiceRequest {
+            request,
+            schema_version,
+            operation,
+            payload,
+        })?;
+        Ok(request)
+    }
+
+    /// Cooperatively cancel an editor service operation by its original request identity.
+    pub fn cancel_service(&self, request: RequestId) -> Result<()> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new("cancel an editor backend request", "no runtime is attached")
+                .with_remedy("the disconnected runtime can no longer publish a result")
+        })?;
+        if request.as_u64() == 0 {
+            return Err(Problem::new(
+                "cancel an editor backend request",
+                "request zero is reserved and cannot identify work",
+            ));
+        }
+        session.send(&Message::ServiceCancel { request })
+    }
+
     /// Ask the attached runtime to enter, pause or leave play. M8.a task 5.1.
     ///
     /// **This is what pressing play now does that it did not before.** Until M8.a, `play.enter` set
@@ -357,6 +400,39 @@ mod tests {
             problem.remedy.as_deref().unwrap().contains("keep editing"),
             "an edit with no runtime attached is ordinary, and the remedy should say so"
         );
+    }
+
+    #[test]
+    fn service_requests_and_cancellation_share_the_session_request_identity() {
+        let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+
+        let request = runtime
+            .service_request(1, "material.compile", vec![1, 2, 3])
+            .unwrap();
+        runtime.cancel_service(request).unwrap();
+
+        let submitted = cy_editor_protocol::read_frame(&mut runtime_reader)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            Message::decode(&submitted).unwrap(),
+            Message::ServiceRequest {
+                request,
+                schema_version: 1,
+                operation: "material.compile".into(),
+                payload: vec![1, 2, 3],
+            }
+        );
+        let cancelled = cy_editor_protocol::read_frame(&mut runtime_reader)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            Message::decode(&cancelled).unwrap(),
+            Message::ServiceCancel { request }
+        );
+        drop(runtime_writer);
     }
 
     #[test]

@@ -199,8 +199,14 @@ pub(super) fn profiler(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     if progress.rows().is_empty() {
         ui.label(secondary(panels.shell, "Nothing is running."));
     } else {
-        for row in progress.rows() {
-            ui.label(egui::RichText::new(row.line()));
+        let rows = progress.rows().to_vec();
+        for row in rows {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(row.line()));
+                if row.cancellable && ui.small_button("Cancel").clicked() {
+                    panels.editor.operations.cancel(row.request);
+                }
+            });
         }
     }
 

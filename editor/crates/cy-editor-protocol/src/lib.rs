@@ -40,6 +40,6 @@ pub mod server;
 pub mod session;
 
 pub use frame::{FrameId, read_frame, write_frame};
-pub use message::{ApplyWhen, Message, RequestId};
+pub use message::{ApplyWhen, Message, RequestId, ServiceEventKind};
 pub use server::serve;
 pub use session::{Session, SessionEvent, SessionState};

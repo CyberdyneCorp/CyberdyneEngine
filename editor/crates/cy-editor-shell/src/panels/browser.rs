@@ -36,6 +36,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     controls(panels, ui);
     ui.add_space(metrics.gap() * 0.5);
     panels.asset_browser.refresh(&panels.editor.asset_catalogue);
+    import_dialog(panels, ui.ctx());
     let total = panels.asset_browser.rows().len();
 
     if total == 0 {
@@ -84,6 +85,9 @@ fn controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             .set_name_filter(panels.inputs.browser_filter.clone());
     }
     ui.horizontal(|ui| {
+        if ui.button("Import…").clicked() {
+            panels.inputs.browser_import_open = true;
+        }
         if ui
             .add_enabled(
                 !panels.asset_browser.folder().is_empty(),
@@ -138,6 +142,64 @@ fn controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     });
 }
 
+fn import_dialog(panels: &mut Panels<'_>, ctx: &egui::Context) {
+    if !panels.inputs.browser_import_open {
+        return;
+    }
+    let mut open = true;
+    egui::Window::new("Import assets")
+        .collapsible(false)
+        .resizable(true)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(
+                "Choose files in Finder and drop them here, or enter native paths (one per line).",
+            );
+            ui.add(
+                egui::TextEdit::multiline(&mut panels.inputs.browser_import_paths)
+                    .hint_text("/Users/me/Models/robot.fbx")
+                    .desired_rows(5)
+                    .desired_width(460.0),
+            );
+            ui.label(secondary(
+                panels.shell,
+                format!(
+                    "Destination: {}",
+                    if panels.asset_browser.folder().is_empty() {
+                        "Imported"
+                    } else {
+                        panels.asset_browser.folder()
+                    }
+                ),
+            ));
+            ui.horizontal(|ui| {
+                let paths: Vec<std::path::PathBuf> = panels
+                    .inputs
+                    .browser_import_paths
+                    .lines()
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(std::path::PathBuf::from)
+                    .collect();
+                if ui
+                    .add_enabled(!paths.is_empty(), egui::Button::new("Import"))
+                    .clicked()
+                {
+                    panels.intents.push(Intent::ImportExternal {
+                        paths,
+                        destination: panels.asset_browser.folder().to_string(),
+                    });
+                    panels.inputs.browser_import_paths.clear();
+                    panels.inputs.browser_import_open = false;
+                }
+                if ui.button("Cancel").clicked() {
+                    panels.inputs.browser_import_open = false;
+                }
+            });
+        });
+    panels.inputs.browser_import_open &= open;
+}
+
 fn virtual_rows(
     panels: &mut Panels<'_>,
     ui: &mut egui::Ui,
@@ -179,7 +241,7 @@ fn entry(
     rect: egui::Rect,
 ) -> bool {
     let metrics = panels.metrics();
-    let kind = Kind::of_path(&row.path);
+    let kind = Kind::of_label(&row.kind);
     let thumbnail = if row.folder {
         Thumbnail::Typed(Kind::Other)
     } else {

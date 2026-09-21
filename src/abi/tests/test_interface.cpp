@@ -69,6 +69,42 @@ struct Bound {
     }
 };
 
+struct ProbeService final : cy::abi::EditorServiceBackend {
+    CyServiceRequest submitted{};
+    bool cancelled = false;
+    bool ready = false;
+    const cy::u8 result[2] = {0xCA, 0xFE};
+
+    CyResult open(CyServiceSession* out_session) noexcept override {
+        *out_session = reinterpret_cast<CyServiceSession>(this);
+        return CY_RESULT_OK;
+    }
+    void close(CyServiceSession session) noexcept override { CY_CHECK(session != nullptr); }
+    CyResult submit(CyServiceSession, const CyServiceRequest& request) noexcept override {
+        submitted = request;
+        ready = true;
+        return CY_RESULT_OK;
+    }
+    CyResult cancel(CyServiceSession, cy::u64 request_id) noexcept override {
+        cancelled = request_id == submitted.request_id;
+        return cancelled ? CY_RESULT_OK : CY_RESULT_NOT_FOUND;
+    }
+    CyResult poll(CyServiceSession, CyServiceEvent& event, bool& has_event) noexcept override {
+        has_event = ready;
+        if (ready) {
+            event = CyServiceEvent{sizeof(CyServiceEvent),
+                                   CY_SERVICE_EVENT_COMPLETED,
+                                   submitted.request_id,
+                                   1,
+                                   0,
+                                   result,
+                                   sizeof(result)};
+            ready = false;
+        }
+        return CY_RESULT_OK;
+    }
+};
+
 // A behaviour vtable a module would register. The entries are C functions with C linkage, because
 // that is what crosses the boundary; they count their own calls so a test can see that the engine
 // reached the module's code and not something that merely looked like it.
@@ -130,11 +166,59 @@ CY_TEST_CASE("an older engine refuses a newer module, naming both versions") {
     // `native-abi`'s "Older engine, newer module": null, and the loader can report both numbers.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR + 1) == nullptr);
     CY_CHECK_EQ(cy::abi::last_error_code(), CY_RESULT_VERSION_MISMATCH);
-    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.1") != nullptr);
+    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.2") != nullptr);
 
     // A different major is a different ABI and there is nothing to negotiate.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR + 1, 0) == nullptr);
     CY_CHECK_EQ(cy::abi::last_error_code(), CY_RESULT_VERSION_MISMATCH);
+}
+
+CY_TEST_CASE("the editor service is asynchronous cancellable and request identified") {
+    Bound bound;
+    ProbeService backend;
+    bound.host.bind_editor_service(&backend);
+    const CyInterface& iface = table();
+
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(iface.service_open(&bound.host, &session), CY_RESULT_OK);
+    CY_REQUIRE(session != nullptr);
+
+    const cy::u8 bytes[] = {1, 2, 3};
+    const CyServiceRequest request{sizeof(CyServiceRequest), 1,     77,
+                                   "material.catalogue.get", bytes, sizeof(bytes)};
+    CY_REQUIRE_EQ(iface.service_submit(&bound.host, session, &request), CY_RESULT_OK);
+    CY_CHECK_EQ(backend.submitted.request_id, 77U);
+    CY_CHECK(std::strcmp(backend.submitted.operation, "material.catalogue.get") == 0);
+    CY_REQUIRE_EQ(iface.service_cancel(&bound.host, session, 77), CY_RESULT_OK);
+    CY_CHECK(backend.cancelled);
+
+    CyServiceEvent event{};
+    bool has_event = false;
+    CY_REQUIRE_EQ(iface.service_poll(&bound.host, session, &event, &has_event), CY_RESULT_OK);
+    CY_REQUIRE(has_event);
+    CY_CHECK_EQ(event.request_id, 77U);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_EQ(event.payload_size, 2U);
+    CY_CHECK_EQ(event.payload[0], 0xCAU);
+
+    CY_REQUIRE_EQ(iface.service_poll(&bound.host, session, &event, &has_event), CY_RESULT_OK);
+    CY_CHECK_FALSE(has_event);
+    iface.service_close(&bound.host, session);
+}
+
+CY_TEST_CASE("the editor service refuses malformed requests and an unavailable backend") {
+    Bound bound;
+    const CyInterface& iface = table();
+    CyServiceSession session = nullptr;
+    CY_CHECK_EQ(iface.service_open(&bound.host, &session), CY_RESULT_UNAVAILABLE);
+
+    ProbeService backend;
+    bound.host.bind_editor_service(&backend);
+    CY_REQUIRE_EQ(iface.service_open(&bound.host, &session), CY_RESULT_OK);
+    const CyServiceRequest no_identity{sizeof(CyServiceRequest), 1,       0,
+                                       "material.compile",       nullptr, 0};
+    CY_CHECK_EQ(iface.service_submit(&bound.host, session, &no_identity),
+                CY_RESULT_INVALID_ARGUMENT);
 }
 
 CY_TEST_CASE("a failure is a returned code and an untouched output") {

@@ -29,6 +29,35 @@ impl RequestId {
     }
 }
 
+/// The lifecycle state carried by a backend service event.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum ServiceEventKind {
+    /// The request ID has been reserved and work may start.
+    Accepted = 0,
+    /// Non-terminal progress; the payload schema is operation-specific.
+    Progress = 1,
+    /// Successful terminal result.
+    Completed = 2,
+    /// Failed terminal result with structured diagnostics in the payload.
+    Failed = 3,
+    /// Cancelled terminal result.
+    Cancelled = 4,
+}
+
+impl ServiceEventKind {
+    const fn from_u8(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Accepted),
+            1 => Some(Self::Progress),
+            2 => Some(Self::Completed),
+            3 => Some(Self::Failed),
+            4 => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+}
+
 /// When the runtime should apply a change.
 ///
 /// The spike's single biggest available win, made explicit rather than inferred. An authoring world
@@ -294,6 +323,33 @@ pub enum Message {
         /// One line for a person: how many entities and bodies the session built, or why not.
         detail: String,
     },
+    /// Submit one versioned operation to the engine-owned editor service.
+    ServiceRequest {
+        /// Unique within the service session.
+        request: RequestId,
+        /// Version of the operation payload, independent of the transport.
+        schema_version: u32,
+        /// Stable operation identity, such as `material.compile`.
+        operation: String,
+        /// Operation-specific encoded input.
+        payload: Vec<u8>,
+    },
+    /// Cooperatively cancel a previously submitted service request.
+    ServiceCancel {
+        /// The request to cancel.
+        request: RequestId,
+    },
+    /// One lifecycle event emitted for a service request.
+    ServiceEvent {
+        /// The request this event belongs to.
+        request: RequestId,
+        /// Lifecycle state; exactly one terminal state is emitted.
+        kind: ServiceEventKind,
+        /// Version of the event payload.
+        schema_version: u32,
+        /// Operation-specific encoded output or diagnostics.
+        payload: Vec<u8>,
+    },
 }
 
 impl Message {
@@ -312,6 +368,7 @@ impl Message {
         if !self.write_connection(&mut writer)
             && !self.write_work(&mut writer)
             && !self.write_play(&mut writer)
+            && !self.write_service(&mut writer)
         {
             debug_assert!(
                 false,
@@ -511,6 +568,42 @@ impl Message {
         true
     }
 
+    /// Versioned editor backend operations. Existing message tags remain untouched.
+    fn write_service(&self, writer: &mut Writer) -> bool {
+        match self {
+            Message::ServiceRequest {
+                request,
+                schema_version,
+                operation,
+                payload,
+            } => {
+                writer.u8(17);
+                writer.u64(request.as_u64());
+                writer.u32(*schema_version);
+                writer.text(operation);
+                writer.bytes(payload);
+            }
+            Message::ServiceCancel { request } => {
+                writer.u8(18);
+                writer.u64(request.as_u64());
+            }
+            Message::ServiceEvent {
+                request,
+                kind,
+                schema_version,
+                payload,
+            } => {
+                writer.u8(19);
+                writer.u64(request.as_u64());
+                writer.u8(*kind as u8);
+                writer.u32(*schema_version);
+                writer.bytes(payload);
+            }
+            _ => return false,
+        }
+        true
+    }
+
     /// Decode a message, refusing a tag this build does not know.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
@@ -603,6 +696,7 @@ impl Message {
                 fov_y_radians: reader.f32()?,
                 near: reader.f32()?,
             },
+            17..=19 => Self::decode_service(tag, &mut reader)?,
             other => {
                 return Err(Problem::new(
                     "decode a message",
@@ -614,6 +708,32 @@ impl Message {
         Ok(message)
     }
 
+    fn decode_service(tag: u8, reader: &mut Reader<'_>) -> Result<Self> {
+        match tag {
+            17 => Ok(Message::ServiceRequest {
+                request: RequestId::from_raw(reader.u64()?),
+                schema_version: reader.u32()?,
+                operation: reader.text()?,
+                payload: reader.bytes()?,
+            }),
+            18 => Ok(Message::ServiceCancel {
+                request: RequestId::from_raw(reader.u64()?),
+            }),
+            19 => Ok(Message::ServiceEvent {
+                request: RequestId::from_raw(reader.u64()?),
+                kind: ServiceEventKind::from_u8(reader.u8()?).ok_or_else(|| {
+                    Problem::new(
+                        "decode a service event",
+                        "its lifecycle tag is not supported",
+                    )
+                })?,
+                schema_version: reader.u32()?,
+                payload: reader.bytes()?,
+            }),
+            _ => unreachable!("the caller admits only service message tags"),
+        }
+    }
+
     /// The request this message answers, when it answers one.
     #[must_use]
     pub const fn request(&self) -> Option<RequestId> {
@@ -623,7 +743,8 @@ impl Message {
             | Message::Reloaded { request, .. }
             | Message::Picked { request, .. }
             | Message::Playing { request, .. }
-            | Message::GizmoGeometry { request, .. } => Some(*request),
+            | Message::GizmoGeometry { request, .. }
+            | Message::ServiceEvent { request, .. } => Some(*request),
             _ => None,
         }
     }
@@ -711,6 +832,21 @@ mod tests {
                 state: "playing".into(),
                 mode: "separate-process".into(),
                 detail: "2 entities, 2 bodies".into(),
+            },
+            Message::ServiceRequest {
+                request: RequestId::from_raw(15),
+                schema_version: 1,
+                operation: "material.catalogue.get".into(),
+                payload: vec![1, 2],
+            },
+            Message::ServiceCancel {
+                request: RequestId::from_raw(15),
+            },
+            Message::ServiceEvent {
+                request: RequestId::from_raw(15),
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: vec![3, 4],
             },
         ];
         for message in &messages {

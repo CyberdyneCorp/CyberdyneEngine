@@ -28,6 +28,8 @@ use cy_editor_services::{Editor, OperationService};
 /// One running or settled operation, as the surface shows it.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Row {
+    /// Stable request identity shared by progress and cancellation.
+    pub request: u64,
     /// What it is: "Importing meshes/rock.gltf".
     pub label: String,
     /// How far along, when the work can say. `None` is a spinner rather than a bar.
@@ -182,6 +184,7 @@ fn rows_of(operations: &OperationService) -> Vec<Row> {
                 _ => None,
             };
             Row {
+                request: operation.id(),
                 label: operation.label().to_string(),
                 fraction,
                 step,

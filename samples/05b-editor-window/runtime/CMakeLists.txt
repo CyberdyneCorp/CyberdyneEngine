@@ -65,6 +65,7 @@ cy_add_module(
         cy::backends-viewport
         cy::servers-render
         cy::runtime-editor-bridge
+        cy::editor-backend
         cy::gameplay-play
         cy::physics-reference
         cy::rhi

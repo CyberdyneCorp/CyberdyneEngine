@@ -129,6 +129,15 @@ pub trait CommandContext {
         None
     }
 
+    /// Queue a native source path for project staging and asynchronous import.
+    fn start_external_asset_import(&mut self, source: &str, destination: &str) -> Result<u64> {
+        let _ = (source, destination);
+        Err(cy_editor_core::problem::Problem::new(
+            "import an external asset",
+            "this host has no asynchronous import service",
+        ))
+    }
+
     /// Project settings and per-user preferences, when this host exposes them.
     fn settings(&mut self) -> Option<&mut dyn SettingsHost> {
         None

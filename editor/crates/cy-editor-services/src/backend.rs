@@ -1,0 +1,1019 @@
+//! State for engine-owned editor backend services.
+//!
+//! The wire stays generic, while this service records the material catalogue the editor currently
+//! knows.  Keeping the bytes here (below presentation) lets a runtime disappear without taking an
+//! authored graph or the last compatible catalogue snapshot with it.
+
+use cy_editor_core::codec::Reader;
+use cy_editor_core::observe::{Revision, Versioned};
+use cy_editor_core::problem::Problem;
+use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
+
+use crate::runtime::RuntimeSession;
+
+const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
+const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
+const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
+const PREVIEW_CREATE_OPERATION: &str = "preview.create";
+const PREVIEW_RELOAD_OPERATION: &str = "preview.reload";
+const SERVICE_SCHEMA_VERSION: u32 = 1;
+
+/// Where the material catalogue request currently is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum MaterialCatalogueState {
+    /// No runtime has supplied a catalogue in this editor session.
+    #[default]
+    Unavailable,
+    /// A request is in flight.
+    Loading,
+    /// A compatible catalogue snapshot is available.
+    Ready,
+    /// The last request failed. A previous snapshot, if any, is retained.
+    Failed,
+}
+
+/// Operation represented by the material request state.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MaterialOperation {
+    /// Validate without producing GPU programs.
+    Validate,
+    /// Compile and return a stable artefact identity.
+    Compile,
+}
+
+/// Stable severity carried by backend diagnostics.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MaterialDiagnosticSeverity {
+    /// Informational context.
+    Info,
+    /// The graph remains usable but deserves attention.
+    Warning,
+    /// The requested operation cannot complete.
+    Error,
+}
+
+/// Navigable location in a submitted material graph.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct MaterialDiagnosticLocation {
+    /// Graph/document name supplied with the request.
+    pub document: String,
+    /// Stable node instance key, or zero for a document-level diagnostic.
+    pub node: u64,
+    /// Manifest-assigned node type identity, or zero when unavailable.
+    pub node_type: u32,
+    /// Manifest-assigned pin identity, or zero for a node/document location.
+    pub pin: u32,
+    /// Human-readable pin metadata; identity remains authoritative.
+    pub pin_name: String,
+}
+
+/// One ordered engine diagnostic.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct MaterialDiagnostic {
+    /// Stable severity.
+    pub severity: MaterialDiagnosticSeverity,
+    /// Stable machine-readable code.
+    pub code: String,
+    /// Human-readable explanation.
+    pub message: String,
+    /// Optional type, feature, or plugin metadata.
+    pub detail: String,
+    /// Primary location selected by the editor.
+    pub primary: MaterialDiagnosticLocation,
+    /// Other graph locations involved in the failure.
+    pub related: Vec<MaterialDiagnosticLocation>,
+    /// Optional corrective action.
+    pub remedy: String,
+}
+
+/// Request-correlated state shown by the material authoring surface.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum MaterialRequestState {
+    /// No validation or compilation has been requested.
+    #[default]
+    Idle,
+    /// The backend owns this request.
+    Pending {
+        /// Stable live-protocol request identity.
+        request: RequestId,
+        /// Work requested by the author.
+        operation: MaterialOperation,
+    },
+    /// The submitted graph passed backend validation.
+    Validated {
+        /// Request which produced the result.
+        request: RequestId,
+    },
+    /// The compiler produced a stable artefact.
+    Compiled {
+        /// Request which produced the result.
+        request: RequestId,
+        /// Compiler-owned content/derivation identity.
+        artefact: u64,
+        /// Semantic source-graph identity.
+        graph: u64,
+        /// Number of compiled programs in the artefact.
+        programs: u32,
+        /// Stable asset identities read by the compiled material.
+        dependencies: Vec<String>,
+    },
+    /// Terminal backend refusal or service loss.
+    Failed {
+        /// Matching request, when submission had succeeded.
+        request: Option<RequestId>,
+        /// Ordered structured diagnostics returned by the backend.
+        diagnostics: Vec<MaterialDiagnostic>,
+    },
+    /// Cooperative cancellation was acknowledged.
+    Cancelled {
+        /// Matching request identity.
+        request: RequestId,
+    },
+}
+
+/// Runtime-visible state of the material preview lease.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum MaterialPreviewState {
+    /// No preview has been requested in this session.
+    #[default]
+    Idle,
+    /// Preview creation or artefact reload is in flight.
+    Pending {
+        /// Correlated service request.
+        request: RequestId,
+        /// Human-readable operation name.
+        operation: String,
+    },
+    /// Runtime acknowledged the exact artefact currently presented.
+    Applied {
+        /// Generational preview-world handle.
+        preview: u64,
+        /// Compiler artefact acknowledged by the runtime.
+        artefact: u64,
+    },
+    /// Preview failed while the previous applied artefact, if any, remains valid.
+    Failed {
+        /// Structured failure.
+        problem: Problem,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum PreviewOperation {
+    Create,
+    Reload { artefact: u64 },
+}
+
+/// Backend-service state owned by the editor rather than by a panel.
+pub struct BackendServices {
+    material_catalogue: Versioned<Option<Vec<u8>>>,
+    catalogue_state: MaterialCatalogueState,
+    catalogue_request: Option<RequestId>,
+    material_request: Option<(RequestId, MaterialOperation)>,
+    material_state: MaterialRequestState,
+    preview_handle: Option<u64>,
+    preview_request: Option<(RequestId, PreviewOperation)>,
+    preview_pending_artefact: Option<u64>,
+    preview_applied_artefact: Option<u64>,
+    preview_state: MaterialPreviewState,
+    connected: bool,
+}
+
+impl Default for BackendServices {
+    fn default() -> Self {
+        Self {
+            material_catalogue: Versioned::new(None),
+            catalogue_state: MaterialCatalogueState::Unavailable,
+            catalogue_request: None,
+            material_request: None,
+            material_state: MaterialRequestState::Idle,
+            preview_handle: None,
+            preview_request: None,
+            preview_pending_artefact: None,
+            preview_applied_artefact: None,
+            preview_state: MaterialPreviewState::Idle,
+            connected: false,
+        }
+    }
+}
+
+impl BackendServices {
+    /// Create an empty service view. A catalogue is requested when a runtime becomes reachable.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Submit discovery work once per runtime connection.
+    pub fn maintain(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
+        if !runtime.is_connected() {
+            self.connected = false;
+            self.catalogue_request = None;
+            if self.catalogue_state == MaterialCatalogueState::Loading {
+                self.catalogue_state = MaterialCatalogueState::Failed;
+            }
+            if let Some((request, _)) = self.material_request.take() {
+                self.material_state = MaterialRequestState::Failed {
+                    request: Some(request),
+                    diagnostics: vec![local_diagnostic(
+                        "service-disconnected",
+                        "the runtime disconnected before publishing a terminal event",
+                    )],
+                };
+            }
+            self.preview_handle = None;
+            self.preview_request = None;
+            self.preview_pending_artefact = None;
+            return None;
+        }
+        if self.connected {
+            return self.advance_preview(runtime);
+        }
+
+        self.connected = true;
+        match runtime.service_request(
+            SERVICE_SCHEMA_VERSION,
+            MATERIAL_CATALOGUE_OPERATION,
+            Vec::new(),
+        ) {
+            Ok(request) => {
+                self.catalogue_request = Some(request);
+                self.catalogue_state = MaterialCatalogueState::Loading;
+                self.advance_preview(runtime)
+            }
+            Err(problem) => {
+                self.connected = false;
+                self.catalogue_state = MaterialCatalogueState::Failed;
+                Some(problem)
+            }
+        }
+    }
+
+    /// Reconcile service events drained by the editor's ordinary frame pump.
+    pub fn accept(&mut self, message: &Message) -> Option<Problem> {
+        let Message::ServiceEvent {
+            request,
+            kind,
+            schema_version,
+            payload,
+        } = message
+        else {
+            return None;
+        };
+        if Some(*request) == self.catalogue_request {
+            return self.accept_catalogue(*kind, *schema_version, payload);
+        }
+        if self.material_request.map(|pending| pending.0) == Some(*request) {
+            return self.accept_material(*request, *kind, *schema_version, payload);
+        }
+        if self.preview_request.map(|pending| pending.0) == Some(*request) {
+            return self.accept_preview(*request, *kind, *schema_version, payload);
+        }
+        None
+    }
+
+    fn accept_catalogue(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        match kind {
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => None,
+            ServiceEventKind::Completed => {
+                self.catalogue_request = None;
+                if schema_version != SERVICE_SCHEMA_VERSION {
+                    self.catalogue_state = MaterialCatalogueState::Failed;
+                    return Some(Problem::new(
+                        "load the material node catalogue",
+                        format!(
+                            "the runtime returned schema {schema_version}; this editor supports schema 1"
+                        ),
+                    )
+                    .with_remedy("use an editor and runtime with compatible service schemas"));
+                }
+                self.material_catalogue.set(Some(payload.to_vec()));
+                self.catalogue_state = MaterialCatalogueState::Ready;
+                None
+            }
+            ServiceEventKind::Failed => {
+                self.catalogue_request = None;
+                self.catalogue_state = MaterialCatalogueState::Failed;
+                Some(decode_failure(payload))
+            }
+            ServiceEventKind::Cancelled => {
+                self.catalogue_request = None;
+                self.catalogue_state = MaterialCatalogueState::Failed;
+                Some(
+                    Problem::new(
+                        "load the material node catalogue",
+                        "the backend cancelled the catalogue request",
+                    )
+                    .with_remedy("retry after the runtime is ready"),
+                )
+            }
+        }
+    }
+
+    /// Submit validation or compilation for the current transient material canvas.
+    pub fn request_material(
+        &mut self,
+        runtime: &RuntimeSession,
+        operation: MaterialOperation,
+        payload: Vec<u8>,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if self.material_request.is_some() {
+            return Err(Problem::new(
+                "submit a material backend request",
+                "validation or compilation is already pending",
+            )
+            .with_remedy("cancel it or wait for its terminal event"));
+        }
+        if self.preview_request.is_some() {
+            return Err(Problem::new(
+                "submit a material backend request",
+                "the preview is still applying the previous result",
+            )
+            .with_remedy("wait for the reload acknowledgement"));
+        }
+        let operation_name = match operation {
+            MaterialOperation::Validate => MATERIAL_VALIDATE_OPERATION,
+            MaterialOperation::Compile => MATERIAL_COMPILE_OPERATION,
+        };
+        let request = runtime.service_request(SERVICE_SCHEMA_VERSION, operation_name, payload)?;
+        self.material_request = Some((request, operation));
+        self.material_state = MaterialRequestState::Pending { request, operation };
+        Ok(request)
+    }
+
+    /// Ask the backend to cancel the pending material operation.
+    pub fn cancel_material(&self, runtime: &RuntimeSession) -> cy_editor_core::problem::Result<()> {
+        let request = self
+            .material_request
+            .map(|pending| pending.0)
+            .ok_or_else(|| {
+                Problem::new(
+                    "cancel a material backend request",
+                    "no material request is pending",
+                )
+            })?;
+        runtime.cancel_service(request)
+    }
+
+    /// Latest request-correlated material result. Terminal state survives disconnects.
+    #[must_use]
+    pub const fn material_request_state(&self) -> &MaterialRequestState {
+        &self.material_state
+    }
+
+    fn accept_material(
+        &mut self,
+        request: RequestId,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
+            return None;
+        }
+        let operation = self
+            .material_request
+            .take()
+            .expect("request identity matched")
+            .1;
+        match kind {
+            ServiceEventKind::Completed => {
+                match decode_material_result(operation, payload, schema_version) {
+                    Ok(result) => {
+                        self.material_state = result.with_request(request);
+                        if let MaterialRequestState::Compiled { artefact, .. } =
+                            &self.material_state
+                        {
+                            self.preview_pending_artefact = Some(*artefact);
+                        }
+                    }
+                    Err(problem) => {
+                        self.material_state = MaterialRequestState::Failed {
+                            request: Some(request),
+                            diagnostics: vec![local_diagnostic(
+                                "result-unreadable",
+                                &problem.because,
+                            )],
+                        };
+                        return Some(problem);
+                    }
+                }
+            }
+            ServiceEventKind::Failed => {
+                let diagnostics = decode_diagnostics(payload).unwrap_or_else(|problem| {
+                    vec![local_diagnostic("diagnostic-unreadable", &problem.because)]
+                });
+                let summary = diagnostics.first().map_or_else(
+                    || "the backend returned no diagnostic".into(),
+                    |diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message),
+                );
+                self.material_state = MaterialRequestState::Failed {
+                    request: Some(request),
+                    diagnostics,
+                };
+                return Some(Problem::new("process a material graph", summary));
+            }
+            ServiceEventKind::Cancelled => {
+                self.material_state = MaterialRequestState::Cancelled { request };
+            }
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
+        }
+        None
+    }
+
+    /// Latest compatible snapshot. It remains available across runtime loss.
+    #[must_use]
+    pub fn material_catalogue(&self) -> Option<&[u8]> {
+        self.material_catalogue.get().as_deref()
+    }
+
+    /// Revision used by presentation to install a snapshot only once.
+    #[must_use]
+    pub const fn material_catalogue_revision(&self) -> Revision {
+        self.material_catalogue.revision()
+    }
+
+    /// Current request state for status surfaces.
+    #[must_use]
+    pub const fn material_catalogue_state(&self) -> MaterialCatalogueState {
+        self.catalogue_state
+    }
+
+    /// Runtime acknowledgement state for the latest compiled material.
+    #[must_use]
+    pub const fn material_preview_state(&self) -> &MaterialPreviewState {
+        &self.preview_state
+    }
+
+    fn advance_preview(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
+        if self.preview_request.is_some() || self.preview_pending_artefact.is_none() {
+            return None;
+        }
+        let artefact = self.preview_pending_artefact.expect("checked above");
+        let (name, payload, operation) = if let Some(preview) = self.preview_handle {
+            let mut payload = Vec::with_capacity(16);
+            payload.extend_from_slice(&preview.to_le_bytes());
+            payload.extend_from_slice(&artefact.to_le_bytes());
+            (
+                PREVIEW_RELOAD_OPERATION,
+                payload,
+                PreviewOperation::Reload { artefact },
+            )
+        } else {
+            (
+                PREVIEW_CREATE_OPERATION,
+                Vec::new(),
+                PreviewOperation::Create,
+            )
+        };
+        match runtime.service_request(SERVICE_SCHEMA_VERSION, name, payload) {
+            Ok(request) => {
+                self.preview_request = Some((request, operation));
+                self.preview_state = MaterialPreviewState::Pending {
+                    request,
+                    operation: name.to_string(),
+                };
+                None
+            }
+            Err(problem) => {
+                self.preview_state = MaterialPreviewState::Failed {
+                    problem: problem.clone(),
+                };
+                Some(problem)
+            }
+        }
+    }
+
+    fn accept_preview(
+        &mut self,
+        request: RequestId,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
+            return None;
+        }
+        let (_, operation) = self
+            .preview_request
+            .take()
+            .expect("request identity matched");
+        if schema_version != SERVICE_SCHEMA_VERSION {
+            return self.fail_preview(Problem::new(
+                "apply a material preview",
+                "the runtime returned an unsupported preview schema",
+            ));
+        }
+        match kind {
+            ServiceEventKind::Completed => match operation {
+                PreviewOperation::Create => {
+                    let preview = read_u64_payload(payload, 0).map_err(|problem| {
+                        Problem::new("create a material preview", problem.because)
+                    });
+                    match preview {
+                        Ok(preview) => {
+                            self.preview_handle = Some(preview);
+                            self.preview_state = MaterialPreviewState::Pending {
+                                request,
+                                operation: PREVIEW_RELOAD_OPERATION.to_string(),
+                            };
+                            None
+                        }
+                        Err(problem) => self.fail_preview(problem),
+                    }
+                }
+                PreviewOperation::Reload { artefact } => {
+                    let requested = read_u64_payload(payload, 0);
+                    let applied = read_u64_payload(payload, 8);
+                    match (requested, applied) {
+                        (Ok(requested), Ok(applied))
+                            if requested == artefact && applied == artefact =>
+                        {
+                            self.preview_pending_artefact = None;
+                            self.preview_applied_artefact = Some(applied);
+                            self.preview_state = MaterialPreviewState::Applied {
+                                preview: self.preview_handle.unwrap_or_default(),
+                                artefact: applied,
+                            };
+                            None
+                        }
+                        _ => self.fail_preview(Problem::new(
+                            "reload a material preview",
+                            "the acknowledgement did not name the requested artefact",
+                        )),
+                    }
+                }
+            },
+            ServiceEventKind::Failed => self.fail_preview(decode_failure(payload)),
+            ServiceEventKind::Cancelled => self.fail_preview(Problem::new(
+                "apply a material preview",
+                "the preview request was cancelled",
+            )),
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
+        }
+    }
+
+    fn fail_preview(&mut self, problem: Problem) -> Option<Problem> {
+        self.preview_pending_artefact = None;
+        self.preview_state = MaterialPreviewState::Failed {
+            problem: problem.clone(),
+        };
+        Some(problem)
+    }
+}
+
+fn read_u64_payload(payload: &[u8], offset: usize) -> cy_editor_core::problem::Result<u64> {
+    let bytes: [u8; 8] = payload
+        .get(offset..offset.saturating_add(8))
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| Problem::new("read a preview result", "the payload is truncated"))?;
+    Ok(u64::from_le_bytes(bytes))
+}
+
+enum DecodedMaterialResult {
+    Validated,
+    Compiled {
+        artefact: u64,
+        graph: u64,
+        programs: u32,
+        dependencies: Vec<String>,
+    },
+}
+
+impl DecodedMaterialResult {
+    fn with_request(self, request: RequestId) -> MaterialRequestState {
+        match self {
+            Self::Validated => MaterialRequestState::Validated { request },
+            Self::Compiled {
+                artefact,
+                graph,
+                programs,
+                dependencies,
+            } => MaterialRequestState::Compiled {
+                request,
+                artefact,
+                graph,
+                programs,
+                dependencies,
+            },
+        }
+    }
+}
+
+fn decode_material_result(
+    operation: MaterialOperation,
+    payload: &[u8],
+    schema_version: u32,
+) -> cy_editor_core::problem::Result<DecodedMaterialResult> {
+    if schema_version != SERVICE_SCHEMA_VERSION {
+        return Err(Problem::new(
+            "decode a material result",
+            "unsupported result schema",
+        ));
+    }
+    let mut reader = Reader::new(payload);
+    let payload_schema = reader.u32()?;
+    if !matches!(payload_schema, 1 | 2) || reader.u8()? != 1 {
+        return Err(Problem::new(
+            "decode a material result",
+            "the result did not report success",
+        ));
+    }
+    let result = match operation {
+        MaterialOperation::Validate => DecodedMaterialResult::Validated,
+        MaterialOperation::Compile => {
+            let artefact = reader.u64()?;
+            let graph = reader.u64()?;
+            let programs = reader.u32()?;
+            let dependencies = if payload_schema >= 2 {
+                let count = reader.u32()?;
+                (0..count)
+                    .map(|_| reader.text())
+                    .collect::<cy_editor_core::problem::Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
+            DecodedMaterialResult::Compiled {
+                artefact,
+                graph,
+                programs,
+                dependencies,
+            }
+        }
+    };
+    if !reader.is_empty() {
+        return Err(Problem::new(
+            "decode a material result",
+            "bytes remain after the result",
+        ));
+    }
+    Ok(result)
+}
+
+fn decode_diagnostics(payload: &[u8]) -> cy_editor_core::problem::Result<Vec<MaterialDiagnostic>> {
+    let mut reader = Reader::new(payload);
+    let schema = reader.u32()?;
+    let diagnostics = match schema {
+        1 => vec![local_diagnostic(&reader.text()?, &reader.text()?)],
+        2 => {
+            let count = reader.u32()?;
+            let mut diagnostics = Vec::with_capacity(count as usize);
+            for _ in 0..count {
+                let severity = match reader.u8()? {
+                    0 => MaterialDiagnosticSeverity::Info,
+                    1 => MaterialDiagnosticSeverity::Warning,
+                    2 => MaterialDiagnosticSeverity::Error,
+                    value => {
+                        return Err(Problem::new(
+                            "decode a backend diagnostic",
+                            format!("severity {value} is not supported"),
+                        ));
+                    }
+                };
+                let code = reader.text()?;
+                let message = reader.text()?;
+                let detail = reader.text()?;
+                let primary = decode_location(&mut reader)?;
+                let related_count = reader.u32()?;
+                let mut related = Vec::with_capacity(related_count as usize);
+                for _ in 0..related_count {
+                    related.push(decode_location(&mut reader)?);
+                }
+                diagnostics.push(MaterialDiagnostic {
+                    severity,
+                    code,
+                    message,
+                    detail,
+                    primary,
+                    related,
+                    remedy: reader.text()?,
+                });
+            }
+            diagnostics
+        }
+        _ => {
+            return Err(Problem::new(
+                "decode a backend diagnostic",
+                format!("diagnostic schema {schema} is not supported"),
+            ));
+        }
+    };
+    if !reader.is_empty() {
+        return Err(Problem::new(
+            "decode a backend diagnostic",
+            "bytes remain after the diagnostic list",
+        ));
+    }
+    Ok(diagnostics)
+}
+
+fn decode_location(
+    reader: &mut Reader<'_>,
+) -> cy_editor_core::problem::Result<MaterialDiagnosticLocation> {
+    Ok(MaterialDiagnosticLocation {
+        document: reader.text()?,
+        node: reader.u64()?,
+        node_type: reader.u32()?,
+        pin: reader.u32()?,
+        pin_name: reader.text()?,
+    })
+}
+
+fn local_diagnostic(code: &str, message: &str) -> MaterialDiagnostic {
+    MaterialDiagnostic {
+        severity: MaterialDiagnosticSeverity::Error,
+        code: code.into(),
+        message: message.into(),
+        detail: String::new(),
+        primary: MaterialDiagnosticLocation::default(),
+        related: Vec::new(),
+        remedy: String::new(),
+    }
+}
+
+fn decode_failure(payload: &[u8]) -> Problem {
+    match decode_diagnostics(payload).and_then(|diagnostics| {
+        diagnostics.into_iter().next().ok_or_else(|| {
+            Problem::new(
+                "decode a backend diagnostic",
+                "the diagnostic list is empty",
+            )
+        })
+    }) {
+        Ok(diagnostic) => Problem::new(
+            "load the material node catalogue",
+            format!("{}: {}", diagnostic.code, diagnostic.message),
+        )
+        .with_remedy("inspect runtime capabilities or use a compatible engine build"),
+        Err(_) => Problem::new(
+            "load the material node catalogue",
+            "the runtime returned an unreadable failure diagnostic",
+        )
+        .with_remedy("rebuild the editor and runtime from compatible revisions"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use cy_editor_core::codec::Writer;
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
+
+    use super::*;
+    use crate::notifications::NotificationService;
+
+    #[test]
+    fn a_runtime_catalogue_is_requested_asynchronously_and_survives_disconnect() {
+        let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let mut runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+        let mut backend = BackendServices::new();
+
+        assert!(backend.maintain(&runtime).is_none());
+        assert_eq!(
+            backend.material_catalogue_state(),
+            MaterialCatalogueState::Loading
+        );
+        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request,
+            schema_version,
+            operation,
+            payload,
+        } = request
+        else {
+            panic!("the first backend message was not a service request")
+        };
+        assert_ne!(request.as_u64(), 0);
+        assert_eq!(schema_version, 1);
+        assert_eq!(operation, MATERIAL_CATALOGUE_OPERATION);
+        assert!(payload.is_empty());
+
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(7);
+        catalogue.u32(0);
+        let catalogue = catalogue.finish();
+        write_frame(
+            &mut runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: catalogue.clone(),
+            }
+            .encode(),
+        )
+        .unwrap();
+
+        let mut notifications = NotificationService::new();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.material_catalogue().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(backend.material_catalogue(), Some(catalogue.as_slice()));
+        assert_eq!(
+            backend.material_catalogue_state(),
+            MaterialCatalogueState::Ready
+        );
+
+        drop(runtime_writer);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while runtime.is_connected() && Instant::now() < deadline {
+            runtime.pump(&mut notifications);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        backend.maintain(&runtime);
+        assert_eq!(
+            backend.material_catalogue(),
+            Some(catalogue.as_slice()),
+            "runtime loss must not discard the catalogue a live authored graph uses"
+        );
+    }
+
+    #[test]
+    fn a_structured_backend_failure_is_retained_as_a_problem() {
+        let mut payload = Writer::new();
+        payload.u32(1);
+        payload.text("catalogue-unavailable");
+        payload.text("material node registration failed");
+        let problem = decode_failure(&payload.finish());
+        assert!(
+            problem.because.contains("catalogue-unavailable"),
+            "{problem}"
+        );
+        assert!(problem.because.contains("node registration"), "{problem}");
+        assert!(problem.remedy.is_some());
+    }
+
+    #[test]
+    fn a_versioned_material_diagnostic_retains_stable_and_related_locations() {
+        let mut payload = Writer::new();
+        payload.u32(2);
+        payload.u32(1);
+        payload.u8(2);
+        payload.text("graph.link.type-mismatch");
+        payload.text("this pin does not accept the connected value");
+        payload.text("closure");
+        payload.text("editor_preview");
+        payload.u64(2);
+        payload.u32(5);
+        payload.u32(1);
+        payload.text("uv");
+        payload.u32(1);
+        payload.text("editor_preview");
+        payload.u64(1);
+        payload.u32(16);
+        payload.u32(3);
+        payload.text("out");
+        payload.text("connect a value output instead");
+
+        let diagnostics = decode_diagnostics(&payload.finish()).expect("schema 2 decodes");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "graph.link.type-mismatch");
+        assert_eq!(diagnostics[0].primary.node, 2);
+        assert_eq!(diagnostics[0].primary.node_type, 5);
+        assert_eq!(diagnostics[0].primary.pin, 1);
+        assert_eq!(diagnostics[0].related[0].node, 1);
+        assert_eq!(diagnostics[0].related[0].node_type, 16);
+        assert_eq!(diagnostics[0].related[0].pin, 3);
+    }
+
+    #[test]
+    fn a_compile_result_is_applied_only_to_its_request_identity() {
+        let request = cy_editor_protocol::RequestId::from_raw(77);
+        let mut backend = BackendServices::new();
+        backend.material_request = Some((request, MaterialOperation::Compile));
+        backend.material_state = MaterialRequestState::Pending {
+            request,
+            operation: MaterialOperation::Compile,
+        };
+
+        let mut payload = Writer::new();
+        payload.u32(2);
+        payload.u8(1);
+        payload.u64(0xCAFE);
+        payload.u64(0xBEEF);
+        payload.u32(3);
+        payload.u32(1);
+        payload.text("0123456789abcdef0123456789abcdef");
+        let payload = payload.finish();
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request: cy_editor_protocol::RequestId::from_raw(76),
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: payload.clone(),
+                })
+                .is_none()
+        );
+        assert!(matches!(
+            backend.material_request_state(),
+            MaterialRequestState::Pending { request: pending, .. } if *pending == request
+        ));
+
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request,
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload,
+                })
+                .is_none()
+        );
+        assert_eq!(
+            backend.material_request_state(),
+            &MaterialRequestState::Compiled {
+                request,
+                artefact: 0xCAFE,
+                graph: 0xBEEF,
+                programs: 3,
+                dependencies: vec!["0123456789abcdef0123456789abcdef".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn a_pending_material_request_becomes_a_visible_failure_on_disconnect() {
+        let request = cy_editor_protocol::RequestId::from_raw(9);
+        let mut backend = BackendServices::new();
+        backend.material_request = Some((request, MaterialOperation::Validate));
+        backend.material_state = MaterialRequestState::Pending {
+            request,
+            operation: MaterialOperation::Validate,
+        };
+        let runtime = RuntimeSession::none();
+
+        assert!(backend.maintain(&runtime).is_none());
+        assert!(matches!(
+            backend.material_request_state(),
+            MaterialRequestState::Failed {
+                request: Some(failed),
+                diagnostics,
+            } if *failed == request && diagnostics[0].code == "service-disconnected"
+        ));
+    }
+
+    #[test]
+    fn preview_is_current_only_after_the_exact_reload_acknowledgement() {
+        let create = RequestId::from_raw(10);
+        let reload = RequestId::from_raw(11);
+        let preview = 0x1000_0002_u64;
+        let artefact = 0xCAFE_BABE_u64;
+        let mut backend = BackendServices::new();
+        backend.preview_pending_artefact = Some(artefact);
+        backend.preview_request = Some((create, PreviewOperation::Create));
+
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request: create,
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: preview.to_le_bytes().to_vec(),
+                })
+                .is_none()
+        );
+        assert_eq!(backend.preview_handle, Some(preview));
+        assert_ne!(
+            backend.material_preview_state(),
+            &MaterialPreviewState::Applied { preview, artefact }
+        );
+
+        backend.preview_request = Some((reload, PreviewOperation::Reload { artefact }));
+        let mut acknowledgement = Vec::new();
+        acknowledgement.extend_from_slice(&artefact.to_le_bytes());
+        acknowledgement.extend_from_slice(&artefact.to_le_bytes());
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request: reload,
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: acknowledgement,
+                })
+                .is_none()
+        );
+        assert_eq!(
+            backend.material_preview_state(),
+            &MaterialPreviewState::Applied { preview, artefact }
+        );
+    }
+}

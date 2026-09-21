@@ -115,6 +115,7 @@ mod tests {
             "content-browser",
             "viewport",
             "inspector",
+            "editor-materials",
             "script-graph",
             "animation",
             "console",

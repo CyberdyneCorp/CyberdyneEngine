@@ -14,12 +14,12 @@
 /// aborting engine startup.
 public enum ABI {
     public static let major: UInt32 = 1
-    public static let minor: UInt32 = 1
+    public static let minor: UInt32 = 2
     public static let patch: UInt32 = 0
 
     /// `sizeof(CyInterface)` as this overlay was generated. The engine may export a larger table —
     /// that is what append-only growth looks like from here — and may never export a smaller one.
-    public static let interfaceTableSize: UInt32 = 320
+    public static let interfaceTableSize: UInt32 = 360
 
     /// The entries this overlay knows, in the table's order. Written down so that a diagnostic can
     /// say *which* entry a mismatched table stops at rather than only that the sizes differ.
@@ -62,5 +62,10 @@ public enum ABI {
         "world_child_count",
         "world_child",
         "world_chunks",
+        "service_open",
+        "service_close",
+        "service_submit",
+        "service_cancel",
+        "service_poll",
     ]
 }

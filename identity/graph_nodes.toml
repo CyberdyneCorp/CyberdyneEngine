@@ -1,0 +1,105 @@
+# Stable graph identities. Append-only: renamed entries retain their id; removed entries become
+# tombstones and their ids are never reused. Pin ids are scoped to their node type.
+version = 1
+next_node_type_id = 26
+
+[[node_type]]
+id = 1
+name = "material.constant"
+pins = [{ id = 1, name = "out", direction = "output" }]
+[[node_type]]
+id = 2
+name = "material.parameter"
+pins = [{ id = 1, name = "out", direction = "output" }]
+[[node_type]]
+id = 3
+name = "material.attribute"
+pins = [{ id = 1, name = "out", direction = "output" }]
+[[node_type]]
+id = 4
+name = "material.field"
+pins = [{ id = 1, name = "out", direction = "output" }]
+[[node_type]]
+id = 5
+name = "material.texture_sample"
+pins = [{ id = 1, name = "uv", direction = "input" }, { id = 2, name = "out", direction = "output" }]
+[[node_type]]
+id = 6
+name = "material.multiply"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 7
+name = "material.add"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 8
+name = "material.subtract"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 9
+name = "material.divide"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 10
+name = "material.one_minus"
+pins = [{ id = 1, name = "value", direction = "input" }, { id = 2, name = "out", direction = "output" }]
+[[node_type]]
+id = 11
+name = "material.saturate"
+pins = [{ id = 1, name = "value", direction = "input" }, { id = 2, name = "out", direction = "output" }]
+[[node_type]]
+id = 12
+name = "material.lerp"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "t", direction = "input" }, { id = 4, name = "out", direction = "output" }]
+[[node_type]]
+id = 13
+name = "material.swizzle"
+pins = [{ id = 1, name = "value", direction = "input" }, { id = 2, name = "out", direction = "output" }]
+[[node_type]]
+id = 14
+name = "material.combine"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 15
+name = "material.custom"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 16
+name = "material.diffuse"
+pins = [{ id = 1, name = "colour", direction = "input" }, { id = 2, name = "weight", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 17
+name = "material.specular"
+pins = [{ id = 1, name = "colour", direction = "input" }, { id = 2, name = "roughness", direction = "input" }, { id = 3, name = "weight", direction = "input" }, { id = 4, name = "out", direction = "output" }]
+[[node_type]]
+id = 18
+name = "material.coat"
+pins = [{ id = 1, name = "roughness", direction = "input" }, { id = 2, name = "weight", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 19
+name = "material.sheen"
+pins = [{ id = 1, name = "colour", direction = "input" }, { id = 2, name = "weight", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 20
+name = "material.emission"
+pins = [{ id = 1, name = "colour", direction = "input" }, { id = 2, name = "weight", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 21
+name = "material.transmission"
+pins = [{ id = 1, name = "colour", direction = "input" }, { id = 2, name = "weight", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 22
+name = "material.subsurface"
+pins = [{ id = 1, name = "colour", direction = "input" }, { id = 2, name = "weight", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 23
+name = "material.add_closures"
+pins = [{ id = 1, name = "a", direction = "input" }, { id = 2, name = "b", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 24
+name = "material.layer_closures"
+pins = [{ id = 1, name = "top", direction = "input" }, { id = 2, name = "base", direction = "input" }, { id = 3, name = "out", direction = "output" }]
+[[node_type]]
+id = 25
+name = "material.output"
+pins = [{ id = 1, name = "surface", direction = "input" }, { id = 2, name = "opacity", direction = "input" }]

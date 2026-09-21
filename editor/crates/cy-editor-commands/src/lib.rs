@@ -46,7 +46,7 @@ pub mod scope;
 
 pub use assets::{
     AssetHost, AssetImportOutcome, AssetImportRequest, ImportFormat, ImportSetting,
-    ImportedSubAsset,
+    ImportedSceneNode, ImportedSubAsset,
 };
 pub use context::{
     AssetMove, CommandContext, Manipulation, ManipulationKind, Outcome, ProjectHost, SettingsHost,

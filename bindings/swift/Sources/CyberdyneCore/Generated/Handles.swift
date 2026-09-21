@@ -78,6 +78,31 @@ public struct Engine: @unchecked Sendable {
     public func findBehaviour(name: UnsafePointer<CChar>?) -> CyBehaviourType? {
         interface.findBehaviour(engine: raw, name: name)
     }
+
+    @inlinable
+    public func serviceOpen(into: UnsafeMutablePointer<CyServiceSession>?) throws {
+        try interface.serviceOpen(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func serviceClose(session: CyServiceSession) {
+        interface.serviceClose(engine: raw, session: session)
+    }
+
+    @inlinable
+    public func serviceSubmit(session: CyServiceSession, request: UnsafePointer<CyServiceRequest>?) throws {
+        try interface.serviceSubmit(engine: raw, session: session, request: request)
+    }
+
+    @inlinable
+    public func serviceCancel(session: CyServiceSession, requestId: UInt64) throws {
+        try interface.serviceCancel(engine: raw, session: session, requestId: requestId)
+    }
+
+    @inlinable
+    public func servicePoll(session: CyServiceSession, event: UnsafeMutablePointer<CyServiceEvent>?, hasEvent: UnsafeMutablePointer<Bool>?) throws {
+        try interface.servicePoll(engine: raw, session: session, event: event, hasEvent: hasEvent)
+    }
 }
 
 public struct World: @unchecked Sendable {

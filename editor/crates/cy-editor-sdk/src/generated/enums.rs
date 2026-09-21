@@ -458,6 +458,68 @@ impl Stage {
         }
     }
 }
+/// `CyServiceEventKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum ServiceEventKind {
+    /// `CY_SERVICE_EVENT_ACCEPTED` = 0.
+    Accepted = 0,
+    /// `CY_SERVICE_EVENT_PROGRESS` = 1.
+    Progress = 1,
+    /// `CY_SERVICE_EVENT_COMPLETED` = 2.
+    Completed = 2,
+    /// `CY_SERVICE_EVENT_FAILED` = 3.
+    Failed = 3,
+    /// `CY_SERVICE_EVENT_CANCELLED` = 4.
+    Cancelled = 4,
+}
+
+impl ServiceEventKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [ServiceEventKind; 5] = [
+        ServiceEventKind::Accepted,
+        ServiceEventKind::Progress,
+        ServiceEventKind::Completed,
+        ServiceEventKind::Failed,
+        ServiceEventKind::Cancelled,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(ServiceEventKind::Accepted),
+            1 => Some(ServiceEventKind::Progress),
+            2 => Some(ServiceEventKind::Completed),
+            3 => Some(ServiceEventKind::Failed),
+            4 => Some(ServiceEventKind::Cancelled),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            ServiceEventKind::Accepted => "CY_SERVICE_EVENT_ACCEPTED",
+            ServiceEventKind::Progress => "CY_SERVICE_EVENT_PROGRESS",
+            ServiceEventKind::Completed => "CY_SERVICE_EVENT_COMPLETED",
+            ServiceEventKind::Failed => "CY_SERVICE_EVENT_FAILED",
+            ServiceEventKind::Cancelled => "CY_SERVICE_EVENT_CANCELLED",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

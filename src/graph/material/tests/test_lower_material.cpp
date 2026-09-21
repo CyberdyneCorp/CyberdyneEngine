@@ -46,6 +46,8 @@ using cy::u8;
 using cy::usize;
 using cy::graph::NodeKey;
 using cy::graph::material::lower_material;
+using cy::graph::material::material_node_pin_id;
+using cy::graph::material::material_node_type_id;
 using cy::graph::material::material_node_types;
 using cy::graph_material_test::allocator;
 using cy::graph_material_test::author_reference;
@@ -73,6 +75,45 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
         CY_CHECK(std::ranges::find(offered, expected) != offered.end());
     }
     CY_CHECK(std::ranges::find(offered, std::string("material.output")) != offered.end());
+}
+
+CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero identity") {
+    std::vector<cy::graph::NodeTypeId> identities;
+    for (const auto& type : material_node_types()) {
+        const auto identity = material_node_type_id(type);
+        CY_REQUIRE(identity != cy::graph::kInvalidNodeTypeId);
+        CY_CHECK(std::ranges::find(identities, identity) == identities.end());
+        identities.push_back(identity);
+
+        cy::graph::PinDesc storage[cy::graph::material::kMaxPins];
+        const auto pins = cy::graph::material::material_node_pins(type, storage);
+        std::vector<cy::graph::PinId> pin_ids;
+        for (const auto& pin : pins) {
+            CY_REQUIRE(pin.identity != cy::graph::kInvalidPinId);
+            CY_CHECK_EQ(pin.identity, material_node_pin_id(type, pin.name.text(), pin.direction));
+            CY_CHECK(std::ranges::find(pin_ids, pin.identity) == pin_ids.end());
+            pin_ids.push_back(pin.identity);
+        }
+    }
+    CY_CHECK_EQ(identities.size(), material_node_types().size());
+}
+
+CY_TEST_CASE("graph_material: the service catalogue is deterministic and versioned") {
+    cy::Array<u8> first(allocator());
+    cy::Array<u8> second(allocator());
+    CY_REQUIRE(cy::graph::material::encode_material_catalogue(first));
+    CY_REQUIRE(cy::graph::material::encode_material_catalogue(second));
+    CY_REQUIRE_EQ(first.size(), second.size());
+    CY_REQUIRE(std::equal(first.begin(), first.end(), second.begin()));
+    CY_REQUIRE(first.size() >= 12U);
+    const auto read_u32 = [&](usize offset) {
+        return static_cast<u32>(first[offset]) | (static_cast<u32>(first[offset + 1]) << 8U) |
+               (static_cast<u32>(first[offset + 2]) << 16U) |
+               (static_cast<u32>(first[offset + 3]) << 24U);
+    };
+    CY_CHECK_EQ(read_u32(0), 1U);
+    CY_CHECK_EQ(read_u32(4), 2U);
+    CY_CHECK_EQ(read_u32(8), material_node_types().size());
 }
 
 CY_TEST_CASE(

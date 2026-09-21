@@ -396,31 +396,31 @@ impl SpecialisedEditors {
     /// animation, materials, sequencing"*. This constant is what fills it.
     pub const REGION: Region = Region::CentreLower;
 
-    /// The host, with the vocabularies this tree can supply already loaded.
+    /// The host, with local presentation vocabularies loaded.
+    ///
+    /// Material definitions deliberately are not local: the desktop installs them from the
+    /// engine-owned backend catalogue after connecting to a runtime.
     pub fn new() -> Result<Self> {
         let mut catalogues = BTreeMap::new();
         for domain in Domain::ALL {
+            // Material definitions are compiler-owned and arrive through editor-backend-services.
+            // The desktop editor must not silently accept the historical Rust copy when the
+            // runtime is absent or incompatible.
+            if domain == Domain::Materials {
+                continue;
+            }
             let types = domain.node_types();
             if types.is_empty() {
                 continue;
             }
-            // MATERIALS CARRIES ITS PINS AND THE OTHER THREE DO NOT, and the asymmetry is recorded
-            // rather than tidied. A catalogue with no pins can be OPENED and cannot be WIRED:
-            // `GraphCanvas::connect` refuses a pin the node type does not declare. M11.c task 6.1a
-            // needed the material editor to be authorable in, so `material::material_catalogue()`
-            // declares the engine's own pins and `unit` checks them against `lower_material.cpp`.
-            // The script, ability and pose vocabularies still carry names only; whoever makes one of
-            // those editors authorable owes it the same table and the same cross-language check.
-            let catalogue = if domain == Domain::Materials {
-                material::catalogue()?
-            } else {
-                Catalogue::new(
-                    types
-                        .iter()
-                        .map(|name| NodeType::new(*name, Vec::new()))
-                        .collect(),
-                )?
-            };
+            // Script, ability and pose still carry names only; whoever makes one of those editors
+            // authorable owes it pins through its own engine-owned catalogue.
+            let catalogue = Catalogue::new(
+                types
+                    .iter()
+                    .map(|name| NodeType::new(*name, Vec::new()))
+                    .collect(),
+            )?;
             catalogues.insert(domain, catalogue);
         }
         Ok(Self {
@@ -429,6 +429,31 @@ impl SpecialisedEditors {
             active: None,
             catalogues,
         })
+    }
+
+    /// Construct the legacy offline content generator's host.
+    ///
+    /// The shipped desktop uses [`Self::new`] and installs the engine catalogue. This explicit
+    /// exception keeps `cy-author-material`, which generates the committed M11.c beauty content
+    /// without a runtime, reproducible until that build tool itself becomes a service client.
+    #[doc(hidden)]
+    pub fn with_legacy_material_catalogue() -> Result<Self> {
+        let mut editors = Self::new()?;
+        editors
+            .catalogues
+            .insert(Domain::Materials, material::catalogue()?);
+        Ok(editors)
+    }
+
+    /// Replace the bootstrap material vocabulary with the versioned catalogue returned by the
+    /// backend. Presentation state remains local; type, pin, and schema identity come from here.
+    pub fn install_material_catalogue(&mut self, payload: &[u8]) -> Result<()> {
+        let catalogue = Catalogue::new(material::catalogue_from_service(payload)?)?;
+        self.catalogues.insert(Domain::Materials, catalogue.clone());
+        if self.active == Some(Domain::Materials) {
+            self.canvas.replace_catalogue(catalogue);
+        }
+        Ok(())
     }
 
     /// Which editor is active, if any.
@@ -484,12 +509,13 @@ impl SpecialisedEditors {
                     .join(", ")
             )));
         }
+        let changed_domain = self.active != Some(domain);
         self.active = Some(domain);
         let surfaces = domain.surfaces();
-        if let Some(catalogue) = self.catalogues.get(&domain) {
+        if changed_domain && let Some(catalogue) = self.catalogues.get(&domain) {
             self.canvas.load(catalogue.clone());
         }
-        if surfaces.contains(&Surface::Timeline) {
+        if changed_domain && surfaces.contains(&Surface::Timeline) {
             // The surface is emptied and NOT populated. `domain.track_kinds()` is what the
             // add-track menu offers, not a set of tracks to fabricate: a sequence editor that
             // opened with seventeen tracks nobody authored would put the editor's own furniture
@@ -516,6 +542,7 @@ impl SpecialisedEditors {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_core::codec::Writer;
 
     /// The repository root, from this crate's own manifest. The tests below read the specification
     /// rather than a copy of it, for the reason `tools/editor/selftest.py` gives: a copied fixture
@@ -608,6 +635,39 @@ mod tests {
             canvases.windows(2).all(|pair| pair[0] == pair[1]),
             "the graph editors opened onto different canvases: {canvases:?} — which is the sixth \
              bespoke graph editor the requirement forbids"
+        );
+    }
+
+    #[test]
+    fn reopening_the_active_material_editor_preserves_authored_nodes() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("material.future");
+        catalogue.u32(1);
+        catalogue.u32(9);
+        catalogue.u8(1);
+        catalogue.text("out");
+        catalogue.text("value");
+        catalogue.u32(0);
+        host.install_material_catalogue(&catalogue.finish())
+            .expect("engine catalogue installs");
+
+        host.open(Domain::Materials)
+            .expect("material editor opens")
+            .graph
+            .expect("material editor uses the shared graph")
+            .add("material.future", graph::Layout { x: 20.0, y: 30.0 })
+            .expect("catalogue node is placed");
+        let reopened = host.open(Domain::Materials).expect("active editor reopens");
+        assert_eq!(
+            reopened.graph.expect("shared graph").nodes().count(),
+            1,
+            "drawing another frame reset the authored material graph"
         );
     }
 

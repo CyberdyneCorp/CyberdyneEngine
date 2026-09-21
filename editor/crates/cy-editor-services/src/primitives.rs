@@ -432,6 +432,15 @@ pub struct MeshBinding {
     pub mesh: cy_editor_core::ids::FieldId,
 }
 
+/// Where a mesh instance keeps the material asset used to draw it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MaterialBinding {
+    /// The engine-owned `MeshRenderer` component.
+    pub component: cy_editor_core::ids::TypeId,
+    /// The field holding the material asset.
+    pub material: cy_editor_core::ids::FieldId,
+}
+
 impl MeshBinding {
     /// The component's name. The engine's own, unqualified — `src/scene/src/node_template.cpp`
     /// names `cy::render::MeshRenderer`, and `authoring_name_of` is what drops the namespace.
@@ -457,7 +466,10 @@ impl MeshBinding {
         if let Some(found) = Self::of_schema(schema) {
             return found;
         }
-        let component = schema.declare_type(Self::COMPONENT, false);
+        let component = match schema.type_named(Self::COMPONENT) {
+            Some(definition) => definition.id,
+            None => schema.declare_type(Self::COMPONENT, false),
+        };
         let mesh = schema
             .declare_field(
                 component,
@@ -467,6 +479,46 @@ impl MeshBinding {
             )
             .expect("the type was declared on the line above");
         Self { component, mesh }
+    }
+}
+
+impl MaterialBinding {
+    /// The component name is owned by the reflected engine type.
+    pub const COMPONENT: &'static str = MeshBinding::COMPONENT;
+    /// The reflected field holding the material asset reference.
+    pub const FIELD: &'static str = "material";
+
+    /// Find the material binding in an existing document schema.
+    #[must_use]
+    pub fn of_schema(schema: &DocumentSchema) -> Option<Self> {
+        let definition = schema.type_named(Self::COMPONENT)?;
+        Some(Self {
+            component: definition.id,
+            material: definition.field_named(Self::FIELD)?.id,
+        })
+    }
+
+    /// Find the binding or add the missing material field to `MeshRenderer`.
+    pub fn declare(schema: &mut DocumentSchema) -> Self {
+        if let Some(found) = Self::of_schema(schema) {
+            return found;
+        }
+        let component = match schema.type_named(Self::COMPONENT) {
+            Some(definition) => definition.id,
+            None => schema.declare_type(Self::COMPONENT, false),
+        };
+        let material = schema
+            .declare_field(
+                component,
+                Self::FIELD,
+                ValueKind::Text,
+                "The material this entity draws with.",
+            )
+            .expect("the component exists above");
+        Self {
+            component,
+            material,
+        }
     }
 }
 
@@ -491,6 +543,7 @@ pub fn create_mesh_instance(
 ) -> Result<NodeId> {
     let transform = TransformBinding::of_schema(document.schema());
     let mesh = MeshBinding::declare(document.schema_mut());
+    let material = MaterialBinding::declare(document.schema_mut());
 
     let node = document.create_node(parent)?;
     if let Some(binding) = transform {
@@ -510,7 +563,10 @@ pub fn create_mesh_instance(
     document.add_component(
         node,
         mesh.component,
-        vec![(mesh.mesh, Value::Text(String::new()))],
+        vec![
+            (mesh.mesh, Value::Text(String::new())),
+            (material.material, Value::Text(String::new())),
+        ],
     )?;
     document.record(Operation::SetAssetReference {
         node,
@@ -532,6 +588,19 @@ pub fn mesh_of(document: &Document, node: NodeId) -> Option<String> {
     match document
         .content()
         .field(node, binding.component, binding.mesh)?
+    {
+        Value::Text(asset) if !asset.is_empty() => Some(asset.clone()),
+        _ => None,
+    }
+}
+
+/// The material asset an entity draws with, or nothing when it uses the runtime default.
+#[must_use]
+pub fn material_of(document: &Document, node: NodeId) -> Option<String> {
+    let binding = MaterialBinding::of_schema(document.schema())?;
+    match document
+        .content()
+        .field(node, binding.component, binding.material)?
     {
         Value::Text(asset) if !asset.is_empty() => Some(asset.clone()),
         _ => None,

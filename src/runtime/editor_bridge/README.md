@@ -1,5 +1,9 @@
 # `src/runtime/editor_bridge` — the hosted runtime's side of the editor's control socket
 
+Tags 17–19 carry the generic editor-service request, cancellation, and event envelopes. Their
+payload is deliberately opaque here: the hosted runtime routes it to `cy::editor-backend`, the same
+dispatcher registered behind ABI 1.2, so the socket does not gain compiler or renderer knowledge.
+
 What a `cyberdyne-editor --host <socket>` talks to. **M7 tasks 5b.3 and 5b.4.**
 
 ## Why it exists now

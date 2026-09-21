@@ -85,9 +85,30 @@ pub struct ImportedSubAsset {
     pub id: String,
 }
 
+/// One node projected from an imported prefab across the tool/editor boundary.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct ImportedSceneNode {
+    /// Stable source identity derived from the named ancestry, not the source ordering.
+    pub identity: String,
+    /// Artist-facing node name.
+    pub name: String,
+    /// Earlier node index, or `None` for a root.
+    pub parent: Option<usize>,
+    /// Local translation in engine coordinates.
+    pub translation: [f32; 3],
+    /// Local quaternion in engine ABI order: x, y, z, w.
+    pub rotation: [f32; 4],
+    /// Local scale.
+    pub scale: [f32; 3],
+    /// Stable cooked mesh identity, when this node draws one.
+    pub mesh: Option<String>,
+}
+
 /// What an import did.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct AssetImportOutcome {
+    /// Version of the importer/editor result schema.
+    pub schema_version: u32,
     /// The source, project-relative and as the importer echoed it back.
     pub source: String,
     /// Which importer ran: `gltf`, `fbx`, `obj`, `texture`.
@@ -98,6 +119,8 @@ pub struct AssetImportOutcome {
     pub cache: String,
     /// Everything it produced, in the order the importer produced it.
     pub sub_assets: Vec<ImportedSubAsset>,
+    /// Complete imported hierarchy, empty for non-scene assets and older tools.
+    pub scene: Vec<ImportedSceneNode>,
     /// How many diagnostics were warnings.
     pub warnings: usize,
     /// How many were errors. A non-zero count is a refusal rather than an outcome — see

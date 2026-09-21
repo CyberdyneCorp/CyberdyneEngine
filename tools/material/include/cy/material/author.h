@@ -2,33 +2,15 @@
 #define CY_MATERIAL_AUTHOR_H
 // Reading the editor's material canvas. M11.c task 6.1a. See author.cpp for why it exists.
 
-#include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
-#include <cy/graph/cybergraph.h>
 #include <cy/rendering/material/ir.h>
 
 #include <string_view>
 
 namespace cy::material {
 
-/// The interchange's own version, which the editor writes on its first line.
-inline constexpr u32 kCanvasVersion = 1;
 /// The sidecar's version.
 inline constexpr u32 kInfoVersion = 1;
-
-/// What one interchange described.
-struct AuthoredCanvas {
-    Name name;
-    u32 nodes = 0;
-    u32 links = 0;
-};
-
-/// Read an editor canvas interchange into an authored graph.
-///
-/// Refuses by name: an unknown keyword, a version this build does not read, a node whose key is
-/// already taken, a wire to a node that is not there. `Error::system_code` carries the line.
-[[nodiscard]] Expected<AuthoredCanvas, Error> read_canvas(std::string_view text,
-                                                          graph::Graph& out) noexcept;
 
 /// Write the sidecar a frame reads to check the parameter block it is about to upload.
 ///

@@ -278,3 +278,8 @@ add_subdirectory(runtime)
 # back. The comment at the top of this file said this directory would be added when it held a
 # target — it does now.
 add_subdirectory(abi)
+
+# The editor backend is above the ABI and the compiler: it adapts engine-owned authoring services
+# to the transport-neutral dispatcher registered on `cy::abi::Host`. Neither compiler nor renderer
+# links back to the editor.
+add_subdirectory(editor_backend)

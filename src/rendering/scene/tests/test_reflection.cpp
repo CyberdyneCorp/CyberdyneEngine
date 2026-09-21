@@ -103,15 +103,21 @@ CY_TEST_CASE("a mesh renderer names an asset, and separately a handle") {
     // scalars and an asset id is 128 bits.
     bool has_high = false;
     bool has_low = false;
+    bool has_material_high = false;
+    bool has_material_low = false;
     bool has_handle = false;
     for (u32 index = 0; index < mesh->field_count; ++index) {
         const std::string_view name = mesh->fields[index].name;
         has_high = has_high || name == "mesh.high";
         has_low = has_low || name == "mesh.low";
+        has_material_high = has_material_high || name == "material.high";
+        has_material_low = has_material_low || name == "material.low";
         has_handle = has_handle || name == "mesh_handle";
     }
     CY_CHECK(has_high);
     CY_CHECK(has_low);
+    CY_CHECK(has_material_high);
+    CY_CHECK(has_material_low);
     // THE HANDLE IS NOT REFLECTED and must not become so: "handles are runtime-only and are never
     // serialized", and a schema carrying one would invite a file to hold a slot index.
     CY_CHECK_FALSE(has_handle);
@@ -124,7 +130,7 @@ CY_TEST_CASE("a mesh renderer names an asset, and separately a handle") {
     CY_CHECK(AssetRef{}.is_nil());
 }
 
-CY_TEST_CASE("the authoring schema presents the mesh reference as the editor's own binding") {
+CY_TEST_CASE("the authoring schema presents mesh and material references as editor bindings") {
     Fixture fixture;
     CY_REQUIRE(fixture.ok);
 
@@ -147,20 +153,28 @@ CY_TEST_CASE("the authoring schema presents the mesh reference as the editor's o
     CY_REQUIRE(found != nullptr);
 
     const cy::scene::serialization::AuthoringField* mesh = nullptr;
+    const cy::scene::serialization::AuthoringField* material = nullptr;
     for (const cy::scene::serialization::AuthoringField& field : found->fields) {
         if (field.name == "mesh") {
             mesh = &field;
+        } else if (field.name == "material") {
+            material = &field;
         }
     }
     CY_REQUIRE(mesh != nullptr);
+    CY_REQUIRE(material != nullptr);
     CY_CHECK_EQ(mesh->kind, cy::scene::serialization::AuthoringKind::Text);
-    // One field, not two: the pair of lanes is grouped, and the group keeps the identifier of the
-    // first lane so an override naming it still names the same bytes.
+    CY_CHECK_EQ(material->kind, cy::scene::serialization::AuthoringKind::Text);
+    // Two authored references, not four scalar lanes: each pair is grouped and keeps the identity
+    // of its first lane so an override naming it still names the same bytes.
     u32 lanes = 0;
     for (const cy::scene::serialization::AuthoringField& field : found->fields) {
-        lanes += (field.name == "mesh" || field.name == "high" || field.name == "low") ? 1U : 0U;
+        lanes += (field.name == "mesh" || field.name == "material" || field.name == "high" ||
+                  field.name == "low")
+                     ? 1U
+                     : 0U;
     }
-    CY_CHECK_EQ(lanes, 1U);
+    CY_CHECK_EQ(lanes, 2U);
 }
 
 CY_TEST_CASE("the shipped templates that name the renderer's components are instantiable") {

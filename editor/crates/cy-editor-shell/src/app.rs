@@ -40,6 +40,7 @@ use cy_editor_commands::{Arguments, Registry, Scope};
 use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::Revision;
 use cy_editor_core::value::Value;
+use cy_editor_interface::SpecialisedEditors;
 use cy_editor_interface::notifications::{Choice, Modal};
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
@@ -82,6 +83,8 @@ pub struct EditorWindow {
     pub scope: Scope,
 
     shell: Shell,
+    specialised: SpecialisedEditors,
+    material_catalogue_revision: Revision,
     documents: DocumentTabsViewModel,
     hierarchy: HierarchyViewModel,
     history: HistoryViewModel,
@@ -133,6 +136,7 @@ impl EditorWindow {
         scope: Scope,
     ) -> cy_editor_core::problem::Result<Self> {
         let mut shell = Shell::new(&registry)?;
+        let specialised = SpecialisedEditors::new()?;
         if let Err(problem) = editor.asset_catalogue.refresh() {
             editor
                 .notifications
@@ -166,6 +170,8 @@ impl EditorWindow {
             registry,
             scope,
             shell,
+            specialised,
+            material_catalogue_revision: Revision::INITIAL,
             documents: DocumentTabsViewModel::new(),
             hierarchy: HierarchyViewModel::new(),
             history: HistoryViewModel::new(),
@@ -278,6 +284,24 @@ impl EditorWindow {
         self.described = Some(fingerprint);
     }
 
+    /// Install an engine catalogue only when the backend publishes a new immutable snapshot.
+    fn sync_material_catalogue(&mut self) {
+        let revision = self.editor.backend.material_catalogue_revision();
+        if revision == self.material_catalogue_revision {
+            return;
+        }
+        self.material_catalogue_revision = revision;
+        let Some(payload) = self.editor.backend.material_catalogue() else {
+            return;
+        };
+        if let Err(problem) = self.specialised.install_material_catalogue(payload) {
+            self.editor.notifications.post(Notification::error(
+                "The material catalogue is incompatible",
+                problem,
+            ));
+        }
+    }
+
     /// Try to attach the viewport to a runtime, at most every [`REATTACH_INTERVAL`].
     #[cfg(target_os = "linux")]
     fn attach_viewport(&mut self) {
@@ -308,6 +332,14 @@ impl EditorWindow {
                         self.editor
                             .notifications
                             .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
+                Intent::ImportExternal { paths, destination } => {
+                    for path in paths {
+                        let arguments = Arguments::new()
+                            .with("source", Value::Text(path.display().to_string()))
+                            .with("destination", Value::Text(destination.clone()));
+                        self.invoke("asset.import-external", &arguments);
                     }
                 }
                 Intent::ActivateDocument(document) => {
@@ -375,6 +407,40 @@ impl EditorWindow {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    fn finish_imports(&mut self) {
+        for completion in self.editor.take_completed_imports() {
+            match completion.result {
+                Ok(outcome) => {
+                    if let Err(problem) = self.editor.asset_catalogue.refresh() {
+                        self.editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                    self.editor.notifications.post(Notification::info(format!(
+                        "Imported {} as request #{} ({} sub-assets, cache {})",
+                        outcome.source,
+                        completion.request,
+                        outcome.sub_assets.len(),
+                        outcome.cache
+                    )));
+                    let placeable =
+                        outcome.first("mesh/").is_some() || outcome.first("prefab").is_some();
+                    if placeable
+                        && self.editor.workspace.active().is_some()
+                        && let Some(source) = completion.source
+                    {
+                        let arguments = Arguments::new().with("path", Value::Text(source));
+                        self.invoke("asset.place", &arguments);
+                    }
+                }
+                Err(problem) => self
+                    .editor
+                    .notifications
+                    .post(Notification::error(problem.what.clone(), problem)),
             }
         }
     }
@@ -681,6 +747,7 @@ impl EditorWindow {
                     registry,
                     scope,
                     shell,
+                    specialised,
                     hierarchy,
                     history,
                     settings,
@@ -702,6 +769,7 @@ impl EditorWindow {
                     registry,
                     scope,
                     shell,
+                    specialised,
                     hierarchy,
                     history,
                     settings,
@@ -772,6 +840,8 @@ impl eframe::App for EditorWindow {
 
         // 1 and 2: the editor's housekeeping, then the engine's newest frame.
         self.editor.pump();
+        self.finish_imports();
+        self.sync_material_catalogue();
         #[cfg(target_os = "linux")]
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {
@@ -808,6 +878,23 @@ impl eframe::App for EditorWindow {
         root.set_style(std::sync::Arc::new(style));
         let metrics = self.shell.metrics();
         let mut intents: Vec<Intent> = Vec::new();
+        let dropped: Vec<std::path::PathBuf> = ctx.input(|input| {
+            input
+                .raw
+                .dropped_files
+                .iter()
+                .filter_map(|file| {
+                    let path = file.path();
+                    (!path.as_os_str().is_empty()).then(|| path.to_path_buf())
+                })
+                .collect()
+        });
+        if !dropped.is_empty() {
+            intents.push(Intent::ImportExternal {
+                paths: dropped,
+                destination: self.asset_browser.folder().to_string(),
+            });
+        }
 
         // 4: the keyboard first, so a key is not swallowed by whatever happens to be under the
         // pointer, then the chrome, then the panels.
@@ -954,6 +1041,10 @@ pub fn run(window: EditorWindow) -> eframe::Result<()> {
 mod tests {
     use super::*;
     use cy_editor_core::Actor;
+    use cy_editor_core::codec::Writer;
+    use cy_editor_interface::Domain;
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
+    use cy_editor_services::RuntimeSession;
 
     fn scratch(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("cy-editor-shell-{name}-{}", std::process::id()))
@@ -1000,6 +1091,76 @@ mod tests {
             "a close frame was reported twice"
         );
         assert_eq!(window.smoke_frames_drawn, 3);
+    }
+
+    #[test]
+    fn the_production_window_installs_a_runtime_owned_material_catalogue() {
+        let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let mut window = window();
+        assert!(
+            !window.specialised.can_open(Domain::Materials),
+            "the desktop editor must not use the legacy Rust material table"
+        );
+        window.editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+
+        window.editor.pump();
+        let submitted =
+            Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request, operation, ..
+        } = submitted
+        else {
+            panic!("the window did not request an engine catalogue")
+        };
+        assert_eq!(operation, "material.catalogue.get");
+
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(7);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(3);
+        catalogue.text("material.future");
+        catalogue.u32(1);
+        catalogue.u32(9);
+        catalogue.u8(1);
+        catalogue.text("out");
+        catalogue.text("value");
+        catalogue.u32(0);
+        write_frame(
+            &mut runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: catalogue.finish(),
+            }
+            .encode(),
+        )
+        .unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while window.editor.backend.material_catalogue().is_none()
+            && std::time::Instant::now() < deadline
+        {
+            window.editor.pump();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        window.sync_material_catalogue();
+        let session = window
+            .specialised
+            .open(Domain::Materials)
+            .expect("the runtime catalogue opens the material editor");
+        assert!(
+            session
+                .graph
+                .expect("materials use the shared graph")
+                .catalogue()
+                .get("material.future")
+                .is_some(),
+            "a backend-only node must appear without an editor source change"
+        );
     }
 
     #[test]

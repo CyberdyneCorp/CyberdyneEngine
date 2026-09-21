@@ -51,6 +51,20 @@ class World;
 
 namespace cy::abi {
 
+/// Transport-neutral implementation behind the stable editor-service ABI and live protocol.
+class EditorServiceBackend {
+public:
+    virtual ~EditorServiceBackend() = default;
+    [[nodiscard]] virtual CyResult open(CyServiceSession* out_session) noexcept = 0;
+    virtual void close(CyServiceSession session) noexcept = 0;
+    [[nodiscard]] virtual CyResult submit(CyServiceSession session,
+                                          const CyServiceRequest& request) noexcept = 0;
+    [[nodiscard]] virtual CyResult cancel(CyServiceSession session,
+                                          cy::u64 request_id) noexcept = 0;
+    [[nodiscard]] virtual CyResult poll(CyServiceSession session, CyServiceEvent& out_event,
+                                        bool& out_has_event) noexcept = 0;
+};
+
 /// One reflected field of a module-registered component, as the engine kept it.
 ///
 /// `name` is borrowed. The C header states the rule at the descriptor — a name must outlive the
@@ -157,6 +171,9 @@ struct CyEngine_T {
     /// must outlive the host; the host holds a pointer and never a copy, because there is exactly
     /// one world and two views of it would be two worlds.
     void bind_world(CyWorld_T* binding) noexcept { world = binding; }
+    void bind_editor_service(cy::abi::EditorServiceBackend* service) noexcept {
+        editor_service = service;
+    }
 
     /// Register a behaviour type in the current generation. Re-registering a name that belongs to
     /// the current generation replaces the vtable; re-registering one from a *retired* generation
@@ -186,6 +203,7 @@ struct CyEngine_T {
 
     cy::Allocator& allocator;
     CyWorld_T* world = nullptr;
+    cy::abi::EditorServiceBackend* editor_service = nullptr;
     cy::Array<CyBehaviourType_T*> behaviours;
     cy::u32 generation = 0;
     /// Heap-backed `CyVar` payloads currently alive. Atomic because a value may be released on a

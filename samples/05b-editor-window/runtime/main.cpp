@@ -71,6 +71,7 @@
 #if defined(CY_PHYSICS)
 #    include <cy/backends/physics/jolt/server.h>
 #endif
+#include <cy/editor/material_service.h>
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
 #include <cy/servers/render/picking.h>
@@ -279,6 +280,8 @@ struct Host {
     /// reports is about the frames the editor actually received rather than about a second count.
     render::ViewportTransport transport{render::ViewportTransportKind::SharedTexture};
     runtime::EditorBridge* bridge = nullptr;
+    editor::MaterialService* editor_service = nullptr;
+    CyServiceSession service_session = nullptr;
     /// THE WORLD, and the whole of what M7's `EditorSession` used to stand in for. See
     /// `world_view.h`: there is no association here, because the runtime opened the same file the
     /// editor did and a node's identity is derived on both sides from the same two numbers.
@@ -359,7 +362,7 @@ struct Host {
     /// SIZED BY THE LAST TAG, not by the last one this runtime answers: `Play` is 15 and
     /// `GizmoGeometry` is 13, so an array sized by the latter would be written past its end by the
     /// counter above the switch the first time an editor pressed play.
-    u64 received[static_cast<usize>(runtime::EditorMessage::Playing) + 1] = {};
+    u64 received[static_cast<usize>(runtime::EditorMessage::ServiceCancel) + 1] = {};
     u64 unknown_messages = 0;
 };
 
@@ -689,6 +692,37 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                     gameplay::play_mode_name(host.play_mode), detail);
 }
 
+void answer_service(Host& host, const runtime::EditorRequest& request) noexcept {
+    if (host.editor_service == nullptr || host.service_session == nullptr) {
+        (void)host.bridge->send_service_event(request.request, runtime::ServiceEventKind::Failed, 1,
+                                              {});
+        return;
+    }
+    if (request.kind == runtime::EditorMessage::ServiceCancel) {
+        (void)host.editor_service->cancel(host.service_session, request.request);
+    } else {
+        char operation[64] = {};
+        if (request.operation.size() >= sizeof(operation)) {
+            (void)host.bridge->send_service_event(request.request,
+                                                  runtime::ServiceEventKind::Failed, 1, {});
+            return;
+        }
+        std::memcpy(operation, request.operation.data(), request.operation.size());
+        const CyServiceRequest submitted{sizeof(CyServiceRequest), request.schema_version,
+                                         request.request,          operation,
+                                         request.payload.data(),   request.payload.size()};
+        (void)host.editor_service->submit(host.service_session, submitted);
+    }
+    CyServiceEvent event{};
+    bool present = false;
+    if (host.editor_service->poll(host.service_session, event, present) == CY_RESULT_OK &&
+        present) {
+        (void)host.bridge->send_service_event(
+            event.request_id, static_cast<runtime::ServiceEventKind>(event.kind),
+            event.schema_version, {event.payload, event.payload_size});
+    }
+}
+
 void serve_editor(Host& host) noexcept {
     const u64 before = host.bridge->connections();
     host.bridge->service();
@@ -737,6 +771,10 @@ void serve_editor(Host& host) noexcept {
                 break;
             case runtime::EditorMessage::Play:
                 answer_play(host, request);
+                break;
+            case runtime::EditorMessage::ServiceRequest:
+            case runtime::EditorMessage::ServiceCancel:
+                answer_service(host, request);
                 break;
             default:
                 break;
@@ -1145,6 +1183,12 @@ int main(int argc, char** argv) {
         }
 
         Host host;
+        editor::MaterialService editor_service(allocator);
+        CyServiceSession service_session = nullptr;
+        if (editor_service.open(&service_session) != CY_RESULT_OK) {
+            report("editor service", Error{ErrorCode::OutOfMemory,
+                                           "the material service session could not be created"});
+        }
         host.options = options;
         host.scene = &scene;
         host.view_world = &view_world;
@@ -1153,6 +1197,8 @@ int main(int argc, char** argv) {
         host.renderer = &renderer;
         host.publisher = publisher->get();
         host.bridge = &bridge;
+        host.editor_service = &editor_service;
+        host.service_session = service_session;
         const u64 started = monotonic_nanos();
         const u64 interval_nanos =
             (options.rate > 0.0) ? static_cast<u64>(1'000'000'000.0 / options.rate) : 0;
@@ -1188,6 +1234,7 @@ int main(int argc, char** argv) {
         }
 
         print_report(host, view_world, bridge, started);
+        editor_service.close(service_session);
 
         // THE SESSION BEFORE THE SERVER. A session destroyed after the server it holds a world in
         // would call `destroy_body` on freed memory, which is exactly the shape M5.5's gate found

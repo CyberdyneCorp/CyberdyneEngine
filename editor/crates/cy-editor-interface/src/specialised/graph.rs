@@ -75,6 +75,8 @@ pub enum PinDirection {
 /// One pin of a node type: its name, its side, and the type that flows along it.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Pin {
+    /// Stable engine-assigned identity, or zero for a legacy catalogue.
+    pub identity: u32,
     /// The pin's name, unique within its node type and direction.
     pub name: String,
     /// Which side of the node it is on.
@@ -92,6 +94,7 @@ impl Pin {
         data_type: impl Into<String>,
     ) -> Self {
         Self {
+            identity: 0,
             name: name.into(),
             direction,
             data_type: data_type.into(),
@@ -99,24 +102,85 @@ impl Pin {
     }
 }
 
+/// Generic property control kind supplied by a backend graph catalogue.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PropertyKind {
+    /// Identifier or arbitrary text.
+    Text,
+    /// Boolean checkbox.
+    Bool,
+    /// One numeric scalar.
+    Scalar,
+    /// A comma-separated numeric vector.
+    Vector,
+    /// One value from a declared choice list.
+    Enumeration,
+    /// Stable project asset reference constrained by kind.
+    Asset,
+}
+
+/// One catalogue-driven node property.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Property {
+    /// Stable identity within the node type.
+    pub identity: u32,
+    /// Serialized property name.
+    pub name: String,
+    /// Generic control/value kind.
+    pub kind: PropertyKind,
+    /// Typed default encoded in the graph's readable literal form.
+    pub default: String,
+    /// Range, choices, identifier rule, or required asset kind.
+    pub constraint: String,
+    /// Backend-owned authoring explanation.
+    pub tooltip: String,
+}
+
 /// A node type as a domain registers it: what it is called, and what it connects by.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NodeType {
+    /// Stable engine-assigned identity, or zero for a legacy catalogue.
+    pub identity: u32,
+    /// Version of this node's serialized schema.
+    pub schema_version: u32,
     /// The engine's own spelling — `script.add_float`, `pose.blend`, `ai.selector`. This is the
     /// name `cy::graph::NodeRegistry` interns, and the contract gate compares this list against the
     /// engine's lowering tables so that a node type added to one side and not the other is red.
     pub name: String,
     /// Its pins, in declaration order.
     pub pins: Vec<Pin>,
+    /// Properties rendered generically by clients.
+    pub properties: Vec<Property>,
 }
 
 impl NodeType {
     /// A node type and its pins.
     pub fn new(name: impl Into<String>, pins: Vec<Pin>) -> Self {
         Self {
+            identity: 0,
+            schema_version: 1,
             name: name.into(),
             pins,
+            properties: Vec::new(),
         }
+    }
+
+    /// A node type described by the engine-owned catalogue.
+    pub fn identified(identity: u32, schema_version: u32, name: String, pins: Vec<Pin>) -> Self {
+        Self {
+            identity,
+            schema_version,
+            name,
+            pins,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Attach backend-owned property descriptors.
+    #[must_use]
+    pub fn with_properties(mut self, properties: Vec<Property>) -> Self {
+        self.properties = properties;
+        self
     }
 
     /// The pin of this name and direction, if the type has one.
@@ -213,6 +277,10 @@ pub struct Link {
     pub from: NodeKey,
     /// The output pin it leaves by.
     pub from_pin: String,
+    /// Stable identity of the target pin. The name remains readable migration metadata.
+    pub to_pin_identity: u32,
+    /// Stable identity of the source pin. The name remains readable migration metadata.
+    pub from_pin_identity: u32,
 }
 
 /// How bad an authoring diagnostic is.
@@ -315,6 +383,15 @@ impl GraphCanvas {
         self.next_ordinal = 1;
     }
 
+    /// Replace the domain vocabulary without discarding authored graph state.
+    ///
+    /// A backend reconnect may return a newer compatible catalogue while the author is editing.
+    /// Existing nodes remain present even when their definition disappeared; [`Self::diagnostics`]
+    /// then reports the missing type instead of turning a service refresh into data loss.
+    pub fn replace_catalogue(&mut self, catalogue: Catalogue) {
+        self.catalogue = catalogue;
+    }
+
     /// The vocabulary currently loaded.
     pub fn catalogue(&self) -> &Catalogue {
         &self.catalogue
@@ -414,6 +491,8 @@ impl GraphCanvas {
             to_pin: to_pin.to_owned(),
             from,
             from_pin: from_pin.to_owned(),
+            to_pin_identity: target.identity,
+            from_pin_identity: source.identity,
         };
         if self.reaches(to, from) {
             return Err(Problem::new(
@@ -428,6 +507,29 @@ impl GraphCanvas {
         }
         self.links.insert(link);
         Ok(())
+    }
+
+    /// Wire pins by their persistent catalogue identities.
+    ///
+    /// Names remain readable metadata on [`Link`], but an editor gesture addresses the definitions
+    /// by ID so a compatible catalogue refresh cannot silently move the gesture to a same-named
+    /// replacement pin.
+    pub fn connect_identified(
+        &mut self,
+        from: NodeKey,
+        from_pin: u32,
+        to: NodeKey,
+        to_pin: u32,
+    ) -> Result<()> {
+        let source = self
+            .pin_with_identity(from, from_pin, PinDirection::Output)?
+            .name
+            .clone();
+        let target = self
+            .pin_with_identity(to, to_pin, PinDirection::Input)?
+            .name
+            .clone();
+        self.connect(from, &source, to, &target)
     }
 
     /// Every wire, in `(to, to_pin, from, from_pin)` order.
@@ -583,6 +685,39 @@ impl GraphCanvas {
         })
     }
 
+    fn pin_with_identity(
+        &self,
+        key: NodeKey,
+        identity: u32,
+        direction: PinDirection,
+    ) -> Result<&Pin> {
+        let node = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| Self::no_such_node(key))?;
+        let node_type = self.catalogue.get(&node.type_name).ok_or_else(|| {
+            Problem::new(
+                format!("wire the {} node {}", node.type_name, key.ordinal()),
+                "the loaded catalogue does not declare its type, so its pins are unknown",
+            )
+            .with_remedy("restore the plugin or choose a declared node type")
+        })?;
+        node_type
+            .pins
+            .iter()
+            .find(|pin| pin.identity == identity && pin.direction == direction)
+            .ok_or_else(|| {
+                Problem::new(
+                    format!("wire pin identity {identity} on a {} node", node.type_name),
+                    format!(
+                        "{} declares no {direction:?} pin carrying identity {identity}",
+                        node.type_name
+                    ),
+                )
+                .with_remedy("refresh the catalogue and select one of its stable pin identities")
+            })
+    }
+
     fn no_such_node(key: NodeKey) -> Problem {
         Problem::new(
             format!("act on graph node {}", key.ordinal()),
@@ -646,6 +781,36 @@ mod tests {
             "the refusal names neither type: {refused:?}"
         );
         assert_eq!(canvas.links().count(), 0, "a refused wire was made anyway");
+    }
+
+    #[test]
+    fn a_visible_connection_records_stable_pin_identities() {
+        let mut source_pin = Pin::new("renamable_out", PinDirection::Output, "float");
+        source_pin.identity = 41;
+        let mut target_pin = Pin::new("renamable_in", PinDirection::Input, "float");
+        target_pin.identity = 73;
+        let catalogue = Catalogue::new(vec![
+            NodeType::identified(10, 1, "test.identified_source".into(), vec![source_pin]),
+            NodeType::identified(11, 1, "test.identified_sink".into(), vec![target_pin]),
+        ])
+        .expect("identified catalogue");
+        let mut canvas = GraphCanvas::new(8);
+        canvas.load(catalogue);
+        let source = canvas
+            .add("test.identified_source", Layout::default())
+            .expect("source");
+        let target = canvas
+            .add("test.identified_sink", Layout::default())
+            .expect("target");
+
+        canvas
+            .connect_identified(source, 41, target, 73)
+            .expect("stable identities connect");
+        let link = canvas.links().next().expect("the link");
+        assert_eq!(link.from_pin_identity, 41);
+        assert_eq!(link.to_pin_identity, 73);
+        assert_eq!(link.from_pin, "renamable_out");
+        assert_eq!(link.to_pin, "renamable_in");
     }
 
     #[test]

@@ -51,6 +51,7 @@ pub fn panel_title(panel: &PanelId) -> &str {
         "viewport" => "Viewport",
         "inspector" => "Inspector",
         "script-graph" => "Script Graph",
+        "editor-materials" => "Material Graph",
         "swift-workspace" => "Swift Workspace",
         "semantic-diff" => "Semantic Diff",
         "semantic-merge" => "Semantic Merge",

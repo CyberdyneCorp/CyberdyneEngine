@@ -14,6 +14,7 @@
 
 use cy_editor_commands::{Registry, Scope};
 use cy_editor_core::Actor;
+use cy_editor_interface::SpecialisedEditors;
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
 use cy_editor_interface::thumbnails::Thumbnails;
@@ -32,6 +33,7 @@ struct Harness {
     registry: Registry,
     scope: Scope,
     shell: Shell,
+    specialised: SpecialisedEditors,
     hierarchy: HierarchyViewModel,
     history: HistoryViewModel,
     settings: SettingsViewModel,
@@ -63,6 +65,7 @@ impl Harness {
             registry,
             scope: Scope::unrestricted(),
             shell,
+            specialised: SpecialisedEditors::new().expect("specialised editors"),
             hierarchy: HierarchyViewModel::new(),
             history: HistoryViewModel::new(),
             settings: SettingsViewModel::new(),
@@ -93,6 +96,7 @@ impl Harness {
             registry,
             scope,
             shell,
+            specialised,
             hierarchy,
             history,
             settings,
@@ -118,6 +122,7 @@ impl Harness {
                     registry,
                     scope,
                     shell,
+                    specialised,
                     hierarchy,
                     history,
                     settings,
@@ -298,6 +303,7 @@ fn several_passes_over_one_frame_of_input_are_one_press() {
                 registry: &harness.registry,
                 scope: &harness.scope,
                 shell: &mut harness.shell,
+                specialised: &mut harness.specialised,
                 hierarchy: &mut harness.hierarchy,
                 history: &mut harness.history,
                 settings: &mut harness.settings,

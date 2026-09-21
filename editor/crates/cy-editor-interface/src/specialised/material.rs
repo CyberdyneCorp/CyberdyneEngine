@@ -15,9 +15,10 @@
 //! `NodeType::new(name, Vec::new())` — no pins at all. A material editor whose nodes cannot be wired
 //! is the same kind of thing as one that will not open.
 //!
-//! So this module is the pins, and [`tests`] checks them against the engine's own table by reading
-//! `lower_material.cpp` — the rule `tools/editor/selftest.py` states and the reason it gives: a
-//! copied fixture goes stale, and a stale fixture agrees with a broken check.
+//! The desktop editor no longer uses that copied table: it starts without a material vocabulary and
+//! installs `material.catalogue.get` from the backend. The table below remains only for the
+//! explicitly named legacy `cy-author-material` content generator, so the committed M11.c beauty
+//! inputs remain reproducible until that offline tool also becomes a service client.
 //!
 //! --- WHY THE EDITOR DOES NOT WRITE `.cygraph` ------------------------------------------------------
 //!
@@ -39,9 +40,12 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+use cy_editor_core::codec::Reader;
 use cy_editor_core::problem::{Problem, Result};
 
-use super::graph::{Catalogue, GraphCanvas, Layout, NodeKey, NodeType, Pin, PinDirection};
+use super::graph::{
+    Catalogue, GraphCanvas, Layout, NodeKey, NodeType, Pin, PinDirection, Property, PropertyKind,
+};
 
 /// The interchange's own version, written on its first line.
 pub const INTERCHANGE_VERSION: u32 = 1;
@@ -138,6 +142,81 @@ pub fn material_catalogue() -> Vec<NodeType> {
         .collect()
 }
 
+/// Decode schema 1 returned by `material.catalogue.get`.
+pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
+    let mut reader = Reader::new(bytes);
+    let schema = reader.u32()?;
+    if schema != 1 {
+        return Err(Problem::new(
+            "read the material catalogue",
+            format!("schema {schema} is not supported; this editor supports schema 1"),
+        ));
+    }
+    let _catalogue_version = reader.u32()?;
+    let count = reader.u32()?;
+    let mut nodes = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let identity = reader.u32()?;
+        let node_schema = reader.u32()?;
+        let name = reader.text()?;
+        let pin_count = reader.u32()?;
+        let mut pins = Vec::with_capacity(pin_count as usize);
+        for _ in 0..pin_count {
+            let pin_identity = reader.u32()?;
+            let direction = match reader.u8()? {
+                0 => PinDirection::Input,
+                1 => PinDirection::Output,
+                value => {
+                    return Err(Problem::new(
+                        "read the material catalogue",
+                        format!("pin direction {value} is not supported"),
+                    ));
+                }
+            };
+            let mut pin = Pin::new(reader.text()?, direction, reader.text()?);
+            pin.identity = pin_identity;
+            pins.push(pin);
+        }
+        let property_count = reader.u32()?;
+        let mut properties = Vec::with_capacity(property_count as usize);
+        for _ in 0..property_count {
+            let identity = reader.u32()?;
+            let kind = match reader.u8()? {
+                0 => PropertyKind::Text,
+                1 => PropertyKind::Bool,
+                2 => PropertyKind::Scalar,
+                3 => PropertyKind::Vector,
+                4 => PropertyKind::Enumeration,
+                5 => PropertyKind::Asset,
+                value => {
+                    return Err(Problem::new(
+                        "read the material catalogue",
+                        format!("property kind {value} is not supported"),
+                    ));
+                }
+            };
+            properties.push(Property {
+                identity,
+                kind,
+                name: reader.text()?,
+                default: reader.text()?,
+                constraint: reader.text()?,
+                tooltip: reader.text()?,
+            });
+        }
+        nodes.push(
+            NodeType::identified(identity, node_schema, name, pins).with_properties(properties),
+        );
+    }
+    if !reader.is_empty() {
+        return Err(Problem::new(
+            "read the material catalogue",
+            "bytes remain after the declared node table",
+        ));
+    }
+    Ok(nodes)
+}
+
 /// A material being authored on the shared canvas.
 ///
 /// Thin on purpose: every edit below is a call on [`GraphCanvas`], which is THE canvas — the one
@@ -203,28 +282,43 @@ impl<'a> MaterialAuthoring<'a> {
     /// a non-deterministic producer would make that file churn.
     #[must_use]
     pub fn interchange(&self) -> String {
-        let mut out = String::new();
-        let _ = writeln!(out, "cymatcanvas {INTERCHANGE_VERSION}");
-        let _ = writeln!(out, "material {}", self.name);
-        for node in self.canvas.nodes() {
-            let _ = writeln!(out, "node {} {}", node.key.ordinal(), node.type_name);
-            let ordered: BTreeMap<&String, &String> = node.properties.iter().collect();
-            for (property, value) in ordered {
-                let _ = writeln!(out, "prop {} {} {}", node.key.ordinal(), property, value);
-            }
-        }
-        for link in self.canvas.links() {
-            let _ = writeln!(
-                out,
-                "link {} {} {} {}",
-                link.from.ordinal(),
-                link.from_pin,
-                link.to.ordinal(),
-                link.to_pin
-            );
-        }
-        out
+        canvas_interchange(&self.name, self.canvas)
+            .expect("MaterialAuthoring::begin already validated the material name")
     }
+}
+
+/// Encode an existing visible canvas for the engine-owned material service.
+///
+/// This is the same transient interchange used by [`MaterialAuthoring`]; it is never persisted as
+/// a canonical CyberGraph and contains no compiler implementation.
+pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        return Err(Problem::new(
+            "name a material",
+            "the service material name must contain only ASCII letters, digits and underscores",
+        ));
+    }
+    let mut out = String::new();
+    let _ = writeln!(out, "cymatcanvas {INTERCHANGE_VERSION}");
+    let _ = writeln!(out, "material {name}");
+    for node in canvas.nodes() {
+        let _ = writeln!(out, "node {} {}", node.key.ordinal(), node.type_name);
+        let ordered: BTreeMap<&String, &String> = node.properties.iter().collect();
+        for (property, value) in ordered {
+            let _ = writeln!(out, "prop {} {} {}", node.key.ordinal(), property, value);
+        }
+    }
+    for link in canvas.links() {
+        let _ = writeln!(
+            out,
+            "link {} {} {} {}",
+            link.from.ordinal(),
+            link.from_pin,
+            link.to.ordinal(),
+            link.to_pin
+        );
+    }
+    Ok(out)
 }
 
 /// Build a `Catalogue` out of [`material_catalogue`]. Separate so the failure is one call's.
@@ -236,12 +330,87 @@ pub(crate) fn catalogue() -> Result<Catalogue> {
 mod tests {
     use super::*;
     use crate::specialised::{Domain, SpecialisedEditors};
+    use cy_editor_core::codec::Writer;
 
     fn repository() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../..")
             .canonicalize()
             .expect("the workspace is inside the repository")
+    }
+
+    #[test]
+    fn a_backend_catalogue_supplies_stable_node_and_pin_identities() {
+        let mut bytes = Writer::new();
+        bytes.u32(1);
+        bytes.u32(7);
+        bytes.u32(1);
+        bytes.u32(42);
+        bytes.u32(3);
+        bytes.text("material.future");
+        bytes.u32(1);
+        bytes.u32(9);
+        bytes.u8(1);
+        bytes.text("out");
+        bytes.text("value");
+        bytes.u32(0);
+        let decoded = catalogue_from_service(&bytes.finish()).expect("schema 1 decodes");
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].identity, 42);
+        assert_eq!(decoded[0].schema_version, 3);
+        assert_eq!(decoded[0].pins[0].identity, 9);
+
+        let mut editors = SpecialisedEditors::new().expect("non-material catalogues");
+        let mut bytes = Writer::new();
+        bytes.u32(1);
+        bytes.u32(7);
+        bytes.u32(1);
+        bytes.u32(42);
+        bytes.u32(3);
+        bytes.text("material.future");
+        bytes.u32(1);
+        bytes.u32(9);
+        bytes.u8(1);
+        bytes.text("out");
+        bytes.text("value");
+        bytes.u32(0);
+        editors
+            .install_material_catalogue(&bytes.finish())
+            .expect("backend catalogue installs");
+        let session = editors.open(Domain::Materials).expect("materials opens");
+        assert!(
+            session
+                .graph
+                .expect("graph")
+                .catalogue()
+                .get("material.future")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn backend_property_descriptors_remain_typed_and_constrained() {
+        let mut bytes = Writer::new();
+        bytes.u32(1);
+        bytes.u32(2);
+        bytes.u32(1);
+        bytes.u32(5);
+        bytes.u32(1);
+        bytes.text("material.texture_sample");
+        bytes.u32(0);
+        bytes.u32(1);
+        bytes.u32(2);
+        bytes.u8(5);
+        bytes.text("texture");
+        bytes.text("");
+        bytes.text("texture");
+        bytes.text("Project texture asset");
+
+        let decoded = catalogue_from_service(&bytes.finish()).expect("property catalogue decodes");
+        let property = &decoded[0].properties[0];
+        assert_eq!(property.identity, 2);
+        assert_eq!(property.kind, PropertyKind::Asset);
+        assert_eq!(property.constraint, "texture");
     }
 
     /// THE CROSS-LANGUAGE JOIN, AND IT IS READ RATHER THAN COPIED.
@@ -263,7 +432,7 @@ mod tests {
         let mut engine: Vec<(String, Vec<String>)> = Vec::new();
         for line in body.lines().skip(1) {
             let line = line.trim();
-            if !line.starts_with("{\"material.") {
+            if !line.contains("\"material.") {
                 continue;
             }
             let quoted: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
@@ -302,8 +471,8 @@ mod tests {
     fn the_material_editor_opens_and_its_nodes_can_be_wired() {
         // The refusal M11.c's spike measured, performed in reverse: this exact call returned
         // "this build declares no authoring vocabulary for materials" before the engine declared one.
-        let mut editors =
-            SpecialisedEditors::new().expect("the built-in catalogues are well formed");
+        let mut editors = SpecialisedEditors::with_legacy_material_catalogue()
+            .expect("the legacy build-tool catalogues are well formed");
         assert!(editors.can_open(Domain::Materials));
         let session = editors.open(Domain::Materials).expect("materials opens");
         let canvas = session
@@ -345,7 +514,8 @@ mod tests {
 
     #[test]
     fn a_material_name_that_is_not_an_identifier_is_refused() {
-        let mut editors = SpecialisedEditors::new().expect("catalogues");
+        let mut editors = SpecialisedEditors::with_legacy_material_catalogue()
+            .expect("legacy build-tool catalogues");
         let session = editors.open(Domain::Materials).expect("materials opens");
         let canvas = session.graph.expect("a graph editor");
         // The generated program declares `void cy_material_<name>_primary_high(...)`, so a name with

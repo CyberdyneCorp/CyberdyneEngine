@@ -8,10 +8,13 @@
 //
 // It is the same split tools/cook/ made, for the same reason.
 
+#include <cy/core/assets/cooked.h>
 #include <cy/core/assets/derived_cache.h>
 #include <cy/core/assets/file.h>
+#include <cy/core/assets/hash.h>
 #include <cy/core/assets/path.h>
 #include <cy/core/jobs/job_system.h>
+#include <cy/import/gltf.h>
 #include <cy/import/pipeline.h>
 #include <cy/import/sidecar.h>
 
@@ -191,6 +194,118 @@ void print_sub_assets(const std::string& project, const cy::assets::VirtualPath&
     std::fputs(record.value().binding_count() == 0 ? "]" : "\n    ]", stdout);
 }
 
+/// Print the imported prefab as an editor-facing, versioned scene description.
+///
+/// The editor deliberately does not decode cooked prefab bytes. The importer owns that format and
+/// projects only stable identities and editable local transforms across its JSON boundary.
+void print_instances(const std::string& project, const std::string& output,
+                     const cy::assets::VirtualPath& source) {
+    std::fputs(",\n    \"instances\": [", stdout);
+    if (output.empty()) {
+        std::fputs("]", stdout);
+        return;
+    }
+
+    cy::Expected<cy::assets::VirtualPath, cy::Error> record_path =
+        cy::import::import_record_path_for(source);
+    if (!record_path) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Array<cy::u8> record_bytes;
+    const std::string record_native = project + "/" + std::string(record_path.value().view());
+    if (!cy::assets::fs::read_whole(record_native.c_str(), record_bytes)) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Expected<cy::import::ImportRecord, cy::Error> record = cy::import::ImportRecord::parse(
+        std::string_view(reinterpret_cast<const char*>(record_bytes.data()), record_bytes.size()),
+        nullptr);
+    if (!record) {
+        std::fputs("]", stdout);
+        return;
+    }
+
+    const cy::AssetId prefab = record.value().sub_asset("prefab");
+    if (prefab.is_nil()) {
+        std::fputs("]", stdout);
+        return;
+    }
+    char prefab_text[cy::AssetId::kTextLength + 1] = {};
+    (void)prefab.format(prefab_text);
+    const std::string cooked_native = output + "/" + prefab_text + ".cyasset";
+    cy::Array<cy::u8> cooked;
+    if (!cy::assets::fs::read_whole(cooked_native.c_str(), cooked)) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Expected<cy::Span<const cy::u8>, cy::Error> payload =
+        cy::assets::read_cooked_payload(cooked.data(), cooked.size(), true);
+    if (!payload) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Array<cy::import::ImportedNode> nodes;
+    cy::Array<char> names;
+    if (!cy::import::read_cooked_scene_graph(payload.value(), nodes, names)) {
+        std::fputs("]", stdout);
+        return;
+    }
+
+    std::vector<std::string> meshes;
+    for (cy::usize index = 0; index < record.value().binding_count(); ++index) {
+        const std::string_view name = record.value().binding_name(index);
+        if (!name.starts_with("mesh/") || name.find("/lod") != std::string_view::npos) {
+            continue;
+        }
+        char id[cy::AssetId::kTextLength + 1] = {};
+        (void)record.value().binding_id(index).format(id);
+        meshes.emplace_back(id);
+    }
+
+    std::vector<std::string> identities;
+    identities.reserve(nodes.size());
+    for (cy::usize index = 0; index < nodes.size(); ++index) {
+        const cy::import::ImportedNode& node = nodes[index];
+        std::string key =
+            node.parent >= 0 ? identities[static_cast<cy::usize>(node.parent)] : "root";
+        key += "/";
+        key.append(node.name.data(), node.name.size());
+        cy::usize occurrence = 0;
+        for (cy::usize previous = 0; previous < index; ++previous) {
+            if (nodes[previous].parent == node.parent && nodes[previous].name == node.name) {
+                ++occurrence;
+            }
+        }
+        key += "#" + std::to_string(occurrence);
+        char identity[cy::assets::ContentHash::kTextLength + 1] = {};
+        cy::assets::content_hash(key.data(), key.size()).format(identity);
+        identities.emplace_back(identity);
+
+        std::fputs(index == 0 ? "\n      {\"identity\": " : ",\n      {\"identity\": ", stdout);
+        put_json_string(identity);
+        std::fputs(", \"name\": ", stdout);
+        put_json_string(std::string(node.name).c_str());
+        std::fprintf(stdout,
+                     ", \"parent\": %d, \"translation\": [%.9g, %.9g, %.9g], "
+                     "\"rotation\": [%.9g, %.9g, %.9g, %.9g], "
+                     "\"scale\": [%.9g, %.9g, %.9g], \"mesh\": ",
+                     node.parent, static_cast<double>(node.translation.x),
+                     static_cast<double>(node.translation.y),
+                     static_cast<double>(node.translation.z), static_cast<double>(node.rotation.x),
+                     static_cast<double>(node.rotation.y), static_cast<double>(node.rotation.z),
+                     static_cast<double>(node.rotation.w), static_cast<double>(node.scale.x),
+                     static_cast<double>(node.scale.y), static_cast<double>(node.scale.z));
+        if (node.mesh >= 0 && static_cast<cy::usize>(node.mesh) < meshes.size()) {
+            put_json_string(meshes[static_cast<cy::usize>(node.mesh)].c_str());
+        } else {
+            std::fputs("null", stdout);
+        }
+        std::fputs("}", stdout);
+    }
+    std::fputs(nodes.empty() ? "]" : "\n    ]", stdout);
+}
+
 /// The whole run, as JSON on stdout.
 ///
 /// The human report is a paragraph a person reads; this is the same facts in the shape a caller
@@ -198,9 +313,9 @@ void print_sub_assets(const std::string& project, const cy::assets::VirtualPath&
 /// WHICH sub-assets an import produced and what identity each one holds, and parsing a paragraph
 /// for that is how a tool boundary becomes a source of bugs.
 void print_json(const cy::import::ImportPipeline& pipeline, const std::string& project,
-                const cy::Array<cy::assets::VirtualPath>& sources,
+                const std::string& output, const cy::Array<cy::assets::VirtualPath>& sources,
                 const cy::import::ImporterRegistry& registry) {
-    std::fputs("{\n  \"sources\": [", stdout);
+    std::fputs("{\n  \"schema_version\": 2,\n  \"sources\": [", stdout);
     const cy::Span<const cy::import::AssetImportOutcome> rows = pipeline.report().rows();
     for (cy::usize index = 0; index < rows.size(); ++index) {
         const cy::import::AssetImportOutcome& row = rows[index];
@@ -233,6 +348,7 @@ void print_json(const cy::import::ImportPipeline& pipeline, const std::string& p
         put_json_string(absent);
         if (index < sources.size()) {
             print_sub_assets(project, sources[index], registry);
+            print_instances(project, output, sources[index]);
         }
         std::fputs("\n    }", stdout);
     }
@@ -459,7 +575,7 @@ int main(int argc, char** argv) {
     }
 
     if (as_json) {
-        print_json(pipeline, project, paths, registry);
+        print_json(pipeline, project, output, paths, registry);
     } else {
         std::vector<char> text(static_cast<std::size_t>(64) * 1024, '\0');
         (void)pipeline.report().format(text.data(), text.size());

@@ -27,7 +27,7 @@ use cy_editor_commands::registry::{Arguments, Registry};
 use cy_editor_commands::scope::{DocumentScope, Scope};
 use cy_editor_commands::{
     AssetImportOutcome, AssetImportRequest, EffectClass, ImportFormat, ImportSetting,
-    ImportedSubAsset,
+    ImportedSceneNode, ImportedSubAsset,
 };
 use cy_editor_core::Actor;
 use cy_editor_core::ids::NodeId;
@@ -36,7 +36,7 @@ use cy_editor_documents::Document;
 use cy_editor_services::assets::{AssetImportService, ImportRunner};
 use cy_editor_services::builtin;
 use cy_editor_services::editor::Editor;
-use cy_editor_services::primitives::{MeshBinding, mesh_of};
+use cy_editor_services::primitives::{MaterialBinding, MeshBinding, material_of, mesh_of};
 use cy_editor_services::project::ProjectService;
 use cy_editor_viewport::gizmo::TransformBinding;
 
@@ -50,6 +50,7 @@ struct Recording {
     extensions: Vec<String>,
     /// When set, every import is refused with this reason.
     refuse: Option<String>,
+    scene: bool,
 }
 
 impl Recording {
@@ -64,6 +65,16 @@ impl Recording {
                 ".tga".to_string(),
             ],
             refuse: None,
+            scene: false,
+        })
+    }
+
+    fn with_scene() -> Arc<Self> {
+        Arc::new(Self {
+            calls: Mutex::new(Vec::new()),
+            extensions: vec![".fbx".to_string()],
+            refuse: None,
+            scene: true,
         })
     }
 
@@ -72,6 +83,7 @@ impl Recording {
             calls: Mutex::new(Vec::new()),
             extensions: vec![".obj".to_string()],
             refuse: Some(reason.to_string()),
+            scene: false,
         })
     }
 
@@ -120,6 +132,7 @@ impl ImportRunner for Recording {
             ));
         }
         Ok(AssetImportOutcome {
+            schema_version: 2,
             source: request.source.clone(),
             importer: "obj".to_string(),
             id: "5e014c7f8f1666b05d2b42948d633399".to_string(),
@@ -134,11 +147,35 @@ impl ImportRunner for Recording {
                     id: "d658eeb594dfd3c1b877fef741678723".to_string(),
                 },
             ],
+            scene: if self.scene {
+                vec![
+                    ImportedSceneNode {
+                        identity: "root-source".into(),
+                        name: "Chair".into(),
+                        translation: [1.0, 0.0, 0.0],
+                        rotation: [0.0, 0.0, 0.0, 1.0],
+                        scale: [1.0, 1.0, 1.0],
+                        ..ImportedSceneNode::default()
+                    },
+                    ImportedSceneNode {
+                        identity: "seat-source".into(),
+                        name: "Seat".into(),
+                        parent: Some(0),
+                        translation: [0.0, 2.0, 0.0],
+                        rotation: [0.0, 0.0, 0.0, 1.0],
+                        scale: [1.0, 1.0, 1.0],
+                        mesh: Some("5e014c7f8f1666b05d2b42948d633399".into()),
+                    },
+                ]
+            } else {
+                Vec::new()
+            },
             warnings: 0,
             errors: 0,
             steps_not_reached: "7 (import skeletons), 8 (import animations), 10 (produce a prefab \
                                 of the hierarchy)"
                 .to_string(),
+            ..AssetImportOutcome::default()
         })
     }
 }
@@ -330,6 +367,49 @@ fn an_import_lands_a_mesh_in_the_open_world_as_one_entity() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].source, "models/chair.obj");
     assert!(!calls[0].force);
+}
+
+#[test]
+fn an_imported_prefab_instantiates_its_complete_named_hierarchy_in_one_transaction() {
+    let sandbox = Sandbox::new("prefab-hierarchy");
+    let registry = registry();
+    let mut editor = editor_with_a_world(&sandbox, Recording::with_scene());
+
+    invoke(
+        &mut editor,
+        &registry,
+        "asset.import",
+        &Arguments::new()
+            .with("path", Value::Text("models/chair.fbx".into()))
+            .with("at", Value::Vec3([10.0, 0.0, 0.0])),
+    );
+
+    let created = nodes(&editor);
+    assert_eq!(created.len(), 2);
+    let document = document(&editor);
+    let root = created
+        .iter()
+        .copied()
+        .find(|node| document.content().node(*node).unwrap().name == "Chair")
+        .expect("named root");
+    let child = created
+        .iter()
+        .copied()
+        .find(|node| document.content().node(*node).unwrap().name == "Seat")
+        .expect("named child");
+    assert_eq!(document.content().node(child).unwrap().parent, Some(root));
+    assert_eq!(
+        mesh_of(document, child).as_deref(),
+        Some("5e014c7f8f1666b05d2b42948d633399")
+    );
+    let transform = TransformBinding::of_schema(document.schema()).unwrap();
+    assert_eq!(
+        document
+            .content()
+            .field(root, transform.component, transform.translation),
+        Some(&Value::Vec3([11.0, 0.0, 0.0]))
+    );
+    assert_eq!(document.history().entries().len(), 1);
 }
 
 #[test]
@@ -658,6 +738,104 @@ fn scene_and_inspector_drops_use_registered_one_transaction_commands() {
         mesh_of(document(&editor), node).as_deref(),
         Some("models/chair.obj")
     );
+}
+
+#[test]
+fn a_material_assignment_preserves_the_mesh_and_survives_undo_and_reload() {
+    let sandbox = Sandbox::new("material-assignment");
+    std::fs::create_dir_all(sandbox.path().join("models")).unwrap();
+    std::fs::create_dir_all(sandbox.path().join("materials")).unwrap();
+    std::fs::write(sandbox.path().join("models/chair.obj"), "chair").unwrap();
+    std::fs::write(sandbox.path().join("materials/oak.cygraph"), "cygraph 1\n").unwrap();
+    let registry = registry();
+    let mut editor = editor_with_a_world(&sandbox, Recording::new());
+
+    let placed = invoke(
+        &mut editor,
+        &registry,
+        "asset.place",
+        &Arguments::new().with("path", Value::Text("models/chair.obj".into())),
+    );
+    let entity = match placed.values.get("entity") {
+        Some(Value::Text(entity)) => entity.clone(),
+        other => panic!("placement did not return an entity: {other:?}"),
+    };
+    invoke(
+        &mut editor,
+        &registry,
+        "asset.assign",
+        &Arguments::new()
+            .with("path", Value::Text("materials/oak.cygraph".into()))
+            .with("entity", Value::Text(entity)),
+    );
+
+    let node = nodes(&editor)[0];
+    assert_eq!(
+        mesh_of(document(&editor), node).as_deref(),
+        Some("models/chair.obj")
+    );
+    assert_eq!(
+        material_of(document(&editor), node).as_deref(),
+        Some("materials/oak.cygraph")
+    );
+    let written = cy_editor_services::write_world(document(&editor));
+    let mut reopened = Document::new("worlds/city.cyworld");
+    cy_editor_services::worldfile::load(&written, &mut reopened, Actor::human("designer"))
+        .expect("the material-bearing world loads back");
+    let reopened_node = reopened.content().nodes().next().expect("the mesh entity");
+    assert_eq!(
+        mesh_of(&reopened, reopened_node).as_deref(),
+        Some("models/chair.obj")
+    );
+    assert_eq!(
+        material_of(&reopened, reopened_node).as_deref(),
+        Some("materials/oak.cygraph")
+    );
+
+    invoke(&mut editor, &registry, "edit.undo", &Arguments::new());
+    assert_eq!(
+        mesh_of(document(&editor), node).as_deref(),
+        Some("models/chair.obj")
+    );
+    assert_eq!(material_of(document(&editor), node), None);
+}
+
+#[test]
+fn assigning_a_texture_as_a_material_is_refused_without_mutation() {
+    let sandbox = Sandbox::new("wrong-material-kind");
+    std::fs::create_dir_all(sandbox.path().join("models")).unwrap();
+    std::fs::create_dir_all(sandbox.path().join("textures")).unwrap();
+    std::fs::write(sandbox.path().join("models/chair.obj"), "chair").unwrap();
+    std::fs::write(sandbox.path().join("textures/oak.png"), "texture").unwrap();
+    let registry = registry();
+    let mut editor = editor_with_a_world(&sandbox, Recording::new());
+    let placed = invoke(
+        &mut editor,
+        &registry,
+        "asset.place",
+        &Arguments::new().with("path", Value::Text("models/chair.obj".into())),
+    );
+    let entity = match placed.values.get("entity") {
+        Some(Value::Text(entity)) => entity.clone(),
+        other => panic!("placement did not return an entity: {other:?}"),
+    };
+    let history_before = document(&editor).history().entries().len();
+    let refused = refusal(
+        &mut editor,
+        &registry,
+        "asset.assign",
+        &Arguments::new()
+            .with("path", Value::Text("textures/oak.png".into()))
+            .with("entity", Value::Text(entity)),
+    );
+    assert!(
+        refused.contains("neither a mesh nor a material"),
+        "{refused}"
+    );
+    assert_eq!(document(&editor).history().entries().len(), history_before);
+    let node = nodes(&editor)[0];
+    assert_eq!(material_of(document(&editor), node), None);
+    assert!(MaterialBinding::of_schema(document(&editor).schema()).is_some());
 }
 
 #[test]

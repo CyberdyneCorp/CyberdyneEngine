@@ -22,6 +22,7 @@ using MaterialValueType = rendering::material::ValueType;
 /// The literal strings are what `tools/editor/play_contract.py specialised-editors` reads, and
 /// `unit.graph_material` asserts every one of them equals `"material." + graph_op_name(op)`.
 struct NodeSpec {
+    NodeTypeId identity;
     std::string_view type;
     GraphOp op;
     /// Input pin names, in the order `MaterialGraph::connect` numbers its ports.
@@ -37,31 +38,33 @@ struct NodeSpec {
 constexpr std::string_view kOutputType = "material.output";
 
 constexpr NodeSpec kPalette[] = {
-    {"material.constant", GraphOp::Constant, {}, 0, false},
-    {"material.parameter", GraphOp::Parameter, {}, 0, false},
-    {"material.attribute", GraphOp::Attribute, {}, 0, false},
-    {"material.field", GraphOp::Field, {}, 0, false},
-    {"material.texture_sample", GraphOp::TextureSample, {"uv"}, 1, false},
-    {"material.multiply", GraphOp::Multiply, {"a", "b"}, 2, false},
-    {"material.add", GraphOp::Add, {"a", "b"}, 2, false},
-    {"material.subtract", GraphOp::Subtract, {"a", "b"}, 2, false},
-    {"material.divide", GraphOp::Divide, {"a", "b"}, 2, false},
-    {"material.one_minus", GraphOp::OneMinus, {"value"}, 1, false},
-    {"material.saturate", GraphOp::Saturate, {"value"}, 1, false},
-    {"material.lerp", GraphOp::Lerp, {"a", "b", "t"}, 3, false},
-    {"material.swizzle", GraphOp::Swizzle, {"value"}, 1, false},
-    {"material.combine", GraphOp::Combine, {"a", "b"}, 2, false},
-    {"material.custom", GraphOp::Custom, {"a", "b"}, 2, false},
-    {"material.diffuse", GraphOp::Diffuse, {"colour", "weight"}, 2, true},
-    {"material.specular", GraphOp::Specular, {"colour", "roughness", "weight"}, 3, true},
-    {"material.coat", GraphOp::Coat, {"roughness", "weight"}, 2, true},
-    {"material.sheen", GraphOp::Sheen, {"colour", "weight"}, 2, true},
-    {"material.emission", GraphOp::Emission, {"colour", "weight"}, 2, true},
-    {"material.transmission", GraphOp::Transmission, {"colour", "weight"}, 2, true},
-    {"material.subsurface", GraphOp::Subsurface, {"colour", "weight"}, 2, true},
-    {"material.add_closures", GraphOp::AddClosures, {"a", "b"}, 2, true},
-    {"material.layer_closures", GraphOp::LayerClosures, {"top", "base"}, 2, true},
+    {1, "material.constant", GraphOp::Constant, {}, 0, false},
+    {2, "material.parameter", GraphOp::Parameter, {}, 0, false},
+    {3, "material.attribute", GraphOp::Attribute, {}, 0, false},
+    {4, "material.field", GraphOp::Field, {}, 0, false},
+    {5, "material.texture_sample", GraphOp::TextureSample, {"uv"}, 1, false},
+    {6, "material.multiply", GraphOp::Multiply, {"a", "b"}, 2, false},
+    {7, "material.add", GraphOp::Add, {"a", "b"}, 2, false},
+    {8, "material.subtract", GraphOp::Subtract, {"a", "b"}, 2, false},
+    {9, "material.divide", GraphOp::Divide, {"a", "b"}, 2, false},
+    {10, "material.one_minus", GraphOp::OneMinus, {"value"}, 1, false},
+    {11, "material.saturate", GraphOp::Saturate, {"value"}, 1, false},
+    {12, "material.lerp", GraphOp::Lerp, {"a", "b", "t"}, 3, false},
+    {13, "material.swizzle", GraphOp::Swizzle, {"value"}, 1, false},
+    {14, "material.combine", GraphOp::Combine, {"a", "b"}, 2, false},
+    {15, "material.custom", GraphOp::Custom, {"a", "b"}, 2, false},
+    {16, "material.diffuse", GraphOp::Diffuse, {"colour", "weight"}, 2, true},
+    {17, "material.specular", GraphOp::Specular, {"colour", "roughness", "weight"}, 3, true},
+    {18, "material.coat", GraphOp::Coat, {"roughness", "weight"}, 2, true},
+    {19, "material.sheen", GraphOp::Sheen, {"colour", "weight"}, 2, true},
+    {20, "material.emission", GraphOp::Emission, {"colour", "weight"}, 2, true},
+    {21, "material.transmission", GraphOp::Transmission, {"colour", "weight"}, 2, true},
+    {22, "material.subsurface", GraphOp::Subsurface, {"colour", "weight"}, 2, true},
+    {23, "material.add_closures", GraphOp::AddClosures, {"a", "b"}, 2, true},
+    {24, "material.layer_closures", GraphOp::LayerClosures, {"top", "base"}, 2, true},
 };
+
+constexpr NodeTypeId kOutputIdentity = 25;
 
 /// The root's two pins, which are the two setters.
 constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
@@ -78,6 +81,62 @@ struct FlagSpec {
     std::string_view property;
     rendering::material::NodeFlags flag;
 };
+
+enum class PropertyKind : u8 { Text, Bool, Scalar, Vector, Enumeration, Asset };
+
+struct PropertySpec {
+    u32 identity;
+    std::string_view name;
+    PropertyKind kind;
+    std::string_view fallback;
+    std::string_view constraint;
+    std::string_view tooltip;
+};
+
+constexpr PropertySpec kConstantProperties[] = {
+    {1, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Value type"},
+    {2, "value", PropertyKind::Vector, "0", "", "Constant value"},
+};
+constexpr PropertySpec kParameterProperties[] = {
+    {1, "symbol", PropertyKind::Text, "parameter", "identifier", "Shader parameter name"},
+    {2, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Value type"},
+    {3, "default", PropertyKind::Vector, "0", "", "Default runtime value"},
+    {4, "static", PropertyKind::Bool, "false", "", "Request static specialisation"},
+};
+constexpr PropertySpec kNamedProperties[] = {
+    {1, "symbol", PropertyKind::Text, "", "identifier", "Engine attribute or field name"},
+    {2, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Value type"},
+};
+constexpr PropertySpec kTextureProperties[] = {
+    {1, "symbol", PropertyKind::Text, "texture", "identifier", "Bindless texture slot name"},
+    {2, "texture", PropertyKind::Asset, "", "texture", "Project texture asset"},
+    {3, "type", PropertyKind::Enumeration, "vec4", "float|vec2|vec3|vec4", "Sample value type"},
+    {4, "average", PropertyKind::Vector, "1,1,1,1", "", "Fallback and analysis average"},
+    {5, "shadow_critical", PropertyKind::Bool, "false", "", "Retain in shadow derivations"},
+    {6, "microdetail", PropertyKind::Bool, "false", "", "Mark as microdetail"},
+};
+constexpr PropertySpec kTypedProperties[] = {
+    {1, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Result value type"},
+};
+
+[[nodiscard]] Span<const PropertySpec> properties_for(std::string_view type) noexcept {
+    if (type == "material.constant") {
+        return {kConstantProperties, std::size(kConstantProperties)};
+    }
+    if (type == "material.parameter") {
+        return {kParameterProperties, std::size(kParameterProperties)};
+    }
+    if (type == "material.attribute" || type == "material.field" || type == "material.custom") {
+        return {kNamedProperties, std::size(kNamedProperties)};
+    }
+    if (type == "material.texture_sample") {
+        return {kTextureProperties, std::size(kTextureProperties)};
+    }
+    if (type == "material.swizzle" || type == "material.combine") {
+        return {kTypedProperties, std::size(kTypedProperties)};
+    }
+    return {};
+}
 
 constexpr FlagSpec kFlags[] = {
     {"base_reflectance", rendering::material::NodeFlags::BaseReflectance},
@@ -287,12 +346,119 @@ Span<const std::string_view> material_node_types() noexcept {
     return {names, std::size(names)};
 }
 
+NodeTypeId material_node_type_id(std::string_view type) noexcept {
+    if (type == kOutputType) {
+        return kOutputIdentity;
+    }
+    const NodeSpec* spec = spec_for(type);
+    return spec != nullptr ? spec->identity : kInvalidNodeTypeId;
+}
+
+Status encode_material_catalogue(Array<u8>& out) noexcept {
+    const auto u8_value = [&](u8 value) { return out.push_back(value); };
+    const auto u32_value = [&](u32 value) -> Status {
+        for (usize byte = 0; byte < 4; ++byte) {
+            if (Status pushed = out.push_back(static_cast<u8>((value >> (byte * 8)) & 0xFFU));
+                !pushed) {
+                return pushed;
+            }
+        }
+        return ok();
+    };
+    const auto text = [&](std::string_view value) -> Status {
+        if (Status length = u32_value(static_cast<u32>(value.size())); !length) {
+            return length;
+        }
+        return out.append({reinterpret_cast<const u8*>(value.data()), value.size()});
+    };
+
+    out.clear();
+    if (Status status = u32_value(1); !status) {
+        return status;  // schema
+    }
+    if (Status status = u32_value(2); !status) {
+        return status;  // catalogue version
+    }
+    const auto types = material_node_types();
+    if (Status status = u32_value(static_cast<u32>(types.size())); !status) {
+        return status;
+    }
+    for (const std::string_view type : types) {
+        if (Status status = u32_value(material_node_type_id(type)); !status) {
+            return status;
+        }
+        if (Status status = u32_value(1); !status) {
+            return status;  // node schema version
+        }
+        if (Status status = text(type); !status) {
+            return status;
+        }
+        PinDesc storage[kMaxPins];
+        const auto pins = material_node_pins(type, storage);
+        if (Status status = u32_value(static_cast<u32>(pins.size())); !status) {
+            return status;
+        }
+        for (const PinDesc& pin : pins) {
+            if (Status status = u32_value(pin.identity); !status) {
+                return status;
+            }
+            if (Status status = u8_value(static_cast<u8>(pin.direction)); !status) {
+                return status;
+            }
+            if (Status status = text(pin.name.text()); !status) {
+                return status;
+            }
+            if (Status status = text(pin.type.text()); !status) {
+                return status;
+            }
+        }
+        const Span<const PropertySpec> properties = properties_for(type);
+        if (Status status = u32_value(static_cast<u32>(properties.size())); !status) {
+            return status;
+        }
+        for (const PropertySpec& property : properties) {
+            if (Status status = u32_value(property.identity); !status) {
+                return status;
+            }
+            if (Status status = u8_value(static_cast<u8>(property.kind)); !status) {
+                return status;
+            }
+            if (Status status = text(property.name); !status) {
+                return status;
+            }
+            if (Status status = text(property.fallback); !status) {
+                return status;
+            }
+            if (Status status = text(property.constraint); !status) {
+                return status;
+            }
+            if (Status status = text(property.tooltip); !status) {
+                return status;
+            }
+        }
+    }
+    return ok();
+}
+
+PinId material_node_pin_id(std::string_view type, std::string_view pin,
+                           PinDirection direction) noexcept {
+    PinDesc storage[kMaxPins];
+    const Span<const PinDesc> pins = material_node_pins(type, storage);
+    for (usize index = 0; index < pins.size(); ++index) {
+        if (pins[index].name.text() == pin && pins[index].direction == direction) {
+            return static_cast<PinId>(index + 1);
+        }
+    }
+    return kInvalidPinId;
+}
+
 Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kMaxPins]) noexcept {
     usize count = 0;
     PinDesc* pins = storage;
     const auto push = [&](std::string_view name, std::string_view pin_type,
                           PinDirection direction) {
         pins[count].name = Name::intern(name);
+        pins[count].identity = static_cast<PinId>(count + 1);
         pins[count].type = Name::intern(pin_type);
         pins[count].direction = direction;
         pins[count].execution = false;
@@ -322,6 +488,7 @@ Status register_material_nodes(NodeRegistry& registry) noexcept {
     for (std::string_view type : material_node_types()) {
         PinDesc storage[kMaxPins];
         NodeTypeDesc desc;
+        desc.identity = material_node_type_id(type);
         desc.name = Name::intern(type);
         desc.plugin = Name::intern("material-compiler");
         desc.version = 1;
