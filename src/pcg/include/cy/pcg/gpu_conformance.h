@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The canonical CPU half of the GPU PCG conformance workload. The GPU adapter is a separate
 // target: cy::pcg retains its deliberate no-RHI boundary.

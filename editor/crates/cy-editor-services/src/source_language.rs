@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Optional SourceKit-LSP lifecycle and diagnostics behind service-owned values.
 //!
 //! A missing or crashed language server changes only this service's availability. Source buffers,

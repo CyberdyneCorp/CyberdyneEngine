@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Authoritative state for one semantic three-way merge.
 //!
 //! The service owns the pending decisions. Views only read rows from it, and registered commands

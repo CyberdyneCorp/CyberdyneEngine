@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Versioned, per-user persistence for open documents and presentation state.
 //!
 //! The file is deliberately not part of the project. It records which assets this user had open,

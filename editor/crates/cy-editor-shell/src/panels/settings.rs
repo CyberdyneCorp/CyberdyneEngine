@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Searchable project settings and user preferences.
 
 use cy_editor_commands::Arguments;

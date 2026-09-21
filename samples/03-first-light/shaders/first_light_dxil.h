@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled DXIL for samples/03-first-light. GENERATED — do not edit by hand.
 // clang-format off

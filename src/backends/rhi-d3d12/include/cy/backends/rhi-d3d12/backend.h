@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Native Direct3D 12 backend registration and device report. M11.d.5.
 

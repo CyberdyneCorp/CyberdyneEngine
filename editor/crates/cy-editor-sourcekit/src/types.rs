@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Editor-owned language-service values.
 
 use std::collections::BTreeMap;

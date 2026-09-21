@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Desktop agent status, controls, confirmations, and privacy-labelled audit records.
 
 use cy_editor_visual::colour::Semantic;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Registered commands for semantic comparison and conflict resolution.
 
 use cy_editor_commands::{Command, EffectClass, Metadata, Outcome, ParameterSpec, Registry};

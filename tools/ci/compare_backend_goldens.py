@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Compare committed backend captures and verify the device evidence beside them."""
 
 from __future__ import annotations

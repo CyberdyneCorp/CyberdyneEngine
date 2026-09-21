@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Device-owned visual producers for the integrated world frame.
 
 import cy.field;

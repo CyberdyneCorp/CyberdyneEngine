@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Install, run, measure, and capture the iOS Metal sample on physical hardware."""
 
 from __future__ import annotations

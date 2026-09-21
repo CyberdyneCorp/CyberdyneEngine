@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Embed checked-in MSL source modules for the world sample.
 
 The MSL sources are emitted as adjacent C++ raw-string literals that concatenate at compile

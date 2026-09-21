@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled MSL for the GPU skinning dispatch. GENERATED — do not edit by hand.
 

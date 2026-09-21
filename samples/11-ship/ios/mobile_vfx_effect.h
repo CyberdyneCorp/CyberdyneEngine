@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The effect every VFX suite uses, and the graph builder that authors it. M8.c section 2.
 //

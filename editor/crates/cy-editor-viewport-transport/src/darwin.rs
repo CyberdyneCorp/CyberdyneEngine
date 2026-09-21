@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Native macOS viewport transport: IOSurface-backed Metal textures and a shared announcement page.
 //!
 //! The producer publishes only after its Metal upload completes. The editor holds the sampled slot

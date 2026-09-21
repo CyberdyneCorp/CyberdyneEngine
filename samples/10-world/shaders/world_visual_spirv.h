@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled SPIR-V for the world's shading. GENERATED — do not edit by hand.
 //

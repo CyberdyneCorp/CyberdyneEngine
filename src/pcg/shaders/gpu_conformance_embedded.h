@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // GENERATED from gpu_conformance.slang by embed.py. Do not edit by hand.
 

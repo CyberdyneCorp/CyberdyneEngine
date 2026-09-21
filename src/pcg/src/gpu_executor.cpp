@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/pcg/gpu_executor.h>
 
 #include "../shaders/gpu_conformance_embedded.h"

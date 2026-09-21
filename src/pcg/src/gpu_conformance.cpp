@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/pcg/gpu_conformance.h>
 
 #include <cy/pcg/dataset.h>

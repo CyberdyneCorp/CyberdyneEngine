@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Embed checked-in MSL source for the GPU skinning pass.
 
 The MSL source is emitted as adjacent C++ raw-string literals that concatenate at compile

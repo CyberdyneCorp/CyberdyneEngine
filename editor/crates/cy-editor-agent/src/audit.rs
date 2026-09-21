@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Privacy-labelled diagnostics for agent activity.
 //!
 //! Records deliberately contain no command arguments, resource contents, source text, or image

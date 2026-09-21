@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Direct3D 12 implementation records. Windows SDK types stay in this private header.
 

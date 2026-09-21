@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Generated prelude for emitter `sparks0`. Everything below is derived from this effect's own declarations, which is the
 // only place it can come from: a parameter block and an attribute layout are
 // different for every effect and cannot live in a shared standard library.

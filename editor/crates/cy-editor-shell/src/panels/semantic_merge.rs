@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Identity-keyed semantic Diff and Merge panels.
 
 use cy_editor_commands::Arguments;

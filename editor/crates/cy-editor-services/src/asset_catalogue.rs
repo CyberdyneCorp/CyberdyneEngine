@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Deterministic, observable project asset discovery for the Content Browser.
 
 use std::path::{Component, Path, PathBuf};

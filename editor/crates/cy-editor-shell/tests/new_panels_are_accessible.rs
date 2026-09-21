@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Headless visual/accessibility matrix for the panels added by complete-editor-features-now.
 
 use cy_editor_commands::{Registry, Scope};

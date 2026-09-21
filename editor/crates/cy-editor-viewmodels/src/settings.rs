@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Searchable settings rows derived from the settings service.
 
 use cy_editor_core::observe::Revision;

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Install and smoke-test the iOS Metal sample on an already booted simulator."""
 
 from __future__ import annotations

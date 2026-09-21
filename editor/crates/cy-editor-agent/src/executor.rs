@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Execution of transport-neutral agent requests against the editor's shared command surface.
 //!
 //! A wire transport decodes into [`AgentRequest`](crate::AgentRequest), then hands the request here.

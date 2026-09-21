@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The macOS half of the engine viewport publisher: IOSurface-backed Metal textures handed to the
 // editor without copying across the process boundary. Platform-neutral ownership lives in wire.cpp.
 

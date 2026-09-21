@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Device identity classification shared by backend reports. M11.d.5.
 

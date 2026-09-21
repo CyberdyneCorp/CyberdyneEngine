@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Attributed undo history for the active document.
 
 use cy_editor_commands::Arguments;

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Embed named DXIL files in one deterministic C++ header."""
 
 from pathlib import Path

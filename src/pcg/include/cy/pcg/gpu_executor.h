@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // RHI adapter for the deterministic GPU PCG conformance workload. Kept out of cy::pcg so cooks
 // and dedicated servers retain the core module's no-device link graph.

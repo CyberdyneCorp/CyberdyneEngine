@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Process and LSP framing boundary.
 
 use std::io::{BufRead, BufReader, Write};
