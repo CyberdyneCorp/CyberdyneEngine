@@ -39,7 +39,9 @@
 //! successfully and reports exactly that, which is a diagnosis rather than a crash, and it is what
 //! makes adding the export a one-line engine change instead of an investigation.
 
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::ffi::{CString, c_char, c_void};
+#[cfg(unix)]
+use std::ffi::{CStr, c_int};
 use std::path::{Path, PathBuf};
 
 use cy_editor_core::problem::{Problem, Result};
@@ -517,14 +519,106 @@ mod platform {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+mod platform {
+    use super::{CString, Path, Problem, Result, c_char, c_void};
+
+    // Three externs against kernel32, which every Rust program on Windows is already linked to
+    // through the standard library. Matches the Unix module's stance: declare the loader rather
+    // than take a dependency to spell three symbols.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryA(lpLibFileName: *const c_char) -> *mut c_void;
+        fn GetProcAddress(hModule: *mut c_void, lpProcName: *const c_char) -> *mut c_void;
+        fn GetLastError() -> u32;
+    }
+
+    fn last_error() -> String {
+        // SAFETY: no arguments and the return is a plain error code.
+        let code = unsafe { GetLastError() };
+        format!("Windows error {code}")
+    }
+
+    pub(super) fn open(path: &Path) -> Result<*mut c_void> {
+        let text = path.to_str().ok_or_else(|| {
+            Problem::new(
+                format!("load {}", path.display()),
+                "the path is not valid UTF-8, and LoadLibraryA takes an ANSI string",
+            )
+        })?;
+        let c_path = CString::new(text).map_err(|_| {
+            Problem::new(
+                format!("load {}", path.display()),
+                "the path contains a NUL byte",
+            )
+        })?;
+        // SAFETY: `c_path` is a live NUL-terminated string for the duration of the call.
+        let module = unsafe { LoadLibraryA(c_path.as_ptr()) };
+        if module.is_null() {
+            return Err(
+                Problem::new(format!("load {}", path.display()), last_error()).with_remedy(
+                    "check that the file exists and that its own dependencies resolve",
+                ),
+            );
+        }
+        Ok(module)
+    }
+
+    /// Resolve a required symbol.
+    ///
+    /// # Safety
+    ///
+    /// `F` must be the exact signature the library declares for `name`. Nothing can check this; the
+    /// callers are in `host.rs` and each says why its cast is the ABI's declared signature.
+    pub(super) unsafe fn symbol<F: Copy>(
+        module: *mut c_void,
+        path: &Path,
+        name: &str,
+    ) -> Result<F> {
+        // SAFETY: the caller's contract, discharged at each call site.
+        match unsafe { optional_symbol::<F>(module, name) } {
+            Some(function) => Ok(function),
+            None => Err(Problem::new(
+                format!("load {}", path.display()),
+                format!("it exports no `{name}`, so it is not a Cyberdyne engine image"),
+            )
+            .with_remedy("point at the engine's shared library, not at a module or a game binary")),
+        }
+    }
+
+    /// Resolve a symbol that may legitimately be absent.
+    ///
+    /// # Safety
+    ///
+    /// As [`symbol`].
+    pub(super) unsafe fn optional_symbol<F: Copy>(module: *mut c_void, name: &str) -> Option<F> {
+        assert_eq!(
+            size_of::<F>(),
+            size_of::<*mut c_void>(),
+            "a symbol can only be transmuted to a pointer-sized function type"
+        );
+        let c_name = CString::new(name).ok()?;
+        // SAFETY: `c_name` is live for the call and `module` came from `open`.
+        let address = unsafe { GetProcAddress(module, c_name.as_ptr()) };
+        if address.is_null() {
+            return None;
+        }
+        // SAFETY: `address` is a code address the loader resolved, and the caller's contract is
+        // that `F` is the signature the library declares for it. The size assertion above is what
+        // makes the read well-formed; the signature is what makes the call correct, and only the
+        // caller can know that.
+        Some(unsafe { *std::ptr::from_ref(&address).cast::<F>() })
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 mod platform {
     use super::{Path, Problem, Result, c_void};
 
     pub(super) fn open(path: &Path) -> Result<*mut c_void> {
         Err(Problem::new(
             format!("load {}", path.display()),
-            "embedded hosting is implemented for Unix only in this build",
+            "embedded hosting is implemented for Unix and Windows only in this build",
         )
         .with_remedy("use hosted mode, which is the default and is platform independent"))
     }
