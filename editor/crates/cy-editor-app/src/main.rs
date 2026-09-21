@@ -13,6 +13,7 @@
 //!
 //! ```text
 //! cyberdyne-editor                                     # opens the window
+//! cyberdyne-editor --project samples/05b-editor-window/project
 //! cyberdyne-editor --open worlds/city.cyworld          # opens the window on a world
 //! cyberdyne-editor --version
 //! cyberdyne-editor --list-commands
@@ -35,7 +36,7 @@ use cy_editor_app::{Application, run_script};
 use cy_editor_commands::{AssetHost, ImportFormat};
 use cy_editor_core::Actor;
 use cy_editor_core::problem::{Problem, Result};
-use cy_editor_services::{Notification, WorkspaceStore};
+use cy_editor_services::{Notification, ProjectService, WorkspaceStore};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -59,6 +60,7 @@ fn main() -> ExitCode {
               sub-structures would make the parser longer and say nothing new"
 )]
 struct Options {
+    project: Option<String>,
     open: Vec<String>,
     script: Option<String>,
     host: Option<String>,
@@ -76,6 +78,7 @@ struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            project: None,
             open: Vec::new(),
             script: None,
             host: None,
@@ -109,6 +112,9 @@ fn run(arguments: &[String]) -> Result<()> {
     }
 
     let mut application = Application::new(Actor::human(whoami()))?;
+    if let Some(project) = selected_project(&options)? {
+        application.editor = application.editor.with_project(project);
+    }
 
     if options.list_commands {
         // The projection an agent reads, printed. Every line states the command's parameters and its
@@ -292,6 +298,7 @@ fn parse(arguments: &[String]) -> Result<Options> {
             "--version" | "-V" => options.version = true,
             "--list-commands" => options.list_commands = true,
             "--list-importers" => options.list_importers = true,
+            "--project" => options.project = Some(value(arguments, &mut index, "--project")?),
             "--open" => options.open.push(value(arguments, &mut index, "--open")?),
             "--script" => options.script = Some(value(arguments, &mut index, "--script")?),
             "--host" => options.host = Some(value(arguments, &mut index, "--host")?),
@@ -320,6 +327,27 @@ fn parse(arguments: &[String]) -> Result<Options> {
         index += 1;
     }
     Ok(options)
+}
+
+fn selected_project(options: &Options) -> Result<Option<ProjectService>> {
+    let Some(root) = &options.project else {
+        return Ok(None);
+    };
+    let project = ProjectService::new(root);
+    if !project.is_declared() {
+        return Err(Problem::new(
+            format!("open the project {}", project.root().display()),
+            format!(
+                "the directory does not contain {}",
+                ProjectService::MANIFEST
+            ),
+        )
+        .with_remedy(
+            "choose a CyberEngine project directory; the editor will not treat an arbitrary \
+             directory as writable project content",
+        ));
+    }
+    Ok(Some(project))
 }
 
 fn value(arguments: &[String], index: &mut usize, option: &str) -> Result<String> {
@@ -474,6 +502,7 @@ const USAGE: &str = "\
 cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
 
     --open <asset>        open a document (repeatable)
+    --project <directory> open this CyberEngine project instead of the working directory
     --headless            run without a window; the default is to open one
     --smoke               open the real window, draw three frames, then close successfully
     --mcp                 host MCP alongside the window; combine with --headless for stdio-only
@@ -507,6 +536,31 @@ mod tests {
         let smoke = parse(&["--smoke".into()]).unwrap();
         assert!(smoke.smoke);
         assert!(opens_window(&smoke));
+    }
+
+    #[test]
+    fn an_explicit_project_must_declare_itself() {
+        let root =
+            std::env::temp_dir().join(format!("cy-editor-project-option-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let options = parse(&[
+            "--project".into(),
+            root.display().to_string(),
+            "--open".into(),
+            "worlds/city.cyworld".into(),
+        ])
+        .unwrap();
+        let Err(refused) = selected_project(&options) else {
+            panic!("an undeclared directory was accepted as a project");
+        };
+        assert!(refused.to_string().contains(ProjectService::MANIFEST));
+
+        std::fs::write(root.join(ProjectService::MANIFEST), "{}\n").unwrap();
+        let project = selected_project(&options).unwrap().unwrap();
+        assert_eq!(project.root(), root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

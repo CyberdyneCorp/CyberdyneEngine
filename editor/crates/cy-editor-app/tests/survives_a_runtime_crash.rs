@@ -24,6 +24,7 @@ use cy_editor_app::Application;
 use cy_editor_commands::Arguments;
 use cy_editor_core::Actor;
 use cy_editor_core::value::Value;
+use cy_editor_viewport::play::PlayState;
 
 /// Where Cargo put `cy-runtime-stub`.
 fn stub_binary() -> PathBuf {
@@ -62,6 +63,21 @@ fn start_runtime(socket: &PathBuf) -> Child {
         .expect("a readable line");
     assert_eq!(ready, "listening");
     child
+}
+
+fn set_all_viewports(application: &mut Application, state: PlayState) {
+    for viewport in application.editor.viewports.all_mut().iter_mut() {
+        viewport.play = state;
+    }
+}
+
+fn all_viewports_are(application: &Application, state: PlayState) -> bool {
+    application
+        .editor
+        .viewports
+        .all()
+        .iter()
+        .all(|viewport| viewport.play == state)
 }
 
 #[test]
@@ -115,6 +131,10 @@ fn the_editor_survives_the_runtime_being_killed_mid_session() {
     assert_eq!(nodes_before, 2);
     assert_eq!(history_before, 2);
 
+    // Model the state the runtime owned before it died. The loss path must not leave the editor
+    // claiming that this simulation still exists after the process is gone.
+    set_all_viewports(&mut application, PlayState::Playing);
+
     // The runtime dies. SIGKILL rather than a clean shutdown, because a crash is what is being
     // tested and a crash does not run a shutdown path.
     runtime.kill().expect("the runtime can be killed");
@@ -132,6 +152,7 @@ fn the_editor_survives_the_runtime_being_killed_mid_session() {
         !application.editor.runtime.is_connected(),
         "the editor learned the runtime is gone"
     );
+    assert!(all_viewports_are(&application, PlayState::Editing));
 
     // THE POINT OF ALL OF IT: everything the editor knew is still true.
     let after = application.editor.documents.get(document).unwrap();

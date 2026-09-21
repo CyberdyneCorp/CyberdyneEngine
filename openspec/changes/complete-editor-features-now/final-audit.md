@@ -73,3 +73,16 @@ views, encoded remote-device transport, general cook/package/deploy and device i
 native debugger/profiler transports, stable offline artefact schemas, domain-specific canonical
 authoring vocabularies/lowerings, and the remaining engine ABI/lifecycle callbacks. The UI does not
 render placeholder controls for those dependencies.
+
+## Engine-usable follow-up added before merge
+
+The editor now accepts a declared project explicitly through `--project <directory>` before any
+workspace or document work begins. Play and Pause no longer put the viewport into a simulation state
+when no runtime accepted the request, and losing an attached runtime returns all viewports to
+Editing while documents and unsaved history survive. Focused CLI, control-socket, and killed-process
+regressions cover those behaviors.
+
+The final connected macOS acceptance run remains open until the parallel Metal/backend change is on
+the branch. It must use the engine's `cy_editor_window_runtime`, receive an IOSurface frame, exercise
+Play/Pause/Stop, kill and restart the runtime, and retain the authored document. This is task 11.3;
+the local behavior above does not claim that integration evidence early.

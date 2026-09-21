@@ -836,8 +836,9 @@ fn reload_completion_reports_preserved_and_dropped_state() {
 }
 
 #[test]
-fn play_is_entered_and_left_and_says_what_happens_to_edits() {
-    // Task 3.8. The state is the runtime's rather than a panel's, so every viewport agrees.
+fn play_without_a_runtime_keeps_the_authoring_loop_in_editing() {
+    // The state is the runtime's rather than a panel's. With no runtime attached, the authoring
+    // loop stays available and the editor does not invent a simulation state.
     let registry = registry();
     let mut editor = Editor::new(Actor::human("designer"));
     assert_eq!(
@@ -852,35 +853,21 @@ fn play_is_entered_and_left_and_says_what_happens_to_edits() {
             &Scope::unrestricted(),
             &Arguments::new(),
         )
-        .expect("play begins");
-    assert!(entered.summary.contains("PLAYING"), "{}", entered.summary);
+        .expect("the authoring session remains usable");
     assert!(
-        entered.summary.contains("discarded"),
-        "the persistence policy is always stated: {}",
+        entered.summary.contains("nothing is simulating"),
+        "the missing runtime is stated: {}",
         entered.summary
     );
     assert_eq!(
         cy_editor_commands::ProjectHost::play_state(&editor),
-        "playing"
+        "editing"
     );
 
     let again = registry.availability("play.enter", &editor);
     assert!(
-        !again.is_available(),
-        "entering play twice is a caller that has lost track"
-    );
-
-    editor
-        .invoke(
-            &registry,
-            "play.leave",
-            &Scope::unrestricted(),
-            &Arguments::new(),
-        )
-        .expect("play ends");
-    assert_eq!(
-        cy_editor_commands::ProjectHost::play_state(&editor),
-        "editing"
+        again.is_available(),
+        "starting a runtime later must leave Play available"
     );
 }
 

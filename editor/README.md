@@ -101,9 +101,18 @@ just build-editor                  build (profile-mapped, into build/editor/)
 just build-editor --generate       regenerate the SDK bindings from the C ABI first
 just build-editor-check            the selftest, rustfmt, clippy and the tests
 just build-editor-format           format the hand-written Rust in place
-just run-editor --open <asset> --script <path>
+just run-editor --project <directory> --open <asset>
+just run-editor --project <directory> --open <asset> --script <path>
 just run-editor-runtime [<socket>] the hosted-runtime stub `--host` connects to
 ```
+
+`--project` is resolved before workspace restoration, service discovery, and document opening. The
+directory must contain `project.json`; the editor refuses an arbitrary directory instead of making
+it writable project content. Without the option, the working directory remains the implicit root.
+
+Playing and Paused are engine states. If no runtime is attached, requesting either leaves the
+viewport in Editing and posts a remedy instead of showing a state no engine accepted. Losing a
+runtime likewise returns every viewport to Editing while the documents remain open.
 
 Every recipe takes `--profile <name>`. The four profiles mean the same thing in Cargo that they mean
 in CMake — M0's spike wrote that column and reserved it unused for five milestones, and

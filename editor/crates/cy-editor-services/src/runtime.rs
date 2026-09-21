@@ -154,10 +154,9 @@ impl RuntimeSession {
     /// is `cy::gameplay::PlaySession`: it builds a simulation from the authored world, steps it in
     /// the `Physics` stage, and restores the world exactly when play ends.
     ///
-    /// Refused with a remedy when there is no runtime, exactly as [`RuntimeSession::apply`] is —
-    /// and the refusal is the interesting half: an editor with no engine attached can still switch
-    /// its own badge (which [`crate::editor::Editor::set_play`] does), but it must not claim
-    /// anything is simulating.
+    /// Refused with a remedy when there is no runtime, exactly as [`RuntimeSession::apply`] is.
+    /// The editor remains usable for authoring, but does not switch its local play badge unless an
+    /// engine accepted the request.
     /// `mode` says WHERE the runtime is to run it. M11.b task 3.1.
     ///
     /// The mode is sent on every play message rather than only on the one that enters play, because

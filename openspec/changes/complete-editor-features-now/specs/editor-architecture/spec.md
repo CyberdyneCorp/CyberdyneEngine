@@ -2,6 +2,20 @@
 
 ## ADDED Requirements
 
+### Requirement: Explicit project selection
+The editor SHALL accept an explicit project directory before restoring workspace state, discovering
+project services, or opening documents. An explicit directory SHALL contain the engine's project
+manifest and SHALL be refused by name when it does not.
+
+#### Scenario: Developer opens a declared project
+- **WHEN** a developer starts the editor with `--project <directory>` and that directory contains
+  `project.json`
+- **THEN** project services and relative document paths SHALL use that directory as their root
+
+#### Scenario: Arbitrary directory is refused
+- **WHEN** a developer explicitly selects a directory without `project.json`
+- **THEN** the editor SHALL refuse it rather than treating it as writable project content
+
 ### Requirement: Swift Workspace
 The editor SHALL provide a Swift Workspace for project gameplay sources with a project-relative file
 tree, tabbed text editing, source diagnostics, symbol navigation, and build and development-module
