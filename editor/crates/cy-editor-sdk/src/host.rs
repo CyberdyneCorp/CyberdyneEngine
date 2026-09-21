@@ -39,9 +39,9 @@
 //! successfully and reports exactly that, which is a diagnosis rather than a crash, and it is what
 //! makes adding the export a one-line engine change instead of an investigation.
 
-use std::ffi::{CString, c_char, c_void};
 #[cfg(unix)]
 use std::ffi::{CStr, c_int};
+use std::ffi::{CString, c_char, c_void};
 use std::path::{Path, PathBuf};
 
 use cy_editor_core::problem::{Problem, Result};
