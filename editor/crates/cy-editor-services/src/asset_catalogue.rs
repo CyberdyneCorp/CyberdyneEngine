@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Deterministic, observable project asset discovery for the Content Browser.
 
 use std::path::{Component, Path, PathBuf};
@@ -297,10 +298,15 @@ mod tests {
     use super::*;
 
     fn temporary() -> PathBuf {
+        // Windows refuses `:` in a filename, and Rust's default test thread name is the fully-
+        // qualified path with `::` between segments — so a raw name here (which works on Unix)
+        // is `InvalidFilename` on Windows. Sanitize the separators before joining.
+        let raw_name = std::thread::current().name().unwrap_or("test").to_string();
+        let name = raw_name.replace("::", "-");
         let path = std::env::temp_dir().join(format!(
             "cy-asset-catalogue-{}-{}",
             std::process::id(),
-            std::thread::current().name().unwrap_or("test")
+            name
         ));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(path.join("art/props")).unwrap();

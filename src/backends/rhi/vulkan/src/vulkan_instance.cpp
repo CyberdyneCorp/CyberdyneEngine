@@ -546,6 +546,7 @@ void VulkanDevice::fill_capabilities() noexcept {
 
     capabilities_.set_backend(BackendKind::Vulkan);
     capabilities_.set_device_name(properties.properties.deviceName);
+    capabilities_.set_vendor_id(properties.properties.vendorID);
     // SPIR-V is what this device consumes, and it is stated rather than assumed — Metal gap 1. The
     // interchange form and the native form happen to coincide here; on Metal and D3D12 they do not,
     // and the cook reads this rather than the backend's identity.

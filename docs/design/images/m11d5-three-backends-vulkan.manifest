@@ -1,0 +1,5 @@
+cygolden 1
+suite render.golden_backends
+rows 2
+row backend=null image=first_light device="null device" vendor="Cyberdyne" vendor_id=0x0000 class=null-backend outcome=NOT-EVALUATED-no-image differing=0 off_edge=0 max_delta=0 reason="the null backend produces no readable colour; render.null_frame judges its structure"
+row backend=vulkan image=first_light device="NVIDIA GeForce RTX 5060" vendor="NVIDIA" vendor_id=0x10de class=hardware outcome=matched differing=0 off_edge=0 max_delta=0 reason="the committed M3 Vulkan reference is the comparison baseline"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled MSL for the iOS spark-plume simulation kernel. GENERATED — do not edit by hand.
 

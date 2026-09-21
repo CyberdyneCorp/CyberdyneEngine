@@ -297,8 +297,16 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     description.fragment_shader = depth_only ? depth_fragment_ : forward_fragment_;
     description.vertex_bindings = Span<const rhi::VertexBinding>(bindings, stream_count);
     description.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, stream_count);
-    const usize color_count =
-        depth_only ? (setup.prepass_velocity ? 2U : (setup.prepass_normal ? 1U : 0U)) : 1U;
+    usize color_count = 1U;
+    if (depth_only) {
+        if (setup.prepass_velocity) {
+            color_count = 2U;
+        } else if (setup.prepass_normal) {
+            color_count = 1U;
+        } else {
+            color_count = 0U;
+        }
+    }
     description.color_attachments = Span<const rhi::ColorAttachmentState>(colors, color_count);
     description.sample_count = setup.sample_count;
     description.depth_stencil.format = setup.depth_format;

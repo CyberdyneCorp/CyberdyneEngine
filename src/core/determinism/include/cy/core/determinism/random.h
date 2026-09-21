@@ -39,6 +39,7 @@
 
 #include <cy/core/base/types.h>
 #include <cy/core/determinism/epoch.h>
+#include <cy/core/memory/hash.h>
 
 namespace cy::determinism {
 
@@ -53,8 +54,7 @@ inline constexpr u64 kStreamSecret2 = 0x94d049bb133111ebULL;
 
 /// 64x64 -> 128 multiply folded to 64 bits. The whole of the mixing, used twice per draw.
 [[nodiscard]] constexpr u64 fold_multiply(u64 a, u64 b) noexcept {
-    const __uint128_t product = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b);
-    return static_cast<u64>(product) ^ static_cast<u64>(product >> 64U);
+    return cy::detail::mix(a, b);
 }
 
 /// FNV-1a over a name. Deliberately a different function from the engine's `hash_bytes`: this one

@@ -1,6 +1,7 @@
 #include <cy/core/determinism/hash.h>
 
 #include <cy/core/base/assert.h>
+#include <cy/core/memory/hash.h>
 
 #include <cmath>
 #include <cstring>
@@ -16,8 +17,7 @@ constexpr u64 kSecretB = 0xc4ceb9fe1a85ec53ULL;
 constexpr u64 kSecretC = 0x9e3779b97f4a7c15ULL;
 
 [[nodiscard]] u64 fold_multiply(u64 a, u64 b) noexcept {
-    const __uint128_t product = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b);
-    return static_cast<u64>(product) ^ static_cast<u64>(product >> 64U);
+    return cy::detail::mix(a, b);
 }
 
 // Order matters: this is what makes a tree's children an ordered sequence rather than a set, and

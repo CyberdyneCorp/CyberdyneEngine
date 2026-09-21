@@ -15,6 +15,16 @@
 #ifndef CY_TEST_TEST_H
 #define CY_TEST_TEST_H
 
+// MSVC's `<string_view>` (as of v19.44) declares an `operator<<` overload for `basic_ostream` that
+// references `basic_ostream::iostate` inline. `basic_ostream` is only forward-declared in that
+// header, so a translation unit that pulls in `<string_view>` without first including `<ostream>`
+// fails to compile inside the STL. Every test that uses `<string_view>` would otherwise need the
+// workaround; declaring it here in the one file every test includes keeps the fix in one place.
+// GCC and Clang STLs do not have this dependency but including `<ostream>` here is a no-op cost.
+#if defined(_MSC_VER)
+#    include <ostream>
+#endif
+
 #include <doctest/doctest.h>
 
 // The budget for one test case, in nanoseconds of the case's own CPU time. tests/CMakeLists.txt

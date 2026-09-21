@@ -113,9 +113,9 @@ struct SharedState {
     /// **A SEQLOCK'S PAYLOAD HAS TO BE ATOMIC, or it is a data race by the memory model's own
     /// definition** — two threads touching the same bytes with at least one writing, which is
     /// exactly what a seqlock does on purpose. Written as a plain struct and copied, it is
-    /// undefined behaviour that happens to work, and `-fsanitize=thread` says so; written as
-    /// relaxed atomics it is defined, and the sequence around it is what makes a torn read
-    /// detectable rather than a torn OBJECT.
+    /// undefined behaviour that happens to work, and `-fsanitize=thread` says so. The payload and
+    /// sequence use one sequentially-consistent order so a weakly ordered CPU cannot expose new
+    /// words while both sequence reads still observe the preceding even value.
     ///
     /// The words are `frame_id`, `slot | generation << 32`, `timeline_value`, `submitted_nanos` —
     /// which is `Announcement`'s own layout, little-endian, so the editor's `#[repr(C)]` struct

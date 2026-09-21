@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Opt-in proof against the installed Swift toolchain.
 
 #![forbid(unsafe_code)]

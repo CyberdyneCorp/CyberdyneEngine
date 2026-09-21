@@ -38,6 +38,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -131,9 +132,17 @@ def act_ship(tools: Tools, report: Report) -> None:
     # A COPY, and a cold cache. Act 4 edits a line of content, so a run that built out of the
     # committed project would edit the repository; and a first build that was served from a previous
     # run's cache would make "a cold build ran every node" a statement about nothing.
+    #
+    # Windows: rmtree fails with ERROR_ACCESS_DENIED on files with the read-only attribute set.
+    # Historical runs before the artefact store's Windows fix left such files behind, so clear the
+    # attribute on every entry we walk before deleting. `onerror` also works with the Python 3.9
+    # floor used by CMake on macOS.
+    def _force_delete(func, path, _exc):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
     for directory in (tools.project, tools.cache, tools.artefacts, tools.install):
         if directory.exists():
-            shutil.rmtree(directory)
+            shutil.rmtree(directory, onerror=_force_delete)
     tools.work.mkdir(parents=True, exist_ok=True)
     shutil.copytree(SAMPLE / "project", tools.project)
 
@@ -290,8 +299,10 @@ def binaries(arguments) -> tuple[Path, Path]:
     build_dir = Path(arguments.build_dir or os.environ.get("CY_BUILD_DIR", "build/dev"))
     if not build_dir.is_absolute():
         build_dir = ROOT / build_dir
-    sample = build_dir / "samples" / "11-ship" / "cy_sample_ship"
-    cy_build = build_dir / "tools" / "build" / "cy_build"
+    # Windows appends `.exe`; POSIX does not. Try both, prefer the platform's convention.
+    exe = ".exe" if sys.platform == "win32" else ""
+    sample = build_dir / "samples" / "11-ship" / f"cy_sample_ship{exe}"
+    cy_build = build_dir / "tools" / "build" / f"cy_build{exe}"
     for binary in (sample, cy_build):
         expect(binary.exists(),
                f"{binary} does not exist; build with `just build-engine -D CY_BUILD_TOOLS=ON`")

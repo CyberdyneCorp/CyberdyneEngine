@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <utility>
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -292,7 +293,7 @@ void LinuxPlatform::request_exit(i32 exit_code) {
 }
 
 std::string_view LinuxPlatform::argument(usize index) const {
-    if (arguments_ == nullptr || index >= static_cast<usize>(argument_count_)) {
+    if (arguments_ == nullptr || std::cmp_greater_equal(index, argument_count_)) {
         return {};
     }
     const char* value = arguments_[index];
@@ -712,7 +713,7 @@ Nanoseconds LinuxPlatform::monotonic_nanoseconds() const {
     if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
         return 0;
     }
-    return static_cast<Nanoseconds>(now.tv_sec) * 1'000'000'000LL +
+    return (static_cast<Nanoseconds>(now.tv_sec) * 1'000'000'000LL) +
            static_cast<Nanoseconds>(now.tv_nsec);
 }
 
@@ -721,7 +722,7 @@ i64 LinuxPlatform::wall_nanoseconds() const {
     if (::clock_gettime(CLOCK_REALTIME, &now) != 0) {
         return 0;
     }
-    return static_cast<i64>(now.tv_sec) * 1'000'000'000LL + static_cast<i64>(now.tv_nsec);
+    return (static_cast<i64>(now.tv_sec) * 1'000'000'000LL) + static_cast<i64>(now.tv_nsec);
 }
 
 // --- Locale, CPU, memory ------------------------------------------------------------------------
@@ -751,10 +752,10 @@ CpuFeatures LinuxPlatform::cpu_features() const {
     // __builtin_cpu_supports() reads the running processor, not the compiler's baseline, which is
     // what the interface asks for: "reported, never assumed".
     __builtin_cpu_init();
-    features.sse42 = __builtin_cpu_supports("sse4.2") != 0;
-    features.avx = __builtin_cpu_supports("avx") != 0;
-    features.avx2 = __builtin_cpu_supports("avx2") != 0;
-    features.avx512f = __builtin_cpu_supports("avx512f") != 0;
+    features.sse42 = static_cast<bool>(__builtin_cpu_supports("sse4.2"));
+    features.avx = static_cast<bool>(__builtin_cpu_supports("avx"));
+    features.avx2 = static_cast<bool>(__builtin_cpu_supports("avx2"));
+    features.avx512f = static_cast<bool>(__builtin_cpu_supports("avx512f"));
 #elif defined(__aarch64__)
     // Every AArch64 processor has Advanced SIMD; it is not optional in the base architecture.
     features.neon = true;

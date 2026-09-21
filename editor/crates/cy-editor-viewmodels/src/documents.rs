@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Open-document tabs: derived labels and intents over the workspace and document services.
 //!
 //! A tab owns no document state. Its identity, dirty marker, and active cue are rebuilt from the

@@ -24,6 +24,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -139,11 +140,24 @@ constexpr KeyName kKeys[] = {
 }
 
 [[nodiscard]] Expected<f64, Error> parse_number(std::string_view token) noexcept {
-    f64 value = 0.0;
-    const char* first = token.data();
-    const char* last = token.data() + token.size();
-    const std::from_chars_result parsed = std::from_chars(first, last, value);
-    if (parsed.ec != std::errc{} || parsed.ptr != last) {
+    // `std::from_chars` for floating-point is not implemented in Apple's libc++ (Xcode 16.2 with
+    // Apple Clang 16 still deletes the `bool` overload rather than shipping `double`), so this
+    // path took Werror'd on the macOS leg the moment Swift 6 stopped failing earlier. `strtod` is
+    // in C89 and produces the same accept/reject shape by writing the end pointer; the only wart
+    // is that it wants a NUL-terminated string, so a short-string buffer holds the token by copy.
+    // The largest legitimate scientific notation fits in far less than 64 bytes; a longer token
+    // is refused rather than clipped.
+    if (token.empty() || token.size() >= 64) {
+        return fail(ErrorCode::InvalidArgument, "a number was expected");
+    }
+    char buffer[64];
+    for (usize index = 0; index < token.size(); ++index) {
+        buffer[index] = token[index];
+    }
+    buffer[token.size()] = '\0';
+    char* endptr = nullptr;
+    const f64 value = std::strtod(buffer, &endptr);
+    if (endptr != buffer + token.size()) {
         return fail(ErrorCode::InvalidArgument, "a number was expected");
     }
     if (!std::isfinite(value)) {

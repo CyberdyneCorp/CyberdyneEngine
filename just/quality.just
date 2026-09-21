@@ -78,9 +78,22 @@ quality-lint *args:
         exit 1
     fi
 
+    jobs="${CY_JOBS:-}"
+    if [ -z "${jobs}" ]; then
+        if command -v nproc >/dev/null 2>&1; then
+            jobs="$(nproc)"
+        elif command -v getconf >/dev/null 2>&1; then
+            jobs="$(getconf _NPROCESSORS_ONLN)"
+        elif command -v sysctl >/dev/null 2>&1; then
+            jobs="$(sysctl -n hw.logicalcpu)"
+        else
+            jobs=1
+        fi
+    fi
+
     echo "==> clang-tidy ${#files[@]} file(s) against ${database}"
     printf '%s\n' "${files[@]}" \
-        | xargs -P "${CY_JOBS:-$(nproc)}" -n 1 "${linter}" -p "${build_dir}" --quiet
+        | xargs -P "${jobs}" -n 1 "${linter}" -p "${build_dir}" --quiet
     echo "clang-tidy: no findings"
 
 # The two halves of the layer rule are checked in different places, so this recipe runs both.

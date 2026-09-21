@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Portable integer-only PCG candidate generation and density filtering.
 //
 // Regenerate the checked-in targets from the repository root:

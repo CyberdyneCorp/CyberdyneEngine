@@ -266,6 +266,8 @@ public:
     /// allocated, exactly as ScreenInfo::name is.
     [[nodiscard]] const char* device_name() const noexcept { return device_name_; }
     void set_device_name(const char* name) noexcept;
+    [[nodiscard]] u32 vendor_id() const noexcept { return vendor_id_; }
+    void set_vendor_id(u32 vendor_id) noexcept { vendor_id_ = vendor_id; }
 
     [[nodiscard]] const char* driver_version() const noexcept { return driver_version_; }
     void set_driver_version(const char* version) noexcept;
@@ -298,6 +300,7 @@ private:
     bool queue_ownership_transfers_ = false;
     u8 queue_domain_[kQueueKindCount] = {};
     char device_name_[128] = {};
+    u32 vendor_id_ = 0;
     char driver_version_[64] = {};
     RayTracingObservation ray_tracing_{};
 };

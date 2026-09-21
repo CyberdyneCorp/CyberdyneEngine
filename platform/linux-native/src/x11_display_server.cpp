@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <utility>
 
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -72,7 +73,7 @@ Nanoseconds monotonic_now() {
     if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
         return 0;
     }
-    return static_cast<Nanoseconds>(now.tv_sec) * 1'000'000'000LL +
+    return (static_cast<Nanoseconds>(now.tv_sec) * 1'000'000'000LL) +
            static_cast<Nanoseconds>(now.tv_nsec);
 }
 
@@ -325,8 +326,6 @@ bool X11DisplayServer::has_feature(Feature feature) const {
         case Feature::WindowAlwaysOnTop:  // _NET_WM_STATE_ABOVE
         case Feature::WindowNoFocus:      // WM_HINTS input = False
         case Feature::WindowPopup:        // override-redirect
-            return true;
-
         // X11 hands out pixels and never logical units, so a window's back buffer is always at the
         // screen's pixel density. The flag is honoured by being unavoidable.
         case Feature::HighDpi:
@@ -675,7 +674,7 @@ Status X11DisplayServer::set_window_icon(WindowId window, const IconImage& icon)
     // bits of each. Getting that wrong gives a half-drawn icon, and it is the single most common
     // X11 mistake in this call.
     const usize count = static_cast<usize>(icon.width) * static_cast<usize>(icon.height);
-    constexpr usize kMaxIconPixels = 256 * 256;
+    constexpr usize kMaxIconPixels = usize{256} * 256;
     if (count > kMaxIconPixels) {
         return fail(ErrorCode::InvalidArgument, "a window icon is at most 256 by 256 pixels");
     }
@@ -686,7 +685,7 @@ Status X11DisplayServer::set_window_icon(WindowId window, const IconImage& icon)
     buffer[0] = icon.width;
     buffer[1] = icon.height;
     for (usize i = 0; i < count; ++i) {
-        const u8* pixel = icon.pixels + i * 4;
+        const u8* pixel = icon.pixels + (i * 4);
         buffer[i + 2] = (static_cast<long>(pixel[3]) << 24) | (static_cast<long>(pixel[0]) << 16) |
                         (static_cast<long>(pixel[1]) << 8) | static_cast<long>(pixel[2]);
     }
@@ -869,7 +868,7 @@ const ScreenInfo* X11DisplayServer::screen_record(ScreenId id) const {
 }
 
 ScreenId X11DisplayServer::screen_containing(Point position, Extent size) const {
-    const Point centre{position.x + size.width / 2, position.y + size.height / 2};
+    const Point centre{position.x + (size.width / 2), position.y + (size.height / 2)};
     for (usize i = 0; i < screen_count_; ++i) {
         const ScreenInfo& info = screens_[i];
         if (centre.x >= info.position.x && centre.x < info.position.x + info.resolution.width &&
@@ -1035,8 +1034,7 @@ void X11DisplayServer::translate_event(const void* x_event) {
     switch (event.type) {
         case ClientMessage: {
             if (event.xclient.message_type != static_cast<Atom>(atoms_[kWmProtocols]) ||
-                static_cast<Atom>(event.xclient.data.l[0]) !=
-                    static_cast<Atom>(atoms_[kWmDeleteWindow])) {
+                std::cmp_not_equal(event.xclient.data.l[0], atoms_[kWmDeleteWindow])) {
                 return;
             }
             if (Window* record = find_by_handle(static_cast<u64>(event.xclient.window));

@@ -695,3 +695,11 @@ fi
 echo "entered:$entered"
 '''
 ci_job = "milestone-m11d"
+
+# Mirrors `m11b:m11c-open` — the handover check is a regex over a path assembled from a shell
+# variable, so the prover cannot derive a mutation from its text. The smallest act that unclaims
+# the next rung being entered is the checked task boxes going away.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/changes/*m11d5*/tasks.md"
+token = "- [x] "

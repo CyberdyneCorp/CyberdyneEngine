@@ -30,6 +30,7 @@ whole table.
 | [vulkan_headers](https://github.com/KhronosGroup/Vulkan-Headers) | 1.4.304 | Apache-2.0 | `CY_RENDERER_VULKAN` is on | a shipped game |
 | [volk](https://github.com/zeux/volk) | 1.4.304 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
 | [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.3.0 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
+| [pix_events](https://github.com/microsoft/PixEvents) | b0caa735 | MIT | `CY_RENDERER_D3D12` is on | a shipped game |
 | [slang](https://github.com/shader-slang/slang) | 2026.9.2 | Apache-2.0 WITH LLVM-exception | `CY_SHADER_SLANG` is on | the editor and the cooker only |
 | [jolt](https://github.com/jrouwe/JoltPhysics) | 5.6.0 | MIT | `CY_PHYSICS` is on | a shipped game |
 | [miniaudio](https://github.com/mackron/miniaudio) | 0.11.24 | MIT-0 | `CY_AUDIO` is on | a shipped game |
@@ -154,6 +155,18 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: `CY_RENDERER_VULKAN` is on
 - **Linked into**: a shipped game
 - **Why integrated rather than built**: Suballocation, memory-type selection, defragmentation and VK_EXT_memory_budget tracking against a device's own heaps. An allocator is not differentiating and getting memory types wrong is a class of bug that only appears on the vendor nobody tested.
+
+### pix_events b0caa735
+
+- **Upstream**: https://github.com/microsoft/PixEvents
+- **Pinned at**: `b0caa735f8510f4ff60c29ef1c88101620defc5e` (`unreleased-b0caa735`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE.txt`](https://github.com/microsoft/PixEvents/blob/b0caa735f8510f4ff60c29ef1c88101620defc5e/LICENSE.txt), and
+  `LICENSE.txt` at the root of the fetched source in any configured build tree
+- **Behind**: the native D3D12 command buffer in src/backends/rhi-d3d12/, which uses Microsoft's event encoder so render-graph pass labels are readable by PIX
+- **Included when**: `CY_RENDERER_D3D12` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: PIX requires a versioned event blob rather than raw strings passed to ID3D12CommandList diagnostic methods; Microsoft's encoder keeps captures readable and the D3D12 debug layer clean.
 
 ### slang 2026.9.2
 

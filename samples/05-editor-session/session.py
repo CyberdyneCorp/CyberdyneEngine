@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import select
 import shutil
 import signal
 import subprocess
@@ -354,25 +355,13 @@ def start_runtime(binaries: Binaries, socket: Path) -> subprocess.Popen:
 def wait_until_connected(runtime: subprocess.Popen, timeout_s: float = 10.0) -> bool:
     """Whether the editor has reached the runtime, observed rather than assumed.
 
-    A runtime that has accepted a connection holds two more file descriptors than one that has not.
-    Reading that costs nothing and needs no cooperation from either process. Where there is no
-    procfs — a host that is not Linux — this returns False and the caller kills anyway: the editor is
-    blocked on the FIFO either way, and the assertions that follow are what actually decide the run.
+    The test runtime prints and flushes one line after `accept`, which works on every Unix host this
+    artefact supports and avoids racing the editor against an immediate kill on macOS.
     """
-    descriptors = Path(f"/proc/{runtime.pid}/fd")
-    try:
-        base = len(list(descriptors.iterdir()))
-    except OSError:
+    if runtime.stdout is None:
         return False
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        try:
-            if len(list(descriptors.iterdir())) > base:
-                return True
-        except OSError:
-            return False
-        time.sleep(0.001)
-    return False
+    readable, _, _ = select.select([runtime.stdout], [], [], timeout_s)
+    return bool(readable) and runtime.stdout.readline().strip() == "connected"
 
 
 def kill(runtime: subprocess.Popen) -> None:

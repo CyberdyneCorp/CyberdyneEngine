@@ -16,7 +16,8 @@ was actually linked, and the only honest place to look is the built artefacts.
 
 --- TWO CHECKS, BECAUSE ONE OF THEM CAN PASS WHILE THE CLAIM IS FALSE ------------------------------
 
-  * DT_NEEDED — what the binary asks the dynamic loader for. Catches a link against the runtime.
+  * DT_NEEDED or LC_LOAD_DYLIB — what the binary asks the dynamic loader for. Catches a link against
+    the runtime on ELF and Mach-O respectively.
   * Swift mangled symbols (`$s...`) in the dynamic symbol table. Catches Swift code STATICALLY
     linked in, which has no DT_NEEDED entry at all and which the first check would pass over.
 
@@ -41,8 +42,14 @@ import subprocess
 import sys
 
 ELF_MAGIC = b"\x7fELF"
+MACHO_MAGICS = {
+    b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",
+    b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",
+    b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca",
+}
 
-# The runtime libraries a Swift binary asks for. Matched as a prefix on the SONAME.
+# The runtime libraries a Swift binary asks for. Matched as a prefix on the SONAME or install name.
 SWIFT_LIBRARIES = ("libswift", "libFoundation", "lib_Concurrency", "lib_StringProcessing")
 
 # What a Swift symbol looks like once mangled. `$s` is Swift 5's stable prefix; `$S` and `_T0` are
@@ -53,12 +60,17 @@ SWIFT_SYMBOL_PREFIXES = ("$s", "$S", "_T0")
 DEFAULT_ALLOWED = ("libCyGame_g*.so", "*.swift-module.so")
 
 
-def is_elf(path: pathlib.Path) -> bool:
+def binary_format(path: pathlib.Path) -> str | None:
     try:
         with path.open("rb") as handle:
-            return handle.read(4) == ELF_MAGIC
+            magic = handle.read(4)
     except OSError:
-        return False
+        return None
+    if magic == ELF_MAGIC:
+        return "elf"
+    if magic in MACHO_MAGICS:
+        return "macho"
+    return None
 
 
 def readelf(path: pathlib.Path, *flags: str) -> str:
@@ -67,7 +79,12 @@ def readelf(path: pathlib.Path, *flags: str) -> str:
     return result.stdout
 
 
-def needed_libraries(path: pathlib.Path) -> list[str]:
+def needed_libraries(path: pathlib.Path, format_name: str) -> list[str]:
+    if format_name == "macho":
+        result = subprocess.run(["otool", "-L", str(path)], check=False, text=True,
+                                capture_output=True)
+        return [line.strip().split(" ", 1)[0].rsplit("/", 1)[-1]
+                for line in result.stdout.splitlines()[1:] if line.strip()]
     names = []
     for line in readelf(path, "-d").splitlines():
         if "(NEEDED)" not in line:
@@ -79,7 +96,13 @@ def needed_libraries(path: pathlib.Path) -> list[str]:
     return names
 
 
-def swift_symbols(path: pathlib.Path) -> list[str]:
+def swift_symbols(path: pathlib.Path, format_name: str) -> list[str]:
+    if format_name == "macho":
+        result = subprocess.run(["nm", "-gU", str(path)], check=False, text=True,
+                                capture_output=True)
+        names = [line.split()[-1].removeprefix("_") for line in result.stdout.splitlines()
+                 if line.split()]
+        return [name for name in names if name.startswith(SWIFT_SYMBOL_PREFIXES)]
     found = []
     for line in readelf(path, "--dyn-syms", "--wide").splitlines():
         fields = line.split()
@@ -91,8 +114,9 @@ def swift_symbols(path: pathlib.Path) -> list[str]:
     return found
 
 
-def candidates(build_dir: pathlib.Path, allowed: list[str]) -> tuple[list[pathlib.Path], int]:
-    """Every ELF the engine's build produced, minus the ones allowed to carry Swift.
+def candidates(build_dir: pathlib.Path,
+               allowed: list[str]) -> tuple[list[tuple[pathlib.Path, str]], int]:
+    """Every native binary the engine's build produced, minus allowed Swift modules.
 
     `_deps/` is skipped: those are third-party sources the build fetches, and what THEY link is not
     a statement about the engine core. `.build/` is skipped for the same reason and one more — it is
@@ -100,7 +124,7 @@ def candidates(build_dir: pathlib.Path, allowed: list[str]) -> tuple[list[pathli
     plugin the compiler launches, swift-syntax's own libraries, the intermediate objects of the game
     modules. None of it is an engine binary, and none of it ships.
     """
-    inspected: list[pathlib.Path] = []
+    inspected: list[tuple[pathlib.Path, str]] = []
     skipped = 0
     for path in sorted(build_dir.rglob("*")):
         if not path.is_file() or path.is_symlink():
@@ -109,12 +133,13 @@ def candidates(build_dir: pathlib.Path, allowed: list[str]) -> tuple[list[pathli
             continue
         if path.suffix in (".o", ".a", ".json", ".txt", ".cmake", ".ninja"):
             continue
-        if not is_elf(path):
+        format_name = binary_format(path)
+        if format_name is None:
             continue
         if any(fnmatch.fnmatch(path.name, pattern) for pattern in allowed):
             skipped += 1
             continue
-        inspected.append(path)
+        inspected.append((path, format_name))
     return inspected, skipped
 
 
@@ -129,16 +154,27 @@ def main(argv: list[str]) -> int:
         print(f"no such build directory: {arguments.build_dir}", file=sys.stderr)
         return 2
 
+    # Windows: this project ships no Swift toolchain support on Windows — bindings/swift/
+    # CMakeLists.txt says as much and does not register the swift_reload or swift_package suites
+    # here. The engine's binaries are PE, not ELF, and this check's ELF scan finds none. The claim
+    # under test ("no Swift runtime is linked") holds by construction, and asserting it via a PE
+    # scan would only make Windows the one platform that can regress this via a tool change. Skip
+    # cleanly, and say so.
+    if sys.platform == "win32":
+        print("==> swift runtime  not applicable on Windows (engine binaries are PE, "
+              "not ELF; no Swift toolchain in this build tree)")
+        return 0
+
     allowed = list(DEFAULT_ALLOWED) + arguments.allow
     inspected, skipped = candidates(arguments.build_dir, allowed)
 
     failures: list[str] = []
-    for path in inspected:
-        linked = [name for name in needed_libraries(path)
+    for path, format_name in inspected:
+        linked = [name for name in needed_libraries(path, format_name)
                   if name.startswith(SWIFT_LIBRARIES)]
         if linked:
             failures.append(f"  {path}: links {', '.join(linked)}")
-        symbols = swift_symbols(path)
+        symbols = swift_symbols(path, format_name)
         if symbols:
             failures.append(f"  {path}: {len(symbols)} Swift symbol(s), first {symbols[0]}")
 

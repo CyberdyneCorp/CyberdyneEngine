@@ -127,6 +127,14 @@ struct VertexInput
     [[vk::location(2)]] float2 uv : TEXCOORD0;
 };
 
+// Keep the depth-only entry point's native input signature depth-only too. D3D12 validates the
+// DXIL signature against the pipeline input layout when the PSO is created, so using VertexInput
+// here would require NORMAL and TEXCOORD even though the function never reads them.
+struct ShadowVertexInput
+{
+    [[vk::location(0)]] float3 position : POSITION;
+};
+
 struct ForwardVertexOutput
 {
     float4 clip : SV_Position;
@@ -166,7 +174,7 @@ float4 transform(float4 row0, float4 row1, float4 row2, float4 row3, float3 rela
 }
 
 [shader("vertex")]
-DepthOnlyOutput shadowVertex(VertexInput input)
+DepthOnlyOutput shadowVertex(ShadowVertexInput input)
 {
     DepthOnlyOutput output;
     output.clip = transform(globals.frame.lightViewProjectionRow0,

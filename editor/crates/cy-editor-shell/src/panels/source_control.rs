@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Provider-neutral source-control status and actions.
 
 use cy_editor_commands::Arguments;

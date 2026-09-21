@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The same PCG compute workload through Metal and Vulkan. Each build selects one backend, while
 // the shader, CPU reference, comparisons, and digest remain identical.
 

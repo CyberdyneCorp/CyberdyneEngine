@@ -95,7 +95,10 @@ function(cy_pcg_declare_tests)
             DEFINITIONS CY_PCG_TEST_METAL=1)
     endif()
 
-    if(CY_RENDERER_VULKAN)
+    # Apple devices use the native Metal path. A Vulkan build option on macOS does not imply that a
+    # Vulkan device exists, and registering a device suite that can only abort would misreport the
+    # platform matrix. The Metal suite above carries the physical Apple GPU claim.
+    if(CY_RENDERER_VULKAN AND NOT APPLE)
         cy_add_test(
             NAME pcg_gpu_vulkan
             KIND integration

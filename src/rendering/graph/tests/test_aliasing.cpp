@@ -254,7 +254,7 @@ struct MixedFrame {
 
     MixedFrame() noexcept : graph(cy::system_allocator(cy::MemoryDomain::Renderer)) {
         image = graph.create_texture(storage_image("image", 256));
-        scratch = graph.create_buffer(storage_buffer("scratch", 64 * 1024));
+        scratch = graph.create_buffer(storage_buffer("scratch", cy::u64{64} * 1024));
         output = graph.import_buffer(storage_buffer("result", 4096),
                                      cy::rhi::BufferHandle::from_slot(0, 1));
 

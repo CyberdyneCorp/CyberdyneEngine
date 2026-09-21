@@ -1047,7 +1047,7 @@ Status Stage::stage_world(const World& world) noexcept {
     }
     device_->dynamic_indices = *buffer;
 
-    constexpr u64 foam_cells = 128U * 128U;
+    constexpr u64 foam_cells = u64{128} * u64{128};
     description.name = "world foam previous";
     description.size = foam_cells * sizeof(f32);
     description.usage = rhi::BufferUsage::Storage;
@@ -1955,9 +1955,9 @@ void Stage::close() noexcept {
             device.destroy_texture(device_->output);
             device_->output = rhi::TextureHandle{};
         }
-        for (u32 index = 0; index < 3; ++index) {
-            if (!device_->visual_pipelines[index].is_null()) {
-                device.destroy_compute_pipeline(device_->visual_pipelines[index]);
+        for (auto& pipeline : device_->visual_pipelines) {
+            if (!pipeline.is_null()) {
+                device.destroy_compute_pipeline(pipeline);
             }
         }
         if (!device_->visual_layout.is_null()) {
@@ -1966,9 +1966,9 @@ void Stage::close() noexcept {
         if (!device_->visual_set_layout.is_null()) {
             device.destroy_descriptor_set_layout(device_->visual_set_layout);
         }
-        for (u32 index = 0; index < 3; ++index) {
-            if (!device_->visual_shaders[index].is_null()) {
-                device.destroy_shader_module(device_->visual_shaders[index]);
+        for (auto& shader : device_->visual_shaders) {
+            if (!shader.is_null()) {
+                device.destroy_shader_module(shader);
             }
         }
         device.destroy_graphics_pipeline(device_->pipeline);
@@ -1983,8 +1983,8 @@ void Stage::close() noexcept {
         device.destroy_buffer(device_->dynamic_indices);
         device.destroy_buffer(device_->foam_previous);
         device.destroy_buffer(device_->foam_next);
-        for (u32 index = 0; index < 4; ++index) {
-            device.destroy_buffer(device_->terrain_fields[index]);
+        for (auto& field : device_->terrain_fields) {
+            device.destroy_buffer(field);
         }
         device.destroy_buffer(device_->readback);
         rhi::destroy_device(*allocator_, device_->handle.value());

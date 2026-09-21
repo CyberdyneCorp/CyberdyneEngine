@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! In-progress Swift source buffers, separate from project state until an explicit save.
 
 use cy_editor_core::observe::{Revision, Watch};

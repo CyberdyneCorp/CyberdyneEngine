@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Content Browser navigation and combined name/type filtering.
 
 use std::collections::BTreeSet;

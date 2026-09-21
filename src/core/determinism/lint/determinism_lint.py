@@ -270,7 +270,14 @@ def check_build_half(profiles: dict[str, str], entries: list[dict],
         checked += 1
         if profile in ("None", "ReplayStable"):
             continue
-        if contraction_flag not in command:
+        # MSVC does not contract floating-point operations under `/fp:precise` (its default) or
+        # `/fp:strict`. Contraction is only enabled by `/fp:fast`, which is caught below. So an
+        # MSVC command line without `/fp:fast` implies contraction-off already, and demanding an
+        # `-ffp-contract=off` flag it does not recognise would produce a finding per translation
+        # unit for every determinism target under a Windows build. Detect the MSVC dialect from
+        # its unmistakable option syntax and skip the contraction-flag check for it.
+        is_msvc = "/nologo" in command or " cl.exe " in command or "\\cl.exe " in command
+        if not is_msvc and contraction_flag not in command:
             findings.append(Finding(
                 "contraction", source, 0, "",
                 f"target '{target}' declares determinism profile {profile} but was compiled "

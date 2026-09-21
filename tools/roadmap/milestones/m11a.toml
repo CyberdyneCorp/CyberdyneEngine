@@ -960,20 +960,21 @@ evaluates = ["developer-workflow-and-just"]
 known_gap = "THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the eleven categories the `Recipe surface` requirement names covers nothing — against a matrix row whose Working evidence reads `Every category of the required recipe surface does something from M6: Environment, Build, Run, Test, Quality, Generate, Content, Diagnose, Roadmap, Maintenance, Release`. THIS IS THE FIRST THING AN EVALUATING CRITERION FOUND, and it is exactly what §5 was written to make possible: the row's stated evidence was one quarter false and no check could say so, because the only expectation naming the row expected `seed` and an exit tier is a floor. It is declared rather than fixed here because the fix is M11.d's scope — `m11d:release-recipes-stop-refusing` is that criterion, and `developer-workflow-and-just` reaches Complete at M11.d `with the targets a release and a second platform bring`. What this rung owes is that the claim is now checked; what M11.d owes is that it becomes true. The other three legs pass, so a regression in any of them turns this from a one-line gap into a failure with a named cause"
 known_gap_closes = "m11d"
 ci_job = "milestone-m11a"
-# THE PROOF OF A DECLARED GAP RUNS THE OTHER WAY ROUND, and `falsify.prove` says why: this
-# criterion is RED on the unmutated tree, so "it goes red under mutation" is nothing to
-# demonstrate — it has already failed, in the open, and the whole ledger reads it. What a gap
-# has to show is that it is not PERMANENTLY red, which is the difference between a deadline
-# and a check that can never pass. So the mutation below is the gap's own closing act made
-# small: the Release category stops refusing, and the criterion must go GREEN. `just/release.just`
-# is the only file touched, so the leg that asserts the justfile still DEFINES `_not-implemented`
-# — the leg that stops "rename the helper away" reading as "everything is implemented" — still
-# holds while this runs.
+# THE GAP HAS CLOSED, so the mutation below is not the gap's closing act any more — it is the
+# ordinary "prove the criterion CAN fail" shape every other criterion carries.
+#
+# `row_evidence.py developer-workflow-and-just` recognises a refused recipe by whether its body
+# calls `_not-implemented`, and it separately probes that `just _not-implemented probe-recipe
+# probe-task` returns non-zero (the leg the row's evidence names outright, so that renaming the
+# helper away cannot be read as "everything is implemented"). Renaming `_not-implemented` in
+# `justfile` — where the helper is defined — breaks both legs at once, so the criterion fails
+# with a real diagnosis. The previous mutation targeted `just/release.just`, where the token
+# lived only while the Release category was refusing; it lives in `justfile` now.
 [criterion.falsifies]
 mutate = "rename-token"
-target = "just/release.just"
+target = "justfile"
 token = "_not-implemented"
-note = "the gap closes at m11d:release-recipes-stop-refusing; this is that fix in miniature"
+note = "renaming the helper's own definition makes row_evidence report the refusal detector broken, which is the leg the row's evidence names outright"
 
 [[criterion]]
 id = "thirdparty-dependencies-at-working"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! A bounded, transport-neutral request queue for interactive agent connections.
 //!
 //! Network readers may enqueue from their own thread, but only the UI owner drains requests and

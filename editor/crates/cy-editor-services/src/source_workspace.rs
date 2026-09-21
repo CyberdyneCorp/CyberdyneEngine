@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Project-relative Swift source discovery and conflict-safe file access.
 //!
 //! The source workspace owns facts about files on disk: which Swift sources exist, the fingerprint

@@ -2558,16 +2558,13 @@ whole milestone ladder flaky.
   prediction: **a case within 20% of its budget is a case that will fail eventually**, and the sweep
   that finds them is `CY_TEST_BUDGET_SCALE=0.4` over every binary in every profile.
 
-- **`rhi-and-render-graph` is Working over one backend, and the frame does not reach a window.**
-  Vulkan is the only backend with a device behind it; the null backend executes nothing by design.
-  `DisplayServer::create_surface(GraphicsApi::Vulkan, ...)` exists and works, and
-  `SwapchainDescription` takes the surface it produces — but `cy::rhi::Device` exposes no way to
-  obtain the API instance a surface must be created against (`native_handle()` returns the
-  `VkDevice`; the `VkInstance` stays inside `src/backends/rhi/vulkan/`). So a host can create a
-  window and a device and cannot join them, and `samples/03-first-light` renders offscreen and
-  writes a PPM with `--capture`. The milestone's artefact is therefore a **headless** lit scene, and
-  `m3.toml` records it as a note. It is a small engine-owned accessor away, and it is the first
-  thing M5's editor viewport will want.
+- **`rhi-and-render-graph` has Complete-grade backend evidence assembled at M11.d.5.** Vulkan on an
+  NVIDIA RTX 5060, Metal on an Apple M3 Pro and D3D12 on an AMD Radeon RX 6900 XT rendered the same
+  first-light reference with maximum channel delta 1. All twelve requirements map to live evidence
+  in `tools/roadmap/requirements-coverage.toml`, and the reviewer-facing audit is in
+  `src/backends/rhi/README.md`. D3D12 Resource Heap Tier 1 execution remains a declared hardware
+  deferral; the allocator policy itself is implemented and tested without a device. The status row
+  remains Working until M11.d.5's renderer-off and inherited full-suite gates are green.
 - **Async compute is derived, and nothing in the artefact uses it.** The spike proved the model on
   the device — two queue families, a coalesced `qf2 -> qf0` ownership release, a cross-queue
   semaphore, 256/256 texels correct, zero validation errors — and `unit.render_graph`,

@@ -247,11 +247,11 @@ Status VfxGpuPass::create_pipelines(const rhi::ShaderModuleBundle& kernel) noexc
     pipeline_layout_ = *pipeline_layout_handle;
 
     struct Program {
-        const char* name;
+        const char* name = nullptr;
         rhi::ShaderModuleBundle bundle;
-        u32 group_size;
-        rhi::ShaderModuleHandle* module;
-        rhi::ComputePipelineHandle* pipeline;
+        u32 group_size = 0;
+        rhi::ShaderModuleHandle* module = nullptr;
+        rhi::ComputePipelineHandle* pipeline = nullptr;
     };
     rhi::ShaderModuleBundle reset;
     reset.spirv = {kVfxResetSpirv, sizeof(kVfxResetSpirv) / sizeof(u32)};

@@ -60,6 +60,9 @@
 #if defined(CY_RENDERER_METAL)
 #    include <cy/backends/rhi-metal/backend.h>
 #endif
+#if defined(CY_RENDERER_D3D12)
+#    include <cy/backends/rhi-d3d12/backend.h>
+#endif
 
 #include "golden.h"
 #include "golden_ledger.h"
@@ -75,7 +78,6 @@ namespace {
 using cy::render_test::DeviceClass;
 using cy::render_test::LedgerRow;
 using cy::render_test::Outcome;
-using cy::sample::first_light::Camera;
 using cy::sample::first_light::FrameReport;
 using cy::sample::first_light::Renderer;
 using cy::sample::first_light::RendererOptions;
@@ -92,6 +94,11 @@ constexpr cy::u32 kHeight = 108;
 /// truth and no comparison would ever fail."
 constexpr const char* kImage = "first_light";
 
+void print_validation(cy::rhi::ValidationSeverity severity, const char* message, void*) noexcept {
+    std::fprintf(stderr, "golden_backends: validation[%u]: %s\n", static_cast<unsigned>(severity),
+                 message != nullptr ? message : "");
+}
+
 const char* reference_path() noexcept {
     static char storage[1024];
     std::snprintf(storage, sizeof(storage), "%s/references/%s.png", CY_RENDER_TEST_DIR, kImage);
@@ -107,6 +114,9 @@ void register_everything() noexcept {
 #endif
 #if defined(CY_RENDERER_METAL)
     (void)cy::rhi::metal::register_metal_backend();
+#endif
+#if defined(CY_RENDERER_D3D12)
+    (void)cy::rhi::d3d12::register_d3d12_backend();
 #endif
     (void)cy::rhi::null::register_null_backend();
 }
@@ -156,6 +166,7 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
         cy::render_test::set_field(row.reason, sizeof(row.reason), device.error().message);
         return row;
     }
+    device.value()->set_validation_callback(&print_validation, nullptr);
 
     // `create_device` falls back to the null backend rather than failing. A fallback answering for
     // the backend that was asked for would attribute one backend's image to another, which is the
@@ -165,8 +176,12 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
 
     cy::render_test::set_field(row.device, sizeof(row.device),
                                device.value()->capabilities().device_name());
-    row.device_class =
-        cy::render_test::classify(row.device, device.value()->capabilities().backend());
+    const cy::rhi::DeviceIdentity identity =
+        cy::rhi::classify_device_identity(row.device, device.value()->capabilities().vendor_id(),
+                                          device.value()->capabilities().backend());
+    row.vendor_id = identity.vendor_id;
+    cy::render_test::set_field(row.vendor, sizeof(row.vendor), identity.vendor);
+    row.device_class = identity.classification;
 
     if (!answered_itself) {
         row.outcome = Outcome::NoDevice;
@@ -190,9 +205,13 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
 
     cy::render_test::Image rendered(allocator);
     const cy::Status drawn = render_once(allocator, *device.value(), rendered);
+    const cy::Status idle = drawn ? device.value()->wait_idle() : cy::ok();
     if (!drawn) {
         row.outcome = Outcome::NoDevice;
         cy::render_test::set_field(row.reason, sizeof(row.reason), drawn.error().message);
+    } else if (!idle) {
+        row.outcome = Outcome::Differed;
+        cy::render_test::set_field(row.reason, sizeof(row.reason), idle.error().message);
     } else {
         if (const char* directory = std::getenv("CY_GOLDEN_CAPTURE_DIR");
             directory != nullptr && directory[0] != '\0') {
@@ -259,6 +278,8 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
 
     // 2. Every backend that produced an image matched the one committed reference, and the failure
     //    NAMES THE BACKEND — which is the half of the M3 requirement that has never been testable.
+    const char* capture_directory = std::getenv("CY_GOLDEN_CAPTURE_DIR");
+    const bool capture_required = capture_directory != nullptr && capture_directory[0] != '\0';
     cy::u32 judged = 0;
     for (const LedgerRow& row : rows) {
         if (row.outcome == Outcome::Matched || row.outcome == Outcome::Differed) {
@@ -273,6 +294,9 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
                          row.image, row.differing, row.differing_off_edge, row.max_channel_delta);
         }
         CY_CHECK(row.outcome != Outcome::Differed);
+        if (capture_required && row.device_class != DeviceClass::NullBackend) {
+            CY_CHECK(row.outcome == Outcome::Matched);
+        }
     }
 
     // 3. Every enumerated backend produced a row, and a backend with no device is a row saying so
@@ -294,30 +318,34 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
 // as the D3D12 backend it will judge.
 CY_TEST_CASE(
     "render.golden_backends: a device is never called hardware because nothing said it was not") {
-    using cy::render_test::classify;
     using cy::rhi::BackendKind;
+    using cy::rhi::classify_device_identity;
 
     // Every string here was OBSERVED — the three Linux ones on the machine M11.d was worked on, the
     // two hosted-runner ones by the spike's probe workflow on macos-14 and windows-2022.
-    CY_CHECK(classify("llvmpipe (LLVM 17.0.6, 256 bits)", BackendKind::Vulkan) ==
-             DeviceClass::Software);
-    CY_CHECK(classify("Microsoft Basic Render Driver", BackendKind::D3D12) ==
-             DeviceClass::Software);
-    CY_CHECK(classify("Apple Paravirtual device", BackendKind::Metal) == DeviceClass::Paravirtual);
-    CY_CHECK(classify("", BackendKind::Null) == DeviceClass::NullBackend);
+    CY_CHECK(classify_device_identity("llvmpipe (LLVM 17.0.6, 256 bits)", 0, BackendKind::Vulkan)
+                 .classification == DeviceClass::Software);
+    CY_CHECK(classify_device_identity("Microsoft Basic Render Driver", 0, BackendKind::D3D12)
+                 .classification == DeviceClass::Software);
+    CY_CHECK(classify_device_identity("Apple Paravirtual device", 0, BackendKind::Metal)
+                 .classification == DeviceClass::Paravirtual);
+    CY_CHECK(classify_device_identity("", 0, BackendKind::Null).classification ==
+             DeviceClass::NullBackend);
 
-    // THE CASE THIS EXISTS FOR. An unknown name is `Unattested`, never `Hardware`. A classifier
+    // THE CASE THIS EXISTS FOR. An unknown name is `Unknown`, never `Hardware`. A classifier
     // that defaulted to hardware would relabel the exact device the spike caught the moment its
-    // reported name changed by one word.
-    // The RTX 5060 this host actually has: the name matches no software fragment, and NOTHING
-    // in the interface attests that it is hardware, so the honest label is "unattested".
-    CY_CHECK(classify("NVIDIA GeForce RTX 5060", BackendKind::Vulkan) == DeviceClass::Unattested);
-    CY_CHECK(classify("Some Future Adapter", BackendKind::D3D12) == DeviceClass::Unattested);
-    CY_CHECK(classify(nullptr, BackendKind::Vulkan) == DeviceClass::Unattested);
+    // reported name changed by one word. A known vendor ID does attest the real adapter.
+    CY_CHECK(classify_device_identity("NVIDIA GeForce RTX 5060", 0x10DEU, BackendKind::Vulkan)
+                 .classification == DeviceClass::Hardware);
+    CY_CHECK(classify_device_identity("Some Future Adapter", 0xFFFFU, BackendKind::D3D12)
+                 .classification == DeviceClass::Unknown);
+    CY_CHECK(classify_device_identity(nullptr, 0, BackendKind::Vulkan).classification ==
+             DeviceClass::Unknown);
 
-    // And the row a reader sees says one of four words, never an empty string.
-    for (const DeviceClass kind : {DeviceClass::Software, DeviceClass::Paravirtual,
-                                   DeviceClass::NullBackend, DeviceClass::Unattested}) {
+    // And the row a reader sees says one of five words, never an empty string.
+    for (const DeviceClass kind :
+         {DeviceClass::Hardware, DeviceClass::Software, DeviceClass::Paravirtual,
+          DeviceClass::NullBackend, DeviceClass::Unknown}) {
         CY_CHECK(cy::render_test::describe(kind)[0] != '\0');
     }
     for (const Outcome outcome :

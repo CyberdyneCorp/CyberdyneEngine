@@ -356,7 +356,7 @@ Status SocketFileProvider::exchange(u16 op, const VirtualPath& path, u64 argumen
     if (Status sent = send_all(header_bytes, kHeaderBytes); !sent) {
         return sent;
     }
-    if (path.size() != 0) {
+    if (!path.empty()) {
         if (Status sent = send_all(path.c_str(), path.size()); !sent) {
             return sent;
         }
@@ -586,6 +586,18 @@ Status FileServingHost::accept_pending() noexcept {
         }
         int one = 1;
         (void)::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
+        // Darwin inherits O_NONBLOCK from the listening socket on an accepted connection. The
+        // protocol reader deliberately blocks, with the deadline below, once poll says a message
+        // has begun: a header and its path may arrive in separate packets. Clear the inherited
+        // flag explicitly so the second read does not mistake EAGAIN for a closed peer.
+        const int client_flags = ::fcntl(client, F_GETFL, 0);
+        if (client_flags < 0 || ::fcntl(client, F_SETFL, client_flags & ~O_NONBLOCK) != 0) {
+            const int failure = errno;
+            int scoped = client;
+            close_socket(scoped);
+            return fail(ErrorCode::Io, "an accepted socket could not be made blocking", failure);
+        }
 
         // A read deadline on the client, because `serve_one` reads a whole message once `poll` says
         // one has begun to arrive. A peer that sends half a header and stops would otherwise hold
@@ -818,7 +830,13 @@ Expected<u32, Error> FileServingHost::serve(u32 timeout_ms) noexcept {
         if (slot == clients_.size()) {
             continue;
         }
-        if ((events & (POLLHUP | POLLERR | POLLNVAL)) != 0 || !serve_one(socket, served)) {
+        // POLLHUP may arrive together with POLLIN while unread request bytes remain. Drain those
+        // bytes before closing; dropping readable data made a valid final request platform-timing
+        // dependent on Darwin.
+        const bool readable = (events & POLLIN) != 0;
+        const bool invalid = (events & (POLLERR | POLLNVAL)) != 0;
+        const bool hung_up_without_data = (events & POLLHUP) != 0 && !readable;
+        if (invalid || hung_up_without_data || (readable && !serve_one(socket, served))) {
             drop(slot);
         }
     }

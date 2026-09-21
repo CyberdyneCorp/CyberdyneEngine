@@ -68,7 +68,7 @@ def load_description(header: pathlib.Path) -> dict:
 def outputs(description: dict, header: pathlib.Path) -> dict[str, str]:
     """Every generated file, keyed by its path relative to the Swift package root."""
     return {
-        "Sources/CyberdyneABI/include/cy/abi/cy_abi.h": HEADER_BANNER + header.read_text(),
+        "Sources/CyberdyneABI/include/cy/abi/cy_abi.h": HEADER_BANNER + header.read_text(encoding="utf-8"),
         "Sources/CyberdyneABI/include/module.modulemap": MODULE_MAP,
         "Sources/CyberdyneCore/Generated/ABI.swift": emit.abi_version(description),
         "Sources/CyberdyneCore/Generated/Enums.swift": emit.enums(description),
@@ -83,9 +83,10 @@ def _write(package: pathlib.Path, files: dict[str, str], quiet: bool) -> int:
     for name, text in sorted(files.items()):
         target = package / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and target.read_text() == text:
+        if target.exists() and target.read_text(encoding="utf-8") == text:
             continue
-        target.write_text(text)
+        with target.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(text)
         if not quiet:
             print(f"    wrote {name}")
     if not quiet:
@@ -97,7 +98,7 @@ def _check(package: pathlib.Path, files: dict[str, str]) -> int:
     stale: list[str] = []
     for name, text in sorted(files.items()):
         target = package / name
-        current = target.read_text() if target.exists() else ""
+        current = target.read_text(encoding="utf-8") if target.exists() else ""
         if current == text:
             continue
         stale.append(name)

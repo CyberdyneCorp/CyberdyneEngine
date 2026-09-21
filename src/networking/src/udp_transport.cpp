@@ -5,13 +5,43 @@
 
 #if defined(__linux__) || defined(__APPLE__)
 #    define CY_NET_HAS_POSIX_SOCKETS 1
+#    define CY_NET_HAS_WINSOCK 0
 #    include <arpa/inet.h>
 #    include <fcntl.h>
 #    include <netinet/in.h>
 #    include <sys/socket.h>
 #    include <unistd.h>
+#elif defined(_WIN32)
+#    define CY_NET_HAS_POSIX_SOCKETS 0
+#    define CY_NET_HAS_WINSOCK 1
+#    define WIN32_LEAN_AND_MEAN
+#    define NOMINMAX
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+#    pragma comment(lib, "Ws2_32.lib")
 #else
 #    define CY_NET_HAS_POSIX_SOCKETS 0
+#    define CY_NET_HAS_WINSOCK 0
+#endif
+
+#if CY_NET_HAS_WINSOCK
+namespace {
+/// WSAStartup once per process. Header lives beside the transport that needs it — every socket
+/// call in this file depends on it having run, and RAII in a function-local static gives us
+/// initialisation on first use and no explicit teardown.
+struct WinsockLifetime {
+    WinsockLifetime() noexcept {
+        WSADATA data{};
+        (void)WSAStartup(MAKEWORD(2, 2), &data);
+    }
+    ~WinsockLifetime() { (void)WSACleanup(); }
+};
+[[nodiscard]] bool ensure_winsock() noexcept {
+    static const WinsockLifetime lifetime;
+    (void)lifetime;
+    return true;
+}
+}  // namespace
 #endif
 
 namespace cy::net {
@@ -38,7 +68,7 @@ void unmake(Allocator& allocator, T* object) noexcept {
 }  // namespace
 
 bool udp_available() noexcept {
-    return CY_NET_HAS_POSIX_SOCKETS != 0;
+    return CY_NET_HAS_POSIX_SOCKETS != 0 || CY_NET_HAS_WINSOCK != 0;
 }
 
 namespace {
@@ -244,12 +274,127 @@ bool UdpTransport::pump() noexcept {
     return true;
 }
 
+#elif CY_NET_HAS_WINSOCK
+
+// Winsock branch. Same shape as the POSIX one above — different function names, different socket
+// handle type (SOCKET = uintptr_t rather than int), different error paths (WSAGetLastError not
+// errno), different non-blocking API (ioctlsocket + FIONBIO rather than fcntl). The socket handle
+// is stored in the same `int socket_` because the transport's member is fixed and SOCKET truncates
+// to int for INVALID_SOCKET (0xFFFFFFFF / -1) — we roundtrip through reinterpret to preserve the
+// upper bits on 64-bit builds where SOCKET is 64 bits wide.
+
+namespace {
+[[nodiscard]] SOCKET to_socket(int handle) noexcept {
+    return static_cast<SOCKET>(static_cast<intptr_t>(handle));
+}
+[[nodiscard]] int from_socket(SOCKET handle) noexcept {
+    return static_cast<int>(static_cast<intptr_t>(handle));
+}
+}  // namespace
+
+Status UdpTransport::open(u16 port) noexcept {
+    if (socket_ >= 0) {
+        return fail(ErrorCode::AlreadyExists, "networking: this transport is already bound");
+    }
+    (void)ensure_winsock();
+    const SOCKET handle = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (handle == INVALID_SOCKET) {
+        return fail(ErrorCode::Unavailable, "networking: could not create a UDP socket");
+    }
+    u_long nonblocking = 1;
+    if (::ioctlsocket(handle, FIONBIO, &nonblocking) != 0) {
+        ::closesocket(handle);
+        return fail(ErrorCode::Unavailable, "networking: could not make the socket non-blocking");
+    }
+    sockaddr_in local{};
+    local.sin_family = AF_INET;
+    local.sin_addr.s_addr = htonl(INADDR_ANY);
+    local.sin_port = htons(port);
+    if (::bind(handle, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) == SOCKET_ERROR) {
+        ::closesocket(handle);
+        return fail(ErrorCode::Unavailable, "networking: could not bind the UDP socket");
+    }
+    sockaddr_in bound{};
+    int bound_size = sizeof(bound);
+    if (::getsockname(handle, reinterpret_cast<sockaddr*>(&bound), &bound_size) == 0) {
+        bound_port_ = ntohs(bound.sin_port);
+    } else {
+        bound_port_ = port;
+    }
+    socket_ = from_socket(handle);
+    if (Status sized = inbound_.resize(kMaxWireDatagram); !sized) {
+        close();
+        return sized;
+    }
+    return ok();
+}
+
+void UdpTransport::close() noexcept {
+    if (socket_ >= 0) {
+        ::closesocket(to_socket(socket_));
+        socket_ = -1;
+    }
+    bound_port_ = 0;
+}
+
+Status UdpTransport::transmit(const UdpAddress& address, Span<const u8> wire) noexcept {
+    if (socket_ < 0) {
+        return fail(ErrorCode::Unavailable, "networking: the transport is not bound");
+    }
+    sockaddr_in remote{};
+    remote.sin_family = AF_INET;
+    remote.sin_addr.s_addr = htonl(address.ipv4);
+    remote.sin_port = htons(address.port);
+    const int written = ::sendto(to_socket(socket_), reinterpret_cast<const char*>(wire.data()),
+                                 static_cast<int>(wire.size()), 0,
+                                 reinterpret_cast<const sockaddr*>(&remote), sizeof(remote));
+    if (written == SOCKET_ERROR) {
+        return fail(ErrorCode::Io, "networking: the datagram could not be sent");
+    }
+    ++sent_;
+    return ok();
+}
+
+bool UdpTransport::pump() noexcept {
+    if (socket_ < 0) {
+        return false;
+    }
+    sockaddr_in from{};
+    int from_size = sizeof(from);
+    const int read = ::recvfrom(to_socket(socket_), reinterpret_cast<char*>(inbound_.data()),
+                                static_cast<int>(inbound_.size()), 0,
+                                reinterpret_cast<sockaddr*>(&from), &from_size);
+    if (read <= 0) {
+        return false;
+    }
+    ++received_;
+    UdpAddress address;
+    address.ipv4 = ntohl(from.sin_addr.s_addr);
+    address.port = ntohs(from.sin_port);
+    Link* link = find(address);
+    if (link == nullptr) {
+        ++strangers_;
+        return true;
+    }
+    link->stats.datagrams_in += 1;
+    link->stats.bytes_in += static_cast<u64>(read);
+    ChannelId channel = 0;
+    ReceiveVerdict verdict = ReceiveVerdict::Delivered;
+    if (!link->endpoint.ingest(Span<const u8>(inbound_.data(), static_cast<usize>(read)), channel,
+                               verdict)) {
+        return true;
+    }
+    if (verdict == ReceiveVerdict::Duplicate) {
+        link->stats.datagrams_duplicate += 1;
+    }
+    return true;
+}
+
 #else
 
 Status UdpTransport::open(u16) noexcept {
     return fail(ErrorCode::Unsupported,
-                "networking: this build has no socket implementation; Windows is unverified and "
-                "reported so rather than stubbed");
+                "networking: this build has no socket implementation for this platform");
 }
 
 void UdpTransport::close() noexcept {

@@ -3,7 +3,7 @@
 
 #include <cy/platform/stub_display_server.h>
 
-#include <ctime>
+#include <chrono>
 
 namespace cy {
 namespace {
@@ -13,12 +13,9 @@ Unexpected<Error> no_such_window() {
 }
 
 Nanoseconds monotonic_now() {
-    timespec now{};
-    if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
-        return 0;
-    }
-    return static_cast<Nanoseconds>(now.tv_sec) * 1'000'000'000LL +
-           static_cast<Nanoseconds>(now.tv_nsec);
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 }  // namespace

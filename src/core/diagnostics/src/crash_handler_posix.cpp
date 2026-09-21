@@ -65,6 +65,7 @@
 #endif
 #if defined(__APPLE__)
 #    include <mach-o/dyld.h>
+#    include <mach-o/loader.h>
 #endif
 
 namespace cy::diag {
@@ -106,7 +107,6 @@ u32 g_module_count = 0;
 
 /// Copy the part of `path` after the last separator. The whole point of this file: a directory is
 /// never copied, so there is nothing to redact later.
-#ifdef CY_DIAG_HAVE_DL_ITERATE_PHDR
 void copy_basename(char* out, u32 capacity, const char* path) noexcept {
     const char* name = path;
     for (const char* cursor = path; *cursor != '\0'; ++cursor) {
@@ -127,7 +127,7 @@ void copy_basename(char* out, u32 capacity, const char* path) noexcept {
 /// installation, where reading a file is allowed — rather than left as `<unknown>`.
 void main_module_name(char* out, u32 capacity) noexcept {
     out[0] = '\0';
-#    if defined(__linux__)
+#if defined(__linux__)
     char resolved[512];
     const ssize_t length = ::readlink("/proc/self/exe", resolved, sizeof(resolved) - 1);
     if (length > 0) {
@@ -135,17 +135,16 @@ void main_module_name(char* out, u32 capacity) noexcept {
         copy_basename(out, capacity, resolved);
         return;
     }
-#    elif defined(__APPLE__)
+#elif defined(__APPLE__)
     char resolved[1024];
     uint32_t size = sizeof(resolved);
     if (::_NSGetExecutablePath(resolved, &size) == 0) {
         copy_basename(out, capacity, resolved);
         return;
     }
-#    endif
+#endif
     copy_basename(out, capacity, "main-executable");
 }
-#endif
 
 #ifdef CY_DIAG_HAVE_DL_ITERATE_PHDR
 /// One loaded object. Returns non-zero to stop the walk, which is how the table's bound is enforced
@@ -192,12 +191,66 @@ int collect_module(struct dl_phdr_info* info, size_t /*size*/, void* /*user*/) n
 }
 #endif
 
+#if defined(__APPLE__) && !defined(CY_DIAG_HAVE_DL_ITERATE_PHDR)
+/// Darwin does not provide `dl_iterate_phdr()`. Walk dyld's image table at installation instead,
+/// and derive each mapped span from the Mach-O segment commands while it is safe to consult dyld.
+void collect_apple_modules() noexcept {
+    const uint32_t image_count = ::_dyld_image_count();
+    for (uint32_t image = 0; image < image_count && g_module_count < kMaxModules; ++image) {
+        const mach_header* header = ::_dyld_get_image_header(image);
+        if (header == nullptr || header->magic != MH_MAGIC_64) {
+            continue;
+        }
+        const auto* header64 = reinterpret_cast<const mach_header_64*>(header);
+        const auto* command = reinterpret_cast<const load_command*>(header64 + 1);
+        const auto slide = static_cast<i64>(::_dyld_get_image_vmaddr_slide(image));
+        u64 low = 0;
+        u64 high = 0;
+        bool mapped = false;
+        for (uint32_t index = 0; index < header64->ncmds; ++index) {
+            if (command->cmd == LC_SEGMENT_64) {
+                const auto* segment = reinterpret_cast<const segment_command_64*>(command);
+                if (segment->vmsize != 0 && segment->initprot != VM_PROT_NONE) {
+                    const auto start = static_cast<u64>(static_cast<i64>(segment->vmaddr) + slide);
+                    const auto end = start + static_cast<u64>(segment->vmsize);
+                    if (!mapped || start < low) {
+                        low = start;
+                    }
+                    if (!mapped || end > high) {
+                        high = end;
+                    }
+                    mapped = true;
+                }
+            }
+            command = reinterpret_cast<const load_command*>(reinterpret_cast<const char*>(command) +
+                                                            command->cmdsize);
+        }
+        if (!mapped || low >= high) {
+            continue;
+        }
+
+        ModuleEntry& entry = g_modules[g_module_count++];
+        entry.base = reinterpret_cast<u64>(header);
+        entry.low = low;
+        entry.high = high;
+        const char* path = ::_dyld_get_image_name(image);
+        if (path != nullptr && path[0] != '\0') {
+            copy_basename(entry.name, kModuleNameCapacity, path);
+        } else {
+            main_module_name(entry.name, kModuleNameCapacity);
+        }
+    }
+}
+#endif
+
 /// Capture the table. Called from `platform_install_crash_handler()` — before the guard that makes
 /// a second installation a no-op, so a process that reinstalls after dlopen()ing something sees it.
 void capture_module_table() noexcept {
     g_module_count = 0;
 #ifdef CY_DIAG_HAVE_DL_ITERATE_PHDR
     ::dl_iterate_phdr(&collect_module, nullptr);
+#elif defined(__APPLE__)
+    collect_apple_modules();
 #endif
 }
 

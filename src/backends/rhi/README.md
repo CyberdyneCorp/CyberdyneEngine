@@ -1,18 +1,19 @@
 # `src/backends/rhi/` — layer 3
 
-The Rendering Hardware Interface: an explicit, Vulkan-shaped abstraction over a graphics device, a
-**null backend** that implements all of it without a GPU, and a **Vulkan backend** behind the same
-interface.
+The Rendering Hardware Interface: an explicit, Vulkan-shaped abstraction over a graphics device,
+with null, Vulkan, native Metal and native D3D12 implementations behind the same interface.
 
 **Governed by**: `rhi-and-render-graph`. Landed at M3, section 2.1 and 2.3 of that milestone's tasks.
 
-## The three targets, and the order they were written in
+## The backend targets, and the order they were written in
 
 | Target | Built when | What it is |
 |---|---|---|
 | `cy::rhi` | always | the interface, the hard limits, the capability model, the backend registry, and the access table |
 | `cy::rhi-null` | always | the whole interface without a device: real handles, real validation, a comparable command log |
 | `cy::rhi-vulkan` | `CY_RENDERER_VULKAN` | Vulkan, over volk and VMA |
+| `cy::rhi-metal` | always; native device added by `CY_RENDERER_METAL` on Apple | platform-neutral mappings and gap records everywhere; argument buffers, memoryless attachments and placement heaps on Apple |
+| `cy::rhi-d3d12` | `CY_RENDERER_D3D12` on Windows | native D3D12, including descriptor heaps, root signatures and placed resources |
 
 **The null backend was written before the Vulkan one** (design.md §1). With no Vulkan to lean on, the
 interface above it had to be an interface; written afterwards it would have been a set of empty
@@ -66,6 +67,28 @@ carries where each stands as data.
   functions, and what its command log is for.
 - `vulkan/src/vulkan_instance.cpp` — queue selection by capability, the 1.3 baseline, and why
   synchronisation validation has to be asked for explicitly.
+
+## Complete-grade requirement audit
+
+M11.d.5 read all twelve requirements in `rhi-and-render-graph` after the Metal and D3D12 backends
+were exercised. `tools/roadmap/requirements-coverage.toml` is the machine-readable mapping; this is
+the reviewer-facing audit of the same rows. `just quality-requirements rhi-and-render-graph`
+reports 12 of 12 answered and fails if a requirement, suite or named case disappears.
+
+| Requirement | Grade | Evidence |
+|---|---|---|
+| Explicit RHI | Satisfied | `unit.rhi` creates each resource family, enforces hard limits and rejects stale generational handles. |
+| No manual barriers in user-facing code | Satisfied | `render.null_frame` attributes every recorded barrier to the graph; the public command buffer exposes no barrier operation. |
+| Render graph | Satisfied | `unit.render_graph` covers declaration, culling, scheduling, barriers, queue ownership, transient placement and aliasing. |
+| Parallel command recording | Satisfied | `smoke.vulkan_frame` compares the bytes recorded by job workers; backends that cannot preserve that model report `ParallelPassRecording = false`. |
+| Resource lifetime and frames in flight | Satisfied | `render.golden` crosses the frame-slot ring and requires the final image to remain identical. |
+| Shader modules and pipelines | Satisfied | `integration.rhi_pipeline_cache` covers persistence and cold start; backend suites cover SPIR-V, MSL and DXIL creation. |
+| Descriptor management | Satisfied | `unit.rhi` covers classic sets, the global table, its single sampler and capability-selected compatibility behavior; Metal and D3D12 device suites exercise native materialization. |
+| Memory management | Satisfied | `unit.rhi` accounts categories and pressure, render-graph suites cover transient aliasing, and backend suites cover VMA, Metal heaps and D3D12 placed heaps. |
+| Backend capability model | Satisfied | `unit.rhi` mutates device answers and verifies the derived capability; renderer decisions consume the capability rather than backend identity. |
+| Backend roadmap | Satisfied | `render.golden_backends` records matched Vulkan, native Metal and native D3D12 frames on NVIDIA, Apple and AMD hardware. |
+| Validation and debugging | Satisfied | backend suites enable validation; `integration.render_graph_scale` checks text and Graphviz dumps; graph passes emit tool labels and breadcrumbs. |
+| Null backend | Satisfied | `render.null_frame` runs the first-light frame without a GPU while `unit.rhi` preserves validation and comparable command logs. |
 
 ## What does not belong here
 

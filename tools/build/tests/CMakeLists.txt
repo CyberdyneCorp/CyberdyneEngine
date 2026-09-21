@@ -54,11 +54,20 @@ function(cy_build_declare_tests)
         SOURCES "${tests_dir}/test_build_content.cpp"
         DEPENDENCIES cy::build-graph cy::build-content)
 
-    cy_add_test(
-        NAME build_patch
-        KIND integration
-        SOURCES "${tests_dir}/test_build_patch.cpp"
-        DEPENDENCIES cy::build-graph)
+    # `build_patch` exercises the hard-interrupt property of `Installation::apply` by forking a
+    # child process and killing it at each patch stage. `fork` with no `exec` is POSIX-only: the
+    # child inherits the fixture exactly as the parent has it, which is what makes this an
+    # interruption of THIS application rather than of a similar one. Windows has no `fork`, so the
+    # suite is registered only on POSIX hosts. The rollback path is still covered on every host by
+    # the soft-interrupt case in `Installation::apply` itself, which returns at each stage rather
+    # than crashing — the loss is coverage of the "no destructor runs" property, not of rollback.
+    if(NOT WIN32)
+        cy_add_test(
+            NAME build_patch
+            KIND integration
+            SOURCES "${tests_dir}/test_build_patch.cpp"
+            DEPENDENCIES cy::build-graph)
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_build_declare_tests)

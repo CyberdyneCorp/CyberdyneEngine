@@ -19,7 +19,8 @@
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
-#include <sys/stat.h>
+#include <filesystem>
+#include <system_error>
 
 #include <atomic>
 #include <chrono>
@@ -322,7 +323,15 @@ CY_TEST_CASE("an artefact mutated in place is reported rather than served") {
     const std::string path = service.artefacts().path_of(digest);
 
     // The store makes an artefact read-only, so this is what it takes to break the rule at all.
-    CY_REQUIRE_EQ(::chmod(path.c_str(), 0644), 0);
+    {
+        std::error_code ec;
+        std::filesystem::permissions(
+            path,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+                std::filesystem::perms::group_read | std::filesystem::perms::others_read,
+            std::filesystem::perm_options::replace, ec);
+        CY_REQUIRE(!ec);
+    }
     const char kTampered[] = "tampered";
     CY_REQUIRE(
         assets::fs::write_atomic(path.c_str(), kTampered, sizeof(kTampered) - 1).has_value());

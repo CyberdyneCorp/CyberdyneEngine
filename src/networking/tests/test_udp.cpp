@@ -23,8 +23,10 @@
 
 #include <cy/networking/udp_transport.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 
 using namespace cy::net_test;
 using cy::u32;
@@ -166,11 +168,14 @@ CY_TEST_CASE("networking: a datagram from an address no link names is counted an
         stranger.send(peer.value(), 0, DeliveryMode::Unreliable, cy::Span<const u8>(kMessage, 12))
             .has_value());
 
-    for (u64 now = 0; now <= 100; now += 10) {
+    // The socket is non-blocking. Give the kernel scheduler a bounded opportunity to deliver the
+    // loopback datagram instead of assuming eleven immediate polls consume wall-clock time.
+    for (u64 now = 0; now <= 100 && server.datagrams_from_strangers() == 0; ++now) {
         stranger.advance(now);
         server.advance(now);
         Datagram datagram;
         CY_CHECK_FALSE(server.receive(datagram));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     // Counted rather than answered: answering an unsolicited datagram is the cheapest amplification
     // there is.

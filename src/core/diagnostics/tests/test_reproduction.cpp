@@ -27,9 +27,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
-
-#include <unistd.h>
+#include <system_error>
 
 using namespace cy::diag;
 
@@ -66,9 +66,24 @@ std::string read_file(const char* path) {
 /// them `potentially-personal`. A test that writes outside its own scratch directory is a test that
 /// pollutes whatever directory it is invoked from.
 const char* scratch_dir() {
-    static char directory[] = "/tmp/cy-reproduction-XXXXXX";
-    static const char* made = ::mkdtemp(directory);
-    return made != nullptr ? made : ".";
+    static const std::string made = []() -> std::string {
+        std::error_code ignored;
+        const std::filesystem::path base = std::filesystem::temp_directory_path(ignored);
+        if (base.empty()) {
+            return ".";
+        }
+        // A digest of the running process's launch address gives us a name that survives one
+        // process but never collides with a concurrent one — the same property `mkdtemp` provided
+        // without pinning us to POSIX. `create_directories` is idempotent for the same process,
+        // which is what `static` above needs.
+        char suffix[40] = {};
+        std::snprintf(suffix, sizeof(suffix), "cy-reproduction-%016llx",
+                      static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(&suffix)));
+        const std::filesystem::path directory = base / suffix;
+        std::filesystem::create_directories(directory, ignored);
+        return directory.generic_string();
+    }();
+    return made.c_str();
 }
 
 std::string scratch(const char* name) {

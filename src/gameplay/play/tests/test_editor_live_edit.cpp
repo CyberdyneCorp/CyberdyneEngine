@@ -335,13 +335,18 @@ CY_TEST_CASE("a field edited while playing keeps the runtime state the simulatio
     }
 
     CharacterHost host(character, 200.0F);
-    AuthoringChange raise;
-    raise.node_identity = sphere;
-    raise.type = kCharacter;
-    raise.field = kMaximumHealth;
-    raise.value = float_value(200.0F);
+    // Named `edit` rather than `raise` because doctest's CY_CHECK / CY_REQUIRE expansion may pull
+    // in an unqualified `raise(int)` (POSIX signal helper) on some libstdc++ / doctest header
+    // combinations, and a local named `raise` then shadows it — GCC on arm64 refuses the macro
+    // with "no match for call to (AuthoringChange) (int)". Same-scope shadowing of a stdlib name
+    // is the antipattern; renaming avoids it without teaching every downstream header a workaround.
+    AuthoringChange edit;
+    edit.node_identity = sphere;
+    edit.type = kCharacter;
+    edit.field = kMaximumHealth;
+    edit.value = float_value(200.0F);
     const cy::Expected<LiveEditOutcome, cy::Error> applied =
-        playing.compiler.apply(playing.session, playing.state.world, host, raise);
+        playing.compiler.apply(playing.session, playing.state.world, host, edit);
     CY_REQUIRE(applied.has_value());
     CY_CHECK(applied->policy == LiveEditPolicy::ReinitializeComponent);
     CY_CHECK_EQ(host.rebuilds, 1U);
@@ -529,13 +534,13 @@ CY_TEST_CASE("a field edited while playing that restarts the world drops stale b
     maximum.kind = LiveFieldKind::F32;
     CY_REQUIRE(playing.compiler.bind(maximum).has_value());
 
-    AuthoringChange raise;
-    raise.node_identity = sphere;
-    raise.type = kCharacter;
-    raise.field = kMaximumHealth;
-    raise.value = float_value(150.0F);
+    AuthoringChange edit;  // Not `raise` — see the twin comment on the earlier occurrence.
+    edit.node_identity = sphere;
+    edit.type = kCharacter;
+    edit.field = kMaximumHealth;
+    edit.value = float_value(150.0F);
     // Bound, so it announces the derived `Immediate` rather than "no live binding".
-    CY_CHECK(playing.compiler.announce(raise).policy == LiveEditPolicy::Immediate);
+    CY_CHECK(playing.compiler.announce(edit).policy == LiveEditPolicy::Immediate);
 
     LiveEditHost host;
     AuthoringChange gravity;
@@ -549,7 +554,7 @@ CY_TEST_CASE("a field edited while playing that restarts the world drops stale b
     CY_CHECK_EQ(restarted->worlds_restarted, 1U);
 
     // The caller's binding is gone, and it says so rather than writing somewhere.
-    const LiveEditDecision after = playing.compiler.announce(raise);
+    const LiveEditDecision after = playing.compiler.announce(edit);
     CY_CHECK(after.policy == LiveEditPolicy::Unsupported);
     CY_CHECK(std::string(after.reason).find("no live binding") != std::string::npos);
     // And the engine's own are back, against the NEW world's identifiers.

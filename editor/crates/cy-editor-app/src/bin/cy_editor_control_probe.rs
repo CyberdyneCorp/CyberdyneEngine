@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Process-level probe for the editor control socket.
 //!
 //! It sends the same resize-aware gizmo intent and frame-addressed pick as the window, then checks

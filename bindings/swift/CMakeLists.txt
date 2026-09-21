@@ -84,14 +84,24 @@ endif()
 
 message(STATUS "Swift bindings: ${swift_probe_output}")
 
-# `swift test` over the package. An `add_test` rather than a `cy_add_test`, because there is no C++
-# translation unit here to compile a per-case budget into: the taxonomy's budget is enforced inside
-# the binary by cy::test::BudgetGuard, and this binary is the Swift test runner. It carries the
-# integration label and the integration timeout, which is what the recipes select on.
-add_test(NAME integration.swift_package
-         COMMAND "${Python3_EXECUTABLE}" "${CY_SWIFT_DRIVER}" --test
-         WORKING_DIRECTORY "${CY_SWIFT_PACKAGE}")
-set_tests_properties(integration.swift_package PROPERTIES LABELS "integration" TIMEOUT 900)
+# `swift test` needs XCTest in addition to the compiler used by the reload fixture. Apple's command
+# line tools can provide `swiftc` without the XCTest SDK, so probe this independently: hiding the
+# reload suite just because package tests are unavailable would discard a valid portability check.
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${CY_SWIFT_DRIVER}" --probe-tests
+                RESULT_VARIABLE swift_tests_probe_result
+                ERROR_VARIABLE swift_tests_probe_error)
+if(swift_tests_probe_result EQUAL 0)
+    # An `add_test` rather than a `cy_add_test`, because there is no C++ translation unit here to
+    # compile a per-case budget into: the Swift test runner carries the integration label/timeout.
+    add_test(NAME integration.swift_package
+             COMMAND "${Python3_EXECUTABLE}" "${CY_SWIFT_DRIVER}" --test
+             WORKING_DIRECTORY "${CY_SWIFT_PACKAGE}")
+    set_tests_properties(integration.swift_package PROPERTIES LABELS "integration" TIMEOUT 900)
+else()
+    message(STATUS
+        "Swift bindings: swiftc cannot import XCTest, so integration.swift_package is not "
+        "registered; integration.swift_reload remains enabled.\n   ${swift_tests_probe_error}")
+endif()
 
 # --- The reload fixture: three generations of one Swift module -------------------------------------
 #

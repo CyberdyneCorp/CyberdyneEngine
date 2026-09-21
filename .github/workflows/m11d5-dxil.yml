@@ -1,0 +1,55 @@
+name: m11d5-dxil
+
+on:
+  pull_request:
+    paths:
+      - src/backends/rhi-d3d12/**
+      - src/backends/rhi/**
+      - src/core/diagnostics/src/crash_handler_windows.cpp
+      - src/core/determinism/src/hash.cpp
+      - src/core/determinism/include/cy/core/determinism/random.h
+      - src/core/jobs/src/schedule.cpp
+      - src/core/jobs/include/cy/core/jobs/sync.h
+      - src/core/memory/include/cy/core/memory/hash.h
+      - src/core/memory/tests/test_containers.cpp
+      - src/pcg/include/cy/pcg/dataset.h
+      - src/rendering/graph/src/visualise.cpp
+      - platform/stub/src/stub_display_server.cpp
+      - tests/harness/src/budget.cpp
+      - tests/render/**
+      - samples/03-first-light/shaders/first_light.slang
+      - samples/03-first-light/shaders/first_light_dxil.h
+      - samples/03-first-light/src/renderer.cpp
+      - cmake/**
+      - CMakeLists.txt
+      - .github/workflows/m11d5-dxil.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: extractions/setup-just@v3
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build and validate D3D12 through the repository recipe
+        env:
+          CY_D3D12_REGENERATE_DXIL: '1'
+          CY_DXIL_WORK_DIR: ${{ runner.temp }}
+          CY_GOLDEN_CAPTURE_DIR: ${{ runner.temp }}\golden
+          CY_GOLDEN_LEDGER: ${{ runner.temp }}\golden\m11d5-three-backends-d3d12.manifest
+        run: just test-d3d12-golden
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m11d5-d3d12-evidence
+          path: |
+            samples/03-first-light/shaders/first_light_dxil.h
+            ${{ runner.temp }}\golden\*

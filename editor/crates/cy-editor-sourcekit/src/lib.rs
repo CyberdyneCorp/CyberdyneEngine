@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! SourceKit-LSP process lifecycle and typed editor-facing language operations.
 //!
 //! JSON and Language Server Protocol details stop at this crate. Callers work with the source

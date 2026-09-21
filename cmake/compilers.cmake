@@ -47,6 +47,10 @@ function(cy_define_compile_options)
     target_compile_features(cy_compile_options INTERFACE cxx_std_20)
 
     if(MSVC)
+        # The engine uses the ISO C file/string APIs behind platform-neutral wrappers. MSVC's
+        # C4996 marks those standard names deprecated in favour of Microsoft-only `_s` variants;
+        # keep /W4 and /WX useful without forcing Windows spellings into shared sources.
+        target_compile_definitions(cy_compile_options INTERFACE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(cy_compile_options INTERFACE
             /permissive-        # conforming preprocessor and two-phase lookup
             /Zc:__cplusplus     # report the real __cplusplus value

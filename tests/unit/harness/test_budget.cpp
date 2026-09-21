@@ -39,11 +39,9 @@ CY_TEST_CASE("harness: the instrument says which clock it is") {
     // Not an assertion that the clock is a CPU clock — that is a platform's answer, not a test's.
     // What is asserted is that the harness states it, because the stall ceiling is applied only
     // where the budget is CPU time and a test that assumed otherwise would be asserting nothing.
-#if defined(_WIN32)
-    CY_CHECK_FALSE(cy::test::budget_measures_cpu_time());
-#else
+    // Every platform this project builds on now has a per-thread CPU clock: Linux and macOS via
+    // CLOCK_THREAD_CPUTIME_ID, Windows via QueryThreadCycleTime with a TSC calibration.
     CY_CHECK(cy::test::budget_measures_cpu_time());
-#endif
 }
 
 CY_TEST_CASE("harness: the budget is calibrated against the machine it is running on") {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The open-document strip: visible identity, dirty state, and close intents.
 //!
 //! Tabs render the [`DocumentTabsViewModel`] and emit actions. They never mutate the editor while

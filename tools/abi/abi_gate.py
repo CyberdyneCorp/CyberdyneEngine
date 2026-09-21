@@ -49,7 +49,11 @@ import argparse
 import json
 import pathlib
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 and 3.10, which remain supported CMake interpreters.
+    tomllib = None
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -318,10 +322,46 @@ def compare(old: dict, new: dict) -> tuple[list[Finding], list[str]]:
     return findings, notes
 
 
+def parse_approval_document(text: str) -> dict:
+    """Parse the deliberately tiny approval file on Python versions before tomllib.
+
+    The file has one array-of-tables and three quoted string fields. Keeping that grammar small
+    preserves the Python 3.9 test floor without introducing a package dependency into the ABI gate.
+    """
+    if tomllib is not None:
+        return tomllib.loads(text)
+
+    approvals: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == "[[approval]]":
+            current = {}
+            approvals.append(current)
+            continue
+        if current is None or "=" not in line:
+            raise ValueError(f"approval file line {number}: expected [[approval]] or key = value")
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key not in {"change", "rationale", "version"}:
+            raise ValueError(f"approval file line {number}: unknown field {key!r}")
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"approval file line {number}: values must be quoted strings"
+            ) from error
+        if not isinstance(decoded, str):
+            raise ValueError(f"approval file line {number}: {key} must be a string")
+        current[key] = decoded
+    return {"approval": approvals}
+
+
 def load_approvals() -> dict[str, dict]:
     if not APPROVALS.exists():
         return {}
-    document = tomllib.loads(APPROVALS.read_text(encoding="utf-8"))
+    document = parse_approval_document(APPROVALS.read_text(encoding="utf-8"))
     approvals: dict[str, dict] = {}
     for entry in document.get("approval", []):
         if "change" not in entry or "rationale" not in entry or "version" not in entry:

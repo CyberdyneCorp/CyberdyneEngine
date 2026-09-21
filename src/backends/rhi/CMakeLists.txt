@@ -33,6 +33,7 @@ cy_add_module(
     SOURCES
         src/access.cpp
         src/backend.cpp
+        src/device_identity.cpp
         src/pipeline_cache_file.cpp
         src/types.cpp
         src/validation.cpp

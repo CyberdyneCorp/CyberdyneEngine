@@ -45,6 +45,18 @@ fn main() -> ExitCode {
 
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
+            // A process-level crash test must distinguish "listening" from "the editor reached
+            // the runtime" without relying on Linux-only /proc inspection.
+            //
+            // `println!` panics on a broken pipe, and `survives_a_runtime_crash.rs`'s
+            // `start_runtime` reads a single "listening" line then drops its `BufReader<ChildStdout>`
+            // — closing the read end of our stdout pipe. A `println!` here after that runs into
+            // `Broken pipe (os error 32)` and aborts the stub before the editor's Hello can reach
+            // it, so the editor's session goes straight to `Lost` and `is_connected()` reports
+            // false on line 83 of that test. Write through the handle directly and swallow the
+            // error: the stub does not need stdout to work, only the socket.
+            let _ = writeln!(std::io::stdout(), "connected");
+            let _ = std::io::stdout().flush();
             let Ok(mut reader) = stream.try_clone() else {
                 continue;
             };

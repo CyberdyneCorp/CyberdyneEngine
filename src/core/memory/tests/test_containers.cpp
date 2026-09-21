@@ -391,6 +391,11 @@ CY_TEST_CASE("OrderedMap iterates in insertion order, holes and all") {
 }
 
 CY_TEST_CASE("hashing is defined in one place and mixes its input") {
+    // This vector covers carries across all four 32-bit limbs. MSVC implements the multiply with
+    // those limbs because it has no __uint128_t; all compilers must keep the same hash contract.
+    CY_CHECK_EQ(cy::detail::mix(0x0123456789abcdefull, 0xfedcba9876543210ull),
+                0x2317228f48165bb2ull);
+
     // Pin the seed for the duration, and put it back: the process seed is shared state, and the
     // case below asserts what the BUILD chose rather than what a neighbouring test left behind.
     // Leaving it pinned is what made this suite pass in dev and fail in Shipping, which is exactly

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Dependency-free JSON values, parsing, writing, and binary encoding for editor protocols.
 //!
 //! --- WHY THIS EXISTS RATHER THAN A DEPENDENCY -------------------------------------------------------

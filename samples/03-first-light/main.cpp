@@ -72,6 +72,9 @@
 #if defined(CY_RENDERER_METAL)
 #    include <cy/backends/rhi-metal/backend.h>
 #endif
+#if defined(CY_RENDERER_D3D12)
+#    include <cy/backends/rhi-d3d12/backend.h>
+#endif
 
 #include "renderer.h"
 #include "scene.h"
@@ -399,6 +402,9 @@ int main(int argument_count, char** arguments) {
 #endif
 #if defined(CY_RENDERER_METAL)
     (void)cy::rhi::metal::register_metal_backend();
+#endif
+#if defined(CY_RENDERER_D3D12)
+    (void)cy::rhi::d3d12::register_d3d12_backend();
 #endif
 
     cy::rhi::DeviceDescription description;

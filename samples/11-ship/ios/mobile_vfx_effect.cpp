@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The spark plume every VFX suite compiles, simulates and draws. M8.c section 2. See effects.h for
 // why each part of it is there.
 

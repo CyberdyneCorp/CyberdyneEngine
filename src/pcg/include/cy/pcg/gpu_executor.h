@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // RHI adapter for the deterministic GPU PCG conformance workload. Kept out of cy::pcg so cooks
 // and dedicated servers retain the core module's no-device link graph.
@@ -7,6 +8,9 @@
 
 namespace cy::pcg::gpu {
 
+/// The outcome of one GPU-vs-CPU candidate agreement run. `cpu` and `device` are the two summaries
+/// that must match; `first_mismatch` is the slot index of the first differing record (or `~0U` when
+/// none), and `all_records_equal` is the stronger claim that every readback record matched.
 struct AgreementReport {
     GpuCandidateSummary cpu;
     GpuCandidateSummary device;

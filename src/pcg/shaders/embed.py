@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Embed the GPU PCG conformance shader's SPIR-V and MSL outputs."""
 
 from pathlib import Path

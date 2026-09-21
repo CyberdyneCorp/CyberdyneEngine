@@ -20,8 +20,10 @@ machines that have no GPU at all.
 
 --- WHAT DOES CARRY THE CLAIM ---------------------------------------------------------------------
 
-The golden IMAGE is a different object from the golden SUITE. `tests/render/references/first_light.png`
-is the picture `samples/03-first-light` draws, and `test_golden_frame.cpp` says so in its own words:
+The golden IMAGE is a different object from the golden SUITE. The Vulkan baseline at
+`tests/render/references/first_light.png` and the device-labelled Metal and D3D12 captures under
+`docs/design/images/` are pictures `samples/03-first-light` draws, and `test_golden_frame.cpp` says
+so in its own words:
 
     Phase 0 rather than a phase somebody liked: it is the only phase a reader can reproduce from the
     scene alone, and `--frames 1` on the sample is the same frame.
@@ -33,10 +35,11 @@ IMAGE ON EACH PLATFORM BACKEND, AND JUDGE WHAT COMES OUT AGAINST THE COMMITTED R
 
 Two claims, and neither is a tolerance:
 
-  1. every leg's capture is EXACTLY the committed reference — same 192x108, same 62208 bytes of RGB,
-     no differing texel. `render.golden` compares with a neighbourhood tolerance because an image
-     may legitimately be re-encoded; nothing here may differ at all, because it is the same device
-     rendering the same frame with a different process owner.
+  1. every leg's capture is EXACTLY the committed reference for the RHI backend the sample selected
+     — same 192x108, same 62208 bytes of RGB, no differing texel. Comparing a Metal capture with the
+     Vulkan baseline would turn backend quantisation into a platform failure; M11.d.5's separate
+     three-backend suite owns that tolerance. Nothing here may differ from its own backend's image,
+     because it is the same device rendering the same frame with a different process owner.
   2. every leg's capture is byte-identical to every other leg's. This is the claim that has teeth if
      the reference is ever regenerated: it is the run comparing itself against itself, and it cannot
      be laundered by rewriting a committed file.
@@ -70,8 +73,13 @@ from harness.artefact import Absent, Failed, Report  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: The reference the M3 milestone closed on, and the suite that judges it.
-REFERENCE = ROOT / "tests" / "render" / "references" / "first_light.png"
+#: The device-labelled reference for each renderer. The platform test chooses among these only
+#: after the sample reports which backend it actually created; it never guesses from the host OS.
+REFERENCES = {
+    "vulkan": ROOT / "docs" / "design" / "images" / "m11d5-three-backends-vulkan.png",
+    "metal": ROOT / "docs" / "design" / "images" / "m11d5-three-backends-metal.png",
+    "d3d12": ROOT / "docs" / "design" / "images" / "m11d5-three-backends-d3d12.png",
+}
 
 #: `test_golden_frame.cpp`'s `kWidth` and `kHeight`, which are also this sample's defaults.
 WIDTH = 192
@@ -203,6 +211,15 @@ def run_leg(binary: Path, leg: str, capture: Path) -> subprocess.CompletedProces
     )
 
 
+def selected_backend(result: subprocess.CompletedProcess) -> str:
+    """Return the backend named by the sample's device-selection record."""
+    prefix = "03-first-light: device   backend="
+    for line in result.stdout.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].split(maxsplit=1)[0]
+    raise Failed("the sample produced a frame without naming its selected RHI backend")
+
+
 #: The two error codes that mean "this machine does not have it" rather than "it is broken".
 #: `main.cpp`'s `report()` prints the code's name in brackets, which is a far steadier thing to read
 #: than SDL's or Xlib's own wording — "no X display", "No available video device" and whatever the
@@ -222,7 +239,9 @@ def why_absent(result: subprocess.CompletedProcess) -> str | None:
     return None
 
 
-def judge(report: Report, binary: Path, work: Path, reference: bytes) -> dict[str, bytes]:
+def judge(
+    report: Report, binary: Path, work: Path, references: dict[str, bytes]
+) -> dict[str, bytes]:
     """Run every leg, judge each against the reference, and hand back what each one drew."""
     captured: dict[str, bytes] = {}
     for leg, needs_display in LEGS:
@@ -239,14 +258,22 @@ def judge(report: Report, binary: Path, work: Path, reference: bytes) -> dict[st
                 f"exit {result.returncode}: {' | '.join(tail) if tail else 'no output'}",
             )
             continue
+        backend = selected_backend(result)
+        if backend not in references:
+            report.gap(
+                f"the M3 frame on the {leg} platform backend",
+                f"selected RHI backend {backend!r} has no committed device reference",
+            )
+            continue
         pixels = read_capture(capture)
+        reference = references[backend]
         differing, worst = differing_texels(reference, pixels)
         where = "with a window" if needs_display else "with no window"
         if differing == 0:
             report.did(
                 f"the M3 golden image on the {leg} platform backend",
                 f"{WIDTH}x{HEIGHT}, {len(pixels)} bytes, EXACTLY "
-                f"tests/render/references/first_light.png ({where})",
+                f"{REFERENCES[backend].relative_to(ROOT)} ({backend}, {where})",
             )
             captured[leg] = pixels
         else:
@@ -311,16 +338,19 @@ def main(argv: list[str] | None = None) -> int:
         binary = find_binary(arguments)
         work = Path(arguments.work) if arguments.work else ROOT / "build" / "first-light-legs"
         work.mkdir(parents=True, exist_ok=True)
-        if not REFERENCE.exists():
-            raise Absent(f"no committed reference at {REFERENCE}")
-        reference = read_reference(REFERENCE)
-        if len(reference) != WIDTH * HEIGHT * 3:
-            raise Failed(
-                f"{REFERENCE} is not {WIDTH}x{HEIGHT}: it decoded to {len(reference)} bytes"
-            )
-        print(f"==> reference {REFERENCE} — {WIDTH}x{HEIGHT}, {len(reference)} bytes of RGB")
+        references = {}
+        for backend, path in REFERENCES.items():
+            if not path.exists():
+                raise Absent(f"no committed {backend} reference at {path}")
+            reference = read_reference(path)
+            if len(reference) != WIDTH * HEIGHT * 3:
+                raise Failed(
+                    f"{path} is not {WIDTH}x{HEIGHT}: it decoded to {len(reference)} bytes"
+                )
+            references[backend] = reference
+            print(f"==> reference {path} — {WIDTH}x{HEIGHT}, {len(reference)} bytes of RGB")
 
-        captured = judge(report, binary, work, reference)
+        captured = judge(report, binary, work, references)
         judge_against_each_other(report, captured)
         if not captured:
             raise Absent(

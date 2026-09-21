@@ -1244,6 +1244,7 @@ public:
                                                        : desc.frames_in_flight;
         capabilities_.set_backend(BackendKind::Metal);
         capabilities_.set_device_name(device.name.UTF8String);
+        capabilities_.set_vendor_id(0x106BU);
         capabilities_.set_driver_version("Metal");
         capabilities_.set_native_shader_format(ShaderFormat::Msl);
         capabilities_.set_needs_queue_ownership_transfer(false);

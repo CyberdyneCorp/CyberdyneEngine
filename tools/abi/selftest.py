@@ -269,6 +269,28 @@ class Selftest:
             output,
         )
 
+    def case_python39_approval_parser(self) -> None:
+        parser = abi_gate.tomllib
+        try:
+            abi_gate.tomllib = None
+            document = abi_gate.parse_approval_document(
+                '[[approval]]\nchange = "table.old.signature"\n'
+                'rationale = "a reviewed break"\nversion = "2.0"\n'
+            )
+        finally:
+            abi_gate.tomllib = parser
+        self.expect(
+            "the Python 3.9 fallback parses a complete approval",
+            document == {
+                "approval": [{
+                    "change": "table.old.signature",
+                    "rationale": "a reviewed break",
+                    "version": "2.0",
+                }]
+            },
+            str(document),
+        )
+
     def case_baseline_is_current(self) -> None:
         # The committed baseline is a real description of a real table, not an empty document that
         # would make every comparison above vacuous.
@@ -289,6 +311,7 @@ class Selftest:
         self.case_inserted_struct_member()
         self.case_changed_enum_value()
         self.case_approval_is_named()
+        self.case_python39_approval_parser()
         self.case_baseline_is_current()
         total = self.passed + self.failed
         print(f"selftest: {self.passed}/{total} passed")

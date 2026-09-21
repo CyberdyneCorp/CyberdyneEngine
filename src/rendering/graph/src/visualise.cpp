@@ -12,8 +12,10 @@ namespace {
 /// fails, and it stops rather than truncating silently, because a truncated plan dump read as a
 /// whole one is worse than no dump.
 // NOLINTNEXTLINE(cert-dcl50-cpp) — a formatting sink is variadic by nature; see .clang-tidy.
-__attribute__((format(printf, 2, 3))) bool append(Array<char>& out, const char* pattern,
-                                                  ...) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((format(printf, 2, 3)))
+#endif
+bool append(Array<char>& out, const char* pattern, ...) noexcept {
     char line[512];
     va_list arguments;
     va_start(arguments, pattern);

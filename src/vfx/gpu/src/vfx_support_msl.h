@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled MSL for the VFX GPU scheduler. GENERATED — do not edit by hand.
 

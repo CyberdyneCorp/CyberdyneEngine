@@ -237,6 +237,23 @@ interface = "the RHI's memory report and transient pool in src/backends/rhi/vulk
 scope = "runtime"
 justification = "Suballocation, memory-type selection, defragmentation and VK_EXT_memory_budget tracking against a device's own heaps. An allocator is not differentiating and getting memory types wrong is a class of bug that only appears on the vendor nobody tested."
 
+[[dependency]]
+name = "pix_events"
+version = "b0caa735"
+tag = "unreleased-b0caa735"
+commit = "b0caa735f8510f4ff60c29ef1c88101620defc5e"
+repository = "https://github.com/microsoft/PixEvents"
+licence = "MIT"
+licence_file = "LICENSE.txt"
+optional = true
+feature = "CY_RENDERER_D3D12"
+system_package = false
+cmake_target = "cy_pix_events_headers"
+source_subdir = "cy-not-a-subproject"
+interface = "the native D3D12 command buffer in src/backends/rhi-d3d12/, which uses Microsoft's event encoder so render-graph pass labels are readable by PIX"
+scope = "runtime"
+justification = "PIX requires a versioned event blob rather than raw strings passed to ID3D12CommandList diagnostic methods; Microsoft's encoder keeps captures readable and the D3D12 debug layer clean."
+
 # --- M11.c: DXC, AND WHY IT IS NOT A TABLE -------------------------------------------------------
 #
 # `CY_SHADER_DXIL` turns on `SLANG_ENABLE_DXIL`, and Slang's own CMake then downloads Microsoft's

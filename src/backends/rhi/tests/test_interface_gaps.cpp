@@ -217,10 +217,12 @@ CY_TEST_CASE("gap 3: every image use has a name and the vocabulary is the engine
     // The two whose names changed when `ImageLayout` became `ImageUse`, because the old ones were
     // `VkImageLayout`'s and not the engine's: VK_IMAGE_LAYOUT_GENERAL and
     // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL.
-    CY_CHECK_EQ(cy::rhi::image_use_name(ImageUse::Storage), "Storage");
-    CY_CHECK_EQ(cy::rhi::image_use_name(ImageUse::SampledRead), "SampledRead");
-    CY_CHECK_EQ(cy::rhi::image_use_name(ImageUse::Presentable), "Presentable");
-    CY_CHECK_EQ(cy::rhi::image_use_name(static_cast<ImageUse>(ImageUse::Count)), "<invalid>");
+    CY_CHECK_EQ(std::strcmp(cy::rhi::image_use_name(ImageUse::Storage), "Storage"), 0);
+    CY_CHECK_EQ(std::strcmp(cy::rhi::image_use_name(ImageUse::SampledRead), "SampledRead"), 0);
+    CY_CHECK_EQ(std::strcmp(cy::rhi::image_use_name(ImageUse::Presentable), "Presentable"), 0);
+    CY_CHECK_EQ(
+        std::strcmp(cy::rhi::image_use_name(static_cast<ImageUse>(ImageUse::Count)), "<invalid>"),
+        0);
 }
 
 CY_TEST_CASE("gap 3: two reads of one image can still need a barrier") {

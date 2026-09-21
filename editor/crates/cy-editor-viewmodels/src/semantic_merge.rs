@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Presentation-only semantic Diff and Merge models.
 
 use cy_editor_core::observe::Watch;

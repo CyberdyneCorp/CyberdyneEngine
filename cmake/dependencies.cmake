@@ -431,6 +431,13 @@ function(cy__configure_jolt)
     set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
     set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
     set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+    # MSVC only: Jolt defaults `USE_STATIC_MSVC_RUNTIME_LIBRARY` to ON, which builds it against the
+    # static CRT (/MT). The engine and every other dependency in the tree use the dynamic CRT (/MD)
+    # — mixing them fails at link with LNK2038 across every Jolt object file. Force Jolt onto the
+    # same runtime the rest of the tree already uses.
+    if(WIN32)
+        set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+    endif()
 endfunction()
 
 function(cy__configure_vma)
@@ -502,6 +509,14 @@ function(cy__provide_xatlas source_dir)
     add_library(xatlas STATIC "${source_dir}/source/xatlas/xatlas.cpp")
     target_include_directories(xatlas SYSTEM PUBLIC "${source_dir}/source/xatlas")
     set_target_properties(xatlas PROPERTIES CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+endfunction()
+
+# PixEvents ships Visual Studio projects rather than a CMake project. The D3D12 backend only needs
+# its event encoder headers: command-buffer markers are written into the native command list and do
+# not call the CPU event-runtime ABI.
+function(cy__provide_pix_events source_dir)
+    add_library(cy_pix_events_headers INTERFACE)
+    target_include_directories(cy_pix_events_headers SYSTEM INTERFACE "${source_dir}/include")
 endfunction()
 
 # Everything that has to happen after the dependency's targets exist.

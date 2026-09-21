@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Swift Workspace file tree, tabs, conflict-safe buffers, and build loop.
 
 use cy_editor_commands::Arguments;

@@ -16,6 +16,7 @@
 #endif
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -232,7 +233,7 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
             }
         }
     }
-    out.materials_placed = static_cast<u32>(__builtin_popcount(placed_bits));
+    out.materials_placed = static_cast<u32>(std::popcount(placed_bits));
 
     // The warm-up frames run through the identical path and are then discarded: the device has to
     // do the work to clock up, so skipping them would defeat the purpose. See `warmup_frames`.
@@ -338,7 +339,7 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         }
     }
 
-    out.materials_seen = static_cast<u32>(__builtin_popcount(material_bits));
+    out.materials_seen = static_cast<u32>(std::popcount(material_bits));
     out.validation_errors = holder.errors();
     out.device = true;
 

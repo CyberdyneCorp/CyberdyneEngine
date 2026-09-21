@@ -31,12 +31,12 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 1. The D3D12 memory decision, before the backend is half written
 
-- [ ] 1.1 **Memory is the first decision, not the last.** Vulkan's allocator is VMA, fetched through
+- [x] 1.1 **Memory is the first decision, not the last.** Vulkan's allocator is VMA, fetched through
       `deps/manifest.toml`; there is no equivalent in this tree for D3D12. Either a suballocator of
       the engine's own over `ID3D12Heap`, or an adopted dependency — and an adoption **"SHALL go
       through the OpenSpec change flow recording the evaluation against these criteria"**, so it is a
       change of its own against `thirdparty-dependencies`, decided before the backend exists
-- [ ] 1.2 **Whichever is chosen, it is written for Resource Heap Tier 1 as well as Tier 2.** Every
+- [x] 1.2 **Whichever is chosen, it is written for Resource Heap Tier 1 as well as Tier 2.** Every
       hosted image reports Tier 2 and Tier 1 hardware still ships; on Tier 1 a heap holds buffers *or*
       textures and never a mix, which is the same partition Vulkan spells as a bitmask and which the
       memory-pool class M11.d settled already expresses. The tier-1 path is the half that does not
@@ -53,9 +53,9 @@ change flow rather than through a backend. Everything else follows the interface
       exercise neither because their Metal device reports no Apple family; the local M3 Pro suite
       exercises both the memoryless path and placement-heap aliasing and records the device
 - [x] 2.3 **The bindless descriptor model against argument buffers, and the tier reported.** The
-      hosted device is Tier 1 and the engine's model needs Tier 2, so `unit.rhi_metal` **SHALL report
-      the argument-buffer tier it ran at** — a Tier 1 pass that reads as a Tier 2 one is the defect
-      this rung is most likely to ship
+      hosted device is Tier 1 and the engine's model needs Tier 2, so `integration.rhi_metal`
+      **SHALL report the argument-buffer tier it ran at** — a Tier 1 pass that reads as a Tier 2 one
+      is the defect this rung is most likely to ship
 - [x] 2.4 The three things that map cleanly, spent as the seed says rather than re-derived:
       `MTLSharedEvent` for timeline semaphores, `MTLFunctionConstantValues` for specialization
       constants, and **nothing at all** for reversed-Z, because the projection inverts and the
@@ -70,71 +70,90 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 3. D3D12 — from nothing
 
-- [ ] 3.1 **There is no D3D12 backend and there is no D3D12 file.** The only three D3D12 things in the
+- [x] 3.1 **There is no D3D12 backend and there is no D3D12 file.** The only three D3D12 things in the
       tree are `BackendKind::D3D12`, `Feature::D3D12Surface` and `CY_RENDERER_D3D12|OFF` — three
       enumerators describing an API the engine does not have. The module is written from nothing,
       against the interface M11.d settled
-- [ ] 3.2 Descriptor heaps and bindless against the engine's descriptor model; a root signature derived
+- [x] 3.2 Descriptor heaps and bindless against the engine's descriptor model; a root signature derived
       from the engine's pipeline layout; **barriers derived from the access masks**, which is M11.d's
       interface change paying for itself a second time
-- [ ] 3.3 DXIL out of the shader pipeline: `SLANG_ENABLE_DXIL` on, DXC declared in the manifest with a
+- [x] 3.3 DXIL out of the shader pipeline: `SLANG_ENABLE_DXIL` on, DXC declared in the manifest with a
       licence identifier and a justification like every other integrated toolchain
-- [ ] 3.4 **Adapter selection, and the trap the spike found.** Every hosted Windows image presents two
+- [x] 3.4 **Adapter selection, and the trap the spike found.** Every hosted Windows image presents two
       adapters, both `Microsoft Basic Render Driver`, and **adapter 0 does not set
       `DXGI_ADAPTER_FLAG_SOFTWARE`**. Selection SHALL NOT trust that flag. It classifies from the
       adapter's reported identity and vendor against a table this engine owns, and an adapter it
       cannot classify is reported **unknown** rather than assumed hardware
-- [ ] 3.5 **The golden images on D3D12**, same rule as 2.6, with the adapter's identity in the result
+- [x] 3.5 **The golden images on D3D12**, same rule as 2.6, with the adapter's identity in the result.
+      Physical evidence: AMD Radeon RX 6900 XT (RDNA 2, vendor 0x1002, class hardware) at
+      `docs/design/images/m11d5-three-backends-d3d12.png` and its manifest. `unit.rhi_d3d12` and
+      `integration.rhi_d3d12` pass with the debug layer enabled; `render.golden_backends` writes
+      the row `backend=d3d12 ... outcome=matched ... max_delta=1`. First-light shaders compiled at
+      `sm_6_6` (the engine-wide floor) rather than the hosted-WARP `sm_6_2` compatibility payload
 
 ## 4. The device report, and the claim a Linux host can check
 
-- [ ] 4.1 **Every device report names the device that answered** — across all three backends, Vulkan
+- [x] 4.1 **Every device report names the device that answered** — across all three backends, Vulkan
       included, because the rule is the engine's and not a Windows workaround. Identity string,
       vendor, and the classification the engine derived: hardware, paravirtual, software, or unknown
-- [ ] 4.2 **The classification is tested where it can be tested**, which is here: `unit.rhi` carries
+- [x] 4.2 **The classification is tested where it can be tested**, which is here: `unit.rhi` carries
       *"a software device is labelled from its identity"* and *"a device report names the device that
       answered"*, both device-free, both red on this host until they are written. This is the rung's
       only fully judgeable claim and it is deliberately not pushed onto a runner
-- [ ] 4.3 **The engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12`
+- [x] 4.3 **The engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12`
       OFF as well as ON** — M8.c's rule, applied to the two options this rung delivers. Off is what
       every machine that is not a Mac or a Windows box builds, and a backend that has quietly become
       mandatory shows up on a Linux host first
 
 ## 5. The artefact — one scene, three backends, the same picture
 
-- [ ] 5.1 `just test-render --compare-backends vulkan metal d3d12`: the M3 golden images compared
+- [x] 5.1 `just test-render --compare-backends vulkan metal d3d12`: the M3 golden images compared
       across legs of the matrix within tolerance, in the same shape as the cross-leg digest job M11.a
       built. **It is the one claim no single leg can make**, which is why it moved here with its
-      subject rather than staying in M11.d
-- [ ] 5.2 **One committed screenshot per backend** under `docs/design/images/`, named
+      subject rather than staying in M11.d. Now green across three vendors:
+      `vulkan: NVIDIA GeForce RTX 5060 (delta 0)`,
+      `metal: Apple M3 Pro (delta 1)`,
+      `d3d12: AMD Radeon RX 6900 XT (delta 1)`;
+      `vulkan versus metal: within tolerance`, `vulkan versus d3d12: within tolerance`.
+      Adversarial pass performed (§7.2): scaling `sun_.color` from `1.05` to `1.25` in
+      `samples/03-first-light/scene.cpp` turned the D3D12 row red with 10,745 texels over
+      tolerance, 3,242 of them off any high-contrast edge, worst channel delta 17; restoring the
+      scalar returned the ledger to `matched`
+- [x] 5.2 **One committed screenshot per backend** under `docs/design/images/`, named
       `m11d5-three-backends-<backend>.png`, **each labelled with the backend and the device that
-      produced it**. A diagram is allowed and **SHALL be labelled one**
-- [ ] 5.3 **The artefact is honest about its own coverage on its own face**, the way M10's was about
+      produced it**. A diagram is allowed and **SHALL be labelled one**. All three backends now
+      committed: `m11d5-three-backends-vulkan.png` (NVIDIA GeForce RTX 5060),
+      `m11d5-three-backends-metal.png` (Apple M3 Pro),
+      `m11d5-three-backends-d3d12.png` (AMD Radeon RX 6900 XT)
+- [x] 5.3 **The artefact is honest about its own coverage on its own face**, the way M10's was about
       its 122 ms: which legs ran, which reported NOT EVALUATED and why, which device answered on each,
-      and the four deferrals of `design.md` §2 named rather than omitted
-- [ ] 5.4 `rhi-and-render-graph` read **requirement by requirement at Complete grade** — satisfied,
+      and the four deferrals of `design.md` §2 named rather than omitted. Each committed manifest
+      carries the row for its backend plus the `null` NOT-EVALUATED-no-image row; `vendor_id`,
+      `class` and `device` are populated from the RHI classifier and are non-empty on every
+      hardware row
+- [x] 5.4 `rhi-and-render-graph` read **requirement by requirement at Complete grade** — satisfied,
       partial or unmet per requirement with the evidence in the module's README — the way M10 read
       `save-and-persistence`. The row has been Working since M3 over one backend and has never been
       read at Complete grade
 
 ## 6. Records and gates
 
-- [ ] 6.1 `tools/roadmap/milestones/m11d5.toml` — this rung's own criteria only, the ledger flat — the
+- [x] 6.1 `tools/roadmap/milestones/m11d5.toml` — this rung's own criteria only, the ledger flat — the
       `milestone-m11d5` gate in `gates.toml`, and the floor in `selftest.MINIMUM_CRITERIA`
-- [ ] 6.2 The insertion itself, and every reader of a milestone identifier: `record.MILESTONES`,
+- [x] 6.2 The insertion itself, and every reader of a milestone identifier: `record.MILESTONES`,
       `plan.milestone_id` and the three heading patterns, the matrix column set and load table,
       `ROADMAP.md`, `dependencies.md`, `implementing.md`, `risks.md` entry 12, and the three insertion
       checks in `selftest.py`. `design.md` §4 lists them so none is discovered later
-- [ ] 6.3 An `m11e-open` criterion using the double-star glob form, and **M11.d's own handover
+- [x] 6.3 An `m11e-open` criterion using the double-star glob form, and **M11.d's own handover
       criterion re-pointed at this rung** — it named `m11e`, and a handover that skips a rung is the
       one thing a handover check exists to make impossible
 - [ ] 6.4 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them
 - [ ] 6.5 Move `ci.yml`'s milestone job to `m11d5` in the same commit that flips the gate green
-- [ ] 6.6 **Hand M11.e its entry**: a written statement of **what M11.d.5 did not close**, in the shape
+- [x] 6.6 **Hand M11.e its entry**: a written statement of **what M11.d.5 did not close**, in the shape
       M8.a, M8.c and M10 used — unchecked tasks named, with the defect rather than the intention, and
       the four deferrals of §2 carried forward with their re-entry points
-- [ ] 6.7 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the same
+- [x] 6.7 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the same
       change that closes it; any it does not close keeps `known_gap_closes` pointed at the rung that
       will
 

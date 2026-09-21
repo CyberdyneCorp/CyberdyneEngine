@@ -1616,15 +1616,13 @@ paravirtual or software.
 - The engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12` **off** as well as on
 - Every requirement of `rhi-and-render-graph` maps to a test, a gate or a recorded exemption
 
-**What this rung may not claim, recorded as deferrals rather than criteria a hosted leg could fake.**
-M11.d's spike created a device on every runner that was allocated, and none of them is a GPU: the
-macOS device reports **no Apple GPU family at all**, so tile memory and memoryless attachments — the
-whole stated reason `rhi-and-render-graph` refuses MoltenVK — cannot be exercised anywhere; argument
-buffers are Tier 1 there, so the bindless descriptor model can pass untested; every hosted Windows
-image is `Microsoft Basic Render Driver`; and D3D12 Resource Heap Tier 1, which hardware still ships,
-is presented by no runner. Each is carried in
-[`implement-m11d5-backends`](../openspec/changes/implement-m11d5-backends/design.md) with a re-entry
-point.
+**Hardware evidence gathered for the closing gate.** Physical runs retired three questions the hosted-runner spike
+could not answer: an Apple M3 Pro exercised memoryless attachments, placement heaps and Tier 2
+argument buffers; NVIDIA, Apple and AMD hardware produced matching golden images; and the Radeon
+run closed the D3D12 hardware leg. D3D12 Resource Heap Tier 1 execution remains deferred because
+both hosted WARP and the physical Radeon report Tier 2. Its engine-side partition policy is tested,
+and [`implement-m11d5-backends`](../openspec/changes/implement-m11d5-backends/design.md) names the
+Tier 1 device or validation forcing mode that re-enters the native exercise.
 
 **Risk spike**: **already spent, by M11.d.** Two throwaway workflow runs created a device on each
 hosted leg, cleared a target to a known colour, read the pixel back and presented it — a frame that

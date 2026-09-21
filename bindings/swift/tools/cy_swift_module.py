@@ -75,11 +75,12 @@ let package = Package(
 """
 
 
-def swift(arguments: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess:
+def swift(arguments: list[str], cwd: pathlib.Path | None = None,
+          input_text: str | None = None) -> subprocess.CompletedProcess:
     """Run a Swift command through a login-shell environment that has the toolchain on PATH."""
     command = ". " + SWIFTLY_ENV + " 2>/dev/null; " + " ".join(f"'{item}'" for item in arguments)
     return subprocess.run(["bash", "-lc", command], cwd=cwd, check=False, text=True,
-                          capture_output=True)
+                          input=input_text, capture_output=True)
 
 
 def probe() -> int:
@@ -89,6 +90,16 @@ def probe() -> int:
         sys.stderr.write(result.stderr)
         return 1
     sys.stdout.write(result.stdout.strip().splitlines()[0] + "\n")
+    return 0
+
+
+def probe_tests() -> int:
+    """Report whether this toolchain can compile the package's XCTest suite."""
+    xctest = swift(["swiftc", "-typecheck", "-"], input_text="import XCTest\n")
+    if xctest.returncode != 0:
+        sys.stderr.write("no Swift package-test toolchain: swiftc cannot import XCTest.\n")
+        sys.stderr.write(xctest.stderr)
+        return 1
     return 0
 
 
@@ -134,6 +145,8 @@ def build_generation(work: pathlib.Path, index: int, sources: pathlib.Path,
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Build a Swift game module per generation.")
     parser.add_argument("--probe", action="store_true", help="report the toolchain and exit")
+    parser.add_argument("--probe-tests", action="store_true",
+                        help="report whether XCTest package tests can compile and exit")
     parser.add_argument("--test", action="store_true", help="run `swift test` over the package")
     parser.add_argument("--work", type=pathlib.Path)
     parser.add_argument("--out", type=pathlib.Path)
@@ -143,6 +156,8 @@ def main(argv: list[str]) -> int:
 
     if arguments.probe:
         return probe()
+    if arguments.probe_tests:
+        return probe_tests()
     if arguments.test:
         result = swift(["swift", "test", "--package-path", str(PACKAGE),
                         "--scratch-path", str(SCRATCH)])

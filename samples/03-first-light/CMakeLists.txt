@@ -70,6 +70,9 @@ endif()
 if(CY_RENDERER_METAL)
     target_link_libraries(cy_sample_first-light PRIVATE cy::rhi-metal)
 endif()
+if(CY_RENDERER_D3D12)
+    target_link_libraries(cy_sample_first-light PRIVATE cy::rhi-d3d12)
+endif()
 
 if(NOT CY_BUILD_TESTS)
     return()
@@ -78,8 +81,8 @@ endif()
 # --- THE M3 GOLDEN IMAGE, ONCE PER PLATFORM BACKEND. M11.d task 4.3 ------------------------------
 #
 # `golden_legs.py` runs this binary on every platform backend the build has and checks each capture
-# against `tests/render/references/first_light.png` — the reference `render.golden` judges — and
-# against the other legs. Its own header says at length why the claim lives HERE and not in
+# against the device-labelled reference for the RHI backend the sample reports, then against the
+# other legs byte for byte. Its own header says at length why the claim lives HERE and not in
 # `tests/render/`: that directory links no platform target and constructs no `DisplayServer`, so no
 # platform backend can change one texel of it, and putting a window into it would make the render
 # suites need a display on every machine that runs them.

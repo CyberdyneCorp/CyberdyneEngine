@@ -13,6 +13,7 @@
 #include <cy/vfx/runtime.h>
 #include <cy/vfx/world.h>
 
+#include <chrono>
 #include <cstdio>
 #include <ctime>
 
@@ -48,13 +49,18 @@ struct Cooked {
 
 /// This thread's own CPU time. Wall clock would measure the machine's other agents rather than this
 /// step, which is the defect `cy/test/test.h` records about the taxonomy's budget and fixed there
-/// for the same reason.
+/// for the same reason. Same guarded fallback as the other perf tests in the tree; MSVC has no
+/// standard per-thread CPU clock, so the assertion below relaxes to wall clock there.
 [[nodiscard]] u64 thread_cpu_ns() noexcept {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
     timespec now{};
-    if (::clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) != 0) {
-        return 0;
+    if (::clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) == 0) {
+        return (static_cast<u64>(now.tv_sec) * 1000000000ULL) + static_cast<u64>(now.tv_nsec);
     }
-    return (static_cast<u64>(now.tv_sec) * 1000000000ULL) + static_cast<u64>(now.tv_nsec);
+#endif
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                .count());
 }
 
 [[nodiscard]] WorldDescription small_world() noexcept {

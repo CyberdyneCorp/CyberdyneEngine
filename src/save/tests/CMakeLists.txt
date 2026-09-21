@@ -83,11 +83,18 @@ function(cy_save_declare_tests)
     # previous save still valid", and this file is that criterion in its strongest form — a real
     # child process SIGKILLed at each phase of a real commit. The in-process half of the same claim
     # stays in test_archive.cpp beside the archive model it is a property of.
-    cy_add_test(
-        NAME save_kill_nine
-        KIND determinism
-        SOURCES "${tests_dir}/test_kill_nine.cpp"
-        DEPENDENCIES cy::save)
+    #
+    # The suite uses `fork` + `SIGKILL` + `waitpid` to spawn the child and terminate it precisely
+    # at each write phase. Those APIs are POSIX-only; Windows has no `fork` and its `TerminateProcess`
+    # does not carry the same phase-guaranteed semantics. The archive-model half in test_archive.cpp
+    # still runs on Windows, covering the in-process interruption path.
+    if(NOT WIN32)
+        cy_add_test(
+            NAME save_kill_nine
+            KIND determinism
+            SOURCES "${tests_dir}/test_kill_nine.cpp"
+            DEPENDENCIES cy::save)
+    endif()
 
     # cy::core-diagnostics is here for one case: "a save leaves a breadcrumb on the thread that
     # writes it" reads the breadcrumb ring back. `cy::save` links it privately, so the headers are

@@ -59,8 +59,8 @@ vertex float4 metal_test_vertex(uint vertex_id [[vertex_id]]) {
     cy::rhi::ShaderModuleDescription description;
     description.name = "native MSL vertex module";
     description.stage = cy::rhi::ShaderStage::Vertex;
-    description.native = cy::Span<const cy::u8>(
-        reinterpret_cast<const cy::u8*>(source), sizeof(source) - 1);
+    description.native =
+        cy::Span<const cy::u8>(reinterpret_cast<const cy::u8*>(source), sizeof(source) - 1);
     description.native_format = cy::rhi::ShaderFormat::Msl;
     description.entry_point = "metal_test_vertex";
 
@@ -70,8 +70,8 @@ vertex float4 metal_test_vertex(uint vertex_id [[vertex_id]]) {
 
     constexpr char invalid_source[] = "vertex this is deliberately not valid MSL";
     description.name = "invalid native MSL";
-    description.native = cy::Span<const cy::u8>(
-        reinterpret_cast<const cy::u8*>(invalid_source), sizeof(invalid_source) - 1);
+    description.native = cy::Span<const cy::u8>(reinterpret_cast<const cy::u8*>(invalid_source),
+                                                sizeof(invalid_source) - 1);
     const cy::u64 errors_before = device.statistics().validation_errors;
     CY_CHECK_FALSE(device.create_shader_module(description));
     CY_CHECK_EQ(device.statistics().validation_errors, errors_before + 1);
@@ -97,8 +97,7 @@ kernel void pipeline_compute(uint index [[thread_position_in_grid]]) {
     if (index == test_value) { return; }
 }
 )msl";
-    const cy::Span<const cy::u8> bytes(reinterpret_cast<const cy::u8*>(source),
-                                       sizeof(source) - 1);
+    const cy::Span<const cy::u8> bytes(reinterpret_cast<const cy::u8*>(source), sizeof(source) - 1);
     auto create_shader = [&](cy::rhi::ShaderStage stage, const char* entry) {
         cy::rhi::ShaderModuleDescription description;
         description.name = entry;
@@ -177,8 +176,7 @@ vertex float4 readback_vertex(uint vertex_id [[vertex_id]]) {
 }
 fragment float4 readback_fragment() { return float4(1.0, 0.0, 0.0, 1.0); }
 )msl";
-    const cy::Span<const cy::u8> code(reinterpret_cast<const cy::u8*>(source),
-                                      sizeof(source) - 1);
+    const cy::Span<const cy::u8> code(reinterpret_cast<const cy::u8*>(source), sizeof(source) - 1);
     auto create_shader = [&](cy::rhi::ShaderStage stage, const char* entry) {
         cy::rhi::ShaderModuleDescription description;
         description.name = entry;
@@ -211,8 +209,8 @@ fragment float4 readback_fragment() { return float4(1.0, 0.0, 0.0, 1.0); }
     texture_description.name = "readback color target";
     texture_description.format = cy::rhi::Format::Rgba8Unorm;
     texture_description.extent = {4, 4, 1};
-    texture_description.usage = cy::rhi::TextureUsage::ColorAttachment |
-                                cy::rhi::TextureUsage::TransferSource;
+    texture_description.usage =
+        cy::rhi::TextureUsage::ColorAttachment | cy::rhi::TextureUsage::TransferSource;
     const auto texture = device.create_texture(texture_description);
     CY_REQUIRE(texture);
     cy::rhi::TextureViewDescription view_description;
@@ -228,8 +226,7 @@ fragment float4 readback_fragment() { return float4(1.0, 0.0, 0.0, 1.0); }
     const auto readback = device.create_buffer(readback_description);
     CY_REQUIRE(readback);
 
-    const auto command_handle =
-        device.acquire_command_buffer(cy::rhi::QueueKind::Graphics, false);
+    const auto command_handle = device.acquire_command_buffer(cy::rhi::QueueKind::Graphics, false);
     CY_REQUIRE(command_handle);
     CY_REQUIRE(device.begin_command_buffer(*command_handle));
     cy::rhi::CommandBuffer* commands = device.command_buffer(*command_handle);
@@ -370,8 +367,8 @@ kernel void read_argument_buffer(constant ArgumentTable& table [[buffer(0)]],
     texture_description.name = "argument buffer sampled texture";
     texture_description.format = cy::rhi::Format::Rgba8Unorm;
     texture_description.extent = {1, 1, 1};
-    texture_description.usage = cy::rhi::TextureUsage::Sampled |
-                                cy::rhi::TextureUsage::TransferDestination;
+    texture_description.usage =
+        cy::rhi::TextureUsage::Sampled | cy::rhi::TextureUsage::TransferDestination;
     const auto texture = device.create_texture(texture_description);
     CY_REQUIRE(texture);
     cy::rhi::TextureViewDescription view_description;
@@ -412,8 +409,8 @@ kernel void read_argument_buffer(constant ArgumentTable& table [[buffer(0)]],
     upload_copy.texture_extent = {1, 1, 1};
     commands->copy_buffer_to_texture(*upload, *texture, {&upload_copy, 1});
     commands->bind_compute_pipeline(*pipeline);
-    const cy::rhi::DescriptorSetHandle descriptor_sets[] = {
-        device.global_texture_table(), *output_set};
+    const cy::rhi::DescriptorSetHandle descriptor_sets[] = {device.global_texture_table(),
+                                                            *output_set};
     commands->bind_descriptor_sets(*pipeline_layout, 0, descriptor_sets);
     commands->dispatch(1, 1, 1);
     CY_REQUIRE(device.end_command_buffer(*command));
@@ -421,8 +418,7 @@ kernel void read_argument_buffer(constant ArgumentTable& table [[buffer(0)]],
     submit.command_buffers = {&*command, 1};
     const auto signal = device.submit(submit);
     CY_REQUIRE(signal);
-    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *signal,
-                                    5'000'000'000ULL));
+    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *signal, 5'000'000'000ULL));
     CY_CHECK_EQ(*static_cast<const cy::u32*>(device.buffer_mapped_pointer(*output)), 0x00C0FFEEU);
     CY_CHECK_EQ(static_cast<const cy::u32*>(device.buffer_mapped_pointer(*output))[63], 64U);
 
@@ -476,8 +472,7 @@ CY_TEST_CASE("Metal shared events drive timelines, fences, and binary submission
     consume.signal_fence = *fence;
     const auto consumed = device.submit(consume);
     CY_REQUIRE(consumed);
-    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *consumed,
-                                    5'000'000'000ULL));
+    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *consumed, 5'000'000'000ULL));
     CY_CHECK(device.fence_signalled(*fence));
     CY_CHECK_EQ(device.statistics().semaphore_waits, 1U);
 
@@ -500,8 +495,8 @@ CY_TEST_CASE("Metal timestamp queries resolve GPU counter samples") {
     cy::rhi::BufferDescription buffer_description;
     buffer_description.name = "timestamp copy buffer";
     buffer_description.size = 16;
-    buffer_description.usage = cy::rhi::BufferUsage::TransferSource |
-                               cy::rhi::BufferUsage::TransferDestination;
+    buffer_description.usage =
+        cy::rhi::BufferUsage::TransferSource | cy::rhi::BufferUsage::TransferDestination;
     buffer_description.memory = cy::rhi::MemoryUse::HostVisibleDeviceLocal;
     const auto source = device.create_buffer(buffer_description);
     const auto destination = device.create_buffer(buffer_description);
@@ -523,8 +518,7 @@ CY_TEST_CASE("Metal timestamp queries resolve GPU counter samples") {
     submit.command_buffers = {&*command, 1};
     const auto signal = device.submit(submit);
     CY_REQUIRE(signal);
-    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *signal,
-                                    5'000'000'000ULL));
+    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *signal, 5'000'000'000ULL));
 
     cy::u64 timestamps[2]{};
     const auto read = device.read_query_results(*queries, 0, 2, timestamps);

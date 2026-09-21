@@ -257,12 +257,41 @@ private:
         VoicePlayback playback;
         /// Double buffered: `update()` writes the index `render()` is not reading. See the class
         /// comment.
-        VoiceMixState mix[2];
+        VoiceMixState mix[2]{};
         u32 generation = 0;
         /// Set by the audio thread when a clip ran out or a fade finished; read and cleared by
         /// `update()`. `u32` rather than `bool` because a relaxed atomic on a byte and on a word
         /// cost the same and the word is what the platform actually does.
         std::atomic<u32> finished{0};
+
+        VoiceSlot() = default;
+        ~VoiceSlot() = default;
+        VoiceSlot(const VoiceSlot&) = delete;
+        VoiceSlot& operator=(const VoiceSlot&) = delete;
+
+        /// `Array<VoiceSlot>::resize()` in `allocate_buffers()` relocates elements when the storage
+        /// grows. `std::atomic<u32>` deletes its own move constructor, which forces us to write one
+        /// — bytes move to the new address and the atomic is re-created with the same value. Safe
+        /// because relocation runs during `initialize()`, before the audio thread starts and before
+        /// any pointer into `voices_` has escaped this class.
+        VoiceSlot(VoiceSlot&& other) noexcept
+            : control(other.control),
+              playback(other.playback),
+              mix{other.mix[0], other.mix[1]},
+              generation(other.generation),
+              finished(other.finished.load(std::memory_order_relaxed)) {}
+        VoiceSlot& operator=(VoiceSlot&& other) noexcept {
+            if (this != &other) {
+                control = other.control;
+                playback = other.playback;
+                mix[0] = other.mix[0];
+                mix[1] = other.mix[1];
+                generation = other.generation;
+                finished.store(other.finished.load(std::memory_order_relaxed),
+                               std::memory_order_relaxed);
+            }
+            return *this;
+        }
     };
 
     struct ClipSlot {

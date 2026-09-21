@@ -85,6 +85,17 @@ build-engine *args:
     # build that hung.
     lock_dir="${CY_BUILD_DIR:-build/${profile}}"
     mkdir -p "${lock_dir}"
+    # On CI, `actions/cache` restores `build/dev` verbatim — including any `.cy-build.lock.pid`
+    # symlink a prior job left behind on that job's runner. The fallback path below tests
+    # `kill -0 <owner>` against the local process table, and on a fresh runner a foreign PID
+    # occasionally happens to match a live local process (short PIDs collide often), so the loop
+    # waits forever for a process that has nothing to do with this build. GITHUB_ACTIONS is set
+    # to `true` by every hosted runner; on CI, forget any stashed fallback lock before we try.
+    # The flock file itself is a 0-byte inode with no cross-process state, so deleting it before
+    # `exec 9>` costs nothing.
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        rm -f "${lock_dir}/.cy-build.lock.pid" "${lock_dir}/.cy-build.lock"
+    fi
     exec 9>"${lock_dir}/.cy-build.lock"
     if command -v flock >/dev/null 2>&1; then
         if ! flock -n 9; then
@@ -97,8 +108,29 @@ build-engine *args:
             lockf -s 9
         fi
     else
-        echo "build-engine: neither flock nor lockf is available; cannot protect ${lock_dir}" >&2
-        exit 1
+        # GitHub's macOS image has the lockf(2) API but no `lockf` executable. An atomic symlink
+        # carries the owner's PID, so a crashed build leaves a lock the next process can identify
+        # and reap instead of wedging the tree forever. The ownership check in the EXIT handler
+        # prevents one waiter from deleting a lock acquired by another.
+        fallback_lock="${lock_dir}/.cy-build.lock.pid"
+        announced=0
+        while ! ln -s "$$" "${fallback_lock}" 2>/dev/null; do
+            owner="$(readlink "${fallback_lock}" 2>/dev/null || true)"
+            if [[ "${owner}" =~ ^[0-9]+$ ]] && ! kill -0 "${owner}" 2>/dev/null; then
+                rm -f "${fallback_lock}"
+                continue
+            fi
+            if [ "${announced}" -eq 0 ]; then
+                echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
+                announced=1
+            fi
+            sleep 0.1
+        done
+        release_fallback_lock() {
+            [ "$(readlink "${fallback_lock}" 2>/dev/null || true)" != "$$" ] || \
+                rm -f "${fallback_lock}"
+        }
+        trap release_fallback_lock EXIT
     fi
 
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"

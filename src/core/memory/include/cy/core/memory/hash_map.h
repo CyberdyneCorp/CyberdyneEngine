@@ -45,8 +45,16 @@ class HashMap {
 public:
     struct Entry {
         K key;
-        // Empty for a HashSet, and then costing nothing.
+        // Empty for a HashSet, and then costing nothing. MSVC honours the standard attribute for
+        // diagnostics but preserves the pre-standard layout, so an empty member still consumes a
+        // byte plus padding unless the compiler-specific spelling is also present. Both are named
+        // so `sizeof(Entry) == sizeof(K)` on every toolchain — the property the HashSet taxonomy
+        // asserts. GCC and Clang ignore unknown attribute namespaces per [dcl.attr.grammar]/6.
+#if defined(_MSC_VER)
+        [[no_unique_address, msvc::no_unique_address]] V value;
+#else
         [[no_unique_address]] V value;
+#endif
     };
 
     explicit HashMap(Allocator& allocator = current_allocator()) noexcept

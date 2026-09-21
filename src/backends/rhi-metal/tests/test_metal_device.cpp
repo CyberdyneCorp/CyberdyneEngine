@@ -19,7 +19,7 @@ public:
     Fixture() noexcept : allocator_(cy::system_allocator(cy::MemoryDomain::Gpu)) {
         (void)cy::rhi::metal::register_metal_backend();
         cy::rhi::DeviceDescription description;
-        description.application_name = "unit.rhi_metal";
+        description.application_name = "integration.rhi_metal";
         description.enable_validation = true;
         device_ = cy::rhi::create_device(allocator_, cy::rhi::metal::kMetalBackendName, description,
                                          selection_);

@@ -31,6 +31,14 @@ namespace {
 
 constexpr f32 kEpsilon = 1.0e-6F;
 
+/// Moment subtraction loses a few ulps when both moments describe one constant sample. Treat that
+/// numerical residue as zero so a flat signal stays flat on every architecture.
+[[nodiscard]] f32 stable_variance(f32 first, f32 second) noexcept {
+    const f32 variance = std::max(0.0F, second - (first * first));
+    const f32 roundoff = kEpsilon * std::max(1.0F, std::abs(second));
+    return variance <= roundoff ? 0.0F : variance;
+}
+
 /// A pixel is converged when it has this many accumulated samples and its standard deviation has
 /// fallen below this fraction of its own value. "Filter strength SHALL fall as confidence and
 /// sample count rise, so a converged signal is not blurred" is these two numbers.
@@ -270,7 +278,7 @@ void Denoiser::estimate_variance(SignalState& state, u32 pixels) const noexcept 
     for (u32 pixel = 0; pixel < pixels; ++pixel) {
         const f32 first = state.moment1[pixel];
         const f32 second = state.moment2[pixel];
-        state.variance[pixel] = std::max(0.0F, second - (first * first));
+        state.variance[pixel] = stable_variance(first, second);
     }
 
     // A pixel with almost no temporal history has no meaningful temporal variance either, so its
@@ -304,7 +312,7 @@ void Denoiser::estimate_variance(SignalState& state, u32 pixels) const noexcept 
             }
             const f32 mean = sum / count;
             state.variance[pixel] =
-                std::max({state.variance[pixel], 0.0F, (sum_squared / count) - (mean * mean)});
+                std::max(state.variance[pixel], stable_variance(mean, sum_squared / count));
             total += state.variance[pixel];
         }
     }

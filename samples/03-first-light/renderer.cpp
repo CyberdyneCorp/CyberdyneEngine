@@ -3,6 +3,7 @@
 #include <cy/backends/rhi/access.h>
 #include <cy/core/math/projection.h>
 
+#include "shaders/first_light_dxil.h"
 #include "shaders/first_light_msl.h"
 #include "shaders/first_light_spirv.h"
 
@@ -268,30 +269,39 @@ Status Renderer::create_shaders() noexcept {
         const char* msl;
         usize msl_bytes;
         const char* msl_entry;
+        const u8* dxil;
+        usize dxil_bytes;
         rhi::ShaderModuleHandle* out;
     };
     const Request requests[3] = {
         {"first-light shadow vertex", rhi::ShaderStage::Vertex, kFirstLightShadowVertexSpirv,
          sizeof(kFirstLightShadowVertexSpirv), kFirstLightShadowVertexMsl,
-         sizeof(kFirstLightShadowVertexMsl) - 1, "shadowVertex", &shadow_vertex_},
+         sizeof(kFirstLightShadowVertexMsl) - 1, "shadowVertex", kFirstLightShadowVertexDxil,
+         sizeof(kFirstLightShadowVertexDxil), &shadow_vertex_},
         {"first-light forward vertex", rhi::ShaderStage::Vertex, kFirstLightForwardVertexSpirv,
          sizeof(kFirstLightForwardVertexSpirv), kFirstLightForwardVertexMsl,
-         sizeof(kFirstLightForwardVertexMsl) - 1, "forwardVertex", &forward_vertex_},
+         sizeof(kFirstLightForwardVertexMsl) - 1, "forwardVertex", kFirstLightForwardVertexDxil,
+         sizeof(kFirstLightForwardVertexDxil), &forward_vertex_},
         {"first-light forward fragment", rhi::ShaderStage::Fragment,
          kFirstLightForwardFragmentSpirv, sizeof(kFirstLightForwardFragmentSpirv),
          kFirstLightForwardFragmentMsl, sizeof(kFirstLightForwardFragmentMsl) - 1,
-         "forwardFragment", &forward_fragment_},
+         "forwardFragment", kFirstLightForwardFragmentDxil, sizeof(kFirstLightForwardFragmentDxil),
+         &forward_fragment_},
     };
-    const bool metal = device_->capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
+    const rhi::ShaderFormat native_format = device_->capabilities().native_shader_format();
     for (const Request& request : requests) {
         rhi::ShaderModuleDescription description;
         description.name = request.name;
         description.stage = request.stage;
-        if (metal) {
+        if (native_format == rhi::ShaderFormat::Msl) {
             description.entry_point = request.msl_entry;
             description.native =
                 Span<const u8>(reinterpret_cast<const u8*>(request.msl), request.msl_bytes);
             description.native_format = rhi::ShaderFormat::Msl;
+        } else if (native_format == rhi::ShaderFormat::Dxil) {
+            description.entry_point = request.name;
+            description.native = Span<const u8>(request.dxil, request.dxil_bytes);
+            description.native_format = rhi::ShaderFormat::Dxil;
         } else {
             description.entry_point = "main";
             description.spirv = Span<const u32>(request.words, request.spirv_bytes / sizeof(u32));

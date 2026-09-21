@@ -22,10 +22,10 @@
 //
 //     THE LABEL HAS TO COME FROM THE ADAPTER'S IDENTITY, NOT FROM ITS FLAG.
 //
-// So `classify()` below reads the device's own reported name against a table of known software and
-// paravirtual implementations, and anything it does not recognise is `Unattested` — never
-// `Hardware`. A classifier that guessed "hardware" for an unknown string would relabel exactly the
-// device the spike caught.
+// So the shared RHI classifier reads the device's reported name and vendor ID. Known physical
+// vendor IDs attest hardware, known software and paravirtual identities override that
+// classification, and anything it does not recognise stays `unknown`. A classifier that guessed
+// "hardware" from the missing software flag would relabel exactly the device the spike caught.
 //
 // ================================================================================================
 // THE RECORD IS A FILE, BECAUSE A CLAIM ABOUT A MACHINE NOBODY HERE OWNS HAS TO BE READABLE LATER
@@ -47,6 +47,7 @@
 // examined.
 
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/device_identity.h>
 #include <cy/core/base/types.h>
 
 #include <cstdio>
@@ -55,79 +56,10 @@
 
 namespace cy::render_test {
 
-/// What kind of implementation answered. Derived from the device's reported name, never from a
-/// flag.
-enum class DeviceClass : u8 {
-    /// A software rasteriser: llvmpipe, lavapipe, SwiftShader, WARP, Microsoft Basic Render Driver.
-    Software,
-    /// A virtualised device on a hosted runner: "Apple Paravirtual device".
-    Paravirtual,
-    /// A backend that draws nothing by construction. Its row is never an image claim.
-    NullBackend,
-    /// A name no table entry matches: no evidence it is software, and NO EVIDENCE IT IS HARDWARE.
-    /// Deliberately not spelled `Hardware` — see the header comment. The rung that writes the Metal
-    /// and D3D12 backends is where this can become an attested answer, because
-    /// `VkPhysicalDeviceType`,
-    /// `DXGI_ADAPTER_DESC` and `MTLDevice`'s own properties are the only things that can give one,
-    /// and none of them is reachable through `DeviceCapabilities` today.
-    Unattested,
-};
+using DeviceClass = rhi::DeviceClass;
 
 [[nodiscard]] inline const char* describe(DeviceClass kind) noexcept {
-    switch (kind) {
-        case DeviceClass::Software:
-            return "software";
-        case DeviceClass::Paravirtual:
-            return "paravirtual";
-        case DeviceClass::NullBackend:
-            return "null-backend";
-        case DeviceClass::Unattested:
-            return "unattested";
-    }
-    return "unattested";
-}
-
-/// The names this project has seen answer that are not hardware. Each is a string a driver reports
-/// about itself, and each was observed rather than guessed: the three Linux ones on this host, the
-/// two hosted-runner ones by M11.d's spike on `macos-14`, `windows-2022` and `windows-11-arm`.
-struct NonHardware {
-    const char* fragment;
-    DeviceClass kind;
-};
-
-inline constexpr NonHardware kNonHardware[] = {
-    {"llvmpipe", DeviceClass::Software},
-    {"lavapipe", DeviceClass::Software},
-    {"SwiftShader", DeviceClass::Software},
-    {"Software Rasterizer", DeviceClass::Software},
-    {"Microsoft Basic Render Driver", DeviceClass::Software},
-    {"WARP", DeviceClass::Software},
-    {"Paravirtual", DeviceClass::Paravirtual},
-    {"Virtual", DeviceClass::Paravirtual},
-    // The null backend is NOT a fragment here: `classify` decides it from the backend KIND, which
-    // is a fact rather than a string. A `"null"` fragment would also match a real device whose
-    // reported name happened to contain the word, which is the false positive a name table has to
-    // avoid when its whole purpose is not to mislabel a device.
-};
-
-/// Classify a device by the name it reports about itself.
-///
-/// Unattested is deliberately NOT hardware. The spike's Windows finding is the whole reason: a
-/// classifier that defaults to "hardware" would call a software rasteriser hardware the moment its
-/// name changed, and the golden image it labelled would be a claim about a machine nobody ran.
-[[nodiscard]] inline DeviceClass classify(const char* device_name, rhi::BackendKind kind) noexcept {
-    if (kind == rhi::BackendKind::Null) {
-        return DeviceClass::NullBackend;
-    }
-    if (device_name == nullptr || device_name[0] == '\0') {
-        return DeviceClass::Unattested;
-    }
-    for (const NonHardware& entry : kNonHardware) {
-        if (std::strstr(device_name, entry.fragment) != nullptr) {
-            return entry.kind;
-        }
-    }
-    return DeviceClass::Unattested;
+    return rhi::device_class_name(kind);
 }
 
 /// What happened to one image on one backend.
@@ -161,7 +93,9 @@ struct LedgerRow {
     char backend[32] = {};
     char image[64] = {};
     char device[128] = {};
-    DeviceClass device_class = DeviceClass::Unattested;
+    char vendor[32] = {};
+    u32 vendor_id = 0;
+    DeviceClass device_class = DeviceClass::Unknown;
     Outcome outcome = Outcome::NoDevice;
     u32 differing = 0;
     u32 differing_off_edge = 0;
@@ -200,11 +134,12 @@ inline void set_field(char* field, usize capacity, const char* value) noexcept {
     for (usize index = 0; index < count; ++index) {
         const LedgerRow& row = rows[index];
         std::fprintf(file,
-                     "row backend=%s image=%s device=\"%s\" class=%s outcome=%s "
+                     "row backend=%s image=%s device=\"%s\" vendor=\"%s\" vendor_id=0x%04x "
+                     "class=%s outcome=%s "
                      "differing=%u off_edge=%u max_delta=%u reason=\"%s\"\n",
-                     row.backend, row.image, row.device, describe(row.device_class),
-                     describe(row.outcome), row.differing, row.differing_off_edge,
-                     row.max_channel_delta, row.reason);
+                     row.backend, row.image, row.device, row.vendor, row.vendor_id,
+                     describe(row.device_class), describe(row.outcome), row.differing,
+                     row.differing_off_edge, row.max_channel_delta, row.reason);
     }
     std::fclose(file);
     return path;
@@ -224,7 +159,7 @@ inline void report_ledger(const LedgerRow* rows, usize count) noexcept {
                          row.max_channel_delta);
         }
         if (row.device[0] != '\0') {
-            std::fprintf(stderr, "  on \"%s\"", row.device);
+            std::fprintf(stderr, "  on \"%s\" (%s, 0x%04x)", row.device, row.vendor, row.vendor_id);
         }
         if (row.reason[0] != '\0') {
             std::fprintf(stderr, "  — %s", row.reason);

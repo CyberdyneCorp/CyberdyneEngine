@@ -7,6 +7,35 @@ namespace cy::rendering::vg {
 
 namespace {
 
+/// A relaxed atomic load/store over a plain value in place. `std::atomic_ref` is the direct
+/// C++20 spelling and what the load_entry / store_entry pair below wants; it is supported on
+/// libstdc++ 10+ and MSVC 19.28+ but was not in Apple libc++ until Xcode 15. Where it is
+/// missing, fall back to the compiler builtin — `__atomic_load_n` / `__atomic_store_n` compile
+/// to the same instruction on aligned integer types and are available on every GCC and every
+/// Clang this project targets.
+#if defined(__cpp_lib_atomic_ref) && __cpp_lib_atomic_ref >= 201806L
+template <class T>
+[[nodiscard]] T relaxed_load(const T& value) noexcept {
+    // `atomic_ref` never mutates during a load, but its template argument must be non-const.
+    // The table owns mutable entries; a const view here only prevents ordinary writes by callers.
+    T& mutable_value = const_cast<T&>(value);
+    return std::atomic_ref<T>(mutable_value).load(std::memory_order_relaxed);
+}
+template <class T>
+void relaxed_store(T& target, T value) noexcept {
+    std::atomic_ref<T>(target).store(value, std::memory_order_relaxed);
+}
+#else
+template <class T>
+[[nodiscard]] T relaxed_load(const T& value) noexcept {
+    return __atomic_load_n(&value, __ATOMIC_RELAXED);
+}
+template <class T>
+void relaxed_store(T& target, T value) noexcept {
+    __atomic_store_n(&target, value, __ATOMIC_RELAXED);
+}
+#endif
+
 /// The subsystem policy this cache registers. Every field is a statement `residency` asks a
 /// subsystem to make about itself, and the two that are not defaults are the ones this capability
 /// argues for: a geometry page is CHEAP to re-fetch — it is immutable, content-addressed bytes on
@@ -36,25 +65,21 @@ namespace {
 }  // namespace
 
 PageTableEntry load_entry(const PageTableEntry& entry) noexcept {
-    // `atomic_ref` never mutates during a load, but its template argument must be non-const.
-    // The table owns mutable entries; this const view only prevents ordinary writes by callers.
-    PageTableEntry& mutable_entry = const_cast<PageTableEntry&>(entry);
     PageTableEntry copy;
-    copy.location = std::atomic_ref<u32>(mutable_entry.location).load(std::memory_order_relaxed);
-    copy.bytes = std::atomic_ref<u32>(mutable_entry.bytes).load(std::memory_order_relaxed);
-    copy.generation =
-        std::atomic_ref<u16>(mutable_entry.generation).load(std::memory_order_relaxed);
-    copy.flags = std::atomic_ref<u8>(mutable_entry.flags).load(std::memory_order_relaxed);
-    copy.reserved = std::atomic_ref<u8>(mutable_entry.reserved).load(std::memory_order_relaxed);
+    copy.location = relaxed_load(entry.location);
+    copy.bytes = relaxed_load(entry.bytes);
+    copy.generation = relaxed_load(entry.generation);
+    copy.flags = relaxed_load(entry.flags);
+    copy.reserved = relaxed_load(entry.reserved);
     return copy;
 }
 
 void store_entry(PageTableEntry& entry, const PageTableEntry& value) noexcept {
-    std::atomic_ref<u32>(entry.location).store(value.location, std::memory_order_relaxed);
-    std::atomic_ref<u32>(entry.bytes).store(value.bytes, std::memory_order_relaxed);
-    std::atomic_ref<u16>(entry.generation).store(value.generation, std::memory_order_relaxed);
-    std::atomic_ref<u8>(entry.flags).store(value.flags, std::memory_order_relaxed);
-    std::atomic_ref<u8>(entry.reserved).store(value.reserved, std::memory_order_relaxed);
+    relaxed_store(entry.location, value.location);
+    relaxed_store(entry.bytes, value.bytes);
+    relaxed_store(entry.generation, value.generation);
+    relaxed_store(entry.flags, value.flags);
+    relaxed_store(entry.reserved, value.reserved);
 }
 
 GeometryCache::GeometryCache(const CacheOptions& options, Allocator& allocator) noexcept

@@ -114,18 +114,19 @@ void AnnouncementPage::publish(const Announcement& frame) noexcept {
         return;
     }
     // THE SEQLOCK, WITHOUT A STANDALONE FENCE. `std::atomic_thread_fence` is not supported under
-    // `-fsanitize=thread` — GCC refuses to compile it — and it is not needed: an acquire-release
-    // read-modify-write opens the write, which stops the payload stores below being reordered
-    // above it, and a release store closes it, which orders those stores before the sequence
-    // becomes even again. That is the pair the reader's two acquire loads are matched with.
-    const u64 start = state_->sequence.fetch_add(1, std::memory_order_acq_rel);
+    // `-fsanitize=thread` — GCC refuses to compile it. Every word therefore participates in the
+    // sequentially-consistent order: a reader cannot observe a payload store between the odd and
+    // even sequence writes while both sequence reads still observe the preceding even value. The
+    // page carries five words once per presented frame, so this stronger and simpler protocol is
+    // far below the cost of the IOSurface/GPU handoff it protects.
+    const u64 start = state_->sequence.fetch_add(1, std::memory_order_seq_cst);
     const u64 words[4] = {
         frame.frame_id, static_cast<u64>(frame.slot) | (static_cast<u64>(frame.generation) << 32U),
         frame.timeline_value, frame.submitted_nanos};
     for (u32 index = 0; index < 4; ++index) {
-        state_->words[index].store(words[index], std::memory_order_relaxed);
+        state_->words[index].store(words[index], std::memory_order_seq_cst);
     }
-    state_->sequence.store(start + 2, std::memory_order_release);
+    state_->sequence.store(start + 2, std::memory_order_seq_cst);
     state_->heartbeat.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -134,15 +135,15 @@ bool AnnouncementPage::read(Announcement& out) const noexcept {
         return false;
     }
     for (u32 attempt = 0; attempt < kReadAttempts; ++attempt) {
-        const u64 before = state_->sequence.load(std::memory_order_acquire);
+        const u64 before = state_->sequence.load(std::memory_order_seq_cst);
         if ((before & 1U) != 0U) {
             continue;
         }
         u64 words[4] = {};
         for (u32 index = 0; index < 4; ++index) {
-            words[index] = state_->words[index].load(std::memory_order_relaxed);
+            words[index] = state_->words[index].load(std::memory_order_seq_cst);
         }
-        if (state_->sequence.load(std::memory_order_acquire) != before) {
+        if (state_->sequence.load(std::memory_order_seq_cst) != before) {
             continue;
         }
         Announcement frame;

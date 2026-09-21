@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/pcg/gpu_executor.h>
 
 #include "../shaders/gpu_conformance_embedded.h"
@@ -138,10 +139,13 @@ Expected<AgreementReport, Error> run_candidate_agreement(rhi::Device& device,
         return make_unexpected(descriptors.error());
     }
     resources.descriptors = *descriptors;
-    const rhi::DescriptorWrite writes[] = {
-        {.binding = 0, .kind = rhi::DescriptorKind::UniformBuffer, .buffer = resources.parameters},
-        {.binding = 1, .kind = rhi::DescriptorKind::StorageBuffer, .buffer = resources.output},
-    };
+    rhi::DescriptorWrite writes[2]{};
+    writes[0].binding = 0;
+    writes[0].kind = rhi::DescriptorKind::UniformBuffer;
+    writes[0].buffer = resources.parameters;
+    writes[1].binding = 1;
+    writes[1].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[1].buffer = resources.output;
     if (Status updated = device.update_descriptor_set(resources.descriptors, writes); !updated) {
         return make_unexpected(updated.error());
     }

@@ -37,12 +37,11 @@ CY_TEST_CASE("the table agrees with the build that produced it") {
     CY_CHECK(feature_enabled("CY_BUILD_TESTS", &found));
     CY_CHECK(found);
 
-    // A feature no milestone has turned on yet: declared, and off. It was CY_RENDERER_VULKAN until
-    // M3 made that one buildable — a Vulkan-enabled build then failed this case, which is the
-    // table doing its job rather than the test finding a defect. CY_RENDERER_METAL is M7's, so it
-    // stays off in every configuration this milestone can produce.
+    // A feature deferred by decision: declared, and off. It was CY_RENDERER_VULKAN until M3 made
+    // that one buildable, then CY_RENDERER_METAL until M11 delivered it on Apple. CY_XR has no
+    // platform-default that can silently turn it on beneath this assertion.
     found = false;
-    CY_CHECK_FALSE(feature_enabled("CY_RENDERER_METAL", &found));
+    CY_CHECK_FALSE(feature_enabled("CY_XR", &found));
     CY_CHECK(found);
 }
 

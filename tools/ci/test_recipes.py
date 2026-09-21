@@ -268,6 +268,16 @@ def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
         failures.append(
             f"{build_file.name}: `build-engine` has no lockf path; macOS does not ship flock"
         )
+    for token, purpose in (
+        ('ln -s "$$" "${fallback_lock}"', "an atomic fallback lock"),
+        ('kill -0 "${owner}"', "stale-owner detection"),
+        ("trap release_fallback_lock EXIT", "fallback-lock cleanup"),
+    ):
+        if token not in build_commands:
+            failures.append(
+                f"{build_file.name}: `build-engine` has no {purpose}; hosted macOS ships neither "
+                "the flock nor lockf command"
+            )
     return failures
 
 

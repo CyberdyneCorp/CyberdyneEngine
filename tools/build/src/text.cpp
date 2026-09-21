@@ -10,12 +10,31 @@ namespace {
 }
 
 /// Read one quoted word, starting at the opening quote. Answers false on an unterminated quote.
+///
+/// Backslash escapes: `\"` and `\\` are literal quotes and backslashes; `\n`, `\r` and `\t` are
+/// their respective control characters. The escape set is symmetric with `quote()` below — a
+/// value that survives the round-trip is one that carries newlines and quotes inside a single
+/// physical line, which is what the toolchain fingerprint's multi-line description needs.
 [[nodiscard]] bool take_quoted(std::string_view line, usize& cursor, std::string& out) {
     ++cursor;  // the opening quote
     while (cursor < line.size()) {
         const char character = line[cursor];
         if (character == '\\' && cursor + 1 < line.size()) {
-            out.push_back(line[cursor + 1]);
+            const char escaped = line[cursor + 1];
+            switch (escaped) {
+                case 'n':
+                    out.push_back('\n');
+                    break;
+                case 'r':
+                    out.push_back('\r');
+                    break;
+                case 't':
+                    out.push_back('\t');
+                    break;
+                default:
+                    out.push_back(escaped);
+                    break;
+            }
             cursor += 2;
             continue;
         }
@@ -94,10 +113,35 @@ std::string quote(std::string_view word) {
     out.reserve(word.size() + 2);
     out.push_back('"');
     for (const char character : word) {
-        if (character == '"' || character == '\\') {
-            out.push_back('\\');
+        // A quoted word cannot span physical lines in this format — the reader splits on newlines
+        // before parsing — so newlines and other whitespace controls are escaped rather than
+        // embedded verbatim. The toolchain fingerprint's multi-line description is the case that
+        // motivated this: its `compiler MSVC 19.44...\nflags c++20...` value used to serialise as
+        // an unterminated-on-line-one quoted word and fail every round-trip.
+        switch (character) {
+            case '"':
+                out.push_back('\\');
+                out.push_back('"');
+                continue;
+            case '\\':
+                out.push_back('\\');
+                out.push_back('\\');
+                continue;
+            case '\n':
+                out.push_back('\\');
+                out.push_back('n');
+                continue;
+            case '\r':
+                out.push_back('\\');
+                out.push_back('r');
+                continue;
+            case '\t':
+                out.push_back('\\');
+                out.push_back('t');
+                continue;
+            default:
+                out.push_back(character);
         }
-        out.push_back(character);
     }
     out.push_back('"');
     return out;

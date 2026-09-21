@@ -81,7 +81,7 @@ constexpr Glyph kGlyphs[] = {
             return candidate;
         }
     }
-    return kGlyphs[sizeof(kGlyphs) / sizeof(kGlyphs[0]) - 1];  // '?'
+    return kGlyphs[(sizeof(kGlyphs) / sizeof(kGlyphs[0])) - 1];  // '?'
 }
 
 /// A content error, spelled as the engine spells one. `cy::fail` returns something convertible to

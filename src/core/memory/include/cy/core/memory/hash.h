@@ -32,9 +32,26 @@ void set_hash_seed(u64 seed) noexcept;
 namespace detail {
 
 /// 64x64 -> 128 multiply, folded to 64 bits by xor. The whole of the mixing.
-[[nodiscard]] inline u64 mix(u64 a, u64 b) noexcept {
+[[nodiscard]] constexpr u64 mix(u64 a, u64 b) noexcept {
+#if defined(_MSC_VER)
+    // MSVC has no __uint128_t. Split the operands into 32-bit limbs so this produces the exact
+    // same high and low halves on x64 and arm64 without binding the public header to one intrinsic.
+    const u64 a_low = static_cast<u32>(a);
+    const u64 a_high = a >> 32;
+    const u64 b_low = static_cast<u32>(b);
+    const u64 b_high = b >> 32;
+    const u64 low_low = a_low * b_low;
+    const u64 low_high = a_low * b_high;
+    const u64 high_low = a_high * b_low;
+    const u64 high_high = a_high * b_high;
+    const u64 middle = (low_low >> 32) + static_cast<u32>(low_high) + static_cast<u32>(high_low);
+    const u64 low = (middle << 32) | static_cast<u32>(low_low);
+    const u64 high = high_high + (low_high >> 32) + (high_low >> 32) + (middle >> 32);
+    return low ^ high;
+#else
     const __uint128_t product = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b);
     return static_cast<u64>(product) ^ static_cast<u64>(product >> 64);
+#endif
 }
 
 inline constexpr u64 kSecret0 = 0xa0761d6478bd642full;

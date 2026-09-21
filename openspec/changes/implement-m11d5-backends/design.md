@@ -27,7 +27,7 @@ Four readings, each of which changes what a criterion in this rung is allowed to
   `rhi-and-render-graph`'s entire stated reason for refusing MoltenVK as the long-term Apple strategy.
   *The thing a native Metal backend is for cannot be exercised on any hosted runner.*
 - **Argument buffers are Tier 1** there. The engine's descriptor model is bindless and the bindless
-  path needs Tier 2, so `unit.rhi_metal` can pass on that leg **without the descriptor model having
+  path needs Tier 2, so `integration.rhi_metal` can pass on that leg **without the descriptor model having
   been exercised once**.
 - **There is no hardware GPU on any hosted Windows image**, and the trap is sharper than "it is
   WARP": the probe found **two** adapters, both `Microsoft Basic Render Driver`, and **adapter 0 does
@@ -60,22 +60,36 @@ buffers. On the M3 Pro the captured Metal image has zero differing texels agains
 `tests/render/references/first_light.png` (maximum raw channel delta 1), and the generated ledger
 names `Apple M3 Pro`. The capture and ledger are committed under `docs/design/images/`.
 
-## 2. What this rung may not claim, with re-entry points
+## 2. Hardware claims and their re-entry points
 
-Four deferrals, each recorded here rather than expressed as a criterion a hosted leg could satisfy
-vacuously. `delivery-roadmap` requires deferred scope to name what is unmet, why, and the condition
-that brings it back.
+Four hardware questions were declared before implementation rather than expressed as criteria a
+hosted leg could satisfy vacuously. Three were later retired by physical Apple, NVIDIA and AMD
+evidence; one remains deferred. `delivery-roadmap` requires deferred scope to name what is unmet,
+why, and the condition that brings it back.
 
-| Deferral | Why it cannot be claimed | Re-entry point |
+| Hardware question | Current status | Evidence or re-entry point |
 |---|---|---|
-| **Apple-family tile memory and memoryless attachments** | The only Metal device any hosted runner presents reports no Apple GPU family. The features do not exist on it | An Apple-silicon machine in the matrix, self-hosted or otherwise. Until then the Metal backend implements them and the claim is *compiled and exercised nowhere* |
-| **Argument buffers at Tier 2** | The hosted device is Tier 1; the bindless descriptor model needs Tier 2, so a passing `unit.rhi_metal` proves nothing about it | The same machine. The backend's conformance suite SHALL report the tier it ran at, so a Tier 1 pass cannot be read as a Tier 2 one |
-| **Golden-image parity against hardware references** | `tests/render/references/` are photographs taken on this project's own hardware; every hosted leg is paravirtual or software | A hardware leg per backend. Until then the comparison is run and the **delta is reported** with the device named, rather than thresholded into a tick |
-| **D3D12 Resource Heap Tier 1** | Every hosted image reports Tier 2; Tier 1 hardware still ships and the allocator's partition behaviour differs on it | A Tier 1 device, or a validation-layer forcing mode if one proves to exist. The allocator SHALL be written for both tiers regardless, which is the half that does not need the device |
+| **Apple-family tile memory and memoryless attachments** | **Closed** | The Apple M3 Pro suite exercised memoryless attachments and explicit-placement heap aliasing on an Apple-family device. |
+| **Argument buffers at Tier 2** | **Closed** | The same M3 Pro reported Tier 2 and sampled through the 16,384-entry global texture table in a native compute dispatch. |
+| **Golden-image parity against hardware references** | **Closed** | Vulkan on NVIDIA RTX 5060, Metal on Apple M3 Pro and D3D12 on AMD Radeon RX 6900 XT all matched the same reference and each other with maximum channel delta 1. |
+| **D3D12 Resource Heap Tier 1** | **Deferred** | Hosted WARP and the physical AMD device report Tier 2. Re-enter on a Tier 1 device, or through a validation forcing mode if one becomes available. The device-free policy test already requires Tier 1 to split buffers, non-render-target textures and render/depth textures into incompatible pool classes. |
 
-**None of these is a reason to skip the backend.** Compile, create a device, draw, present and read a
-pixel back are all real on a hosted leg, and a backend that does those four correctly is a backend
-whose remaining risk is a device away rather than a rewrite away.
+The remaining Tier 1 item is a hardware exercise, not missing allocator policy. Compile, create a
+device, draw, present and readback are covered on hosted WARP and physical AMD hardware.
+
+### 2.1 D3D12 memory decision
+
+The backend uses an engine-owned placed-resource allocator over `ID3D12Heap`; it adopts no new
+dependency. Persistent resources begin as committed allocations, while the render graph's
+transients use the placed heap where aliasing changes peak memory. This keeps the implementation
+behind the existing RHI memory report and pressure path and avoids introducing a second allocator
+policy beside `MemoryPoolClass`.
+
+Resource Heap Tier 2 reports one pool class for buffers and textures. Tier 1 reports distinct
+classes for buffers, non-render-target textures and render/depth textures. The graph meets those
+classes: compatible resources can share a heap, and an empty meet rejects an illegal mixed heap
+before execution. The classification and refusal are device-free; executing placed resources on
+Tier 1 remains the hardware deferral above.
 
 ## 3. What counts as a delivered backend, and what is reported instead
 
