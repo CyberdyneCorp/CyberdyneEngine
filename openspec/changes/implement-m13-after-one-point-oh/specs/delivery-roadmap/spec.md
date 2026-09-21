@@ -23,15 +23,15 @@ is the one shape a deadline cannot survive.
 - **THEN** the ledger fails naming the deferral and the rung
 - **AND** the deferral is re-pointed by a deliberate act rather than by the gate that found it
 
-### Requirement: M12 carries the three capabilities 1.0 ships without
-`xr-support`, `ml-inference` and Android SHALL be deferred to M12 by name. Each SHALL reach
+### Requirement: M13 carries the three capabilities 1.0 ships without
+`xr-support`, `ml-inference` and Android SHALL be deferred to M13 by name. Each SHALL reach
 Complete there, or be deferred again through a change that argues for it and names a further
 re-entry.
 
-M12 SHALL NOT be used as a destination for work a current rung finds inconvenient. A fourth
+M13 SHALL NOT be used as a destination for work a current rung finds inconvenient. A fourth
 capability arrives only through a change that argues for it; the ladder already carries the cost of
 one rung that became a collector of everything nobody did.
 
 #### Scenario: A rung tries to move work to M12 without a change
-- **WHEN** a criterion or task re-points a capability at M12 outside a change proposing it
+- **WHEN** a criterion or task re-points a capability at M13 outside a change proposing it
 - **THEN** the ledger fails, naming the capability and the rung that moved it

@@ -1687,11 +1687,48 @@ RTS desyncs without**, and which nothing currently maps. See tasks 6.1a.
 
 ---
 
-## M12 — After 1.0
+## M12 — The Game
+
+*A vertical slice that proves the engine by using it.*
+
+**Entry**: M11.e green. **1.0 is the engine; this rung is the proof.**
+
+**Why.** Sixty capabilities are recorded Working, each verified by the suite written alongside it,
+and **nothing has ever used them together**. A row observed only by its own tests is a row observed
+once — and this ladder's argument throughout has been that a claim nobody observed is not a claim.
+
+**The subject was already declared missing.** `m11b:the-game-exists` has been a declared gap since
+M11.b: its check is `ls -d samples/*game*` and its answer is nothing. Three more travel with it.
+No rung built the subject — M11.e's artefact is `samples/11-ship`, which that criterion itself calls
+*"a packaging proof"*. **The four criteria move here with their subject**, which is
+`delivery-roadmap`'s *"A criterion follows its subject"*. **So 1.0 stops claiming a game**, and says
+so rather than leaving a reader to infer it.
+
+**The slice is scoped by what it exercises, not by what it contains.** Art, balance and campaign are
+out of scope:
+
+| The slice does this | Because it exercises |
+|---|---|
+| 200 units ordered across one map | `navigation`'s flow fields — whose header claims *"20,000 agents ordered to the same destination"* — and crowd avoidance. **0 of 16 requirements mapped** |
+| Units drawn at unit count | instancing, indirect draws, GPU culling, HLOD, virtual geometry — all implemented, none pushed to RTS scale |
+| Fog of war, an economy, a victory rule | `gameplay-framework`, recorded **Complete**, whose spec requires exactly that scenario |
+| Two clients, one seed, one result | `simulation-and-determinism` — three named determinism suites **do not exist** |
+| Physics under load | fixed-step integration, mapped by nothing, which a lockstep RTS desyncs without |
+
+**And every defect it finds carries a regression test.** Not "fix bugs" — each defect is repaired in
+a change carrying a test that **fails without the repair**, recorded in a register with the row it
+belongs to and the tier that row held when it was found. A defect in a Complete row is a finding
+about the ladder. A count of repairs is not a gate; a count of tests each watched going red is.
+
+**Change**: [`implement-m12-the-game`](../openspec/changes/implement-m12-the-game/proposal.md)
+
+---
+
+## M13 — After 1.0
 
 *The three capabilities 1.0 ships without.*
 
-**Entry**: M11.e green. **1.0 ships from M11.e; this rung is after it**, and no criterion here may
+**Entry**: M12 green. **1.0 ships from M11.e and M12 proves it with a game; this rung is after both**, and no criterion here may
 be cited as a reason for M11.e to remain open.
 
 **Why this rung exists.** `delivery-roadmap` treats a re-entry point named in the record as a
@@ -1712,13 +1749,13 @@ did, and it will not carry two.
 
 **And the ladder's end is checked rather than assumed.** M11.e's note states the rule M12 had to
 satisfy to exist: *either M11.e is the last rung everywhere, or whatever follows it carries a
-ledger, a gate, a floor and a change directory, all four*. M12 carries
-`tools/roadmap/milestones/m12.toml`, `milestone-m12` in `gates.toml`, its floor, and
-`openspec/changes/implement-m12-after-one-point-oh/`. A rung present in some of the places that read
+ledger, a gate, a floor and a change directory, all four*. M13 carries
+`tools/roadmap/milestones/m13.toml`, `milestone-m13` in `gates.toml`, its floor, and
+`openspec/changes/implement-m13-after-one-point-oh/`. A rung present in some of the places that read
 the ladder and absent from others is exactly the failure M8's split produced three times in one
 change.
 
-**Change**: [`implement-m12-after-one-point-oh`](../openspec/changes/implement-m12-after-one-point-oh/proposal.md)
+**Change**: [`implement-m13-after-one-point-oh`](../openspec/changes/implement-m13-after-one-point-oh/proposal.md)
 
 ---
 

@@ -1,12 +1,12 @@
-# Tasks — M12, After 1.0
+# Tasks — M13, After 1.0
 
 ## 0. The rung exists on the ladder, in all four places
 
-- [x] 0.1 `tools/roadmap/record.py`'s `MILESTONES` carries `m12` after `m11e`
-- [x] 0.2 `tools/roadmap/gates.toml` carries `milestone-m12` at `joins-on-close`
-- [x] 0.3 `tools/roadmap/milestones/m12.toml` exists and is read by `just roadmap-milestone m12`
+- [x] 0.1 `tools/roadmap/record.py`'s `MILESTONES` carries `m13` after `m11e`
+- [x] 0.2 `tools/roadmap/gates.toml` carries `milestone-m13` at `joins-on-close`
+- [x] 0.3 `tools/roadmap/milestones/m13.toml` exists and is read by `just roadmap-milestone m12`
 - [x] 0.4 This change directory exists and validates
-- [ ] 0.5 `m11e:the-ladder-ends-consistently` passes with M12 present — the end of the ladder is
+- [ ] 0.5 `m11e:the-ladder-ends-consistently` passes with M13 present — the end of the ladder is
       **consistent**, which is what that check asks, rather than M11.e being last
 
 ## 1. Android — the half of mobile 1.0 does not ship
@@ -43,7 +43,7 @@
 ## 4. Records and the gate
 
 - [ ] 4.1 The three rows reach Complete, or each is recorded deferred again with its reason
-- [ ] 4.2 `docs/roadmap/capability-matrix.md` carries an M12 column
-- [ ] 4.3 `docs/roadmap/ROADMAP.md` describes M12 as after 1.0, not as part of it
+- [ ] 4.2 `docs/roadmap/capability-matrix.md` carries an M13 column
+- [ ] 4.3 `docs/roadmap/ROADMAP.md` describes M13 as after 1.0, not as part of it
 - [ ] 4.4 Every criterion this rung adds has been shown able to fail by `just roadmap-falsify`
 - [ ] 4.5 The gate

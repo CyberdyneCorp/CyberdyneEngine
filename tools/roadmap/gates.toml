@@ -1242,12 +1242,22 @@ state = "joins-on-close"
 
 [[gate]]
 id = "milestone-m12"
-describe = "M12 — After 1.0: the three capabilities 1.0 ships without, each deferred by a deliberate act rather than by omission. Android beside the iOS target M11.e shipped, `ml-inference` off Seed with a consumer that exercises it, and `xr-support` entered through the frame-timing seam M3 left half open. This rung exists so that a deferral has somewhere to point: a re-entry named in the record is a decision, and one named nowhere is an oversight wearing the same clothes."
+describe = "M12 — The Game: a vertical slice that proves the engine by using it. Sixty capabilities reached Working verified one at a time and nothing has ever used them together; this rung builds the consumer that does. Its artefact is `samples/12-rts/` — 200 units on flow fields, fog of war, an economy and a victory rule, two clients agreeing on one seed — and its second half is that every defect the slice finds is repaired in a change carrying a test that fails without the repair. 1.0 is the engine; this rung is the proof."
 runs = ["just roadmap-milestone m12"]
 platforms = ["linux", "windows", "macos"]
 since = "m12"
 class = "milestone"
 milestone = "m12"
+state = "joins-on-close"
+
+[[gate]]
+id = "milestone-m13"
+describe = "M13 — After 1.0: the three capabilities 1.0 and its proof both ship without. Android beside the iOS target M11.e shipped, `ml-inference` off Seed with a consumer that exercises it, and `xr-support` entered through the frame-timing seam M3 left half open. This rung exists so that a deferral has somewhere to point: a re-entry named in the record is a decision, and one named nowhere is an oversight wearing the same clothes."
+runs = ["just roadmap-milestone m13"]
+platforms = ["linux", "windows", "macos"]
+since = "m13"
+class = "milestone"
+milestone = "m13"
 state = "joins-on-close"
 
 

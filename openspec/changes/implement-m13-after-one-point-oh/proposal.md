@@ -1,4 +1,4 @@
-# M12 — After 1.0: the three capabilities 1.0 ships without
+# M13 — After 1.0: the three capabilities 1.0 ships without
 
 ## Why
 
@@ -19,13 +19,13 @@ reach 1.0 without, and each costs more than the rung that would otherwise carry 
 
 ## What changes
 
-- M12 joins the ladder with all four attachments the end-of-ladder check requires: a ledger
-  (`tools/roadmap/milestones/m12.toml`), a gate (`milestone-m12`), a floor, and this change
+- M13 joins the ladder with all four attachments the end-of-ladder check requires: a ledger
+  (`tools/roadmap/milestones/m13.toml`), a gate (`milestone-m13`), a floor, and this change
   directory. `m11e:the-ladder-ends-consistently` is satisfied by a rung that carries all four
   rather than by M11.e being last everywhere.
-- The three deferrals name M12 as their re-entry point, replacing *"after 1.0"* and the
+- The three deferrals name M13 as their re-entry point, replacing *"after 1.0"* and the
   M11.e destination that could not close them.
-- **1.0 still ships from M11.e.** M12 is after it, and nothing in M11.e waits on this rung.
+- **1.0 still ships from M11.e, and M12 proves it with a game.** M13 is after both, and nothing in M11.e waits on this rung.
 
 ## What this is not
 

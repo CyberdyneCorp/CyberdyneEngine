@@ -1,83 +1,70 @@
-# M12 — After 1.0: the exit criteria of the rung that exists so a deferral has somewhere to point.
+# M12 — The Game: the exit criteria of the rung that proves the engine by using it.
 #
-# WHY THIS RUNG EXISTS. `delivery-roadmap` treats a re-entry point named in the record as a decision
-# and one named nowhere as an oversight wearing the same clothes. Three capabilities reach 1.0
-# without a Complete cell, and until this rung existed none of them had a destination that was a
-# rung: `xr-support`'s re-entry was recorded as "after 1.0", which is a date; `ml-inference` has sat
-# at Seed since M8.c with `m11b:ml-inference-or-a-deferral` asking for a consumer OR a deferral and
-# M11.b producing neither; and Android is the half of mobile M11.e does not ship, iOS having landed
-# there with `platform/ios/` while Android has no platform directory at all.
+# WHY THIS RUNG EXISTS. Sixty capabilities are recorded Working, each verified by the suite written
+# alongside it, and NOTHING HAS EVER USED THEM TOGETHER. That is the gap no audit closes and no
+# sweep reaches: a row observed only by its own tests is a row observed once. This ladder's whole
+# argument is that a claim nobody observed is not a claim — eleven checks have shipped here unable
+# to fail — and sixty rows at Working are sixty claims observed one at a time.
 #
-# AND THE LADDER'S END IS CHECKED RATHER THAN ASSUMED. `m11e`'s own note states the rule this rung
-# had to satisfy to exist: "either m11e is the last rung everywhere, or whatever follows it carries
-# a ledger, a gate, a floor and a change directory, all four." This file is the first, `gates.toml`
-# carries `milestone-m12`, the floor is below, and
-# `openspec/changes/implement-m12-after-one-point-oh/` is the fourth. A rung present in some of the
-# places that read the ladder and absent from others is exactly the failure M8's split produced
-# three times in one change.
+# AND THE SUBJECT WAS ALREADY DECLARED MISSING. `m11b:the-game-exists` has been a declared gap since
+# M11.b: its check is `ls -d samples/*game*` and its answer is nothing. Three more travel with it —
+# `-is-playable`, `-drawn`, `-is-honest-about-its-content`. No rung built the subject: M11.e's
+# artefact is `samples/11-ship`, which `m11b:the-game-exists` itself calls "a packaging proof".
+# THE FOUR CRITERIA MOVE HERE WITH THEIR SUBJECT, which is `delivery-roadmap`'s "A criterion follows
+# its subject" — leaving them behind produces a check with nothing to check, and M11.d.5's own
+# header records the same move being made for the same reason.
 #
-# 1.0 STILL SHIPS FROM M11.e. This rung is AFTER it. Nothing in M11.e waits on anything here, and a
-# criterion in this file may not be cited as a reason for M11.e to remain open.
+# SO 1.0 STOPS CLAIMING A GAME, AND THAT IS THE DELIBERATE PART. 1.0 IS THE ENGINE; THIS RUNG IS THE
+# PROOF. M11.e's 1.0 record says so rather than leaving a reader to infer it.
 #
-# WHAT THIS RUNG IS NOT. It is not a destination for work a current rung finds inconvenient. Three
-# capabilities enter by name and by decision; a fourth arrives only through a change that argues for
-# it. The ladder already carries the cost of one rung that became a collector of everything nobody
-# did, and it will not carry two.
+# THE SLICE IS SCOPED BY WHAT IT EXERCISES, NOT BY WHAT IT CONTAINS. Art, balance, campaign and
+# polish are out of scope. Every clause of the artefact exists because it drives a row that is
+# currently claimed and unobserved: flow fields against `navigation`'s own "20,000 agents ordered to
+# the same destination"; unit counts against instancing, indirect draws, GPU culling and HLOD; fog of
+# war, an economy and a victory rule against `gameplay-framework`, which is recorded COMPLETE and
+# whose specification requires exactly that scenario; and two clients on one seed against
+# `simulation-and-determinism`.
+#
+# THE SECOND HALF IS NOT "FIX BUGS". It is that each defect the slice finds is repaired in a change
+# carrying a test that FAILS WITHOUT THE REPAIR. A count of repairs is not a gate; a count of tests
+# each watched going red is. A defect found in a row recorded Complete is a finding about the ladder
+# and not only about the code, and the register records which.
 
 schema = 1
 id = "m12"
-name = "After 1.0"
+name = "The Game"
 
-artefact = "the three capabilities 1.0 shipped without, each either Complete or deferred again by a deliberate act that names a further re-entry"
+artefact = "samples/12-rts/ — a vertical slice sized to exercise named rows rather than to be good: 200 units ordered across one map on flow fields, fog of war, an economy and a victory rule, gameplay in Swift with hot reload used in anger, two clients agreeing on one seed, and a committed screenshot — beside a register of every defect it found, each with the test that fails without its repair."
 
 notes = [
     "`just roadmap-milestone m12` is this recipe, so it cannot be one of the criteria it evaluates.",
-    "1.0 SHIPS FROM M11.e AND THIS RUNG IS AFTER IT. No criterion in this file may be cited as a reason for M11.e to remain open, and nothing in M11.e waits on anything here.",
-    "THE THREE CAPABILITIES ENTER BY NAME: `xr-support`, `ml-inference` and Android. A fourth arrives only through a change that argues for it. The ladder already carries the cost of one rung that became a collector of everything nobody did.",
+    "THE FOUR GAME CRITERIA MOVED HERE FROM m11e WITH THEIR SUBJECT. They are not copied: two ledgers asserting one subject is how a rung closes on another's evidence.",
+    "1.0 SHIPS FROM M11.e. This rung is the proof of it, not part of it, and no criterion here may be cited as a reason for M11.e to remain open.",
+    "ART, BALANCE AND CAMPAIGN ARE OUT OF SCOPE. A criterion here that judges whether the game is GOOD is a criterion no machine can settle; what is checkable is that the rows it names were exercised together and that what it found was repaired with a test.",
 ]
 
 [[criterion]]
-id = "the-three-deferrals-name-this-rung"
-describe = "`xr-support`, `ml-inference` and Android each name M12 as their re-entry point, and none of them names a date, a rung that does not exist, or a rung whose gate is already green. THIS IS THE CRITERION THAT MAKES THE OTHERS POSSIBLE: a deferral pointing nowhere is the shape this project has already produced twice — four release recipes refused naming an 'M12 — build-and-packaging' that did not exist, and a declared gap pointed at M11.a for two rungs after M11.a closed"
-source = "tasks 0, delivery-roadmap (A deferral names a rung, not a date)"
+id = "defects-carry-their-regression-test"
+describe = "every defect the slice found is repaired in a change carrying a test that fails without the repair, and the register in the change's design.md records the defect, the row it belongs to, the test, and the tier that row held when it was found. A COUNT OF REPAIRS IS NOT A GATE; a count of tests each watched going red is. This is the project's own standing rule — 'any bug found needs a regression test added on the PR that solves it' — applied to the first consumer the engine has ever had, and it is the half of this rung that outlives the sample: the game is evidence, the tests are the residue"
+source = "tasks 3, testing-and-quality, delivery-roadmap"
 kind = "command"
 run = '''
 set -eo pipefail
-python3 - <<'CHECK'
-import pathlib, sys, tomllib
-sys.path.insert(0, "tools/roadmap")
-import record as record_module
-
-ladder = list(record_module.MILESTONES)
-if "m12" not in ladder:
-    print("m12 is not on the ladder in record.MILESTONES")
-    raise SystemExit(1)
-
-gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
-gate = [g for g in gates["gate"] if g.get("milestone") == "m12"]
-if not gate:
-    print("no milestone-m12 gate in gates.toml")
-    raise SystemExit(1)
-
-ledger = pathlib.Path("tools/roadmap/milestones/m12.toml")
-change = pathlib.Path("openspec/changes/implement-m12-after-one-point-oh")
-for path in (ledger, change):
-    if not path.exists():
-        print(f"missing attachment: {path}")
-        raise SystemExit(1)
-
-print(f"m12 present in all four: ladder position {ladder.index('m12')}, "
-      f"gate {gate[0]['state']}, ledger, change directory")
-CHECK
+register="openspec/changes/implement-m12-the-game/design.md"
+test -f "$register" || { echo "no defect register at $register"; exit 1; }
+defects=$(grep -cE '^\| *D[0-9]+ ' "$register" || true)
+tested=$(grep -cE '^\| *D[0-9]+ .*\|.*(test|suite)[^|]*\|' "$register" || true)
+echo "register: $defects defect(s), $tested carrying a named test"
+test "${defects:-0}" -gt 0 || { echo "the register names no defect: a slice that found nothing did not exercise anything"; exit 1; }
+test "${tested:-0}" -eq "${defects:-0}" || { echo "$((defects - tested)) defect(s) have no named test"; exit 1; }
 '''
 ci_job = "milestone-m12"
 
-# THE MUTATION IS THE ABSENCE THE CRITERION EXISTS TO CATCH. Removing `m12` from the ladder tuple
-# leaves the gate, the ledger and the change directory all present and the rung unreachable by every
-# reader that walks `record.MILESTONES` — which is the three-readers-three-regexes failure M8's split
-# produced, in the one place it is cheapest to make.
+# THE MUTATION IS THE SHAPE THE RULE EXISTS TO REFUSE: a defect recorded with no test beside it. The
+# register still parses, the rung still has findings, and the one thing that makes a finding durable
+# is missing.
 [criterion.falsifies]
-mutate = "delete-lines"
-target = "tools/roadmap/record.py"
-token = '    "m12",'
-note = "one line in the ladder tuple; the tree still imports, every other attachment is still there, and the rung is simply not on the ladder any more."
+mutate = "rename-token"
+target = "openspec/changes/implement-m12-the-game/design.md"
+token = "regression test"
+note = "renaming the column the register's test cells are found by leaves every defect row present and none of them carrying a test, which is exactly the state this criterion refuses."

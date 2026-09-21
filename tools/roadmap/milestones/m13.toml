@@ -1,0 +1,83 @@
+# M13 — After 1.0: the exit criteria of the rung that exists so a deferral has somewhere to point.
+#
+# WHY THIS RUNG EXISTS. `delivery-roadmap` treats a re-entry point named in the record as a decision
+# and one named nowhere as an oversight wearing the same clothes. Three capabilities reach 1.0
+# without a Complete cell, and until this rung existed none of them had a destination that was a
+# rung: `xr-support`'s re-entry was recorded as "after 1.0", which is a date; `ml-inference` has sat
+# at Seed since M8.c with `m11b:ml-inference-or-a-deferral` asking for a consumer OR a deferral and
+# M11.b producing neither; and Android is the half of mobile M11.e does not ship, iOS having landed
+# there with `platform/ios/` while Android has no platform directory at all.
+#
+# AND THE LADDER'S END IS CHECKED RATHER THAN ASSUMED. `m11e`'s own note states the rule this rung
+# had to satisfy to exist: "either m11e is the last rung everywhere, or whatever follows it carries
+# a ledger, a gate, a floor and a change directory, all four." This file is the first, `gates.toml`
+# carries `milestone-m13`, the floor is below, and
+# `openspec/changes/implement-m13-after-one-point-oh/` is the fourth. A rung present in some of the
+# places that read the ladder and absent from others is exactly the failure M8's split produced
+# three times in one change.
+#
+# 1.0 STILL SHIPS FROM M11.e. This rung is AFTER it. Nothing in M11.e waits on anything here, and a
+# criterion in this file may not be cited as a reason for M11.e to remain open.
+#
+# WHAT THIS RUNG IS NOT. It is not a destination for work a current rung finds inconvenient. Three
+# capabilities enter by name and by decision; a fourth arrives only through a change that argues for
+# it. The ladder already carries the cost of one rung that became a collector of everything nobody
+# did, and it will not carry two.
+
+schema = 1
+id = "m13"
+name = "After 1.0"
+
+artefact = "the three capabilities 1.0 shipped without, each either Complete or deferred again by a deliberate act that names a further re-entry"
+
+notes = [
+    "`just roadmap-milestone m13` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "1.0 SHIPS FROM M11.e, M12 PROVES IT WITH A GAME, AND THIS RUNG IS AFTER BOTH. No criterion in this file may be cited as a reason for M11.e to remain open, and nothing in M11.e waits on anything here.",
+    "THE THREE CAPABILITIES ENTER BY NAME: `xr-support`, `ml-inference` and Android. A fourth arrives only through a change that argues for it. The ladder already carries the cost of one rung that became a collector of everything nobody did.",
+]
+
+[[criterion]]
+id = "the-three-deferrals-name-this-rung"
+describe = "`xr-support`, `ml-inference` and Android each name M13 as their re-entry point, and none of them names a date, a rung that does not exist, or a rung whose gate is already green. THIS IS THE CRITERION THAT MAKES THE OTHERS POSSIBLE: a deferral pointing nowhere is the shape this project has already produced twice — four release recipes refused naming an 'M12 — build-and-packaging' that did not exist, and a declared gap pointed at M11.a for two rungs after M11.a closed"
+source = "tasks 0, delivery-roadmap (A deferral names a rung, not a date)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import record as record_module
+
+ladder = list(record_module.MILESTONES)
+if "m13" not in ladder:
+    print("m13 is not on the ladder in record.MILESTONES")
+    raise SystemExit(1)
+
+gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
+gate = [g for g in gates["gate"] if g.get("milestone") == "m13"]
+if not gate:
+    print("no milestone-m13 gate in gates.toml")
+    raise SystemExit(1)
+
+ledger = pathlib.Path("tools/roadmap/milestones/m13.toml")
+change = pathlib.Path("openspec/changes/implement-m13-after-one-point-oh")
+for path in (ledger, change):
+    if not path.exists():
+        print(f"missing attachment: {path}")
+        raise SystemExit(1)
+
+print(f"m13 present in all four: ladder position {ladder.index('m13')}, "
+      f"gate {gate[0]['state']}, ledger, change directory")
+CHECK
+'''
+ci_job = "milestone-m13"
+
+# THE MUTATION IS THE ABSENCE THE CRITERION EXISTS TO CATCH. Removing `m13` from the ladder tuple
+# leaves the gate, the ledger and the change directory all present and the rung unreachable by every
+# reader that walks `record.MILESTONES` — which is the three-readers-three-regexes failure M8's split
+# produced, in the one place it is cheapest to make.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/record.py"
+token = '    "m13",'
+note = "one line in the ladder tuple; the tree still imports, every other attachment is still there, and the rung is simply not on the ladder any more."
