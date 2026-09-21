@@ -187,22 +187,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # extractions/setup-just@v3 has no Windows-arm64 target ("failed to determine any valid
-      # targets; arch = arm64, platform = win32"), so on that one leg the binary is installed by
-      # hand from `just`'s own release page. Every other leg — including windows-x86_64 — uses the
-      # action, which does have a mapping for them.
+      # targets; arch = arm64, platform = win32"), so on that one leg the binary comes from the
+      # `rust-just` PyPI wheel, which does ship a win_arm64 build and drops `just.exe` on PATH via
+      # the Python Scripts directory. `pip install` is on the workflow gate's provisioning list, so
+      # the check-workflows selftest accepts it. Every other leg uses the action.
       - if: matrix.label != 'windows-arm64'
         uses: extractions/setup-just@v3
       - if: matrix.label == 'windows-arm64'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $version = '1.36.0'
-          $url = "https://github.com/casey/just/releases/download/$version/just-$version-aarch64-pc-windows-msvc.zip"
-          $zip = "$env:RUNNER_TEMP\just.zip"
-          $dir = "$env:RUNNER_TEMP\just"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath $dir -Force
-          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append
+        run: pip install rust-just==1.36.0
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -276,20 +269,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # setup-just@v3 has no Windows-arm64 target — see the `build` matrix's twin block for the
-      # manual install rationale.
+      # `pip install rust-just` rationale.
       - if: matrix.label != 'windows-arm64'
         uses: extractions/setup-just@v3
       - if: matrix.label == 'windows-arm64'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $version = '1.36.0'
-          $url = "https://github.com/casey/just/releases/download/$version/just-$version-aarch64-pc-windows-msvc.zip"
-          $zip = "$env:RUNNER_TEMP\just.zip"
-          $dir = "$env:RUNNER_TEMP\just"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath $dir -Force
-          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append
+        run: pip install rust-just==1.36.0
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
