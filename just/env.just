@@ -443,14 +443,29 @@ _host-compiler:
 
 # True when version {{found}} is at least {{minimum}}. Dotted components, numerically, left to right.
 #
-# Uses python3 rather than awk. `awk` is not on PATH on the windows-arm64 GitHub image, and Windows
-# reacts to a missing `awk` by asking WSL to satisfy it — which prints "Windows Subsystem for Linux
-# must be updated" and exits non-zero, so every version check reads as "old" and env-doctor refuses
-# a machine whose tools are all fine. python3 is one of the tools env-doctor already requires, so
-# assuming its presence here is honest.
+# Pure bash, no external tools. Two prior attempts each failed on the windows-arm64 hosted image:
+# `awk` is not on PATH there, and Windows reacts to a missing command by asking the App Execution
+# Aliases layer to satisfy it via WSL, which prints "Windows Subsystem for Linux must be updated"
+# and exits non-zero. `python3` triggered the same redirect through a different route on the same
+# image. Explicit bash shebang + integer-only shell arithmetic sidesteps both. Every character
+# after the first non-digit is stripped per component, so `1.36.0-rc1` compares as `1.36.0`.
 [private]
 _version-at-least found minimum:
-    @python3 -c "import re,sys;p=lambda s:[int((re.match(r'\d+',c) or re.match(r'0','0')).group()) for c in s.split('.')];a=p('{{found}}');b=p('{{minimum}}');n=max(len(a),len(b));sys.exit(0 if a+[0]*(n-len(a))>=b+[0]*(n-len(b)) else 1)"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IFS='.' read -ra found_parts <<< "{{found}}"
+    IFS='.' read -ra min_parts <<< "{{minimum}}"
+    n=${#found_parts[@]}
+    (( ${#min_parts[@]} > n )) && n=${#min_parts[@]}
+    for (( i=0; i<n; i++ )); do
+        a="${found_parts[i]:-0}"
+        b="${min_parts[i]:-0}"
+        a="${a%%[!0-9]*}"; a="${a:-0}"
+        b="${b%%[!0-9]*}"; b="${b:-0}"
+        if (( 10#$a > 10#$b )); then exit 0; fi
+        if (( 10#$a < 10#$b )); then exit 1; fi
+    done
+    exit 0
 
 # The Swift toolchain: whether it is present, which version, and — when it is installed but not on
 # PATH — why, which is the case this recipe exists for.
