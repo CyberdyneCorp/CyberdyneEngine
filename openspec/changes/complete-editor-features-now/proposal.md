@@ -27,6 +27,8 @@ Editor features should now be finished as one coherent workstream.
   document model, with explicit conflict resolution and no silent loss.
 - Add regression, interaction-target, persistence, accessibility, and command/MCP parity coverage,
   and update Editor documentation as behavior lands.
+- Let a developer name the project root explicitly and keep Play, Pause, and Editing state aligned
+  with the engine runtime that actually accepted the transition.
 - Explicitly defer renderer-produced thumbnails and previews, remote-device encoded streaming,
   renderer/debugger views whose producers do not exist, build/deployment service integration,
   domain editors lacking engine authoring vocabularies, and platform work owned by the active Metal
@@ -43,7 +45,10 @@ None.
 - `editor-agent-interface`: require the shipped desktop window and MCP transport to operate
   concurrently with visible, revocable human control.
 - `editor-architecture`: add the Swift Workspace and make the already-required project, hierarchy,
-  source-control, history, settings, and asset operations usable desktop surfaces.
+  source-control, history, settings, asset operations, and explicit project selection usable
+  desktop surfaces.
+- `live-editing`: require disconnected Play requests and runtime loss to leave the editor in an
+  honest Editing state rather than presenting a simulation state with no engine.
 - `editor-documents-and-transactions`: make open-document state, guarded close, restoration,
   attributed history, semantic comparison, and merge directly operable in the workspace.
 - `swift-scripting`: define the embedded SourceKit-LSP editing and edit-build-reload experience

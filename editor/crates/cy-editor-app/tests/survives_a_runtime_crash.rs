@@ -23,7 +23,9 @@ use std::time::{Duration, Instant};
 use cy_editor_app::Application;
 use cy_editor_commands::Arguments;
 use cy_editor_core::Actor;
+use cy_editor_core::ids::DocumentId;
 use cy_editor_core::value::Value;
+use cy_editor_viewport::play::PlayState;
 
 /// Where Cargo put `cy-runtime-stub`.
 fn stub_binary() -> PathBuf {
@@ -62,6 +64,47 @@ fn start_runtime(socket: &PathBuf) -> Child {
         .expect("a readable line");
     assert_eq!(ready, "listening");
     child
+}
+
+fn set_all_viewports(application: &mut Application, state: PlayState) {
+    for viewport in application.editor.viewports.all_mut().iter_mut() {
+        viewport.play = state;
+    }
+}
+
+fn all_viewports_are(application: &Application, state: PlayState) -> bool {
+    application
+        .editor
+        .viewports
+        .all()
+        .iter()
+        .all(|viewport| viewport.play == state)
+}
+
+fn wait_for_connection_state(application: &mut Application, connected: bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while application.editor.runtime.is_connected() != connected && Instant::now() < deadline {
+        application.pump();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    application.pump();
+    assert_eq!(
+        application.editor.runtime.is_connected(),
+        connected,
+        "the runtime connection reached the requested state"
+    );
+}
+
+fn assert_dirty_document(
+    application: &Application,
+    document: DocumentId,
+    nodes: usize,
+    history: usize,
+) {
+    let document = application.editor.documents.get(document).unwrap();
+    assert_eq!(document.content().node_count(), nodes);
+    assert_eq!(document.history().entries().len(), history);
+    assert!(document.is_dirty());
 }
 
 #[test]
@@ -115,23 +158,18 @@ fn the_editor_survives_the_runtime_being_killed_mid_session() {
     assert_eq!(nodes_before, 2);
     assert_eq!(history_before, 2);
 
+    // Model the state the runtime owned before it died. The loss path must not leave the editor
+    // claiming that this simulation still exists after the process is gone.
+    set_all_viewports(&mut application, PlayState::Playing);
+
     // The runtime dies. SIGKILL rather than a clean shutdown, because a crash is what is being
     // tested and a crash does not run a shutdown path.
     runtime.kill().expect("the runtime can be killed");
     runtime.wait().expect("and reaped");
 
     // The editor notices — on its own frame, without blocking on anything.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while application.editor.runtime.is_connected() && Instant::now() < deadline {
-        application.pump();
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    application.pump();
-
-    assert!(
-        !application.editor.runtime.is_connected(),
-        "the editor learned the runtime is gone"
-    );
+    wait_for_connection_state(&mut application, false);
+    assert!(all_viewports_are(&application, PlayState::Editing));
 
     // THE POINT OF ALL OF IT: everything the editor knew is still true.
     let after = application.editor.documents.get(document).unwrap();
@@ -173,6 +211,24 @@ fn the_editor_survives_the_runtime_being_killed_mid_session() {
         .find(|notification| notification.message.contains("runtime"))
         .expect("the crash is surfaced rather than silent");
     assert!(crash.problem.as_ref().unwrap().remedy.is_some());
+
+    // Starting the runtime again is enough. The same editor process reconnects at its bounded
+    // retry cadence, retains the dirty document, and replays the three unsaved transactions into
+    // the fresh runtime before incremental mirroring resumes.
+    let mut restarted = start_runtime(&socket);
+    wait_for_connection_state(&mut application, true);
+    assert_dirty_document(&application, document, nodes_before + 1, history_before + 1);
+    assert_eq!(
+        application.editor.mirror.forwarded_transactions(),
+        3,
+        "the fresh runtime received every unsaved transaction"
+    );
+
+    restarted
+        .kill()
+        .expect("the restarted runtime can be killed");
+    restarted.wait().expect("and reaped");
+    drop(application);
 
     std::fs::remove_dir_all(&directory).unwrap();
 }

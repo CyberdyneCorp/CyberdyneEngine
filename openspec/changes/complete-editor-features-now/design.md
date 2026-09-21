@@ -122,6 +122,20 @@ commands, headless tests, shell regression tests, and documentation before the n
 This sequence delivers usable features early and avoids requiring the most cross-cutting thread and
 wire changes before the document workflows they expose exist.
 
+### 9. Explicit projects and runtime-authoritative Play state
+
+`--project <directory>` selects the root before workspace restoration, document opening, importer
+discovery, or source discovery. The directory must contain the engine's `project.json`; an explicit
+path is never weakened into an arbitrary writable directory.
+
+Play state describes an engine simulation, so the runtime request is sent before the local viewport
+state changes. If Play or Pause cannot be sent to an attached runtime, the command remains non-fatal
+for the authoring session, reports the remedy, and leaves the viewport in its previous state. Leaving
+Play may always restore the local Editing state. Losing an attached runtime also restores Editing on
+the next pump.
+This local correction does not launch a process; editor-owned runtime launch and the physical Metal
+connected test remain dependent on the parallel backend change.
+
 ## Risks / Trade-offs
 
 - **MCP request waits for a UI frame** → Use bounded channels, explicit deadlines, and progress

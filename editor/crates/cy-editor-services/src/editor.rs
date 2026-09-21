@@ -305,6 +305,16 @@ impl Editor {
     /// because a frame happened.
     pub fn pump(&mut self) {
         let messages = self.runtime.pump(&mut self.notifications);
+        #[cfg(unix)]
+        if self.runtime.reconnect_if_due() {
+            self.mirror.runtime_restarted();
+            self.notifications.post(Notification::info(
+                "The hosted runtime restarted and the editor reconnected",
+            ));
+        }
+        if !self.runtime.is_connected() {
+            self.set_local_play_state(PlayState::Editing);
+        }
         // THE GIZMO ARRIVES HERE. `RuntimeMirror` takes a published layout, refuses one that
         // belongs to a frame the viewport is not showing, and hands what survives to the viewport
         // panel — which draws nothing and hit-tests everything, because the geometry is the
@@ -905,32 +915,29 @@ impl cy_editor_commands::ProjectHost for Editor {
                 .with_remedy("the states are: editing, playing, paused"));
             }
         };
-        // Every viewport, because play is a property of the runtime rather than of a panel: two
-        // viewports showing different play states would be two runtimes. The mode is the runtime's
-        // for the same reason, and is held once here rather than per viewport.
-        for viewport in self.viewports.all_mut().iter_mut() {
-            viewport.play = wanted;
-        }
-        self.play_mode = wanted_mode;
-
         // AND THE RUNTIME, WHICH IS WHAT M8.a ADDS. Until now this function set a badge and told
         // the engine nothing: pressing play changed a word in the corner of the viewport and
         // simulated nothing, which is design.md §4's "today it reports `hosting: NoRuntime`".
         //
-        // The badge is still set FIRST and unconditionally, and the failure to reach a runtime is
-        // reported rather than raised. An editor with no engine attached is a first-class mode
-        // (`crate::runtime`'s header argues it at length) and a designer switching to play in one
-        // is doing an ordinary thing; what must not happen is the editor claiming that something is
-        // simulating when nothing is. So the sentence says which of the two happened.
+        // The runtime request happens before the local badge changes. A disconnected editor remains
+        // fully usable for authoring, but PLAYING and PAUSED describe a simulation and therefore
+        // cannot be entered when no engine accepted the request.
         let hosted = match self.runtime.play(state, wanted_mode) {
-            Ok(request) => format!(" — asked the runtime (request {})", request.as_u64()),
+            Ok(request) => {
+                self.set_local_play_state(wanted);
+                self.play_mode = wanted_mode;
+                format!(" — asked the runtime (request {})", request.as_u64())
+            }
             Err(problem) => {
-                self.notifications.post(Notification::info(format!(
-                    "Play: {}. The viewport says {}.",
-                    problem,
-                    wanted.badge()
-                )));
-                " — no runtime is attached, so nothing is simulating".to_string()
+                if wanted == PlayState::Editing {
+                    self.set_local_play_state(PlayState::Editing);
+                }
+                self.notifications
+                    .post(Notification::warning(format!("Play unchanged: {problem}.")));
+                return Ok(format!(
+                    "Play unchanged ({}) — no runtime is attached, so nothing is simulating",
+                    cy_editor_commands::ProjectHost::play_state(self)
+                ));
             }
         };
 
@@ -955,6 +962,16 @@ impl cy_editor_commands::ProjectHost for Editor {
 
     fn play_mode(&self) -> String {
         self.play_mode.name().to_string()
+    }
+}
+
+impl Editor {
+    fn set_local_play_state(&mut self, state: PlayState) {
+        // Every viewport, because play is a property of the runtime rather than of a panel: two
+        // viewports showing different play states would describe two runtimes.
+        for viewport in self.viewports.all_mut().iter_mut() {
+            viewport.play = state;
+        }
     }
 }
 

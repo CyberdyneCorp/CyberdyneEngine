@@ -13,10 +13,12 @@
 //!
 //! ```text
 //! cyberdyne-editor                                     # opens the window
+//! cyberdyne-editor --project samples/05b-editor-window/project
 //! cyberdyne-editor --open worlds/city.cyworld          # opens the window on a world
 //! cyberdyne-editor --version
 //! cyberdyne-editor --list-commands
 //! cyberdyne-editor --headless --open worlds/city.cyworld
+//! cyberdyne-editor --smoke                            # open, draw three frames, close
 //! cyberdyne-editor --open worlds/city.cyworld --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --host /run/cyberdyne.sock --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --mcp --agent-scope author
@@ -31,9 +33,10 @@
 use std::process::ExitCode;
 
 use cy_editor_app::{Application, run_script};
+use cy_editor_commands::{AssetHost, ImportFormat};
 use cy_editor_core::Actor;
 use cy_editor_core::problem::{Problem, Result};
-use cy_editor_services::{Notification, WorkspaceStore};
+use cy_editor_services::{Notification, ProjectService, WorkspaceStore};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -57,13 +60,16 @@ fn main() -> ExitCode {
               sub-structures would make the parser longer and say nothing new"
 )]
 struct Options {
+    project: Option<String>,
     open: Vec<String>,
     script: Option<String>,
     host: Option<String>,
     list_commands: bool,
+    list_importers: bool,
     version: bool,
     journal: Option<String>,
     headless: bool,
+    smoke: bool,
     mcp: bool,
     agent_scope: String,
     agent_intent: String,
@@ -72,13 +78,16 @@ struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            project: None,
             open: Vec::new(),
             script: None,
             host: None,
             list_commands: false,
+            list_importers: false,
             version: false,
             journal: None,
             headless: false,
+            smoke: false,
             mcp: false,
             // The narrowest useful setting, which is what `editor-agent-interface` requires a scope
             // to default to: an agent may look at everything and change nothing until somebody says
@@ -103,6 +112,9 @@ fn run(arguments: &[String]) -> Result<()> {
     }
 
     let mut application = Application::new(Actor::human(whoami()))?;
+    if let Some(project) = selected_project(&options)? {
+        application.editor = application.editor.with_project(project);
+    }
 
     if options.list_commands {
         // The projection an agent reads, printed. Every line states the command's parameters and its
@@ -110,6 +122,22 @@ fn run(arguments: &[String]) -> Result<()> {
         for line in application.registry.projection() {
             println!("{line}");
         }
+        return Ok(());
+    }
+
+    if options.list_importers {
+        let formats = application.editor.imports.import_formats();
+        if formats.is_empty() {
+            return Err(Problem::new(
+                "list the editor's importers",
+                format!(
+                    "the import service reported none ({})",
+                    application.editor.imports.describe()
+                ),
+            )
+            .with_remedy("build cy_import_cli or set CY_IMPORT_CLI to that executable"));
+        }
+        print!("{}", format_importers(&formats));
         return Ok(());
     }
 
@@ -133,33 +161,8 @@ fn run(arguments: &[String]) -> Result<()> {
     }
 
     let opens_window = opens_window(&options);
-    let workspace_store = if opens_window {
-        match WorkspaceStore::for_user(application.editor.project.root()) {
-            Ok(store) => {
-                match store.restore(&mut application.editor) {
-                    Ok(report) => {
-                        if !report.missing.is_empty() {
-                            application.editor.notifications.post(Notification::warning(
-                                format!(
-                                    "Skipped {} missing document(s) from the previous workspace: {}",
-                                    report.missing.len(),
-                                    report.missing.join(", ")
-                                ),
-                            ));
-                        }
-                    }
-                    Err(problem) => application
-                        .editor
-                        .notifications
-                        .post(Notification::error(problem.what.clone(), problem)),
-                }
-                Some(store)
-            }
-            Err(problem) => {
-                eprintln!("cyberdyne-editor: {problem}");
-                None
-            }
-        }
+    let workspace_store = if opens_window && !options.smoke {
+        restore_workspace(&mut application)
     } else {
         None
     };
@@ -196,6 +199,35 @@ fn run(arguments: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn restore_workspace(application: &mut Application) -> Option<WorkspaceStore> {
+    let store = match WorkspaceStore::for_user(application.editor.project.root()) {
+        Ok(store) => store,
+        Err(problem) => {
+            eprintln!("cyberdyne-editor: {problem}");
+            return None;
+        }
+    };
+
+    match store.restore(&mut application.editor) {
+        Ok(report) if !report.missing.is_empty() => {
+            application
+                .editor
+                .notifications
+                .post(Notification::warning(format!(
+                    "Skipped {} missing document(s) from the previous workspace: {}",
+                    report.missing.len(),
+                    report.missing.join(", ")
+                )));
+        }
+        Ok(_) => {}
+        Err(problem) => application
+            .editor
+            .notifications
+            .post(Notification::error(problem.what.clone(), problem)),
+    }
+    Some(store)
+}
+
 fn opens_window(options: &Options) -> bool {
     !options.headless && options.script.is_none()
 }
@@ -211,6 +243,9 @@ fn run_window(
         scope,
     } = application;
     let mut window = cy_editor_shell::EditorWindow::new(editor, registry, scope)?;
+    if options.smoke {
+        window = window.with_smoke_frames(3);
+    }
     if let Some(store) = workspace_store {
         window = window.with_workspace_store(store);
     }
@@ -262,11 +297,14 @@ fn parse(arguments: &[String]) -> Result<Options> {
         match argument {
             "--version" | "-V" => options.version = true,
             "--list-commands" => options.list_commands = true,
+            "--list-importers" => options.list_importers = true,
+            "--project" => options.project = Some(value(arguments, &mut index, "--project")?),
             "--open" => options.open.push(value(arguments, &mut index, "--open")?),
             "--script" => options.script = Some(value(arguments, &mut index, "--script")?),
             "--host" => options.host = Some(value(arguments, &mut index, "--host")?),
             "--journal" => options.journal = Some(value(arguments, &mut index, "--journal")?),
             "--headless" => options.headless = true,
+            "--smoke" => options.smoke = true,
             "--mcp" => options.mcp = true,
             "--agent-scope" => {
                 options.agent_scope = value(arguments, &mut index, "--agent-scope")?;
@@ -291,6 +329,27 @@ fn parse(arguments: &[String]) -> Result<Options> {
     Ok(options)
 }
 
+fn selected_project(options: &Options) -> Result<Option<ProjectService>> {
+    let Some(root) = &options.project else {
+        return Ok(None);
+    };
+    let project = ProjectService::new(root);
+    if !project.is_declared() {
+        return Err(Problem::new(
+            format!("open the project {}", project.root().display()),
+            format!(
+                "the directory does not contain {}",
+                ProjectService::MANIFEST
+            ),
+        )
+        .with_remedy(
+            "choose a CyberEngine project directory; the editor will not treat an arbitrary \
+             directory as writable project content",
+        ));
+    }
+    Ok(Some(project))
+}
+
 fn value(arguments: &[String], index: &mut usize, option: &str) -> Result<String> {
     *index += 1;
     arguments.get(*index).cloned().ok_or_else(|| {
@@ -299,6 +358,29 @@ fn value(arguments: &[String], index: &mut usize, option: &str) -> Result<String
             "it takes a value and none followed it",
         )
     })
+}
+
+/// Canonical editor-side projection of the importer tool's dynamic catalogue.
+///
+/// A line is `name<TAB>extensions<TAB>setting:type,...`. Keeping this deliberately simple lets the
+/// cross-language criterion parse the tool's human listing independently and compare exact rows.
+fn format_importers(formats: &[ImportFormat]) -> String {
+    let mut output = String::new();
+    for format in formats {
+        let settings = format
+            .settings
+            .iter()
+            .map(|setting| format!("{}:{}", setting.name, setting.kind))
+            .collect::<Vec<_>>()
+            .join(",");
+        output.push_str(&format.importer);
+        output.push('\t');
+        output.push_str(&format.extensions.join(","));
+        output.push('\t');
+        output.push_str(&settings);
+        output.push('\n');
+    }
+    output
 }
 
 /// Serve one agent over standard input and output.
@@ -420,7 +502,9 @@ const USAGE: &str = "\
 cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
 
     --open <asset>        open a document (repeatable)
+    --project <directory> open this CyberEngine project instead of the working directory
     --headless            run without a window; the default is to open one
+    --smoke               open the real window, draw three frames, then close successfully
     --mcp                 host MCP alongside the window; combine with --headless for stdio-only
     --agent-scope <name>  what it may do: read (default), author, or confirmed operator work
     --agent-intent <text> what it says it is trying to do; recorded on every change it makes
@@ -428,6 +512,7 @@ cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
     --host <socket>       attach a hosted runtime over a Unix domain socket
     --journal <directory> write transaction journals here, for crash recovery
     --list-commands       print the command registry, with parameters and effect classes
+    --list-importers      print the importers and option schemas discovered from cy_import_cli
     --version             print the editor and ABI versions
     --help                this";
 
@@ -444,5 +529,51 @@ mod tests {
         let headless = parse(&["--mcp".into(), "--headless".into()]).unwrap();
         assert!(headless.mcp);
         assert!(!opens_window(&headless));
+    }
+
+    #[test]
+    fn smoke_uses_the_window_and_is_bounded() {
+        let smoke = parse(&["--smoke".into()]).unwrap();
+        assert!(smoke.smoke);
+        assert!(opens_window(&smoke));
+    }
+
+    #[test]
+    fn an_explicit_project_must_declare_itself() {
+        let root =
+            std::env::temp_dir().join(format!("cy-editor-project-option-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let options = parse(&[
+            "--project".into(),
+            root.display().to_string(),
+            "--open".into(),
+            "worlds/city.cyworld".into(),
+        ])
+        .unwrap();
+        let Err(refused) = selected_project(&options) else {
+            panic!("an undeclared directory was accepted as a project");
+        };
+        assert!(refused.to_string().contains(ProjectService::MANIFEST));
+
+        std::fs::write(root.join(ProjectService::MANIFEST), "{}\n").unwrap();
+        let project = selected_project(&options).unwrap().unwrap();
+        assert_eq!(project.root(), root);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn importer_projection_preserves_names_extensions_and_option_types() {
+        let listing = format_importers(&[ImportFormat {
+            importer: "mesh".into(),
+            extensions: vec![".gltf".into(), ".glb".into()],
+            settings: vec![cy_editor_commands::ImportSetting {
+                name: "scale".into(),
+                kind: "float".into(),
+                description: "not part of the parity key".into(),
+            }],
+        }]);
+        assert_eq!(listing, "mesh\t.gltf,.glb\tscale:float\n");
     }
 }

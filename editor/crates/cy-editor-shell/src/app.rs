@@ -112,6 +112,10 @@ pub struct EditorWindow {
     /// The device the window shares with the transport, when there is one.
     #[cfg(target_os = "linux")]
     gpu: Option<Arc<cy_editor_viewport_transport::Gpu>>,
+    /// Frames left in a bounded desktop smoke run. `None` is an ordinary interactive window.
+    smoke_frames_remaining: Option<u8>,
+    /// Frames actually drawn by the smoke run, reported when it closes.
+    smoke_frames_drawn: u8,
 }
 
 /// The identity's artwork; a type alias so the field reads as what it is.
@@ -187,7 +191,34 @@ impl EditorWindow {
             last_attach: None,
             #[cfg(target_os = "linux")]
             gpu: None,
+            smoke_frames_remaining: None,
+            smoke_frames_drawn: 0,
         })
+    }
+
+    /// Close after drawing exactly `frames` real interface frames.
+    ///
+    /// This is the lifecycle behind `cyberdyne-editor --smoke`. It deliberately lives on the real
+    /// window rather than in a headless substitute, so creating the native surface, docking the
+    /// shipped panels and submitting interface work are all part of the check.
+    #[must_use]
+    pub fn with_smoke_frames(mut self, frames: u8) -> Self {
+        self.smoke_frames_remaining = Some(frames.max(1));
+        self
+    }
+
+    /// Record one rendered smoke frame and answer whether this is the one that closes the run.
+    fn finish_smoke_frame(&mut self) -> bool {
+        let Some(remaining) = self.smoke_frames_remaining.take() else {
+            return false;
+        };
+        self.smoke_frames_drawn = self.smoke_frames_drawn.saturating_add(1);
+        if remaining > 1 {
+            self.smoke_frames_remaining = Some(remaining - 1);
+            false
+        } else {
+            true
+        }
     }
 
     /// Persist this window's restart state in the selected per-user store.
@@ -805,6 +836,15 @@ impl eframe::App for EditorWindow {
         }
 
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
+        if self.finish_smoke_frame() {
+            eprintln!(
+                "cyberdyne-editor: smoke drew {} frame(s) through the desktop shell",
+                self.smoke_frames_drawn
+            );
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if self.smoke_frames_remaining.is_some() {
+            ctx.request_repaint();
+        }
         // A viewport that is streaming frames needs a repaint every frame; one that is not still
         // needs a slow tick, because a runtime started after the editor must be noticed.
         if self.link.is_attached() || self.agent.is_some() {
@@ -947,6 +987,19 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+    }
+
+    #[test]
+    fn a_smoke_window_closes_once_after_the_requested_number_of_frames() {
+        let mut window = window().with_smoke_frames(3);
+        assert!(!window.finish_smoke_frame());
+        assert!(!window.finish_smoke_frame());
+        assert!(window.finish_smoke_frame());
+        assert!(
+            !window.finish_smoke_frame(),
+            "a close frame was reported twice"
+        );
+        assert_eq!(window.smoke_frames_drawn, 3);
     }
 
     #[test]

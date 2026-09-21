@@ -80,7 +80,8 @@ env-doctor *args:
     }
 
     echo "CyberdyneEngine — environment report"
-    printf '  %-9s %s\n' host "${platform} $(uname -m 2>/dev/null || echo unknown)"
+    host_arch="$(just _host-architecture)"
+    printf '  %-9s %s\n' host "${platform} ${host_arch}"
     echo
 
     while IFS='|' read -r name binary minimum purpose; do
@@ -150,7 +151,6 @@ env-doctor *args:
     # test legs, so the tool's absence on that one host is acceptable. Report it advisory here
     # instead of missing, and skip the `check_pinned` version comparison that would otherwise fail
     # the whole recipe with `status=1`.
-    host_arch="$(uname -m 2>/dev/null || echo unknown)"
     tolerate_tidy_missing=0
     if [ "${platform}" = windows ] && \
        { [ "${host_arch}" = aarch64 ] || [ "${host_arch}" = arm64 ]; }; then
@@ -359,6 +359,21 @@ _host-platform:
         *)                          echo unknown ;;
     esac
 
+# The native runner architecture, even when the shell itself is an emulated x64 process. Git Bash
+# reports its own `x86_64` architecture on GitHub's Windows ARM64 runner, while RUNNER_ARCH reports
+# the machine that setup-python and the compiler toolchain target.
+[private]
+_host-architecture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    architecture="${RUNNER_ARCH:-${PROCESSOR_ARCHITECTURE:-}}"
+    [ -n "${architecture}" ] || architecture="$(uname -m 2>/dev/null || echo unknown)"
+    case "${architecture}" in
+        ARM64 | arm64 | aarch64)        echo arm64 ;;
+        X64 | x64 | AMD64 | amd64 | x86_64) echo x86_64 ;;
+        *)                              echo "${architecture}" ;;
+    esac
+
 # The correction for a missing or too-old tool, for this host. Never merely "it is absent".
 #
 # clang-format and clang-tidy give the same command on all three hosts, and it is a `pip install` of
@@ -443,14 +458,29 @@ _host-compiler:
 
 # True when version {{found}} is at least {{minimum}}. Dotted components, numerically, left to right.
 #
-# Uses python3 rather than awk. `awk` is not on PATH on the windows-arm64 GitHub image, and Windows
-# reacts to a missing `awk` by asking WSL to satisfy it — which prints "Windows Subsystem for Linux
-# must be updated" and exits non-zero, so every version check reads as "old" and env-doctor refuses
-# a machine whose tools are all fine. python3 is one of the tools env-doctor already requires, so
-# assuming its presence here is honest.
+# Pure bash, no external tools. Two prior attempts each failed on the windows-arm64 hosted image:
+# `awk` is not on PATH there, and Windows reacts to a missing command by asking the App Execution
+# Aliases layer to satisfy it via WSL, which prints "Windows Subsystem for Linux must be updated"
+# and exits non-zero. `python3` triggered the same redirect through a different route on the same
+# image. Explicit bash shebang + integer-only shell arithmetic sidesteps both. Every character
+# after the first non-digit is stripped per component, so `1.36.0-rc1` compares as `1.36.0`.
 [private]
 _version-at-least found minimum:
-    @python3 -c "import re,sys;p=lambda s:[int((re.match(r'\d+',c) or re.match(r'0','0')).group()) for c in s.split('.')];a=p('{{found}}');b=p('{{minimum}}');n=max(len(a),len(b));sys.exit(0 if a+[0]*(n-len(a))>=b+[0]*(n-len(b)) else 1)"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IFS='.' read -ra found_parts <<< "{{found}}"
+    IFS='.' read -ra min_parts <<< "{{minimum}}"
+    n=${#found_parts[@]}
+    (( ${#min_parts[@]} > n )) && n=${#min_parts[@]}
+    for (( i=0; i<n; i++ )); do
+        a="${found_parts[i]:-0}"
+        b="${min_parts[i]:-0}"
+        a="${a%%[!0-9]*}"; a="${a:-0}"
+        b="${b%%[!0-9]*}"; b="${b:-0}"
+        if (( 10#$a > 10#$b )); then exit 0; fi
+        if (( 10#$a < 10#$b )); then exit 1; fi
+    done
+    exit 0
 
 # The Swift toolchain: whether it is present, which version, and — when it is installed but not on
 # PATH — why, which is the case this recipe exists for.

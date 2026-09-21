@@ -19,10 +19,9 @@
 //!
 //! --- THE CASE WORTH READING TWICE ------------------------------------------------------------------
 //!
-//! `an_editor_with_no_runtime_still_switches_its_badge_and_says_nothing_is_simulating`. An editor
-//! with no engine attached is a first-class mode, so pressing play there must not be an error — but
-//! it must not claim to be simulating either. Both halves are asserted, because getting one of them
-//! is easy and getting the pair right is the requirement.
+//! `an_editor_with_no_runtime_keeps_its_editing_state_and_says_nothing_is_simulating`. An editor
+//! with no engine attached is a first-class authoring mode, so pressing play there does not end the
+//! session — and it does not display a play state no engine accepted.
 
 #![cfg(unix)]
 
@@ -270,21 +269,20 @@ fn the_viewports_badge_and_the_runtime_are_switched_together() {
 }
 
 #[test]
-fn an_editor_with_no_runtime_still_switches_its_badge_and_says_nothing_is_simulating() {
-    // BOTH HALVES. `NoRuntime` is a first-class mode — `cy_editor_services::runtime`'s header
-    // argues it at length — so pressing play with no engine attached must not be an error. But it
-    // must not claim anything is simulating either, and a designer who saw PLAYING over a still
-    // world with no explanation would reasonably think the engine had hung.
+fn an_editor_with_no_runtime_keeps_its_editing_state_and_says_nothing_is_simulating() {
+    // `NoRuntime` is a first-class authoring mode, but PLAYING is not: it says an engine accepted
+    // the request and is simulating. A disconnected editor stays in Editing and gives the person
+    // the remedy instead of presenting a contradictory badge.
     let mut editor = Editor::new(Actor::human("designer"));
     assert_eq!(editor.hosting_mode(), HostingMode::NoRuntime);
     let registry = registry();
 
     let summary = press(&mut editor, &registry, "play.enter");
-    assert!(summary.contains("PLAYING"), "{summary}");
+    assert!(summary.contains("unchanged (editing)"), "{summary}");
     assert!(summary.contains("nothing is simulating"), "{summary}");
     assert_eq!(
         editor.viewports.focused().play,
-        cy_editor_viewport::play::PlayState::Playing
+        cy_editor_viewport::play::PlayState::Editing
     );
 
     // And it is said where a person will see it, not only in the return value a script reads.

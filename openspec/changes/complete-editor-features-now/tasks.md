@@ -80,3 +80,10 @@
 - [x] 10.3 Exercise dark/light themes, compact/comfortable density, narrow windows, keyboard-only flows, and screen-reader labels for every new panel; capture matching screenshots where rendering is available.
 - [x] 10.4 Update `editor/README.md`, the visual-language documentation, command help, and roadmap evidence for the behavior actually delivered; keep renderer/backend dependencies explicitly open.
 - [x] 10.5 Re-audit every item from task 1.1 against code, tests, runtime behavior, and documentation, and leave no feature classified as locally implementable without a completed task or an evidence-backed dependency.
+- [x] 10.6 Map all 133 requirements in the nine Editor capability rows to executable evidence or an explicit M11.e deferral, and verify the coverage audit rejects missing, stale, or renamed evidence.
+
+## 11. Engine-usable local integration
+
+- [x] 11.1 Add `--project <directory>` before workspace restoration and document opening; verify a declared project is selected and an arbitrary directory is refused with the missing manifest named.
+- [x] 11.2 Make Play and Pause update viewport state only after an attached runtime accepts the request; verify a disconnected editor remains in Editing and reports an actionable notification.
+- [x] 11.3 After the Metal backend change merges, rebase this branch and run the editor with `cy_editor_window_runtime` on macOS; verify the first IOSurface frame, Play/Pause/Stop, runtime loss, document survival, and restart in one connected acceptance run.

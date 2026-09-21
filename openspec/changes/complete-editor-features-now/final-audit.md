@@ -43,15 +43,27 @@ function above its applicable project target.
 - `openspec validate complete-editor-features-now --strict`: passed.
 - `python3 tools/editor/feature_scope.py`: passed, confirming no viewport transport, RHI, native
   Metal, renderer, or backend ownership paths entered this change.
+- The Editor requirement audit passed with 133 of 133 requirements mapped across all nine rows: 91
+  map to executable tests, proven criteria, or gates, and 42 are explicit M11.e deferrals with named
+  re-entry tests. The implemented and tested process boundary, tick-boundary edit application,
+  policy classification, state preservation, and refusal behavior advance `editor-architecture`
+  and `live-editing` from Seed to Working; the deferrals keep both below Complete.
+- The `m11b:editor-at-complete-grade` coverage criterion was re-proven after the map became green:
+  renaming one mapped requirement makes the audit report both an unanswered requirement and a stale
+  entry, so the 133/133 result is demonstrably able to fail.
 - The 56-case theme/density/width accessibility matrix and pointer-free keyboard check passed for
   all seven new panels; the headless harness has no raster screenshot path, as recorded in the
   change README.
 - The SDK generator self-test passed 17/17 cases. The canonical `just build-editor-check` wrapper
-  then stopped at its existing macOS Bash 3.2 `mapfile` incompatibility. The exact failure was
-  reproduced on clean `main`; its underlying rustfmt, Clippy, and Cargo gates are the direct
-  commands above. The focused `just test-smoke -R editor_session` wrapper likewise stopped on an
-  existing Bash 3.2 array-syntax parse error reproduced on clean `main`; the Cargo runtime-crash,
-  authoring-loop, protocol, desktop/headless MCP, and installed-SourceKit integration cases passed.
+  now runs on macOS Bash 3.2 and passed rustfmt, Clippy with warnings denied, the full workspace test
+  suite, and doctests. The physical native-window smoke command also passed through
+  `just run-editor --smoke` and closed after its bounded three-frame draw.
+- The editor SDK now loads the ABI fixture through the native Windows wide-character loader as well
+  as through the Unix loader. The generated-inspector integration suite therefore exercises the
+  real interface table, reflected catalogue, edit transaction, and engine-side value write on the
+  Windows editor leg instead of stopping at an unsupported-loader error. Asset-catalogue temporary
+  paths and SourceKit diagnostic URIs are also formed from the host platform's path syntax, so the
+  same service tests exercise their claims on Windows rather than relying on Unix-only fixtures.
 
 ## Dependencies intentionally left open
 
@@ -61,3 +73,28 @@ views, encoded remote-device transport, general cook/package/deploy and device i
 native debugger/profiler transports, stable offline artefact schemas, domain-specific canonical
 authoring vocabularies/lowerings, and the remaining engine ABI/lifecycle callbacks. The UI does not
 render placeholder controls for those dependencies.
+
+## Engine-usable follow-up added before merge
+
+The editor now accepts a declared project explicitly through `--project <directory>` before any
+workspace or document work begins. Play and Pause no longer put the viewport into a simulation state
+when no runtime accepted the request, and losing an attached runtime returns all viewports to
+Editing while documents and unsaved history survive. Focused CLI, control-socket, and killed-process
+regressions cover those behaviors.
+
+The branch is now rebased over the Metal/backend change and has been exercised on a physical Apple
+M3 Pro. `cy_editor_window_runtime` created the native Metal device, published a four-image IOSurface
+ring, and the editor displayed the engine's three-object scene. Play, Pause, and Stop reached the
+engine and received authoritative replies; the runtime reported one play session, one simulated
+tick, and a document identical after Stop. This run exposed and fixed a command-line defect where a
+script could exit after queueing those requests but before the writer delivered them. A real-socket
+regression now requires every scripted play transition to receive the runtime's reply.
+
+Task 11.3 passed in a single connected acceptance run on the physical Apple M3 Pro. Runtime A
+published 2,155 IOSurface frames from the native Metal device while the editor sent Play, Pause, and
+Stop and received authoritative state replies. Killing Runtime A returned the viewport to Editing;
+the same editor process continued serving its document, hierarchy, and history resources with the
+dirty document intact. Runtime B then started at the same local endpoint, and the editor reconnected
+without a restart, replayed its unsaved transactions, displayed 1,120 fresh frames, and completed a
+second Play/Stop cycle. Runtime B measured 59.9 published frames per second during that acceptance
+leg; this records functional evidence rather than a controlled performance benchmark.

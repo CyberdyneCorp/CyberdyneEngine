@@ -13,6 +13,8 @@
 use cy_editor_commands::Arguments;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::Value;
+use cy_editor_protocol::{Message, SessionEvent};
+use std::fmt::Write as _;
 
 use crate::application::Application;
 
@@ -36,7 +38,7 @@ pub fn run_script(application: &mut Application, script: &str) -> Result<ScriptO
             continue;
         }
         let (id, arguments) = parse_line(line, number + 1)?;
-        let result = application.invoke(id, &arguments).map_err(|problem| {
+        let mut result = application.invoke(id, &arguments).map_err(|problem| {
             Problem::new(
                 format!("line {}: {}", number + 1, problem.what),
                 problem.because.clone(),
@@ -47,9 +49,77 @@ pub fn run_script(application: &mut Application, script: &str) -> Result<ScriptO
                     .unwrap_or_else(|| "see the command's metadata".into()),
             )
         })?;
+        settle_runtime_play(application, id, number + 1, &mut result.summary)?;
         outcome.summaries.push(result.summary);
     }
     Ok(outcome)
+}
+
+/// Wait for the engine's answer when a command-line script changes play state.
+///
+/// The desktop remains fully asynchronous. A script has no next interface frame, though, and
+/// dropping its application immediately after queuing a play message can stop the writer thread
+/// before the runtime sees it. Sequential scripts also need the previous state to be authoritative
+/// before issuing the next one.
+fn settle_runtime_play(
+    application: &Application,
+    command: &str,
+    line: usize,
+    summary: &mut String,
+) -> Result<()> {
+    let expected = match command {
+        "play.enter" => "playing",
+        "play.pause" => "paused",
+        "play.leave" => "editing",
+        _ => return Ok(()),
+    };
+    if !summary.contains("asked the runtime") {
+        return Ok(());
+    }
+
+    let answer =
+        application
+            .editor
+            .runtime
+            .block_until(std::time::Duration::from_secs(5), |event| match event {
+                SessionEvent::Message(Message::Playing { state, detail, .. }) => {
+                    Some(Ok((state.clone(), detail.clone())))
+                }
+                SessionEvent::Message(Message::Rejected { reason, remedy, .. }) => {
+                    Some(Err(Problem::new(
+                        format!("line {line}: the runtime refused {command}"),
+                        reason.clone(),
+                    )
+                    .with_remedy(remedy.clone())))
+                }
+                SessionEvent::Lost(problem) => Some(Err(Problem::new(
+                    format!("line {line}: wait for {command}"),
+                    problem.because.clone(),
+                )
+                .with_remedy(
+                    problem
+                        .remedy
+                        .clone()
+                        .unwrap_or_else(|| "restart the runtime and run the script again".into()),
+                ))),
+                SessionEvent::Message(_) => None,
+            });
+    let (state, detail) = answer.ok_or_else(|| {
+        Problem::new(
+            format!("line {line}: wait for {command}"),
+            "the runtime did not answer within 5 seconds",
+        )
+        .with_remedy("check the runtime log and connection, then run the script again")
+    })??;
+    if state != expected {
+        return Err(Problem::new(
+            format!("line {line}: confirm {command}"),
+            format!("the runtime answered with {state:?}, expected {expected:?}"),
+        )
+        .with_remedy("inspect the runtime play-session log; it accepted a different state"));
+    }
+    let _ = write!(summary, " — runtime confirmed {state}: {detail}");
+    Ok(())
 }
 
 /// `scene.create-entity parent=<identity>` into an identifier and its arguments.
@@ -92,6 +162,50 @@ mod tests {
         application
     }
 
+    #[cfg(unix)]
+    fn play_runtime(
+        path: &std::path::Path,
+    ) -> (
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        std::thread::JoinHandle<()>,
+    ) {
+        use std::os::unix::net::UnixListener;
+
+        let listener = UnixListener::bind(path).expect("a listening runtime socket");
+        let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = std::sync::Arc::clone(&received);
+        let runtime =
+            std::thread::spawn(move || {
+                let (stream, _) = listener.accept().expect("the editor connects");
+                let mut reader = stream.try_clone().expect("a runtime reader");
+                let mut writer = stream;
+                let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
+                    match message {
+                        Message::Hello { .. } => Some(vec![Message::Welcome {
+                            abi_major: 1,
+                            abi_minor: 1,
+                            runtime: "script play double".into(),
+                        }]),
+                        Message::Play {
+                            request,
+                            state,
+                            mode,
+                        } => {
+                            record.lock().expect("the play record").push(state.clone());
+                            Some(vec![Message::Playing {
+                                request,
+                                detail: format!("{state} accepted"),
+                                state,
+                                mode,
+                            }])
+                        }
+                        _ => Some(Vec::new()),
+                    }
+                });
+            });
+        (received, runtime)
+    }
+
     #[test]
     fn a_session_runs_with_no_window_and_no_graphics_device() {
         let mut application = application();
@@ -117,6 +231,38 @@ mod tests {
                 .node_count(),
             2
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_script_waits_until_the_runtime_confirms_each_play_state() {
+        let directory = std::env::temp_dir().join(format!(
+            "cy-editor-script-play-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let socket = directory.join("runtime.sock");
+        let (received, runtime) = play_runtime(&socket);
+        let mut application = application();
+        application.attach_hosted_runtime(&socket).unwrap();
+
+        let outcome = run_script(&mut application, "play.enter\nplay.pause\nplay.leave\n").unwrap();
+
+        assert!(
+            outcome
+                .summaries
+                .iter()
+                .all(|summary| summary.contains("runtime confirmed")),
+            "{outcome:?}"
+        );
+        assert_eq!(*received.lock().unwrap(), ["playing", "paused", "editing"]);
+
+        // The protocol server owns a blocking read until the process exits. Dropping this handle
+        // is deliberate, as in the end-to-end service tests that use the same server loop.
+        drop(runtime);
+        drop(application);
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[test]

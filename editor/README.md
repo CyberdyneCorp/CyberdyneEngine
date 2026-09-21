@@ -61,6 +61,11 @@ depends upward or sideways. Each crate declares its layer in `[package.metadata.
 `cy-editor-app` moved from layer 5 to 6 at M5.5, when the render crate arrived: the binary hands a
 built `Editor` to the window, so it has to sit above it.
 
+The SDK's embedded-runtime loader uses `dlopen`/`dlsym` on Linux and macOS and
+`LoadLibraryW`/`GetProcAddress` on Windows. The same generated ABI fixture and inspector integration
+tests run on all three platforms; Windows paths are passed to the loader as UTF-16 rather than being
+re-encoded through a narrow string.
+
 **The agent interface is a projection and a wire, and they are separate crates on purpose.**
 `cy-editor-agent` holds what an agent can see and do — the tools, which are the registry; the read
 surface, which is the services; the session, its scope, its budget and its claims. It names no
@@ -96,9 +101,25 @@ just build-editor                  build (profile-mapped, into build/editor/)
 just build-editor --generate       regenerate the SDK bindings from the C ABI first
 just build-editor-check            the selftest, rustfmt, clippy and the tests
 just build-editor-format           format the hand-written Rust in place
-just run-editor --open <asset> --script <path>
+just run-editor --project <directory> --open <asset>
+just run-editor --project <directory> --open <asset> --script <path>
 just run-editor-runtime [<socket>] the hosted-runtime stub `--host` connects to
 ```
+
+Command-line scripts wait for an attached runtime to confirm each `play.enter`, `play.pause`, and
+`play.leave` request before continuing. Their summaries include the runtime's authoritative state
+and detail, so a script cannot exit after merely queueing a play request that the engine never saw.
+
+`--project` is resolved before workspace restoration, service discovery, and document opening. The
+directory must contain `project.json`; the editor refuses an arbitrary directory instead of making
+it writable project content. Without the option, the working directory remains the implicit root.
+
+Playing and Paused are engine states. If no runtime is attached, requesting either leaves the
+viewport in Editing and posts a remedy instead of showing a state no engine accepted. Losing a
+runtime likewise returns every viewport to Editing while the documents remain open. A hosted
+runtime connection remembers its local endpoint and retries once per second after a loss. When the
+runtime returns, the existing editor process reconnects and replays the open document's unsaved
+transaction history before incremental live editing resumes.
 
 Every recipe takes `--profile <name>`. The four profiles mean the same thing in Cargo that they mean
 in CMake — M0's spike wrote that column and reserved it unused for five milestones, and
@@ -139,6 +160,14 @@ drop intents, and importer-declared settings for supported formats.
 `cyberdyne-editor --list-commands` is the canonical command help: it prints every registered command
 with its typed parameters and effect class. The desktop palette, scripts and MCP tool listing are
 projections of that same registry, so these are not separate APIs:
+
+Two bounded discovery paths support release and roadmap checks without replacing the desktop:
+
+- `just run-editor --smoke` opens the native editor window, draws three frames through the shipped
+  shell and dock layout, and closes successfully.
+- `cyberdyne-editor --list-importers` prints the importer names, extensions and typed settings the
+  editor discovered from `cy_import_cli`. `tools/editor/import_contract.py` compares that projection
+  with the tool's own catalogue so a format cannot disappear from either side unnoticed.
 
 | Area | Registered commands added or completed by this pass |
 |---|---|
