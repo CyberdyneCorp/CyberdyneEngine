@@ -1678,6 +1678,41 @@ distribution and record rung — a finding worth having on day one rather than a
 
 ---
 
+## M12 — After 1.0
+
+*The three capabilities 1.0 ships without.*
+
+**Entry**: M11.e green. **1.0 ships from M11.e; this rung is after it**, and no criterion here may
+be cited as a reason for M11.e to remain open.
+
+**Why this rung exists.** `delivery-roadmap` treats a re-entry point named in the record as a
+decision, and one named nowhere as an oversight wearing the same clothes. Three capabilities reach
+1.0 without a Complete cell, and until this rung existed none of them had a destination that was a
+rung:
+
+| Capability | Where it stood | Why it is deferred rather than dropped |
+|---|---|---|
+| **Android** | iOS landed at M11.e with `platform/ios/`; Android has no platform directory, toolchain or cross-compilation leg | The engine ships on five platforms without it; adding a sixth is a rung's worth of work, not a task's |
+| **`ml-inference`** | **Seed since M8.c.** `integration.ai` does not exist and the ONNX backend registers the CPU execution provider only | `m11b:ml-inference-or-a-deferral` asks for a consumer **or** a deferral with a re-entry; M11.b produced neither, and this is the re-entry |
+| **`xr-support`** | The one row of seventy-six reaching 1.0 without a Complete cell; re-entry recorded as *"after 1.0"* | A date is not a rung. The entry point is already named: `cy::Runtime::tick()` takes no predicted display time, so a host cannot tell the engine when a frame will be displayed — the half of M3's seam that is not open |
+
+**What this rung is not.** It is not a destination for work a current rung finds inconvenient. Three
+capabilities enter by name and by decision; a fourth arrives only through a change that argues for
+it. The ladder already carries the cost of one rung that became a collector of everything nobody
+did, and it will not carry two.
+
+**And the ladder's end is checked rather than assumed.** M11.e's note states the rule M12 had to
+satisfy to exist: *either M11.e is the last rung everywhere, or whatever follows it carries a
+ledger, a gate, a floor and a change directory, all four*. M12 carries
+`tools/roadmap/milestones/m12.toml`, `milestone-m12` in `gates.toml`, its floor, and
+`openspec/changes/implement-m12-after-one-point-oh/`. A rung present in some of the places that read
+the ladder and absent from others is exactly the failure M8's split produced three times in one
+change.
+
+**Change**: [`implement-m12-after-one-point-oh`](../openspec/changes/implement-m12-after-one-point-oh/proposal.md)
+
+---
+
 ## How this document is maintained
 
 Re-sequencing the ladder, moving a capability between milestones, changing exit criteria, or

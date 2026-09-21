@@ -1240,6 +1240,16 @@ class = "milestone"
 milestone = "m11e"
 state = "joins-on-close"
 
+[[gate]]
+id = "milestone-m12"
+describe = "M12 — After 1.0: the three capabilities 1.0 ships without, each deferred by a deliberate act rather than by omission. Android beside the iOS target M11.e shipped, `ml-inference` off Seed with a consumer that exercises it, and `xr-support` entered through the frame-timing seam M3 left half open. This rung exists so that a deferral has somewhere to point: a re-entry named in the record is a decision, and one named nowhere is an oversight wearing the same clothes."
+runs = ["just roadmap-milestone m12"]
+platforms = ["linux", "windows", "macos"]
+since = "m12"
+class = "milestone"
+milestone = "m12"
+state = "joins-on-close"
+
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

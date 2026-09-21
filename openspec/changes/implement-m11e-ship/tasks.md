@@ -40,6 +40,14 @@ pointed.
 
 ## 1. Mobile targets and cross-compilation — `build-system-and-platforms` → C
 
+**ANDROID IS DEFERRED TO M12, AND iOS IS THE MOBILE TARGET THIS RUNG SHIPS.**
+The spike's four axes are measured for **one** mobile ABI, which is what 0.1 already says.
+Android has no platform directory, no toolchain and no cross-compilation leg, and adding a
+sixth platform is a rung's worth of work rather than a task's — so it goes to `M12 — After
+1.0` by name, alongside `ml-inference` and `xr-support`, rather than being left implied by a
+spike that measured one ABI. A deferral names a rung; this one names M12.
+
+
 Contingent on section 0. Every task below assumes the spike cleared its axis; where it did not, the
 task becomes a deferral with its three parts (§6.1) rather than a smaller version of itself.
 
@@ -300,8 +308,10 @@ what makes 6.1 mandatory rather than advisory.
       accepts a predicted display time, or the partial closure is recorded as a decision with its cost
       through a change against `xr-support`. **A seam check reporting green over a half-open seam is
       worse than no check**, and it is the only prerequisite this rung has to do anything about
-- [ ] 7.3 **`xr-support` stays deferred, with its re-entry recorded as it already is** — *"after
-      1.0"*, prerequisites held open. This is a decision restated, not a row skipped, and it is the
+- [ ] 7.3 **`xr-support` stays deferred, and its re-entry is now a RUNG rather than a date** — **M12**,
+      prerequisites held open. *"After 1.0"* named no rung anything could act on; `M12 — After
+      1.0` carries a ledger, a gate, a floor and a change directory, which is what
+      `delivery-roadmap` requires of a deferral. This is a decision restated, not a row skipped, and it is the
       one row of seventy-six that reaches 1.0 without a Complete cell
 
 ## 8. The artefact — `samples/11-ship`, and the 1.0 record

@@ -929,7 +929,7 @@ ci_job = "milestone-m11b"
 # --- Section 5: the artefact -----------------------------------------------------------------------
 
 known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: there is no `cy_test_integration_ai` in a fully built tree and no CMakeLists.txt declares the suite `integration.ai`; `ml-inference` is still recorded at `seed` with nine requirements, where it has been since M8.c. THE CRITERION'S OWN SECOND HALF IS WHAT IS OWED: it reads `ml-inference` is exercised by the game's AI, OR it is recorded as a deferral with its re-entry point at M11.e. M11.b produced neither, and M11.e is the only rung allowed to record a deferral, so the criterion names its own closing rung."
-known_gap_closes = "m11e"
+known_gap_closes = "m12"
 known_gap_declared_by = "m11c"
 
 [[criterion]]

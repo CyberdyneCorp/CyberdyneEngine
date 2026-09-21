@@ -93,6 +93,7 @@ MILESTONES = (
     "m11d",
     "m11d5",
     "m11e",
+    "m12",
 )
 ENTRY_KEYS = ("tier", "milestone", "change")
 
