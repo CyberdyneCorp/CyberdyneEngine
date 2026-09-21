@@ -360,8 +360,8 @@ CY_TEST_CASE("material_stages: the command line and the library agree about the 
     // extra pair (see tests/smoke/process.h for the full explanation of the rule). And write NUL
     // rather than /dev/null for stderr redirection.
 #if defined(_WIN32)
-    const std::string command = "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" compile \"" +
-                                source + "\" --stages 2>NUL\"";
+    const std::string command =
+        "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" compile \"" + source + "\" --stages 2>NUL\"";
 #else
     const std::string command =
         std::string(CY_MATERIAL_BINARY) + " compile " + source + " --stages 2>/dev/null";

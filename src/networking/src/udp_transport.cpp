@@ -310,8 +310,7 @@ Status UdpTransport::open(u16 port) noexcept {
     local.sin_family = AF_INET;
     local.sin_addr.s_addr = htonl(INADDR_ANY);
     local.sin_port = htons(port);
-    if (::bind(handle, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) ==
-        SOCKET_ERROR) {
+    if (::bind(handle, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) == SOCKET_ERROR) {
         ::closesocket(handle);
         return fail(ErrorCode::Unavailable, "networking: could not bind the UDP socket");
     }
@@ -346,8 +345,7 @@ Status UdpTransport::transmit(const UdpAddress& address, Span<const u8> wire) no
     remote.sin_family = AF_INET;
     remote.sin_addr.s_addr = htonl(address.ipv4);
     remote.sin_port = htons(address.port);
-    const int written = ::sendto(to_socket(socket_),
-                                 reinterpret_cast<const char*>(wire.data()),
+    const int written = ::sendto(to_socket(socket_), reinterpret_cast<const char*>(wire.data()),
                                  static_cast<int>(wire.size()), 0,
                                  reinterpret_cast<const sockaddr*>(&remote), sizeof(remote));
     if (written == SOCKET_ERROR) {
@@ -363,10 +361,9 @@ bool UdpTransport::pump() noexcept {
     }
     sockaddr_in from{};
     int from_size = sizeof(from);
-    const int read =
-        ::recvfrom(to_socket(socket_), reinterpret_cast<char*>(inbound_.data()),
-                   static_cast<int>(inbound_.size()), 0, reinterpret_cast<sockaddr*>(&from),
-                   &from_size);
+    const int read = ::recvfrom(to_socket(socket_), reinterpret_cast<char*>(inbound_.data()),
+                                static_cast<int>(inbound_.size()), 0,
+                                reinterpret_cast<sockaddr*>(&from), &from_size);
     if (read <= 0) {
         return false;
     }

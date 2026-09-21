@@ -1110,8 +1110,9 @@ CY_TEST_CASE("graph_script: a program digest does not close over a constant's pa
     // caught in the act. Report it rather than fail the case.
 #if defined(_MSC_VER)
     if (!any_constant_has_dirty_padding(program.value())) {
-        CY_TEST_MESSAGE("graph_script: constant padding was zero on this build — the discrimination "
-                        "check is theoretical here; the digest-vs-fields invariant still holds");
+        CY_TEST_MESSAGE(
+            "graph_script: constant padding was zero on this build — the discrimination "
+            "check is theoretical here; the digest-vs-fields invariant still holds");
     }
 #else
     CY_CHECK(any_constant_has_dirty_padding(program.value()));
