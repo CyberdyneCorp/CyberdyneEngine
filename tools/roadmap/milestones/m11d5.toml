@@ -73,6 +73,12 @@ kind = "recipe"
 run = "just quality-specs"
 ci_job = "specs"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/specs/delivery-roadmap/spec.md"
+token  = "#### Scenario:"
+note   = "carried from m11b:specs — a requirement with no scenario is what --strict refuses; taking every scenario out of one specification is the failure the gate exists to catch."
+
 [[criterion]]
 id = "format"
 describe = "the formatting gate is green over a tree that gained two graphics backends"
@@ -80,6 +86,12 @@ source = "tasks"
 kind = "recipe"
 run = "just quality-format-check"
 ci_job = "format"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".clang-format"
+token  = "IndentWidth: 4"
+note   = "carried from m11b:format — the gate's claim is that the tree matches .clang-format, and changing what .clang-format asks for makes every file in the tree differ from the style."
 
 [[criterion]]
 id = "lint"
@@ -96,6 +108,12 @@ source = "tasks, engine-architecture, rhi-and-render-graph"
 kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token  = "platform/"
+note   = "carried from m11b:layering — renaming the directory the SDL rule exempts turns the SDL includes that legitimately live in platform/ into reported violations, so the layer check fires on real files rather than crashing."
 
 [[criterion]]
 id = "workflows"
@@ -128,6 +146,12 @@ kind = "recipe"
 run = "just roadmap-status"
 ci_job = "roadmap-status"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "docs/roadmap/status.yaml"
+token  = "    change:"
+note   = "carried from m11b:roadmap-record — taking the change annotations out of the status record makes every tier claim lose its provenance, which is exactly what this gate exists to catch."
+
 [[criterion]]
 id = "plan-consistency"
 describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, and the ladder places m11d5 between m11d and m11e — which is the property an insertion gets wrong, and did get wrong at M5.5"
@@ -135,6 +159,12 @@ source = "tasks, delivery-roadmap"
 kind = "recipe"
 run = "just roadmap-test"
 ci_job = "roadmap-status"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/specs/audio/spec.md"
+token  = "### Requirement:"
+note   = "carried from m11b:plan-consistency — removing every requirement from a spec breaks the plan-vs-record consistency the tool checks."
 
 [[criterion]]
 id = "four-profiles"
@@ -318,3 +348,11 @@ fi
 echo "entered:$entered"
 '''
 ci_job = "milestone-m11d5"
+
+# Mirrors `m11b:m11c-open` — the handover check is a regex over a path assembled from a shell
+# variable, so the prover cannot derive a mutation from its text. The smallest act that unclaims
+# the next rung being entered is the checked task boxes going away.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/changes/*m11e*/tasks.md"
+token = "- [x] "

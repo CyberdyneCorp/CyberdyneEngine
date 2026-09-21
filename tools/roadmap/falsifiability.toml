@@ -17,7 +17,23 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 212 proven, 441 not yet shown able to fail.
+# 240 proven, 429 not yet shown able to fail.
+
+[[proof]]
+ledger = "m0"
+criterion = "doctor"
+digest = "7a636a7ed8693dd2"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): CyberdyneEngine — environment report … env-doctor: 1 problem(s) — cmake"
+
+[[proof]]
+ledger = "m0"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m0"
@@ -25,7 +41,7 @@ criterion = "m1-open"
 digest = "f31466b90b99ea2d"
 verdict = "proven"
 mutation = "delete-path in openspec/changes/**/*m1*/proposal.md (derived)"
-detail = "red under mutation of 8 file(s)"
+detail = "red under mutation of 9 file(s)"
 
 [[proof]]
 ledger = "m0"
@@ -34,6 +50,14 @@ digest = "524458e3e0b5c928"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 8 file(s)"
+
+[[proof]]
+ledger = "m1"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m1"
@@ -55,9 +79,9 @@ detail = "red under mutation of 7 file(s)"
 ledger = "m1"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m10"
@@ -69,11 +93,19 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-2-0 (exi
 
 [[proof]]
 ledger = "m10"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+
+[[proof]]
+ledger = "m10"
 criterion = "m11-open"
 digest = "a15b340462013969"
 verdict = "proven"
 mutation = "delete-path in openspec/changes/**/*m11*/proposal.md (derived)"
-detail = "red under mutation of 6 file(s)"
+detail = "red under mutation of 7 file(s)"
 
 [[proof]]
 ledger = "m10"
@@ -135,9 +167,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m10"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m11a"
@@ -151,9 +183,9 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 ledger = "m11a"
 criterion = "build-system-at-working"
 digest = "d453179c9c0208da"
-verdict = "proven"
-mutation = "delete-lines 'set(CY_PROFILES' in cmake/profiles.cmake (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): build-system-and-platforms: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree … every optional dependency is gated by a feature option that exists"
 
 [[proof]]
 ledger = "m11a"
@@ -182,10 +214,10 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3
 [[proof]]
 ledger = "m11a"
 criterion = "developer-workflow-at-working"
-digest = "a269492dee76d4fd"
+digest = "efc4385fbd8c318b"
 verdict = "proven"
-mutation = "rename-token '_not-implemented' in just/release.just (declared)"
-detail = "a declared gap: RED unmutated (every category of the required recipe surface does something rather than refusing), GREEN under the mutation of 1 file(s) — the gap is a deadline rather than a permanent red"
+mutation = "rename-token '_not-implemented' in justfile (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -247,9 +279,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11a"
 criterion = "layering"
 digest = "332ed56e5ef61f0e"
-verdict = "proven"
-mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m11a"
@@ -383,9 +415,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): [docte
 ledger = "m11a"
 criterion = "testing-and-quality-at-working"
 digest = "c9c47bf8f92969ee"
-verdict = "proven"
-mutation = "delete-lines 'CY_TEST_BUDGET_' in tests/CMakeLists.txt (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): testing-and-quality: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree … every kind in the taxonomy has at least one suite declared"
 
 [[proof]]
 ledger = "m11a"
@@ -407,9 +439,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): thirdp
 ledger = "m11a"
 criterion = "workflows"
 digest = "1077408579d6044a"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m11a"
@@ -519,9 +551,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no bui
 ledger = "m11b"
 criterion = "layering"
 digest = "332ed56e5ef61f0e"
-verdict = "proven"
-mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m11b"
@@ -719,9 +751,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no bui
 ledger = "m11b"
 criterion = "workflows"
 digest = "1077408579d6044a"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m11c"
@@ -807,9 +839,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11c"
 criterion = "layering"
 digest = "af09d70ad7f7be87"
-verdict = "proven"
-mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m11c"
@@ -838,10 +870,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-compilers 
 [[proof]]
 ledger = "m11c"
 criterion = "m11d-open"
-digest = "510629bace6a8da2"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11d-desktop/proposal.md … the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+digest = "6cfd73e301a6baf6"
+verdict = "proven"
+mutation = "delete-lines '- [x] ' in openspec/changes/*m11d*/tasks.md (declared)"
+detail = "red under mutation of 2 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -1015,17 +1047,17 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 ledger = "m11c"
 criterion = "workflows"
 digest = "96fbe4499165bcb3"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m11d"
 criterion = "core-rows-at-complete-grade"
-digest = "522881c95ca1a0e0"
+digest = "c0bbe416d88044a7"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction rhi-an … 0 of 83 requirement(s) across 7 row(s) map to a test, a gate or a recorded exemption"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction … 0 of 71 requirement(s) across 6 row(s) map to a test, a gate or a recorded exemption"
 
 [[proof]]
 ledger = "m11d"
@@ -1033,15 +1065,31 @@ criterion = "developer-workflow-recipes"
 digest = "c98044d98067383f"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): quality.just:166: names M11, which is not on the ladder … 6 recipe line(s) refuse naming a milestone the ladder does not carry"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): deploy.just:110: names M11, which is not on the ladder … 4 recipe line(s) refuse naming a milestone the ladder does not carry"
 
 [[proof]]
 ledger = "m11d"
-criterion = "m11e-open"
-digest = "c415a4b8b99407b9"
+criterion = "full-gate-set"
+digest = "4a15950897732892"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11e-ship/proposal.md … the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+detail = "red unmutated, in the sandbox and in the repository (exit 2): ==> swift-format  bindings/swift/ and samples/04-character/game/ against .swift-format … Or name one: CY_SWIFT_FORMAT=/path/to/swift-format"
+
+[[proof]]
+ledger = "m11d"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+
+[[proof]]
+ledger = "m11d"
+criterion = "m11d5-open"
+digest = "8131c42bc53b4505"
+verdict = "proven"
+mutation = "delete-lines '- [x] ' in openspec/changes/*m11d5*/tasks.md (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
@@ -1057,7 +1105,7 @@ criterion = "native-platform-backend"
 digest = "5745acc09a5a8d62"
 verdict = "proven"
 mutation = "rename-token ': public DisplayServer\\x1f: public Platform' in platform/,src/ (derived)"
-detail = "red under mutation of 7 file(s)"
+detail = "red under mutation of 9 file(s)"
 
 [[proof]]
 ledger = "m11d"
@@ -1070,7 +1118,7 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): no commi
 [[proof]]
 ledger = "m11d"
 criterion = "roadmap-tiers"
-digest = "1ee58f37a6ed1121"
+digest = "9137be083990859b"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): build-and-packaging: recorded 'working', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
@@ -1087,25 +1135,97 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 ledger = "m11d"
 criterion = "ship-sample-drawn"
 digest = "af0bef6a8c02a879"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+verdict = "proven"
+mutation = "delete-path in docs/design/images/m11d-ship*.png (derived)"
+detail = "red under mutation of 2 file(s)"
 
 [[proof]]
 ledger = "m11d"
 criterion = "ship-sample-exists"
 digest = "2eb2f60fe49c40a6"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+verdict = "proven"
+mutation = "delete-path in samples/11-ship/CMakeLists.txt (derived)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "format"
+digest = "48992a2b2026a4cb"
 verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+mutation = "delete-lines 'IndentWidth: 4' in .clang-format (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "layering"
+digest = "d915eb4fa3e15cc9"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "m11e-open"
+digest = "bd4e90ad4bdb2ea9"
+verdict = "proven"
+mutation = "delete-lines '- [x] ' in openspec/changes/*m11e*/tasks.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "plan-consistency"
+digest = "bf97e3858c524956"
+verdict = "proven"
+mutation = "delete-lines '### Requirement:' in openspec/specs/audio/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "roadmap-record"
+digest = "060878dbfb9d1099"
+verdict = "proven"
+mutation = "delete-lines '    change:' in docs/roadmap/status.yaml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "roadmap-tiers"
+digest = "79af3fdc801d75d6"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): rhi-and-render-graph: recorded 'working', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "specs"
+digest = "204ba26e833d195c"
+verdict = "proven"
+mutation = "delete-lines '#### Scenario:' in openspec/specs/delivery-roadmap/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "workflows"
+digest = "9af1b2784b91ec73"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m11e"
+criterion = "deferral-is-the-last-rungs-act"
+digest = "9c88f6bfa8aac2ad"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): a deferral is recorded at M11.d: | **M11.d.5** | **None of its own** — it consumes M11.d's. The one question left to it is narrower and cannot … 3 deferral(s) recorded by a rung below the last one"
 
 [[proof]]
 ledger = "m11e"
@@ -1113,7 +1233,23 @@ criterion = "dependency-set-integrated"
 digest = "46b080ac5760e1d2"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): 17 dependency entries in deps/manifest.toml: … ACL, Core ML, DirectML, FreeType, HarfBuzz, ICU, ISPC Texture Compressor, LZ4, OpenUSD, SPIRV-Cross, SPIRV-Reflect, SPIRV-Tools, TensorRT, astc-encoder, bc7enc,"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): 18 dependency entries in deps/manifest.toml: … ACL, Core ML, DirectML, FreeType, HarfBuzz, ICU, ISPC Texture Compressor, LZ4, OpenUSD, SPIRV-Cross, SPIRV-Reflect, SPIRV-Tools, TensorRT, astc-encoder, bc7enc,"
+
+[[proof]]
+ledger = "m11e"
+criterion = "every-deferral-carries-its-three-parts"
+digest = "aa1cf1ee5aa690b2"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): roadmap-debts: docs/roadmap/open-debts.md is stale — a debt was declared, closed or demoted and the document was not regenerated. … error: Recipe `roadmap-debts` failed on line 17 with exit code 1"
+
+[[proof]]
+ledger = "m11e"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m11e"
@@ -1121,7 +1257,7 @@ criterion = "no-recipe-refuses-with-a-dead-milestone"
 digest = "19fa87f9cb0f9db8"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): build.just:72: names M3, whose gate is already green … 101 recipe line(s) name a milestone that is absent or already closed"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): build.just:169: names M0, whose gate is already green … 95 recipe line(s) name a milestone that is absent or already closed"
 
 [[proof]]
 ledger = "m11e"
@@ -1145,7 +1281,7 @@ criterion = "record-matches-plan-history-closed"
 digest = "5cd78f1302b398ca"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): M4 build-system-and-platforms: working planned, seed recorded … 4 cell(s) over closed milestones exceed the status record"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): M11B ai-system: complete planned, working recorded … 40 cell(s) over closed milestones exceed the status record"
 
 [[proof]]
 ledger = "m11e"
@@ -1175,9 +1311,17 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): (no outp
 ledger = "m11e"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m2"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m2"
@@ -1199,9 +1343,9 @@ detail = "red under mutation of 6 file(s)"
 ledger = "m2"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m3"
@@ -1218,6 +1362,14 @@ digest = "7de91f3744e3f79b"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'sun_.ambient = 0.10F;' in samples/03-first-light/scene.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m3"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m3"
@@ -1247,9 +1399,9 @@ detail = "red under mutation of 9 file(s)"
 ledger = "m3"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m3"
@@ -1258,6 +1410,14 @@ digest = "2dbbcf49cd8271c7"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'command.d = info.view_mask;' in src/backends/rhi/null/src/null_command_buffer.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m4"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m4"
@@ -1279,9 +1439,17 @@ detail = "red under mutation of 8 file(s)"
 ledger = "m4"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m5"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m5"
@@ -1303,9 +1471,17 @@ detail = "red under mutation of 14 file(s)"
 ledger = "m5"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m5b"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m5b"
@@ -1343,9 +1519,17 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m5b"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m6"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m6"
@@ -1375,9 +1559,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m6"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m7"
@@ -1386,6 +1570,14 @@ digest = "ab24a0c4b2479f9d"
 verdict = "proven against a built tree"
 mutation = "delete-lines '++counters.tested;' in src/servers/render/culling/src/gpu_cull.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m7"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m7"
@@ -1439,9 +1631,17 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 ledger = "m7"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m8a"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m8a"
@@ -1471,9 +1671,17 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m8a"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m8b"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m8b"
@@ -1511,9 +1719,17 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m8b"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
+
+[[proof]]
+ledger = "m8c"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m8c"
@@ -1607,17 +1823,25 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 ledger = "m8c"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[proof]]
 ledger = "m9"
 criterion = "breadcrumbs-adopted"
 digest = "5c80660c20bc60fe"
 verdict = "proven"
-mutation = "rename-token 'CY_BREADCRUMB' in 2,src/ (derived)"
+mutation = "rename-token 'CY_BREADCRUMB' in src/ (derived)"
 detail = "red under mutation of 9 file(s)"
+
+[[proof]]
+ledger = "m9"
+criterion = "layering"
+digest = "013d16d0f90d9149"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
 
 [[proof]]
 ledger = "m9"
@@ -1641,7 +1865,7 @@ criterion = "replay-one-record"
 digest = "ff9ccfd61274b06c"
 verdict = "proven"
 mutation = "rename-token 'kRecordTypeId' in samples/,src/,tools/ (derived)"
-detail = "red under mutation of 6 file(s)"
+detail = "red under mutation of 8 file(s)"
 
 [[proof]]
 ledger = "m9"
@@ -1711,25 +1935,17 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m9"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … ok   no C++ compiler is a diagnosis, not a configure error five minutes later"
 
 [[unproven]]
 ledger = "m0"
 criterion = "build"
 digest = "46a8c51370a53a99"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m0"
-criterion = "doctor"
-digest = "7a636a7ed8693dd2"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m0"
@@ -1743,25 +1959,17 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m0"
 criterion = "generated-code"
 digest = "3b3928ebb85ae874"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m0"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m0"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m0"
@@ -1775,17 +1983,17 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m0"
 criterion = "sample-headless"
 digest = "8aca70f76fb2a8f1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m0"
 criterion = "sample-window"
 digest = "5bc4e5551f9a1fe6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: no window system on this host, and a headless run is not evidence that a window opens — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m0"
@@ -1799,113 +2007,105 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m0"
 criterion = "test"
 digest = "d5d5e3c6e896c520"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m0"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m0"
 criterion = "trace"
 digest = "fb8f8770bc54559a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "asan-jobs"
 digest = "beef6a828a8d7952"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "generated-code"
 digest = "3b3928ebb85ae874"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "headless-host"
 digest = "f6178152d8a8f048"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "identity-manifest"
 digest = "2b7d97fbb8215430"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-identity'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "identity-rename"
 digest = "c808a3d19373bf52"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "job-throughput"
 digest = "e7d7780bd207323c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m1"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "memory-budgets"
 digest = "434e01251118e238"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "project-graph"
 digest = "7c74eeb26f70b8a5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "reflection-goldens"
 digest = "30c7a0f51386014f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
@@ -1927,145 +2127,145 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m1"
 criterion = "startup-order"
 digest = "6b8af961593d8cca"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m1"
 criterion = "tsan-jobs"
 digest = "6010b5b36d35ab43"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "determinism-fuzzing-and-saves"
 digest = "02cd61b2db6fdd54"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "determinism-golden-replay"
 digest = "58c85383b43e239b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "determinism-kind-populated"
 digest = "d1c5699cd9b58390"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "fields-determinism-split"
 digest = "75b2d16726337c15"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "fields-gpu-agreement"
 digest = "72ec01f338bfa8e5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "fields-one-vegetation-potential"
 digest = "3c10b895aa7c7cce"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "fields-one-wind-declaration"
 digest = "4e9857466e1cccfb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "fields-residency-and-streaming"
 digest = "c3412e9306ec6a6d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "fields-substrate"
 digest = "c7fefafbfffec24b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "foliage-core"
 digest = "fe96793477641f3b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "foliage-exceptions"
 digest = "b293791d93a702ed"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "foliage-fields"
 digest = "0fb92073e01d07ad"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "foliage-grass"
 digest = "49dc83762ebbe205"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "foliage-placement"
 digest = "68f21909c3445d1e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "foliage-streaming"
 digest = "2191ef323422f388"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
@@ -2079,121 +2279,113 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m10"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "four-profiles-editor"
 digest = "bb393f5a07c4aeb4"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m10"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "one-producer-refused"
 digest = "7b93e300fe5c3cce"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-adapters"
 digest = "d3399e068814f146"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-core"
 digest = "c7343f474a7ab5f3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-generation"
 digest = "ebaac53beaf2cd96"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-gpu-domain-agreement"
 digest = "5eab29bb20cc7def"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host has one GPU vendor, so agreement measured here would be agreement with one driver rather than between two, and `requires = \"gpu\"` would make it RUN and PASS on exactly that evidence — CI job 'milestone-m10'"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-identity"
 digest = "5ac0464f997dae20"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-override-survives-regeneration"
 digest = "12f070a85110fadc"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-partial-reproduces-full"
 digest = "3fbcdd81e7994f57"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-scale"
 digest = "780628a30ecd9ec1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "pcg-spike-conditions"
 digest = "1e2342752939dbb7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
@@ -2223,41 +2415,41 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m10"
 criterion = "sky-clouds"
 digest = "5f0be83593e7296e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "sky-composition"
 digest = "c7e3bb552097932a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "sky-core"
 digest = "7d57ca364c3aa985"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "sky-light"
 digest = "bc66fe3972b56821"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "sky-tables"
 digest = "d996f24844358ac6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
@@ -2271,177 +2463,177 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m10"
 criterion = "terrain-authoring"
 digest = "7869b93bea1e71e7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "terrain-cook"
 digest = "af11eeeb119402fb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "terrain-core"
 digest = "fd6b7b4858d22881"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "terrain-geometry"
 digest = "ec2212d23808e4b6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "terrain-persistence"
 digest = "e3e0df776324a26c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "vfx-compiler"
 digest = "0218dc838dce5636"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "vfx-device"
 digest = "a41f4da28edb2fdf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: particle state resident in GPU buffers and a dispatch sized by the device cannot be measured on a machine with no device, and must not be reported as passing there — `vfx-runtime` is the companion that needs none — CI job 'milestone-m10'"
 
 [[unproven]]
 ledger = "m10"
 criterion = "vfx-runtime"
 digest = "1839f3e904170b77"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "vfx-values"
 digest = "d719118a5f07c37d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "water-core"
 digest = "a79ae80762741dd3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "water-foam"
 digest = "dd62c858bdccc8e7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "water-shoreline"
 digest = "76dc7bccc517f9ce"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "water-streaming"
 digest = "5874857a86f75e4f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "weather-core"
 digest = "d8de04b8adff2901"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "weather-determinism"
 digest = "326b85398dc8dbc4"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "weather-ecosystem"
 digest = "49eabcb00d925afa"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "weather-fields"
 digest = "961fb3bdf08f04ae"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "world-artefact"
 digest = "faa2020740f95d14"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "world-budget-curve"
 digest = "d9f02af962d5433b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "world-frame-budget"
 digest = "2474db3f8b9aefc3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "world-seed-control"
 digest = "5b5b4b92431c891a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
 criterion = "world-still"
 digest = "331c12bfb048572f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: the still is drawn on a graphics device; on a machine with none the program reports which device it did not find and writes no frames, which must not read as a pass — CI job 'milestone-m10'"
 
 [[unproven]]
 ledger = "m11c"
@@ -2455,9 +2647,9 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 ledger = "m11c"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
+detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11d"
@@ -2469,19 +2661,11 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
-criterion = "d3d12-backend-exists"
-digest = "e4d27727b07eaa5a"
-verdict = "not provable here"
-mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: D3D12 exists only on Windows and this host is Linux; reported NOT EVALUATED here rather than passed by a suite that did not run — CI job 'milestone-m11d'"
-
-[[unproven]]
-ledger = "m11d"
 criterion = "documentation-gate"
 digest = "08840163db54e9c5"
-verdict = "refuted"
+verdict = "no mutation"
 mutation = "-"
-detail = "absent-recipe: just quality-docs: no such recipe"
+detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11d"
@@ -2501,14 +2685,6 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
-criterion = "full-gate-set"
-digest = "d20078bfe37c3b27"
-verdict = "refuted"
-mutation = "-"
-detail = "absent-recipe: just quality-swift-format: no such recipe; absent-recipe: just quality-licence-headers: no such recipe; absent-recipe: just quality-spelling: no such recipe"
-
-[[unproven]]
-ledger = "m11d"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -2517,35 +2693,11 @@ detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
-criterion = "golden-images-across-three-backends"
-digest = "7b49d70a1417310d"
-verdict = "not provable here"
-mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: three backends live on three operating systems and no single machine has all three; the comparison is between legs of the matrix, which is the same shape as the cross-leg digest job M11.a builds — CI job 'milestone-m11d'"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "metal-backend-is-native"
-digest = "4e11d3dfd02d69cb"
-verdict = "not provable here"
-mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: Metal exists only on macOS and this host is Linux; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered — CI job 'milestone-m11d'"
 
 [[unproven]]
 ledger = "m11d"
@@ -2559,9 +2711,9 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 ledger = "m11d"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
+detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11d"
@@ -2612,6 +2764,86 @@ mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
+ledger = "m11d5"
+criterion = "d3d12-backend-exists"
+digest = "1c90434e87ca9922"
+verdict = "not provable here"
+mutation = "-"
+detail = "this host cannot evaluate it, so it cannot judge it either: D3D12 exists only on Windows and this host is Linux; reported NOT EVALUATED here rather than passed by a suite that did not run — CI job 'milestone-m11d5'"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "device-identity-is-named"
+digest = "05e7a3d3d9d966af"
+verdict = "not provable here"
+mutation = "-"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "four-profiles"
+digest = "021dbef044895d07"
+verdict = "not provable here"
+mutation = "-"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "generated-code"
+digest = "0571f02a45293a0d"
+verdict = "not provable here"
+mutation = "-"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "golden-images-across-three-backends"
+digest = "7b49d70a1417310d"
+verdict = "not provable here"
+mutation = "-"
+detail = "this host cannot evaluate it, so it cannot judge it either: three backends live on three operating systems and no single machine has all three; the comparison is between legs of the matrix, which is the same shape as the cross-leg digest job M11.a built — CI job 'milestone-m11d5'"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "not provable here"
+mutation = "-"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "metal-backend-is-native"
+digest = "dbed2d2395c26d5b"
+verdict = "not provable here"
+mutation = "-"
+detail = "this host cannot evaluate it, so it cannot judge it either: Metal exists only on macOS and this host is Linux with no Apple toolchain; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered — CI job 'milestone-m11d5'"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "renderer-options-off-is-clean"
+digest = "b3567a020f9bdf8a"
+verdict = "not provable here"
+mutation = "-"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "rhi-row-at-complete-grade"
+digest = "6021d475593759c3"
+verdict = "no mutation"
+mutation = "-"
+detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+
+[[unproven]]
+ledger = "m11d5"
+criterion = "three-backend-images-committed"
+digest = "26e6a00f8c682b77"
+verdict = "no mutation"
+mutation = "-"
+detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+
+[[unproven]]
 ledger = "m11e"
 criterion = "attribution-api"
 digest = "63682e0878639e2a"
@@ -2622,18 +2854,10 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 [[unproven]]
 ledger = "m11e"
 criterion = "cross-compilation-works"
-digest = "8ce150908ed8958e"
+digest = "d1ca0e6661ca9213"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just build'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "deferral-is-the-last-rungs-act"
-digest = "9c88f6bfa8aac2ad"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11e"
@@ -2642,14 +2866,6 @@ digest = "8fe4b83bbf386135"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "every-deferral-carries-its-three-parts"
-digest = "aa1cf1ee5aa690b2"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11e"
@@ -2701,14 +2917,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11e"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
 verdict = "not provable here"
@@ -2717,8 +2925,16 @@ detail = "it needs a built tree ('just quality-lint'); the sandbox is source onl
 
 [[unproven]]
 ledger = "m11e"
+criterion = "metal-compute-workloads"
+digest = "d36140f03db531d8"
+verdict = "not provable here"
+mutation = "-"
+detail = "this host cannot evaluate it, so it cannot judge it either: the suites require native Metal; physical Apple GPU evidence is recorded separately because hosted macOS exposes a paravirtual Tier 1 device — CI job 'milestone-m11e'"
+
+[[unproven]]
+ledger = "m11e"
 criterion = "mobile-artefact-is-produced"
-digest = "44d666761ebbc816"
+digest = "dd18d9334f3cfee8"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: no mobile toolchain and no device exist on this host; the claim is reported NOT EVALUATED here rather than passed, and the matrix leg is where it is answered — CI job 'milestone-m11e'"
@@ -2735,14 +2951,14 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 ledger = "m11e"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
+detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "porting-surface-against-a-real-non-desktop"
-digest = "388483f34e425433"
+digest = "d1ca0e6661ca9213"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: no mobile toolchain on this host; `porting-surface-against-a-stub` in M11.d's ledger carries the half that can be judged anywhere — CI job 'milestone-m11e'"
@@ -2783,121 +2999,113 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 ledger = "m2"
 criterion = "asan-world"
 digest = "5c335357d380702d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "coherence"
 digest = "6b3f3028817db62b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "commit-boundary"
 digest = "32e93c1e949b5eb7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "cooked-assets"
 digest = "6018b3cb6dc796a1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "cooking"
 digest = "ba6b1302c781702e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "determinism"
 digest = "ee74a2449bd34626"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "documents"
 digest = "49df34c072e8ccd1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "ecs-blocks"
 digest = "e79897cb51364b31"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "ecs-core"
 digest = "e976085d8a3ec85a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "ecs-scheduling"
 digest = "97fb915397b7fd35"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "ecs-snapshots"
 digest = "81fc3c86fb3fb994"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "headless-sim"
 digest = "ee261490c5d013ea"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m2"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "nodes"
 digest = "8c386136da2d93a9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
@@ -2911,17 +3119,17 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m2"
 criterion = "runtime"
 digest = "4c52d3432e9853b3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "sample-recipe"
 digest = "d600949ce05be86a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
@@ -2935,49 +3143,49 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m2"
 criterion = "state-hash"
 digest = "6219da4649d8f96c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m2"
 criterion = "tsan-world"
 digest = "e90ba061b2fcbf78"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
 criterion = "wire-format"
 digest = "1ddcd27087d58f2d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "aliasing"
 digest = "d3e54cd27970f6ed"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "culling"
 digest = "9b9bd1eff85d41d8"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
@@ -2991,89 +3199,81 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m3"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "hot-reload"
 digest = "4d089c33274a83ae"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m3"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "lighting"
 digest = "4c9fffebba5049ac"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "materials"
 digest = "0ed76fbebc85cfd6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "render-extract"
 digest = "6c0dbfb9d6194355"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "render-frame"
 digest = "e17779f134f0d71e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "render-graph"
 digest = "017bb2f6b14208ff"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "render-server"
 digest = "183799ebf4a0ed49"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "rhi"
 digest = "5eb0c767c80a2507"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
@@ -3087,25 +3287,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m3"
 criterion = "sample-recipe"
 digest = "665e17d41c29a3cd"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "sanitizers-render"
 digest = "b78d110f250dc469"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
 criterion = "shaders"
 digest = "e36ebe29d59ceaf4"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
@@ -3119,25 +3319,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m3"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m3"
 criterion = "vulkan-frame"
 digest = "c2b092af700593fe"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host has no graphics device; the null backend runs the same derivation and is covered by render-null above — CI job 'render-device'"
 
 [[unproven]]
 ledger = "m4"
 criterion = "abi"
 digest = "5ced10dbaf34a907"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
@@ -3151,25 +3351,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m4"
 criterion = "audio"
 digest = "be056bcfbf9f3dca"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "camera"
 digest = "52bb2b0a3b5989b0"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "command-stream"
 digest = "69ac5eb44c779c07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
@@ -3183,73 +3383,65 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m4"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "input-fixed-tick"
 digest = "a5db884bd3c45689"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m4"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "no-cpp-gameplay"
 digest = "a92d322b5b5ed48c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "no-swift-runtime"
 digest = "6ab2b374b86656e0"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "physics"
 digest = "8544da6db689ead3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "physics-jolt"
 digest = "0d841f4edc7025f4"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
@@ -3263,25 +3455,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m4"
 criterion = "sample-artefact"
 digest = "90194ad3f299ca47"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "sample-recipe"
 digest = "fc0a38a7e4535b4c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "sanitizers"
 digest = "d9e17efae5157d60"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
@@ -3295,81 +3487,81 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m4"
 criterion = "swift-api"
 digest = "3a192150b200d84d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "swift-reload"
 digest = "3f65a154255233de"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix, and neither has ever loaded a Swift game module — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m5"
 criterion = "artefact"
 digest = "6667d26dc22e39c1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "artefact-selftest"
 digest = "8710e12b01434ee2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "asset-import"
 digest = "841855702b9ad86d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "derived-cache"
 digest = "2f3cb84ea54647c6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "editor"
 digest = "1b4959c1f0214126"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "editor-profiles"
 digest = "a98332f01b3c911e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "editor-three-platforms"
 digest = "1b4959c1f0214126"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: no single host runs all three operating systems, so the complete claim belongs to the CI matrix. macOS now has local Apple-hardware evidence from the exact recipe; Windows remains CI-only — CI job 'editor'"
 
 [[unproven]]
 ledger = "m5"
@@ -3383,41 +3575,33 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m5"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m5"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "live-reload"
 digest = "366921474aa97a68"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
@@ -3431,25 +3615,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m5"
 criterion = "runtime-inspection"
 digest = "9ee5249c4490e2b9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "sample-recipe"
 digest = "7310c4f26a9fba44"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "sanitizers"
 digest = "f0bbce07c30b5b9e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
@@ -3463,65 +3647,65 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m5"
 criterion = "text"
 digest = "e58437560fb4df3a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "agent-artefact"
 digest = "d9dac7207f314b46"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "agent-recipe"
 digest = "22aa443d0cc9ad52"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "editor"
 digest = "1b4959c1f0214126"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "editor-profiles"
 digest = "a98332f01b3c911e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "editor-three-platforms"
 digest = "1b4959c1f0214126"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'editor'"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "editor-without-the-agent-interface"
 digest = "3ba6751b7bba8f7e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('cargo'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
@@ -3535,33 +3719,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m5b"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m5b"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
@@ -3583,81 +3759,81 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m5b"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "toolkit-containment"
 digest = "01365da50fb4517a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('cargo'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "viewport-transport"
 digest = "d4f89da9026a36ee"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: the transport imports a dma-buf with an explicit DRM format modifier and waits on an exported timeline semaphore; there is no software path and a machine with no device cannot judge it — CI job 'milestone-m5b'"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "window-artefact"
 digest = "8fee5b809cdd0b4c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this artefact is about a window: it needs an X server with the XTEST extension, a device that can import a dma-buf, python-xlib and Pillow. A hosted runner has none of them, and a check that reported green because the window never opened is the exact failure M5.5 exists to correct — CI job 'milestone-m5b'"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "window-recipe"
 digest = "a38a919edc3930db"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: the same reason as `window-artefact`: there is no display on a hosted runner and this artefact is about a window — CI job 'milestone-m5b'"
 
 [[unproven]]
 ledger = "m6"
 criterion = "build-patch"
 digest = "8b8f895d2469cf71"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "build-service"
 digest = "8f0ef4bfa67b3aed"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "continuous-traversal"
 digest = "ba68140f0b13a827"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "culling"
 digest = "ed8d46d4faddbbac"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "derivation-keys"
 digest = "c9451018b6522a38"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
@@ -3671,89 +3847,81 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m6"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "geometry"
 digest = "ddddabcf50df6f6e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "import-complete"
 digest = "e0a5d782469c319f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "import-fbx"
 digest = "e278fbdd86d8f52f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m6"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "open-world-artefact"
 digest = "5b53c97520a7c40e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "open-world-recipe"
 digest = "a80b6c47081d03f7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "residency-separation"
 digest = "3ebe5218dc141bea"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "residency-teardown"
 digest = "39e3b8e6f7cae845"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
@@ -3767,25 +3935,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m6"
 criterion = "save-generations"
 digest = "a9ef116ca49661c1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "save-overlay"
 digest = "a266fda5a817055a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "save-service"
 digest = "8b3ce45fc8875d90"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
@@ -3799,97 +3967,97 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m6"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m6"
 criterion = "virtual-texturing"
 digest = "026728b0b16eb600"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "virtual-texturing-teardown"
 digest = "7267c25bf0cb4f5c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "world-activation"
 digest = "8514d230a67bb20a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
 criterion = "world-cells"
 digest = "d3dd427a9223b06b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "arbiter"
 digest = "5fb43b07de432023"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "arbiter-sweep"
 digest = "a90a396dbeb9dc15"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "artefact-harness"
 digest = "8a15ed43ff59d3f9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "assets-streaming"
 digest = "b31600352cb038ce"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "denoise"
 digest = "6991ce17641beb41"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "fidelity-artefact"
 digest = "8b9107e1e94b63f6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "fidelity-recipe"
 digest = "3b7cfa75e9cff8a5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
@@ -3903,97 +4071,89 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m7"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "gi"
 digest = "b9e96f6e782a849c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "gi-fallback"
 digest = "3edf5ade865d9775"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m7"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "lighting"
 digest = "4f361659105a73fa"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "material-compiler"
 digest = "ff86a90c54c05579"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "material-cook"
 digest = "dcdcab07251b28b7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "materials-shading"
 digest = "4bf234f45a950171"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "memory-attribution"
 digest = "20a93008174f88c3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "metal-seed"
 digest = "adbced76f2e2606a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
@@ -4007,25 +4167,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m7"
 criterion = "post"
 digest = "085ec7786e6b422b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "raytracing"
 digest = "4bb4d1740bb7ba68"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "residency-cost"
 digest = "3ebe5218dc141bea"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
@@ -4039,17 +4199,17 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m7"
 criterion = "shader-system"
 digest = "6d46e252b2b33309"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "sky"
 digest = "20c5f1c3e48ad1e2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
@@ -4063,97 +4223,97 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m7"
 criterion = "temporal"
 digest = "ecafc53cb4ed41ed"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "three-platforms"
 digest = "90f870fe6e82ebaf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host runs one operating system; the other two are built only by the CI matrix — CI job 'build-and-test'"
 
 [[unproven]]
 ledger = "m7"
 criterion = "viewport"
 digest = "8fee5b809cdd0b4c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: it drives a real window on a real X session; a hosted runner has no display and the entry is reported not evaluated rather than passed — CI job 'editor-window'"
 
 [[unproven]]
 ledger = "m7"
 criterion = "virtual-geometry"
 digest = "d85243ead55c67c4"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "virtual-geometry-build"
 digest = "bafe9a8327d3f541"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
 criterion = "virtual-shadows"
 digest = "a4b1185213a31023"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "authoring-artefact"
 digest = "5820f376bc638efa"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "authoring-control"
 digest = "b52e33621de93367"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "authoring-recipe"
 digest = "d3671984e3166cfd"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "editor"
 digest = "1b4959c1f0214126"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "editor-authoring"
 digest = "383fb9b614e4b1b3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('cargo'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "editor-profiles"
 digest = "a98332f01b3c911e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
@@ -4167,97 +4327,89 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8a"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "import-cache"
 digest = "8937ebf302701a93"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "import-formats"
 digest = "6fb54a5d41c9894c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "import-steps"
 digest = "3feae5a03b6bc37f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8a"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "obj"
 digest = "312af0825137c5e5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "one-world"
 digest = "72ccbcfbeb1d48c1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "physics-bridge"
 digest = "d5e755dceb007836"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "physics-simulation"
 digest = "e980ae5df3ed6e6c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "physics-teardown"
 digest = "897a3fe2fa49bce0"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
@@ -4271,17 +4423,17 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8a"
 criterion = "play-session"
 digest = "5045fa1ecb9397f7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "primitives"
 digest = "81dad88a21252c98"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
@@ -4295,9 +4447,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8a"
 criterion = "spawning"
 digest = "afb1d371d8916c8e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
@@ -4311,129 +4463,129 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8a"
 criterion = "world-runtime"
 digest = "4a77042536dcfd02"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
 criterion = "world-transactions"
 digest = "49df34c072e8ccd1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "ability-core"
 digest = "5539ae252efe4154"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "ability-scale"
 digest = "eebfbb9359fbe7e7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "ai-runtime"
 digest = "be2667af95a3d360"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "ai-scale"
 digest = "26b8fcba1f53b87a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "animation"
 digest = "82bb0583354de064"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "animation-runtime"
 digest = "323f278482f71069"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "animation-teardown"
 digest = "a94a5261a5fd731c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "audio-acoustics"
 digest = "271463f72d9990f5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "audio-mixer"
 digest = "49f1684927f1d6d3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "camera-authoring"
 digest = "8447ed2e01adf66a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "camera-system"
 digest = "13f3786652d84ae3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "camera-world"
 digest = "81086fb33e708e8d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "cybergraph"
 digest = "beb4a91a3ad6e707"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "feature-options-off"
 digest = "4a4f4a83f1188101"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
@@ -4447,113 +4599,105 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8b"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "gameplay-core"
 digest = "f2933342c0a178d1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "gameplay-play"
 digest = "5045fa1ecb9397f7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "gameplay-scale"
 digest = "fd78d9c1d65956d1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "gameplay-spawn"
 digest = "afb1d371d8916c8e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "graph-compiler"
 digest = "6f3580557db4bcc5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8b"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "mesh-renderer-reflected"
 digest = "d09d8b6e708bbec9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "navigation"
 digest = "5ee0abbb47cfc75f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "navigation-build"
 digest = "35306a9bd6017af9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "navigation-crowd"
 digest = "58ed8b934f43aaba"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "navigation-fields"
 digest = "b5b3fbc43b99330a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
@@ -4567,25 +4711,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8b"
 criterion = "prefab-apply-extract"
 digest = "49df34c072e8ccd1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "render-assembly"
 digest = "bcd8770cc7613ef3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "rendering-2d"
 digest = "273cd4f20600cd46"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
@@ -4599,33 +4743,33 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8b"
 criterion = "skinning-pose-world"
 digest = "631ba2818f4160a4"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "slice-artefact"
 digest = "5d3535e6db52a867"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "slice-control"
 digest = "ce7f2b248876b819"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "slice-recipe"
 digest = "91f3ac58a5175e6e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
@@ -4639,65 +4783,65 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8b"
 criterion = "text"
 digest = "38e111375c498fa9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "ui"
 digest = "4a28fd86a129de6d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
 criterion = "ui-scale"
 digest = "4f42fd007afe3191"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "audio-parity"
 digest = "271463f72d9990f5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "feature-options-off"
 digest = "99768e8cfd0507da"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "firewall-cook"
 digest = "8a6093c6227f9fe6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "firewall-ecs"
 digest = "cbd1927ba20b5a11"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "firewall-gameplay"
 digest = "622c4e69e76cb592"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
@@ -4711,81 +4855,73 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8c"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8c"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "material-slang"
 digest = "e1baca49b6ae743a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "ml-core"
 digest = "5a4a0fd72a6a2509"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "ml-onnxruntime"
 digest = "c264f79f7746d4ea"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "ml-option-off"
 digest = "322ff0481cd161fa"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "ml-runtime"
 digest = "0156c83a7e274ce8"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "pipeline-layer"
 digest = "87cc3a545abb9c8a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
@@ -4807,81 +4943,81 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8c"
 criterion = "sequence-cut"
 digest = "8f69fd4bbf77a89e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "sequencing-camera"
 digest = "61f2d995a91c1f28"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "sequencing-commands"
 digest = "b421d9d751e16c98"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "sequencing-core"
 digest = "82885a103c58d63c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "sequencing-playback"
 digest = "5ef66fb5b2f9c8d0"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "slice-artefact"
 digest = "5d3535e6db52a867"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "slice-capture"
 digest = "04ed21baf231bb85"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: it records the slice's frame on a graphics device and reads the image back; every other act of the artefact is judgeable with neither a device nor a display, and `m8c:slice-artefact` runs those — CI job 'milestone-m8c'"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "slice-control"
 digest = "ce7f2b248876b819"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "slice-determinism"
 digest = "5607b5530df7e084"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "slice-recipe"
 digest = "91f3ac58a5175e6e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
@@ -4895,97 +5031,97 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8c"
 criterion = "steam-audio-configures"
 digest = "ece015151e6454cc"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "vfx-compiler"
 digest = "b17f6db706a0e5fa"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "vfx-runtime"
 digest = "1839f3e904170b77"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
 criterion = "vfx-values"
 digest = "a59cc110c52a72e6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "bandwidth-curve"
 digest = "032d454e05726168"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "crash-artefact-paths"
 digest = "d155c7533880a5fd"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "determinism-core"
 digest = "b2c75eead635f87f"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "determinism-lint"
 digest = "caac65aa14de7a54"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "determinism-lint-selftest"
 digest = "96ba8a65cd66a8df"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "determinism-scale"
 digest = "8265e1ebba346b31"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "figures-regenerated"
 digest = "752eb4b4afb2720d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "firewall-armed"
 digest = "622c4e69e76cb592"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
@@ -4999,9 +5135,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m9"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
@@ -5015,137 +5151,129 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m9"
 criterion = "gameplay-log-seam"
 digest = "f2933342c0a178d1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m9"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-artefact"
 digest = "ea044753525b868c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-control"
 digest = "c845d9ae5cfe03db"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-crash"
 digest = "8fb614af15449a04"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-divergence"
 digest = "09e246bfc2166705"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-profiles-agree"
 digest = "cb2fef5f7d560ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-recipe"
 digest = "242cbc65190d5d0a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-replay"
 digest = "b100503cc4515302"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "multiplayer-session"
 digest = "fdeb3e2e859feadd"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "networking-core"
 digest = "445f45b4ee9f43f5"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "networking-defaults-on"
 digest = "106b0fef9df72b1d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "networking-option-off"
 digest = "781f4b8b4be311a0"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "networking-session"
 digest = "81a0d74cefe8ee26"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "networking-udp"
 digest = "6e3c249f702e991c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
@@ -5159,9 +5287,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m9"
 criterion = "profile-refused-at-configuration"
 digest = "c032a3fa8491940a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('cmake'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
@@ -5177,39 +5305,39 @@ criterion = "record-matches-plan-history"
 digest = "a54ddb48cdc8adba"
 verdict = "no mutation"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "THIS GAP CLOSES BY AN ADDITION AND NO MUTATION VERB ADDS: a declared gap owes a mutation that makes it GREEN, none can be derived from its text, and none can be declared either: the thing it names is ABSENT and every verb here subtracts. Its recorded redness stands; what is unjudged is whether the gap is a deadline rather than a permanent red. Red unmutated: M8B: thirdparty-dependencies (working planned, seed recorded)"
 
 [[unproven]]
 ledger = "m9"
 criterion = "reliable-channel-stalls-under-loss"
 digest = "f9f82ebd538df3d6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "replay-core"
 digest = "6ff87a04e4bfca7e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "replay-log"
 digest = "57d83e68d3d45257"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
 criterion = "replay-snapshot"
 digest = "839294b14867a424"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
@@ -5223,9 +5351,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m9"
 criterion = "rollback-no-duplicate-effects"
 digest = "4aaa5a33464a5aa3"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
@@ -5239,6 +5367,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m9"
 criterion = "state-hash-coverage"
 digest = "ed1c85fe809162d6"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
