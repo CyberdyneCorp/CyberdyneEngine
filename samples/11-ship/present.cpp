@@ -148,9 +148,12 @@ struct BlitState {
 
 void report_validation(rhi::ValidationSeverity severity, const char* message,
                        void* /*user*/) noexcept {
-    const char* label = severity == rhi::ValidationSeverity::Error     ? "error"
-                        : severity == rhi::ValidationSeverity::Warning ? "warning"
-                                                                       : "info";
+    const char* label = "info";
+    if (severity == rhi::ValidationSeverity::Error) {
+        label = "error";
+    } else if (severity == rhi::ValidationSeverity::Warning) {
+        label = "warning";
+    }
     std::fprintf(stderr, "11-ship: vulkan validation %s: %s\n", label,
                  message != nullptr ? message : "");
 }

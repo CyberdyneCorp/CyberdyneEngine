@@ -32,7 +32,7 @@ void set_hash_seed(u64 seed) noexcept;
 namespace detail {
 
 /// 64x64 -> 128 multiply, folded to 64 bits by xor. The whole of the mixing.
-[[nodiscard]] inline constexpr u64 mix(u64 a, u64 b) noexcept {
+[[nodiscard]] constexpr u64 mix(u64 a, u64 b) noexcept {
 #if defined(_MSC_VER)
     // MSVC has no __uint128_t. Split the operands into 32-bit limbs so this produces the exact
     // same high and low halves on x64 and arm64 without binding the public header to one intrinsic.
