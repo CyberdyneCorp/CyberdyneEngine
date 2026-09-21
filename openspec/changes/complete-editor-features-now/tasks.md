@@ -86,4 +86,4 @@
 
 - [x] 11.1 Add `--project <directory>` before workspace restoration and document opening; verify a declared project is selected and an arbitrary directory is refused with the missing manifest named.
 - [x] 11.2 Make Play and Pause update viewport state only after an attached runtime accepts the request; verify a disconnected editor remains in Editing and reports an actionable notification.
-- [ ] 11.3 After the Metal backend change merges, rebase this branch and run the editor with `cy_editor_window_runtime` on macOS; verify the first IOSurface frame, Play/Pause/Stop, runtime loss, document survival, and restart in one connected acceptance run.
+- [x] 11.3 After the Metal backend change merges, rebase this branch and run the editor with `cy_editor_window_runtime` on macOS; verify the first IOSurface frame, Play/Pause/Stop, runtime loss, document survival, and restart in one connected acceptance run.

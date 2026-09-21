@@ -305,6 +305,13 @@ impl Editor {
     /// because a frame happened.
     pub fn pump(&mut self) {
         let messages = self.runtime.pump(&mut self.notifications);
+        #[cfg(unix)]
+        if self.runtime.reconnect_if_due() {
+            self.mirror.runtime_restarted();
+            self.notifications.post(Notification::info(
+                "The hosted runtime restarted and the editor reconnected",
+            ));
+        }
         if !self.runtime.is_connected() {
             self.set_local_play_state(PlayState::Editing);
         }

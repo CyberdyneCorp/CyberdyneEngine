@@ -16,3 +16,9 @@ leave or return every viewport to Editing with an actionable diagnostic.
 - **WHEN** the attached runtime is lost while the editor presents Playing or Paused
 - **THEN** the next editor pump SHALL return every viewport to Editing
 - **AND** the editor SHALL preserve the open documents and their unsaved changes
+
+#### Scenario: Hosted runtime restarts
+- **WHEN** a hosted runtime disappears and later returns at its configured local endpoint
+- **THEN** the existing editor process SHALL reconnect without closing its open documents
+- **AND** it SHALL replay the unsaved transaction history into the fresh runtime before forwarding
+  later edits

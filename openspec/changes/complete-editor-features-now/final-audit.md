@@ -90,8 +90,11 @@ tick, and a document identical after Stop. This run exposed and fixed a command-
 script could exit after queueing those requests but before the writer delivered them. A real-socket
 regression now requires every scripted play transition to receive the runtime's reply.
 
-Task 11.3 remains open for one reason. Killing the physical Metal runtime left the editor process,
-open document, and authoring state alive, but starting the runtime again did not reconnect the
-existing editor session. The runtime created its device and sockets successfully and received no
-new editor attachment. Automatic reconnect or an explicit reconnect action, followed by the same
-physical restart run, is still required before this criterion can be checked.
+Task 11.3 passed in a single connected acceptance run on the physical Apple M3 Pro. Runtime A
+published 2,155 IOSurface frames from the native Metal device while the editor sent Play, Pause, and
+Stop and received authoritative state replies. Killing Runtime A returned the viewport to Editing;
+the same editor process continued serving its document, hierarchy, and history resources with the
+dirty document intact. Runtime B then started at the same local endpoint, and the editor reconnected
+without a restart, replayed its unsaved transactions, displayed 1,120 fresh frames, and completed a
+second Play/Stop cycle. Runtime B measured 59.9 published frames per second during that acceptance
+leg; this records functional evidence rather than a controlled performance benchmark.

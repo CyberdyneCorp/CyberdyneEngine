@@ -29,6 +29,10 @@ pub struct RuntimeSession {
     session: Option<Session>,
     /// Where to reconnect, so that "offer to restart the runtime" has something to offer.
     endpoint: Option<String>,
+    /// Earliest next connection attempt. A local socket refusal is immediate, but trying it every
+    /// interface frame would still turn a stopped runtime into needless work.
+    #[cfg(unix)]
+    retry_at: Option<std::time::Instant>,
 }
 
 impl Default for RuntimeSession {
@@ -38,6 +42,8 @@ impl Default for RuntimeSession {
             mode: HostingMode::NoRuntime,
             session: None,
             endpoint: None,
+            #[cfg(unix)]
+            retry_at: None,
         }
     }
 }
@@ -63,6 +69,7 @@ impl RuntimeSession {
             mode: HostingMode::Hosted,
             session: Some(session),
             endpoint: Some(endpoint.display().to_string()),
+            retry_at: None,
         })
     }
 
@@ -73,7 +80,46 @@ impl RuntimeSession {
             mode: HostingMode::Hosted,
             session: Some(session),
             endpoint: None,
+            #[cfg(unix)]
+            retry_at: None,
         }
+    }
+
+    /// Reattach to a hosted runtime that has returned at the remembered local endpoint.
+    ///
+    /// Called from the interface pump, so a failed attempt is both local and bounded. Failures are
+    /// kept quiet until the one-second retry deadline; the original loss notification already tells
+    /// the designer what happened and a toast per frame would hide useful work.
+    #[cfg(unix)]
+    pub fn reconnect_if_due(&mut self) -> bool {
+        const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+        if self.session.is_some() || self.endpoint.is_none() {
+            return false;
+        }
+        let now = std::time::Instant::now();
+        if self.retry_at.is_some_and(|deadline| deadline > now) {
+            return false;
+        }
+        self.retry_at = Some(now + RETRY_INTERVAL);
+        let endpoint = self.endpoint.as_deref().expect("checked above");
+        let Ok(session) = Session::connect_unix(endpoint) else {
+            return false;
+        };
+        if session
+            .send(&Message::Hello {
+                abi_major: cy_editor_sdk::abi::MAJOR,
+                abi_minor: cy_editor_sdk::abi::MINOR,
+                editor: env!("CARGO_PKG_VERSION").to_string(),
+            })
+            .is_err()
+        {
+            return false;
+        }
+        self.mode = HostingMode::Hosted;
+        self.session = Some(session);
+        self.retry_at = None;
+        true
     }
 
     /// Which mode is in force.
@@ -276,6 +322,10 @@ impl RuntimeSession {
             }
             self.session = None;
             self.mode = HostingMode::NoRuntime;
+            #[cfg(unix)]
+            {
+                self.retry_at = Some(std::time::Instant::now());
+            }
         }
         messages
     }

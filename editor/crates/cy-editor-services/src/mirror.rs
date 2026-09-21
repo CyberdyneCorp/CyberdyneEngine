@@ -86,6 +86,9 @@ pub struct RuntimeMirror {
     /// keeping. Not a notification: "no runtime is attached" is an ordinary state and a toast per
     /// frame would be a wall of them.
     quiet_reason: Option<String>,
+    /// A restarted runtime loaded the saved world and therefore needs the editor's dirty history
+    /// replayed before incremental forwarding resumes.
+    replay_on_next_sync: bool,
 }
 
 impl RuntimeMirror {
@@ -123,6 +126,17 @@ impl RuntimeMirror {
     #[must_use]
     pub fn quiet_reason(&self) -> Option<&str> {
         self.quiet_reason.as_deref()
+    }
+
+    /// Forget runtime-scoped state while retaining the editor-owned camera and document state.
+    pub fn runtime_restarted(&mut self) {
+        self.layout = None;
+        self.pending = None;
+        self.document = None;
+        self.forwarded = 0;
+        self.cursor = 0;
+        self.replay_on_next_sync = true;
+        self.quiet_reason = None;
     }
 
     /// Take a message the session delivered. Anything this mirror has no use for is left alone.
@@ -258,9 +272,15 @@ impl RuntimeMirror {
         let revision = Revision::from_u64(document.id().as_u128() as u64);
         if self.document != Some(revision) {
             self.document = Some(revision);
-            self.forwarded = entries.len();
-            self.cursor = cursor;
-            return;
+            if self.replay_on_next_sync {
+                self.forwarded = 0;
+                self.cursor = 0;
+                self.replay_on_next_sync = false;
+            } else {
+                self.forwarded = entries.len();
+                self.cursor = cursor;
+                return;
+            }
         }
 
         // Undo first: the cursor moved back, so the entries between the new cursor and the old one

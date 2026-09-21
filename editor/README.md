@@ -116,7 +116,10 @@ it writable project content. Without the option, the working directory remains t
 
 Playing and Paused are engine states. If no runtime is attached, requesting either leaves the
 viewport in Editing and posts a remedy instead of showing a state no engine accepted. Losing a
-runtime likewise returns every viewport to Editing while the documents remain open.
+runtime likewise returns every viewport to Editing while the documents remain open. A hosted
+runtime connection remembers its local endpoint and retries once per second after a loss. When the
+runtime returns, the existing editor process reconnects and replays the open document's unsaved
+transaction history before incremental live editing resumes.
 
 Every recipe takes `--profile <name>`. The four profiles mean the same thing in Cargo that they mean
 in CMake — M0's spike wrote that column and reserved it unused for five milestones, and
