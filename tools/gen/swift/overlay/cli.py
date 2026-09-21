@@ -85,7 +85,8 @@ def _write(package: pathlib.Path, files: dict[str, str], quiet: bool) -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists() and target.read_text(encoding="utf-8") == text:
             continue
-        target.write_text(text, encoding="utf-8", newline="\n")
+        with target.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(text)
         if not quiet:
             print(f"    wrote {name}")
     if not quiet:

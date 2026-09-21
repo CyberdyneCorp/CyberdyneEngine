@@ -38,10 +38,9 @@ An act that is expected to work and does not fails the run, always.
 
   2. `project.build` — "the scope \"author\" does not grant the effect class external-effect". That
      refusal is CORRECT and this driver asserts it: running a compiler is an effect undo cannot
-     reach, and `editor-agent-interface` requires it to be granted deliberately. What is missing is
-     a scope that grants it: `cy-editor-app/src/main.rs` offers `read` and `author` and no third.
-     Until there is one, no agent connection can start a build, and `project.reload` therefore
-     answers "nothing has been built".
+     reach, and `editor-agent-interface` requires it to be granted deliberately. The `operator`
+     scope grants that class for an explicitly trusted connection; this sample keeps the narrower
+     author scope so it proves ordinary content work cannot start external processes.
 
   3. `viewport:` — "no frame has arrived from the runtime for this viewport". The viewport transport
      is real and measured, and this milestone's other artefact photographs the engine's own frame
@@ -327,7 +326,10 @@ def act_author(agent: Agent, root: Path, report: Report) -> None:
     if path.exists():
         path.unlink()
 
-    ok, text, values = agent.tool("source.write", path=SCRIPT_PATH, contents=SCRIPT_SOURCE)
+    ok, text, values = agent.tool(
+        "source.write", path=SCRIPT_PATH, contents=SCRIPT_SOURCE,
+        expected_fingerprint="missing", base="",
+    )
     expect(ok, f"source.write was refused: {text}")
     expect(path.is_file(), f"source.write reported success and wrote no file at {path}")
     expect(
@@ -401,9 +403,8 @@ def act_scope(agent: Agent, report: Report) -> None:
     )
     report.gap(
         "project.build",
-        "no --agent-scope grants external-effect, so no agent connection can start a build and "
-        "project.reload therefore answers \"nothing has been built\". cy-editor-app/src/main.rs "
-        "declares read and author and no third scope",
+        "the author scope deliberately excludes external-effect; use an explicitly trusted "
+        "operator connection to start a build",
     )
 
 

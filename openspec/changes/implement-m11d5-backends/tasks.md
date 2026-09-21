@@ -53,9 +53,9 @@ change flow rather than through a backend. Everything else follows the interface
       exercise neither because their Metal device reports no Apple family; the local M3 Pro suite
       exercises both the memoryless path and placement-heap aliasing and records the device
 - [x] 2.3 **The bindless descriptor model against argument buffers, and the tier reported.** The
-      hosted device is Tier 1 and the engine's model needs Tier 2, so `unit.rhi_metal` **SHALL report
-      the argument-buffer tier it ran at** — a Tier 1 pass that reads as a Tier 2 one is the defect
-      this rung is most likely to ship
+      hosted device is Tier 1 and the engine's model needs Tier 2, so `integration.rhi_metal`
+      **SHALL report the argument-buffer tier it ran at** — a Tier 1 pass that reads as a Tier 2 one
+      is the defect this rung is most likely to ship
 - [x] 2.4 The three things that map cleanly, spent as the seed says rather than re-derived:
       `MTLSharedEvent` for timeline semaphores, `MTLFunctionConstantValues` for specialization
       constants, and **nothing at all** for reversed-Z, because the projection inverts and the
@@ -100,7 +100,7 @@ change flow rather than through a backend. Everything else follows the interface
       *"a software device is labelled from its identity"* and *"a device report names the device that
       answered"*, both device-free, both red on this host until they are written. This is the rung's
       only fully judgeable claim and it is deliberately not pushed onto a runner
-- [ ] 4.3 **The engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12`
+- [x] 4.3 **The engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12`
       OFF as well as ON** — M8.c's rule, applied to the two options this rung delivers. Off is what
       every machine that is not a Mac or a Windows box builds, and a backend that has quietly become
       mandatory shows up on a Linux host first
@@ -131,29 +131,29 @@ change flow rather than through a backend. Everything else follows the interface
       carries the row for its backend plus the `null` NOT-EVALUATED-no-image row; `vendor_id`,
       `class` and `device` are populated from the RHI classifier and are non-empty on every
       hardware row
-- [ ] 5.4 `rhi-and-render-graph` read **requirement by requirement at Complete grade** — satisfied,
+- [x] 5.4 `rhi-and-render-graph` read **requirement by requirement at Complete grade** — satisfied,
       partial or unmet per requirement with the evidence in the module's README — the way M10 read
       `save-and-persistence`. The row has been Working since M3 over one backend and has never been
       read at Complete grade
 
 ## 6. Records and gates
 
-- [ ] 6.1 `tools/roadmap/milestones/m11d5.toml` — this rung's own criteria only, the ledger flat — the
+- [x] 6.1 `tools/roadmap/milestones/m11d5.toml` — this rung's own criteria only, the ledger flat — the
       `milestone-m11d5` gate in `gates.toml`, and the floor in `selftest.MINIMUM_CRITERIA`
-- [ ] 6.2 The insertion itself, and every reader of a milestone identifier: `record.MILESTONES`,
+- [x] 6.2 The insertion itself, and every reader of a milestone identifier: `record.MILESTONES`,
       `plan.milestone_id` and the three heading patterns, the matrix column set and load table,
       `ROADMAP.md`, `dependencies.md`, `implementing.md`, `risks.md` entry 12, and the three insertion
       checks in `selftest.py`. `design.md` §4 lists them so none is discovered later
-- [ ] 6.3 An `m11e-open` criterion using the double-star glob form, and **M11.d's own handover
+- [x] 6.3 An `m11e-open` criterion using the double-star glob form, and **M11.d's own handover
       criterion re-pointed at this rung** — it named `m11e`, and a handover that skips a rung is the
       one thing a handover check exists to make impossible
 - [ ] 6.4 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them
 - [ ] 6.5 Move `ci.yml`'s milestone job to `m11d5` in the same commit that flips the gate green
-- [ ] 6.6 **Hand M11.e its entry**: a written statement of **what M11.d.5 did not close**, in the shape
+- [x] 6.6 **Hand M11.e its entry**: a written statement of **what M11.d.5 did not close**, in the shape
       M8.a, M8.c and M10 used — unchecked tasks named, with the defect rather than the intention, and
       the four deferrals of §2 carried forward with their re-entry points
-- [ ] 6.7 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the same
+- [x] 6.7 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the same
       change that closes it; any it does not close keeps `known_gap_closes` pointed at the rung that
       will
 

@@ -61,14 +61,24 @@ buffers, ordinary textures and render/depth textures. Re-enter when a Tier 1 ada
 or when a D3D12 validation forcing mode can exercise the native placed-resource path. Do not infer
 Tier 1 execution from the policy test.
 
-The rung's gate remains open. A clean macOS build with Metal and D3D12 disabled succeeds, but its
-required `test-all` run currently reports 12 integration failures and 4 smoke failures in inherited,
-non-backend suites. The failures
-include Python 3.9 selecting code that requires `tomllib`, Vulkan device tests registering on a Mac
-without a Vulkan device, macOS crash-report module discovery, Swift/XCTest discovery, and unrelated
-math, denoise, networking, asset and editor-play cases. Task 4.3 and the full §7 gate stay unchecked
-until the renderer-off configuration passes its whole suite; the capability status therefore stays
-Working and `milestone-m11d5` stays `joins-on-close`.
+The renderer-off portability leg is green on the physical Apple M3 Pro. The exact command
+`CY_BUILD_DIR=build/m11d5-renderers-off uv run --python 3.12 just test-all --profile dev`, with
+`CY_RENDERER_METAL=OFF` and `CY_RENDERER_D3D12=OFF`, passed 83 unit, 181 integration, 20 smoke,
+20 render and five determinism tests; `smoke.first_light_legs` was the one explicit unavailable leg.
+The run fixed the inherited portability defects it exposed: ARM SIMD signed-zero selection, Mach-O
+crash-module and Swift-runtime inspection, Darwin pipe and socket behavior, unavailable frontend and
+GPU-suite registration, Swift compiler/XCTest separation, and two numerical/timing assumptions.
+Each fix is held by the case that failed before it. Task 4.3 is therefore evaluated rather than
+waived.
+
+Fresh Debug, Development and Profile builds and their complete `test-all` suites pass on the same
+Apple M3 Pro. The fresh Shipping build also completes, and its suites reach one failure in
+`unit.rendering_architecture`: the M11.c measured-cost case times an empty interval and requires the
+result to be greater than zero, which optimized code does not guarantee. The same case reproduced
+repeatedly while the rest of the Shipping suites passed. M11.c is owned by its existing workstream,
+so this change records the exact re-entry point rather than modifying that criterion from M11.d.5.
+Task 7.1, the closing records and the M11.d.5 gate therefore remain unchecked until that owned test
+is corrected and the fresh four-profile matrix is rerun.
 
 M11.e receives no missing Metal or D3D12 implementation task from this rung. It receives
 the Tier 1 hardware exercise above, plus its own mobile, distribution, dependency and final-record

@@ -100,7 +100,7 @@ specific features its own acceptance text names:
   entire stated reason for refusing MoltenVK. *The thing a native Metal backend is for cannot be
   exercised on any hosted runner.*
 - **Argument buffers are Tier 1** on that device. The engine's descriptor model is bindless; the
-  bindless path needs Tier 2. So `unit.rhi_metal` can pass there without the descriptor model ever
+  bindless path needs Tier 2. So `integration.rhi_metal` can pass there without the descriptor model ever
   having been exercised.
 - **There is no hardware GPU on any hosted Windows image**, and the trap is sharper than "it is
   WARP": the probe found **two** adapters, both `Microsoft Basic Render Driver`, and **adapter 0 does

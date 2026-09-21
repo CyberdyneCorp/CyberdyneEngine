@@ -402,11 +402,9 @@ Expected<usize, Error> Sdl3Platform::write_process_input(ProcessHandle process,
     if (written == 0) {
         return sdl_failure(ErrorCode::Internal);
     }
-    // A pipe buffers, and SDL does not flush on its own. Without this the child blocks reading a
-    // request that is sitting in this process's buffer, and the parent blocks reading the reply.
-    if (!SDL_FlushIO(input)) {
-        return sdl_failure(ErrorCode::Internal);
-    }
+    // SDL's process stream writes directly to the pipe descriptor; there is no userspace buffer to
+    // flush. Calling SDL_FlushIO asks the OS to sync the pipe and fails with EBADF on Darwin even
+    // though the bytes were delivered successfully.
     return static_cast<usize>(written);
 }
 

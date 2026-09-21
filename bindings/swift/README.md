@@ -160,8 +160,10 @@ CMakeLists.txt              registers the checks as CTest entries; builds no Swi
 | `integration.swift_package` | yes | `swift test`: the package's own cases |
 | `integration.swift_reload` | yes | a real Swift module, hot-reloaded by the engine's loader |
 
-Without a Swift toolchain the last two are **not registered**, and the configure says so — the same
-arrangement `tests/render/` uses for a machine with no GPU, and for the same reason: a suite that is
+Without a Swift toolchain the last two are **not registered**, and the configure says so. A compiler
+without the XCTest SDK (for example Apple's standalone command-line tools) still registers
+`integration.swift_reload`, while `integration.swift_package` remains absent and configure reports
+why. This is the same arrangement `tests/render/` uses for a machine with no GPU: a suite that is
 registered and skips is a suite whose green means nothing.
 
 `swiftly` writes its environment line to `~/.profile`, which only login shells read. Every Swift

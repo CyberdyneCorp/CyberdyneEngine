@@ -188,7 +188,7 @@ nor valid in that address space. A fixed-capacity `ParameterBlock<T>` emits one 
 compiles through both `metal` and `metallib`. The fixture in `tests/fixtures/` preserves that result;
 the runtime test uses the same ABI at the engine's full 16,384-slot capacity.
 
-The native conformance suite is registered as `unit.rhi_metal`; the driver compiler, GPU execution
+The native conformance suite is registered as `integration.rhi_metal`; the driver compiler, GPU execution
 and presentation cases remain in `integration.rhi_metal_shader` and
 `integration.rhi_metal_surface` so their unavoidable driver waits are charged to the integration
 budget. The M11.d.5 criterion runs all three on Apple hosts.

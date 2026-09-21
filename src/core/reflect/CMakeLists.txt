@@ -126,9 +126,13 @@ execute_process(
 
 if(cy_reflect_probe_result EQUAL 0)
     set(cy_reflect_frontend_default ON)
+    set(CY_REFLECT_FRONTEND_AVAILABLE ON CACHE INTERNAL
+        "Whether the configured reflection interpreter can run the frontend" FORCE)
     message(STATUS "Reflection generator: ${cy_reflect_probe_output}")
 else()
     set(cy_reflect_frontend_default OFF)
+    set(CY_REFLECT_FRONTEND_AVAILABLE OFF CACHE INTERNAL
+        "Whether the configured reflection interpreter can run the frontend" FORCE)
     message(STATUS
         "Reflection generator unavailable; compiling the committed metadata in "
         "src/core/reflect/generated/ instead. Editing an annotated header will not regenerate it.")

@@ -135,13 +135,14 @@ def act_ship(tools: Tools, report: Report) -> None:
     #
     # Windows: rmtree fails with ERROR_ACCESS_DENIED on files with the read-only attribute set.
     # Historical runs before the artefact store's Windows fix left such files behind, so clear the
-    # attribute on every entry we walk before deleting. `onexc` is Python 3.12+ (`onerror` in 3.11).
+    # attribute on every entry we walk before deleting. `onerror` also works with the Python 3.9
+    # floor used by CMake on macOS.
     def _force_delete(func, path, _exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
     for directory in (tools.project, tools.cache, tools.artefacts, tools.install):
         if directory.exists():
-            shutil.rmtree(directory, onexc=_force_delete)
+            shutil.rmtree(directory, onerror=_force_delete)
     tools.work.mkdir(parents=True, exist_ok=True)
     shutil.copytree(SAMPLE / "project", tools.project)
 

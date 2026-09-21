@@ -58,7 +58,8 @@ def describe_edited(replacement: tuple[str, str] | None = None) -> dict:
         text = text.replace(old, new, 1)
     with tempfile.TemporaryDirectory() as scratch:
         edited = pathlib.Path(scratch) / "cy_abi.h"
-        edited.write_text(text, encoding="utf-8", newline="\n")
+        with edited.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(text)
         return cli.load_description(edited)
 
 
@@ -210,8 +211,8 @@ def a_stale_committed_file_is_detected_and_named() -> None:
         shutil.copytree(PACKAGE, copy,
                         ignore=shutil.ignore_patterns(".build", "*.so", "modules"))
         target = copy / "Sources" / "CyberdyneCore" / "Generated" / "Enums.swift"
-        target.write_text(target.read_text(encoding="utf-8") + "\n// an edit nobody regenerated\n",
-                          encoding="utf-8", newline="\n")
+        with target.open("a", encoding="utf-8", newline="\n") as output:
+            output.write("\n// an edit nobody regenerated\n")
         files = cli.outputs(cli.load_description(HEADER), HEADER)
         assert cli._check(copy, files) == 1, "an edited generated file was reported as current"
         # And the control: the unedited copy is current.

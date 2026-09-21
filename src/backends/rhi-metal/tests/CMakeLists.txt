@@ -35,9 +35,12 @@ function(cy_rhi_metal_declare_tests)
         DEPENDENCIES cy::rhi-metal)
 
     if(APPLE AND CY_RENDERER_METAL)
+        # Native device creation crosses the driver boundary and can spend more than the unit
+        # suite's 1 ms CPU budget. Keep the device contract in the integration taxonomy rather
+        # than relaxing a unit budget until it hides that cost.
         cy_add_test(
             NAME rhi_metal
-            KIND unit
+            KIND integration
             SOURCES "${tests_dir}/test_metal_device.cpp"
             DEPENDENCIES cy::rhi-metal)
         cy_add_test(

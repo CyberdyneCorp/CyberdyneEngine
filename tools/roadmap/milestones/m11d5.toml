@@ -39,7 +39,7 @@
 #      claims compile-create-draw-present and NOT the feature set, and the difference is a declared
 #      deferral in design.md rather than a tick.
 #   2. The engine's descriptor model is bindless and the bindless path needs argument buffers at
-#      Tier 2. The hosted device is Tier 1, so `unit.rhi_metal` can pass there without the
+#      Tier 2. The hosted device is Tier 1, so `integration.rhi_metal` can pass there without the
 #      descriptor model having been exercised once.
 #   3. "Pick the first adapter without DXGI_ADAPTER_FLAG_SOFTWARE" selects a software rasteriser on
 #      every hosted Windows image. A backend that trusts that flag reports hardware it does not
@@ -160,7 +160,7 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-pattern='^(unit.rhi_metal|integration.rhi_metal_shader|integration.rhi_metal_surface|render.golden_backends)$'
+pattern='^(integration.rhi_metal|integration.rhi_metal_shader|integration.rhi_metal_surface|render.golden_backends)$'
 registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
 echo "$registered of 4 suite(s) match $pattern"
 test "$registered" -ge 4 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }

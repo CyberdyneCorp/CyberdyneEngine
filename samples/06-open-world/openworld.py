@@ -168,13 +168,14 @@ def act_ship(tools: Tools, report: Report) -> dict[str, tuple[str, str]]:
     # against two warm builds and says nothing. A previous run of this driver left both directories
     # full, and the first draft of this act duly reported four cache hits as a cold build.
     # Windows: rmtree fails with ERROR_ACCESS_DENIED on read-only files. Clear the attribute on
-    # every entry it fails on. Same pattern as samples/11-ship/ship.py.
+    # every entry it fails on. `onerror` keeps the driver compatible with the Python 3.9 floor.
+    # Same pattern as samples/11-ship/ship.py.
     def _force_delete(func, path, _exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
     for directory in (tools.project, tools.cache, tools.artefacts, tools.install):
         if directory.exists():
-            shutil.rmtree(directory, onexc=_force_delete)
+            shutil.rmtree(directory, onerror=_force_delete)
     shutil.copytree(SAMPLE / "project", tools.project)
 
     built = tools.build(tools.work / "base.cypackage")
@@ -229,7 +230,7 @@ def act_play(tools: Tools, report: Report, ticks: int) -> dict[str, float]:
         def _force_delete(func, path, _exc):
             os.chmod(path, stat.S_IWRITE)
             func(path)
-        shutil.rmtree(tools.save, onexc=_force_delete)
+        shutil.rmtree(tools.save, onerror=_force_delete)
 
     started = time.monotonic()
     played = tools.play("traverse", ticks)

@@ -45,6 +45,10 @@ fn main() -> ExitCode {
 
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
+            // A process-level crash test must distinguish "listening" from "the editor reached
+            // the runtime" without relying on Linux-only /proc inspection.
+            println!("connected");
+            let _ = std::io::stdout().flush();
             let Ok(mut reader) = stream.try_clone() else {
                 continue;
             };

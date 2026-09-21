@@ -63,9 +63,14 @@ function(cy_reflect_declare_tests)
     # The generator, the manifest and the identity gate, exercised as programs. The gate is proved
     # by renaming a field in a real tree and watching generation fail, which no C++ test can do to
     # itself.
-    add_test(NAME integration.reflect_generator
-        COMMAND "${CY_REFLECT_PYTHON}" "${CY_REFLECT_TESTS_DIR}/test_generator.py"
-                --source-root "${CMAKE_SOURCE_DIR}")
-    set_tests_properties(integration.reflect_generator PROPERTIES
-        TIMEOUT 600 LABELS integration)
+    # The cases invoke the real clang frontend. Keep them absent when the configured interpreter
+    # failed the same probe used by the build; registering a suite that can only report a missing
+    # dependency turns an unavailable capability into a misleading test failure.
+    if(CY_REFLECT_FRONTEND_AVAILABLE)
+        add_test(NAME integration.reflect_generator
+            COMMAND "${CY_REFLECT_PYTHON}" "${CY_REFLECT_TESTS_DIR}/test_generator.py"
+                    --source-root "${CMAKE_SOURCE_DIR}")
+        set_tests_properties(integration.reflect_generator PROPERTIES
+            TIMEOUT 600 LABELS integration)
+    endif()
 endfunction()

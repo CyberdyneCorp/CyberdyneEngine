@@ -27,7 +27,7 @@ Four readings, each of which changes what a criterion in this rung is allowed to
   `rhi-and-render-graph`'s entire stated reason for refusing MoltenVK as the long-term Apple strategy.
   *The thing a native Metal backend is for cannot be exercised on any hosted runner.*
 - **Argument buffers are Tier 1** there. The engine's descriptor model is bindless and the bindless
-  path needs Tier 2, so `unit.rhi_metal` can pass on that leg **without the descriptor model having
+  path needs Tier 2, so `integration.rhi_metal` can pass on that leg **without the descriptor model having
   been exercised once**.
 - **There is no hardware GPU on any hosted Windows image**, and the trap is sharper than "it is
   WARP": the probe found **two** adapters, both `Microsoft Basic Render Driver`, and **adapter 0 does

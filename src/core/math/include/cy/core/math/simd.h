@@ -179,9 +179,8 @@ inline void store(f32* p, Float4 a) noexcept {
 /// the one guarantee this file exists to provide. This cost one test failure to discover, which is
 /// exactly what the comparison is for.
 ///
-/// NEON's `VMIN`/`FMIN` uses a different tie rule for signed zeros and for NaN, so the ARM backend
-/// is expected to diverge in those two cases. It is unverified either way — there is no ARM host in
-/// this milestone — and the first ARM CI run is what will settle it.
+/// Hardware backends reproduce this selection rule rather than relying on an instruction whose
+/// signed-zero or NaN tie behavior differs by architecture.
 [[nodiscard]] inline Float4 min(Float4 a, Float4 b) noexcept {
     return Float4{{a.v[0] < b.v[0] ? a.v[0] : b.v[0], a.v[1] < b.v[1] ? a.v[1] : b.v[1],
                    a.v[2] < b.v[2] ? a.v[2] : b.v[2], a.v[3] < b.v[3] ? a.v[3] : b.v[3]}};
@@ -469,10 +468,10 @@ inline void store(f32* p, Float4 a) noexcept {
     return Float4{vdivq_f32(a.v, b.v)};
 }
 [[nodiscard]] inline Float4 min(Float4 a, Float4 b) noexcept {
-    return Float4{vminq_f32(a.v, b.v)};
+    return Float4{vbslq_f32(vcltq_f32(a.v, b.v), a.v, b.v)};
 }
 [[nodiscard]] inline Float4 max(Float4 a, Float4 b) noexcept {
-    return Float4{vmaxq_f32(a.v, b.v)};
+    return Float4{vbslq_f32(vcgtq_f32(a.v, b.v), a.v, b.v)};
 }
 
 /// `vmlaq_f32` is permitted to fuse. Written as a separate multiply and add for the same reason the
