@@ -75,9 +75,13 @@ def format_rust(text: str, name: str) -> str:
             "rustfmt is not on PATH, and the generated bindings are written through it so that the "
             "formatting gate and the currency gate agree.\n"
             "  It ships with every Rust toolchain: `rustup component add rustfmt`.")
+    # `encoding="utf-8"` rather than `text=True`: on Windows the latter uses locale (cp1252),
+    # which mangles the em-dashes in generator-emitted doc comments and fails rustfmt with
+    # "stream did not contain valid UTF-8". Every other Windows-Python I/O in this tree is pinned
+    # to UTF-8 for the same reason.
     result = subprocess.run(
         [formatter, "--edition", RUSTFMT_EDITION, "--emit", "stdout"],
-        input=text, capture_output=True, text=True, check=False)
+        input=text, capture_output=True, encoding="utf-8", check=False)
     if result.returncode != 0:
         raise RuntimeError(f"rustfmt refused the generated {name}:\n{result.stderr}")
     return result.stdout
@@ -111,9 +115,9 @@ def _write(crate: pathlib.Path, files: dict[str, str], quiet: bool) -> int:
     for name, text in sorted(files.items()):
         target = crate / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and target.read_text() == text:
+        if target.exists() and target.read_text(encoding="utf-8") == text:
             continue
-        target.write_text(text)
+        target.write_text(text, encoding="utf-8", newline="\n")
         if not quiet:
             print(f"    wrote {name}")
     if not quiet:
@@ -125,7 +129,7 @@ def _check(crate: pathlib.Path, files: dict[str, str]) -> int:
     stale: list[str] = []
     for name, text in sorted(files.items()):
         target = crate / name
-        current = target.read_text() if target.exists() else ""
+        current = target.read_text(encoding="utf-8") if target.exists() else ""
         if current == text:
             continue
         stale.append(name)

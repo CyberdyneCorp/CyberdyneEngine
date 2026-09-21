@@ -50,14 +50,14 @@ def case(name: str, body) -> None:
 
 def describe_edited(replacement: tuple[str, str] | None = None) -> dict:
     """The ABI description, optionally with one edit applied to the header first."""
-    text = HEADER.read_text()
+    text = HEADER.read_text(encoding="utf-8")
     if replacement is not None:
         old, new = replacement
         assert old in text, f"the header no longer contains {old!r}; this case needs rewriting"
         text = text.replace(old, new, 1)
     with tempfile.TemporaryDirectory() as scratch:
         edited = pathlib.Path(scratch) / "cy_abi.h"
-        edited.write_text(text)
+        edited.write_text(text, encoding="utf-8", newline="\n")
         return cli.load_description(edited)
 
 
