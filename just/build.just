@@ -85,6 +85,17 @@ build-engine *args:
     # build that hung.
     lock_dir="${CY_BUILD_DIR:-build/${profile}}"
     mkdir -p "${lock_dir}"
+    # On CI, `actions/cache` restores `build/dev` verbatim — including any `.cy-build.lock.pid`
+    # symlink a prior job left behind on that job's runner. The fallback path below tests
+    # `kill -0 <owner>` against the local process table, and on a fresh runner a foreign PID
+    # occasionally happens to match a live local process (short PIDs collide often), so the loop
+    # waits forever for a process that has nothing to do with this build. GITHUB_ACTIONS is set
+    # to `true` by every hosted runner; on CI, forget any stashed fallback lock before we try.
+    # The flock file itself is a 0-byte inode with no cross-process state, so deleting it before
+    # `exec 9>` costs nothing.
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        rm -f "${lock_dir}/.cy-build.lock.pid" "${lock_dir}/.cy-build.lock"
+    fi
     exec 9>"${lock_dir}/.cy-build.lock"
     if command -v flock >/dev/null 2>&1; then
         if ! flock -n 9; then
