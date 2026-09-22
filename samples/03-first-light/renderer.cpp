@@ -872,7 +872,9 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     const rhi::DescriptorWrite write{.binding = 0,
                                      .kind = rhi::DescriptorKind::UniformBuffer,
                                      .buffer = program.parameters,
-                                     .buffer_range = rendering::kMaterialBlockBytes};
+                                     .buffer_range = rendering::kMaterialBlockBytes,
+                                     .texture_view = {},
+                                     .sampler = {}};
     if (Status updated = device_->update_descriptor_set(program.descriptor_set, {&write, 1});
         !updated) {
         device_->destroy_buffer(program.parameters);
