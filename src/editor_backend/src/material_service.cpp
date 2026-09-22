@@ -353,7 +353,7 @@ CyResult preview_reload(CyServiceSession_T& session,
     }
     const u64 requested = read_u64(session.request_payload, 8);
     const u32 targets = read_u32(session.request_payload, 16);
-    const usize expected = 20 + static_cast<usize>(targets) * 20;
+    const usize expected = 20 + (static_cast<usize>(targets) * 20);
     if (requested == 0 || targets == 0 || session.request_payload.size() != expected) {
         return failed(session, "preview-reload-rejected",
                       "reload requires a non-zero artefact and at least one exact target binding");
@@ -364,7 +364,7 @@ CyResult preview_reload(CyServiceSession_T& session,
                       "a reload can address at most sixteen material bindings");
     }
     for (u32 target = 0; target < targets; ++target) {
-        const usize offset = 20 + static_cast<usize>(target) * 20;
+        const usize offset = 20 + (static_cast<usize>(target) * 20);
         const u32 material_slot = read_u32(session.request_payload, offset + 16);
         if (material_slot >= 16) {
             return failed(session, "material-slot-unsupported",

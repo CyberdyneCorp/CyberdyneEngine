@@ -17,7 +17,6 @@
 namespace cy::sample::editor_window {
 namespace {
 
-using rendering::MaterialParameter;
 using rendering::ParameterKind;
 using rendering::material::CompiledProgram;
 using rendering::material::Node;
@@ -434,7 +433,9 @@ Status MetalMaterialRuntime::publish(
 
     Array<char> unit(*allocator_);
     if (Status assembled = assemble_unit(*primary, unit); !assembled) {
-        return assembled;
+        // Status owns a copied Error whose message uses static storage. The analyzer follows
+        // Writer's Array pointer into `unit`, although that pointer is not part of the Status.
+        return assembled;  // NOLINT(clang-analyzer-core.StackAddressEscape)
     }
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
     (void)shader::slang::register_slang_backend();
@@ -497,14 +498,14 @@ Status MetalMaterialRuntime::publish(
 
     Program program;
     program.artefact = artefact;
-    for (const MaterialParameter& parameter : material.layout().parameters()) {
+    for (const rendering::MaterialParameter& parameter : material.layout().parameters()) {
         Program::Slot& slot = program.slots[program.slot_count++];
         slot.identity = parameter.id;
         slot.kind = parameter.kind;
         slot.offset = parameter.offset;
     }
     for (const rendering::material::ParameterDecl& declared : primary->module.parameters()) {
-        const MaterialParameter* parameter =
+        const rendering::MaterialParameter* parameter =
             material.layout().find(rendering::parameter_id(declared.name.c_str()));
         if (parameter == nullptr) {
             continue;
@@ -535,7 +536,7 @@ Status MetalMaterialRuntime::publish(
         }
     }
     for (const rendering::material::TextureDecl& texture : primary->module.textures()) {
-        const MaterialParameter* parameter =
+        const rendering::MaterialParameter* parameter =
             material.layout().find(rendering::parameter_id(texture.name.c_str()));
         if (parameter != nullptr) {
             const u32 index = renderer_->default_texture_index();
@@ -611,7 +612,7 @@ Status MetalMaterialRuntime::reload(u64 preview, u64 artefact,
 }
 
 Status MetalMaterialRuntime::update(u64 preview, u64 artefact,
-                                    const editor::MaterialParameterUpdate& update) noexcept {
+                                    const editor::MaterialParameterUpdate& parameter) noexcept {
     Preview* state = find_preview(preview);
     Program* program = find_program(artefact);
     if (state == nullptr || program == nullptr) {
@@ -627,7 +628,7 @@ Status MetalMaterialRuntime::update(u64 preview, u64 artefact,
     }
     const Program::Slot* found = nullptr;
     for (u32 index = 0; index < program->slot_count; ++index) {
-        if (program->slots[index].identity == update.identity) {
+        if (program->slots[index].identity == parameter.identity) {
             found = &program->slots[index];
             break;
         }
@@ -640,7 +641,7 @@ Status MetalMaterialRuntime::update(u64 preview, u64 artefact,
     u8 converted[16] = {};
     u32 converted_size = 0;
     if (Status converted_status =
-            convert_parameter_value(*renderer_, found->kind, update, converted, converted_size);
+            convert_parameter_value(*renderer_, found->kind, parameter, converted, converted_size);
         !converted_status) {
         return converted_status;
     }

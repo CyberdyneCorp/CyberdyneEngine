@@ -45,7 +45,7 @@ ImportResult run(const std::vector<u8>& bytes, const ImportOptions* options) {
 }  // namespace
 
 CY_TEST_CASE("heightfield: raw input refuses to guess dimensions format units or range") {
-    std::vector<u8> bytes(65U * 65U * 2U, 0);
+    std::vector<u8> bytes(static_cast<cy::usize>(65U) * 65U * 2U, 0);
     ImportResult result = run(bytes, nullptr);
     CY_CHECK(result.has_errors());
     CY_CHECK(reported(result, "heightfield-metadata-required"));
@@ -53,7 +53,7 @@ CY_TEST_CASE("heightfield: raw input refuses to guess dimensions format units or
 }
 
 CY_TEST_CASE("heightfield: explicit metadata produces a versioned tiled terrain asset") {
-    std::vector<u8> bytes(65U * 65U * 2U, 0);
+    std::vector<u8> bytes(static_cast<cy::usize>(65U) * 65U * 2U, 0);
     bytes[2] = 0xFF;
     bytes[3] = 0xFF;
     ImportOptions options = declared_options();
@@ -76,7 +76,7 @@ CY_TEST_CASE("heightfield: explicit metadata produces a versioned tiled terrain 
 }
 
 CY_TEST_CASE("heightfield: inconsistent range resolution tiling and bytes are structured errors") {
-    std::vector<u8> bytes(65U * 65U * 2U, 0);
+    std::vector<u8> bytes(static_cast<cy::usize>(65U) * 65U * 2U, 0);
     const OptionsSchema schema = heightfield_options();
 
     ImportOptions range = declared_options();
