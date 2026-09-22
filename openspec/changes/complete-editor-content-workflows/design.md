@@ -74,6 +74,12 @@ current when an acknowledgement omits or changes a target. Runtime parameter mes
 preview generation, applied artefact generation and stable parameter identity, followed by an
 explicit bool, integer, float, vector or texture-asset value kind.
 
+The editor backend delegates artefact publication, preview creation, reload, typed parameter
+updates and destruction through an engine-owned `MaterialPreviewRuntime` interface implemented by
+the viewport host. Session state is committed and an acknowledgement is emitted only after that
+runtime accepts the operation. This prevents a protocol-level echo from being mistaken for a GPU
+program installation and keeps renderer/Metal types out of the ABI and Rust editor.
+
 ### 5. Terrain edits are modifiers, not destructive heightmap writes
 
 Heightmaps import into tiled terrain source data. Sculpt and paint gestures append or edit stable

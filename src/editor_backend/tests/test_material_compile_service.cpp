@@ -70,11 +70,36 @@ CyServiceEvent submit_and_poll(const CyInterface& api, cy::abi::Host& host,
     return event;
 }
 
+class PublicationRuntime final : public cy::editor::MaterialPreviewRuntime {
+public:
+    cy::Status publish(
+        cy::u64 artefact,
+        const cy::rendering::material::CompiledMaterial& material) noexcept override {
+        published = artefact;
+        programs = static_cast<cy::u32>(material.programs().size());
+        return cy::ok();
+    }
+    cy::Status create(cy::u64) noexcept override { return cy::ok(); }
+    cy::Status reload(cy::u64, cy::u64,
+                      cy::Span<const cy::editor::MaterialPreviewTarget>) noexcept override {
+        return cy::ok();
+    }
+    cy::Status update(cy::u64, cy::u64,
+                      const cy::editor::MaterialParameterUpdate&) noexcept override {
+        return cy::ok();
+    }
+    cy::Status destroy(cy::u64) noexcept override { return cy::ok(); }
+
+    cy::u64 published = 0;
+    cy::u32 programs = 0;
+};
+
 }  // namespace
 
 CY_TEST_CASE("editor_backend: material compile returns stable artefact and dependency identities") {
     cy::abi::Host host(allocator());
-    cy::editor::MaterialService service(allocator());
+    PublicationRuntime preview_runtime;
+    cy::editor::MaterialService service(allocator(), &preview_runtime);
     host.bind_editor_service(&service);
     const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
     CyServiceSession session = nullptr;
@@ -96,6 +121,8 @@ CY_TEST_CASE("editor_backend: material compile returns stable artefact and depen
         CY_CHECK(read_u64(event.payload + 13) != 0);
     }
     CY_CHECK_EQ(identities[0], identities[1]);
+    CY_CHECK_EQ(preview_runtime.published, identities[1]);
+    CY_CHECK_GT(preview_runtime.programs, 0U);
     api->service_close(&host, session);
 }
 
@@ -176,8 +203,8 @@ CY_TEST_CASE("editor_backend: material preview vertical slice crosses the public
     std::memcpy(parameter + 16, &parameter_id, sizeof(parameter_id));
     parameter[20] = 1;
     parameter[21] = 1;
-    request = {sizeof(CyServiceRequest), 1, 6, "preview.parameter.update", parameter,
-               sizeof(parameter)};
+    request = {sizeof(CyServiceRequest),   1,         6,
+               "preview.parameter.update", parameter, sizeof(parameter)};
     event = submit_and_poll(*api, host, session, request);
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
 
@@ -186,8 +213,8 @@ CY_TEST_CASE("editor_backend: material preview vertical slice crosses the public
     std::memcpy(mismatched + 8, &artefact, sizeof(artefact));
     std::memcpy(mismatched + 16, &parameter_id, sizeof(parameter_id));
     mismatched[20] = 3;
-    request = {sizeof(CyServiceRequest), 1, 7, "preview.parameter.update", mismatched,
-               sizeof(mismatched)};
+    request = {sizeof(CyServiceRequest),   1,          7,
+               "preview.parameter.update", mismatched, sizeof(mismatched)};
     event = submit_and_poll(*api, host, session, request);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
 

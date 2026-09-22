@@ -47,6 +47,60 @@ CyServiceEvent submit_and_poll(const CyInterface& api, cy::abi::Host& host,
     return event;
 }
 
+class PreviewRuntime final : public cy::editor::MaterialPreviewRuntime {
+public:
+    cy::Status publish(cy::u64 artefact,
+                       const cy::rendering::material::CompiledMaterial&) noexcept override {
+        published = artefact;
+        return cy::ok();
+    }
+
+    cy::Status create(cy::u64 preview) noexcept override {
+        created = preview;
+        return cy::ok();
+    }
+
+    cy::Status reload(cy::u64 preview, cy::u64 artefact,
+                      cy::Span<const cy::editor::MaterialPreviewTarget> targets) noexcept override {
+        if (reject_reload) {
+            return cy::fail(cy::ErrorCode::Unavailable,
+                            "the viewport refused to install the material program");
+        }
+        reloaded_preview = preview;
+        reloaded_artefact = artefact;
+        reloaded_targets = static_cast<cy::u32>(targets.size());
+        reloaded_slot = targets.empty() ? 0 : targets[0].material_slot;
+        return cy::ok();
+    }
+
+    cy::Status update(cy::u64 preview, cy::u64 artefact,
+                      const cy::editor::MaterialParameterUpdate& parameter) noexcept override {
+        updated_preview = preview;
+        updated_artefact = artefact;
+        updated_parameter = parameter.identity;
+        updated_kind = parameter.kind;
+        return cy::ok();
+    }
+
+    cy::Status destroy(cy::u64 preview) noexcept override {
+        destroyed = preview;
+        return cy::ok();
+    }
+
+    cy::u64 published = 0;
+    cy::u64 created = 0;
+    cy::u64 reloaded_preview = 0;
+    cy::u64 reloaded_artefact = 0;
+    cy::u64 updated_preview = 0;
+    cy::u64 updated_artefact = 0;
+    cy::u64 destroyed = 0;
+    cy::u32 reloaded_targets = 0;
+    cy::u32 reloaded_slot = 0;
+    cy::u32 updated_parameter = 0;
+    cy::u8 updated_kind = 0;
+    bool reject_reload = false;
+};
+
 }  // namespace
 
 CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
@@ -184,7 +238,8 @@ CY_TEST_CASE("editor_backend: material diagnostics carry stable node and pin loc
 
 CY_TEST_CASE("editor_backend: preview handles are generational and reload is acknowledged") {
     cy::abi::Host host(allocator());
-    cy::editor::MaterialService service(allocator());
+    PreviewRuntime preview_runtime;
+    cy::editor::MaterialService service(allocator(), &preview_runtime);
     host.bind_editor_service(&service);
     const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
     CyServiceSession session = nullptr;
@@ -199,6 +254,7 @@ CY_TEST_CASE("editor_backend: preview handles are generational and reload is ack
     CY_REQUIRE_EQ(event.payload_size, 8U);
     cy::u8 handle[8];
     std::memcpy(handle, event.payload, sizeof(handle));
+    CY_CHECK_EQ(preview_runtime.created, read_u64(handle));
 
     cy::u8 reload_payload[40] = {};
     std::memcpy(reload_payload, handle, 8);
@@ -219,6 +275,10 @@ CY_TEST_CASE("editor_backend: preview handles are generational and reload is ack
     std::memcpy(&applied, event.payload + 8, 8);
     CY_CHECK_EQ(requested, artefact);
     CY_CHECK_EQ(applied, artefact);
+    CY_CHECK_EQ(preview_runtime.reloaded_preview, read_u64(handle));
+    CY_CHECK_EQ(preview_runtime.reloaded_artefact, artefact);
+    CY_CHECK_EQ(preview_runtime.reloaded_targets, 1U);
+    CY_CHECK_EQ(preview_runtime.reloaded_slot, material_slot);
 
     const CyServiceRequest destroy{sizeof(CyServiceRequest), 1, 3, "preview.destroy", handle, 8};
     CY_REQUIRE_EQ(api->service_submit(&host, session, &destroy), CY_RESULT_OK);
@@ -226,11 +286,63 @@ CY_TEST_CASE("editor_backend: preview handles are generational and reload is ack
     CY_REQUIRE_EQ(api->service_submit(&host, session, &destroy), CY_RESULT_OK);
     CY_REQUIRE_EQ(api->service_poll(&host, session, &event, &present), CY_RESULT_OK);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_EQ(preview_runtime.destroyed, read_u64(handle));
 
     const CyServiceRequest stale{sizeof(CyServiceRequest),   1,      4,
                                  "preview.parameter.update", handle, 8};
     CY_REQUIRE_EQ(api->service_submit(&host, session, &stale), CY_RESULT_OK);
     CY_REQUIRE_EQ(api->service_poll(&host, session, &event, &present), CY_RESULT_OK);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    api->service_close(&host, session);
+}
+
+CY_TEST_CASE("editor_backend: a renderer rejection is not acknowledged or made current") {
+    cy::abi::Host host(allocator());
+    PreviewRuntime preview_runtime;
+    cy::editor::MaterialService service(allocator(), &preview_runtime);
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+
+    const CyServiceRequest create{sizeof(CyServiceRequest), 1, 1, "preview.create", nullptr, 0};
+    CyServiceEvent event = submit_and_poll(*api, host, session, create);
+    CY_REQUIRE_EQ(event.payload_size, 8U);
+    cy::u8 preview[8] = {};
+    std::memcpy(preview, event.payload, sizeof(preview));
+
+    const auto reload = [&](cy::u64 request, cy::u64 artefact) {
+        cy::u8 payload[40] = {};
+        std::memcpy(payload, preview, sizeof(preview));
+        std::memcpy(payload + 8, &artefact, sizeof(artefact));
+        const cy::u32 target_count = 1;
+        std::memcpy(payload + 16, &target_count, sizeof(target_count));
+        const CyServiceRequest request_value{sizeof(CyServiceRequest), 1,       request,
+                                             "preview.reload",         payload, sizeof(payload)};
+        return submit_and_poll(*api, host, session, request_value);
+    };
+
+    constexpr cy::u64 accepted = 0x1111;
+    event = reload(2, accepted);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    preview_runtime.reject_reload = true;
+    event = reload(3, 0x2222);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    CY_CHECK_EQ(preview_runtime.reloaded_artefact, accepted);
+
+    cy::u8 parameter[22] = {};
+    std::memcpy(parameter, preview, sizeof(preview));
+    std::memcpy(parameter + 8, &accepted, sizeof(accepted));
+    const cy::u32 parameter_id = 4;
+    std::memcpy(parameter + 16, &parameter_id, sizeof(parameter_id));
+    parameter[20] = 1;
+    parameter[21] = 1;
+    const CyServiceRequest update{sizeof(CyServiceRequest),   1,         4,
+                                  "preview.parameter.update", parameter, sizeof(parameter)};
+    event = submit_and_poll(*api, host, session, update);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_EQ(preview_runtime.updated_artefact, accepted);
+    CY_CHECK_EQ(preview_runtime.updated_parameter, parameter_id);
+    CY_CHECK_EQ(preview_runtime.updated_kind, 1U);
     api->service_close(&host, session);
 }

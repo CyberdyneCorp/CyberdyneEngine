@@ -6,6 +6,7 @@
 #include <cy/rendering/material/compiler.h>
 
 #include <cstring>
+#include <iterator>
 #include <new>
 #include <string_view>
 
@@ -191,13 +192,20 @@ Status put_material_dependencies(Array<u8>& out, const cy::graph::Graph& graph,
 
 CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::Graph& graph,
                                  const cy::rendering::material::Module& module,
+                                 cy::editor::MaterialPreviewRuntime* preview_runtime,
                                  cy::Allocator& allocator) noexcept {
     cy::rendering::material::CompileOptions options;
     auto compiled = cy::rendering::material::compile_material(module, options, allocator);
     if (!compiled) {
         return failed_material(session, "material.compile", compiled.error().message);
     }
-    if (!put_u64(session.event_payload, compiled.value().cook_key()) ||
+    const u64 artefact = compiled.value().cook_key();
+    if (preview_runtime != nullptr) {
+        if (Status published = preview_runtime->publish(artefact, compiled.value()); !published) {
+            return failed_material(session, "material.publish-rejected", published.error().message);
+        }
+    }
+    if (!put_u64(session.event_payload, artefact) ||
         !put_u64(session.event_payload, graph.semantic_digest()) ||
         !put_u32(session.event_payload, static_cast<u32>(compiled.value().programs().size()))) {
         return CY_RESULT_OUT_OF_MEMORY;
@@ -209,8 +217,9 @@ CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::G
     return CY_RESULT_OK;
 }
 
-CyResult compile_graph(CyServiceSession_T& session, cy::Allocator& allocator,
-                       bool compile) noexcept {
+CyResult compile_graph(CyServiceSession_T& session,
+                       cy::editor::MaterialPreviewRuntime* preview_runtime,
+                       cy::Allocator& allocator, bool compile) noexcept {
     cy::graph::NodeRegistry registry(allocator);
     if (Status status = cy::graph::material::register_material_nodes(registry); !status) {
         return failed(session, "catalogue-unavailable", status.error().message);
@@ -258,7 +267,8 @@ CyResult compile_graph(CyServiceSession_T& session, cy::Allocator& allocator,
     if (!compile) {
         return CY_RESULT_OK;
     }
-    return compile_material_result(session, graph.value(), module.value(), allocator);
+    return compile_material_result(session, graph.value(), module.value(), preview_runtime,
+                                   allocator);
 }
 
 bool preview_slot(const CyServiceSession_T& session, u64 handle, usize& slot) noexcept {
@@ -271,7 +281,8 @@ bool preview_slot(const CyServiceSession_T& session, u64 handle, usize& slot) no
     return session.preview_live[slot] && session.preview_generation[slot] == generation;
 }
 
-CyResult preview_create(CyServiceSession_T& session) noexcept {
+CyResult preview_create(CyServiceSession_T& session,
+                        cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     for (usize slot = 0; slot < 16; ++slot) {
         if (session.preview_live[slot]) {
             continue;
@@ -279,15 +290,21 @@ CyResult preview_create(CyServiceSession_T& session) noexcept {
         if (session.preview_generation[slot] == 0) {
             session.preview_generation[slot] = 1;
         }
+        const u64 handle = (static_cast<u64>(session.preview_generation[slot]) << 32U) | (slot + 1);
+        if (preview_runtime != nullptr) {
+            if (Status created = preview_runtime->create(handle); !created) {
+                return failed(session, "preview-create-rejected", created.error().message);
+            }
+        }
         session.preview_live[slot] = true;
         session.event_payload.clear();
-        const u64 handle = (static_cast<u64>(session.preview_generation[slot]) << 32U) | (slot + 1);
         return put_u64(session.event_payload, handle) ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
     }
     return failed(session, "preview-limit", "this session already owns sixteen preview worlds");
 }
 
-CyResult preview_destroy(CyServiceSession_T& session) noexcept {
+CyResult preview_destroy(CyServiceSession_T& session,
+                         cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     if (session.request_payload.size() != 8) {
         return failed(session, "preview-handle-invalid", "a preview handle is eight bytes");
     }
@@ -297,6 +314,11 @@ CyResult preview_destroy(CyServiceSession_T& session) noexcept {
         // Idempotent destruction: a stale/already-destroyed handle is still absent afterwards.
         session.event_payload.clear();
         return CY_RESULT_OK;
+    }
+    if (preview_runtime != nullptr) {
+        if (Status destroyed = preview_runtime->destroy(handle); !destroyed) {
+            return failed(session, "preview-destroy-rejected", destroyed.error().message);
+        }
     }
     session.preview_live[slot] = false;
     session.preview_artefact[slot] = 0;
@@ -310,7 +332,8 @@ CyResult preview_destroy(CyServiceSession_T& session) noexcept {
     return CY_RESULT_OK;
 }
 
-CyResult preview_reload(CyServiceSession_T& session) noexcept {
+CyResult preview_reload(CyServiceSession_T& session,
+                        cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     if (session.request_payload.size() < 8) {
         return failed(session, "preview-handle-invalid", "the request has no preview handle");
     }
@@ -329,6 +352,11 @@ CyResult preview_reload(CyServiceSession_T& session) noexcept {
         return failed(session, "preview-reload-rejected",
                       "reload requires a non-zero artefact and at least one exact target binding");
     }
+    cy::editor::MaterialPreviewTarget decoded[16] = {};
+    if (targets > std::size(decoded)) {
+        return failed(session, "preview-target-limit",
+                      "a reload can address at most sixteen material bindings");
+    }
     for (u32 target = 0; target < targets; ++target) {
         const usize offset = 20 + static_cast<usize>(target) * 20;
         const u32 material_slot = read_u32(session.request_payload, offset + 16);
@@ -336,11 +364,21 @@ CyResult preview_reload(CyServiceSession_T& session) noexcept {
             return failed(session, "material-slot-unsupported",
                           "the runtime supports material slots zero through fifteen");
         }
+        std::memcpy(decoded[target].entity, session.request_payload.data() + offset, 16);
+        decoded[target].material_slot = material_slot;
+    }
+    const u64 preview = read_u64(session.request_payload, 0);
+    if (preview_runtime != nullptr) {
+        if (Status reloaded =
+                preview_runtime->reload(preview, requested, {decoded, static_cast<usize>(targets)});
+            !reloaded) {
+            return failed(session, "preview-reload-rejected", reloaded.error().message);
+        }
     }
     session.preview_artefact[slot] = requested;
     session.event_payload.clear();
-    if (!put_u64(session.event_payload, requested) ||
-        !put_u64(session.event_payload, requested) || !put_u32(session.event_payload, targets)) {
+    if (!put_u64(session.event_payload, requested) || !put_u64(session.event_payload, requested) ||
+        !put_u32(session.event_payload, targets)) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     return session.event_payload.append(
@@ -349,7 +387,8 @@ CyResult preview_reload(CyServiceSession_T& session) noexcept {
                : CY_RESULT_OUT_OF_MEMORY;
 }
 
-CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
+CyResult preview_parameter_update(CyServiceSession_T& session,
+                                  cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     if (session.request_payload.size() < 21) {
         return failed(session, "parameter-payload-invalid",
                       "a parameter update requires preview, artefact, identity and type");
@@ -369,11 +408,10 @@ CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
                       "the parameter identity or value type is not supported");
     }
     const usize value_size = session.request_payload.size() - 21;
-    const bool valid_size = (kind == 1 && value_size == 1) ||
-                            ((kind == 2 || kind == 3) && value_size == 8) ||
-                            (kind == 4 && value_size == 16) ||
-                            (kind == 5 && value_size >= 4 &&
-                             read_u32(session.request_payload, 21) == value_size - 4);
+    const bool valid_size =
+        (kind == 1 && value_size == 1) || ((kind == 2 || kind == 3) && value_size == 8) ||
+        (kind == 4 && value_size == 16) ||
+        (kind == 5 && value_size >= 4 && read_u32(session.request_payload, 21) == value_size - 4);
     if (!valid_size) {
         return failed(session, "parameter-payload-invalid",
                       "the encoded value does not match its declared type");
@@ -382,6 +420,15 @@ CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
     if (established != 0 && established != kind) {
         return failed(session, "parameter-type-mismatch",
                       "the parameter was previously established with another type");
+    }
+    if (preview_runtime != nullptr) {
+        const cy::editor::MaterialParameterUpdate update{
+            parameter, kind, {session.request_payload.data() + 21, value_size}};
+        if (Status applied = preview_runtime->update(read_u64(session.request_payload, 0),
+                                                     session.preview_artefact[slot], update);
+            !applied) {
+            return failed(session, "parameter-update-rejected", applied.error().message);
+        }
     }
     established = kind;
     session.event_payload.clear();
@@ -428,6 +475,16 @@ CyResult MaterialService::open(CyServiceSession* out_session) noexcept {
 void MaterialService::close(CyServiceSession session) noexcept {
     if (session == nullptr) {
         return;
+    }
+    if (preview_runtime_ != nullptr) {
+        for (usize slot = 0; slot < std::size(session->preview_live); ++slot) {
+            if (!session->preview_live[slot]) {
+                continue;
+            }
+            const u64 handle =
+                (static_cast<u64>(session->preview_generation[slot]) << 32U) | (slot + 1);
+            (void)preview_runtime_->destroy(handle);
+        }
     }
     session->~CyServiceSession_T();
     allocator_->deallocate(session, sizeof(CyServiceSession_T), alignof(CyServiceSession_T));
@@ -492,17 +549,17 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
             result = CY_RESULT_OUT_OF_MEMORY;
         }
     } else if (!session->cancelled && operation == "material.validate") {
-        result = compile_graph(*session, *allocator_, false);
+        result = compile_graph(*session, preview_runtime_, *allocator_, false);
     } else if (!session->cancelled && operation == "material.compile") {
-        result = compile_graph(*session, *allocator_, true);
+        result = compile_graph(*session, preview_runtime_, *allocator_, true);
     } else if (!session->cancelled && operation == "preview.create") {
-        result = preview_create(*session);
+        result = preview_create(*session, preview_runtime_);
     } else if (!session->cancelled && operation == "preview.destroy") {
-        result = preview_destroy(*session);
+        result = preview_destroy(*session, preview_runtime_);
     } else if (!session->cancelled && operation == "preview.parameter.update") {
-        result = preview_parameter_update(*session);
+        result = preview_parameter_update(*session, preview_runtime_);
     } else if (!session->cancelled && operation == "preview.reload") {
-        result = preview_reload(*session);
+        result = preview_reload(*session, preview_runtime_);
     } else if (!session->cancelled) {
         result = failed(*session, "operation-unsupported",
                         "this backend does not support the operation");

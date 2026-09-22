@@ -22,3 +22,9 @@ The first vertical slice supports:
 Requests are copied at submission, identified by nonzero request IDs, cancelled cooperatively, and
 publish exactly one terminal event. Payload schemas are versioned independently of ABI 1.2 and of
 the live message framing.
+
+Preview operations may be connected to a runtime-owned `MaterialPreviewRuntime`. Compiled
+materials are published to that interface before their identities are returned, and create,
+reload, parameter-update and destroy acknowledgements are emitted only after the runtime accepts
+the operation. The interface carries engine-owned compiled material and stable binding data; no
+renderer, Metal or compiler type crosses the C ABI/live protocol or enters the Rust editor.
