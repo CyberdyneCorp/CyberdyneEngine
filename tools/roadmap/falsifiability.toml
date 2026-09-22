@@ -17,23 +17,23 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 246 proven, 424 not yet shown able to fail.
+# 250 proven, 423 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
 criterion = "doctor"
-digest = "7a636a7ed8693dd2"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): CyberdyneEngine — environment report … env-doctor: 1 problem(s) — cmake"
+digest = "c4608193d93b06b9"
+verdict = "proven"
+mutation = "rename-token 'cmake    | cmake' in just/env.just (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m0"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m0"
@@ -54,10 +54,10 @@ detail = "red under mutation of 8 file(s)"
 [[proof]]
 ledger = "m1"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m1"
@@ -94,10 +94,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-2-0 (exi
 [[proof]]
 ledger = "m10"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m10"
@@ -183,9 +183,9 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 ledger = "m11a"
 criterion = "build-system-at-working"
 digest = "d453179c9c0208da"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): build-system-and-platforms: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree … every optional dependency is gated by a feature option that exists"
+verdict = "proven"
+mutation = "delete-lines 'set(CY_PROFILES' in cmake/profiles.cmake (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -279,9 +279,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11a"
 criterion = "layering"
 digest = "332ed56e5ef61f0e"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -415,9 +415,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): [docte
 ledger = "m11a"
 criterion = "testing-and-quality-at-working"
 digest = "c9c47bf8f92969ee"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): testing-and-quality: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree … every kind in the taxonomy has at least one suite declared"
+verdict = "proven"
+mutation = "delete-lines 'CY_TEST_BUDGET_' in tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -551,9 +551,9 @@ detail = "red under mutation of 1 file(s), rebuilt against build/dev (exit 1: As
 ledger = "m11b"
 criterion = "layering"
 digest = "332ed56e5ef61f0e"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"
@@ -646,10 +646,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "roadmap-tiers"
-digest = "441f7c83c650b924"
+digest = "80d87e3788ac56b5"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): visual-scripting: recorded 'working', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11b"
@@ -794,6 +794,14 @@ digest = "d85c446bbb2dd265"
 verdict = "proven"
 mutation = "delete-lines 'IndentWidth: 4' in .clang-format (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "forward-path-samples-a-texture"
+digest = "186ef5588170f0ba"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/dev (exit 1): override: CY_BUILD_DIR=build/dev … the suite SKIPPED for want of a device: that is not a pass"
 
 [[proof]]
 ledger = "m11c"
@@ -1077,19 +1085,27 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): deploy.j
 
 [[proof]]
 ledger = "m11d"
+criterion = "documentation-gate"
+digest = "abce86600e6d0330"
+verdict = "proven"
+mutation = "delete-lines 'A stable, manifest-assigned pin identity' in src/graph/include/cy/graph/cybergraph.h (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d"
 criterion = "full-gate-set"
-digest = "4a15950897732892"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): ==> swift-format  bindings/swift/ and samples/04-character/game/ against .swift-format … Or name one: CY_SWIFT_FORMAT=/path/to/swift-format"
+digest = "caf00155294b78f8"
+verdict = "proven"
+mutation = "delete-lines '// SPDX-License-Identifier: MIT' in tools/import/tests/test_heightfield.cpp (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
@@ -1175,9 +1191,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11d5"
 criterion = "layering"
 digest = "d915eb4fa3e15cc9"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d5"
@@ -1246,18 +1262,18 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): 18 depen
 [[proof]]
 ledger = "m11e"
 criterion = "every-deferral-carries-its-three-parts"
-digest = "aa1cf1ee5aa690b2"
+digest = "6227ad7b834d5656"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): roadmap-debts: docs/roadmap/open-debts.md is stale — a debt was declared, closed or demoted and the document was not regenerated. … error: Recipe `roadmap-debts` failed on line 17 with exit code 1"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): roadmap-debts: docs/roadmap/open-debts.md is stale — a debt was declared, closed or demoted and the document was not regenerated. … error: recipe `roadmap-debts` failed on line 17 with exit code 1"
 
 [[proof]]
 ledger = "m11e"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11e"
@@ -1324,12 +1340,28 @@ mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (decl
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
-ledger = "m2"
-criterion = "layering"
-digest = "013d16d0f90d9149"
+ledger = "m12"
+criterion = "defects-carry-their-regression-test"
+digest = "b29cefb5bfa3d093"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): register: 0 defect(s), 0 carrying a named test … the register names no defect: a slice that found nothing did not exercise anything"
+
+[[proof]]
+ledger = "m13"
+criterion = "the-three-deferrals-name-this-rung"
+digest = "f77ebb3514c4e092"
+verdict = "proven"
+mutation = "delete-lines '    \"m13\",' in tools/roadmap/record.py (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m2"
+criterion = "layering"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m2"
@@ -1374,10 +1406,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m3"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m3"
@@ -1422,10 +1454,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m4"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m4"
@@ -1454,10 +1486,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5"
@@ -1486,10 +1518,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5b"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5b"
@@ -1534,10 +1566,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m6"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m6"
@@ -1582,10 +1614,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m7"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m7"
@@ -1646,10 +1678,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8a"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8a"
@@ -1686,10 +1718,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8b"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8b"
@@ -1742,10 +1774,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (
 [[proof]]
 ledger = "m8c"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8c"
@@ -1862,10 +1894,10 @@ detail = "red under mutation of 9 file(s)"
 [[proof]]
 ledger = "m9"
 criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+digest = "4a0b109ec0277529"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m9"
@@ -2706,14 +2738,6 @@ digest = "19f816333575e311"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "documentation-gate"
-digest = "08840163db54e9c5"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11d"

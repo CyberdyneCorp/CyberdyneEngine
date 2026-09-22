@@ -1838,7 +1838,8 @@ def _gap_no_mutation_can_close(mutation: Mutation | None, attempted: str, output
     build-backed proof.
 
     IT IS NOT A WAY IN. `_record` carries an unjudged verdict only for a key already in the
-    inventory at the same digest, so a NEW declared gap with no workable mutation is refused as it
+    inventory; a changed digest on an existing red-in-the-tree proof is refreshed only after this
+    run observes the gap still red. A NEW declared gap with no workable mutation is refused as it
     always was. The other direction is not this function's to hold and does not need to be: a
     declared gap that starts PASSING never reaches here — `prove` only calls it on a criterion that
     failed unmutated — and the ledger fails it by name with "THE GAP IS CLOSED, DELETE THE
@@ -2212,9 +2213,11 @@ def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = Fals
     """Write what was observed. The unproven list only ever SHRINKS, and this is where that holds.
 
     A PROOF MAY ALWAYS BE RECORDED. An entry saying "this one has not been shown able to fail" may
-    not, unless it is already there with the same digest — otherwise `--record` would be the escape
-    hatch that makes the whole mechanism advisory: write the criterion, run the recorder, and the
-    eighth unfalsifiable criterion is on the ladder with the tooling's blessing. The one exception is
+    not, unless it is already there with the same digest. An existing red-in-the-tree proof can
+    refresh its digest when a declared additive gap is still observed red in both trees. Otherwise
+    `--record` would be the escape hatch that makes the whole mechanism advisory: write the
+    criterion, run the recorder, and the eighth unfalsifiable criterion is on the ladder with the
+    tooling's blessing. The one exception is
     `--baseline`, which is how the 584 criteria this ladder already carries were first written down;
     it is a flag on the command line rather than a field in a file, so using it is a deliberate act
     that shows up in a shell history and in a review.
@@ -2231,6 +2234,26 @@ def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = Fals
         # not flag it: this run had no build and did not judge it. It is re-earned, or contradicted,
         # by a run that has one.
         standing_proof = inventory.proofs.get(key)
+        # A declared additive gap can still be observed failing in both trees. If that
+        # same criterion already had a red-in-the-tree proof, refresh its digest when
+        # the check changes while keeping the proof's limited claim: it goes red.
+        # This does not admit a new unproved criterion or claim the gap can close.
+        if (proof.unjudged and standing_proof is not None
+                and standing_proof.verdict == RED_IN_THE_TREE
+                and GAP_IS_ADDITIVE in proof.detail):
+            criterion = next(item for item in criteria_module.load(proof.ledger).criteria
+                             if item.id == proof.criterion)
+            tree_code, tree_output = run_in_the_repository(criterion, "", TREE_CONTROL_TIMEOUT_S)
+            if tree_code > 0 and tree_code != 124:
+                inventory.proofs[key] = Proof(
+                    proof.ledger, proof.criterion, proof.digest, RED_IN_THE_TREE, "-",
+                    "red unmutated, in the sandbox and in the repository "
+                    f"(exit {tree_code}): {_last_line(tree_output)}", proof.seconds)
+                continue
+            refused.append(
+                f"{proof.ledger}:{proof.criterion} is red in the sandbox, but the repository "
+                f"control did not confirm it (exit {tree_code}: {_last_line(tree_output)})")
+            continue
         if (proof.unjudged and standing_proof is not None
                 and standing_proof.digest == proof.digest):
             continue

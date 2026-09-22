@@ -47,6 +47,8 @@ import tempfile
 import time
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -1869,9 +1871,34 @@ def test_falsifiability_of_a_declared_gap(root: Path) -> None:
           falsify_module.reconcile([stays], inventory) == [],
           falsify_module.reconcile([stays], inventory))
 
+    changed = falsify_module.Proof(stays.ledger, stays.criterion, "changed-check",
+                                   stays.verdict, stays.mutation, stays.detail,
+                                   unjudged=stays.unjudged)
+    ledger = SimpleNamespace(criteria=[gap("stays-red")])
+    with patch.object(falsify_module, "read_inventory", return_value=inventory), \
+            patch.object(falsify_module.criteria_module, "load", return_value=ledger), \
+            patch.object(falsify_module, "run_in_the_repository", return_value=(1, "still red")), \
+            patch.object(falsify_module, "write_inventory") as write:
+        refused = falsify_module._record([changed], ("m0",))
+        check("an observed additive gap refreshes an existing red-in-the-tree proof",
+              not refused and inventory.proofs[("m0", "stays-red")].digest == "changed-check"
+              and inventory.proofs[("m0", "stays-red")].verdict == falsify_module.RED_IN_THE_TREE
+              and write.called, refused)
+
+    with patch.object(falsify_module, "read_inventory", return_value=inventory), \
+            patch.object(falsify_module.criteria_module, "load", return_value=ledger), \
+            patch.object(falsify_module, "run_in_the_repository", return_value=(0, "green")), \
+            patch.object(falsify_module, "write_inventory") as write:
+        green = falsify_module.Proof(stays.ledger, stays.criterion, "another-check",
+                                     stays.verdict, stays.mutation, stays.detail,
+                                     unjudged=stays.unjudged)
+        refused = falsify_module._record([green], ("m0",))
+        check("a sandbox-only red cannot refresh a red-in-the-tree proof",
+              len(refused) == 1 and not write.called, refused)
+
     # THE RATCHET IS NOT LOOSENED BY THAT. A gap with no standing record is still refused, because
-    # `_record` carries an unjudged verdict only for a key the inventory already holds at the same
-    # digest — which is what stops "declare it a gap" from being the way onto the ladder.
+    # `_record` carries an unjudged verdict only for a key the inventory already holds; a new
+    # declared gap cannot enter the ladder by naming missing work.
     refused = falsify_module._record([none], ("m0",))
     check("but a declared gap nothing has judged is still REFUSED a place on the ladder",
           len(refused) == 1 and "has not been shown able to fail" in refused[0], refused)

@@ -559,6 +559,12 @@ kind = "command"
 run = "just quality-swift-format && just quality-licence && just quality-spelling"
 ci_job = "milestone-m11d"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/import/tests/test_heightfield.cpp"
+token = "// SPDX-License-Identifier: MIT"
+note = "Removing the header from a new source must fail the licence gate."
+
 [[criterion]]
 id = "developer-workflow-recipes"
 describe = "every category of the required recipe surface does something, and no recipe refuses naming a milestone that is not on the ladder. THE OTHER HALF OF `record-matches-plan-history` THIS RUNG OWNS: `developer-workflow-and-just` is recorded at Seed with its column claiming Working since M6, and four recipes in `just/release.just` refuse naming 'M12 — build-and-packaging', a milestone that does not exist on a ladder whose `record.MILESTONES` ends at m11e"
