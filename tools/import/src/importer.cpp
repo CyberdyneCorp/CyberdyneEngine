@@ -237,6 +237,26 @@ Span<const ImportDiagnostic> ImportResult::diagnostics() const noexcept {
     return {diagnostics_.data(), diagnostics_.size()};
 }
 
+assets::AssetKind sub_asset_kind_from_name(std::string_view name) noexcept {
+    const std::string_view prefix = name.substr(0, name.find('/'));
+    if (prefix == "mesh" || prefix == "collision") {
+        return assets::AssetKind::Mesh;
+    }
+    if (prefix == "material") {
+        return assets::AssetKind::Material;
+    }
+    if (prefix == "animation") {
+        return assets::AssetKind::Animation;
+    }
+    if (prefix == "texture" || name == "texture") {
+        return assets::AssetKind::Texture;
+    }
+    if (prefix == "terrain" || name == "terrain") {
+        return assets::AssetKind::Terrain;
+    }
+    return name == "prefab" ? assets::AssetKind::Prefab : assets::AssetKind::Unknown;
+}
+
 assets::DerivedDependency ImportResult::dependency(usize index) const noexcept {
     CY_ASSERT_MSG(index < dependencies_.size(), "a dependency index past the end");
     const DependencySlot& slot = dependencies_[index];

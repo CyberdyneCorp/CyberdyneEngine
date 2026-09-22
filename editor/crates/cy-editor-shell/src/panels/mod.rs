@@ -104,6 +104,17 @@ pub enum Intent {
     },
 }
 
+/// Build the one intent used by both the chooser and operating-system file drop.
+pub(crate) fn external_import_intent(
+    paths: Vec<std::path::PathBuf>,
+    destination: impl Into<String>,
+) -> Intent {
+    Intent::ImportExternal {
+        paths,
+        destination: destination.into(),
+    }
+}
+
 /// The text a person has typed into a panel's own field.
 ///
 /// Presentation state, and it lives beside the panels rather than in a view model for the reason

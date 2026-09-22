@@ -113,7 +113,7 @@ Expected<CookedAssetHeader, Error> read_cooked_header(const u8* data, usize size
                     "the cooked asset's header version is newer than this build supports");
     }
     const u16 kind = read_u16(data + kKindOffset);
-    if (kind > static_cast<u16>(AssetKind::Binary)) {
+    if (kind > static_cast<u16>(AssetKind::Terrain)) {
         return fail(ErrorCode::Unsupported, "an asset kind this build does not define");
     }
     header.kind = static_cast<AssetKind>(kind);

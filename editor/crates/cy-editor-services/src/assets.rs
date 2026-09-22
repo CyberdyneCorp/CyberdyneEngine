@@ -1752,6 +1752,7 @@ fn count_of(value: usize) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{Duration, SystemTime};
 
     use super::*;
@@ -1839,13 +1840,22 @@ mod tests {
         }
 
         fn extensions(&self) -> Vec<String> {
-            vec![".obj".into()]
+            vec![".fbx".into(), ".obj".into(), ".tga".into()]
         }
 
         fn run(&self, _root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
+            let importer = Path::new(&request.source)
+                .extension()
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
             Ok(AssetImportOutcome {
                 source: request.source.clone(),
-                importer: "obj".into(),
+                importer: if importer == "tga" {
+                    "texture".into()
+                } else {
+                    importer
+                },
                 id: "asset-id".into(),
                 cache: "miss".into(),
                 sub_assets: vec![ImportedSubAsset {
@@ -1876,6 +1886,102 @@ mod tests {
         assert_eq!(completed.len(), 1);
         assert_eq!(completed[0].request, request);
         assert_eq!(completed[0].result.as_ref().unwrap().id, "asset-id");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn external_fbx_obj_and_texture_imports_share_one_async_contract() {
+        let root = temporary_project("async-formats");
+        let mut imports = AssetImportService::new(&root).with_runner(Arc::new(ImmediateRunner));
+        let mut operations = OperationService::new();
+        let mut requests = Vec::new();
+        for name in ["robot.fbx", "chair.obj", "oak.tga"] {
+            let source = root.join(name);
+            std::fs::write(&source, b"source").unwrap();
+            requests.push(
+                imports
+                    .start_external(&mut operations, source, "Imported".into())
+                    .unwrap(),
+            );
+        }
+        for operation in operations.all() {
+            operation.block_until_settled(Duration::from_secs(5));
+        }
+        let completed = imports.take_completed();
+        assert_eq!(completed.len(), 3);
+        let mut completed_requests = completed
+            .iter()
+            .map(|item| item.request)
+            .collect::<Vec<_>>();
+        completed_requests.sort_unstable();
+        requests.sort_unstable();
+        assert_eq!(completed_requests, requests);
+        let mut importers = completed
+            .iter()
+            .map(|item| item.result.as_ref().unwrap().importer.as_str())
+            .collect::<Vec<_>>();
+        importers.sort_unstable();
+        assert_eq!(
+            importers,
+            vec!["fbx", "obj", "texture"],
+            "every supported source format completed"
+        );
+        let unsupported = root.join("scene.blend");
+        std::fs::write(&unsupported, b"source").unwrap();
+        let refused = imports
+            .start_external(&mut operations, unsupported, String::new())
+            .expect_err("no importer claims Blender files");
+        assert!(refused.to_string().contains("supported extensions"));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    struct CacheRunner(AtomicUsize);
+
+    impl ImportRunner for CacheRunner {
+        fn describe(&self) -> String {
+            "cache test importer".into()
+        }
+
+        fn extensions(&self) -> Vec<String> {
+            vec![".obj".into()]
+        }
+
+        fn run(&self, _root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
+            let count = self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(AssetImportOutcome {
+                source: request.source.clone(),
+                importer: "obj".into(),
+                id: "stable-id".into(),
+                cache: if count == 0 { "miss" } else { "hit" }.into(),
+                ..AssetImportOutcome::default()
+            })
+        }
+    }
+
+    #[test]
+    fn repeated_external_import_surfaces_the_cache_hit_without_changing_identity() {
+        let root = temporary_project("async-cache");
+        let source = root.join("chair.obj");
+        std::fs::write(&source, b"o chair\n").unwrap();
+        let mut imports =
+            AssetImportService::new(&root).with_runner(Arc::new(CacheRunner(AtomicUsize::new(0))));
+        let mut operations = OperationService::new();
+        let mut outcomes = Vec::new();
+        for _ in 0..2 {
+            let request = imports
+                .start_external(&mut operations, source.clone(), String::new())
+                .unwrap();
+            operations
+                .all()
+                .iter()
+                .find(|operation| operation.id() == request)
+                .unwrap()
+                .block_until_settled(Duration::from_secs(5));
+            outcomes.push(imports.take_completed().remove(0).result.unwrap());
+        }
+        assert_eq!(outcomes[0].cache, "miss");
+        assert_eq!(outcomes[1].cache, "hit");
+        assert_eq!(outcomes[0].id, outcomes[1].id);
         std::fs::remove_dir_all(root).ok();
     }
 

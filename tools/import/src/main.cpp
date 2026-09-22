@@ -154,7 +154,8 @@ std::vector<std::string> binding_ids(const cy::import::ImportRecord& record,
     std::vector<std::string> ids;
     for (cy::usize index = 0; index < record.binding_count(); ++index) {
         const std::string_view name = record.binding_name(index);
-        if (!name.starts_with(prefix) || (exclude_lods && name.find("/lod") != std::string_view::npos)) {
+        if (!name.starts_with(prefix) ||
+            (exclude_lods && name.find("/lod") != std::string_view::npos)) {
             continue;
         }
         char id[cy::AssetId::kTextLength + 1] = {};
@@ -192,8 +193,8 @@ void print_mesh_dependencies(const std::string& output, std::string_view identit
     if (!read_cooked_mesh(output, identity, mesh)) {
         return;
     }
-    const cy::u32 count = std::min(material_slot_count(mesh),
-                                   static_cast<cy::u32>(materials.size()));
+    const cy::u32 count =
+        std::min(material_slot_count(mesh), static_cast<cy::u32>(materials.size()));
     for (cy::u32 slot = 0; slot < count; ++slot) {
         if (slot != 0) {
             std::fputs(", ", stdout);
@@ -219,23 +220,6 @@ void print_prefab_dependencies(const cy::import::ImportRecord& record) {
     }
 }
 
-const char* imported_kind(std::string_view name) {
-    const std::string_view prefix = name.substr(0, name.find('/'));
-    if (prefix == "mesh" || prefix == "collision") {
-        return "mesh";
-    }
-    if (prefix == "material") {
-        return "material";
-    }
-    if (prefix == "animation") {
-        return "animation";
-    }
-    if (prefix == "texture" || name == "texture") {
-        return "texture";
-    }
-    return name == "prefab" ? "prefab" : "unknown";
-}
-
 void print_sub_asset(const std::string& output, const cy::assets::VirtualPath& source,
                      const cy::import::ImportRecord& record,
                      const std::vector<std::string>& materials, cy::usize index) {
@@ -247,7 +231,7 @@ void print_sub_asset(const std::string& output, const cy::assets::VirtualPath& s
     std::fputs(", \"id\": ", stdout);
     put_json_string(id);
     std::fputs(", \"kind\": ", stdout);
-    put_json_string(imported_kind(name));
+    put_json_string(cy::assets::asset_kind_name(cy::import::sub_asset_kind_from_name(name)));
     std::fputs(", \"source\": ", stdout);
     put_json_string(std::string(source.view()).c_str());
     std::fputs(", \"dependencies\": [", stdout);
@@ -337,9 +321,8 @@ std::string imported_node_identity(cy::Span<const cy::import::ImportedNode> node
     return identity;
 }
 
-void print_imported_node(const std::string& output,
-                         cy::Span<const cy::import::ImportedNode> nodes, cy::usize index,
-                         const std::vector<std::string>& meshes,
+void print_imported_node(const std::string& output, cy::Span<const cy::import::ImportedNode> nodes,
+                         cy::usize index, const std::vector<std::string>& meshes,
                          const std::vector<std::string>& materials,
                          std::vector<std::string>& identities) {
     const cy::import::ImportedNode& node = nodes[index];

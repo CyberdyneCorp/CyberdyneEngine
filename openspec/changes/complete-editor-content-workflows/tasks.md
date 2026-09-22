@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add an Import… interaction and external-file drop handling to the Content Browser, copy accepted sources into a project-owned folder, and route both through the registered import command.
 - [x] 1.2 Execute imports through observable background operations with stable request IDs, per-item progress, cooperative cancellation, retained structured failures, and a responsive editor.
-- [ ] 1.3 Verify FBX, OBJ and texture import from button, drop, command and agent paths, including unsupported formats, missing companions, cancellation and cache hits.
+- [x] 1.3 Verify FBX, OBJ and texture import from button, drop, command and agent paths, including unsupported formats, missing companions, cancellation and cache hits.
 
 ## 2. Sub-assets and prefab instantiation
 
@@ -24,7 +24,7 @@
 
 ## 5. Terrain import and authoring
 
-- [ ] 5.1 Add versioned heightfield import with declared units, range, resolution, tiling and structured diagnostics for unsupported or ambiguous inputs.
+- [x] 5.1 Add versioned heightfield import with declared units, range, resolution, tiling and structured diagnostics for unsupported or ambiguous inputs.
 - [ ] 5.2 Implement the shared painting surface and a terrain specialised editor with non-destructive sculpt modifiers, material-layer painting, brush controls, transactions and undo/redo.
 - [ ] 5.3 Evaluate changed tiles asynchronously, update collision/render data through stable terrain assets, and verify save/reload, cancellation and local recomputation.
 

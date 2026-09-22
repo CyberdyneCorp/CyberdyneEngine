@@ -2,6 +2,7 @@
 //
 // Three of `core-assets-and-io`'s scenarios live here, each as a case named after it.
 
+#include <cy/core/assets/cooked.h>
 #include <cy/core/assets/identity.h>
 #include <cy/test/test.h>
 
@@ -99,10 +100,12 @@ CY_TEST_CASE("Scenario: Source deleted") {
     //      can actually name. The loading half is in test_asset_system.cpp.
     const cy::AssetId missing_texture = placeholder_for(AssetKind::Texture);
     const cy::AssetId missing_mesh = placeholder_for(AssetKind::Mesh);
+    const cy::AssetId missing_terrain = placeholder_for(AssetKind::Terrain);
     CY_CHECK(missing_texture != missing_mesh);
     CY_CHECK(is_placeholder(missing_texture));
     CY_CHECK(placeholder_kind(missing_texture) == AssetKind::Texture);
     CY_CHECK(placeholder_kind(missing_mesh) == AssetKind::Mesh);
+    CY_CHECK(placeholder_kind(missing_terrain) == AssetKind::Terrain);
     CY_CHECK(placeholder_kind(mint_asset_id()) == AssetKind::Unknown);
 }
 
@@ -203,7 +206,18 @@ CY_TEST_CASE("parsing an empty key yields the any-key without touching a null so
 CY_TEST_CASE("Asset kinds round-trip through their names") {
     CY_CHECK(asset_kind_from_name("texture").value() == AssetKind::Texture);
     CY_CHECK(asset_kind_from_name("binary").value() == AssetKind::Binary);
+    CY_CHECK(asset_kind_from_name("terrain").value() == AssetKind::Terrain);
     CY_CHECK_FALSE(asset_kind_from_name("sprite").has_value());
+}
+
+CY_TEST_CASE("Terrain is retained by the cooked asset envelope") {
+    const cy::u8 payload[] = {1, 2, 3, 4};
+    cy::Array<cy::u8> cooked;
+    CY_REQUIRE(
+        write_cooked_asset(AssetKind::Terrain, VariantKey::any(), payload, cooked).has_value());
+    const auto header = read_cooked_header(cooked.data(), cooked.size());
+    CY_REQUIRE(header.has_value());
+    CY_CHECK(header.value().kind == AssetKind::Terrain);
 }
 
 CY_TEST_CASE("Scenario: Content hash") {

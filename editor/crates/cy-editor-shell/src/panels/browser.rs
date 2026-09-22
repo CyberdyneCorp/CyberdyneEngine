@@ -185,10 +185,10 @@ fn import_dialog(panels: &mut Panels<'_>, ctx: &egui::Context) {
                     .add_enabled(!paths.is_empty(), egui::Button::new("Import"))
                     .clicked()
                 {
-                    panels.intents.push(Intent::ImportExternal {
+                    panels.intents.push(super::external_import_intent(
                         paths,
-                        destination: panels.asset_browser.folder().to_string(),
-                    });
+                        panels.asset_browser.folder(),
+                    ));
                     panels.inputs.browser_import_paths.clear();
                     panels.inputs.browser_import_open = false;
                 }

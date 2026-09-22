@@ -58,7 +58,7 @@ use cy_editor_visual::density::{Density, Metrics, Scale};
 
 use crate::keys::{Keys, Pressed};
 use crate::palette::Palette;
-use crate::panels::{Inputs, Intent, Panels};
+use crate::panels::{Inputs, Intent, Panels, external_import_intent};
 use crate::view::ViewAction;
 use crate::viewport_link::ViewportLink;
 use crate::{chrome, dock, documents, identity, theme};
@@ -890,10 +890,7 @@ impl eframe::App for EditorWindow {
                 .collect()
         });
         if !dropped.is_empty() {
-            intents.push(Intent::ImportExternal {
-                paths: dropped,
-                destination: self.asset_browser.folder().to_string(),
-            });
+            intents.push(external_import_intent(dropped, self.asset_browser.folder()));
         }
 
         // 4: the keyboard first, so a key is not swallowed by whatever happens to be under the
@@ -1059,6 +1056,23 @@ mod tests {
             Scope::unrestricted(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn chooser_and_file_drop_share_the_external_import_intent() {
+        let paths = vec![
+            std::path::PathBuf::from("chair.fbx"),
+            std::path::PathBuf::from("chair.obj"),
+            std::path::PathBuf::from("oak.tga"),
+        ];
+        let chooser = external_import_intent(paths.clone(), "Models");
+        let drop = external_import_intent(paths, "Models");
+        assert_eq!(chooser, drop);
+        let Intent::ImportExternal { paths, destination } = chooser else {
+            panic!("external gestures did not produce an import intent")
+        };
+        assert_eq!(paths.len(), 3);
+        assert_eq!(destination, "Models");
     }
 
     #[test]

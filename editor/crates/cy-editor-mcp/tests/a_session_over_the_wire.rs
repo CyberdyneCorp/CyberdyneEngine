@@ -225,7 +225,12 @@ fn the_tool_list_is_the_registry_and_carries_every_effect_class() {
             .unwrap()
             .contains("project-relative"),
     );
-    for command in ["asset.place", "asset.assign"] {
+    for command in [
+        "asset.import",
+        "asset.import-external",
+        "asset.place",
+        "asset.assign",
+    ] {
         assert!(
             tools
                 .iter()
