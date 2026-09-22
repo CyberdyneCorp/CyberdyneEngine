@@ -17,9 +17,11 @@ roadmap-debts *args:
     @cd "{{root}}" && python3 tools/roadmap/debts.py {{args}}
 
 # Run a milestone's full exit criteria. Usage: just roadmap-milestone <id> [--list] [--ci]
-#   [--jobs n]  independent criteria at a time; 1 is the sequential ledger. Default
-#               CY_LEDGER_JOBS, else min(8, cores). What each criterion holds while it runs is
-#               in tools/roadmap/schedule.py; one whose needs cannot be read runs alone.
+#   [--jobs n]  independent criteria at a time. DEFAULT 1 — concurrency is opt-in, because at
+#               min(8, cores) it changed verdicts: five criteria failed that pass when run alone,
+#               on a wall-clock watchdog that does not subtract I/O waiting. Set --jobs n or
+#               CY_LEDGER_JOBS to opt in. What each criterion holds is in tools/roadmap/
+#               schedule.py; one whose needs cannot be read runs alone.
 roadmap-milestone *args:
     #!/usr/bin/env bash
     set -euo pipefail

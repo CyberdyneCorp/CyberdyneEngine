@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 246 proven, 424 not yet shown able to fail.
+# 248 proven, 424 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -646,7 +646,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "roadmap-tiers"
-digest = "441f7c83c650b924"
+digest = "80d87e3788ac56b5"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete'"
@@ -1321,6 +1321,22 @@ criterion = "workflows"
 digest = "199a1db67f1b3b9e"
 verdict = "proven"
 mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m12"
+criterion = "defects-carry-their-regression-test"
+digest = "b29cefb5bfa3d093"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): register: 0 defect(s), 0 carrying a named test … the register names no defect: a slice that found nothing did not exercise anything"
+
+[[proof]]
+ledger = "m13"
+criterion = "the-three-deferrals-name-this-rung"
+digest = "f77ebb3514c4e092"
+verdict = "proven"
+mutation = "delete-lines '    \"m13\",' in tools/roadmap/record.py (declared)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]

@@ -462,11 +462,30 @@ class _Slot:
 
 
 def default_jobs() -> int:
-    """How many criteria run at once unless told otherwise."""
+    """How many criteria run at once unless told otherwise. ONE, and the default is the finding.
+
+    Concurrency is OPT-IN because running two criteria at once CHANGED VERDICTS, which is the one
+    outcome a speedup may not have. M11.c's verification run, at `min(8, cores)`, reported five
+    failures the sequential run before it did not have: `m2:nodes`, `m7:arbiter`, `m7:sky`,
+    `m8b:animation` and `m8b:navigation`. Every one of them exits 0 when re-run alone.
+
+    THE CAUSE IS NOT FLAKINESS, IT IS A WATCHDOG MEASURING THE WRONG THING. `tests/harness/src/
+    budget.cpp`'s `stalled:` check compares WALL CLOCK against a CPU-derived ceiling, and it
+    subtracts time spent waiting for a core — but not time spent waiting for I/O or a page fault.
+    So a case that spent 0.702 ms of CPU and 0.000 ms on the runqueue was failed for holding
+    2053.091 ms of wall clock against a 227.106 ms ceiling, because the ledger's own scheduler was
+    compiling beside it. Under `--jobs 1` that case passes.
+
+    So this default returns to 1 until the harness subtracts I/O and page-fault waiting the way it
+    already subtracts runqueue contention, or the scheduler refuses to co-schedule a budget-
+    sensitive suite with a build. `--jobs n` and `CY_LEDGER_JOBS` still work for anyone who wants
+    the pool; what changed is that nobody gets it without asking, because a ledger that reports a
+    failure the tree does not have is worse than a slow one.
+    """
     override = os.environ.get("CY_LEDGER_JOBS")
     if override and override.strip().isdigit() and int(override) > 0:
         return int(override)
-    return max(1, min(DEFAULT_JOBS, os.cpu_count() or 1))
+    return 1
 
 
 def _slots(entries) -> list[_Slot]:

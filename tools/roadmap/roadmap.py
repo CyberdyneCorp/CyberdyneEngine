@@ -483,7 +483,7 @@ def _parser() -> argparse.ArgumentParser:
     milestone.add_argument("--json", action="store_true", help="machine-readable output")
     milestone.add_argument("--jobs", type=int, default=0,
                            help="how many criteria to evaluate at once; 1 is the sequential ledger "
-                                "(default: CY_LEDGER_JOBS, else min(8, cores))")
+                                "(default: 1 — concurrency is opt-in; see schedule.default_jobs)")
     milestone.add_argument("--record", type=Path, default=record_module.DEFAULT_RECORD)
     milestone.set_defaults(handler=command_milestone)
 
