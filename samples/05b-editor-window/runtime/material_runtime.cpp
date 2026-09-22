@@ -2,7 +2,7 @@
 
 #include <cy/backends/shader/compiler.h>
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
-#include <cy/backends/shader/slang/slang_compiler.h>
+#    include <cy/backends/shader/slang/slang_compiler.h>
 #endif
 #include <cy/backends/shader/source.h>
 #include <cy/core/assets/vfs.h>
