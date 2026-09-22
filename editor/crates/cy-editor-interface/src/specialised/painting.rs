@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The shared spatial painting surface used by terrain and the later field editors.
 //!
 //! It owns only an in-progress gesture and brush presentation state. A completed gesture becomes a

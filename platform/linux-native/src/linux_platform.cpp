@@ -752,10 +752,10 @@ CpuFeatures LinuxPlatform::cpu_features() const {
     // __builtin_cpu_supports() reads the running processor, not the compiler's baseline, which is
     // what the interface asks for: "reported, never assumed".
     __builtin_cpu_init();
-    features.sse42 = static_cast<bool>(__builtin_cpu_supports("sse4.2"));
-    features.avx = static_cast<bool>(__builtin_cpu_supports("avx"));
-    features.avx2 = static_cast<bool>(__builtin_cpu_supports("avx2"));
-    features.avx512f = static_cast<bool>(__builtin_cpu_supports("avx512f"));
+    features.sse42 = __builtin_cpu_supports("sse4.2");
+    features.avx = __builtin_cpu_supports("avx");
+    features.avx2 = __builtin_cpu_supports("avx2");
+    features.avx512f = __builtin_cpu_supports("avx512f");
 #elif defined(__aarch64__)
     // Every AArch64 processor has Advanced SIMD; it is not optional in the base architecture.
     features.neon = true;

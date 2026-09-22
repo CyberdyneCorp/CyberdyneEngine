@@ -73,6 +73,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
+
 [[criterion]]
 id = "workflows"
 describe = "the workflows and the recipes agree, over the FULL matrix this rung builds — and it goes red the moment `milestone-m11e` is green above the newest ledger any workflow evaluates"
@@ -386,6 +392,12 @@ source = "tasks 6, 9.5, delivery-roadmap (Deferred scope has re-entry points)"
 kind = "command"
 run = "just roadmap-debts --check"
 ci_job = "milestone-m11e"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones/m11b.toml"
+token = "known_gap_closes = \"m13\""
+note = "removing the ML gap's re-entry changes the generated debt register, so the committed register is rejected as stale"
 
 [[criterion]]
 id = "deferral-is-the-last-rungs-act"

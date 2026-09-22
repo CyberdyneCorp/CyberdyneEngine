@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE ENGINE'S OWN FORWARD PATH PUTS A TEXTURE ON A MODEL. M11.c task 3.7's last mile.
 //
 // ================================================================================================

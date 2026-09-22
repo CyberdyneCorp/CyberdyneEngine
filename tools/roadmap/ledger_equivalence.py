@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Run one milestone's ledger sequentially and in parallel, and compare the two verdict for verdict.
 
 A SPEEDUP THAT CHANGES ONE VERDICT IS A REGRESSION, and this is the check that says so. It runs

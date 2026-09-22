@@ -72,11 +72,12 @@ state — a save, a replay and a peer all have to agree on it — and `environme
 walks levels finest-first, so its answer depends on what streamed. This module never asks for that
 one.
 
-**6. The platform participates in every derivation key, and that is a temporary honesty.** design.md
-§1.5 declines to claim on this host that a region generated on one architecture reproduces on
-another, so a cache populated on one target is a MISS on another rather than a silently-wrong hit.
-When `pcg-regeneration-cross-platform` goes green in continuous integration, the honest change is to
-**delete** `platform_tag()`'s contribution, not to add a second one.
+**6. The platform participates in every derivation key.** A cache populated on one target remains a
+MISS on another until cross-platform cache reuse is validated. The cross-leg forest workload now
+compiles `cy_pcg` with floating-point contraction disabled and checks a committed world digest on
+each publisher. This covers the generated raster and accepted points for that workload; it does not
+yet establish that every cached PCG result can be reused across architectures. Once that broader
+claim is tested, `platform_tag()` can be removed from the derivation key.
 
 **7. A REGION WITH ITS DETAIL DROPPED IS A REGION THAT WAS NOT EVALUATED, and a partial regeneration
 over one is refused.** `GenerationWorld::demote()` keeps the macro summary and clears the candidates,

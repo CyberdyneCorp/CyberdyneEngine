@@ -133,7 +133,7 @@ jobs:
   #
   # M4 left the question open: Swift is a hard requirement of `swift-scripting` and of the M4
   # artefact, and it was installed on exactly one job. Making it hard across the matrix means every
-  # leg can install a toolchain, and two of the six cannot.
+  # leg can install a toolchain, and two of the four do not.
   #
   # THE ANSWER IS: HARD WHERE A TOOLCHAIN EXISTS, OPTIONAL WHERE ONE DOES NOT, AND THE MATRIX SAYS
   # WHICH IS WHICH. The `swift` column below is that statement, one value per leg:
@@ -149,8 +149,7 @@ jobs:
   #                 other suite, and the absence is visible as a shorter test list rather than as a
   #                 green tick over nothing.
   #
-  # WHY THE TWO `none` LEGS ARE none, precisely, because "ARM" is not the reason and repeating it
-  # would be wrong:
+  # WHY THE TWO `none` LEGS ARE none:
   #
   #   linux-arm64    swift-actions/setup-swift resolves its toolchains from the Swift.org release
   #                  index, and this project has not verified that it selects an aarch64 Ubuntu
@@ -158,15 +157,12 @@ jobs:
   #                  toolchains, so this is the leg that can be closed next, by installing swiftly
   #                  directly rather than through the action. Unverified from this machine: it is a
   #                  runner-image property and cannot be measured locally.
-  #   windows-arm64  Swift for Windows publishes an x86_64 installer; an arm64-native Windows
-  #                  toolchain is not part of a released Swift 6.0 distribution. This leg is
-  #                  `none` by absence rather than by policy, and it is the one that stops Swift
-  #                  from being a hard requirement of the whole matrix at M5.
+  #   windows-x86_64 swift-actions/setup-swift@v2 fails on the Node 24 runtime GitHub Actions now
+  #                  forces on Node-20 actions. The Windows preset does not require Swift, so the
+  #                  build and test legs continue without it.
   #
-  # NOTHING HERE WAS EXECUTED. This file is edited on a Linux workstation with no runner; every
-  # claim above is about a GitHub-hosted image and is verifiable only by running the workflow. The
-  # `playable` job below keeps its own explicit toolchain install for exactly that reason — it is
-  # the job that judges the Swift artefact, and it does not depend on this matrix being right.
+  # The `playable` job below keeps its own explicit toolchain install; it judges the Swift artefact
+  # independently of the platform matrix.
   build:
     name: build ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
@@ -176,7 +172,6 @@ jobs:
         include:
           - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
-          - { label: macos-x86_64, os: macos-15-intel, swift: action }
           - { label: macos-arm64, os: macos-14, swift: action }
           # Windows: swift-actions/setup-swift@v2 crashes on the Node 24 runtime GitHub Actions now
           # forces on Node-20 actions (verify() throws before any download starts), so this leg
@@ -185,19 +180,9 @@ jobs:
           # and the Swift-package suites are gated on the toolchain being present — so `swift: none`
           # is the honest state rather than a workaround.
           - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
-          - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     steps:
       - uses: actions/checkout@v5
-      # extractions/setup-just@v4 has no Windows-arm64 target ("failed to determine any valid
-      # targets; arch = arm64, platform = win32"), so on that one leg the binary comes from the
-      # `rust-just` PyPI wheel, which does ship a win_arm64 build and drops `just.exe` on PATH via
-      # the Python Scripts directory. `pip install` is on the workflow gate's provisioning list, so
-      # the check-workflows selftest accepts it. Every other leg uses the action.
-      - if: matrix.label != 'windows-arm64'
-        uses: extractions/setup-just@v4
-      - if: matrix.label == 'windows-arm64'
-        shell: pwsh
-        run: pip install rust-just==1.36.0
+      - uses: extractions/setup-just@v4
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -230,20 +215,13 @@ jobs:
       # is the same command `just env-doctor` prints as the correction. A distribution package
       # would be a different version on each runner, which is the ambiguity the pin removes.
       #
-      # setup-python is here so that `pip` means the same interpreter on all six legs of the matrix;
+      # setup-python is here so that `pip` means the same interpreter on all four legs of the matrix;
       # the Windows and macOS images do not agree about whether it is `pip`, `pip3` or neither.
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      # clang-tidy's pip wheel has no win_arm64 build (checked every version 14.x through 22.1.8),
-      # so pip would source-build LLVM on that leg — a ~40 min stall we have measured. Skip it
-      # there; the quality-lint gate only runs on the Ubuntu `quality` job, which is not this leg.
-      - if: matrix.label != 'windows-arm64'
-        name: Install the pinned LLVM tooling
+      - name: Install the pinned LLVM tooling
         run: pip install clang-format==22.1.8 clang-tidy==22.1.8
-      - if: matrix.label == 'windows-arm64'
-        name: Install the pinned LLVM tooling
-        run: pip install clang-format==22.1.8
       - name: Install the window-system headers SDL3 builds against
         if: runner.os == 'Linux'
         run: |
@@ -281,24 +259,16 @@ jobs:
         include:
           - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
           - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
-          - { label: macos-x86_64, os: macos-15-intel, swift: action }
           - { label: macos-arm64, os: macos-14, swift: action }
           # `swift: none` on Windows — the twin comment on the `build` matrix has the reasoning.
           - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
-          - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     env:
       # The machine-readable results `testing-and-quality` requires of a continuous integration run.
       # The recipe already knows how to produce them; the job only says where to put them.
       CY_TEST_JUNIT: test-results.xml
     steps:
       - uses: actions/checkout@v5
-      # setup-just@v4 has no Windows-arm64 target — see the `build` matrix's twin block for the
-      # `pip install rust-just` rationale.
-      - if: matrix.label != 'windows-arm64'
-        uses: extractions/setup-just@v4
-      - if: matrix.label == 'windows-arm64'
-        shell: pwsh
-        run: pip install rust-just==1.36.0
+      - uses: extractions/setup-just@v4
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -667,7 +637,7 @@ jobs:
   # continuous integration on all three platforms" — and because a workspace that needs no window,
   # no graphics device and no interface toolkit is exactly the thing that can run anywhere. It is a
   # job of its own rather than a step in the `test` matrix so that a Windows-specific failure names
-  # itself instead of failing six legs of an unrelated matrix.
+  # itself instead of failing four legs of an unrelated matrix.
   #
   # NOT VERIFIED FROM A DEVELOPER MACHINE. This file is edited on Linux; that the macOS and Windows
   # runner images carry cargo, rustfmt and clippy is a property of a GitHub-hosted image and is
@@ -928,15 +898,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      # clang-tidy's pip wheel has no win_arm64 build (checked every version 14.x through 22.1.8),
-      # so pip would source-build LLVM on that leg — a ~40 min stall we have measured. Skip it
-      # there; the quality-lint gate only runs on the Ubuntu `quality` job, which is not this leg.
-      - if: matrix.label != 'windows-arm64'
-        name: Install the pinned LLVM tooling
+      - name: Install the pinned LLVM tooling
         run: pip install clang-format==22.1.8 clang-tidy==22.1.8
-      - if: matrix.label == 'windows-arm64'
-        name: Install the pinned LLVM tooling
-        run: pip install clang-format==22.1.8
       - name: Install the window-system headers
         run: |
           sudo apt-get update
@@ -1246,7 +1209,7 @@ jobs:
   # --- The one job that compares one leg's answer with another's ---------------------------------
   #
   # M11.a section 4. UNTIL THIS PAIR OF JOBS EXISTED, NOTHING IN THIS FILE COMPARED ONE LEG'S RESULT
-  # WITH ANOTHER'S. The build and test matrices above are six legs running independently: each one
+  # WITH ANOTHER'S. The build and test matrices above are four legs running independently: each one
   # asserts that the engine agrees with its own committed expectations, and not one of them asks
   # whether two architectures agree with each other. Three criteria in three ledgers looked for
   # exactly this shape and failed or reported NOT EVALUATED for want of it —
@@ -1292,7 +1255,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
-      # The publisher is independent of the aggregate six-platform build job: `test-determinism`
+      # The publisher is independent of the aggregate four-platform build job: `test-determinism`
       # builds the tree it executes. Depending on the whole build matrix would skip every digest
       # when one unrelated platform leg fails, leaving two healthy architectures unobserved.
       - uses: actions/setup-python@v6
@@ -1476,7 +1439,8 @@ jobs:
       - uses: extractions/setup-just@v4
       # `just roadmap-test`'s falsifiability sweep runs every check the milestone gates depend on,
       # so this job needs the same tools those checks need: openspec for the spec queries,
-      # clang-format 22.1.8 for the format gate, and Pillow for the M11.c beauty-shot renders.
+      # clang-format 22.1.8 for the format gate, codespell for the spelling gate, and Pillow for the
+      # M11.c beauty-shot renders.
       # Without them the sweep reports every check as "was recorded as proven and is now red in the
       # tree" for tool-missing reasons the runner cannot verify against, and the whole job fails
       # for infrastructure rather than for drift.
@@ -1486,7 +1450,7 @@ jobs:
       - name: Install the tools the falsifiability sweep runs
         run: |
           npm install -g @fission-ai/openspec
-          pip install clang-format==22.1.8 clang-tidy==22.1.8 Pillow
+          pip install clang-format==22.1.8 clang-tidy==22.1.8 codespell==2.4.3 Pillow
       - name: Status matches the specification set
         run: just roadmap-status
       # The drift detection's own negative fixtures: a status recipe that stopped failing on drift

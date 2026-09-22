@@ -893,7 +893,7 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     }
     std::memset(mapped, 0, rendering::kMaterialBlockBytes);
     std::memcpy(mapped, parameters.data(), parameters.size());
-    return materials_->programs.push_back(std::move(program));
+    return materials_->programs.push_back(program);
 }
 
 Status Renderer::update_material(u64 artefact, Span<const u8> parameters) noexcept {

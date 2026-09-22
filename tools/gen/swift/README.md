@@ -43,7 +43,10 @@ not silent.
 
 Nullability is **not** in that table. A returned pointer is Optional in Swift, always, because C
 cannot say otherwise and a generator that trusted a header comment would trap on the day the comment
-was wrong.
+was wrong. A pointer to an opaque handle keeps both levels of nullability exposed by the C importer:
+for example, `CyServiceSession*` becomes `UnsafeMutablePointer<CyServiceSession?>?`. The outer
+Optional represents the pointer argument and the inner Optional represents the opaque pointer value
+stored through it.
 
 ## What is generated, and what is deliberately not
 
@@ -74,7 +77,7 @@ stale, and if the parser ever stopped recognising the table, a hand-written brok
 hand-written correct one would both describe nothing — and comparing nothing to nothing succeeds.
 
 Case 0 is the control: the unedited header generates exactly what is committed. It is what makes the
-other twelve mean anything.
+other cases mean anything.
 
 **Governed by**: `swift-scripting` (generated overlay), `native-abi`, `build-system-and-platforms`
 (code generation).

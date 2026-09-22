@@ -645,7 +645,7 @@ ci_job = "milestone-m11a"
 # `m9:lockstep-cross-platform`, `m10:pcg-regeneration-cross-platform` and
 # `m10:pcg-gpu-domain-agreement` each look for exactly one shape — a job that publishes one leg's
 # digest and compares it with another's — and each fails or reports NOT EVALUATED for want of it. The
-# legs already exist: ci.yml's matrices include linux-arm64, macos-arm64 and windows-arm64 and they
+# legs already exist: ci.yml's matrices include linux-arm64, macos-arm64 and windows-x86_64 and they
 # run independently. ONE JOB ANSWERS THREE CRITERIA, and building it once rather than three times is
 # most of the reason this rung exists.
 

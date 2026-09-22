@@ -123,6 +123,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
+
 [[criterion]]
 id = "workflows"
 describe = "every permanent gate is run by a job in .github/workflows/, and no job reimplements a recipe. This is also the check that fails if ci.yml's `milestone` job was not moved to the newest closed milestone when its gate went green — M6 task 10.9's forcing function, and this milestone's task 12.4"

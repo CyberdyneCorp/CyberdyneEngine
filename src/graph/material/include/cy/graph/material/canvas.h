@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Engine-owned decoder for the editor's short-lived material canvas interchange.
 

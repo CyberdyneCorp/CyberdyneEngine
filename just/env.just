@@ -146,9 +146,8 @@ env-doctor *args:
 
     echo
     # `clang-tidy` on PyPI ships no `win_arm64` wheel (verified against every version from 14.x
-    # through 22.1.8), so pip source-builds LLVM there — a ~40 min stall on the CI leg. `just
-    # quality-lint` runs only from the Ubuntu `quality` job, never from the windows-arm64 build or
-    # test legs, so the tool's absence on that one host is acceptable. Report it advisory here
+    # through 22.1.8), so pip source-builds LLVM there. `just quality-lint` runs only from the
+    # Ubuntu `quality` job, and Windows ARM64 is outside the CI matrix. Report it advisory here
     # instead of missing, and skip the `check_pinned` version comparison that would otherwise fail
     # the whole recipe with `status=1`.
     tolerate_tidy_missing=0
@@ -181,9 +180,9 @@ env-doctor *args:
     # WHY ADVISORY RATHER THAN REQUIRED, WRITTEN DOWN SO THE NEXT PERSON DOES NOT HAVE TO GUESS.
     # This recipe is the FIRST criterion of every milestone ledger, including four that are closed,
     # so a hard failure here turns `just roadmap-milestone m0` red on any machine with no Swift —
-    # including two of the six legs of the CI matrix, which are ARM runners no Swift setup action
-    # covers. The absence is already caught where it can be acted on: the configure says which
-    # targets it dropped, and `just test-smoke -R character_sample` and
+    # including the Linux ARM64 CI leg, where no Swift setup action is configured. The absence is
+    # already caught where it can be acted on: the configure says which targets it dropped, and
+    # `just test-smoke -R character_sample` and
     # `just test-integration -R swift_reload` match nothing and exit non-zero, because
     # just/test.just passes --no-tests=error.
     #

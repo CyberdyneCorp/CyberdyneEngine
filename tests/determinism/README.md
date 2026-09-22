@@ -22,7 +22,7 @@ directory forward; M10 task 6.4 is where it is repaired.
 
 Every other suite in this directory asks whether the engine agrees with its own committed
 expectations. None of them asks whether **two architectures agree with each other**, and neither did
-any job in `ci.yml`: its six legs ran independently. That is why `m9:lockstep-cross-platform` was a
+any job in `ci.yml`: its platform legs ran independently. That is why `m9:lockstep-cross-platform` was a
 **declared gap** rather than a `where = "ci"` criterion — `where = "ci"` would have made it PASS in
 continuous integration, satisfied by a single-leg suite, which is the defect the practice exists to
 catch.

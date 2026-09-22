@@ -67,6 +67,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
+
 [[criterion]]
 id = "project-graph"
 describe = "the project graph rejects a cycle, an undeclared dependency, an upward layer dependency, and a shipping target that reaches editor code"

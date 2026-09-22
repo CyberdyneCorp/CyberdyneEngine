@@ -68,4 +68,3 @@ function(cy_vfx_gpu_declare_tests)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_vfx_gpu_declare_tests)
-

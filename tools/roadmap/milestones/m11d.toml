@@ -84,6 +84,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
+
 [[criterion]]
 id = "workflows"
 describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11d` is green above the newest ledger any workflow evaluates"
@@ -539,6 +545,12 @@ kind = "recipe"
 run = "just quality-docs"
 ci_job = "milestone-m11d"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/graph/include/cy/graph/cybergraph.h"
+token = "A stable, manifest-assigned pin identity"
+note = "removing one public alias's documentation makes the documentation gate name PinId as newly undocumented"
+
 [[criterion]]
 id = "full-gate-set"
 describe = "the rest of `testing-and-quality`'s absent gates: swift-format, the licence-header check and the spelling check. THIS IS ONE HALF OF WHAT `m9:record-matches-plan-history` IS ABOUT — the row's Working tier has been claimed by a column and evaluated by no criterion in any ledger, and this is the first criterion in the project that runs something for it"
@@ -546,6 +558,12 @@ source = "tasks, testing-and-quality, m9:record-matches-plan-history"
 kind = "command"
 run = "just quality-swift-format && just quality-licence && just quality-spelling"
 ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/import/tests/test_heightfield.cpp"
+token = "// SPDX-License-Identifier: MIT"
+note = "Removing the header from a new source must fail the licence gate."
 
 [[criterion]]
 id = "developer-workflow-recipes"

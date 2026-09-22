@@ -304,8 +304,7 @@ private:
         // broken", and this is the file that tells them apart.
         const Span<const char> source = pass.generated_source();
         if (!source.empty()) {
-            if (std::FILE* file = open_diagnostic("vfx-dispatch-rejected.slang");
-                file != nullptr) {
+            if (std::FILE* file = open_diagnostic("vfx-dispatch-rejected.slang"); file != nullptr) {
                 (void)std::fwrite(source.data(), 1, source.size(), file);
                 (void)std::fclose(file);
                 std::fprintf(stderr, "wrote vfx-dispatch-rejected.slang (%zu bytes)\n",

@@ -60,6 +60,6 @@
 ## 5. Records and the gate
 
 - [ ] 5.1 M11.e's 1.0 statement says plainly that **1.0 is the engine and M12 is the proof**
-- [ ] 5.2 `docs/roadmap/capability-matrix.md` and `ROADMAP.md` carry M12 and M13
+- [x] 5.2 `docs/roadmap/capability-matrix.md` and `ROADMAP.md` carry M12 and M13
 - [ ] 5.3 Every criterion this rung adds has been shown able to fail by `just roadmap-falsify`
 - [ ] 5.4 The gate

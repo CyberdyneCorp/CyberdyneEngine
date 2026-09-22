@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Terrain authoring through the shared painting surface and ordinary document transactions.
 //!
 //! A terrain, each material layer, and every sculpt or paint gesture has a stable [`NodeId`]. A
