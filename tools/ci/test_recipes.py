@@ -440,6 +440,33 @@ def a_recipe_that_disables_a_feature_disables_what_needs_it(root: pathlib.Path) 
                     )
     return failures
 
+
+def a_test_never_writes_into_the_callers_directory(root: pathlib.Path) -> list[str]:
+    """A test that dirties the tree cannot be used as evidence.
+
+    `write_png("name.png", ...)` with a bare filename lands in whatever directory the suite was
+    invoked from — the repository root, for anyone running `just test-render` by hand. Three
+    separate suites have done it: the VFX compiler and GPU-pass tests left `vfx-kernel.slang`,
+    `vfx-dispatch.slang` and `vfx-sampler.slang` in the root, and the forward-material test left two
+    PNGs there that were then COMMITTED.
+
+    The cost is not tidiness. `falsify --mutate-the-tree` refuses to run in a dirty tree, because a
+    mutation applied to one "could not be told from what is already there" — so the stray output
+    BLOCKED THE FALSIFIABILITY PROOF of the very criterion the test exists to serve. A destination
+    the run owns is what makes a test usable as evidence.
+    """
+    failures = []
+    bare = re.compile(r'(?:write_png|std::fopen|fopen)\s*\(\s*"([A-Za-z0-9_.-]+\.(?:png|slang|json|txt))"')
+    for path in sorted((root / "src").rglob("*.cpp")) + sorted((root / "tests").rglob("*.cpp")):
+        if "/tests/" not in str(path) and not path.name.startswith("test_"):
+            continue
+        for match in bare.finditer(path.read_text(encoding="utf-8", errors="replace")):
+            failures.append(
+                f"{path.relative_to(root)}: writes {match.group(1)!r} by bare filename, so it lands "
+                f"in the caller's working directory; write it under a directory the run owns"
+            )
+    return failures
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -459,6 +486,9 @@ def main() -> int:
         "a recipe that parses flags binds them to $@": a_recipe_that_parses_flags_binds_them,
         "a recipe never accepts a flag it then ignores": (
             a_recipe_never_accepts_a_flag_it_then_ignores
+        ),
+        "a test never writes into the caller's directory": (
+            a_test_never_writes_into_the_callers_directory
         ),
         "a recipe that disables an option disables what requires it": (
             a_recipe_that_disables_a_feature_disables_what_needs_it

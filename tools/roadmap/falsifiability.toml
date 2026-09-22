@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 250 proven, 423 not yet shown able to fail.
+# 251 proven, 422 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -799,9 +799,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11c"
 criterion = "forward-path-samples-a-texture"
 digest = "186ef5588170f0ba"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/dev (exit 1): override: CY_BUILD_DIR=build/dev … the suite SKIPPED for want of a device: that is not a pass"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'texture.texture_view = entry.view;' in src/rendering/pipeline/src/frame_bindings.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-verify (exit 1: the forward material texture case FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"

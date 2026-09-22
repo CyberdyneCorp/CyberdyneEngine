@@ -19,7 +19,30 @@
 #include <cy/vfx/runtime.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <utility>
+
+namespace {
+
+/// Where a diagnostic dump goes: a directory the run owns, never the caller's working directory.
+///
+/// A bare filename lands wherever the suite was invoked from, which for `just test-unit` run by
+/// hand is the repository root. Three suites did it and the output was committed twice; it also
+/// blocked a falsifiability proof, because `falsify --mutate-the-tree` refuses a dirty tree.
+[[nodiscard]] std::FILE* open_diagnostic(const char* name) noexcept {
+    const char* directory = std::getenv("CY_TEST_ARTEFACT_DIR");
+    if (directory == nullptr || *directory == '\0') {
+        directory = CY_TEST_BINARY_DIR;
+    }
+    char path[1024];
+    const int written = std::snprintf(path, sizeof(path), "%s/%s", directory, name);
+    if (written <= 0 || static_cast<std::size_t>(written) >= sizeof(path)) {
+        return nullptr;
+    }
+    return std::fopen(path, "wb");
+}
+
+}  // namespace
 
 using namespace cy;
 using namespace cy::vfx;
@@ -313,7 +336,7 @@ CY_TEST_CASE("the generated unit is self-contained: it imports nothing and decla
     // key, and nothing invokes the compiler"; a generated unit nobody can put in front of a shader
     // compiler is the same gap one layer along. This file is what `slangc` is handed by hand, and
     // what a smoke suite would hand `cy::shader` when one is written.
-    if (std::FILE* file = std::fopen("vfx-kernel.slang", "wb"); file != nullptr) {
+    if (std::FILE* file = open_diagnostic("vfx-kernel.slang"); file != nullptr) {
         (void)std::fwrite(unit.data(), 1, unit.size(), file);
         (void)std::fclose(file);
         std::fprintf(stderr, "wrote vfx-kernel.slang (%zu bytes)\n", unit.size());
@@ -427,7 +450,7 @@ CY_TEST_CASE("an effect that samples a data interface still assembles a compilab
     CY_CHECK_EQ(text.find("float cyVfxSample_wind_field_speed(float x);"), std::string_view::npos);
 
     // Written out beside the plume's, so the two can both be handed to a compiler by hand.
-    if (std::FILE* file = std::fopen("vfx-sampler.slang", "wb"); file != nullptr) {
+    if (std::FILE* file = open_diagnostic("vfx-sampler.slang"); file != nullptr) {
         (void)std::fwrite(unit.data(), 1, unit.size(), file);
         (void)std::fclose(file);
         std::fprintf(stderr, "wrote vfx-sampler.slang (%zu bytes)\n", unit.size());
@@ -477,7 +500,7 @@ CY_TEST_CASE(
 
     std::fprintf(stderr, "probe unit %zu bytes, dispatch unit %zu bytes\n", probe.size(),
                  dispatch.size());
-    if (std::FILE* file = std::fopen("vfx-dispatch.slang", "wb"); file != nullptr) {
+    if (std::FILE* file = open_diagnostic("vfx-dispatch.slang"); file != nullptr) {
         (void)std::fwrite(dispatch.data(), 1, dispatch.size(), file);
         (void)std::fclose(file);
         std::fprintf(stderr, "wrote vfx-dispatch.slang (%zu bytes)\n", dispatch.size());

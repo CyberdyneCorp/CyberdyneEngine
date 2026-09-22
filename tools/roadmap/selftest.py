@@ -213,6 +213,14 @@ def test_record_rules(root: Path) -> None:
 # the deliberate answer to "how many exit conditions does this rung have" that adding a ledger is
 # supposed to force — nine static gates it shares with the ladder, the three moved claims, the three
 # a Linux host can still judge, the artefact, the tier and the handover.
+# M12 AND M13 ARE DECLARED RUNGS WHOSE CRITERIA ARE NOT YET AUTHORED, and their floors say 1 because
+# that is honestly what may not be lost today — not because 1 is a sensible number of exit conditions
+# for a rung. M13 exists so that three deferrals have a rung to name instead of a date, and its one
+# criterion checks precisely that: that m13 is present in the ladder, the gates, the ledgers and the
+# changes, all four. M12 exists to build the consumer that proves the engine, and its one criterion
+# is the defect register. THE FLOOR RISES WHEN EITHER RUNG IS WORKED — a rung reaching its gate with
+# one criterion would be the token gesture this table exists to refuse, and whoever opens M12 or M13
+# raises the number here in the same change that writes the criteria.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
                     "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 62,
                     "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11d5": 16, "m11e": 25,
@@ -2217,6 +2225,38 @@ def _observe(entries, jobs: int):
     return results, overlaps, peak
 
 
+def test_scheduler_concurrency_is_opt_in(root: Path) -> None:
+    """The ledger runs one criterion at a time unless somebody asks for more.
+
+    THIS IS A REGRESSION TEST FOR A VERDICT, NOT FOR A SPEED. When `default_jobs()` returned
+    `min(8, cores)`, M11.c's verification run reported five failures the sequential run before it
+    did not have — `m2:nodes`, `m7:arbiter`, `m7:sky`, `m8b:animation`, `m8b:navigation` — and all
+    five exit 0 when re-run alone. The cause is `tests/harness/src/budget.cpp`'s `stalled:` check,
+    which compares wall clock against a CPU-derived ceiling and subtracts time spent waiting for a
+    core but NOT time spent waiting for I/O or a page fault: one case spent 0.702 ms of CPU and
+    0.000 ms on the runqueue and was failed for holding 2053.091 ms of wall clock against a
+    227.106 ms ceiling, because the ledger's own scheduler was compiling beside it.
+
+    A ledger that reports a failure the tree does not have is worse than a slow one, so the default
+    returned to 1. Restoring a concurrent default without first teaching the harness about I/O
+    waiting reintroduces exactly that, and this case is what refuses it.
+    """
+    previous = os.environ.pop("CY_LEDGER_JOBS", None)
+    try:
+        check("the ledger runs one criterion at a time unless asked for more",
+              schedule_module.default_jobs() == 1,
+              f"default_jobs() is {schedule_module.default_jobs()}, not 1 — concurrency is opt-in "
+              f"until budget.cpp subtracts I/O waiting as well as runqueue contention")
+        os.environ["CY_LEDGER_JOBS"] = "4"
+        check("CY_LEDGER_JOBS still opts in to the pool",
+              schedule_module.default_jobs() == 4,
+              f"CY_LEDGER_JOBS=4 gave {schedule_module.default_jobs()}")
+    finally:
+        os.environ.pop("CY_LEDGER_JOBS", None)
+        if previous is not None:
+            os.environ["CY_LEDGER_JOBS"] = previous
+
+
 def test_scheduler_rules(root: Path) -> None:
     """What the scheduler may and may not do with a set of criteria."""
     entries = [
@@ -2548,6 +2588,7 @@ def main() -> int:
         test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
+        test_scheduler_concurrency_is_opt_in(_area(root, "scheduler-concurrency"))
         test_scheduler_rules(_area(root, "scheduler"))
         test_scheduler_derivation(_area(root, "scheduler-derivation"))
         test_scheduler_declarations(_area(root, "scheduler-declarations"))

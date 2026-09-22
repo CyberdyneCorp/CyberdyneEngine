@@ -56,6 +56,7 @@
 #include <cy/test/test.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 using namespace cy;
@@ -280,13 +281,33 @@ struct Difference {
     return ok();
 }
 
+/// Diagnostic frames, written WHERE THE RUN OWNS rather than into the current directory.
+///
+/// A bare filename here lands in whatever directory the suite was invoked from, which for a person
+/// running `just test-render` by hand is the repository root. That is not a cosmetic problem: it
+/// left two tracked PNGs in the root of this repository, and it later BLOCKED A FALSIFIABILITY
+/// PROOF — `falsify --mutate-the-tree` refuses to run in a dirty tree, because a mutation applied
+/// to it "could not be told from what is already there". A test that cannot be run without dirtying
+/// the tree is a test that cannot be used as evidence.
+///
+/// So the destination is CY_TEST_ARTEFACT_DIR when the harness sets it, else the build tree this
+/// binary was configured into, and never the caller's working directory.
 void save(const char* name, Span<const u32> texels) noexcept {
     render_test::Image image(allocator());
     if (!render_test::adopt(image, texels, kWidth, kHeight).has_value()) {
         return;
     }
-    if (render_test::write_png(name, image).has_value()) {
-        std::fprintf(stderr, "wrote %s (%ux%u)\n", name, kWidth, kHeight);
+    const char* directory = std::getenv("CY_TEST_ARTEFACT_DIR");
+    if (directory == nullptr || *directory == '\0') {
+        directory = CY_TEST_BINARY_DIR;
+    }
+    char path[1024];
+    const int written = std::snprintf(path, sizeof(path), "%s/%s", directory, name);
+    if (written <= 0 || static_cast<usize>(written) >= sizeof(path)) {
+        return;
+    }
+    if (render_test::write_png(path, image).has_value()) {
+        std::fprintf(stderr, "wrote %s (%ux%u)\n", path, kWidth, kHeight);
     }
 }
 

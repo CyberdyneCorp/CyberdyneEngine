@@ -1331,6 +1331,8 @@ evaluate on any machine it owns.
 | **M11.d** · Desktop | 9 | 117 | `samples/11-ship` on desktop, and a native platform backend |
 | **M11.d.5** · Backends | 1 | 12 | one scene, three backends, the same picture |
 | **M11.e** · Ship | 4 | 55 | `samples/11-ship` on every target, and the 1.0 record |
+| **M12** · The Game | 0 | 0 | a vertical slice that proves the engine by using it |
+| **M13** · After 1.0 | 2 | 17 | Android, `ml-inference` and `xr-support`, each deferred by decision |
 
 **M11.d.5 was not in the split; M11.d's spike produced it.** That rung was written carrying Metal
 and D3D12, and the spike established what the plan had assumed: this project works on a Linux host
@@ -1470,10 +1472,14 @@ streaming, and specialised editors whose domains have no canonical writer remain
 continues to show an explicit unavailable state rather than a fake frame, preview, capture or domain
 editor.
 
-`ml-inference` also remained at Seed: M11.b produced neither the game-side consumer nor the
-recorded deferral its exit criterion required. M13 is now its explicit re-entry point, so the M11.b
-Complete cell and tier expectation are intentionally absent even though the original work table
-above is preserved.
+**And `ml-inference` did not move, so the row above is the plan rather than the record.** The work
+table says **C**; the capability matrix carries nothing for `ml-inference` at M11.b, and where the
+two differ the record wins. The row has been at **Seed** since M8.c: `integration.ai` does not exist
+and the ONNX Runtime backend registers the CPU execution provider only. The criterion that asked for
+it — `m11b:ml-inference-or-a-deferral` — allows the row to be *exercised by the game's AI* **or**
+recorded as a deferral with a re-entry point, and M11.b produced neither. It is now a declared gap
+closing at **M13**, which is the rung that exists so a deferral has somewhere to point, and the
+matrix carries its Complete cell there.
 
 ---
 

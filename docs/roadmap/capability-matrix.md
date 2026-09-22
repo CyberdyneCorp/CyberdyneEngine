@@ -164,7 +164,7 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M11.d.5** · Backends | 1 | 1 | `rhi-and-render-graph` |
 | **M11.e** · Ship | 4 | 4 | mobile and the full matrix, the dependency set, the forward pipeline, the roadmap itself |
 | **M12** · The Game | 0 | 0 | — |
-| **M13** · After 1.0 | 2 | 2 | `ml-inference`, `xr-support` |
+| **M13** · After 1.0 | 2 | 2 | `ml-inference` and `xr-support`, each deferred here by decision |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not
