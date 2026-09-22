@@ -80,7 +80,7 @@ public struct Engine: @unchecked Sendable {
     }
 
     @inlinable
-    public func serviceOpen(into: UnsafeMutablePointer<CyServiceSession>?) throws {
+    public func serviceOpen(into: UnsafeMutablePointer<CyServiceSession?>?) throws {
         try interface.serviceOpen(engine: raw, into: into)
     }
 

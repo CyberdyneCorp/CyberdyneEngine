@@ -61,8 +61,13 @@ _POINTERS = {
 }
 
 
-def _named_pointer(spelling: str) -> str | None:
-    """`const CyVar*` -> `UnsafePointer<CyVar>`, `CyVar*` -> `UnsafeMutablePointer<CyVar>`."""
+def _named_pointer(spelling: str, handles: set[str] | frozenset[str]) -> str | None:
+    """Map a pointer to a named ABI type, retaining opaque-handle pointee nullability.
+
+    A handle typedef is itself a C pointer. Consequently `CyServiceSession*` is imported by Swift
+    as `UnsafeMutablePointer<CyServiceSession?>`: the out-parameter stores either an opaque pointer
+    or null. Losing that inner Optional produces a wrapper which cannot call the imported function.
+    """
     if not spelling.endswith("*"):
         return None
     pointee = spelling[:-1].strip()
@@ -73,10 +78,17 @@ def _named_pointer(spelling: str) -> str | None:
     if not pointee.startswith("Cy"):
         return None
     kind = "UnsafeMutablePointer" if mutable else "UnsafePointer"
+    if pointee in handles:
+        pointee += "?"
     return f"{kind}<{pointee}>"
 
 
-def imported(spelling: str, *, optional: bool = False) -> str:
+def imported(
+    spelling: str,
+    *,
+    optional: bool = False,
+    handles: set[str] | frozenset[str] = frozenset(),
+) -> str:
     """The Swift type the C importer gives `spelling`.
 
     `optional` adds the `?` the importer puts on a nullable pointer. It is a caller's decision
@@ -88,7 +100,7 @@ def imported(spelling: str, *, optional: bool = False) -> str:
         return _SCALARS[spelling]
     if spelling in _POINTERS:
         return _POINTERS[spelling] + ("?" if optional else "")
-    named = _named_pointer(spelling)
+    named = _named_pointer(spelling, handles)
     if named is not None:
         return named + ("?" if optional else "")
     if spelling.startswith("Cy"):

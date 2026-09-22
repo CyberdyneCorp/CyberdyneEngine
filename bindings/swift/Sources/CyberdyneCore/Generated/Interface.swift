@@ -250,7 +250,7 @@ public struct Interface: @unchecked Sendable {
     }
 
     @inlinable
-    public func serviceOpen(engine: CyEngine, into: UnsafeMutablePointer<CyServiceSession>?) throws {
+    public func serviceOpen(engine: CyEngine, into: UnsafeMutablePointer<CyServiceSession?>?) throws {
         try check(table.pointee.service_open(engine, into))
     }
 

@@ -278,7 +278,7 @@ def _method(entry: dict, handles: set[str], *, receiver: str | None = None) -> s
     # programmer error the distinct handle typedefs exist to catch. A caller passing a non-optional
     # value into an Optional parameter costs nothing; the reverse costs a force-unwrap at every
     # call site that legitimately means "none".
-    types = [swifttypes.imported(spelling, optional=spelling.endswith("*"))
+    types = [swifttypes.imported(spelling, optional=spelling.endswith("*"), handles=handles)
              for spelling in parameters]
 
     hidden = 1 if receiver is not None else 0
@@ -293,7 +293,8 @@ def _method(entry: dict, handles: set[str], *, receiver: str | None = None) -> s
         return _function(name, declared, "throws", body)
     if returns == "void":
         return _function(name, declared, "", call)
-    swift_return = swifttypes.imported(returns, optional=_nullable_return(returns, handles))
+    swift_return = swifttypes.imported(
+        returns, optional=_nullable_return(returns, handles), handles=handles)
     return _function(name, declared, f"-> {swift_return}", call)
 
 

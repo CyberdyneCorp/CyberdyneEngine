@@ -175,6 +175,19 @@ def a_c_type_with_no_swift_spelling_is_refused() -> None:
     expect_raises(swifttypes.TypeError_, lambda: swifttypes.imported("struct timespec"), "timespec")
 
 
+def an_out_parameter_to_an_opaque_handle_keeps_both_nullability_levels() -> None:
+    handles = {"CyServiceSession"}
+    swift = swifttypes.imported("CyServiceSession*", optional=True, handles=handles)
+    assert swift == "UnsafeMutablePointer<CyServiceSession?>?", swift
+
+    generated = emit.interface(cli.load_description(HEADER))
+    signature = (
+        "public func serviceOpen(engine: CyEngine, "
+        "into: UnsafeMutablePointer<CyServiceSession?>?) throws"
+    )
+    assert signature in generated, "serviceOpen lost opaque-handle out-parameter nullability"
+
+
 def a_receiver_word_collision_is_refused() -> None:
     """Two entries that would become the same method on one wrapper must be an error.
 
@@ -237,6 +250,8 @@ CASES = [
     ("an enum with no Swift name is refused", an_enum_with_no_swift_name_is_refused),
     ("a removed vector kind is refused", a_removed_vector_kind_is_refused_rather_than_silently_skipped),
     ("a C type with no Swift spelling is refused", a_c_type_with_no_swift_spelling_is_refused),
+    ("an opaque-handle out-parameter keeps inner and outer nullability",
+     an_out_parameter_to_an_opaque_handle_keeps_both_nullability_levels),
     ("a receiver-word collision is refused", a_receiver_word_collision_is_refused),
     ("enum cases are camel-cased and keywords back-ticked",
      enum_cases_are_camel_cased_and_keywords_are_back_ticked),
