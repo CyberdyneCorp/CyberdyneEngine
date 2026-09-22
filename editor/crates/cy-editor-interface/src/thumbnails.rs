@@ -42,6 +42,20 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// The kind a catalogue label names.
+    #[must_use]
+    pub fn of_label(label: &str) -> Self {
+        match label {
+            "mesh" => Kind::Mesh,
+            "material" => Kind::Material,
+            "texture" => Kind::Texture,
+            "prefab" => Kind::Prefab,
+            "world" => Kind::World,
+            "swift" | "graph" => Kind::Script,
+            _ => Kind::Other,
+        }
+    }
+
     /// The word a placeholder shows, so that a preview that is not ready still says what it is.
     #[must_use]
     pub const fn label(self) -> &'static str {

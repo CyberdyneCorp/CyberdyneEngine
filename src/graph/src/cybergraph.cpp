@@ -94,7 +94,8 @@ const char* capability_name(Capability single) noexcept {
 // --- NodeType and the registry ------------------------------------------------------------------
 
 NodeType::NodeType(Allocator& allocator, const NodeTypeDesc& desc) noexcept
-    : name_(desc.name),
+    : identity_(desc.identity),
+      name_(desc.name),
       plugin_(desc.plugin),
       version_(desc.version),
       pins_(allocator),
@@ -121,6 +122,21 @@ Status NodeRegistry::register_type(const NodeTypeDesc& desc) noexcept {
         return make_unexpected(
             Error{ErrorCode::AlreadyExists, "a node type of this name is already registered", 0});
     }
+    if (desc.identity != kInvalidNodeTypeId && find(desc.identity) != nullptr) {
+        return make_unexpected(
+            Error{ErrorCode::AlreadyExists, "a node type identity is already registered", 0});
+    }
+    for (usize left = 0; left < desc.pins.size(); ++left) {
+        if (desc.pins[left].identity == kInvalidPinId) {
+            continue;
+        }
+        for (usize right = left + 1; right < desc.pins.size(); ++right) {
+            if (desc.pins[left].identity == desc.pins[right].identity) {
+                return make_unexpected(Error{ErrorCode::AlreadyExists,
+                                             "a pin identity is duplicated on a node type", 0});
+            }
+        }
+    }
     NodeType type(types_.allocator(), desc);
     if (type.pins().size() != desc.pins.size()) {
         return make_unexpected(
@@ -132,6 +148,18 @@ Status NodeRegistry::register_type(const NodeTypeDesc& desc) noexcept {
 const NodeType* NodeRegistry::find(Name type) const noexcept {
     for (const NodeType& candidate : types_) {
         if (candidate.name() == type) {
+            return &candidate;
+        }
+    }
+    return nullptr;
+}
+
+const NodeType* NodeRegistry::find(NodeTypeId identity) const noexcept {
+    if (identity == kInvalidNodeTypeId) {
+        return nullptr;
+    }
+    for (const NodeType& candidate : types_) {
+        if (candidate.identity() == identity) {
             return &candidate;
         }
     }
@@ -655,6 +683,7 @@ void report_unknown_nodes(const Graph& graph, const GraphLibrary* library,
         }
         Diagnostic diagnostic;
         diagnostic.severity = Severity::Error;
+        diagnostic.code = table.subgraph ? "graph.subgraph.missing" : "graph.node.unsupported";
         diagnostic.node = node.key;
         diagnostic.detail = table.subgraph ? node.subgraph : node.type;
         diagnostic.message =
@@ -673,6 +702,7 @@ void validate_link(const Graph& graph, const NodeRegistry& registry, const Graph
     const GraphNode* target = graph.find_node(link.to);
     if (source == nullptr || target == nullptr) {
         Diagnostic diagnostic;
+        diagnostic.code = "graph.link.node-missing";
         diagnostic.node = target != nullptr ? target->key : link.from;
         diagnostic.pin = link.to_pin;
         diagnostic.message = "this wire names a node that is not in the graph";
@@ -690,6 +720,7 @@ void validate_link(const Graph& graph, const NodeRegistry& registry, const Graph
     const PinDesc* in = find_pin(target_pins, link.to_pin, PinDirection::Input);
     if (out == nullptr) {
         Diagnostic diagnostic;
+        diagnostic.code = "graph.link.output-missing";
         diagnostic.node = source->key;
         diagnostic.pin = link.from_pin;
         diagnostic.message = "this node has no output pin of that name";
@@ -698,6 +729,7 @@ void validate_link(const Graph& graph, const NodeRegistry& registry, const Graph
     }
     if (in == nullptr) {
         Diagnostic diagnostic;
+        diagnostic.code = "graph.link.input-missing";
         diagnostic.node = target->key;
         diagnostic.pin = link.to_pin;
         diagnostic.message = "this node has no input pin of that name";
@@ -706,17 +738,23 @@ void validate_link(const Graph& graph, const NodeRegistry& registry, const Graph
     }
     if (out->execution != in->execution) {
         Diagnostic diagnostic;
+        diagnostic.code = "graph.link.execution-mismatch";
         diagnostic.node = target->key;
         diagnostic.pin = link.to_pin;
+        diagnostic.related_node = source->key;
+        diagnostic.related_pin = link.from_pin;
         diagnostic.message = "an execution pin and a data pin cannot be wired together";
         sink.report(diagnostic);
         return;
     }
     if (!out->execution && !registry.converts(out->type, in->type)) {
         Diagnostic diagnostic;
+        diagnostic.code = "graph.link.type-mismatch";
         diagnostic.node = target->key;
         diagnostic.pin = link.to_pin;
         diagnostic.detail = out->type;
+        diagnostic.related_node = source->key;
+        diagnostic.related_pin = link.from_pin;
         diagnostic.message = "this pin's type does not accept the value wired into it";
         sink.report(diagnostic);
     }
@@ -741,6 +779,7 @@ void validate_required_inputs(const Graph& graph, const GraphLibrary* library,
                 continue;
             }
             Diagnostic diagnostic;
+            diagnostic.code = "graph.input.required";
             diagnostic.node = node.key;
             diagnostic.pin = pin.name;
             diagnostic.message = "this input is required and has neither a wire nor a value";
@@ -806,6 +845,7 @@ void validate_acyclic(const Graph& graph, const GraphLibrary* library,
                 }
                 if (state[next] == 1) {
                     Diagnostic diagnostic;
+                    diagnostic.code = "graph.data-cycle";
                     diagnostic.node = link.to;
                     diagnostic.pin = link.to_pin;
                     diagnostic.message = "this wire closes a cycle among data pins";

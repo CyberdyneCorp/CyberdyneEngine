@@ -28,7 +28,7 @@ use cy_editor_documents::Document;
 use cy_editor_services::builtin;
 use cy_editor_services::editor::Editor;
 use cy_editor_services::primitives::{
-    self, MeshBinding, Origin, Primitive, Shape, create_mesh_instance,
+    self, MaterialBinding, MeshBinding, Origin, Primitive, Shape, create_mesh_instance,
 };
 use cy_editor_services::project::ProjectService;
 use cy_editor_viewport::gizmo::{Transform3, TransformBinding};
@@ -377,17 +377,18 @@ fn undo_leaves_no_content_behind() {
     assert!(after.roots().is_empty());
     assert_eq!(after.nodes().count(), 0);
 
-    // And what would be SAVED differs only by the type the schema declared: no node line, no
-    // component line, no value.
+    // And what would be SAVED differs only by the renderer type the schema declared: no node line,
+    // component line, or value. Both engine-owned asset fields stay declared together.
     let saved_after = cy_editor_services::write_world(document(&editor));
     assert!(!saved_after.contains("node "), "{saved_after}");
     assert!(!saved_after.contains("component "), "{saved_after}");
     assert_eq!(
         saved_after.replace(
             &format!(
-                "type 2 runtime \"{}\"\n  field 4 text \"{}\" \"The mesh asset this entity draws.\"\n",
+                "type 2 runtime \"{}\"\n  field 4 text \"{}\" \"The mesh asset this entity draws.\"\n  field 5 text \"{}\" \"The material this entity draws with.\"\n",
                 MeshBinding::COMPONENT,
-                MeshBinding::FIELD
+                MeshBinding::FIELD,
+                MaterialBinding::FIELD,
             ),
             ""
         ),

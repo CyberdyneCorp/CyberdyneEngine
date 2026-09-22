@@ -31,7 +31,7 @@
 
 use cy_editor_commands::Registry;
 use cy_editor_interface::shell::Shell;
-use cy_editor_services::Editor;
+use cy_editor_services::{Editor, MaterialCatalogueState};
 use cy_editor_visual::colour::{Semantic, Surface};
 use cy_editor_visual::density::TextRole;
 use cy_editor_visual::gizmo::GizmoMode;
@@ -334,8 +334,28 @@ pub fn footer(ui: &mut egui::Ui, shell: &Shell, editor: &Editor, pending_chord: 
                         .color(theme::role(shell.theme, Semantic::Active)),
                 );
             }
+            let (catalogue, role) = material_catalogue_status(editor);
+            ui.separator();
+            ui.label(
+                egui::RichText::new(catalogue)
+                    .size(metrics.text(TextRole::Secondary))
+                    .color(theme::role(shell.theme, role)),
+            );
         });
     });
+}
+
+fn material_catalogue_status(editor: &Editor) -> (&'static str, Semantic) {
+    match editor.backend.material_catalogue_state() {
+        MaterialCatalogueState::Unavailable => {
+            ("Materials · no engine catalogue", Semantic::SecondaryText)
+        }
+        MaterialCatalogueState::Loading => {
+            ("Materials · loading engine catalogue", Semantic::Active)
+        }
+        MaterialCatalogueState::Ready => ("Materials · engine catalogue ready", Semantic::Live),
+        MaterialCatalogueState::Failed => ("Materials · engine catalogue failed", Semantic::Error),
+    }
 }
 
 /// The frame the header, toolbar and footer are drawn in: flat, charcoal, one hairline.
@@ -371,5 +391,14 @@ mod tests {
                 .unwrap();
             assert_eq!(active_transform(&editor), mode);
         }
+    }
+
+    #[test]
+    fn material_status_does_not_claim_a_catalogue_before_the_runtime_supplies_one() {
+        let editor = Editor::new(Actor::human("designer"));
+        assert_eq!(
+            material_catalogue_status(&editor).0,
+            "Materials · no engine catalogue"
+        );
     }
 }

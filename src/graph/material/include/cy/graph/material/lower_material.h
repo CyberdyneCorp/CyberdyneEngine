@@ -60,6 +60,15 @@ namespace cy::graph::material {
 /// rather than a constant so that a caller cannot hold a pointer into a table and outlive it.
 [[nodiscard]] Span<const std::string_view> material_node_types() noexcept;
 
+/// Manifest-assigned identities for the material catalogue. Zero means the name is not a material
+/// node in this schema. These values are persisted by authored graphs and never derived from names.
+[[nodiscard]] NodeTypeId material_node_type_id(std::string_view type) noexcept;
+[[nodiscard]] PinId material_node_pin_id(std::string_view type, std::string_view pin,
+                                         PinDirection direction) noexcept;
+
+/// Encode schema 1 of the engine-owned catalogue payload used by both editor transports.
+[[nodiscard]] Status encode_material_catalogue(Array<u8>& out) noexcept;
+
 /// The most pins any material node type has: three inputs and one output.
 inline constexpr usize kMaxPins = 5;
 

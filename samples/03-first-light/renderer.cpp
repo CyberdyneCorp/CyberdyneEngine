@@ -2,12 +2,14 @@
 
 #include <cy/backends/rhi/access.h>
 #include <cy/core/math/projection.h>
+#include <cy/rendering/material/material.h>
 
 #include "shaders/first_light_dxil.h"
 #include "shaders/first_light_msl.h"
 #include "shaders/first_light_spirv.h"
 
 #include <cmath>
+#include <cstring>
 
 namespace cy::sample::first_light {
 namespace {
@@ -64,9 +66,12 @@ void write_rows(f32 out[4][4], const Mat4& matrix) noexcept {
 struct Renderer::PassState {
     rendering::GraphExecutor* executor = nullptr;
     rhi::PipelineLayoutHandle layout;
+    rhi::PipelineLayoutHandle material_layout;
     rhi::GraphicsPipelineHandle shadow_pipeline;
     rhi::GraphicsPipelineHandle forward_pipeline;
     rhi::DescriptorSetHandle descriptor_set;
+    rhi::DescriptorSetHandle global_textures;
+    const MaterialState* materials = nullptr;
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
     rhi::BufferHandle checker_staging;
@@ -84,6 +89,36 @@ struct Renderer::PassState {
     u32 height = 0;
     u32 draws = 0;
     u32 triangles = 0;
+};
+
+struct Renderer::MaterialState {
+    struct Program {
+        u64 artefact = 0;
+        rhi::ShaderModuleHandle vertex;
+        rhi::ShaderModuleHandle fragment;
+        rhi::GraphicsPipelineHandle pipeline;
+        rhi::BufferHandle parameters;
+        rhi::DescriptorSetHandle descriptor_set;
+    };
+
+    explicit MaterialState(Allocator& allocator) noexcept
+        : programs(allocator), object_artefacts(allocator) {}
+
+    [[nodiscard]] const Program* find(u64 artefact) const noexcept {
+        for (const Program& program : programs) {
+            if (program.artefact == artefact) {
+                return &program;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] Program* find(u64 artefact) noexcept {
+        return const_cast<Program*>(static_cast<const MaterialState*>(this)->find(artefact));
+    }
+
+    Array<Program> programs;
+    Array<u64> object_artefacts;
 };
 
 namespace {
@@ -106,6 +141,40 @@ void draw_objects(const PassContext& context, Renderer::PassState& state,
         const ObjectPush& push = state.pushes[index];
         context.commands->push_constants(
             state.layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+            Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(ObjectPush)));
+        context.commands->draw_indexed(state.objects[index].index_count, 1,
+                                       state.objects[index].first_index, 0, 0);
+        ++state.draws;
+        state.triangles += state.objects[index].index_count / 3U;
+    }
+}
+
+void draw_forward_objects(const PassContext& context, Renderer::PassState& state) noexcept {
+    const u64 offset = 0;
+    context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
+                                          Span<const u64>(&offset, 1));
+    context.commands->bind_index_buffer(state.indices, 0, false);
+
+    for (u32 index = 0; index < state.object_count; ++index) {
+        const u64 artefact = index < state.materials->object_artefacts.size()
+                                 ? state.materials->object_artefacts[index]
+                                 : 0;
+        const auto* material = state.materials->find(artefact);
+        rhi::PipelineLayoutHandle layout = state.layout;
+        if (material == nullptr) {
+            context.commands->bind_graphics_pipeline(state.forward_pipeline);
+            context.commands->bind_descriptor_sets(
+                layout, 0, Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
+        } else {
+            layout = state.material_layout;
+            context.commands->bind_graphics_pipeline(material->pipeline);
+            const rhi::DescriptorSetHandle sets[] = {
+                state.global_textures, material->descriptor_set, state.descriptor_set};
+            context.commands->bind_descriptor_sets(layout, 0, sets);
+        }
+        const ObjectPush& push = state.pushes[index];
+        context.commands->push_constants(
+            layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
             Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(ObjectPush)));
         context.commands->draw_indexed(state.objects[index].index_count, 1,
                                        state.objects[index].first_index, 0, 0);
@@ -172,7 +241,7 @@ void record_forward(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    draw_objects(context, *state, state->forward_pipeline);
+    draw_forward_objects(context, *state);
     context.commands->end_rendering();
 }
 
@@ -188,7 +257,12 @@ void record_readback(const PassContext& context, void* user) noexcept {
 }  // namespace
 
 Renderer::Renderer(Allocator& allocator, rhi::Device& device) noexcept
-    : allocator_(&allocator), device_(&device), readback_(allocator) {}
+    : allocator_(&allocator), device_(&device), readback_(allocator) {
+    void* storage = allocator.allocate(sizeof(MaterialState), alignof(MaterialState));
+    if (storage != nullptr) {
+        materials_ = new (storage) MaterialState(allocator);
+    }
+}
 
 Renderer::~Renderer() {
     if (device_ == nullptr) {
@@ -196,6 +270,7 @@ Renderer::~Renderer() {
     }
     rhi::Device& device = *device_;
     (void)device.wait_idle();
+    destroy_material_runtime();
     if (!forward_pipeline_.is_null()) {
         device.destroy_graphics_pipeline(forward_pipeline_);
     }
@@ -243,7 +318,43 @@ Renderer::~Renderer() {
     }
 }
 
+void Renderer::destroy_material_runtime() noexcept {
+    if (materials_ == nullptr) {
+        return;
+    }
+    for (const MaterialState::Program& program : materials_->programs) {
+        if (!program.pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.pipeline);
+        }
+        if (!program.fragment.is_null()) {
+            device_->destroy_shader_module(program.fragment);
+        }
+        if (!program.vertex.is_null()) {
+            device_->destroy_shader_module(program.vertex);
+        }
+        if (!program.parameters.is_null()) {
+            device_->destroy_buffer(program.parameters);
+        }
+    }
+    if (checker_bindless_ != rhi::kInvalidBindlessIndex) {
+        device_->release_bindless_index(checker_bindless_);
+    }
+    if (!material_pipeline_layout_.is_null()) {
+        device_->destroy_pipeline_layout(material_pipeline_layout_);
+    }
+    if (!material_set_layout_.is_null()) {
+        device_->destroy_descriptor_set_layout(material_set_layout_);
+    }
+    materials_->~MaterialState();
+    allocator_->deallocate(materials_, sizeof(MaterialState), alignof(MaterialState));
+    materials_ = nullptr;
+}
+
 Status Renderer::prepare(const Scene& scene, const RendererOptions& options) noexcept {
+    if (materials_ == nullptr) {
+        return fail(ErrorCode::OutOfMemory,
+                    "first-light: material runtime state could not be allocated");
+    }
     options_ = options;
     if (options_.width == 0 || options_.height == 0) {
         return fail(ErrorCode::InvalidArgument, "first-light: the viewport must not be empty");
@@ -256,6 +367,9 @@ Status Renderer::prepare(const Scene& scene, const RendererOptions& options) noe
     }
     if (Status created = create_resources(scene); !created) {
         return created;
+    }
+    if (Status sized = materials_->object_artefacts.resize(scene.objects().size()); !sized) {
+        return sized;
     }
     return upload_geometry(scene);
 }
@@ -337,6 +451,17 @@ Status Renderer::create_pipelines() noexcept {
     }
     set_layout_ = *layout;
 
+    const rhi::DescriptorBinding material_binding{0, rhi::DescriptorKind::UniformBuffer, 1,
+                                                  rhi::ShaderStage::Fragment, false};
+    rhi::DescriptorSetLayoutDescription material_set;
+    material_set.name = "first-light compiled material parameters";
+    material_set.bindings = {&material_binding, 1};
+    auto created_material_set = device_->create_descriptor_set_layout(material_set);
+    if (!created_material_set.has_value()) {
+        return make_unexpected(created_material_set.error());
+    }
+    material_set_layout_ = *created_material_set;
+
     const rhi::PushConstantRange range{rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
                                        sizeof(ObjectPush)};
     rhi::PipelineLayoutDescription pipeline_layout;
@@ -349,6 +474,20 @@ Status Renderer::create_pipelines() noexcept {
         return make_unexpected(created.error());
     }
     pipeline_layout_ = *created;
+
+    const rhi::DescriptorSetLayoutHandle material_sets[] = {device_->global_texture_table_layout(),
+                                                            material_set_layout_, set_layout_};
+    if (!material_sets[0].is_null()) {
+        rhi::PipelineLayoutDescription material_pipeline_layout;
+        material_pipeline_layout.name = "first-light compiled material layout";
+        material_pipeline_layout.set_layouts = material_sets;
+        material_pipeline_layout.push_constants = {&range, 1};
+        auto created_material_layout = device_->create_pipeline_layout(material_pipeline_layout);
+        if (!created_material_layout.has_value()) {
+            return make_unexpected(created_material_layout.error());
+        }
+        material_pipeline_layout_ = *created_material_layout;
+    }
 
     const rhi::VertexBinding binding{0, sizeof(Vertex), rhi::VertexInputRate::PerVertex};
     const rhi::VertexAttribute attributes[3] = {
@@ -528,6 +667,7 @@ Status Renderer::create_resources(const Scene& scene) noexcept {
         return make_unexpected(albedo_sampler_created.error());
     }
     albedo_sampler_ = *albedo_sampler_created;
+    checker_bindless_ = device_->bind_texture_globally(albedo_view_, albedo_sampler_);
 
     rhi::SamplerDescription shadow_sampler;
     shadow_sampler.name = "first-light shadow sampler";
@@ -630,6 +770,175 @@ void Renderer::write_frame_constants(const Scene& scene, const Camera& camera) n
     *block = constants;
 }
 
+Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const char* vertex_entry,
+                                 Span<const u8> fragment_msl, const char* fragment_entry,
+                                 Span<const u8> parameters) noexcept {
+    if (artefact == 0 || vertex_msl.empty() || fragment_msl.empty() || vertex_entry == nullptr ||
+        fragment_entry == nullptr || parameters.size() > rendering::kMaterialBlockBytes) {
+        return fail(ErrorCode::InvalidArgument,
+                    "first-light: a compiled material description is incomplete");
+    }
+    if (material_pipeline_layout_.is_null() ||
+        device_->capabilities().native_shader_format() != rhi::ShaderFormat::Msl) {
+        return fail(ErrorCode::Unsupported,
+                    "first-light: live compiled materials require Metal argument buffers");
+    }
+    if (materials_->find(artefact) != nullptr) {
+        return ok();
+    }
+    if (Status reserved = materials_->programs.reserve(materials_->programs.size() + 1);
+        !reserved) {
+        return reserved;
+    }
+
+    MaterialState::Program program;
+    program.artefact = artefact;
+    const auto create_shader = [&](const char* name, rhi::ShaderStage stage, Span<const u8> source,
+                                   const char* entry, rhi::ShaderModuleHandle& out) -> Status {
+        rhi::ShaderModuleDescription description;
+        description.name = name;
+        description.stage = stage;
+        description.entry_point = entry;
+        description.native = source;
+        description.native_format = rhi::ShaderFormat::Msl;
+        auto created = device_->create_shader_module(description);
+        if (!created.has_value()) {
+            return make_unexpected(created.error());
+        }
+        out = *created;
+        return ok();
+    };
+    if (Status created = create_shader("editor material vertex", rhi::ShaderStage::Vertex,
+                                       vertex_msl, vertex_entry, program.vertex);
+        !created) {
+        return created;
+    }
+    if (Status created = create_shader("editor material fragment", rhi::ShaderStage::Fragment,
+                                       fragment_msl, fragment_entry, program.fragment);
+        !created) {
+        device_->destroy_shader_module(program.vertex);
+        return created;
+    }
+
+    const rhi::VertexBinding vertex_binding{0, sizeof(Vertex), rhi::VertexInputRate::PerVertex};
+    const rhi::VertexAttribute attributes[3] = {
+        {0, 0, rhi::Format::Rgb32Sfloat, 0},
+        {1, 0, rhi::Format::Rgb32Sfloat, 12},
+        {2, 0, rhi::Format::Rg32Sfloat, 24},
+    };
+    const rhi::ColorAttachmentState color{rhi::Format::Rgba8Unorm};
+    rhi::GraphicsPipelineDescription pipeline;
+    pipeline.name = "editor compiled material";
+    pipeline.layout = material_pipeline_layout_;
+    pipeline.vertex_shader = program.vertex;
+    pipeline.fragment_shader = program.fragment;
+    pipeline.vertex_bindings = {&vertex_binding, 1};
+    pipeline.vertex_attributes = attributes;
+    pipeline.color_attachments = {&color, 1};
+    pipeline.rasterisation.cull_mode = rhi::CullMode::Back;
+    pipeline.depth_stencil.format = rhi::Format::D32Sfloat;
+    pipeline.depth_stencil.depth_test_enable = true;
+    pipeline.depth_stencil.depth_write_enable = true;
+    auto created_pipeline = device_->create_graphics_pipeline(pipeline);
+    if (!created_pipeline.has_value()) {
+        device_->destroy_shader_module(program.fragment);
+        device_->destroy_shader_module(program.vertex);
+        return make_unexpected(created_pipeline.error());
+    }
+    program.pipeline = *created_pipeline;
+
+    rhi::BufferDescription block;
+    block.name = "editor material parameter block";
+    block.size = rendering::kMaterialBlockBytes;
+    block.usage = rhi::BufferUsage::Uniform;
+    block.memory = rhi::MemoryUse::Upload;
+    auto created_buffer = device_->create_buffer(block);
+    if (!created_buffer.has_value()) {
+        device_->destroy_graphics_pipeline(program.pipeline);
+        device_->destroy_shader_module(program.fragment);
+        device_->destroy_shader_module(program.vertex);
+        return make_unexpected(created_buffer.error());
+    }
+    program.parameters = *created_buffer;
+    auto created_set = device_->allocate_descriptor_set(material_set_layout_, false);
+    if (!created_set.has_value()) {
+        device_->destroy_buffer(program.parameters);
+        device_->destroy_graphics_pipeline(program.pipeline);
+        device_->destroy_shader_module(program.fragment);
+        device_->destroy_shader_module(program.vertex);
+        return make_unexpected(created_set.error());
+    }
+    program.descriptor_set = *created_set;
+    const rhi::DescriptorWrite write{.binding = 0,
+                                     .kind = rhi::DescriptorKind::UniformBuffer,
+                                     .buffer = program.parameters,
+                                     .buffer_range = rendering::kMaterialBlockBytes};
+    if (Status updated = device_->update_descriptor_set(program.descriptor_set, {&write, 1});
+        !updated) {
+        device_->destroy_buffer(program.parameters);
+        device_->destroy_graphics_pipeline(program.pipeline);
+        device_->destroy_shader_module(program.fragment);
+        device_->destroy_shader_module(program.vertex);
+        return updated;
+    }
+    auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(program.parameters));
+    if (mapped == nullptr) {
+        device_->destroy_buffer(program.parameters);
+        device_->destroy_graphics_pipeline(program.pipeline);
+        device_->destroy_shader_module(program.fragment);
+        device_->destroy_shader_module(program.vertex);
+        return fail(ErrorCode::Internal,
+                    "first-light: the material parameter buffer is not mapped");
+    }
+    std::memset(mapped, 0, rendering::kMaterialBlockBytes);
+    std::memcpy(mapped, parameters.data(), parameters.size());
+    return materials_->programs.push_back(std::move(program));
+}
+
+Status Renderer::update_material(u64 artefact, Span<const u8> parameters) noexcept {
+    MaterialState::Program* program = materials_->find(artefact);
+    if (program == nullptr) {
+        return fail(ErrorCode::NotFound,
+                    "first-light: the compiled material artefact is not retained");
+    }
+    if (parameters.size() > rendering::kMaterialBlockBytes) {
+        return fail(ErrorCode::OutOfRange,
+                    "first-light: the material parameter block exceeds its GPU layout");
+    }
+    auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(program->parameters));
+    if (mapped == nullptr) {
+        return fail(ErrorCode::Internal,
+                    "first-light: the material parameter buffer is not mapped");
+    }
+    std::memset(mapped, 0, rendering::kMaterialBlockBytes);
+    std::memcpy(mapped, parameters.data(), parameters.size());
+    return ok();
+}
+
+Status Renderer::bind_material(u32 object, u32 material_slot, u64 artefact) noexcept {
+    if (material_slot != 0) {
+        return fail(ErrorCode::Unsupported,
+                    "first-light: this mesh has one material section, at slot zero");
+    }
+    if (object >= materials_->object_artefacts.size()) {
+        return fail(ErrorCode::OutOfRange,
+                    "first-light: the material target is not a scene object");
+    }
+    if (materials_->find(artefact) == nullptr) {
+        return fail(ErrorCode::NotFound,
+                    "first-light: the compiled material artefact is not retained");
+    }
+    materials_->object_artefacts[object] = artefact;
+    return ok();
+}
+
+void Renderer::unbind_material(u32 object, u32 material_slot, u64 artefact) noexcept {
+    if (material_slot == 0 && object < materials_->object_artefacts.size() &&
+        materials_->object_artefacts[object] == artefact) {
+        materials_->object_artefacts[object] = 0;
+    }
+}
+
 Expected<FrameReport, Error> Renderer::render(const Scene& scene, const Camera& camera) noexcept {
     if (forward_pipeline_.is_null()) {
         return fail(ErrorCode::Unavailable, "first-light: prepare() was not called");
@@ -704,9 +1013,12 @@ Expected<FrameReport, Error> Renderer::render(const Scene& scene, const Camera& 
     PassState state;
     state.executor = &executor;
     state.layout = pipeline_layout_;
+    state.material_layout = material_pipeline_layout_;
     state.shadow_pipeline = shadow_pipeline_;
     state.forward_pipeline = forward_pipeline_;
     state.descriptor_set = descriptor_set_;
+    state.global_textures = device_->global_texture_table();
+    state.materials = materials_;
     state.vertices = vertices_;
     state.indices = indices_;
     state.checker_staging = checker_staging_;

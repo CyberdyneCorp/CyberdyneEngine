@@ -9,7 +9,7 @@ set_property(GLOBAL PROPERTY CY_EDITOR_WINDOW_RUNTIME_TESTS_DIR "${CMAKE_CURRENT
 
 function(cy_editor_window_runtime_declare_tests)
     get_property(tests_dir GLOBAL PROPERTY CY_EDITOR_WINDOW_RUNTIME_TESTS_DIR)
-    foreach(kind IN ITEMS unit integration)
+    foreach(kind IN ITEMS unit integration smoke)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -31,6 +31,24 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../overlay.cpp"
             "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
+
+    if(APPLE AND CY_RENDERER_METAL AND CY_SHADER_SLANG)
+        cy_add_test(
+            NAME editor_material_metal
+            KIND smoke
+            SOURCES
+                "${tests_dir}/test_material_metal.cpp"
+                "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../world_view.cpp"
+            DEPENDENCIES
+                cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
+                cy::rendering-material-slang cy::shader cy::shader-slang cy::rhi-metal
+            DEFINITIONS
+                "CY_SAMPLE_PROJECT=\"${tests_dir}/../../project\""
+                "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\""
+                CY_SHADER_SLANG=1)
+        target_include_directories(cy_test_smoke_editor_material_metal PRIVATE "${tests_dir}/..")
+    endif()
 
     # ONE WORLD, END TO END WITHOUT A DEVICE. M8.a tasks 1.1 and 1.4: open the world the editor
     # opened, apply the transactions the editor sends, and resolve a pick against the records the

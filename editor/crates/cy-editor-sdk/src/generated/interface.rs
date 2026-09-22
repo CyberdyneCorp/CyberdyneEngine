@@ -920,4 +920,129 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Open an isolated editor-service session.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn service_open(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyServiceSession,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .service_open
+            .ok_or(CallError::Missing("service_open"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Close an editor-service session.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn service_close(
+        &self,
+        engine: ffi::CyEngine,
+        session: ffi::CyServiceSession,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .service_close
+            .ok_or(CallError::Missing("service_close"))?;
+        unsafe { entry(engine, session) };
+        Ok(())
+    }
+
+    /// Submit one versioned asynchronous editor-service request.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn service_submit(
+        &self,
+        engine: ffi::CyEngine,
+        session: ffi::CyServiceSession,
+        request: *const ffi::CyServiceRequest,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .service_submit
+            .ok_or(CallError::Missing("service_submit"))?;
+        let raw = unsafe { entry(engine, session, request) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Cooperatively cancel an editor-service request.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn service_cancel(
+        &self,
+        engine: ffi::CyEngine,
+        session: ffi::CyServiceSession,
+        request_id: u64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .service_cancel
+            .ok_or(CallError::Missing("service_cancel"))?;
+        let raw = unsafe { entry(engine, session, request_id) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Poll one editor-service event without blocking.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn service_poll(
+        &self,
+        engine: ffi::CyEngine,
+        session: ffi::CyServiceSession,
+        event: *mut ffi::CyServiceEvent,
+        has_event: *mut bool,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .service_poll
+            .ok_or(CallError::Missing("service_poll"))?;
+        let raw = unsafe { entry(engine, session, event, has_event) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

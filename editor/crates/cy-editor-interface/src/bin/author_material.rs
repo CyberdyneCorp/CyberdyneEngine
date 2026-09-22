@@ -321,7 +321,7 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(2);
     }
 
-    let mut editors = match SpecialisedEditors::new() {
+    let mut editors = match SpecialisedEditors::with_legacy_material_catalogue() {
         Ok(editors) => editors,
         Err(problem) => {
             eprintln!("cy-author-material: {problem}");

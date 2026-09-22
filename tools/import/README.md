@@ -3,9 +3,10 @@
 Layer 7, targets `cy::import` and `cy_import_cli`, headers `<cy/import/*.h>`, namespace `cy::import`.
 M5 tasks 5.1 and 5.2, governed by `asset-import-pipeline` and (for live reload) `live-editing`.
 
-The importer framework and every importer this build ships — glTF, FBX, OBJ, textures and generated
-primitives: a source file in, cooked sub-assets and two sidecars out, with a content-addressed cache
-in the middle so that the second run of a project costs a file open per asset rather than a re-cook.
+The importer framework and every importer this build ships — glTF, FBX, OBJ, textures, terrain
+heightfields and generated primitives: a source file in, cooked sub-assets and two sidecars out,
+with a content-addressed cache in the middle so that the second run of a project costs a file open
+per asset rather than a re-cook.
 
 ```
 digest    the source, and build the derivation key from it, the TOOLCHAIN THAT COMPILED THIS
@@ -28,6 +29,7 @@ report    what happened, with the reason, per asset and for the run
 | `mesh.h` | `MeshData` and the processing steps: welding, normals, tangents, vertex cache, overdraw and fetch ordering, quadric-error simplification, convex hulls, convex decomposition, and the xatlas-backed lightmap unwrap |
 | `model.h` | The half of a model import that does not depend on the source format: `finish_mesh`, `emit_mesh_with_lods`, `emit_collision`, `emit_prefab`, and the `StandardMaterial` record both model importers write |
 | `texture.h` | Image decoding, format selection from declared usage, mip generation in the correct colour space, alpha coverage, and the mistake detector |
+| `heightfield.h` | Versioned `.r16`/`.raw` terrain ingestion with explicit dimensions, signedness, metre units, vertical range and 64-quad tiling |
 | `gltf.h` | glTF 2.0 and GLB, and the two cooked payload formats a model import produces |
 | `fbx.h` | FBX via ufbx: the same interface, the same option names, and every post-parse step shared with `gltf.h` through `model.h` |
 | `obj.h` | Wavefront OBJ and its `.mtl`: the same interface and the same option names again, with no third-party parser, and the three steps the format cannot express DECLARED rather than warned about |
@@ -144,7 +146,9 @@ that going wrong as 1 hit / 0 miss, and adding a format is exactly when it would
 
 **`--json`** (task 3.1). `cy_import_cli` can print the run as JSON instead of the human report:
 per source, the importer, the identity, the cache outcome, the counts, the absent steps, and the
-sub-asset name-to-identity table read back out of the `.import` record. It exists because the
+schema-versioned sub-asset records read back out of the `.import` record. Schema 3 adds stable kind,
+source and dependency metadata plus prefab instance mesh/material-slot bindings; readers still
+accept schema 1 and 2. It exists because the
 editor's `asset.import` command has to know WHICH sub-assets an import produced, and a tool boundary
 crossed by prose is a source of bugs rather than an interface.
 
@@ -175,6 +179,19 @@ crossed by prose is a source of bugs rather than an interface.
 * **It does not produce a `cy::scene` prefab.** A prefab is a layer-4 concept over an ECS world, and
   a layer-7 tool that constructed one would have to instantiate a world to write a file. The importer
   produces a documented flat node table; turning it into a prefab is the cook step's.
+
+## Heightfield import
+
+The `heightfield` importer claims `.r16` and `.raw`, but deliberately treats their bytes as
+insufficient. A caller must declare `resolution-x`, `resolution-z`, `sample-format`,
+`sample-metres`, `height-min-metres`, and `height-max-metres`; `tile-quads` is 64 to match
+CyberTerrain's shared 65-sample tile boundary. Missing or inconsistent metadata produces stable
+diagnostic codes (`heightfield-metadata-required`, `heightfield-range`, `heightfield-tiling`,
+`heightfield-size`, or `heightfield-sample-range`) and publishes no partial asset.
+
+The cooked payload begins with `CookedHeightfield::kVersion`, layout and metre metadata, followed by
+normalized little-endian u16 samples. Signed integer and normalized float sources are converted at
+the importer boundary, leaving the runtime one representation to tile and stream.
 
 ## What M8.a added: a primitive is an import (task 2.1)
 

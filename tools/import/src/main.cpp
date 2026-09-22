@@ -8,16 +8,20 @@
 //
 // It is the same split tools/cook/ made, for the same reason.
 
+#include <cy/core/assets/cooked.h>
 #include <cy/core/assets/derived_cache.h>
 #include <cy/core/assets/file.h>
+#include <cy/core/assets/hash.h>
 #include <cy/core/assets/path.h>
 #include <cy/core/jobs/job_system.h>
+#include <cy/import/gltf.h>
 #include <cy/import/pipeline.h>
 #include <cy/import/sidecar.h>
 
 #include <cstdio>
 #include <cstring>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -145,13 +149,108 @@ void put_json_string(const char* text) {
     std::fputc('"', stdout);
 }
 
+std::vector<std::string> binding_ids(const cy::import::ImportRecord& record,
+                                     std::string_view prefix, bool exclude_lods = false) {
+    std::vector<std::string> ids;
+    for (cy::usize index = 0; index < record.binding_count(); ++index) {
+        const std::string_view name = record.binding_name(index);
+        if (!name.starts_with(prefix) ||
+            (exclude_lods && name.find("/lod") != std::string_view::npos)) {
+            continue;
+        }
+        char id[cy::AssetId::kTextLength + 1] = {};
+        (void)record.binding_id(index).format(id);
+        ids.emplace_back(id);
+    }
+    return ids;
+}
+
+bool read_cooked_mesh(const std::string& output, std::string_view identity,
+                      cy::import::MeshData& out) {
+    if (output.empty()) {
+        return false;
+    }
+    const std::string native = output + "/" + std::string(identity) + ".cyasset";
+    cy::Array<cy::u8> cooked;
+    if (!cy::assets::fs::read_whole(native.c_str(), cooked)) {
+        return false;
+    }
+    const auto payload = cy::assets::read_cooked_payload(cooked.data(), cooked.size(), true);
+    return payload && cy::import::read_cooked_mesh(payload.value(), out).has_value();
+}
+
+cy::u32 material_slot_count(const cy::import::MeshData& mesh) {
+    cy::u32 slots = 0;
+    for (const cy::import::MeshSection& section : mesh.sections) {
+        slots = std::max(slots, section.material + 1U);
+    }
+    return slots;
+}
+
+void print_mesh_dependencies(const std::string& output, std::string_view identity,
+                             const std::vector<std::string>& materials) {
+    cy::import::MeshData mesh;
+    if (!read_cooked_mesh(output, identity, mesh)) {
+        return;
+    }
+    const cy::u32 count =
+        std::min(material_slot_count(mesh), static_cast<cy::u32>(materials.size()));
+    for (cy::u32 slot = 0; slot < count; ++slot) {
+        if (slot != 0) {
+            std::fputs(", ", stdout);
+        }
+        put_json_string(materials[slot].c_str());
+    }
+}
+
+void print_prefab_dependencies(const cy::import::ImportRecord& record) {
+    bool wrote = false;
+    for (cy::usize index = 0; index < record.binding_count(); ++index) {
+        const std::string_view name = record.binding_name(index);
+        if (!name.starts_with("mesh/") && !name.starts_with("material/")) {
+            continue;
+        }
+        char id[cy::AssetId::kTextLength + 1] = {};
+        (void)record.binding_id(index).format(id);
+        if (wrote) {
+            std::fputs(", ", stdout);
+        }
+        put_json_string(id);
+        wrote = true;
+    }
+}
+
+void print_sub_asset(const std::string& output, const cy::assets::VirtualPath& source,
+                     const cy::import::ImportRecord& record,
+                     const std::vector<std::string>& materials, cy::usize index) {
+    const std::string_view name = record.binding_name(index);
+    char id[cy::AssetId::kTextLength + 1] = {};
+    (void)record.binding_id(index).format(id);
+    std::fputs(index == 0 ? "\n      {\"name\": " : ",\n      {\"name\": ", stdout);
+    put_json_string(std::string(name).c_str());
+    std::fputs(", \"id\": ", stdout);
+    put_json_string(id);
+    std::fputs(", \"kind\": ", stdout);
+    put_json_string(cy::assets::asset_kind_name(cy::import::sub_asset_kind_from_name(name)));
+    std::fputs(", \"source\": ", stdout);
+    put_json_string(std::string(source.view()).c_str());
+    std::fputs(", \"dependencies\": [", stdout);
+    if (name.starts_with("mesh/") && name.find("/lod") == std::string_view::npos) {
+        print_mesh_dependencies(output, id, materials);
+    } else if (name == "prefab") {
+        print_prefab_dependencies(record);
+    }
+    std::fputs("]}", stdout);
+}
+
 /// The sub-asset name-to-id table this source's `.import` record holds, or nothing when it has
 /// none.
 ///
 /// Read back rather than carried out of the pipeline, because the record IS the authority: it is
 /// what makes a reference survive a re-import, and a second copy of the table inside the tool would
 /// be a second thing that could disagree with the file a review reads.
-void print_sub_assets(const std::string& project, const cy::assets::VirtualPath& source,
+void print_sub_assets(const std::string& project, const std::string& output,
+                      const cy::assets::VirtualPath& source,
                       const cy::import::ImporterRegistry& registry) {
     std::fputs(",\n    \"assets\": [", stdout);
     cy::Expected<cy::assets::VirtualPath, cy::Error> record_path =
@@ -178,17 +277,151 @@ void print_sub_assets(const std::string& project, const cy::assets::VirtualPath&
         return;
     }
     (void)registry;
+    const std::vector<std::string> material_ids = binding_ids(record.value(), "material/");
     for (cy::usize index = 0; index < record.value().binding_count(); ++index) {
-        const std::string name(record.value().binding_name(index));
-        char id_text[cy::AssetId::kTextLength + 1] = {};
-        (void)record.value().binding_id(index).format(id_text);
-        std::fputs(index == 0 ? "\n      {\"name\": " : ",\n      {\"name\": ", stdout);
-        put_json_string(name.c_str());
-        std::fputs(", \"id\": ", stdout);
-        put_json_string(id_text);
-        std::fputs("}", stdout);
+        print_sub_asset(output, source, record.value(), material_ids, index);
     }
     std::fputs(record.value().binding_count() == 0 ? "]" : "\n    ]", stdout);
+}
+
+void print_material_slots(const std::string& output, std::string_view mesh_identity,
+                          const std::vector<std::string>& materials) {
+    cy::import::MeshData mesh;
+    if (!read_cooked_mesh(output, mesh_identity, mesh)) {
+        return;
+    }
+    const cy::u32 slots = material_slot_count(mesh);
+    for (cy::u32 slot = 0; slot < slots; ++slot) {
+        if (slot != 0) {
+            std::fputs(", ", stdout);
+        }
+        if (slot < materials.size()) {
+            put_json_string(materials[slot].c_str());
+        } else {
+            std::fputs("null", stdout);
+        }
+    }
+}
+
+std::string imported_node_identity(cy::Span<const cy::import::ImportedNode> nodes, cy::usize index,
+                                   const std::vector<std::string>& parents) {
+    const cy::import::ImportedNode& node = nodes[index];
+    std::string key = node.parent >= 0 ? parents[static_cast<cy::usize>(node.parent)] : "root";
+    key += "/";
+    key.append(node.name.data(), node.name.size());
+    cy::usize occurrence = 0;
+    for (cy::usize previous = 0; previous < index; ++previous) {
+        if (nodes[previous].parent == node.parent && nodes[previous].name == node.name) {
+            ++occurrence;
+        }
+    }
+    key += "#" + std::to_string(occurrence);
+    char identity[cy::assets::ContentHash::kTextLength + 1] = {};
+    cy::assets::content_hash(key.data(), key.size()).format(identity);
+    return identity;
+}
+
+void print_imported_node(const std::string& output, cy::Span<const cy::import::ImportedNode> nodes,
+                         cy::usize index, const std::vector<std::string>& meshes,
+                         const std::vector<std::string>& materials,
+                         std::vector<std::string>& identities) {
+    const cy::import::ImportedNode& node = nodes[index];
+    identities.push_back(imported_node_identity(nodes, index, identities));
+    std::fputs(index == 0 ? "\n      {\"identity\": " : ",\n      {\"identity\": ", stdout);
+    put_json_string(identities.back().c_str());
+    std::fputs(", \"name\": ", stdout);
+    put_json_string(std::string(node.name).c_str());
+    std::fprintf(stdout,
+                 ", \"parent\": %d, \"translation\": [%.9g, %.9g, %.9g], "
+                 "\"rotation\": [%.9g, %.9g, %.9g, %.9g], "
+                 "\"scale\": [%.9g, %.9g, %.9g], \"mesh\": ",
+                 node.parent, static_cast<double>(node.translation.x),
+                 static_cast<double>(node.translation.y), static_cast<double>(node.translation.z),
+                 static_cast<double>(node.rotation.x), static_cast<double>(node.rotation.y),
+                 static_cast<double>(node.rotation.z), static_cast<double>(node.rotation.w),
+                 static_cast<double>(node.scale.x), static_cast<double>(node.scale.y),
+                 static_cast<double>(node.scale.z));
+    const bool has_mesh = node.mesh >= 0 && static_cast<cy::usize>(node.mesh) < meshes.size();
+    if (has_mesh) {
+        put_json_string(meshes[static_cast<cy::usize>(node.mesh)].c_str());
+    } else {
+        std::fputs("null", stdout);
+    }
+    std::fputs(", \"materials\": [", stdout);
+    if (has_mesh) {
+        print_material_slots(output, meshes[static_cast<cy::usize>(node.mesh)], materials);
+    }
+    std::fputs("]}", stdout);
+}
+
+/// Print the imported prefab as an editor-facing, versioned scene description.
+///
+/// The editor deliberately does not decode cooked prefab bytes. The importer owns that format and
+/// projects only stable identities and editable local transforms across its JSON boundary.
+void print_instances(const std::string& project, const std::string& output,
+                     const cy::assets::VirtualPath& source) {
+    std::fputs(",\n    \"instances\": [", stdout);
+    if (output.empty()) {
+        std::fputs("]", stdout);
+        return;
+    }
+
+    cy::Expected<cy::assets::VirtualPath, cy::Error> record_path =
+        cy::import::import_record_path_for(source);
+    if (!record_path) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Array<cy::u8> record_bytes;
+    const std::string record_native = project + "/" + std::string(record_path.value().view());
+    if (!cy::assets::fs::read_whole(record_native.c_str(), record_bytes)) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Expected<cy::import::ImportRecord, cy::Error> record = cy::import::ImportRecord::parse(
+        std::string_view(reinterpret_cast<const char*>(record_bytes.data()), record_bytes.size()),
+        nullptr);
+    if (!record) {
+        std::fputs("]", stdout);
+        return;
+    }
+
+    const cy::AssetId prefab = record.value().sub_asset("prefab");
+    if (prefab.is_nil()) {
+        std::fputs("]", stdout);
+        return;
+    }
+    char prefab_text[cy::AssetId::kTextLength + 1] = {};
+    (void)prefab.format(prefab_text);
+    const std::string cooked_native = output + "/" + prefab_text + ".cyasset";
+    cy::Array<cy::u8> cooked;
+    if (!cy::assets::fs::read_whole(cooked_native.c_str(), cooked)) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Expected<cy::Span<const cy::u8>, cy::Error> payload =
+        cy::assets::read_cooked_payload(cooked.data(), cooked.size(), true);
+    if (!payload) {
+        std::fputs("]", stdout);
+        return;
+    }
+    cy::Array<cy::import::ImportedNode> nodes;
+    cy::Array<char> names;
+    if (!cy::import::read_cooked_scene_graph(payload.value(), nodes, names)) {
+        std::fputs("]", stdout);
+        return;
+    }
+
+    const std::vector<std::string> meshes = binding_ids(record.value(), "mesh/", true);
+    const std::vector<std::string> materials = binding_ids(record.value(), "material/");
+
+    std::vector<std::string> identities;
+    identities.reserve(nodes.size());
+    for (cy::usize index = 0; index < nodes.size(); ++index) {
+        print_imported_node(output, {nodes.data(), nodes.size()}, index, meshes, materials,
+                            identities);
+    }
+    std::fputs(nodes.empty() ? "]" : "\n    ]", stdout);
 }
 
 /// The whole run, as JSON on stdout.
@@ -198,9 +431,9 @@ void print_sub_assets(const std::string& project, const cy::assets::VirtualPath&
 /// WHICH sub-assets an import produced and what identity each one holds, and parsing a paragraph
 /// for that is how a tool boundary becomes a source of bugs.
 void print_json(const cy::import::ImportPipeline& pipeline, const std::string& project,
-                const cy::Array<cy::assets::VirtualPath>& sources,
+                const std::string& output, const cy::Array<cy::assets::VirtualPath>& sources,
                 const cy::import::ImporterRegistry& registry) {
-    std::fputs("{\n  \"sources\": [", stdout);
+    std::fputs("{\n  \"schema_version\": 3,\n  \"sources\": [", stdout);
     const cy::Span<const cy::import::AssetImportOutcome> rows = pipeline.report().rows();
     for (cy::usize index = 0; index < rows.size(); ++index) {
         const cy::import::AssetImportOutcome& row = rows[index];
@@ -232,7 +465,8 @@ void print_json(const cy::import::ImportPipeline& pipeline, const std::string& p
         std::fputs(",\n      \"steps_not_reached\": ", stdout);
         put_json_string(absent);
         if (index < sources.size()) {
-            print_sub_assets(project, sources[index], registry);
+            print_sub_assets(project, output, sources[index], registry);
+            print_instances(project, output, sources[index]);
         }
         std::fputs("\n    }", stdout);
     }
@@ -459,7 +693,7 @@ int main(int argc, char** argv) {
     }
 
     if (as_json) {
-        print_json(pipeline, project, paths, registry);
+        print_json(pipeline, project, output, paths, registry);
     } else {
         std::vector<char> text(static_cast<std::size_t>(64) * 1024, '\0');
         (void)pipeline.report().format(text.data(), text.size());

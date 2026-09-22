@@ -56,6 +56,8 @@ enum class AssetKind : u16 {
     Animation = 9,
     /// Cooked bytes the engine does not interpret. A project's own data, and what a test uses.
     Binary = 10,
+    /// A versioned, tiled terrain heightfield source.
+    Terrain = 11,
 };
 
 /// The enumerator's own spelling, for a diagnostic and for the sidecar's text form. Never null.

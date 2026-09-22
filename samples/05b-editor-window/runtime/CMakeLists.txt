@@ -55,6 +55,7 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES
         main.cpp
+        material_runtime.cpp
         overlay.cpp
         pick_wire.cpp
         world_view.cpp
@@ -65,11 +66,23 @@ cy_add_module(
         cy::backends-viewport
         cy::servers-render
         cy::runtime-editor-bridge
+        cy::editor-backend
+        cy::rendering-material-slang
+        cy::shader
         cy::gameplay-play
         cy::physics-reference
         cy::rhi
         cy::rhi-null
         ${CY_EDITOR_WINDOW_RHI})
+
+target_compile_definitions(
+    cy_editor_window_runtime PRIVATE
+    CY_SHADER_STAGE_PARENT="${CMAKE_SOURCE_DIR}/src/rendering")
+if(APPLE AND CY_SHADER_SLANG)
+    target_link_libraries(cy_editor_window_runtime PRIVATE cy::shader-slang)
+    target_compile_definitions(cy_editor_window_runtime PRIVATE CY_SHADER_SLANG=1
+                                                                  CY_EDITOR_MATERIAL_RUNTIME=1)
+endif()
 
 # Jolt, and the macro that tells main.cpp it is there. The two lines go together: `CY_PHYSICS` is a
 # CMake option and not a compile definition, so linking the backend without defining the macro would

@@ -87,7 +87,18 @@ enum class EditorMessage : u8 {
     Play = 15,
     /// What the play session is doing now. `cy_editor_protocol::Message::Playing`.
     Playing = 16,
+    ServiceRequest = 17,
+    ServiceCancel = 18,
+    ServiceEvent = 19,
     Unknown = 255,
+};
+
+enum class ServiceEventKind : u8 {
+    Accepted = 0,
+    Progress = 1,
+    Completed = 2,
+    Failed = 3,
+    Cancelled = 4,
 };
 
 [[nodiscard]] const char* editor_message_name(EditorMessage message) noexcept;
@@ -115,6 +126,10 @@ struct EditorRequest {
     /// The editor's ABI, for `Hello`.
     u32 abi_major = 0;
     u32 abi_minor = 0;
+    /// ServiceRequest only: the independently versioned payload schema.
+    u32 schema_version = 0;
+    /// ServiceRequest only: a stable UTF-8 operation name.
+    Span<const u8> operation;
     /// The opaque bytes: a transaction, a pick request, a gizmo intent, or — for `Play` — the
     /// state's name as UTF-8 with no terminator, depending on `kind`.
     ///
@@ -192,6 +207,9 @@ public:
     /// tell it from success. It is carried anyway, so the editor can NOTICE a disagreement.
     [[nodiscard]] Status send_playing(u64 request, const char* state, const char* mode,
                                       const char* detail) noexcept;
+    /// Publish one asynchronous editor-service lifecycle event.
+    [[nodiscard]] Status send_service_event(u64 request, ServiceEventKind kind, u32 schema_version,
+                                            Span<const u8> payload) noexcept;
 
     /// Offer the editor a camera that frames what this runtime is holding. **Once per session.**
     ///

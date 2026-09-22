@@ -88,8 +88,15 @@ struct Property {
 
 enum class PinDirection : u8 { Input = 0, Output };
 
+/// Manifest-assigned identities. Zero means an older/private descriptor that is not serialisable.
+using NodeTypeId = u32;
+using PinId = u32;
+inline constexpr NodeTypeId kInvalidNodeTypeId = 0;
+inline constexpr PinId kInvalidPinId = 0;
+
 /// One pin on a node type, or one pin of a subgraph's interface.
 struct PinDesc {
+    PinId identity = kInvalidPinId;
     Name name;
     /// The pin type's NAME (decision 2), not an index into anyone's lattice.
     Name type;
@@ -154,6 +161,7 @@ enum class Determinism : u8 {
 
 /// A node type as a domain registers it. The arrays are borrowed: the registry copies them.
 struct NodeTypeDesc {
+    NodeTypeId identity = kInvalidNodeTypeId;
     Name name;
     /// The plugin that owns it. Recorded on every node so that a graph opened without that plugin
     /// can say WHOSE node it is preserving rather than only that it does not know.
@@ -179,6 +187,7 @@ public:
     NodeType& operator=(NodeType&&) noexcept = default;
 
     [[nodiscard]] Name name() const noexcept { return name_; }
+    [[nodiscard]] NodeTypeId identity() const noexcept { return identity_; }
     [[nodiscard]] Name plugin() const noexcept { return plugin_; }
     [[nodiscard]] u32 version() const noexcept { return version_; }
     [[nodiscard]] Span<const PinDesc> pins() const noexcept { return pins_.span(); }
@@ -188,6 +197,7 @@ public:
     [[nodiscard]] bool pure() const noexcept { return pure_; }
 
 private:
+    NodeTypeId identity_ = kInvalidNodeTypeId;
     Name name_;
     Name plugin_;
     u32 version_ = 1;
@@ -207,6 +217,7 @@ public:
 
     [[nodiscard]] Status register_type(const NodeTypeDesc& desc) noexcept;
     [[nodiscard]] const NodeType* find(Name type) const noexcept;
+    [[nodiscard]] const NodeType* find(NodeTypeId identity) const noexcept;
 
     /// Declare that a value of `from` may be wired into a pin of `to` without an explicit
     /// conversion node. A pin type converts to itself without being declared.
@@ -273,12 +284,17 @@ enum class Severity : u8 { Info = 0, Warning, Error };
 /// an author hunting through a canvas.
 struct Diagnostic {
     Severity severity = Severity::Error;
+    /// Stable machine-readable identity. Messages may improve without changing this value.
+    const char* code = "graph.unspecified";
     NodeKey node = kInvalidNodeKey;
     /// The pin the diagnostic is about, or an empty name when it is about the node.
     Name pin;
     const char* message = "";
     /// A second name the message refers to — a type, a missing plugin, the other end of a wire.
     Name detail;
+    /// Optional second graph location, used for the other endpoint of a broken connection.
+    NodeKey related_node = kInvalidNodeKey;
+    Name related_pin;
 };
 
 /// Where diagnostics go. An array with a cap, so a graph with ten thousand broken wires reports the

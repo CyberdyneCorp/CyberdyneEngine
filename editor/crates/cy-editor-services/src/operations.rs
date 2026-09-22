@@ -116,6 +116,20 @@ impl OperationService {
             operation.cancel();
         }
     }
+
+    /// Cooperatively cancel one operation by its stable request identity.
+    pub fn cancel(&self, request: u64) -> bool {
+        let Some(operation) = self
+            .operations
+            .get()
+            .iter()
+            .find(|operation| operation.id() == request)
+        else {
+            return false;
+        };
+        operation.cancel();
+        true
+    }
 }
 
 /// A cancellation token a caller can hand to work that is not on this service's thread.

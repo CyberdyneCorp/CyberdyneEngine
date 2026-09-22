@@ -42,6 +42,7 @@ line from a Swift behaviour arrived in the engine's log as `[error]` on a run th
 | `world_component_count`, `world_component_info`, `world_component_field` | A generated inspector is "enumerate what is there, describe each field, read it, write it". Two of those four did not exist. |
 | `world_parent`, `world_set_parent`, `world_child_count`, `world_child` | An outliner. |
 | `world_chunks`, `CyChunk` | The bulk read. `Systems.swift` said it plainly: at 1.0 "NONE of them hands a module a chunk". |
+| `service_open` … `service_poll`, `CyServiceRequest`, `CyServiceEvent` | ABI 1.2's asynchronous, cancellable editor-service envelope. Payload schemas remain independently versioned. |
 
 **A component the engine registered is now reachable through every existing entry**, not only
 through the three above. `CyWorld_T::record_or_import` turns the engine's `reflect::TypeInfo` into

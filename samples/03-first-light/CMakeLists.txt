@@ -29,7 +29,9 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
     PUBLIC_DEPENDENCIES
         cy::core-math
-        cy::rendering-graph)
+        cy::rendering-graph
+    PRIVATE_DEPENDENCIES
+        cy::rendering-material)
 
 # The host. `just run-sample` finds a sample's binary as samples/*/cy_sample_<name>, so the target
 # name is what the recipe's `first-light` argument means; there is no manifest to keep in step.

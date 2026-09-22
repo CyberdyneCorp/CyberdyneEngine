@@ -6,6 +6,7 @@
 #include <cy/core/jobs/parallel.h>
 #include <cy/import/fbx.h>
 #include <cy/import/gltf.h>
+#include <cy/import/heightfield.h>
 #include <cy/import/obj.h>
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
@@ -817,6 +818,7 @@ GltfImporter g_gltf;
 FbxImporter g_fbx;
 ObjImporter g_obj;
 TextureImporter g_texture;
+HeightfieldImporter g_heightfield;
 PrimitiveImporter g_primitive;
 }  // namespace
 
@@ -844,7 +846,10 @@ Status register_builtin_importers(ImporterRegistry& registry) noexcept {
     if (Status registered = registry.register_importer(&g_primitive); !registered) {
         return registered;
     }
-    return registry.register_importer(&g_texture);
+    if (Status registered = registry.register_importer(&g_texture); !registered) {
+        return registered;
+    }
+    return registry.register_importer(&g_heightfield);
 }
 
 Status encode_import_bundle(const ImportResult& result, Array<u8>& out) noexcept {

@@ -50,6 +50,7 @@ ENUM_SPECS = {
     "CyVarType": ("VarType", "CY_VAR_", "u32"),
     "CyInitLevel": ("InitLevel", "CY_INIT_LEVEL_", "u32"),
     "CyStage": ("Stage", "CY_STAGE_", "u32"),
+    "CyServiceEventKind": ("ServiceEventKind", "CY_SERVICE_EVENT_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

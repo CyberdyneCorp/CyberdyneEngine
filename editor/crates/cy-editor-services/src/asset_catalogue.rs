@@ -15,6 +15,12 @@ pub struct AssetEntry {
     pub kind: String,
     /// Fingerprint of the source plus its identity/import metadata sidecars.
     pub fingerprint: String,
+    /// Stable imported identity, when this is a logical sub-asset.
+    pub identity: Option<String>,
+    /// Project-relative source which owns this entry.
+    pub source: String,
+    /// Stable name within `source`, absent for an ordinary source file.
+    pub sub_asset: Option<String>,
 }
 
 /// Result of an identity-preserving asset move.
@@ -233,14 +239,102 @@ fn visit(root: &Path, directory: &Path, entries: &mut Vec<AssetEntry>) -> Result
             && let Ok(relative) = path.strip_prefix(root)
         {
             let relative_path = relative.to_string_lossy().replace('\\', "/");
+            let identity = primary_identity(&path)?;
             entries.push(AssetEntry {
                 kind: kind_of(&relative_path).to_string(),
                 fingerprint: fingerprint_bundle(&path)?,
-                path: relative_path,
+                identity,
+                source: relative_path.clone(),
+                sub_asset: None,
+                path: relative_path.clone(),
             });
+            append_imported_sub_assets(&path, &relative_path, entries)?;
         }
     }
     Ok(())
+}
+
+fn primary_identity(source: &Path) -> Result<Option<String>> {
+    let mut path = source.as_os_str().to_os_string();
+    path.push(".meta");
+    let path = PathBuf::from(path);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(Problem::new(
+                format!("read {}", path.display()),
+                error.to_string(),
+            ));
+        }
+    };
+    Ok(text.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("id = ")
+            .and_then(unquote)
+            .map(str::to_string)
+    }))
+}
+
+fn append_imported_sub_assets(
+    source: &Path,
+    relative: &str,
+    entries: &mut Vec<AssetEntry>,
+) -> Result<()> {
+    let mut record_path = source.as_os_str().to_os_string();
+    record_path.push(".import");
+    let record_path = PathBuf::from(record_path);
+    let record = match std::fs::read_to_string(&record_path) {
+        Ok(record) => record,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Problem::new(
+                format!("read {}", record_path.display()),
+                error.to_string(),
+            ));
+        }
+    };
+    let fingerprint = fingerprint_bundle(source)?;
+    for line in record.lines() {
+        let Some(binding) = line.trim().strip_prefix("sub_asset.") else {
+            continue;
+        };
+        let Some((name, identity)) = parse_import_binding(binding) else {
+            return Err(Problem::new(
+                format!("read {}", record_path.display()),
+                format!("malformed sub-asset binding: {line}"),
+            ));
+        };
+        entries.push(AssetEntry {
+            path: format!("{relative}#{name}"),
+            kind: sub_asset_kind(&name).to_string(),
+            fingerprint: fingerprint.clone(),
+            identity: Some(identity),
+            source: relative.to_string(),
+            sub_asset: Some(name),
+        });
+    }
+    Ok(())
+}
+
+fn parse_import_binding(text: &str) -> Option<(String, String)> {
+    let (name, identity) = text.split_once(" = ")?;
+    Some((unquote(name)?.to_string(), unquote(identity)?.to_string()))
+}
+
+fn unquote(text: &str) -> Option<&str> {
+    text.strip_prefix('"')?.strip_suffix('"')
+}
+
+fn sub_asset_kind(name: &str) -> &'static str {
+    match name.split_once('/').map_or(name, |(prefix, _)| prefix) {
+        "mesh" | "collision" => "mesh",
+        "material" => "material",
+        "texture" | "image" => "texture",
+        "prefab" => "prefab",
+        "animation" => "animation",
+        _ => "file",
+    }
 }
 
 fn fingerprint_bundle(source: &Path) -> Result<String> {
@@ -345,6 +439,70 @@ mod tests {
         assert!(!catalogue.refresh().unwrap());
         assert_eq!(catalogue.revision(), revision);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn imported_sub_assets_are_stable_typed_logical_entries() {
+        let root = temporary();
+        let source = root.join("art/robot.fbx");
+        std::fs::write(&source, b"fbx").unwrap();
+        std::fs::write(
+            root.join("art/robot.fbx.import"),
+            "version = 1\nimporter = \"fbx\"\nsub_asset.\"mesh/Body\" = \"mesh-id\"\nsub_asset.\"material/Paint\" = \"material-id\"\nsub_asset.\"prefab\" = \"prefab-id\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("art/robot.fbx.meta"),
+            "meta_version = 1\nid = \"prefab-id\"\nkind = \"prefab\"\n",
+        )
+        .unwrap();
+        let mut catalogue = AssetCatalogueService::new(&root);
+        catalogue.refresh().unwrap();
+
+        let logical: Vec<_> = catalogue
+            .entries()
+            .iter()
+            .filter(|entry| entry.sub_asset.is_some())
+            .map(|entry| {
+                (
+                    entry.path.as_str(),
+                    entry.kind.as_str(),
+                    entry.identity.as_deref(),
+                    entry.source.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            logical,
+            [
+                (
+                    "art/robot.fbx#material/Paint",
+                    "material",
+                    Some("material-id"),
+                    "art/robot.fbx"
+                ),
+                (
+                    "art/robot.fbx#mesh/Body",
+                    "mesh",
+                    Some("mesh-id"),
+                    "art/robot.fbx"
+                ),
+                (
+                    "art/robot.fbx#prefab",
+                    "prefab",
+                    Some("prefab-id"),
+                    "art/robot.fbx"
+                ),
+            ]
+        );
+        assert_eq!(
+            catalogue
+                .entries()
+                .iter()
+                .find(|entry| entry.path == "art/robot.fbx")
+                .and_then(|entry| entry.identity.as_deref()),
+            Some("prefab-id")
+        );
     }
 
     #[test]

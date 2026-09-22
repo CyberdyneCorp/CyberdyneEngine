@@ -224,6 +224,26 @@ CY_TEST_CASE("the prelude declares exactly what the emitted program refers to an
     CY_CHECK_GT(compiled.emitted_bytes, usize{0});
 }
 
+CY_TEST_CASE("the Metal prelude places material parameters in the requested argument buffer") {
+    ParseDiagnostic sink(current_allocator());
+    Expected<Module, Error> module = parse_material(kWornMetal, current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+
+    Array<char> unit(current_allocator());
+    PreludeOptions options;
+    options.material_set = 2;
+    options.material_binding = 4;
+    options.argument_buffer = true;
+    auto report = emit_prelude(*module, options, unit);
+    CY_REQUIRE(report.has_value());
+
+    const std::string_view text(unit.data(), unit.size());
+    CY_CHECK(text.find("[[vk::binding(4, 2)]]") != std::string_view::npos);
+    CY_CHECK(text.find("ParameterBlock<CyMaterialDraw> cyMaterialDraw;") != std::string_view::npos);
+    CY_CHECK(text.find("#define cyMaterialParameters cyMaterialDraw.parameters") !=
+             std::string_view::npos);
+}
+
 CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standard library") {
     CY_REQUIRE(shader::slang::slang_available());
     StandardLibrary library;

@@ -57,6 +57,7 @@ cy_add_module(
         src/fbx_clip.cpp
         src/fbx_skeleton.cpp
         src/gltf.cpp
+        src/heightfield.cpp
         src/image_codecs.cpp
         src/importer.cpp
         src/json.cpp

@@ -3,6 +3,8 @@
 
 use cy_editor_commands::{Registry, Scope};
 use cy_editor_core::Actor;
+use cy_editor_core::codec::Writer;
+use cy_editor_interface::SpecialisedEditors;
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
 use cy_editor_interface::thumbnails::Thumbnails;
@@ -17,12 +19,14 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 7] = [
+const NEW_PANELS: [(&str, &str); 9] = [
     ("undo-history", "Undo"),
     ("settings", "Apply"),
     ("source-control", "Refresh"),
     ("agent-sessions", "No agent is connected."),
     ("swift-workspace", "No Swift source is open."),
+    ("editor-materials", "Engine catalogue"),
+    ("editor-terrain", "No world is open."),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
 ];
@@ -32,6 +36,7 @@ struct Harness {
     registry: Registry,
     scope: Scope,
     shell: Shell,
+    specialised: SpecialisedEditors,
     hierarchy: HierarchyViewModel,
     history: HistoryViewModel,
     settings: SettingsViewModel,
@@ -59,11 +64,16 @@ impl Harness {
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         ctx.options_mut(|options| options.screen_reader = true);
+        let mut specialised = SpecialisedEditors::new().expect("specialised editors");
+        specialised
+            .install_material_catalogue(&test_material_catalogue())
+            .expect("engine material catalogue");
         Self {
             editor: Editor::new(Actor::human("accessibility-auditor")),
             registry,
             scope: Scope::unrestricted(),
             shell,
+            specialised,
             hierarchy: HierarchyViewModel::new(),
             history: HistoryViewModel::new(),
             settings: SettingsViewModel::new(),
@@ -102,6 +112,7 @@ impl Harness {
             registry,
             scope,
             shell,
+            specialised,
             hierarchy,
             history,
             settings,
@@ -124,6 +135,7 @@ impl Harness {
                     registry,
                     scope,
                     shell,
+                    specialised,
                     hierarchy,
                     history,
                     settings,
@@ -170,6 +182,23 @@ impl Harness {
             shapes,
         }
     }
+}
+
+fn test_material_catalogue() -> Vec<u8> {
+    let mut catalogue = Writer::new();
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(42);
+    catalogue.u32(1);
+    catalogue.text("material.future");
+    catalogue.u32(1);
+    catalogue.u32(9);
+    catalogue.u8(1);
+    catalogue.text("out");
+    catalogue.text("value");
+    catalogue.u32(0);
+    catalogue.finish()
 }
 
 struct FrameEvidence {

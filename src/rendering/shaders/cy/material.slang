@@ -296,7 +296,14 @@ public Surface cyResolveSurface(CySurface compiled)
 // SET 0, because `cy/backends/shader/reflection.h`'s convention says a bindless global table appears
 // only in set 0. A material's own parameters are set 3 (per draw) and are declared by the generated
 // prelude; what is global is the TABLE the parameters index into.
+//
+// Metal's descriptor set is one argument buffer and therefore needs a fixed-capacity
+// `ParameterBlock`. A Metal pass defines `CY_MATERIAL_METAL_ARGUMENT_BUFFER` and supplies that
+// target-specific declaration plus these two sampling functions in its root translation unit.
+// Keeping them out of this imported module is significant: Slang otherwise places the imported
+// argument buffer after the root module's push constants, which cannot match the RHI set layout.
 
+#if !defined(CY_MATERIAL_METAL_ARGUMENT_BUFFER)
 [[vk::binding(1, 0)]]
 public Texture2D<float4> cyMaterialTextures[];
 [[vk::binding(2, 0)]]
@@ -321,3 +328,4 @@ public float4 cyMaterialSampleTextureLevel(uint bindlessIndex, float2 uv, float 
 {
     return cyMaterialTextures[bindlessIndex].SampleLevel(cyMaterialSampler, uv, level);
 }
+#endif

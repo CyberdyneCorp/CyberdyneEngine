@@ -76,6 +76,8 @@ const char* asset_kind_name(AssetKind kind) noexcept {
             return "animation";
         case AssetKind::Binary:
             return "binary";
+        case AssetKind::Terrain:
+            return "terrain";
     }
     return "unknown";
 }
@@ -84,7 +86,7 @@ Expected<AssetKind, Error> asset_kind_from_name(std::string_view name) noexcept 
     constexpr AssetKind kKinds[] = {AssetKind::Unknown,   AssetKind::Texture, AssetKind::Mesh,
                                     AssetKind::Material,  AssetKind::Shader,  AssetKind::Audio,
                                     AssetKind::Scene,     AssetKind::Prefab,  AssetKind::Font,
-                                    AssetKind::Animation, AssetKind::Binary};
+                                    AssetKind::Animation, AssetKind::Binary,  AssetKind::Terrain};
     for (const AssetKind kind : kKinds) {
         if (name == asset_kind_name(kind)) {
             return kind;
@@ -165,7 +167,7 @@ cy::AssetId placeholder_for(AssetKind kind) noexcept {
 }
 
 AssetKind placeholder_kind(cy::AssetId id) noexcept {
-    if (!is_placeholder(id) || id.low() > static_cast<u64>(AssetKind::Binary)) {
+    if (!is_placeholder(id) || id.low() > static_cast<u64>(AssetKind::Terrain)) {
         return AssetKind::Unknown;
     }
     return static_cast<AssetKind>(id.low());

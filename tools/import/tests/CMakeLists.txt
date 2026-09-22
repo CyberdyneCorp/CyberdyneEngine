@@ -50,6 +50,7 @@ function(cy_import_declare_tests)
         SOURCES
             "${tests_dir}/test_image_codecs.cpp"
             "${tests_dir}/test_importer_key.cpp"
+            "${tests_dir}/test_heightfield.cpp"
             "${tests_dir}/test_json.cpp"
             "${tests_dir}/test_options.cpp"
             "${tests_dir}/test_texture.cpp"

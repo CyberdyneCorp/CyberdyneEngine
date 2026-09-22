@@ -124,6 +124,16 @@ ENTRIES: dict[str, Entry] = {
     # 1.1: chunks
     "world_chunks": Entry(("world", "component", "into", "capacity", "count"), result="fallible",
                           doc="Enumerate a component's chunks; a null buffer asks for the count."),
+    # 1.2: asynchronous editor backend services
+    "service_open": Entry(("engine", "into"), result="fallible",
+                          doc="Open an isolated editor-service session."),
+    "service_close": Entry(("engine", "session"), doc="Close an editor-service session."),
+    "service_submit": Entry(("engine", "session", "request"), result="fallible",
+                            doc="Submit one versioned asynchronous editor-service request."),
+    "service_cancel": Entry(("engine", "session", "request_id"), result="fallible",
+                            doc="Cooperatively cancel an editor-service request."),
+    "service_poll": Entry(("engine", "session", "event", "has_event"), result="fallible",
+                          doc="Poll one editor-service event without blocking."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

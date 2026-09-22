@@ -28,15 +28,18 @@ mod diagnostics;
 mod hierarchy;
 mod history;
 mod inspector;
+mod material_graph;
 mod pending;
 mod semantic_merge;
 mod settings;
 mod source;
 mod source_control;
+mod terrain;
 mod viewport;
 
 use cy_editor_commands::{Arguments, Registry, Scope};
 use cy_editor_core::ids::DocumentId;
+use cy_editor_interface::SpecialisedEditors;
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::thumbnails::Thumbnails;
@@ -59,6 +62,13 @@ pub enum Intent {
     Invoke(String, Arguments),
     /// Open a document by asset path.
     OpenAsset(String),
+    /// Stage and import files selected outside the project.
+    ImportExternal {
+        /// Native paths supplied by the chooser or operating-system drop.
+        paths: Vec<std::path::PathBuf>,
+        /// Project-relative Content Browser folder receiving the files.
+        destination: String,
+    },
     /// Make an already-open document active.
     ActivateDocument(DocumentId),
     /// Begin closing an open document, asking for a decision when it is dirty.
@@ -95,6 +105,17 @@ pub enum Intent {
     },
 }
 
+/// Build the one intent used by both the chooser and operating-system file drop.
+pub(crate) fn external_import_intent(
+    paths: Vec<std::path::PathBuf>,
+    destination: impl Into<String>,
+) -> Intent {
+    Intent::ImportExternal {
+        paths,
+        destination: destination.into(),
+    }
+}
+
 /// The text a person has typed into a panel's own field.
 ///
 /// Presentation state, and it lives beside the panels rather than in a view model for the reason
@@ -112,6 +133,31 @@ pub struct Inputs {
     pub browser_filter: String,
     /// Asset type filter; empty means every kind.
     pub browser_kind: String,
+    /// Whether the Content Browser import chooser is visible.
+    pub browser_import_open: bool,
+    /// Native paths entered in the import chooser, one per line.
+    pub browser_import_paths: String,
+    /// Search text for the engine-owned material node palette.
+    pub material_filter: String,
+    /// Output pin selected as the source of the next material connection.
+    ///
+    /// Node and pin identities are stored alongside readable metadata so a catalogue rename does
+    /// not silently retarget the in-progress gesture.
+    pub material_link_source: Option<(u64, u32, String, String)>,
+    /// The latest refused material-canvas gesture, kept visible until the next successful edit.
+    pub material_link_problem: Option<String>,
+    /// The latest typed material-property refusal, shown beside the generated controls.
+    pub material_property_problem: Option<String>,
+    /// Active terrain sculpt or paint tool keyword.
+    pub terrain_tool: String,
+    /// Stable material layer receiving paint gestures.
+    pub terrain_layer: Option<cy_editor_core::ids::NodeId>,
+    /// New terrain layer's author-facing name.
+    pub terrain_layer_name: String,
+    /// New terrain layer's material asset reference.
+    pub terrain_layer_material: String,
+    /// Most recent painting-surface refusal.
+    pub terrain_problem: Option<String>,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -165,6 +211,17 @@ impl Default for Inputs {
             hierarchy_drag: None,
             browser_filter: String::new(),
             browser_kind: String::new(),
+            browser_import_open: false,
+            browser_import_paths: String::new(),
+            material_filter: String::new(),
+            material_link_source: None,
+            material_link_problem: None,
+            material_property_problem: None,
+            terrain_tool: "raise".into(),
+            terrain_layer: None,
+            terrain_layer_name: String::new(),
+            terrain_layer_material: String::new(),
+            terrain_problem: None,
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {
@@ -199,6 +256,8 @@ pub struct Panels<'frame> {
     pub scope: &'frame Scope,
     /// The interface's own models: theme, density, palette, inspector, problems, notifications.
     pub shell: &'frame mut Shell,
+    /// The one shared specialised-editor surface host.
+    pub specialised: &'frame mut SpecialisedEditors,
     /// The hierarchy's presentation state.
     pub hierarchy: &'frame mut HierarchyViewModel,
     /// Attributed history for the active document.
@@ -270,6 +329,8 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "semantic-merge" => semantic_merge::show_merge(self, ui),
                 "inspector" => inspector::show(self, ui),
                 "content-browser" => browser::show(self, ui),
+                "editor-materials" => material_graph::show(self, ui),
+                "editor-terrain" => terrain::show(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

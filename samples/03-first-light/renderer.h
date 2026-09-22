@@ -106,6 +106,21 @@ public:
     [[nodiscard]] u32 width() const noexcept { return options_.width; }
     [[nodiscard]] u32 height() const noexcept { return options_.height; }
 
+    /// Retain one editor-compiled Metal program and its initial parameter block. The source has
+    /// already crossed the engine shader compiler; this method only creates RHI objects.
+    [[nodiscard]] Status retain_material(u64 artefact, Span<const u8> vertex_msl,
+                                         const char* vertex_entry, Span<const u8> fragment_msl,
+                                         const char* fragment_entry,
+                                         Span<const u8> parameters) noexcept;
+    [[nodiscard]] Status update_material(u64 artefact, Span<const u8> parameters) noexcept;
+    /// Bind the retained program to one exact scene object. This sample has one section per object,
+    /// so slot zero is the only representable material slot and every other slot is rejected.
+    [[nodiscard]] Status bind_material(u32 object, u32 material_slot, u64 artefact) noexcept;
+    void unbind_material(u32 object, u32 material_slot, u64 artefact) noexcept;
+    [[nodiscard]] rhi::BindlessIndex default_texture_index() const noexcept {
+        return checker_bindless_;
+    }
+
     /// What the record callbacks are handed. Public because `RecordFn` is a plain function pointer,
     /// so the callbacks are free functions and cannot see a private nested type.
     struct PassState;
@@ -114,6 +129,7 @@ private:
     Status create_shaders() noexcept;
     Status create_pipelines() noexcept;
     Status create_resources(const Scene& scene) noexcept;
+    void destroy_material_runtime() noexcept;
     Status upload_geometry(const Scene& scene) noexcept;
     /// Fill the per-frame uniform block from the camera and the sun.
     void write_frame_constants(const Scene& scene, const Camera& camera) noexcept;
@@ -128,6 +144,8 @@ private:
     rhi::ShaderModuleHandle forward_fragment_;
     rhi::DescriptorSetLayoutHandle set_layout_;
     rhi::PipelineLayoutHandle pipeline_layout_;
+    rhi::DescriptorSetLayoutHandle material_set_layout_;
+    rhi::PipelineLayoutHandle material_pipeline_layout_;
     rhi::GraphicsPipelineHandle shadow_pipeline_;
     rhi::GraphicsPipelineHandle forward_pipeline_;
     rhi::DescriptorSetHandle descriptor_set_;
@@ -148,6 +166,7 @@ private:
     rhi::TextureViewHandle shadow_view_;
     rhi::SamplerHandle albedo_sampler_;
     rhi::SamplerHandle shadow_sampler_;
+    rhi::BindlessIndex checker_bindless_ = rhi::kInvalidBindlessIndex;
 
     rhi::ImageUse albedo_use_ = rhi::ImageUse::Undefined;
     rhi::ImageUse shadow_use_ = rhi::ImageUse::Undefined;
@@ -157,6 +176,8 @@ private:
     bool albedo_uploaded_ = false;
 
     Array<u32> readback_;
+    struct MaterialState;
+    MaterialState* materials_ = nullptr;
     u32 index_count_ = 0;
 };
 

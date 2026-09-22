@@ -241,9 +241,23 @@ void write_context(Writer& writer, const PreludeOptions& options) noexcept {
     writer.text("    CyMaterialParams params;\n");
     writer.text("    CyMaterialAttributes attributes;\n");
     writer.text("};\n\n");
-    writer.text("[[vk::binding(0, ");
-    writer.number(options.material_set);
-    writer.text(")]]\nConstantBuffer<CyMaterialParams> cyMaterialParameters;\n\n");
+    if (options.argument_buffer) {
+        writer.text("struct CyMaterialDraw\n{\n");
+        writer.text("    ConstantBuffer<CyMaterialParams> parameters;\n};\n");
+        writer.text("[[vk::binding(");
+        writer.number(options.material_binding);
+        writer.text(", ");
+        writer.number(options.material_set);
+        writer.text(")]]\n");
+        writer.text("ParameterBlock<CyMaterialDraw> cyMaterialDraw;\n");
+        writer.text("#define cyMaterialParameters cyMaterialDraw.parameters\n\n");
+    } else {
+        writer.text("[[vk::binding(");
+        writer.number(options.material_binding);
+        writer.text(", ");
+        writer.number(options.material_set);
+        writer.text(")]]\nConstantBuffer<CyMaterialParams> cyMaterialParameters;\n\n");
+    }
 }
 
 void write_zero_attributes(Writer& writer, const NameSet& attributes) noexcept {

@@ -58,6 +58,19 @@ pub struct CyBehaviourType_T {
 /// `CyBehaviourType` — an opaque handle. Null is the ABI's "no such thing".
 pub type CyBehaviourType = *mut CyBehaviourType_T;
 
+/// The opaque type behind `CyServiceSession`.
+///
+/// A zero-sized member and no constructor: this type exists to give the pointer a name the compiler
+/// can distinguish from every other handle's, so that passing a `CyWorld` where a `CyEngine` is
+/// wanted does not compile. Nothing in Rust ever holds one of these by value.
+#[repr(C)]
+pub struct CyServiceSession_T {
+    _private: [u8; 0],
+}
+
+/// `CyServiceSession` — an opaque handle. Null is the ABI's "no such thing".
+pub type CyServiceSession = *mut CyServiceSession_T;
+
 /// `CyInstance`, the ABI's alias for `void*`.
 pub type CyInstance = *mut ::std::ffi::c_void;
 
@@ -171,6 +184,44 @@ pub struct CyChunk {
     pub epoch: u64,
 }
 
+/// `CyServiceRequest` — 40 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyServiceRequest {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub schema_version: u32,
+    /// `uint64_t` at byte 8.
+    pub request_id: u64,
+    /// `const char*` at byte 16.
+    pub operation: *const ::std::ffi::c_char,
+    /// `const uint8_t*` at byte 24.
+    pub payload: *const u8,
+    /// `uint64_t` at byte 32.
+    pub payload_size: u64,
+}
+
+/// `CyServiceEvent` — 40 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyServiceEvent {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub kind: u32,
+    /// `uint64_t` at byte 8.
+    pub request_id: u64,
+    /// `uint32_t` at byte 16.
+    pub schema_version: u32,
+    /// `uint32_t` at byte 20.
+    pub reserved: u32,
+    /// `const uint8_t*` at byte 24.
+    pub payload: *const u8,
+    /// `uint64_t` at byte 32.
+    pub payload_size: u64,
+}
+
 /// `CyBehaviourVTable` — 56 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -221,7 +272,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 320 bytes, 8-byte aligned.
+/// `CyInterface` — 360 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -335,6 +386,19 @@ pub struct CyInterface {
     pub world_chunks: Option<
         unsafe extern "C" fn(CyWorld, CyComponentTypeId, *mut CyChunk, u32, *mut u32) -> i32,
     >,
+    /// `CyResult(*)(CyEngine, CyServiceSession*)` at byte 320.
+    pub service_open: Option<unsafe extern "C" fn(CyEngine, *mut CyServiceSession) -> i32>,
+    /// `void(*)(CyEngine, CyServiceSession)` at byte 328.
+    pub service_close: Option<unsafe extern "C" fn(CyEngine, CyServiceSession)>,
+    /// `CyResult(*)(CyEngine, CyServiceSession, const CyServiceRequest*)` at byte 336.
+    pub service_submit:
+        Option<unsafe extern "C" fn(CyEngine, CyServiceSession, *const CyServiceRequest) -> i32>,
+    /// `CyResult(*)(CyEngine, CyServiceSession, uint64_t)` at byte 344.
+    pub service_cancel: Option<unsafe extern "C" fn(CyEngine, CyServiceSession, u64) -> i32>,
+    /// `CyResult(*)(CyEngine, CyServiceSession, CyServiceEvent*, bool*)` at byte 352.
+    pub service_poll: Option<
+        unsafe extern "C" fn(CyEngine, CyServiceSession, *mut CyServiceEvent, *mut bool) -> i32,
+    >,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -415,5 +479,10 @@ impl CyInterface {
         world_child_count: None,
         world_child: None,
         world_chunks: None,
+        service_open: None,
+        service_close: None,
+        service_submit: None,
+        service_cancel: None,
+        service_poll: None,
     };
 }

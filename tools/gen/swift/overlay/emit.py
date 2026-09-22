@@ -61,6 +61,7 @@ ENUM_SPECS = {
     # ones those copies already had, so deleting them is a deletion and not a rename.
     "CySeverity": ("Severity", "CY_SEVERITY_", "UInt32"),
     "CyStage": ("SystemStage", "CY_STAGE_", "UInt32"),
+    "CyServiceEventKind": ("ServiceEventKind", "CY_SERVICE_EVENT_", "UInt32"),
 }
 
 

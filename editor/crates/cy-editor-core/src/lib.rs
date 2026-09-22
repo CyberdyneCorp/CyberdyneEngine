@@ -23,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 pub mod actor;
+pub mod brush;
 pub mod codec;
 pub mod ids;
 pub mod observe;

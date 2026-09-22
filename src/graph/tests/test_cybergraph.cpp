@@ -8,6 +8,7 @@
 #include <cy/graph/text.h>
 #include <cy/test/test.h>
 
+#include <string_view>
 #include <utility>
 
 using namespace cy;
@@ -126,9 +127,12 @@ CY_TEST_CASE("cybergraph: a wire whose pin types do not convert is a PIN-PRECISE
     DiagnosticSink sink(allocator());
     CY_REQUIRE(validate(graph, registry, nullptr, sink).has_value());
     CY_REQUIRE_EQ(sink.errors(), 1U);
+    CY_CHECK_EQ(std::string_view(sink.entries()[0].code), "graph.link.type-mismatch");
     CY_CHECK_EQ(sink.entries()[0].node, 2U);
     CY_CHECK_EQ(sink.entries()[0].pin, Name::intern("in"));
     CY_CHECK_EQ(sink.entries()[0].detail, Name::intern("entity"));
+    CY_CHECK_EQ(sink.entries()[0].related_node, 1U);
+    CY_CHECK_EQ(sink.entries()[0].related_pin, Name::intern("value"));
 
     // A declared conversion makes it legal, and nothing else changes.
     NodeRegistry converting(allocator());
@@ -151,6 +155,7 @@ CY_TEST_CASE("cybergraph: a required input with neither a wire nor a value is re
     DiagnosticSink sink(allocator());
     CY_REQUIRE(validate(graph, registry, nullptr, sink).has_value());
     CY_REQUIRE_EQ(sink.errors(), 1U);
+    CY_CHECK_EQ(std::string_view(sink.entries()[0].code), "graph.input.required");
     CY_CHECK_EQ(sink.entries()[0].pin, Name::intern("in"));
 
     // A property standing in for the wire satisfies it.

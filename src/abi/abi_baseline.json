@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 1,
+    "minor": 2,
     "patch": 0
   },
   "functions": [
@@ -217,10 +217,35 @@
         "index": 38,
         "name": "world_chunks",
         "type": "CyResult(*)(CyWorld, CyComponentTypeId, CyChunk*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 39,
+        "name": "service_open",
+        "type": "CyResult(*)(CyEngine, CyServiceSession*)"
+      },
+      {
+        "index": 40,
+        "name": "service_close",
+        "type": "void(*)(CyEngine, CyServiceSession)"
+      },
+      {
+        "index": 41,
+        "name": "service_submit",
+        "type": "CyResult(*)(CyEngine, CyServiceSession, const CyServiceRequest*)"
+      },
+      {
+        "index": 42,
+        "name": "service_cancel",
+        "type": "CyResult(*)(CyEngine, CyServiceSession, uint64_t)"
+      },
+      {
+        "index": 43,
+        "name": "service_poll",
+        "type": "CyResult(*)(CyEngine, CyServiceSession, CyServiceEvent*, bool*)"
       }
     ],
     "name": "CyInterface",
-    "size": 320
+    "size": 360
   },
   "types": [
     {
@@ -237,6 +262,11 @@
       "kind": "handle",
       "name": "CyBehaviourType",
       "tag": "CyBehaviourType_T"
+    },
+    {
+      "kind": "handle",
+      "name": "CyServiceSession",
+      "tag": "CyServiceSession_T"
     },
     {
       "kind": "alias",
@@ -722,6 +752,139 @@
       "size": 40
     },
     {
+      "kind": "enum",
+      "name": "CyServiceEventKind",
+      "values": [
+        {
+          "name": "CY_SERVICE_EVENT_ACCEPTED",
+          "value": 0
+        },
+        {
+          "name": "CY_SERVICE_EVENT_PROGRESS",
+          "value": 1
+        },
+        {
+          "name": "CY_SERVICE_EVENT_COMPLETED",
+          "value": 2
+        },
+        {
+          "name": "CY_SERVICE_EVENT_FAILED",
+          "value": 3
+        },
+        {
+          "name": "CY_SERVICE_EVENT_CANCELLED",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "schema_version",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "request_id",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "operation",
+          "offset": 16,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "payload",
+          "offset": 24,
+          "size": 8,
+          "type": "const uint8_t*"
+        },
+        {
+          "alignment": 8,
+          "name": "payload_size",
+          "offset": 32,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyServiceRequest",
+      "size": 40
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "request_id",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 4,
+          "name": "schema_version",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "payload",
+          "offset": 24,
+          "size": 8,
+          "type": "const uint8_t*"
+        },
+        {
+          "alignment": 8,
+          "name": "payload_size",
+          "offset": 32,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyServiceEvent",
+      "size": 40
+    },
+    {
       "alignment": 8,
       "kind": "struct",
       "members": [
@@ -1119,10 +1282,45 @@
           "offset": 312,
           "size": 8,
           "type": "CyResult(*)(CyWorld, CyComponentTypeId, CyChunk*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "service_open",
+          "offset": 320,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyServiceSession*)"
+        },
+        {
+          "alignment": 8,
+          "name": "service_close",
+          "offset": 328,
+          "size": 8,
+          "type": "void(*)(CyEngine, CyServiceSession)"
+        },
+        {
+          "alignment": 8,
+          "name": "service_submit",
+          "offset": 336,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyServiceSession, const CyServiceRequest*)"
+        },
+        {
+          "alignment": 8,
+          "name": "service_cancel",
+          "offset": 344,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyServiceSession, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "service_poll",
+          "offset": 352,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyServiceSession, CyServiceEvent*, bool*)"
         }
       ],
       "name": "CyInterface",
-      "size": 320
+      "size": 360
     },
     {
       "kind": "enum",

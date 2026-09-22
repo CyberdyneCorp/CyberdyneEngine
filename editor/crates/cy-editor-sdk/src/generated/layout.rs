@@ -179,6 +179,76 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyServiceRequest>() == 40,
+    "CyServiceRequest is not 40 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyServiceRequest>() == 8,
+    "CyServiceRequest is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceRequest, struct_size) == 0,
+    "CyServiceRequest::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceRequest, schema_version) == 4,
+    "CyServiceRequest::schema_version is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceRequest, request_id) == 8,
+    "CyServiceRequest::request_id is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceRequest, operation) == 16,
+    "CyServiceRequest::operation is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceRequest, payload) == 24,
+    "CyServiceRequest::payload is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceRequest, payload_size) == 32,
+    "CyServiceRequest::payload_size is not at byte 32"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyServiceEvent>() == 40,
+    "CyServiceEvent is not 40 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyServiceEvent>() == 8,
+    "CyServiceEvent is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, struct_size) == 0,
+    "CyServiceEvent::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, kind) == 4,
+    "CyServiceEvent::kind is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, request_id) == 8,
+    "CyServiceEvent::request_id is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, schema_version) == 16,
+    "CyServiceEvent::schema_version is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, reserved) == 20,
+    "CyServiceEvent::reserved is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, payload) == 24,
+    "CyServiceEvent::payload is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyServiceEvent, payload_size) == 32,
+    "CyServiceEvent::payload_size is not at byte 32"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyBehaviourVTable>() == 56,
     "CyBehaviourVTable is not 56 bytes; the ABI description and rustc disagree"
 );
@@ -262,8 +332,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 320,
-    "CyInterface is not 320 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 360,
+    "CyInterface is not 360 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -425,6 +495,26 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, world_chunks) == 312,
     "CyInterface::world_chunks is not at byte 312"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, service_open) == 320,
+    "CyInterface::service_open is not at byte 320"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, service_close) == 328,
+    "CyInterface::service_close is not at byte 328"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, service_submit) == 336,
+    "CyInterface::service_submit is not at byte 336"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, service_cancel) == 344,
+    "CyInterface::service_cancel is not at byte 344"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, service_poll) == 352,
+    "CyInterface::service_poll is not at byte 352"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -471,7 +561,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        38,
+        43,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

@@ -843,6 +843,60 @@ static CyResult abi_world_chunks(CyWorld world_handle, CyComponentTypeId compone
     return CY_RESULT_OK;
 }
 
+static CyResult abi_service_open(CyEngine engine_handle, CyServiceSession* out_session) {
+    if (engine_handle == nullptr || out_session == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT,
+                               "service_open requires an engine and output session");
+    }
+    *out_session = nullptr;
+    if (engine_handle->editor_service == nullptr) {
+        return cy::abi::report(CY_RESULT_UNAVAILABLE, "this runtime has no editor service backend");
+    }
+    const CyResult result = engine_handle->editor_service->open(out_session);
+    if (result == CY_RESULT_OK) {
+        cy::abi::clear_last_error();
+    }
+    return result;
+}
+
+static void abi_service_close(CyEngine engine_handle, CyServiceSession session) {
+    if (engine_handle == nullptr || engine_handle->editor_service == nullptr ||
+        session == nullptr) {
+        return;
+    }
+    engine_handle->editor_service->close(session);
+}
+
+static CyResult abi_service_submit(CyEngine engine_handle, CyServiceSession session,
+                                   const CyServiceRequest* request) {
+    if (engine_handle == nullptr || engine_handle->editor_service == nullptr ||
+        session == nullptr || request == nullptr || request->request_id == 0 ||
+        request->operation == nullptr || request->operation[0] == '\0' ||
+        (request->payload_size != 0 && request->payload == nullptr)) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "invalid editor service request");
+    }
+    return engine_handle->editor_service->submit(session, *request);
+}
+
+static CyResult abi_service_cancel(CyEngine engine_handle, CyServiceSession session,
+                                   uint64_t request_id) {
+    if (engine_handle == nullptr || engine_handle->editor_service == nullptr ||
+        session == nullptr || request_id == 0) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "invalid editor service cancellation");
+    }
+    return engine_handle->editor_service->cancel(session, request_id);
+}
+
+static CyResult abi_service_poll(CyEngine engine_handle, CyServiceSession session,
+                                 CyServiceEvent* out_event, bool* out_has_event) {
+    if (engine_handle == nullptr || engine_handle->editor_service == nullptr ||
+        session == nullptr || out_event == nullptr || out_has_event == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "invalid editor service poll");
+    }
+    *out_has_event = false;
+    return engine_handle->editor_service->poll(session, *out_event, *out_has_event);
+}
+
 }  // extern "C"
 
 namespace {
@@ -901,6 +955,13 @@ const CyInterface kInterface = {
     &abi_world_child,
 
     &abi_world_chunks,
+
+    // --- 1.2 ------------------------------------------------------------------------------------
+    &abi_service_open,
+    &abi_service_close,
+    &abi_service_submit,
+    &abi_service_cancel,
+    &abi_service_poll,
 };
 
 }  // namespace
@@ -919,7 +980,7 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.1 and the module requires a later minor");
+                              "this engine exports ABI 1.2 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

@@ -166,6 +166,13 @@ struct SubAsset {
     [[nodiscard]] std::string_view view() const noexcept;
 };
 
+/// Recover the persistent kind carried by the stable sub-asset naming convention.
+///
+/// Import records predate their editor JSON projection and intentionally store the stable name and
+/// identity only. This one mapping keeps cache-hit reports and fresh import results from
+/// disagreeing about kind as new asset kinds are appended.
+[[nodiscard]] assets::AssetKind sub_asset_kind_from_name(std::string_view name) noexcept;
+
 /// Read an input the importer discovered it needed, recording it as a dependency in the same act.
 ///
 /// The engine side of the purity argument at the top of this file. `read` returns the bytes AND

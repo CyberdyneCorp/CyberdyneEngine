@@ -57,6 +57,7 @@ _POINTERS = {
     # decided a spelling for.
     "const uint32_t*": "UnsafePointer<UInt32>",
     "uint32_t*": "UnsafeMutablePointer<UInt32>",
+    "bool*": "UnsafeMutablePointer<Bool>",
 }
 
 

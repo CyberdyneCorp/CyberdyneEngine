@@ -30,6 +30,7 @@ cy_add_module(
     ALIAS cy::graph-material
     TYPE STATIC
     SOURCES
+        src/canvas.cpp
         src/lower_material.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::graph cy::rendering-material)

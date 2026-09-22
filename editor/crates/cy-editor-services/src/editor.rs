@@ -22,12 +22,13 @@ use cy_editor_sdk::HostingMode;
 use cy_editor_viewport::play::{PlayMode, PlayState};
 
 use crate::asset_catalogue::AssetCatalogueService;
-use crate::assets::AssetImportService;
+use crate::assets::{AssetImportService, ExternalImportCompletion};
 use crate::documents::{CloseDecision, CloseOutcome, DocumentService};
 use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
+use crate::primitives::{material_slots_of, mesh_of};
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
@@ -38,6 +39,7 @@ use crate::source_language::SourceLanguageService;
 use crate::source_workspace::SourceWorkspaceService;
 use crate::viewports::ViewportService;
 use crate::workspace::Workspace;
+use crate::{BackendServices, MaterialOperation, MaterialPreviewTarget};
 
 /// Structured progress/result of the most recent script-module reload.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -70,6 +72,8 @@ pub struct Editor {
     pub notifications: NotificationService,
     /// Long operations, off the interface thread.
     pub operations: OperationService,
+    /// Engine-owned authoring catalogues and asynchronous service request state.
+    pub backend: BackendServices,
     /// The engine, or the considered absence of one.
     pub runtime: RuntimeSession,
     /// What keeps the hosted runtime in step with the document, and what carries the engine's gizmo
@@ -153,6 +157,7 @@ impl Editor {
             workspace: Workspace::new(),
             notifications: NotificationService::new(),
             operations: OperationService::new(),
+            backend: BackendServices::new(),
             runtime: RuntimeSession::none(),
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
@@ -206,6 +211,21 @@ impl Editor {
         self
     }
 
+    /// Queue an external source for staging and import, returning its stable request identity.
+    pub fn import_external(
+        &mut self,
+        source: std::path::PathBuf,
+        destination: String,
+    ) -> Result<u64> {
+        self.imports
+            .start_external(&mut self.operations, source, destination)
+    }
+
+    /// Drain completed visible imports without waiting.
+    pub fn take_completed_imports(&mut self) -> Vec<ExternalImportCompletion> {
+        self.imports.take_completed()
+    }
+
     /// Act as somebody else — an agent, with its session and its stated intent.
     ///
     /// Every transaction produced while this is in force carries the given actor, which is how "an
@@ -219,6 +239,43 @@ impl Editor {
     #[must_use]
     pub const fn hosting_mode(&self) -> HostingMode {
         self.runtime.mode()
+    }
+
+    /// Submit the visible material canvas to the engine-owned asynchronous service.
+    pub fn request_material(
+        &mut self,
+        operation: MaterialOperation,
+        canvas: Vec<u8>,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        if operation == MaterialOperation::Compile {
+            let mut targets = Vec::new();
+            if let Some(document_id) = self.workspace.active()
+                && let Some(document) = self.documents.get(document_id)
+            {
+                for node in self.selection.get().nodes() {
+                    if mesh_of(document, node).is_none() {
+                        continue;
+                    }
+                    let slot_count = material_slots_of(document, node).len().max(1);
+                    for slot in 0..slot_count {
+                        targets.push(MaterialPreviewTarget {
+                            entity: node.as_u128(),
+                            slot: u32::try_from(slot).unwrap_or(u32::MAX),
+                        });
+                    }
+                }
+            }
+            if !targets.is_empty() {
+                self.backend.set_material_preview_targets(targets)?;
+            }
+        }
+        self.backend
+            .request_material(&self.runtime, operation, canvas)
+    }
+
+    /// Cooperatively cancel the currently pending material operation.
+    pub fn cancel_material_request(&self) -> Result<()> {
+        self.backend.cancel_material(&self.runtime)
     }
 
     /// Open a document, offering recovery when its journal holds anything.
@@ -321,8 +378,20 @@ impl Editor {
         // engine's (`editor-viewport-and-gizmos`). Every other message is drained rather than
         // queued, which is what keeps the channel bounded in a build with no viewport.
         for message in &messages {
+            if let Some(problem) = self.backend.accept(message) {
+                self.notifications.post(Notification::error(
+                    "The material backend request failed",
+                    problem,
+                ));
+            }
             self.accept_reload_message(message);
             self.mirror.accept(message, self.viewports.focused());
+        }
+        if let Some(problem) = self.backend.maintain(&self.runtime) {
+            self.notifications.post(Notification::error(
+                "The material backend is unavailable",
+                problem,
+            ));
         }
         if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
             let pending = std::mem::take(&mut self.pending_reloads);
@@ -586,6 +655,10 @@ impl CommandContext for Editor {
 
     fn assets(&mut self) -> Option<&mut dyn cy_editor_commands::AssetHost> {
         Some(&mut self.imports)
+    }
+
+    fn start_external_asset_import(&mut self, source: &str, destination: &str) -> Result<u64> {
+        self.import_external(std::path::PathBuf::from(source), destination.to_string())
     }
 
     fn settings(&mut self) -> Option<&mut dyn cy_editor_commands::SettingsHost> {

@@ -22,6 +22,11 @@ and `test_producer.cpp` holds the refusal a second producer of `soil` gets.
 | `include/cy/terrain/system.h` | The `soil` producer claim, the declared consumption, the cooked field-tile loader, and the one call that propagates a deformation's invalidation |
 | `include/cy/terrain/cook.h` | `cy::terrain-cook`: a tile through `rendering::vg::build_geometry()`, and the surface material through the material compiler |
 
+Source height grids enter through `tools/import/include/cy/import/heightfield.h`. That tool-time
+boundary owns raw sample formats and refuses ambiguous dimensions, signedness, units or range; this
+runtime module receives one versioned normalized-u16 terrain asset with explicit metre and tile
+metadata.
+
 ## The seven decisions a reader should know before changing anything
 
 **1. The query primitive is a COLUMN, not a height.** `terrain` requires the interface to answer
@@ -86,8 +91,10 @@ module for one to be.
 - **No shader.** `cy::terrain-cook` authors the surface material as a graph and compiles it; binding
   the produced virtual-texture pages on a device belongs to the renderer-facing work that first
   samples them.
-- **No cooked tile format on disk.** `ModifierStack::flatten()` produces tiles into a store;
-  serialising them into a cell's `Terrain` channel is `save-and-persistence`'s encoding.
+- **No streamed cell-tile format on disk.** The import pipeline now has a versioned source
+  heightfield payload, while `ModifierStack::flatten()` produces runtime tiles into a store.
+  Serialising evaluated tiles into a cell's `Terrain` channel is still
+  `save-and-persistence`'s encoding.
 
 ## Suites
 

@@ -101,6 +101,12 @@ ENTRIES: dict[str, Entry] = {
     "world_child": Entry(("world", "entity", "index")),
     # 1.1: chunks
     "world_chunks": Entry(("world", "component", "into", "capacity", "count"), result="throwing"),
+    # 1.2: asynchronous editor backend services
+    "service_open": Entry(("engine", "into"), result="throwing"),
+    "service_close": Entry(("engine", "session")),
+    "service_submit": Entry(("engine", "session", "request"), result="throwing"),
+    "service_cancel": Entry(("engine", "session", "requestId"), result="throwing"),
+    "service_poll": Entry(("engine", "session", "event", "hasEvent"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

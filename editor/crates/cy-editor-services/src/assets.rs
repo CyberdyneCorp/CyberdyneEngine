@@ -43,21 +43,26 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use cy_editor_commands::{
     Arguments, AssetHost, AssetImportOutcome, AssetImportRequest, AssetMove, Command,
-    CommandContext, EffectClass, ImportFormat, ImportSetting, ImportedSubAsset, Metadata, Outcome,
-    ParameterSpec, Registry,
+    CommandContext, EffectClass, ImportFormat, ImportSetting, ImportedSceneNode, ImportedSubAsset,
+    Metadata, Outcome, ParameterSpec, Registry,
 };
 use cy_editor_core::ids::{DocumentId, NodeId};
 use cy_editor_core::problem::{Problem, Result};
+use cy_editor_core::progress::Cancellation;
 use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_documents::operation::Operation;
 use cy_editor_documents::selection::Selection;
-use cy_editor_viewport::gizmo::Transform3;
-use cy_editor_viewport::math::Vec3;
+use cy_editor_viewport::gizmo::{Transform3, TransformBinding};
+use cy_editor_viewport::math::{Quat, Vec3};
 
-use crate::primitives::{MeshBinding, create_mesh_instance, mesh_of};
+use crate::OperationService;
+use crate::primitives::{
+    MaterialBinding, MeshBinding, create_mesh_instance, material_of, mesh_of, set_material_slots,
+};
 
 /// Domain operation used to make a filesystem move eligible for ordinary undo/redo.
 pub const ASSET_MOVE_DOMAIN: &str = "asset.move";
@@ -65,12 +70,57 @@ pub const ASSET_MOVE_DOMAIN: &str = "asset.move";
 /// Register import, move, and drag/drop asset commands.
 pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(import())?;
+    registry.register(import_external())?;
     registry.register(move_asset())?;
     registry.register(rename_asset())?;
     registry.register(place_asset())?;
     registry.register(assign_asset())?;
     registry.register(set_import_setting())?;
     Ok(())
+}
+
+fn import_external() -> Command {
+    Command::new(
+        Metadata::new(
+            "asset.import-external",
+            "Import External Asset",
+            "Asset",
+            "Copies a native source file into the current project and imports it asynchronously. \
+             Returns a stable request identity used by progress and cancellation.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "source",
+            ValueKind::Text,
+            "Native path selected by the operating system or supplied by an agent.",
+        ))
+        .with(ParameterSpec::optional(
+            "destination",
+            ValueKind::Text,
+            "Project-relative destination folder; Imported when omitted.",
+            Value::Text(String::new()),
+        )),
+        |context, arguments| {
+            let source = arguments.text("source").unwrap_or_default().trim();
+            if source.is_empty() {
+                return Err(Problem::new(
+                    "import an external asset",
+                    "no source path was given",
+                ));
+            }
+            within_scope(context, source)?;
+            let destination = arguments.text("destination").unwrap_or_default().trim();
+            let request = context.start_external_asset_import(source, destination)?;
+            Ok(
+                Outcome::new(format!("Queued {source} as import request #{request}"))
+                    .with(
+                        "request",
+                        Value::Int(i64::try_from(request).unwrap_or(i64::MAX)),
+                    )
+                    .with("source", Value::Text(source.to_string())),
+            )
+        },
+    )
 }
 
 // --- The service ---------------------------------------------------------------------------------
@@ -111,6 +161,19 @@ pub trait ImportRunner: Send + Sync {
     /// When the importer cannot be run, or when the import failed — with the importer's own
     /// diagnostics as the reason.
     fn run(&self, root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome>;
+
+    /// Import with cooperative cancellation at process/importer step boundaries.
+    fn run_cancellable(
+        &self,
+        root: &Path,
+        request: &AssetImportRequest,
+        cancellation: &Cancellation,
+    ) -> Result<AssetImportOutcome> {
+        if cancellation.is_cancelled() {
+            return Err(Problem::new("import an asset", "the request was cancelled"));
+        }
+        self.run(root, request)
+    }
 }
 
 /// The importers, run out of process.
@@ -121,6 +184,19 @@ pub struct AssetImportService {
     /// cannot change while this binary is running.
     extensions: Option<Vec<String>>,
     formats: Option<Vec<ImportFormat>>,
+    completed_tx: Sender<ExternalImportCompletion>,
+    completed_rx: Receiver<ExternalImportCompletion>,
+}
+
+/// Terminal result of one visible asynchronous import.
+#[derive(Clone, Debug)]
+pub struct ExternalImportCompletion {
+    /// Stable operation/request identity.
+    pub request: u64,
+    /// Project-relative source path after staging.
+    pub source: Option<String>,
+    /// Structured importer result or failure.
+    pub result: Result<AssetImportOutcome>,
 }
 
 impl AssetImportService {
@@ -132,11 +208,14 @@ impl AssetImportService {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         let root = root.into();
         let runner = Arc::new(CliImportRunner::found_near(&root));
+        let (completed_tx, completed_rx) = mpsc::channel();
         Self {
             root,
             runner,
             extensions: None,
             formats: None,
+            completed_tx,
+            completed_rx,
         }
     }
 
@@ -169,6 +248,280 @@ impl AssetImportService {
     pub fn describe(&self) -> String {
         self.runner.describe()
     }
+
+    /// Stage and cook an external file without blocking the interface thread.
+    pub fn start_external(
+        &mut self,
+        operations: &mut OperationService,
+        external: PathBuf,
+        destination: String,
+    ) -> Result<u64> {
+        let extension = external
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(|value| format!(".{}", value.to_ascii_lowercase()))
+            .unwrap_or_default();
+        let supported = self.importable_extensions();
+        if !supported.iter().any(|candidate| candidate == &extension) {
+            return Err(Problem::new(
+                format!("import {}", external.display()),
+                format!(
+                    "no importer claims {extension}; supported extensions: {}",
+                    supported.join(", ")
+                ),
+            ));
+        }
+
+        let root = self.root.clone();
+        let runner = Arc::clone(&self.runner);
+        let completed = self.completed_tx.clone();
+        let label = format!(
+            "Import {}",
+            external
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or("asset")
+        );
+        let operation = operations.start(label, move |operation| {
+            operation.report(Some(0.05), "copying source into the project");
+            let staged = stage_external_source(&root, &external, &destination);
+            if operation.cancellation().is_cancelled() {
+                return Ok(());
+            }
+            let result = staged.and_then(|source| {
+                operation.report(Some(0.25), "running the importer");
+                let request = AssetImportRequest {
+                    source: source.clone(),
+                    options: BTreeMap::new(),
+                    force: false,
+                };
+                runner
+                    .run_cancellable(&root, &request, &operation.cancellation())
+                    .map(|outcome| (source, outcome))
+            });
+            if operation.cancellation().is_cancelled() {
+                return Ok(());
+            }
+            operation.report(Some(0.95), "publishing imported assets");
+            let (source, terminal) = match result {
+                Ok((source, outcome)) => (Some(source), Ok(outcome)),
+                Err(problem) => (None, Err(problem)),
+            };
+            let settled = terminal.clone().map(|_| ());
+            let _ = completed.send(ExternalImportCompletion {
+                request: operation.id(),
+                source,
+                result: terminal,
+            });
+            settled
+        });
+        Ok(operation.id())
+    }
+
+    /// Drain terminal results without waiting.
+    pub fn take_completed(&mut self) -> Vec<ExternalImportCompletion> {
+        self.completed_rx.try_iter().collect()
+    }
+}
+
+fn stage_external_source(root: &Path, external: &Path, destination: &str) -> Result<String> {
+    let external = external
+        .canonicalize()
+        .map_err(|error| Problem::new(format!("read {}", external.display()), error.to_string()))?;
+    let root = root.canonicalize().map_err(|error| {
+        Problem::new(
+            format!("open project {}", root.display()),
+            error.to_string(),
+        )
+    })?;
+    if let Ok(relative) = external.strip_prefix(&root) {
+        return Ok(relative.to_string_lossy().replace('\\', "/"));
+    }
+    let destination = Path::new(destination);
+    if destination.is_absolute()
+        || destination
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err(Problem::new(
+            "stage an imported asset",
+            "the destination must stay inside the project",
+        ));
+    }
+    let folder = if destination.as_os_str().is_empty() {
+        root.join("Imported")
+    } else {
+        root.join(destination)
+    };
+    std::fs::create_dir_all(&folder)
+        .map_err(|error| Problem::new(format!("create {}", folder.display()), error.to_string()))?;
+    let name = external.file_name().ok_or_else(|| {
+        Problem::new(
+            "stage an imported asset",
+            "the selected path has no file name",
+        )
+    })?;
+    let target = folder.join(name);
+    std::fs::copy(&external, &target)
+        .map_err(|error| Problem::new(format!("copy {}", external.display()), error.to_string()))?;
+    stage_declared_companions(&external, &target)?;
+    target
+        .strip_prefix(&root)
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .map_err(|_| {
+            Problem::new(
+                "stage an imported asset",
+                "the copied file left the project",
+            )
+        })
+}
+
+fn stage_declared_companions(source: &Path, target: &Path) -> Result<()> {
+    let extension = source
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut companions = match extension.as_str() {
+        "obj" => obj_companions(source)?,
+        "fbx" => fbx_companions(source, target)?,
+        _ => Vec::new(),
+    };
+    companions.sort();
+    companions.dedup();
+    for relative in companions {
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        let Some(source_parent) = source.parent() else {
+            continue;
+        };
+        let Some(target_parent) = target.parent() else {
+            continue;
+        };
+        let from = source_parent.join(&relative);
+        if !from.is_file() {
+            continue;
+        }
+        let to = target_parent.join(&relative);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                Problem::new(format!("create {}", parent.display()), error.to_string())
+            })?;
+        }
+        std::fs::copy(&from, &to).map_err(|error| {
+            Problem::new(
+                format!("copy companion {}", from.display()),
+                error.to_string(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn obj_companions(source: &Path) -> Result<Vec<PathBuf>> {
+    let text = std::fs::read_to_string(source)
+        .map_err(|error| Problem::new(format!("read {}", source.display()), error.to_string()))?;
+    let mut companions: Vec<PathBuf> = text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("mtllib "))
+        .map(|value| PathBuf::from(value.trim()))
+        .collect();
+    for library in companions.clone() {
+        let Some(parent) = source.parent() else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(parent.join(library)) else {
+            continue;
+        };
+        for line in text.lines() {
+            let mut words = line.split_whitespace();
+            let Some(keyword) = words.next() else {
+                continue;
+            };
+            if is_mtl_texture_keyword(keyword)
+                && let Some(path) = words.last()
+            {
+                companions.push(PathBuf::from(path));
+            }
+        }
+    }
+    Ok(companions)
+}
+
+fn is_mtl_texture_keyword(keyword: &str) -> bool {
+    matches!(
+        keyword,
+        "map_Ka"
+            | "map_Kd"
+            | "map_Ks"
+            | "map_Ke"
+            | "map_Bump"
+            | "map_bump"
+            | "bump"
+            | "disp"
+            | "decal"
+            | "norm"
+            | "map_Pr"
+            | "map_Pm"
+    )
+}
+
+fn fbx_companions(source: &Path, target: &Path) -> Result<Vec<PathBuf>> {
+    let bytes = std::fs::read(source)
+        .map_err(|error| Problem::new(format!("read {}", source.display()), error.to_string()))?;
+    let text = String::from_utf8_lossy(&bytes);
+    let companions = text
+        .lines()
+        .filter(|line| line.contains("RelativeFilename"))
+        .filter_map(|line| line.split_once('"').map(|(_, quoted)| quoted))
+        .filter_map(|quoted| quoted.split_once('"').map(|(path, _)| path))
+        .map(|path| PathBuf::from(path.replace('\\', "/")))
+        .collect();
+    if let (Some(stem), Some(source_parent), Some(target_parent)) = (
+        source.file_stem().and_then(std::ffi::OsStr::to_str),
+        source.parent(),
+        target.parent(),
+    ) {
+        let folder = PathBuf::from(format!("{stem}.fbm"));
+        if source_parent.join(&folder).is_dir() {
+            copy_companion_directory(&source_parent.join(&folder), &target_parent.join(&folder))?;
+        }
+    }
+    Ok(companions)
+}
+
+fn copy_companion_directory(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)
+        .map_err(|error| Problem::new(format!("create {}", to.display()), error.to_string()))?;
+    let mut entries = std::fs::read_dir(from)
+        .map_err(|error| Problem::new(format!("read {}", from.display()), error.to_string()))?
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|error| Problem::new(format!("read {}", from.display()), error.to_string()))?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let source = entry.path();
+        let destination = to.join(entry.file_name());
+        if entry
+            .file_type()
+            .map_err(|error| Problem::new("inspect an FBX companion", error.to_string()))?
+            .is_dir()
+        {
+            copy_companion_directory(&source, &destination)?;
+        } else {
+            std::fs::copy(&source, &destination).map_err(|error| {
+                Problem::new(
+                    format!("copy companion {}", source.display()),
+                    error.to_string(),
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 impl AssetHost for AssetImportService {
@@ -278,6 +631,15 @@ impl ImportRunner for CliImportRunner {
     }
 
     fn run(&self, root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
+        self.run_cancellable(root, request, &Cancellation::new())
+    }
+
+    fn run_cancellable(
+        &self,
+        root: &Path,
+        request: &AssetImportRequest,
+        cancellation: &Cancellation,
+    ) -> Result<AssetImportOutcome> {
         let tool = self.tool()?.to_path_buf();
         let mut command = std::process::Command::new(&tool);
         command
@@ -295,11 +657,33 @@ impl ImportRunner for CliImportRunner {
             command.arg("--set").arg(format!("{name}={value}"));
         }
         command.arg(&request.source);
-
-        let output = command.output().map_err(|error| {
+        command
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = command.spawn().map_err(|error| {
             Problem::new(format!("run {}", tool.display()), error.to_string())
                 .with_remedy("check that the importer binary is executable")
         })?;
+        loop {
+            if cancellation.is_cancelled() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Problem::new("import an asset", "the request was cancelled"));
+            }
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                Err(error) => {
+                    return Err(Problem::new(
+                        format!("run {}", tool.display()),
+                        error.to_string(),
+                    ));
+                }
+            }
+        }
+        let output = child
+            .wait_with_output()
+            .map_err(|error| Problem::new(format!("read {}", tool.display()), error.to_string()))?;
         let text = String::from_utf8_lossy(&output.stdout).to_string();
         let complaint = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !output.status.success() && text.trim().is_empty() {
@@ -439,27 +823,170 @@ fn number_field(text: &str, key: &str, at: usize) -> Option<usize> {
     digits.parse().ok()
 }
 
+fn signed_field(text: &str, key: &str) -> Option<i64> {
+    let needle = format!("\"{key}\":");
+    let rest = text.get(text.find(&needle)? + needle.len()..)?.trim_start();
+    let digits: String = rest
+        .chars()
+        .take_while(|character| character.is_ascii_digit() || *character == '-')
+        .collect();
+    digits.parse().ok()
+}
+
+fn float_array<const N: usize>(text: &str, key: &str) -> Option<[f32; N]> {
+    let needle = format!("\"{key}\":");
+    let rest = text.get(text.find(&needle)? + needle.len()..)?.trim_start();
+    let body = rest.strip_prefix('[')?.split(']').next()?;
+    let values = body
+        .split(',')
+        .map(|value| value.trim().parse::<f32>())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .ok()?;
+    values.try_into().ok()
+}
+
+fn string_array(text: &str, key: &str) -> Vec<String> {
+    let needle = format!("\"{key}\":");
+    let Some(rest) = text
+        .find(&needle)
+        .and_then(|start| text.get(start + needle.len()..))
+        .map(str::trim_start)
+        .and_then(|rest| rest.strip_prefix('['))
+    else {
+        return Vec::new();
+    };
+    let Some(body) = rest.split(']').next() else {
+        return Vec::new();
+    };
+    body.split(',')
+        .filter_map(|item| {
+            let item = item.trim();
+            item.strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .map(ToOwned::to_owned)
+        })
+        .collect()
+}
+
+fn material_slot_array(text: &str) -> Vec<String> {
+    let Some(body) = array_body(text, "materials") else {
+        return Vec::new();
+    };
+    body.split(',')
+        .map(|item| {
+            let item = item.trim();
+            item.strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect()
+}
+
+fn array_body<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("\"{key}\":");
+    let start = text.find(&needle)? + needle.len();
+    let open = text.get(start..)?.find('[')? + start;
+    let mut depth = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (offset, character) in text.get(open..)?.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => quoted = true,
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return text.get(open + 1..open + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn scene_nodes(text: &str) -> Vec<ImportedSceneNode> {
+    let Some(body) = array_body(text, "instances") else {
+        return Vec::new();
+    };
+    let mut nodes = Vec::new();
+    let mut cursor = 0;
+    while let Some(open) = body[cursor..].find('{').map(|offset| cursor + offset) {
+        let Some(close) = body[open..].find('}').map(|offset| open + offset + 1) else {
+            break;
+        };
+        let object = &body[open..close];
+        let parent = signed_field(object, "parent").and_then(|value| usize::try_from(value).ok());
+        let mesh = string_field(object, "mesh", 0);
+        let Some(identity) = string_field(object, "identity", 0) else {
+            break;
+        };
+        nodes.push(ImportedSceneNode {
+            identity,
+            name: string_field(object, "name", 0).unwrap_or_default(),
+            parent,
+            translation: float_array(object, "translation").unwrap_or([0.0; 3]),
+            rotation: float_array(object, "rotation").unwrap_or([0.0, 0.0, 0.0, 1.0]),
+            scale: float_array(object, "scale").unwrap_or([1.0; 3]),
+            mesh,
+            materials: material_slot_array(object),
+        });
+        cursor = close;
+    }
+    nodes
+}
+
 /// The first source's row, which is the only one a single-source import produces.
 fn parse_json_outcome(text: &str) -> Option<AssetImportOutcome> {
+    let schema_version = number_field(text, "schema_version", 0).unwrap_or(1);
+    if schema_version > 3 {
+        return None;
+    }
     let mut outcome = AssetImportOutcome {
+        schema_version: u32::try_from(schema_version).ok()?,
         source: string_field(text, "source", 0)?,
         importer: string_field(text, "importer", 0).unwrap_or_default(),
         id: string_field(text, "id", 0).unwrap_or_default(),
         cache: string_field(text, "cache", 0).unwrap_or_default(),
         sub_assets: Vec::new(),
+        scene: scene_nodes(text),
         warnings: number_field(text, "warnings", 0).unwrap_or_default(),
         errors: number_field(text, "errors", 0).unwrap_or_default(),
         steps_not_reached: string_field(text, "steps_not_reached", 0).unwrap_or_default(),
     };
     // The sub-asset table lives after `"assets": [`, and each entry is a name and an id. Walking
     // from that offset is what keeps the row's own `"id"` from being read as the first entry's.
-    if let Some(table) = text.find("\"assets\":") {
-        let mut at = table;
-        while let Some(name) = string_field(text, "name", at) {
-            let name_at = text[at..].find("\"name\":")? + at;
-            let id = string_field(text, "id", name_at).unwrap_or_default();
-            outcome.sub_assets.push(ImportedSubAsset { name, id });
-            at = name_at + "\"name\":".len();
+    if let Some(assets) = array_body(text, "assets") {
+        let mut cursor = 0;
+        while let Some(open) = assets[cursor..].find('{').map(|offset| cursor + offset) {
+            let Some(close) = assets[open..].find('}').map(|offset| open + offset + 1) else {
+                break;
+            };
+            let object = &assets[open..close];
+            let Some(name) = string_field(object, "name", 0) else {
+                break;
+            };
+            let id = string_field(object, "id", 0).unwrap_or_default();
+            outcome.sub_assets.push(ImportedSubAsset {
+                kind: string_field(object, "kind", 0)
+                    .unwrap_or_else(|| name.split('/').next().unwrap_or("unknown").to_string()),
+                source: string_field(object, "source", 0).unwrap_or_else(|| outcome.source.clone()),
+                dependencies: string_array(object, "dependencies"),
+                name,
+                id,
+            });
+            cursor = close;
         }
     }
     Some(outcome)
@@ -662,7 +1189,14 @@ fn place_asset() -> Command {
             {
                 return Err(Problem::not_found(format!("asset {path}")));
             }
-            let node = place_imported(context, arguments, &path)?;
+            let node = place_imported(
+                context,
+                arguments,
+                &AssetImportOutcome {
+                    source: path.clone(),
+                    ..AssetImportOutcome::default()
+                },
+            )?;
             Ok(Outcome::new(format!("Placed {path}"))
                 .with("asset", Value::Text(path))
                 .with("entity", Value::Text(node.to_string())))
@@ -676,8 +1210,9 @@ fn assign_asset() -> Command {
             "asset.assign",
             "Assign Asset",
             "Asset",
-            "Assigns an existing asset to an entity's mesh field as one undoable transaction. \
-             This is the Inspector's asset-drop intent and is automatically the MCP tool.",
+            "Assigns an existing mesh or material asset to the matching MeshRenderer field as one \
+             undoable transaction. This is the Inspector's asset-drop intent and is automatically \
+             the MCP tool.",
             EffectClass::ReversibleMutation,
         )
         .with(ParameterSpec::required(
@@ -711,18 +1246,35 @@ fn assign_asset() -> Command {
             let document = context
                 .document_mut(id)
                 .ok_or_else(|| Problem::not_found("the active document"))?;
-            let binding = MeshBinding::of_schema(document.schema()).ok_or_else(|| {
-                Problem::new("assign an asset", "the scene has no mesh asset field")
-                    .with_remedy("drop the asset into the scene to create a mesh entity first")
-            })?;
-            let before = mesh_of(document, node).ok_or_else(|| {
-                Problem::new("assign an asset", "the entity has no assignable mesh field")
-            })?;
+            let (component, field, before) = match assignment_kind(&path)? {
+                AssignmentKind::Mesh => {
+                    let binding = MeshBinding::of_schema(document.schema()).ok_or_else(|| {
+                        Problem::new("assign a mesh", "the scene has no mesh asset field")
+                            .with_remedy("drop the mesh into the scene first")
+                    })?;
+                    let before = mesh_of(document, node).ok_or_else(|| {
+                        Problem::new("assign a mesh", "the entity has no assignable mesh field")
+                    })?;
+                    (binding.component, binding.mesh, before)
+                }
+                AssignmentKind::Material => {
+                    let binding = MaterialBinding::declare(document.schema_mut());
+                    if mesh_of(document, node).is_none() {
+                        return Err(Problem::new(
+                            "assign a material",
+                            "the entity is not a mesh instance",
+                        )
+                        .with_remedy("drop the material onto an entity with a MeshRenderer"));
+                    }
+                    let before = material_of(document, node).unwrap_or_default();
+                    (binding.component, binding.material, before)
+                }
+            };
             document.with_transaction(format!("Assign {path}"), actor, |document| {
                 document.record(Operation::SetAssetReference {
                     node,
-                    component: binding.component,
-                    field: binding.mesh,
+                    component,
+                    field,
                     before,
                     after: path.clone(),
                 })
@@ -732,6 +1284,29 @@ fn assign_asset() -> Command {
                 .with("entity", Value::Text(node.to_string())))
         },
     )
+}
+
+#[derive(Clone, Copy)]
+enum AssignmentKind {
+    Mesh,
+    Material,
+}
+
+fn assignment_kind(path: &str) -> Result<AssignmentKind> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "cymesh" | "obj" | "fbx" | "gltf" | "glb" | "cyprim" => Ok(AssignmentKind::Mesh),
+        "cymat" | "cygraph" => Ok(AssignmentKind::Material),
+        _ => Err(Problem::new(
+            "assign an asset",
+            format!("{path} is neither a mesh nor a material source"),
+        )
+        .with_remedy("assign a mesh source or a .cymat/.cygraph material")),
+    }
 }
 
 fn set_import_setting() -> Command {
@@ -1040,7 +1615,7 @@ fn run_import(context: &mut dyn CommandContext, arguments: &Arguments) -> Result
     if !place {
         return Ok(outcome);
     }
-    let node = place_imported(context, arguments, &imported.source)?;
+    let node = place_imported(context, arguments, &imported)?;
     Ok(outcome.with("entity", Value::Text(node.to_string())))
 }
 
@@ -1051,7 +1626,7 @@ fn run_import(context: &mut dyn CommandContext, arguments: &Arguments) -> Result
 fn place_imported(
     context: &mut dyn CommandContext,
     arguments: &Arguments,
-    source: &str,
+    imported: &AssetImportOutcome,
 ) -> Result<NodeId> {
     let document_id = active(context)?;
     let parent = parse_node(arguments.text("parent").unwrap_or_default())?;
@@ -1067,13 +1642,76 @@ fn place_imported(
         translation: Vec3::new(at[0], at[1], at[2]),
         ..Transform3::default()
     };
-    let node = document.with_transaction(format!("Import {source}"), actor, |document| {
-        create_mesh_instance(document, parent, source, placement)
-    })?;
+    let node =
+        document.with_transaction(format!("Import {}", imported.source), actor, |document| {
+            if imported.scene.is_empty() {
+                return create_mesh_instance(document, parent, &imported.source, placement);
+            }
+            let mut created = Vec::with_capacity(imported.scene.len());
+            for source in &imported.scene {
+                let source_parent = match source.parent {
+                    Some(index) => Some(*created.get(index).ok_or_else(|| {
+                        Problem::new(
+                            "instantiate an imported prefab",
+                            "a child precedes its parent",
+                        )
+                        .with_remedy("re-import the source with the current importer")
+                    })?),
+                    None => parent,
+                };
+                let mut local = Transform3 {
+                    translation: Vec3::from_array(source.translation),
+                    rotation: Quat::from_array(source.rotation),
+                    scale: Vec3::from_array(source.scale),
+                };
+                if source.parent.is_none() {
+                    local.translation = local.translation + placement.translation;
+                }
+                let instance = if let Some(mesh) = &source.mesh {
+                    let instance = create_mesh_instance(document, source_parent, mesh, local)?;
+                    set_material_slots(document, instance, &source.materials)?;
+                    instance
+                } else {
+                    create_transform_node(document, source_parent, local)?
+                };
+                document.set_name(instance, source.name.clone())?;
+                created.push(instance);
+            }
+            created.first().copied().ok_or_else(|| {
+                Problem::new(
+                    "instantiate an imported prefab",
+                    "the prefab contains no nodes",
+                )
+            })
+        })?;
 
     let mut selection = Selection::new();
     selection.add_node(node);
     context.set_selection(selection);
+    Ok(node)
+}
+
+fn create_transform_node(
+    document: &mut cy_editor_documents::Document,
+    parent: Option<NodeId>,
+    transform: Transform3,
+) -> Result<NodeId> {
+    let binding = TransformBinding::of_schema(document.schema());
+    let node = document.create_node(parent)?;
+    if let Some(binding) = binding {
+        document.add_component(
+            node,
+            binding.component,
+            vec![
+                (
+                    binding.translation,
+                    Value::Vec3(transform.translation.to_array()),
+                ),
+                (binding.rotation, Value::Quat(transform.rotation.to_array())),
+                (binding.scale, Value::Vec3(transform.scale.to_array())),
+            ],
+        )?;
+    }
     Ok(node)
 }
 
@@ -1114,7 +1752,238 @@ fn count_of(value: usize) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, SystemTime};
+
     use super::*;
+
+    fn temporary_project(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("the test clock follows the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "cy-editor-import-{name}-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create temporary project");
+        root
+    }
+
+    #[test]
+    fn an_external_source_is_copied_under_the_project_and_can_be_reimported() {
+        let root = temporary_project("stage");
+        let outside = root.with_extension("obj");
+        std::fs::write(&outside, b"o triangle\n").expect("write source");
+
+        let staged = stage_external_source(&root, &outside, "Models").expect("stage source");
+        assert_eq!(
+            staged,
+            format!("Models/{}", outside.file_name().unwrap().to_string_lossy())
+        );
+        assert_eq!(std::fs::read(root.join(&staged)).unwrap(), b"o triangle\n");
+        std::fs::write(&outside, b"o changed\n").expect("change source");
+        assert_eq!(
+            stage_external_source(&root, &outside, "Models").unwrap(),
+            staged
+        );
+        assert_eq!(std::fs::read(root.join(&staged)).unwrap(), b"o changed\n");
+
+        std::fs::remove_file(outside).ok();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn obj_staging_copies_declared_material_libraries_and_textures() {
+        let root = temporary_project("obj-companions");
+        let outside = temporary_project("obj-source");
+        std::fs::create_dir_all(outside.join("textures")).unwrap();
+        std::fs::write(outside.join("chair.obj"), "mtllib chair.mtl\no Chair\n").unwrap();
+        std::fs::write(
+            outside.join("chair.mtl"),
+            "newmtl Oak\nmap_Kd textures/oak.png\n",
+        )
+        .unwrap();
+        std::fs::write(outside.join("textures/oak.png"), b"png").unwrap();
+
+        let staged = stage_external_source(&root, &outside.join("chair.obj"), "Models")
+            .expect("stage the declared companion set");
+        assert_eq!(staged, "Models/chair.obj");
+        assert!(root.join("Models/chair.mtl").is_file());
+        assert_eq!(
+            std::fs::read(root.join("Models/textures/oak.png")).unwrap(),
+            b"png"
+        );
+
+        std::fs::remove_dir_all(outside).ok();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_missing_obj_companion_is_left_for_the_importer_to_diagnose() {
+        let root = temporary_project("obj-missing-companion");
+        let outside = root.with_extension("obj");
+        std::fs::write(&outside, "mtllib missing.mtl\no Chair\n").unwrap();
+        let staged =
+            stage_external_source(&root, &outside, "Models").expect("staging itself remains valid");
+        assert!(root.join(staged).is_file());
+        assert!(!root.join("Models/missing.mtl").exists());
+        std::fs::remove_file(outside).ok();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    struct ImmediateRunner;
+
+    impl ImportRunner for ImmediateRunner {
+        fn describe(&self) -> String {
+            "test importer".into()
+        }
+
+        fn extensions(&self) -> Vec<String> {
+            vec![".fbx".into(), ".obj".into(), ".tga".into()]
+        }
+
+        fn run(&self, _root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
+            let importer = Path::new(&request.source)
+                .extension()
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            Ok(AssetImportOutcome {
+                source: request.source.clone(),
+                importer: if importer == "tga" {
+                    "texture".into()
+                } else {
+                    importer
+                },
+                id: "asset-id".into(),
+                cache: "miss".into(),
+                sub_assets: vec![ImportedSubAsset {
+                    name: "mesh/Triangle".into(),
+                    id: "mesh-id".into(),
+                    ..ImportedSubAsset::default()
+                }],
+                ..AssetImportOutcome::default()
+            })
+        }
+    }
+
+    #[test]
+    fn a_visible_import_runs_in_the_operation_service_and_correlates_its_result() {
+        let root = temporary_project("async");
+        let source = root.join("triangle.obj");
+        std::fs::write(&source, b"o triangle\n").expect("write source");
+        let mut imports = AssetImportService::new(&root).with_runner(Arc::new(ImmediateRunner));
+        let mut operations = OperationService::new();
+
+        let request = imports
+            .start_external(&mut operations, source, String::new())
+            .expect("queue import");
+        let operation = operations.all().first().expect("operation").clone();
+        operation.block_until_settled(Duration::from_secs(5));
+        let completed = imports.take_completed();
+
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].request, request);
+        assert_eq!(completed[0].result.as_ref().unwrap().id, "asset-id");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn external_fbx_obj_and_texture_imports_share_one_async_contract() {
+        let root = temporary_project("async-formats");
+        let mut imports = AssetImportService::new(&root).with_runner(Arc::new(ImmediateRunner));
+        let mut operations = OperationService::new();
+        let mut requests = Vec::new();
+        for name in ["robot.fbx", "chair.obj", "oak.tga"] {
+            let source = root.join(name);
+            std::fs::write(&source, b"source").unwrap();
+            requests.push(
+                imports
+                    .start_external(&mut operations, source, "Imported".into())
+                    .unwrap(),
+            );
+        }
+        for operation in operations.all() {
+            operation.block_until_settled(Duration::from_secs(5));
+        }
+        let completed = imports.take_completed();
+        assert_eq!(completed.len(), 3);
+        let mut completed_requests = completed
+            .iter()
+            .map(|item| item.request)
+            .collect::<Vec<_>>();
+        completed_requests.sort_unstable();
+        requests.sort_unstable();
+        assert_eq!(completed_requests, requests);
+        let mut importers = completed
+            .iter()
+            .map(|item| item.result.as_ref().unwrap().importer.as_str())
+            .collect::<Vec<_>>();
+        importers.sort_unstable();
+        assert_eq!(
+            importers,
+            vec!["fbx", "obj", "texture"],
+            "every supported source format completed"
+        );
+        let unsupported = root.join("scene.blend");
+        std::fs::write(&unsupported, b"source").unwrap();
+        let refused = imports
+            .start_external(&mut operations, unsupported, String::new())
+            .expect_err("no importer claims Blender files");
+        assert!(refused.to_string().contains("supported extensions"));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    struct CacheRunner(AtomicUsize);
+
+    impl ImportRunner for CacheRunner {
+        fn describe(&self) -> String {
+            "cache test importer".into()
+        }
+
+        fn extensions(&self) -> Vec<String> {
+            vec![".obj".into()]
+        }
+
+        fn run(&self, _root: &Path, request: &AssetImportRequest) -> Result<AssetImportOutcome> {
+            let count = self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(AssetImportOutcome {
+                source: request.source.clone(),
+                importer: "obj".into(),
+                id: "stable-id".into(),
+                cache: if count == 0 { "miss" } else { "hit" }.into(),
+                ..AssetImportOutcome::default()
+            })
+        }
+    }
+
+    #[test]
+    fn repeated_external_import_surfaces_the_cache_hit_without_changing_identity() {
+        let root = temporary_project("async-cache");
+        let source = root.join("chair.obj");
+        std::fs::write(&source, b"o chair\n").unwrap();
+        let mut imports =
+            AssetImportService::new(&root).with_runner(Arc::new(CacheRunner(AtomicUsize::new(0))));
+        let mut operations = OperationService::new();
+        let mut outcomes = Vec::new();
+        for _ in 0..2 {
+            let request = imports
+                .start_external(&mut operations, source.clone(), String::new())
+                .unwrap();
+            operations
+                .all()
+                .iter()
+                .find(|operation| operation.id() == request)
+                .unwrap()
+                .block_until_settled(Duration::from_secs(5));
+            outcomes.push(imports.take_completed().remove(0).result.unwrap());
+        }
+        assert_eq!(outcomes[0].cache, "miss");
+        assert_eq!(outcomes[1].cache, "hit");
+        assert_eq!(outcomes[0].id, outcomes[1].id);
+        std::fs::remove_dir_all(root).ok();
+    }
 
     /// The exact bytes `cy_import_cli --json` wrote for an OBJ, pasted from a real run. A reader
     /// asserted against a document its author also wrote is a reader that agrees with itself.
@@ -1166,6 +2035,45 @@ mod tests {
             Some("mesh/Seat")
         );
         assert!(outcome.steps_not_reached.contains("7 (import skeletons)"));
+    }
+
+    #[test]
+    fn a_versioned_prefab_result_keeps_hierarchy_transforms_and_mesh_identity() {
+        let report = r#"{
+  "schema_version": 3,
+  "sources": [{
+    "source": "models/robot.fbx", "importer": "fbx", "id": "prefab-id",
+    "cache": "miss", "warnings": 0, "errors": 0, "steps_not_reached": "",
+    "assets": [{"name": "mesh/Body", "id": "body-mesh", "kind": "mesh",
+                "source": "models/robot.fbx", "dependencies": ["body-material"]}],
+    "instances": [
+      {"identity": "root-source", "name": "Robot", "parent": -1,
+       "translation": [1, 2, 3], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1], "mesh": null},
+      {"identity": "body-source", "name": "Body", "parent": 0,
+       "translation": [0, 1, 0], "rotation": [0, 0, 0, 1], "scale": [2, 2, 2],
+       "mesh": "body-mesh", "materials": ["body-material", null, "detail-material"]}
+    ]
+  }]
+}"#;
+
+        let outcome = parse_json_outcome(report).expect("version three is supported");
+        assert_eq!(outcome.schema_version, 3);
+        assert_eq!(outcome.scene.len(), 2);
+        assert_eq!(outcome.scene[1].parent, Some(0));
+        assert_eq!(outcome.scene[1].mesh.as_deref(), Some("body-mesh"));
+        assert_eq!(
+            outcome.scene[1].materials,
+            vec!["body-material", "", "detail-material"]
+        );
+        assert_eq!(outcome.sub_assets[0].kind, "mesh");
+        assert_eq!(outcome.sub_assets[0].source, "models/robot.fbx");
+        assert_eq!(outcome.sub_assets[0].dependencies, vec!["body-material"]);
+        assert!(
+            outcome.scene[1]
+                .scale
+                .iter()
+                .all(|lane| (*lane - 2.0).abs() < f32::EPSILON)
+        );
     }
 
     #[test]

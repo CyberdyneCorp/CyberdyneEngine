@@ -28,6 +28,7 @@
 pub mod asset_catalogue;
 pub mod assets;
 pub mod authoring;
+pub mod backend;
 pub mod bodies;
 pub mod builtin;
 pub mod documents;
@@ -48,6 +49,7 @@ pub mod settings;
 pub mod source_control;
 pub mod source_language;
 pub mod source_workspace;
+pub mod terrain;
 pub mod viewports;
 pub mod workspace;
 pub mod workspace_store;
@@ -58,6 +60,12 @@ pub mod worldfile;
 // in the workspace that may say `unsafe`, which is exactly the reach-through
 // `editor-rust-application` forbids.
 pub use asset_catalogue::{AssetCatalogueService, AssetEntry, AssetMove};
+pub use assets::{AssetImportService, ExternalImportCompletion};
+pub use backend::{
+    BackendServices, MaterialCatalogueState, MaterialDiagnostic, MaterialDiagnosticLocation,
+    MaterialDiagnosticSeverity, MaterialOperation, MaterialParameterValue, MaterialPreviewState,
+    MaterialPreviewTarget, MaterialRequestState,
+};
 pub use cy_editor_sdk::HostingMode;
 pub use documents::{CloseDecision, CloseOutcome, DocumentService};
 pub use editor::{Editor, ReloadReport};
