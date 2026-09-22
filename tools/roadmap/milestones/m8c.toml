@@ -410,9 +410,23 @@ id = "ml-option-off"
 describe = "and the same tree with `-D CY_ML=OFF`, which removes src/ml/ entirely. M8.b's gate found CY_UI defaulting OFF while gating NOTHING — an option whose presence and absence produced identical output because neither had been compared — so this milestone checks both directions for every option it adds"
 source = "tasks 4.1c, delivery-roadmap"
 kind = "command"
-run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ml}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_ML=OFF; CY_BUILD_DIR=\"$d\" just test-unit --profile dev -R ^unit.ecs$"
+run = '''
+set -e
+python3 tools/roadmap/matrix.py build off-ml
+CY_BUILD_DIR="$(python3 tools/roadmap/matrix.py path off-ml)" just test-unit --profile dev -R ^unit.ecs$
+'''
 timeout_s = 14400
 ci_job = "milestone-m8c"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the matrix rows it builds.
+# `tools/roadmap/matrix.py` is not a directory redirection schedule.py can read, and the
+# tokens matter here — two criteria that name the same row must not configure it at once.
+needs = ["build:ledger-matrix/off-ml"]
+# The same shape one option along: `if(CY_ML)` is the line that excludes src/ml/, and the
+# CY_ML=OFF configure this criterion performs is what stops without it.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/CMakeLists.txt"
+token = "if(CY_ML)"
 
 # --- Section 4b: the audio debt -------------------------------------------------------------------
 #
@@ -637,6 +651,26 @@ id = "feature-options-off"
 describe = "the whole tree configures and builds with each of this milestone's new feature options switched off — CY_VFX alone, and CY_RENDERER_VULKAN together with the CY_VIRTUAL_GEOMETRY that cmake/features.cmake requires with it. A capability that cannot be removed at build time is not behind an option, whatever cmake/features.cmake says; and samples/08-vertical-slice declares nothing at all in the configurations where its subjects are absent, rather than turning a removable feature into a configure error naming the artefact"
 source = "tasks 2.x, 7.2, delivery-roadmap, testing-and-quality"
 kind = "command"
-run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-vfx}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_VFX=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_RENDERER_VULKAN=OFF -D CY_VIRTUAL_GEOMETRY=OFF"
+run = '''
+# BOTH CONFIGURATIONS COME FROM tools/roadmap/matrix.py, which builds them AT THE SAME TIME, each in
+# its own stable tree under build/ledger-matrix/. Nothing is cached and nothing is skipped: the
+# matrix runs `just build-engine` for each row it is asked for, every time, and Ninja decides what
+# is out of date. What it stops is the rebuild from empty that a per-run CY_BUILD_DIR forced on
+# every evaluation, and the reconfiguring of build/dev that this body did when CY_BUILD_DIR was not
+# set at all.
+python3 tools/roadmap/matrix.py build off-vfx off-vulkan
+'''
 timeout_s = 14400
 ci_job = "milestone-m8c"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the matrix rows it builds.
+# `tools/roadmap/matrix.py` is not a directory redirection schedule.py can read, and the
+# tokens matter here — two criteria that name the same row must not configure it at once.
+needs = ["build:ledger-matrix/off-vfx", "build:ledger-matrix/off-vulkan"]
+# WHAT BREAKING IT LOOKS LIKE, as data `falsify.py` applies. `src/CMakeLists.txt` line
+# `if(CY_VFX)` IS what makes CY_VFX gate anything; deleting it leaves the `add_subdirectory`
+# and its `endif()` dangling, and the CY_VFX=OFF configure this criterion performs stops
+# there. A criterion that stayed green through that would not be checking a configure.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/CMakeLists.txt"
+token = "if(CY_VFX)"

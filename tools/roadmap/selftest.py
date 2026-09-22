@@ -44,6 +44,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from pathlib import Path
 
@@ -58,6 +59,7 @@ import record as record_module  # noqa: E402
 import row_evidence as row_evidence_module  # noqa: E402
 import requirements as requirements_module  # noqa: E402
 import roadmap as roadmap_module  # noqa: E402
+import schedule as schedule_module  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROADMAP = HERE / "roadmap.py"
@@ -2133,6 +2135,358 @@ def test_falsifiability_of_the_ladder(root: Path) -> None:
 NESTED_IN_THE_PROVER = "CY_FALSIFY"
 
 
+
+
+# --- The scheduler: which criteria may run at the same time ----------------------------------------
+#
+# THE LEDGER RAN ON ONE CORE OF TWENTY-FOUR, and making it run on more of them is the only change in
+# this tooling whose failure mode is a FLAKE rather than a wrong answer. A flake in a milestone
+# ledger is worse than a slow ledger: a verdict nobody can reproduce is a verdict nobody can act on,
+# and this project has spent whole phases chasing one. So the rules below are all of one shape —
+# they are about what the scheduler REFUSES to do, not about how fast it is.
+
+
+def _fake(needs=(), *, kind="command", run="", requires="") -> criteria_module.Criterion:
+    return criteria_module.Criterion(
+        id="x", describe="d", source="s", kind=kind, ci_job="j", run=run,
+        requires=requires, reason="r" if requires else "", needs=list(needs))
+
+
+class _Entry:
+    """A stand-in for a PlanEntry: the scheduler reads `criterion` and `label` and nothing else."""
+
+    def __init__(self, label: str, criterion: criteria_module.Criterion) -> None:
+        self.label, self.criterion = label, criterion
+
+
+def _observe(entries, jobs: int):
+    """Run the entries under the scheduler and record what ever overlapped what.
+
+    Returns (results, overlaps, peak): `overlaps` holds every pair that was running at the same time
+    and should not have been, which is the property the whole module exists for.
+    """
+    import random
+    import threading
+
+    lock = threading.Lock()
+    live: list[_Entry] = []
+    overlaps: list[tuple[str, str]] = []
+    peak = 0
+
+    def evaluate(entry):
+        nonlocal peak
+        with lock:
+            for other in live:
+                if not schedule_module.independent(entry.criterion, other.criterion):
+                    overlaps.append((entry.label, other.label))
+            live.append(entry)
+            peak = max(peak, len(live))
+        time.sleep(random.uniform(0.002, 0.02))
+        with lock:
+            live.remove(entry)
+        return entry.label
+
+    results = schedule_module.run(entries, evaluate, jobs)
+    return results, overlaps, peak
+
+
+def test_scheduler_rules(root: Path) -> None:
+    """What the scheduler may and may not do with a set of criteria."""
+    entries = [
+        _Entry("a", _fake(["build:@"])), _Entry("b", _fake([])),
+        _Entry("c", _fake(["build:@"])), _Entry("d", _fake([schedule_module.EXCLUSIVE])),
+        _Entry("e", _fake([])), _Entry("f", _fake(["cargo"])),
+        _Entry("g", _fake(["cargo"])), _Entry("h", _fake([])),
+        _Entry("i", _fake(["build:@", "cargo"])), _Entry("j", _fake(["gpu"])),
+        _Entry("k", _fake(["gpu"])), _Entry("l", _fake([])),
+    ]
+    order = [entry.label for entry in entries]
+
+    for jobs in (2, 4, 8, 16):
+        results, overlaps, peak = _observe(entries, jobs)
+        check(f"results come back in ledger order with {jobs} at a time", results == order,
+              f"got {results}")
+        check(f"nothing runs beside something it shares a resource with, {jobs} at a time",
+              not overlaps, f"overlapped: {overlaps}")
+        check(f"the concurrency cap of {jobs} is respected", peak <= jobs, f"peak was {peak}")
+
+    results, overlaps, peak = _observe(entries, 1)
+    check("--jobs 1 is the sequential ledger: one at a time, in order",
+          results == order and peak == 1 and not overlaps, f"peak {peak}, results {results}")
+
+    # A criterion that runs alone is a BARRIER. Without that it would starve: the pool is always
+    # busy, so a criterion needing the pool empty would never reach the front of it.
+    alone = [_Entry(str(index), _fake([])) for index in range(6)]
+    alone.insert(3, _Entry("alone", _fake([schedule_module.EXCLUSIVE])))
+    _, overlaps, _ = _observe(alone, 8)
+    check("a criterion that runs alone runs with nothing beside it",
+          not overlaps, f"overlapped: {overlaps}")
+
+    every_one_alone = [_Entry(str(index), _fake([schedule_module.EXCLUSIVE])) for index in range(5)]
+    results, overlaps, peak = _observe(every_one_alone, 8)
+    check("a ledger of nothing but exclusive criteria finishes, one at a time",
+          results == [str(index) for index in range(5)] and peak == 1 and not overlaps)
+
+    check("two criteria naming different build trees are independent",
+          schedule_module.independent(_fake(["build:one"]), _fake(["build:two"])))
+    check("two criteria naming the same build tree are not",
+          not schedule_module.independent(_fake(["build:one"]), _fake(["build:one"])))
+    check("an exclusive criterion is independent of nothing, not even an empty one",
+          not schedule_module.independent(_fake([schedule_module.EXCLUSIVE]), _fake([])))
+
+
+def test_scheduler_derivation(root: Path) -> None:
+    """What a criterion's body shows it needs — and, far more important, what it does NOT show.
+
+    Every case here is a body shape that appears in the real ledgers. The negative half is the half
+    that matters: a body the tables cannot read has to come back UNKNOWN so that it runs alone, and
+    a derivation that guessed instead would be indistinguishable from a correct one until the day it
+    produced a flake.
+    """
+    derive = schedule_module.derive
+
+    check("a recipe that only reads the tree holds nothing",
+          derive(_fake(run="just quality-layers")) == ())
+    check("a recipe that builds holds the ledger's build tree",
+          derive(_fake(run="just build-engine")) == (schedule_module.DEFAULT_BUILD,))
+    check("a test recipe holds the build tree too, because every test recipe builds first",
+          derive(_fake(run="just test-unit -R abi")) == (schedule_module.DEFAULT_BUILD,))
+    check("a body redirecting CY_BUILD_DIR to a named subdirectory holds THAT tree",
+          derive(_fake(run='set -e; d="${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ml}"; '
+                           'CY_BUILD_DIR="$d" just build-engine --profile dev -D CY_ML=OFF'))
+          == ("build:off-ml",),
+          str(derive(_fake(run='d="${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ml}"; '
+                               'CY_BUILD_DIR="$d" just build-engine'))))
+    check("${CY_BUILD_DIR:-build/dev} is the ledger's own tree, not a second one",
+          derive(_fake(run='d="${CY_BUILD_DIR:-build/dev}"; just build-engine --profile dev'))
+          == (schedule_module.DEFAULT_BUILD,))
+    check("a sanitized build is a tree of its own",
+          derive(_fake(run="just test-sanitize --sanitizer address --tests ecs"))
+          == (schedule_module.SANITIZE_BUILD,))
+    check("a Cargo criterion holds the Cargo target directory",
+          "cargo" in (derive(_fake(run="just build-editor --profile dev")) or ()))
+    check("a criterion requiring a device holds the device as well as its tree",
+          derive(_fake(run="just build-engine", requires="gpu"))
+          == (schedule_module.DEFAULT_BUILD, "gpu"))
+    check("a path criterion runs a subprocess for nobody and holds nothing",
+          derive(_fake(kind="path")) == ())
+    check("a tiers criterion compares a record already in memory and holds nothing",
+          derive(_fake(kind="tiers")) == ())
+
+    for name, body in (
+        ("a recipe the table does not know", "just some-recipe-nobody-declared"),
+        ("a program the table does not know", "curl https://example.invalid"),
+        ("a heredoc fed to an interpreter", "python3 - <<'X'\nimport os\nX\n"),
+        ("a shell function of its own", "check() { grep -q x y; }; check"),
+        ("a build directory built out of a loop variable",
+         'base="${CY_BUILD_DIR:-build}"; for p in debug dev; do '
+         'CY_BUILD_DIR="$base/agree-$p" just build-engine --profile "$p"; done'),
+        ("a redirection into the working tree", "just build-engine > docs/out.txt"),
+        ("a command that writes where its argument says", 'mkdir -p docs/design/images'),
+        ("a recipe run through a program that runs its argument", "xargs just build-engine"),
+    ):
+        check(f"{name} is UNKNOWN, so the criterion runs alone", derive(_fake(run=body)) is None,
+              f"derived {derive(_fake(run=body))!r} instead")
+
+    # AN ARGUMENT CAN TURN A READER INTO A WRITER, and this is the case that says so.
+    check("`just roadmap-status` reads the record and holds nothing",
+          derive(_fake(run="just roadmap-status")) == ())
+    check("but `--write-lists` rewrites the capability matrix, so that invocation runs alone",
+          derive(_fake(run="just roadmap-status --write-lists")) is None)
+    check("`just quality-abi --update` replaces the committed baseline, so it runs alone",
+          derive(_fake(run="just quality-abi --update")) is None)
+    check("and `just roadmap-debts` rewrites open-debts.md however it is called",
+          derive(_fake(run="just roadmap-debts --check")) == (schedule_module.EXCLUSIVE,))
+
+    check("an unknown body with no declaration runs alone",
+          schedule_module.needs(_fake(run="curl https://example.invalid"))
+          == (schedule_module.EXCLUSIVE,))
+    check("a declaration wins over the derivation",
+          schedule_module.needs(_fake(["build:mine"], run="curl https://example.invalid"))
+          == ("build:mine",))
+
+
+def test_scheduler_declarations(root: Path) -> None:
+    """`needs` is a token from a closed vocabulary, checked where every other declaration is."""
+    head = 'schema = 1\nid = "m0"\nname = "Ground"\n'
+    body = ('[[criterion]]\nid = "x"\ndescribe = "d"\nsource = "s"\nkind = "recipe"\n'
+            'run = "just quality-layers"\nci_job = "layering"\n')
+
+    def load(name: str, needs: str):
+        return criteria_module.load("m0", milestone_file(root, name, head + body + needs))
+
+    check("a criterion may declare what it holds",
+          load("good", 'needs = ["build:m1-bench", "net"]').criteria[0].needs
+          == ["build:m1-bench", "net"])
+    expect_error("a resource class nobody implements is rejected", criteria_module.CriteriaError,
+                 lambda: load("bad-class", 'needs = ["quantum-computer"]'))
+    expect_error("a resource named twice is rejected", criteria_module.CriteriaError,
+                 lambda: load("twice", 'needs = ["cargo", "cargo"]'))
+    expect_error("'needs' is a list, not a sentence", criteria_module.CriteriaError,
+                 lambda: load("prose", 'needs = "it uses its own build directory"'))
+
+    # THE COLLAPSE TAKES THE UNION. Two ledgers declaring the same check may know different things
+    # about it; keeping only the first declarer's would silently drop the other's knowledge that the
+    # check also binds a port, and the check would then run beside something that binds the same one.
+    one = criteria_module.Criterion(id="a", describe="d", source="s", kind="recipe",
+                                    ci_job="j", run="just test-unit", needs=["build:@"])
+    other = criteria_module.Criterion(id="b", describe="d", source="s", kind="recipe",
+                                      ci_job="j", run="just test-unit", needs=["net"])
+    collapsed = criteria_module._collapse([("m0", one), ("m1", other)], "m1")
+    check("collapsing two declarations of one check keeps BOTH resources",
+          collapsed.criterion.needs == ["build:@", "net"], str(collapsed.criterion.needs))
+
+
+def test_scheduler_tables_match_the_justfile(root: Path) -> None:
+    """Every recipe RECIPE_NEEDS classifies still exists, and every recipe a ledger runs is in it.
+
+    A stale row is the quiet failure here: rename a recipe and its row stops matching, so every
+    criterion invoking it becomes underivable and runs alone. That is SAFE — which is exactly why
+    nobody would notice, and why it is checked rather than trusted.
+    """
+    repository = HERE.parent.parent
+    declared: set[str] = set()
+    for source in [repository / "justfile", *sorted((repository / "just").glob("*.just"))]:
+        for line in source.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"^([a-z_][a-z0-9_-]*)\s+[*a-z]|^([a-z_][a-z0-9_-]*):", line)
+            if match:
+                declared.add(match.group(1) or match.group(2))
+    missing = sorted(name for name in schedule_module.RECIPE_NEEDS if name not in declared)
+    check("every recipe the scheduler classifies is a recipe the justfile declares",
+          not missing, f"no longer declared: {', '.join(missing)}")
+
+    invoked: set[str] = set()
+    stragglers: list[str] = []
+    for entry in _every_criterion():
+        recipes = {command[1] for command in schedule_module.commands(entry.criterion.run or "")
+                   if command[0] == "just" and len(command) > 1}
+        invoked |= recipes
+        unknown = recipes - set(schedule_module.RECIPE_NEEDS)
+        if unknown and not entry.criterion.needs and (
+                schedule_module.needs(entry.criterion) != (schedule_module.EXCLUSIVE,)):
+            stragglers.append(f"{entry.label} runs {', '.join(sorted(unknown))}")
+    unclassified = sorted(name for name in invoked
+                          if name not in schedule_module.RECIPE_NEEDS and not name.startswith("$"))
+    check("a recipe a ledger runs but the scheduler cannot classify only costs concurrency",
+          not stragglers,
+          f"unclassified recipes: {', '.join(unclassified) or 'none'}\n"
+          + "\n".join(stragglers))
+
+
+_PLANS: dict[str, criteria_module.Plan] = {}
+
+
+def _plan(identifier: str) -> criteria_module.Plan:
+    """Every ledger's plan, built once. Building all twenty-two takes seconds, and three of the
+    cases below want all of them."""
+    if not _PLANS:
+        permanent = gates_module.permanent_milestones(gates_module.load())
+        for name in criteria_module.available():
+            _PLANS[name] = criteria_module.build_plan(name, permanent)
+    return _PLANS[identifier]
+
+
+def _every_criterion():
+    for identifier in criteria_module.available():
+        yield from _plan(identifier).entries
+
+
+def test_scheduler_over_the_real_ledgers(root: Path) -> None:
+    """Every criterion in every ledger gets an answer, and the answers are not all 'run alone'.
+
+    The second half is the one that would rot. `needs` is allowed to come back `exclusive` for any
+    criterion at all, so a derivation that quietly stopped working — a regex that no longer matches,
+    a table that fell out of step — would still be CORRECT and would simply make the ledger
+    sequential again, which is the defect this whole change removes. So the floor is checked.
+    """
+    plan = _plan("m11c")
+    resolved = {entry.label: schedule_module.needs(entry.criterion) for entry in plan.entries}
+
+    check("every criterion in M11.c's ledger is given a resource set",
+          all(isinstance(tokens, tuple) for tokens in resolved.values()))
+    alone = [label for label, tokens in resolved.items()
+             if tokens == (schedule_module.EXCLUSIVE,)]
+    free = [label for label, tokens in resolved.items() if tokens == ()]
+    check(f"the derivation still reads most of the corpus ({len(alone)} of {len(resolved)} run "
+          f"alone)", len(alone) < len(resolved) // 2,
+          f"{len(alone)} of {len(resolved)} criteria run alone; the derivation has stopped reading "
+          "the ledger and the run is sequential again in all but name")
+    check(f"the criteria that hold nothing can all run at once ({len(free)} of them)",
+          len(free) >= 40, f"only {len(free)} criteria were found to hold nothing")
+
+    # THE DIRECTION THAT MATTERS. The criteria that build and test share one tree, and if the
+    # derivation ever stopped seeing that, they would run on top of each other in it — which is a
+    # corrupted configure and a ctest reading another run's log, not a wrong answer that anybody
+    # could trace back to here.
+    by_tree = [entry for entry in plan.entries
+               if schedule_module.DEFAULT_BUILD in resolved[entry.label]]
+    check("the criteria that share the ledger's build tree take turns in it",
+          len(by_tree) > 100 and not any(
+              schedule_module.independent(one.criterion, other.criterion)
+              for one, other in zip(by_tree, by_tree[1:])),
+          f"{len(by_tree)} criteria named the ledger's build tree")
+
+    broken = [entry.label for entry in _every_criterion()
+              if not isinstance(schedule_module.needs(entry.criterion), tuple)]
+    check(f"every ledger under milestones/ resolves every criterion's needs "
+          f"({len(criteria_module.available())} ledgers)", not broken,
+          f"unresolved: {', '.join(broken)}")
+
+    # AND THE REAL PLAN IS RUN THROUGH THE REAL SCHEDULER. The cases above check the rules against
+    # fixtures and the derivation against the corpus; this one puts the corpus's OWN resource graph —
+    # 440 criteria, their build trees, their devices, their barriers — through `schedule.run` and
+    # asserts that nothing ever ran beside something it shares a resource with. It evaluates nothing,
+    # so it costs a second; `ledger_equivalence.py` is what runs the criteria themselves.
+    results, overlaps, peak = _observe(
+        [_Entry(entry.label, entry.criterion) for entry in plan.entries], 8)
+    check("M11.c's whole plan schedules without one criterion running beside something it shares "
+          "a resource with", not overlaps, f"overlapped: {overlaps[:5]}")
+    check("and it comes back in ledger order",
+          results == [entry.label for entry in plan.entries])
+    check("and it did use the machine: more than one criterion ran at once",
+          peak > 1, f"peak concurrency was {peak}")
+
+
+def test_ledger_report_order_is_the_ledger_order(root: Path) -> None:
+    """The report is part of the contract: same order, same text, whatever order results arrive in.
+
+    A reader compares one ledger run against the previous one BY EYE, line by line. A parallel run
+    that reported the same verdicts in completion order would be a regression even though every
+    verdict was right, so the reporting path holds a finished result back until every earlier one
+    has been printed — and `ledger_equivalence.py` compares two real runs on exactly this basis.
+    """
+    import random
+
+    entries = [_Entry(f"m0:c{index}", _fake([] if index % 3 else ["build:@"]))
+               for index in range(24)]
+
+    printed: list[int] = []
+
+    def evaluate(entry):
+        time.sleep(random.uniform(0.001, 0.02))
+        return entry.label
+
+    schedule_module.run(entries, evaluate, 8,
+                        finished=lambda index, entry, result: printed.append(index))
+    check("results are handed to the reporter as they finish, not in order",
+          printed != sorted(printed) or len(entries) < 4,
+          "every result arrived in order, so this case proves nothing about reordering")
+
+    # And the reporting rule on top of that: roadmap._evaluate_plan buffers until the prefix is
+    # complete. The rule is re-implemented here in three lines because that is the whole of it.
+    blocks: dict[int, str] = {}
+    emitted: list[str] = []
+    following = 0
+    for index in printed:
+        blocks[index] = f"==> {entries[index].label}"
+        while following in blocks:
+            emitted.append(blocks.pop(following))
+            following += 1
+    check("the report comes out in ledger order regardless",
+          emitted == [f"==> {entry.label}" for entry in entries], str(emitted[:5]))
+
+
+
 def _nested() -> bool:
     return bool(os.environ.get(NESTED_IN_THE_PROVER))
 
@@ -2167,6 +2521,12 @@ def main() -> int:
         test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
+        test_scheduler_rules(_area(root, "scheduler"))
+        test_scheduler_derivation(_area(root, "scheduler-derivation"))
+        test_scheduler_declarations(_area(root, "scheduler-declarations"))
+        test_scheduler_tables_match_the_justfile(_area(root, "scheduler-tables"))
+        test_scheduler_over_the_real_ledgers(_area(root, "scheduler-corpus"))
+        test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
         if not _nested():
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
             test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))

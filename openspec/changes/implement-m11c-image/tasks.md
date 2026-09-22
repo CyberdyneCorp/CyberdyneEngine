@@ -418,15 +418,63 @@ below is that work, named rather than discovered.
         the `bind_descriptor_sets` call deleted, and `bindless_set_handle_ = *set_handle;` deleted
         (eleven assertions red, tree still compiling). `m11c:material-texture-is-bound` runs it, and
         `m11c:material-table-is-nameable` carries the contract on a machine with no GPU
-      - [ ] **WHAT IS NOT DONE: `cy/frame.slang` STILL SAMPLES NO TEXTURE.** `surfaceOf()` reads four
-        constants out of `cyMaterialWords`, and the engine's forward pipeline cannot bind this table
-        as it stands: `src/rendering/pipeline/`'s set 0 carries `cy/globals.slang`'s block at binding
-        0 and a pipeline binds ONE set per index, so a program that wants both needs a set 0 that
-        carries both. The fragment-stage lowering is still `samples/12-beauty/shaders/beauty.slang`'s
-        stand-in. What closed here is the junction the spike measured ABSENT — the table reaches a
-        pipeline layout and a command buffer and a material program samples through it — not the
-        forward pass's own material path, which is the permutation-and-pipeline-cache question
-        `slang_program.h` names and is M11.d's
+      - [x] **AND `cy/frame.slang` NOW SAMPLES ONE. THE SET 0 THAT CARRIES BOTH IS THE WHOLE OF WHAT
+        WAS MISSING.** What stood here said `surfaceOf()` read four constants and that the engine's
+        forward pipeline could not bind the table, because `src/rendering/pipeline/`'s set 0 carried
+        `cy/globals.slang`'s block at binding 0 and A PIPELINE BINDS ONE SET PER INDEX. That set now
+        carries the globals block at binding 0, `cyMaterialTextures[]` at binding 1 and
+        `cyMaterialSampler` at binding 2 — the numbers `cy/material.slang` declares and
+        `rhi/pipeline.h` restates, asserted equal at compile time — and `surfaceOf()` multiplies the
+        base colour factor by the texel it samples there. **THE SLOT INDEX IS STILL THE DEVICE'S**:
+        `FrameBindings::set_material_textures` writes each resident view at `array_index = slot`,
+        the slot `bind_texture_globally` handed out, so this set and the device's own table cannot
+        disagree about what a number means
+      - [x] **THE PICTURE, AND THE SUBSTITUTION THAT PROVES IT.**
+        `render.forward_material_texture` — `src/rendering/pipeline/tests/` beside the two suites
+        that already render `FrameScene`, which is the ENGINE's frame: `FrameAssembly`'s passes,
+        `FramePipelines`' pipelines, `cy/frame.slang`'s own fragment shader. It renders that scene
+        three times on a Vulkan device and compares: every texture slot unbound (the frame this
+        engine produced before this task, produced by today's code rather than remembered), a
+        pattern bound as every material's base colour, and **the same frame with that texture
+        replaced by its declared average**. Measured in `build/m11c-forward` on an RTX 5060:
+        **60 712 of 129 600 texels shaded; against the declared average 46.90% of texels differ at
+        mean |delta| 20.881/255; against the constant-shaded frame 47.00% differ at mean |delta|
+        26.434/255**, with **0 validation errors**, 31 assertions green. The average frame is an
+        entirely plausible picture — it is what an unbound table, a slot that resolves to zero and a
+        set bound at the wrong index all produce — so the claim is the DIFFERENCE and not the shot
+      - [x] **A FRAME THAT SAYS NOTHING STILL SAMPLES NOTHING, which is what keeps every committed
+        capture in the tree honest.** `CyFrameData` gained a `materialTextures` word-offset vector
+        whose C++ half defaults to `kNoMaterialTexture`, so `upload_for` — unchanged in signature —
+        hands every caller written before this the frame it always uploaded. And
+        `apply_standard_defaults` now writes that same sentinel into every texture slot of a
+        material, which its own comment has claimed since M3 while the block actually held ZERO:
+        zero is a perfectly good slot of the global table, so the first frame to read these slots
+        would have sampled whatever texture was resident at slot 0
+      - [ ] **WHAT IS STILL NOT DONE, AND IT IS METAL'S HALF.** `slangc -target metal` accepts the
+        sampling but emits an unbounded `texture2d<...>[]` entry-point parameter with no argument
+        buffer behind it — the case `CY_MATERIAL_METAL_ARGUMENT_BUFFER` exists for and which no
+        Metal translation unit supplies for the frame — so `shaders/frame_msl.h` is deliberately NOT
+        regenerated and says so at `cy/frame.slang`'s regeneration invocations. On Metal the frame
+        carries the new word offsets, reads none of them, and shades the four constants. Slang's
+        `NonUniformResourceIndex` is refused by that target too, so the index is plain and the
+        condition it rests on — one draw per material, instance count one — is written down beside
+        it. The fragment-stage lowering is still `samples/12-beauty/shaders/beauty.slang`'s
+        stand-in, and the permutation-and-pipeline-cache question `slang_program.h` names is M11.d's
+      - [x] **TWO REGRESSIONS IN THIS LAYER WERE FOUND BY THE NEW SUITE'S OWN ZERO-VALIDATION-ERROR
+        ASSERTION AND FIXED HERE.** Both arrived with `6514c3d` ("Execute temporal anti-aliasing in
+        frame pipeline") and both had left `render.pipeline` RED in this tree since: measured, the
+        binary built on 19 September passes with 0 validation errors and the one built at 01:46 on
+        22 September — before any of this task's edits — fails 4 of 4 cases with **776**. (1) The
+        prepass grew a normal output, so `create_geometry_pipeline` declared two vertex bindings for
+        the depth pipeline while `draw_layer` kept binding ONE buffer: every depth draw since fetched
+        attribute 1 from a binding nothing was bound to. The count is now
+        `kDepthPassStreamCount`/`kForwardPassStreamCount`, declared once where both files read it.
+        (2) The pass set is written from inside a record callback — the scene colour and the history
+        are transients whose views do not exist earlier — and `bind_frame_sets` has already bound it
+        in the same command buffer, so updating it in place invalidated that command buffer and
+        every later command in the frame. `bind_scene_color` and `bind_temporal` now take a FRESH
+        set out of the frame's pool instead. `render.pipeline` is green again: 4 of 4 cases, 65
+        assertions, 0 validation errors
 - [ ] 3.8 **The sample is taken at an implicit level of detail, or the shot aliases.** Measured: the
       same frame with eight of the importer's nine cooked mip levels never uploaded is BYTE-IDENTICAL
       — mean |delta| 0.000/255, 0.00% of texels. `cy_material_sample`, which the prelude generates,
@@ -434,6 +482,15 @@ below is that work, named rather than discovered.
       is already in the standard library with a comment saying nothing calls it yet. Until a lowering
       that knows it is producing a pixel stage calls it, the cooked mip chain is a third more bytes
       that the frame cannot read and every minified surface in the artefact aliases
+      - [x] **THE FRAME'S OWN PATH TAKES THE IMPLICIT SAMPLE, which is half of this and the half
+        3.7 could deliver.** `cy/frame.slang`'s `surfaceOf()` is a fragment function and knows it,
+        so its base colour sample is `cyMaterialSampleTexture` — the implicit form — and the floor
+        of `render.forward_material_texture`'s picture reads the cooked chain rather than level 0.
+        **What is unchanged is the EMITTER's half**: `cy_material_sample`, which the generated
+        prelude writes, still calls `cyMaterialSampleTextureLevel(..., 0.0)` because a material
+        program is compiled and reflected long before it is placed in a stage, and every byte of
+        that emitter is in a cook key. A shot assembled from generated material programs still
+        samples at level 0; a shot the engine's own forward path draws does not
 
 ## 4. The geometry rows and the one HZB they share — `virtual-geometry`, `virtual-shadows`, `rendering-culling-and-lod` → Complete
 
@@ -1080,10 +1137,22 @@ work was done.
         and is written to go red the day M11.e lands 5a.1. Nothing in the ledger is edited for this
         move, and that is deliberate — a criterion edited to describe a plan change is a criterion
         whose recorded proof no longer matches it
-- [ ] 8.6 Register this rung's spike in `docs/roadmap/risks.md` beside the other milestones', with
+- [x] 8.6 Register this rung's spike in `docs/roadmap/risks.md` beside the other milestones', with
       its outcome recorded the way M10's was. **The ladder mechanics of the split — `record.MILESTONES`,
       the matrix columns, the load table and `selftest`'s floors — are M11.a's** (its tasks 0.1), and
       this section conforms to whatever that decides rather than deciding it here
+      - [x] **DONE, IN REGISTER ENTRY 12, WHERE THE OTHER FIVE RUNGS' SPIKES ALREADY ARE.** Three
+        paragraphs beside M11.d's and in rung order: the verdict — four of six junctions close and
+        the two that do not are the two ENDS of the path, author REFUSED, bind ABSENT, encode
+        partial, the middle sound and the same cook key `0x2e810237312fe3e5` reached from the graph
+        and from the text; what the bad answer COST — a rung boundary rather than a fix, with the
+        `material.*` commands and the front end that saves through them moved to M11.e beside the
+        `.cygraph` writing they depend on, and the artefact's own sentence corrected rather than
+        left standing; and the defect no reading would have found — eight of a texture's nine cooked
+        mip levels never uploaded leaves the frame BYTE-IDENTICAL, because the prelude's
+        `cy_material_sample` asks for an EXPLICIT level. M10's entry 11 is the shape it follows:
+        the verdict in bold, the number that nearly passed, then the pointer to the measurement in
+        full — here `design.md` §1.3b for the measurement and §1.3c for the scope move
 
 ## 9. The gate
 
@@ -2232,3 +2301,210 @@ entered, and it must record `m11d5`'s 19 criteria, which have no entry at all �
 second attempt asked for is still owed** and is still five row names in one `just
 quality-requirements` line; without it, five of the fifteen rows are promoted on a hand measurement
 rather than on a check, which is the thing this ladder refuses everywhere else.
+
+### THE PHASE AFTER THE THIRD CLOSE — M11.c's OWN CRITERIA RUN ALONE, SO THE RED CAN BE ATTRIBUTED
+
+**The third attempt reported ten reds and said nine of them were not M11.c's. This phase measured
+that claim instead of repeating it.** The m11c plan was 441 criteria when this ran; **31 of them
+were first declared by M11.c and 410 are the permanent set** — the forward-path peer added a
+thirty-second, `forward-path-samples-a-texture`, while this was being written, and it is theirs to
+prove and to judge. Only the 31 tell you anything about this rung, so only
+those were run — the same `criteria.evaluate`, the same renderer and the same scheduler
+`just roadmap-milestone` uses, with `plan.entries` narrowed to `plan.own`, six at a time, against
+`build/m11c-rest` built from empty. It is a diagnostic and not a gate: nothing it prints is recorded
+anywhere and the gate remains the full ledger.
+
+**30 ran (the thirty-first is the criterion this phase added, measured separately below): 24 ok,
+5 FAILED, 1 declared gap still open.** And the attribution is now per criterion rather than per
+guess:
+
+| failed | whose | how it was settled |
+|---|---|---|
+| `gi-sky-term-constructed` | **nobody's — a shared-tree race** | `just build-engine` exited 1 at 8.3 s while a peer was writing `src/rendering/`. `just build-engine` on the same tree afterwards: **exit 0**. Re-run alone: **ok** |
+| `frame-passes-through-post` | the forward-path peer | SIGSEGV, not an assertion: `integration.render_assembly`, *"the frame passes through tone mapping, and says so itself"*, 28 assertions green and then `FATAL ERROR: test case CRASHED: SIGSEGV`. `cy::rendering-assembly` publicly depends on `cy::rendering-material`, which is inside the uncommitted forward-path-texture change |
+| `vfx-in-the-shot` | the forward-path peer | `render.vfx`, and the first of its four reds is the one that matters: `CHECK_EQ(repeat.differing, 0U)` → **39 524 of 129 600**. The same frame rendered twice is no longer bit-identical; the third close recorded **0**. Reproducible, not flaky: 39 524 / 2 489 / 3 909 identical on two consecutive runs. `cy_test_render_vfx` links `libcy_rendering_pipeline.a` **and** `libcy_rendering_material.a`, both peer-modified |
+| `shot-authored-through-the-editor` | **M11.c's, and it is fixed here** | below |
+| `roadmap-tiers` | the closing change's | red until the fifteen tiers are written, and meant to be |
+| `every-shader-reaches-every-target` | declared gap | still open, does not block |
+
+**WHERE M11.c's OWN THIRTY-ONE STAND AT THE END OF THIS PHASE**, and not stitched together out of
+re-runs: the whole own-criteria set was run again, in one pass, after the two repairs below, and the
+ledger's own summary line is **`M11C is not closed: 3 of 31 evaluated criteria failed.`** —
+**27 ok, 3 FAILED, 1 declared gap still open.**
+`gi-sky-term-constructed` is **ok** once it is not racing a writer; `shot-authored-through-the-editor`
+is **ok** with the defect below fixed; `remaining-rows-at-complete-grade` is the criterion this phase
+wrote and it is **ok**. The three reds are `frame-passes-through-post` and `vfx-in-the-shot` — both
+the forward-path peer's, each evaluated **four** times through the ledger with the same verdict
+every time, and `vfx-in-the-shot` twice more straight off its binary returning 39 524 / 2 489 / 3 909
+on both — so neither is a race — and `roadmap-tiers`, which is the closing change's and is meant to
+be red.
+
+**NOT ONE LINE OF THE PEER'S TWO WAS TOUCHED.** The change under them is 1 386 insertions across
+14 files including `cy/frame.slang` and the frame's compiled SPIR-V, it was being written while this
+ran, and it is the one lane this phase was told to stay out of. What is owed instead is the line
+number, and it is above.
+
+### THE ONE RED THAT WAS M11.c's, RUN DOWN TO A LINE AND CLOSED WITH A TEST
+
+`m11c:shot-authored-through-the-editor` was GREEN at the third close and is red at HEAD, and no file
+of this rung changed to make it so. **`75da818` made `SpecialisedEditors::open` clear the canvas only
+when the domain CHANGES** — `let changed_domain = self.active != Some(domain);` — deliberately, so
+that a repeated or mis-clicked open cannot empty an author's region, with
+`reopening_the_active_material_editor_preserves_authored_nodes` asserting it. **`cy-author-material`
+authors the shot's three materials in ONE process** and had been relying on each `open` handing it an
+empty canvas, so it started writing **20 nodes, then 40, then 60**, and the first committed canvas it
+compared stopped matching. Both behaviours are right; what was missing is the seam between them.
+
+- **The fix is one call**, in `author()`: `editors.close()` before the `open`, which is what a person
+  does between two materials and what makes each canvas's ordinals restart at 1 the way the
+  committed files do. `GraphCanvas::load` clears nodes, layout, links, selection and `next_ordinal`.
+- **The criterion is green again**, re-run alone against `build/m11c-rest`.
+- **The regression test is `authoring_two_materials_in_one_session_keeps_their_canvases_apart`**, and
+  it asserts BOTH halves so it cannot pass by accident: two materials authored with a close between
+  them carry two nodes each and ordinals from 1, and a third authored WITHOUT one carries three —
+  which is the preserving behaviour `75da818` added. **It was watched going red**: with the
+  `editors.close()` removed from the test it fails `left: 4, right: 2`, and green with it restored.
+  The file was restored from a copy and `md5sum -c` verified before anything else ran.
+- `rustfmt --edition 2024 --check` and `cargo clippy --all-targets` are clean over both edited
+  files, and `cargo test -p cy-editor-interface` is **137 passed, 0 failed** over the whole crate.
+
+### `m11c:format` HAD TWO HALVES AND ONE OF THEM WAS THIS RUNG'S COMMITTED CODE
+
+The static gate reads `red in the tree`, and the record for it says `proven`, so it would have been
+easy to call the whole thing somebody else's. It is not.
+
+- **`src/graph/material/src/lower_material.cpp` was COMMITTED unformatted at `ed6828a`** — not a
+  working-tree edit, the blob itself. That is `src/graph/material/`, which is the module M11.c built
+  for junction 1. Fixed here with `just quality-format src/graph/material`: **four lines of reflow in
+  one function, no behaviour**, and the file is out of `quality-format-check`'s list. "No behaviour"
+  was checked rather than asserted: rebuilt, and `unit.material_compiler`,
+  `integration.material_lowering`, `unit.graph_material` and `integration.graph_material` are **4 of
+  4 passed**.
+- **The other half is not this rung's**: `samples/05b-editor-window/runtime/material_runtime.cpp`
+  carries an UNCOMMITTED `#if defined(CY_SHADER_SLANG)` guard whose `#include` clang-format wants
+  indented. Last written 01:44, by whoever owns that change, and one `just quality-format
+  samples/05b-editor-window` away. `quality-format-check` now names that file and **only** that file.
+
+### THE THIRD COMPLETE-GRADE CRITERION, ASKED FOR TWICE AND WRITTEN HERE
+
+The second and third close attempts both recorded the same debt: fifteen rows are promoted by this
+rung, two criteria read ten of them at Complete grade, and **the other five were measured by hand at
+the close and by nothing else** — which is the thing this ladder refuses everywhere it looks.
+
+`m11c:remaining-rows-at-complete-grade` is that measurement turned into a check:
+`just quality-requirements rendering-culling-and-lod atmosphere-sky-and-clouds rendering-architecture
+rendering-geometry-and-resources vfx-system`, 9, 13, 16, 11 and 26 requirements. Measured here:
+**75 of 75, exit 0**.
+
+- **A third criterion rather than a widening of `image-rows-at-complete-grade`**, and the reason is
+  mechanical: widening that one moves its digest, which costs it a recorded proof it already earned.
+- **It carries a declared mutation of the same shape as the other two's** — the suite goes missing
+  rather than the map being edited, because a mapping that survives the removal of what it names is
+  worse than an empty cell. `rename-token 'vfx_compiler'` in `src/vfx/tests/CMakeLists.txt` takes six
+  of `vfx-system`'s twenty-six to *"no suite `integration.vfx_compiler` is declared by any committed
+  `cy_add_test()`"* and the recipe to **69 of 75** — measured by applying the mutation to a copy of
+  the tracked tree rather than predicted from the coverage map.
+- **And the prover was RUN rather than the mutation declared and trusted**:
+  `PROVEN m11c:remaining-rows-at-complete-grade [rename-token 'vfx_compiler' in
+  src/vfx/tests/CMakeLists.txt (declared)] red under mutation of 1 file(s)`, recorded at digest
+  `7a666c40354f6cdc`. The inventory gained exactly that one entry, verified by diffing the file
+  before and after the write.
+
+### THE FALSIFIABILITY RECONCILIATION — M11.c's OWN ENTRIES SETTLED, THE REST NAMED AND LEFT ALONE
+
+A blanket `just roadmap-falsify --record` is refused by design (the unproven list only shrinks), and
+a blanket one is also the wrong instrument here, because most of what disagrees is not this rung's.
+So the prover was run over **m11c's ledger alone** — 40 criteria, 51.9 s — and reconciled against the
+inventory.
+
+- **m11c carries 38 proofs and 2 accounted-for entries over its 40 criteria**; the two are
+  `four-profiles` (*"it needs a built tree; the sandbox is source only"*) and `plan-consistency`
+  (*"no mutation can be derived from this criterion's text"*). `m11a` and `m11b` carry zero unproven.
+- **NO M11.c DIGEST HAS MOVED.** The 9.2 item that lists `m11c:subsystem-controllers-report-costs`
+  and `m11c:skin-pass-complete` among fourteen stale digests is **out of date**: measured here, every
+  one of m11c's 40 entries matches the digest of the criterion it is about. Both of those criteria
+  also ran green in the own-criteria run above.
+- **`m11c:layering` was stale and is settled.** It was recorded `red in the tree` — *"exit 2 … Recipe
+  `quality-layers` failed on line 115"*, which is `tools/layercheck/selftest.py`. Measured now:
+  `just quality-layers` **exits 0**, layercheck clean over 2 614 files and its selftest 11/11. Settled
+  alone and deliberately: `falsify.py prove m11c --only layering --record` →
+  `PROVEN [rename-token 'platform/' in tools/layercheck/layercheck.py (declared)]`. **Exactly one
+  entry changed**, verified by diffing the inventory before and after.
+- **AND THE SAME STALE RECORD STANDS ON NINETEEN OTHER LEDGERS**, in three further digest groups:
+  `m0 m1 m2 m3 m4 m5 m5b m6 m7 m8a m8b m8c m9 m10 m11a m11b m11d m11d5 m11e` all record `layering` as
+  `red in the tree` for a redness that is gone. **Not touched here** — they are other rungs' entries
+  and settling them from this one is the blanket act that hides what it changed.
+- **`m11c:format` is NOT settled, and that is the deliberate half.** It reads `red in the tree`
+  against a record of `proven`, but it is red for one uncommitted line in somebody else's file.
+  Recording a transient as a criterion's verdict is exactly the decay this inventory exists against;
+  it will re-earn its `proven` the moment that file is formatted.
+- **MEASURED AFTER, NOT ONLY BEFORE.** The m11c prover was run a second time once the settle had
+  landed: **m11c's own disagreements are down from three to two**, `layering` is gone from the list,
+  `remaining-rows-at-complete-grade` raises nothing (it is judged and recorded), and what is left is
+  exactly the two this phase deliberately did not touch — `format`, red for somebody else's
+  uncommitted line, and `roadmap-record`, red for the untracked module below.
+
+### AND ONE FINDING THAT BLOCKS EVERY LEDGER'S PROOFS AND COSTS ONE `git add`
+
+**`tools/roadmap/schedule.py` is untracked, and `criteria.py`, `roadmap.py` and `selftest.py` all
+`import schedule`.** The prover's sandbox is `git ls-files` piped through `tar`, so the file is not
+in it. Reproduced by hand rather than deduced — the same tar into a temporary directory, then
+`python3 tools/roadmap/roadmap.py status`:
+
+```
+  File ".../tools/roadmap/criteria.py", line 44, in <module>
+    import schedule
+ModuleNotFoundError: No module named 'schedule'
+```
+
+So every criterion whose body runs the roadmap tooling is **red in the sandbox and GREEN in the
+repository**, which `reconcile` reports as *"is recorded as proven and no longer proves"* — six of
+them ledger-wide: `roadmap-record` on m11a, m11b, m11c and m11d5, plus
+`m11a:the-four-rows-are-evaluated` and `m11a:ladder-carries-five-rungs`. `plan-consistency` runs
+`just roadmap-test`, which is `selftest.py`, which imports the same module, so it hits the same wall
+on every ledger — it produces no reconcile finding only because it is already on the unproven list
+as *"no mutation"*. `tools/roadmap/matrix.py` and `tools/roadmap/ledger_equivalence.py` are untracked
+as well.
+
+**Until those three files are tracked, a ladder-wide `just roadmap-falsify --record` would write
+"not provable here" over standing proofs across the whole ladder**, and `m7:plan-consistency` cannot
+be made green by any amount of recording. This is not a defect in the parallel-ledger work — it is
+one `git add` in front of it — but it has to happen before the falsifiability inventory is touched
+ledger-wide, and it is said here rather than left to be discovered by the run that does it.
+
+### AND `plan-consistency` ITSELF, RUN, SO ITS THREE REDS ARE NAMED RATHER THAN COUNTED
+
+`just roadmap-test` — which IS `m7:plan-consistency`, and is a criterion of every ledger on the
+ladder — was run at the end of this phase: **497 of 500 checks pass, three fail**, and none of the
+three is this rung's.
+
+1. **"every ledger under milestones/ has a floor recorded, so a new one is not unchecked"** —
+   `selftest.MINIMUM_CRITERIA` has no entry for **`m12`** or **`m13`**, whose ledgers exist. The
+   check is doing exactly what its own comment says it exists for (*"a ledger with no floor recorded
+   here FAILS, rather than being quietly unchecked"*), and the deliberate answer to "how many exit
+   conditions does M12 have" is owed by whoever wrote those two ledgers. M11.c's own floor is 25
+   against 41 criteria, so nothing this phase added is near it.
+2. **"the four plan documents agree"** — `plan.py`, and not touched by anything here.
+3. **"every criterion on the ladder is either proven or on the list that only shrinks"** — the 52
+   disagreements in the table below, of which this phase settled one and left the rest named.
+
+### AND THE LADDER-WIDE PICTURE, MEASURED ONCE SO THE NEXT CLOSER DOES NOT HAVE TO GUESS AT IT
+
+`m7:plan-consistency` is red, and the third close attempt put that down to *"`falsifiability.toml`
+is stale against the two new ledgers"*. It is not one thing and it is not two ledgers. The prover was
+run over the **whole** ladder — **672 criteria in 942 s** — and reconciled: **52 disagreements**, and
+they fall into five shapes, and a `--record` alone fixes only two of them.
+
+| shape | count | what it actually is |
+|---|---|---|
+| recorded `red in the tree`, now **`proven`** | **6** — `layering` on m11a, m11b, **m11c** and m11d5, plus `m11a:testing-and-quality-at-working` and `m11a:build-system-at-working` | stale records of a redness that is gone, on the criteria that declare a `[criterion.falsifies]`. **m11c's is settled above; the other five are theirs** |
+| recorded `red in the tree`, now **`no mutation`** | **17** — `layering` on m0 m1 m2 m3 m4 m5 m5b m6 m7 m8a m8b m8c m9 m10 m11d m11e, plus `m0:doctor` | the same stale redness, but these declare **no** mutation, so recording cannot settle them: each needs a `[criterion.falsifies]` in its own ledger first. **A ledger edit on sixteen closed rungs, and not this rung's to make** |
+| now `red in the tree` | **20** — `format` on eighteen ledgers, plus `m11d:documentation-gate` and `m11e:ladder-ends-here` | every one of the eighteen is the SAME red, and after this phase's fix it is **one uncommitted line in one file** — `samples/05b-editor-window/runtime/material_runtime.cpp`. Eighteen entries, one `just quality-format` away |
+| red in the sandbox, **GREEN in the repository** | **6** — `roadmap-record` on m11a/m11b/m11c/m11d5, `m11a:the-four-rows-are-evaluated`, `m11a:ladder-carries-five-rungs` | **the untracked `schedule.py`**, below. Not a defect in any of the six criteria |
+| nothing has judged it | **3** — `m11c:remaining-rows-at-complete-grade`, `m12:defects-carry-their-regression-test`, `m13:the-three-deferrals-name-this-rung` | new criteria. **M11.c's was proved and recorded by this phase**; M12's and M13's are those rungs' |
+
+**Everything outside M11.c's own four entries was left alone, deliberately**, and is named here so
+the rung that owns each one can act on it without re-running the prover for fifteen minutes. And the
+shape that matters most for whoever runs the next ledger-wide `--record` is the third row: **twenty
+of the fifty-two are one unformatted `#include`**, so the disagreement count will fall by more than
+a third the moment that file is formatted, with nothing else changing.

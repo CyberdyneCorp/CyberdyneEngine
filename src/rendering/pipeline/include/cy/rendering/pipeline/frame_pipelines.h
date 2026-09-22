@@ -48,8 +48,10 @@
 //
 // `render::VertexStream` splits a mesh into streams so "a shadow pass over an interleaved vertex
 // reads normals, UVs and colours it will not use" stops being true. The depth pipeline below binds
-// stream 0 and the forward pipelines bind streams 0, 1 and 2, which is `render::kDepthPassStreams`
-// made structural rather than documented.
+// streams 0 and 1 — it writes a normal and a velocity target and reads no texture coordinate — and
+// the forward pipelines bind 0, 1 and 2, which is `render::kDepthPassStreams` made structural
+// rather than documented. `kDepthPassStreamCount` and `kForwardPassStreamCount` below are those two
+// numbers, declared once because the pipeline and the recorder must agree about them.
 //
 // **`render::PackedNormalTangent` is two pairs of 16-bit SIGNED NORMALISED components and
 // `rhi::Format` has no `Rgba16Snorm`.** So the normal stream this module binds is `Rgba16Sfloat`,
@@ -78,6 +80,53 @@ inline constexpr u32 kViewSet = 1;
 inline constexpr u32 kPassSet = 2;
 inline constexpr u32 kSetCount = 3;
 
+// --- Set 0 carries the globals block AND the material texture table. M11.c task 3.7 -------------
+//
+// THE REASON THE FORWARD PATH SAMPLED NOTHING, and it was not a missing feature anywhere. The RHI
+// has had a global bindless table since M11.c's first half — declared at (set 0, binding 1) and
+// (set 0, binding 2) by `cy/material.slang`, filled by `Device::bind_texture_globally`, made
+// resident by `MaterialTextureTable` — and this module's set 0 carried `cy/globals.slang`'s block
+// at binding 0 and nothing else. A PIPELINE BINDS ONE SET PER INDEX, so a program that wants both
+// needs a set 0 that HAS both, and there was none.
+//
+// THE SLOT INDEX IS STILL THE DEVICE'S. What is written here at `array_index = slot` is the view
+// the device's own table holds at that slot, and the slot is what `Device::bind_texture_globally`
+// handed out; this module allocates no indices of its own. So a material's slot word means the
+// same thing to this set, to the device's table, and to every other consumer of either — the two
+// sets can differ in WHICH DESCRIPTORS ARE WRITTEN, never in what a number means. The frame's own
+// set is what a pipeline layout on the engine's set convention can name; see
+// `FrameBindings::set_material_textures`.
+inline constexpr u32 kGlobalBindingGlobals = 0;
+inline constexpr u32 kGlobalBindingMaterialTextures = 1;
+inline constexpr u32 kGlobalBindingMaterialSampler = 2;
+inline constexpr u32 kGlobalBindingCount = 3;
+
+/// How many slots of the global table the frame's own set 0 can name.
+///
+/// A FIXED COUNT AND NOT THE DEVICE'S 16384: every allocation of this per-frame set costs that many
+/// descriptors out of the frame's pool, and the pool holds 512 of them. A frame that is handed a
+/// slot at or past this index is REFUSED naming both numbers rather than drawing a surface that
+/// samples an unwritten descriptor — which is undefined, and looks like a texture on most drivers.
+inline constexpr u32 kMaterialTextureSlots = 128;
+
+// The numbers are the SHADER's, reached from the RHI's own copy of them rather than written twice.
+// `rhi/pipeline.h` says why they live there: "the shader declared these first".
+static_assert(kGlobalSet == rhi::kGlobalTableSet);
+static_assert(kGlobalBindingMaterialTextures == rhi::kGlobalTableTextureBinding);
+static_assert(kGlobalBindingMaterialSampler == rhi::kGlobalTableSamplerBinding);
+
+/// One resident texture as the frame's set 0 needs it: the slot the device gave it, and the view to
+/// write there. `MaterialTextureTable::slots()` produces these.
+struct MaterialTextureSlot {
+    rhi::BindlessIndex slot = rhi::kInvalidBindlessIndex;
+    rhi::TextureViewHandle view;
+};
+
+/// The sentinel `cy/frame.slang` spells `kCyNoMaterialTexture`: "no texture here". It is
+/// `rhi::kInvalidBindlessIndex`, because the value it stands in for IS a bindless index — and zero
+/// cannot do the job, since zero is a perfectly good slot of the table.
+inline constexpr u32 kNoMaterialTexture = rhi::kInvalidBindlessIndex;
+
 /// Bindings within the view set. The same numbers `cy/frame.slang` declares, and the reason they
 /// are named here is that the two files are the only places they appear.
 inline constexpr u32 kViewBindingFrame = 0;
@@ -104,6 +153,16 @@ inline constexpr u32 kUvStream = 2;
 inline constexpr u32 kPositionStreamStride = 12;  // Rgb32Sfloat
 inline constexpr u32 kNormalStreamStride = 8;     // Rgba16Sfloat: octahedral normal, then tangent
 inline constexpr u32 kUvStreamStride = 8;         // Rg32Sfloat
+
+/// How many streams each pass binds, declared ONCE because two files have to agree about it.
+///
+/// The depth pass takes the position and the packed normal and leaves the UVs alone — it writes a
+/// normal and a velocity target and reads neither texture coordinate. `frame_pipelines.cpp`
+/// declares this many vertex bindings on the pipeline and `frame_recorder.cpp` binds this many
+/// buffers before the draw; when those were two literals they disagreed for three commits, and
+/// every depth draw in that window fetched an attribute from a binding nothing was bound to.
+inline constexpr u32 kDepthPassStreamCount = 2;
+inline constexpr u32 kForwardPassStreamCount = 3;
 
 /// Encode a normal and a tangent into one 8-byte normal-stream vertex.
 ///
@@ -164,9 +223,20 @@ struct alignas(16) FrameViewData {
     f32 temporal_feedback[4] = {};
     /// current jitter in xy and previous jitter in zw, in pixel units.
     f32 temporal_jitter[4] = {};
+    /// Word offsets of the material block's TEXTURE SLOTS — x is the base colour texture's —
+    /// derived from the `MaterialProgram` exactly as `material_offsets` above is.
+    ///
+    /// DEFAULTED TO "NONE", WHICH IS THE WHOLE OF THE BACKWARD COMPATIBILITY. `cy/frame.slang`
+    /// samples nothing when x is `kNoMaterialTexture`, so a caller written before this field
+    /// existed uploads the frame it always uploaded and photographs the picture it always
+    /// photographed. A caller that wants a textured surface says so by writing this field, and
+    /// then owns making the slots resident — see `FrameBindings::set_material_textures`.
+    u32 material_textures[4] = {kNoMaterialTexture, kNoMaterialTexture, kNoMaterialTexture,
+                                kNoMaterialTexture};
 };
 
-static_assert(sizeof(FrameViewData) == 320, "CyFrameData's std140 block is 320 bytes");
+static_assert(sizeof(FrameViewData) == 336, "CyFrameData's std140 block is 336 bytes");
+static_assert(offsetof(FrameViewData, material_textures) == 320);
 static_assert(offsetof(FrameViewData, previous_relative_to_clip) == 64);
 static_assert(offsetof(FrameViewData, relative_to_view) == 128);
 static_assert(offsetof(FrameViewData, ambient_and_occlusion) == 192);
@@ -265,6 +335,14 @@ public:
     [[nodiscard]] rhi::DescriptorSetLayoutHandle set_layout(u32 set) const noexcept;
     [[nodiscard]] rhi::GraphicsPipelineHandle pipeline(FramePipelineKind kind) const noexcept;
     [[nodiscard]] rhi::SamplerHandle linear_clamp() const noexcept { return sampler_; }
+    /// The sampler bound at (set 0, binding 2) — `cy/material.slang`'s `cyMaterialSampler`.
+    ///
+    /// NOT `linear_clamp()`, and the difference is the picture rather than a preference. The post
+    /// chain samples a full-screen target and wants clamped edges and no mip chain; a material
+    /// samples an authored texture across a UV that tiles and wants REPEAT and the cooked mip
+    /// levels. One sampler for both would either tile the scene colour or read a wrapped surface
+    /// at level 0 and alias.
+    [[nodiscard]] rhi::SamplerHandle material_sampler() const noexcept { return material_sampler_; }
 
     /// How many pipeline states were created. The number that separates "the layer is wired up"
     /// from "the layer exists": temporal resolve is retained even when a frame leaves it unused.
@@ -293,6 +371,7 @@ private:
     rhi::DescriptorSetLayoutHandle sets_[kSetCount];
     rhi::PipelineLayoutHandle layout_;
     rhi::SamplerHandle sampler_;
+    rhi::SamplerHandle material_sampler_;
     rhi::GraphicsPipelineHandle pipelines_[kFramePipelineKindCount];
     u32 created_ = 0;
     bool ready_ = false;

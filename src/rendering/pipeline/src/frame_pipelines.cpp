@@ -190,8 +190,28 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
 }
 
 Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
+    // SET 0 CARRIES BOTH, which is M11.c task 3.7's last mile — see frame_pipelines.h. The array
+    // is PARTIALLY BOUND because a material texture table has holes in it by construction: a frame
+    // names the slots it made resident and no others, and a slot nothing wrote is a descriptor no
+    // draw reads. Without the flag, binding this set with one unwritten slot is undefined for the
+    // whole set rather than for that slot.
+    //
+    // THE BINDINGS ARE DECLARED ON EVERY DEVICE AND THE FLAG IS NOT, and the asymmetry is the
+    // Vulkan rule rather than a preference: a pipeline layout must carry every descriptor its
+    // shader statically uses, and the compiled `cyForwardFragment` names `cyMaterialTextures[]`
+    // whatever the device can do — while `create_descriptor_set_layout` refuses a partially bound
+    // binding on the compatibility path by name. A device on that path therefore gets the set with
+    // the array in it and no slot ever made resident, and the frame it uploads carries
+    // `kNoMaterialTexture`, so nothing indexes the array at all: the reduced capability shows up
+    // as a picture shaded from the constants, which is the picture that path had before this.
+    rhi::DescriptorBinding material_textures =
+        view_binding(kGlobalBindingMaterialTextures, rhi::DescriptorKind::SampledTexture);
+    material_textures.count = kMaterialTextureSlots;
+    material_textures.partially_bound = device.descriptor_model() == rhi::DescriptorModel::Bindless;
     const rhi::DescriptorBinding globals[] = {
-        view_binding(0, rhi::DescriptorKind::UniformBuffer),
+        view_binding(kGlobalBindingGlobals, rhi::DescriptorKind::UniformBuffer),
+        material_textures,
+        view_binding(kGlobalBindingMaterialSampler, rhi::DescriptorKind::Sampler),
     };
     const rhi::DescriptorBinding view[] = {
         view_binding(kViewBindingFrame, rhi::DescriptorKind::UniformBuffer),
@@ -215,7 +235,7 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
         Span<const rhi::DescriptorBinding> bindings;
     };
     const SetRequest sets[kSetCount] = {
-        {"cy frame globals", Span<const rhi::DescriptorBinding>(globals, 1)},
+        {"cy frame globals", Span<const rhi::DescriptorBinding>(globals, kGlobalBindingCount)},
         {"cy frame view", Span<const rhi::DescriptorBinding>(view, kViewBindingCount)},
         {"cy frame pass", Span<const rhi::DescriptorBinding>(pass, kPassBindingCount)},
     };
@@ -253,6 +273,22 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
         return make_unexpected(made.error());
     }
     sampler_ = *made;
+
+    // `cyMaterialSampler`. Repeat and a mip chain, which is what an authored texture wants and
+    // what the post chain's clamped sampler above is not — see `material_sampler()`. The defaults
+    // of `SamplerDescription` are already repeat and linear mipmapping, so what this says out loud
+    // is the name and the intent.
+    rhi::SamplerDescription material;
+    material.name = "cy frame material";
+    material.address_u = rhi::AddressMode::Repeat;
+    material.address_v = rhi::AddressMode::Repeat;
+    material.address_w = rhi::AddressMode::Repeat;
+    material.mipmap_mode = rhi::MipmapMode::Linear;
+    Expected<rhi::SamplerHandle, Error> material_made = device.create_sampler(material);
+    if (!material_made.has_value()) {
+        return make_unexpected(material_made.error());
+    }
+    material_sampler_ = *material_made;
     return ok();
 }
 
@@ -271,11 +307,16 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
     };
-    // THE DEPTH PIPELINE BINDS ONE STREAM. `render::kDepthPassStreams` is `stream_bit(Position)`
-    // and this is what makes that constant structural: a depth pass that declared three bindings
-    // would need three buffers bound to draw, which is exactly the bandwidth the stream split
-    // exists to avoid.
-    const usize stream_count = depth_only ? 2U : 3U;
+    // THE DEPTH PIPELINE BINDS TWO STREAMS AND THE FORWARD ONES THREE, and the constants are
+    // `frame_pipelines.h`'s so that the RECORDER binds the same number — which it did not between
+    // `6514c3d` and M11.c task 3.7, and every depth draw in between fetched attribute 1 from a
+    // binding nothing was bound to.
+    //
+    // It was one stream until the prepass grew a normal output: `render::kDepthPassStreams` is
+    // `stream_bit(Position)` and a depth pass that declared three bindings would need three buffers
+    // bound to draw, which is the bandwidth the stream split exists to avoid — so the pass takes
+    // the position and the packed normal and still leaves the UVs unbound.
+    const usize stream_count = depth_only ? kDepthPassStreamCount : kForwardPassStreamCount;
 
     rhi::ColorAttachmentState colors[2];
     colors[0].format = depth_only ? rhi::Format::Rgba16Sfloat : setup.color_format;
@@ -459,6 +500,10 @@ void FramePipelines::shutdown() noexcept {
     if (!sampler_.is_null()) {
         device.destroy_sampler(sampler_);
         sampler_ = rhi::SamplerHandle{};
+    }
+    if (!material_sampler_.is_null()) {
+        device.destroy_sampler(material_sampler_);
+        material_sampler_ = rhi::SamplerHandle{};
     }
     if (!layout_.is_null()) {
         device.destroy_pipeline_layout(layout_);

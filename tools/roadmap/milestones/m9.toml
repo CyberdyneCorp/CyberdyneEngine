@@ -363,10 +363,14 @@ source = "tasks 4.1, delivery-roadmap"
 kind = "command"
 run = '''
 set -e
-d="${CY_BUILD_DIR:+${CY_BUILD_DIR}/net-default}"
-d="${d:-build/m9-net-default}"
-rm -rf "$d"
-CY_BUILD_DIR="$d" just build-engine --profile dev > /dev/null
+# `dev-default` IS THE MATRIX ROW WITH NO `-D` AT ALL, and tools/roadmap/matrix.py DELETES ITS
+# CMakeCache.txt before configuring it. That is what this criterion needs and all of what it needs:
+# an option's default can only be read where nothing is remembered. What it does not need — and
+# what this body did until the matrix, on every single evaluation — is `rm -rf` over the whole tree,
+# which throws away the object files as well and buys a full compile of the engine to learn
+# something only the cache knows.
+python3 tools/roadmap/matrix.py build dev-default
+d="$(python3 tools/roadmap/matrix.py path dev-default)"
 grep -q "^CY_NETWORKING:BOOL=ON$" "$d/CMakeCache.txt" || {
     echo "a default configure left CY_NETWORKING off:"; grep "^CY_NETWORKING" "$d/CMakeCache.txt"; exit 1; }
 test -d "$d/src/networking" || { echo "CY_NETWORKING is ON and src/networking/ declared no targets"; exit 1; }
@@ -375,15 +379,40 @@ echo "CY_NETWORKING:BOOL=ON by default, with src/networking/ and samples/09-mult
 '''
 timeout_s = 14400
 ci_job = "milestone-m9"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the matrix rows it builds.
+# `tools/roadmap/matrix.py` is not a directory redirection schedule.py can read, and the
+# tokens matter here — two criteria that name the same row must not configure it at once.
+needs = ["build:ledger-matrix/dev-default"]
+# THE SUBJECT ITSELF: the row in cmake/features.cmake that declares CY_NETWORKING and its
+# default. Delete it and a configure with no `-D` leaves no `CY_NETWORKING:BOOL=ON` in the
+# cache and no targets behind it — which is the state this criterion exists to refuse.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "cmake/features.cmake"
+token = "CY_NETWORKING|ON|"
 
 [[criterion]]
 id = "networking-option-off"
 describe = "and the tree builds and passes with `-D CY_NETWORKING=OFF`, which removes the TRANSPORT and not the RECORD: `ReplicationInputCursor` stays in src/replay/ and outside the option, so a log is still read five ways in a build with no network in it"
 source = "tasks 4.1, delivery-roadmap"
 kind = "command"
-run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-networking}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_NETWORKING=OFF; CY_BUILD_DIR=\"$d\" just test-integration --profile dev -R replay_session"
+run = '''
+set -e
+python3 tools/roadmap/matrix.py build off-networking
+CY_BUILD_DIR="$(python3 tools/roadmap/matrix.py path off-networking)" just test-integration --profile dev -R replay_session
+'''
 timeout_s = 14400
 ci_job = "milestone-m9"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the matrix rows it builds.
+# `tools/roadmap/matrix.py` is not a directory redirection schedule.py can read, and the
+# tokens matter here — two criteria that name the same row must not configure it at once.
+needs = ["build:ledger-matrix/off-networking"]
+# THE RECORD, WHICH THIS CRITERION SAYS THE OPTION DOES NOT REMOVE. `readers.cpp` is where
+# `ReplicationInputCursor` lives; take it away and the CY_NETWORKING=OFF tree no longer
+# reads a log five ways, which is exactly the claim.
+[criterion.falsifies]
+mutate = "delete-path"
+target = "src/replay/src/readers.cpp"
 
 # THE EXIT CRITERION'S OWN WORD IS "MEASURED", AND IT IS A CURVE RATHER THAN A POPULATION.
 # `cy_net_bandwidth_curve` runs the real `InterestSet` and the real `PriorityScheduler` at eight
@@ -510,15 +539,15 @@ source = "tasks 6.1, 8.1, design.md §1.2"
 kind = "command"
 run = '''
 set -e
-base="${CY_BUILD_DIR:-build}"
-for p in debug dev; do
-    CY_BUILD_DIR="$base/agree-$p" just build-engine --profile "$p" > /dev/null
-done
+# THE TWO BUILDS ARE THE MATRIX'S `debug-default` AND `dev-default`, built side by side rather than
+# one after the other, and `dev-default` is the same tree `networking-defaults-on` reads: one
+# configuration compiled once, not twice into two directories that only this file knew about.
+python3 tools/roadmap/matrix.py build debug-default dev-default
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 for p in debug dev; do
-    "$base/agree-$p/samples/09-multiplayer/cy_sample_multiplayer" --ticks 120 --seed 152092927 \
-        > "$out/$p.txt"
+    d="$(python3 tools/roadmap/matrix.py path "$p-default")"
+    "$d/samples/09-multiplayer/cy_sample_multiplayer" --ticks 120 --seed 152092927 > "$out/$p.txt"
 done
 if ! diff "$out/debug.txt" "$out/dev.txt"; then
     echo "Debug and Development disagree about the session"; exit 1
@@ -527,6 +556,15 @@ echo "Debug (-O0, CY_UNOPTIMISED) and Development (-O2) agree on all $(grep -c '
 '''
 timeout_s = 14400
 ci_job = "milestone-m9"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the matrix rows it builds.
+# `tools/roadmap/matrix.py` is not a directory redirection schedule.py can read, and the
+# tokens matter here — two criteria that name the same row must not configure it at once.
+needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default"]
+# The session both profiles run. Without `net.cpp` neither build produces the program whose
+# output the two are diffed on, and a criterion that compared nothing would say so here.
+[criterion.falsifies]
+mutate = "delete-path"
+target = "samples/09-multiplayer/net.cpp"
 
 # THE NEGATIVE CONTROLS, AND THEY ARE WHAT MAKE THE THREE ABOVE MEASUREMENTS. A lossy session whose
 # loss cannot be shown to be doing anything proves nothing, and a lossy session that is not

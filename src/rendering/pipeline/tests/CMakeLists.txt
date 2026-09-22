@@ -1,6 +1,7 @@
-# src/rendering/pipeline/tests/ — the layer, with and without a device. M8.c tasks 1b.1 and 1b.2.
+# src/rendering/pipeline/tests/ — the layer, with and without a device. M8.c tasks 1b.1 and 1b.2,
+# and M11.c task 3.7.
 #
-# TWO SUITES, AND THE SPLIT IS THE TAXONOMY'S.
+# THREE SUITES, AND THE FIRST SPLIT IS THE TAXONOMY'S.
 #
 #   render_pipeline   KIND integration. Every case builds a spatial index, a material table, a
 #                     render graph and a null device, and the taxonomy names all four as what does
@@ -14,6 +15,13 @@
 #                     CY_RENDERER_VULKAN is on, for the reason tests/render/ gives: a suite that
 #                     always skips is a suite whose failure nobody would notice. With the backend
 #                     compiled in and no GPU it SKIPS LOUDLY.
+#
+#   forward_material_texture
+#                     KIND render, Vulkan only. The same scene with a TEXTURE on its materials,
+#                     compared against the same frame with that texture replaced by its declared
+#                     average. It is separate from `pipeline` because it needs a device with a
+#                     global bindless table and a render server to key residency by, which the
+#                     other two need neither of.
 #
 # THE DEVICE SUITE COMPILES tests/render/golden.cpp. That file is the PNG encoder and the image
 # comparison the golden suite already uses, and this one writes its captures with the same encoder
@@ -73,6 +81,32 @@ function(cy_pipeline_declare_tests)
     target_include_directories(cy_test_render_pipeline
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
     target_compile_definitions(cy_test_render_pipeline PRIVATE ${device_define})
+
+    # THE FORWARD PATH WITH A TEXTURE ON IT. M11.c task 3.7's last mile.
+    #
+    # Vulkan only, and not because Metal is unsupported: the case needs a device with a global
+    # bindless table, and `MaterialTextureTable` refuses a device without one by name. It renders
+    # the SAME `FrameScene` the two suites above render — one scene in this directory, for the
+    # reason the header of this file gives — with one slot of that table bound as every material's
+    # base colour, and again with that texture replaced by its declared average.
+    #
+    # It links cy::servers-render because the residency path is keyed by the render server's own
+    # texture handle: the server owns the record and the table owns the image, and `slot_of` is the
+    # join. golden.cpp for the PNG encoder, as `render.pipeline` does — one encoder in the tree.
+    if(NOT CY_RENDERER_VULKAN)
+        return()
+    endif()
+    cy_add_test(
+        NAME forward_material_texture
+        KIND render
+        SOURCES
+            "${tests_dir}/frame_scene.cpp"
+            "${tests_dir}/test_forward_material_texture.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::servers-render
+                     cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_render_forward_material_texture
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_pipeline_declare_tests)

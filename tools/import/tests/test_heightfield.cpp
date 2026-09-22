@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: MIT
 #include <cy/import/heightfield.h>
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <ranges>
 #include <string_view>
 #include <vector>
 

@@ -150,6 +150,7 @@ Status FrameScene::create_materials() noexcept {
         if (!allocated.has_value()) {
             return make_unexpected(allocated.error());
         }
+        material_slots_[slot] = *allocated;
         if (Status defaults = apply_standard_defaults(program_, table, *allocated, ids);
             !defaults) {
             return defaults;
@@ -465,8 +466,14 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         // tonemaps. Zero stops photographs a physically-lit scene as a white rectangle, which is
         // exactly what the first run of this suite produced.
         globals.exposure_stops = -11.4F;
-        const FrameUpload upload = upload_for(assembly_, out, projection_ * view_, view_,
-                                              instances_.span(), globals, material_offsets_);
+        FrameUpload upload = upload_for(assembly_, out, projection_ * view_, view_,
+                                        instances_.span(), globals, material_offsets_);
+        // WHERE THE MATERIAL'S TEXTURE SLOTS ARE, which `upload_for` does not take: every caller
+        // in the tree predates the field, and one that says nothing gets `kNoMaterialTexture` and
+        // the constant-shaded frame it has always uploaded. See `bind_material_texture`.
+        for (u32 index = 0; index < 4U; ++index) {
+            upload.view.material_textures[index] = material_texture_offsets_[index];
+        }
         if (getenv("CY_PIPELINE_DEBUG") != nullptr && !upload.lights.empty()) {
             const GpuLight& light = upload.lights[0];
             std::fprintf(stderr, "light0 intensity=%f colour=(%f %f %f) kind=%u\n",
@@ -527,6 +534,31 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         return ended;
     }
     return executed;
+}
+
+Status FrameScene::bind_material_texture(rhi::BindlessIndex slot,
+                                         Span<const MaterialTextureSlot> resident) noexcept {
+    if (!built_) {
+        return fail(ErrorCode::Unavailable, "pipeline test: build() was not called");
+    }
+    const StandardParameters ids;
+    // THE OFFSET IS DERIVED, exactly as the four constant offsets above it are: it is a property
+    // of the program's layout, and a literal here would be a second description of it.
+    const MaterialParameter* parameter = program_.find(ids.base_color_texture);
+    if (parameter == nullptr) {
+        return fail(ErrorCode::NotFound,
+                    "pipeline test: the standard material has no base colour texture slot");
+    }
+    material_texture_offsets_[0] = parameter->offset / 4U;
+
+    MaterialTable& table = assembly_.materials();
+    for (const u32 material : material_slots_) {
+        if (Status set = table.set_texture(program_, material, ids.base_color_texture, slot);
+            !set) {
+            return set;
+        }
+    }
+    return bindings_.set_material_textures(resident);
 }
 
 u32 FrameScene::differing_texels(Span<const u32> other) const noexcept {

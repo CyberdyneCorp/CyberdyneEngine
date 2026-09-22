@@ -541,6 +541,50 @@ target = "src/backends/rhi/vulkan/src/vulkan_instance.cpp"
 token = "bindless_set_handle_ = *set_handle;"
 note = "measured: with the line gone the suite goes red on eleven assertions — the table's handle, `MaterialTextureTable::initialize`, both slot lookups and both renders — while the Vulkan objects are created and written exactly as before. Unmutated, the same suite reports 100.00% of texels differing from the declared average at mean |delta| 82.167/255 and 4096 of 4096 texels matching the uploaded byte."
 
+[[criterion]]
+id = "forward-path-samples-a-texture"
+describe = "THE ENGINE'S OWN FORWARD PATH PUTS A TEXTURE ON A MODEL, and the claim is a substitution rather than a shot. `material-texture-is-bound` above proves a material PROGRAM samples through the device's global table; what no suite could say is whether the frame this engine assembles samples anything at all, and until this task it did not: `cy/frame.slang`'s `surfaceOf()` read four constants out of `cyMaterialWords`, so every object in every frame the engine put together was one flat colour. The junction was a set: `src/rendering/pipeline/`'s set 0 carried `cy/globals.slang`'s block at binding 0 and A PIPELINE BINDS ONE SET PER INDEX, so the table could not be bound beside it. This runs `FrameScene` — the same scene `render.pipeline` and `integration.render_pipeline` render, through `FrameAssembly`'s passes and `FramePipelines`' pipelines — THREE times: with every texture slot unbound, with a pattern bound as every material's base colour, and with THAT TEXTURE REPLACED BY ITS DECLARED AVERAGE. The average frame is an entirely plausible picture, which is the point: an unbound table, a slot that resolves to zero and a set bound at the wrong index all produce two frames that AGREE"
+source = "tasks 3.7, 3.8, rendering-materials-and-shading, shader-system"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_render_forward_material_texture"
+test -x "$binary" || { echo "no $binary — the suite render.forward_material_texture does not exist"; exit 1; }
+out="$("$binary" 2>&1)" || { echo "$out" | grep -vE "^graphics validation"; echo "the forward material texture case FAILED"; exit 1; }
+echo "$out" | grep -E "forward material texture:|no Vulkan device" || true
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 1 || { echo "render.forward_material_texture selected no case"; exit 1; }
+# A SKIP IS NOT A PASS, and this suite has two ways to skip: no Vulkan device at all, and a device
+# on the compatibility path, which has no global texture table for a frame to sample through. Both
+# print and RETURN, so the case exits 0 having executed almost nothing — the defect task 9.3
+# measured on `material-texture-is-bound` and the guard `m11a:field-device-agrees-with-cpu` has
+# carried since M11.a. `requires = "gpu"` does not catch either: `criteria._has_gpu()` asks whether
+# /dev/dri holds a render node, which is a different question from whether a Vulkan device can be
+# created and a different one again from what that device can do.
+printf '%s\n' "$out" | grep -q 'no Vulkan device on this machine' && { echo "the suite SKIPPED for want of a device: that is not a pass"; exit 1; }
+printf '%s\n' "$out" | grep -q 'compatibility path' && { echo "the suite SKIPPED for want of a global texture table: that is not a pass"; exit 1; }
+assertions=$(printf '%s' "$out" | sed -nE 's/.*assertions: *([0-9]+) \|.*/\1/p' | head -1)
+test "${assertions:-0}" -ge 20 || { echo "the suite executed ${assertions:-0} assertion(s): it measured nothing"; exit 1; }
+'''
+requires = "gpu"
+reason = "three frames have to be RENDERED and read back for two differences to exist, and only a graphics device renders them. The device-free half of this claim is already carried: `integration.render_pipeline` runs the same scene on the null backend and `material-table-is-nameable` carries the table's contract on a machine with no GPU — neither can say what a texel came back as. AND THIS HOST HAS ONE GPU VENDOR — design.md section 1.3 — so what a green here settles is this driver's answer through the Vulkan backend"
+ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE JUNCTION ITSELF, one line down: the view of a resident texture reaching the
+# frame's own set 0. Without it the descriptor write still happens and still names the right slot,
+# so the shader still indexes a descriptor — it is simply not this texture's — which is exactly the
+# failure this criterion is written to catch and is indistinguishable from a working frame in any
+# single picture.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/pipeline/src/frame_bindings.cpp"
+token = "texture.texture_view = entry.view;"
+note = "measured in build/m11c-forward on an RTX 5060. UNMUTATED: 60 712 of 129 600 texels shaded; against the declared average 46.90% of texels differ at mean |delta| 20.881/255; against the constant-shaded frame 47.00% at 26.434/255; 0 validation errors, 31 of 31 assertions green. MUTATED: the substitution collapses to 1.20% and 0.023/255 — the textured frame and the averaged frame become THE SAME PICTURE, which is the whole failure mode — and the case goes red on three assertions, the two difference bands and the validation count (4, from the null image view the write now carries). The comparison against the CONSTANT frame stays high at 46.95% and 81.516/255, which is the reason the substitution is the load-bearing control and not that one: a frame can sample something and still be sampling the wrong thing. RESTORED: md5sum back to the pristine blob (a7d7f39bb3d0261b6f5741e36d138f61) and the suite green again at 31 of 31."
+
+
 # THIS CRITERION WAS `just test-render virtual-geometry --shaded --compare-golden` AND IT MEASURED
 # NONE OF THOSE THREE WORDS. `just test-render` is `_ctest render`, which selects with
 # `--label-regex "^render$" --no-tests=ignore` and then appends whatever else was passed; ctest
@@ -921,6 +965,35 @@ mutate = "delete-lines"
 target = "src/vfx/src/runtime.cpp"
 token  = "record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;"
 note = "measured against build/m11c-final on an RTX 5060. UNMUTATED: `integration.vfx` reports 996 motes published, 0 dropped, 3 emitters, 901 of 996 inside the artefact's frame and a brightest radiance of 35 811.6, 12 assertions green; `render.vfx` renders the same frame twice BIT-IDENTICALLY (0 of 129 600 texels differ, maximum channel delta 0, which is where the tolerance comes from rather than from a round number), differs from the same frame with an EMPTY ring by 4 713 texels of 129 600 — 3.64%, mean |delta| 20.7/255 where they differ, worst channel 255 — and matches the committed reference exactly, 386 assertions green. MUTATED: the framing collapses to 0 of 996 and `integration.vfx` goes red on that assertion ALONE — the population, the emitter count, the drawability and the radiance all stay green, so the verdict names what broke — and `render.vfx` goes red on six: the empty-ring control falls to 0 texels of difference (the air draws nothing at all), and the frame moves 4 111 texels of 129 600 away from the committed reference, 2 802 of them away from any high-contrast edge, worst channel delta 255 at (308, 173). RESTORED: `md5sum` back to the HEAD blob (1dfc6ce1ab3d3ba3681d167c3ceaaaa1), both suites green again. TWO OTHER MUTATIONS WERE TRIED AND REJECTED: deleting `stage.spawn_count(...)` from `embers.cpp` leaves its `rate` node defined-but-not-used and -Werror stops the compile, which is a red no reader of this criterion could act on; and deleting one of the three `kEmberEmitters` rows turns the criterion red on the POPULATION band rather than on the framing, which says less about the half the criterion is named for."
+
+[[criterion]]
+id = "remaining-rows-at-complete-grade"
+describe = "the five rows this rung promotes that NO OTHER criterion reads at Complete grade — `rendering-culling-and-lod`, `atmosphere-sky-and-clouds`, `rendering-architecture`, `rendering-geometry-and-resources` and `vfx-system`, 9, 13, 16, 11 and 26 requirements — map to a test, a gate or a recorded exemption. The other ten of the fifteen are read by `material-compiler-at-complete-grade` and `image-rows-at-complete-grade`; these five were measured BY HAND at three successive closes and by nothing else, which is the one thing this ladder refuses everywhere it looks"
+source = "tasks 4, 5, 6, testing-and-quality"
+kind = "command"
+run = "just quality-requirements rendering-culling-and-lod atmosphere-sky-and-clouds rendering-architecture rendering-geometry-and-resources vfx-system"
+ci_job = "milestone-m11c"
+
+# WHY THIS CRITERION EXISTS AND WHY IT IS THE THIRD RATHER THAN A WIDENING OF THE SECOND. Fifteen
+# rows are promoted by this rung and two criteria between them read ten at Complete grade. The other
+# five were measured with this exact recipe at the close, by hand, and reported in the record — a
+# measurement, not a check: it is not in the ledger, CI never runs it, and nothing goes red the day
+# a requirement of one of those five rows stops being answered. Widening
+# `image-rows-at-complete-grade` from eight rows to thirteen would have moved a criterion that
+# already carries a recorded proof, which costs that proof its digest; a third criterion of the same
+# shape costs nothing already earned.
+#
+# THE MUTATION IS THE SAME SHAPE AS THE OTHER TWO'S: the suite goes missing rather than the map
+# being edited, because a mapping that survives the removal of what it names is worse than an empty
+# cell. `integration.vfx_compiler` answers six of `vfx-system`'s twenty-six; renaming the
+# `cy_add_test` that DECLARES it leaves those six entries naming a suite that is not there, which
+# `requirements.py` reports as "answered by something that is not there" and which drops the recipe
+# from 75 of 75 to 69 of 75. Mutating `requirements-coverage.toml` instead would have proved only
+# that the recipe reads its own map.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/vfx/tests/CMakeLists.txt"
+token = "vfx_compiler"
 
 # --- Section 4: the artefact -------------------------------------------------------------------------
 

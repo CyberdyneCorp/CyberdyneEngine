@@ -293,8 +293,8 @@ def _method(entry: dict, handles: set[str], *, receiver: str | None = None) -> s
         return _function(name, declared, "throws", body)
     if returns == "void":
         return _function(name, declared, "", call)
-    swift_return = swifttypes.imported(
-        returns, optional=_nullable_return(returns, handles), handles=handles)
+    swift_return = swifttypes.imported(returns, optional=_nullable_return(returns, handles),
+                                       handles=handles)
     return _function(name, declared, f"-> {swift_return}", call)
 
 

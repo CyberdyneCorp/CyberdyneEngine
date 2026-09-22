@@ -60,6 +60,46 @@ is off by default and off in Profile and Shipping, and `shader-system` requires 
 "contain compiled backend-native shader artefacts and no Slang compiler".
 `src/rendering/shaders/cy/frame.slang` is the source and its header carries the invocations.
 
+## Set 0 carries the globals block and the material texture table — M11.c task 3.7
+
+The frame's fragment shader samples `cyMaterialTextures[]` out of the engine's global texture table,
+and until this task it could not. The pieces were all built and none of them met:
+`cy/material.slang` declared the array at **(set 0, binding 1)** and its sampler at **(set 0,
+binding 2)**, `rhi::Device::global_texture_table()` filled that set, and `MaterialTextureTable` made
+cooked pixels resident in it — while this module's set 0 carried `cy/globals.slang`'s block at
+binding 0 and nothing else. **A pipeline binds one set per index**, so a program that wants both
+needs a set 0 that has both. `FramePipelines::create_layouts` now builds that set, and
+`FrameBindings::write_sets` writes both halves of it every frame, because the set is allocated every
+frame.
+
+**The slot index stays the device's.** `FrameBindings::set_material_textures` writes each resident
+view at `array_index = slot`, and the slot is what `Device::bind_texture_globally` handed out — this
+module allocates none of its own. So a material's slot word means the same thing to the frame's set,
+to the device's own table, and to any other consumer of either; the two sets differ in which
+descriptors are written, never in what a number means.
+
+**The macOS viewport's answer was read first and could not be lifted.** `samples/03-first-light`
+solved the same problem two days earlier by giving its compiled-material path a SECOND pipeline
+layout — the device's table at set 0, the material's parameters at set 1, and its own globals moved
+to set 2 — which works because a sample owns its shaders and can renumber them. The frame cannot:
+`cy/globals.slang` fixes the globals block at (set 0, binding 0) for every shader in the engine, and
+sets 1 and 2 are the view and the pass. Moving the frame's globals would move them for
+`cy/fullscreen.slang` and everything else compiled against the standard library, so the set that
+carries both is the only arrangement that leaves the convention intact.
+
+**A frame that says nothing samples nothing.** `FrameViewData::material_textures` defaults to
+`kNoMaterialTexture`, so a caller written before the field existed uploads the frame it always
+uploaded and photographs the picture it always photographed. `apply_standard_defaults` now writes
+the same sentinel into every texture slot of a material, which the comment there had claimed since
+M3 while the block actually held zero — and zero is a perfectly good slot of the global table.
+
+**Metal is not closed here and the MSL is deliberately stale.** `slangc -target metal` accepts the
+sampling but emits an unbounded `texture2d<...>[]` entry-point parameter with no argument buffer
+behind it, which is what `CY_MATERIAL_METAL_ARGUMENT_BUFFER` exists for and which nothing supplies
+for the frame. `shaders/frame_msl.h` is therefore the artefact compiled before this change: on Metal
+the frame carries the new word offsets, reads none of them, and shades the four constants. That
+handover is M11.d's, and `cy/frame.slang`'s header says so at the regeneration invocations.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
@@ -78,6 +118,7 @@ is off by default and off in Profile and Shipping, and `shader-system` requires 
 |---|---|---|
 | `integration.render_pipeline` | integration | the sinks carry six callbacks, including temporal resolve; a frame with them records every draw while an empty `FrameSinks` records nothing; the history and upload rings turn over beyond the frames-in-flight count |
 | `render.pipeline` | render | Vulkan compares captured pixels; Apple Metal creates native pipelines, executes the temporal pass on the GPU, and requires zero validation errors. The older fixture remains black on Metal with TAA disabled, so Metal is command-level evidence until that separate capture defect is fixed |
+| `render.forward_material_texture` | render | the same scene rendered three times on a Vulkan device — every texture slot unbound, a pattern bound as every material's base colour, and **that texture replaced by its declared average** — and the differences between the three pictures. Vulkan only, because the case needs a device with a global bindless table |
 
 Both go red when `FrameRecorder::sinks()` stops attaching callbacks — which was run, not assumed.
 

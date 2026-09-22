@@ -126,11 +126,22 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     rhi::CommandBuffer& commands = *context.commands;
     commands.bind_graphics_pipeline(recorder.pipelines()->pipeline(pipeline));
 
+    // TWO STREAMS FOR THE DEPTH PASS, NOT ONE — position and the packed normal.
+    //
+    // A REGRESSION FIXED HERE RATHER THAN WORKED AROUND, and it was three commits old when M11.c
+    // task 3.7 found it. `6514c3d` ("Execute temporal anti-aliasing in frame pipeline") gave the
+    // prepass a normal and a velocity output, so `cyDepthVertex` began reading `NORMAL` and
+    // `create_geometry_pipeline` began declaring `depth_only ? 2U : 3U` vertex bindings — and this
+    // line, untouched since M8.c, kept binding ONE buffer for the depth pass. Every depth draw
+    // since then has fetched attribute 1 from a binding nothing was bound to: two validation
+    // errors per draw, 776 of them in a `render.pipeline` run, which is why that suite has been
+    // red in this tree since 20 September while the binary built on the 19th still passes.
+    // The number here is the pipeline's own, so the two cannot disagree again.
     const bool depth_only = pipeline == FramePipelineKind::Depth;
     const u64 offsets[3] = {0, 0, 0};
-    commands.bind_vertex_buffers(
-        0, Span<const rhi::BufferHandle>(geometry.streams, depth_only ? 1U : 3U),
-        Span<const u64>(offsets, depth_only ? 1U : 3U));
+    const usize stream_count = depth_only ? kDepthPassStreamCount : kForwardPassStreamCount;
+    commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(geometry.streams, stream_count),
+                                 Span<const u64>(offsets, stream_count));
 
     rhi::BufferHandle bound_indices;
     for (u32 offset = 0; offset < range.count; ++offset) {
@@ -484,6 +495,12 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     for (u32 index = 0; index < 4U; ++index) {
         upload.view.material_offsets[index] = material_offsets[index];
     }
+    // `upload.view.material_textures` IS DELIBERATELY NOT AN ARGUMENT HERE. It keeps its default of
+    // `kNoMaterialTexture`, so every caller written before M11.c task 3.7 uploads the frame it
+    // always uploaded and the shader samples nothing. A caller that has made textures resident
+    // writes the field on the returned upload and calls `FrameBindings::set_material_textures`;
+    // adding a fifth argument would have made every existing caller pass something it has no answer
+    // for, which is how a sentinel becomes a zero somebody guessed.
     const HistoryResource* history = assembly.temporal().history(HistoryId{0});
     upload.view.temporal_feedback[0] =
         history != nullptr && history->valid && !report.temporal_invalidated ? 1.0F : 0.0F;

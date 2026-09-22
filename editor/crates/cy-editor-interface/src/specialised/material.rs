@@ -658,6 +658,82 @@ mod tests {
         assert!(text.contains("prop 1 symbol uv0"));
     }
 
+    /// REGRESSION, and the defect it is against shipped green and went red without a line of this
+    /// module changing. `SpecialisedEditors::open` stopped clearing the canvas when the domain
+    /// asked for is the one ALREADY active — deliberately, so that a repeated or mis-clicked open
+    /// cannot empty an author's region, which
+    /// `reopening_the_active_material_editor_preserves_authored_nodes` asserts from the other side.
+    /// `cy-author-material` authors the beauty shot's three materials in ONE process and had been
+    /// relying on each `open` to start it an empty canvas, so it began writing 20 nodes, then 40,
+    /// then 60, and `m11c:shot-authored-through-the-editor` went red on the first committed canvas
+    /// it compared. The close is what separates two materials, and this is the check that it does.
+    #[test]
+    fn authoring_two_materials_in_one_session_keeps_their_canvases_apart() {
+        let mut editors = SpecialisedEditors::with_legacy_material_catalogue()
+            .expect("legacy build-tool catalogues");
+        let mut interchanges = Vec::new();
+        for name in ["first_material", "second_material"] {
+            // What the generator does between two materials, and what a person does: close the
+            // editor, open it again. Without this line the second material carries the first.
+            editors.close();
+            let session = editors.open(Domain::Materials).expect("materials opens");
+            let canvas = session.graph.expect("a graph editor");
+            let mut material =
+                MaterialAuthoring::begin(name, canvas).expect("the name is an identifier");
+            material
+                .node("material.attribute")
+                .expect("the attribute node is in the catalogue");
+            material
+                .node("material.output")
+                .expect("the output node is in the catalogue");
+            interchanges.push(material.interchange());
+        }
+
+        for (name, text) in ["first_material", "second_material"]
+            .iter()
+            .zip(&interchanges)
+        {
+            let nodes = text
+                .lines()
+                .filter(|line| line.starts_with("node "))
+                .count();
+            assert_eq!(nodes, 2, "{name} carries only its own nodes:\n{text}");
+            // The ordinals restart too, which is what makes the committed canvases byte-comparable
+            // whichever order the generator writes them in.
+            assert!(
+                text.contains("node 1 material.attribute"),
+                "{name}:\n{text}"
+            );
+            assert!(text.contains("node 2 material.output"), "{name}:\n{text}");
+            assert!(text.starts_with(&format!(
+                "cymatcanvas {INTERCHANGE_VERSION}\nmaterial {name}\n"
+            )));
+        }
+
+        // AND THE OTHER HALF, SO THIS TEST CANNOT PASS BY ACCIDENT. If `open` went back to
+        // clearing the canvas every time, the loop above would still pass and the defect it is
+        // against would be unreachable — and an author's work would be lost on a mis-click again.
+        // So the preserving behaviour is asserted here in the same test: authoring a third
+        // material WITHOUT closing first carries the second one's nodes, which is exactly what
+        // `cy-author-material` was doing.
+        let session = editors.open(Domain::Materials).expect("materials reopens");
+        let canvas = session.graph.expect("a graph editor");
+        let mut third =
+            MaterialAuthoring::begin("third_material", canvas).expect("the name is an identifier");
+        third
+            .node("material.output")
+            .expect("the output node is in the catalogue");
+        let carried = third.interchange();
+        let nodes = carried
+            .lines()
+            .filter(|line| line.starts_with("node "))
+            .count();
+        assert_eq!(
+            nodes, 3,
+            "re-opening the ACTIVE material editor preserves what is on the canvas:\n{carried}"
+        );
+    }
+
     #[test]
     fn a_material_name_that_is_not_an_identifier_is_refused() {
         let mut editors = SpecialisedEditors::with_legacy_material_catalogue()

@@ -869,12 +869,11 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
         return make_unexpected(created_set.error());
     }
     program.descriptor_set = *created_set;
-    const rhi::DescriptorWrite write{.binding = 0,
-                                     .kind = rhi::DescriptorKind::UniformBuffer,
-                                     .buffer = program.parameters,
-                                     .buffer_range = rendering::kMaterialBlockBytes,
-                                     .texture_view = {},
-                                     .sampler = {}};
+    rhi::DescriptorWrite write{};
+    write.binding = 0;
+    write.kind = rhi::DescriptorKind::UniformBuffer;
+    write.buffer = program.parameters;
+    write.buffer_range = rendering::kMaterialBlockBytes;
     if (Status updated = device_->update_descriptor_set(program.descriptor_set, {&write, 1});
         !updated) {
         device_->destroy_buffer(program.parameters);
