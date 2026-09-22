@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """The ledger's build matrix: one tree per distinct build CONFIGURATION, shared by every criterion
 that needs it.
 

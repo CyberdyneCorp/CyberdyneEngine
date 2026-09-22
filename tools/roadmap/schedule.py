@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """What one criterion needs to run, and the scheduler that runs independent ones at the same time.
 
 THE LEDGER RAN ON ONE CORE OF TWENTY-FOUR. `criteria.evaluate` runs one criterion per
