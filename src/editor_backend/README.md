@@ -13,8 +13,9 @@ The first vertical slice supports:
 - `material.compile` — compiles the material family and returns its cook identity, source graph
   dependency identity, program count, and stable texture-asset dependency identities;
 - `preview.create`, `preview.destroy`, `preview.parameter.update`, and `preview.reload` — isolated
-  generational handles, idempotent destruction, stale-handle diagnostics, and reload identity
-  acknowledgement.
+  generational handles, idempotent destruction, stale-handle diagnostics, exact entity/material-slot
+  target acknowledgements, and typed bool/integer/float/vector/texture parameter updates bound to an
+  applied artefact generation.
 
 Requests are copied at submission, identified by nonzero request IDs, cancelled cooperatively, and
 publish exactly one terminal event. Payload schemas are versioned independently of ABI 1.2 and of

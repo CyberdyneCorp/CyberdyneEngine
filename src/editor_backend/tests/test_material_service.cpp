@@ -200,15 +200,19 @@ CY_TEST_CASE("editor_backend: preview handles are generational and reload is ack
     cy::u8 handle[8];
     std::memcpy(handle, event.payload, sizeof(handle));
 
-    cy::u8 reload_payload[16];
+    cy::u8 reload_payload[40] = {};
     std::memcpy(reload_payload, handle, 8);
     const cy::u64 artefact = 0xAABB'CCDD'1122'3344ULL;
     std::memcpy(reload_payload + 8, &artefact, 8);
+    const cy::u32 target_count = 1;
+    std::memcpy(reload_payload + 16, &target_count, 4);
+    const cy::u32 material_slot = 2;
+    std::memcpy(reload_payload + 36, &material_slot, 4);
     const CyServiceRequest reload{sizeof(CyServiceRequest), 1, 2, "preview.reload", reload_payload,
                                   sizeof(reload_payload)};
     CY_REQUIRE_EQ(api->service_submit(&host, session, &reload), CY_RESULT_OK);
     CY_REQUIRE_EQ(api->service_poll(&host, session, &event, &present), CY_RESULT_OK);
-    CY_REQUIRE_EQ(event.payload_size, 16U);
+    CY_REQUIRE_EQ(event.payload_size, sizeof(reload_payload));
     cy::u64 requested = 0;
     cy::u64 applied = 0;
     std::memcpy(&requested, event.payload, 8);

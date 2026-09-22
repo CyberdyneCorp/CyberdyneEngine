@@ -63,9 +63,11 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     panels.shell,
                     canvas,
                     &mut panels.inputs.material_filter,
-                    state,
-                    &request_state,
-                    &preview_state,
+                    PaletteBackendState {
+                        catalogue: state,
+                        request: &request_state,
+                        preview: &preview_state,
+                    },
                     &panels.editor.asset_catalogue,
                 );
             },
@@ -145,9 +147,7 @@ fn palette(
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
     filter: &mut String,
-    state: MaterialCatalogueState,
-    request: &MaterialRequestState,
-    preview: &MaterialPreviewState,
+    backend: PaletteBackendState<'_>,
     assets: &AssetCatalogueService,
 ) -> Option<PaletteAction> {
     let mut action = None;
@@ -157,8 +157,8 @@ fn palette(
         format!("{} stable node types", canvas.catalogue().len()),
     ));
     ui.add_space(shell.metrics().gap() * 0.5);
-    let ready = state == MaterialCatalogueState::Ready;
-    let pending = matches!(request, MaterialRequestState::Pending { .. });
+    let ready = backend.catalogue == MaterialCatalogueState::Ready;
+    let pending = matches!(backend.request, MaterialRequestState::Pending { .. });
     ui.horizontal(|ui| {
         if ui
             .add_enabled(ready && !pending, egui::Button::new("Validate"))
@@ -176,8 +176,8 @@ fn palette(
             action = Some(PaletteAction::Cancel);
         }
     });
-    material_request_status(ui, shell, canvas, request);
-    material_preview_status(ui, shell, preview);
+    material_request_status(ui, shell, canvas, backend.request);
+    material_preview_status(ui, shell, backend.preview);
     material_properties(ui, canvas, assets);
     ui.add_space(shell.metrics().gap() * 0.5);
     ui.add(
@@ -222,7 +222,7 @@ fn palette(
 
     ui.with_layout(
         egui::Layout::bottom_up(egui::Align::Min),
-        |ui| match state {
+        |ui| match backend.catalogue {
             MaterialCatalogueState::Ready => {
                 status(ui, shell, Semantic::Live, "Runtime services ready");
             }
@@ -235,6 +235,13 @@ fn palette(
         },
     );
     action
+}
+
+#[derive(Clone, Copy)]
+struct PaletteBackendState<'a> {
+    catalogue: MaterialCatalogueState,
+    request: &'a MaterialRequestState,
+    preview: &'a MaterialPreviewState,
 }
 
 fn material_preview_status(
@@ -269,7 +276,7 @@ fn material_properties(
     canvas: &mut GraphCanvas,
     assets: &AssetCatalogueService,
 ) {
-    let Some(key) = canvas.selection().iter().next().copied() else {
+    let Some(key) = canvas.selection().first().copied() else {
         return;
     };
     let Some(node) = canvas.node(key) else {

@@ -36,7 +36,9 @@ use cy_editor_documents::Document;
 use cy_editor_services::assets::{AssetImportService, ImportRunner};
 use cy_editor_services::builtin;
 use cy_editor_services::editor::Editor;
-use cy_editor_services::primitives::{MaterialBinding, MeshBinding, material_of, mesh_of};
+use cy_editor_services::primitives::{
+    MaterialBinding, MeshBinding, material_of, material_slots_of, mesh_of,
+};
 use cy_editor_services::project::ProjectService;
 use cy_editor_viewport::gizmo::TransformBinding;
 
@@ -132,7 +134,7 @@ impl ImportRunner for Recording {
             ));
         }
         Ok(AssetImportOutcome {
-            schema_version: 2,
+            schema_version: 3,
             source: request.source.clone(),
             importer: "obj".to_string(),
             id: "5e014c7f8f1666b05d2b42948d633399".to_string(),
@@ -141,10 +143,16 @@ impl ImportRunner for Recording {
                 ImportedSubAsset {
                     name: "mesh/Seat".to_string(),
                     id: "5e014c7f8f1666b05d2b42948d633399".to_string(),
+                    kind: "mesh".into(),
+                    source: request.source.clone(),
+                    ..ImportedSubAsset::default()
                 },
                 ImportedSubAsset {
                     name: "material/Oak".to_string(),
                     id: "d658eeb594dfd3c1b877fef741678723".to_string(),
+                    kind: "material".into(),
+                    source: request.source.clone(),
+                    ..ImportedSubAsset::default()
                 },
             ],
             scene: if self.scene {
@@ -165,6 +173,11 @@ impl ImportRunner for Recording {
                         rotation: [0.0, 0.0, 0.0, 1.0],
                         scale: [1.0, 1.0, 1.0],
                         mesh: Some("5e014c7f8f1666b05d2b42948d633399".into()),
+                        materials: vec![
+                            "d658eeb594dfd3c1b877fef741678723".into(),
+                            String::new(),
+                            "d658eeb594dfd3c1b877fef741678723".into(),
+                        ],
                     },
                 ]
             } else {
@@ -175,7 +188,6 @@ impl ImportRunner for Recording {
             steps_not_reached: "7 (import skeletons), 8 (import animations), 10 (produce a prefab \
                                 of the hierarchy)"
                 .to_string(),
-            ..AssetImportOutcome::default()
         })
     }
 }
@@ -402,6 +414,18 @@ fn an_imported_prefab_instantiates_its_complete_named_hierarchy_in_one_transacti
         mesh_of(document, child).as_deref(),
         Some("5e014c7f8f1666b05d2b42948d633399")
     );
+    assert_eq!(
+        material_slots_of(document, child),
+        vec![
+            "d658eeb594dfd3c1b877fef741678723",
+            "",
+            "d658eeb594dfd3c1b877fef741678723"
+        ]
+    );
+    assert_eq!(
+        material_of(document, child).as_deref(),
+        Some("d658eeb594dfd3c1b877fef741678723")
+    );
     let transform = TransformBinding::of_schema(document.schema()).unwrap();
     assert_eq!(
         document
@@ -410,6 +434,24 @@ fn an_imported_prefab_instantiates_its_complete_named_hierarchy_in_one_transacti
         Some(&Value::Vec3([11.0, 0.0, 0.0]))
     );
     assert_eq!(document.history().entries().len(), 1);
+
+    let written = cy_editor_services::write_world(document);
+    let mut reopened = Document::new("worlds/reopened.cyworld");
+    cy_editor_services::worldfile::load(&written, &mut reopened, Actor::human("designer"))
+        .expect("material slots survive reload");
+    let reopened_child = reopened
+        .content()
+        .nodes()
+        .find(|node| reopened.content().node(*node).unwrap().name == "Seat")
+        .expect("the imported child survives reload");
+    assert_eq!(
+        material_slots_of(&reopened, reopened_child),
+        vec![
+            "d658eeb594dfd3c1b877fef741678723",
+            "",
+            "d658eeb594dfd3c1b877fef741678723"
+        ]
+    );
 }
 
 #[test]

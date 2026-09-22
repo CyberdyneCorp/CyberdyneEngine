@@ -83,6 +83,12 @@ pub struct ImportedSubAsset {
     pub name: String,
     /// The identity, as text. Stable across re-imports — that is what the `.import` sidecar is for.
     pub id: String,
+    /// Engine-owned asset kind (`mesh`, `material`, `texture`, `prefab`, ...).
+    pub kind: String,
+    /// Project-relative source which owns this logical child.
+    pub source: String,
+    /// Stable identities this logical asset directly depends on.
+    pub dependencies: Vec<String>,
 }
 
 /// One node projected from an imported prefab across the tool/editor boundary.
@@ -102,6 +108,8 @@ pub struct ImportedSceneNode {
     pub scale: [f32; 3],
     /// Stable cooked mesh identity, when this node draws one.
     pub mesh: Option<String>,
+    /// Material identities indexed by the mesh's material-slot number.
+    pub materials: Vec<String>,
 }
 
 /// What an import did.

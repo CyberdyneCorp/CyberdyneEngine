@@ -16,6 +16,8 @@ const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const PREVIEW_CREATE_OPERATION: &str = "preview.create";
 const PREVIEW_RELOAD_OPERATION: &str = "preview.reload";
+const PREVIEW_DESTROY_OPERATION: &str = "preview.destroy";
+const PREVIEW_PARAMETER_OPERATION: &str = "preview.parameter.update";
 const SERVICE_SCHEMA_VERSION: u32 = 1;
 
 /// Where the material catalogue request currently is.
@@ -39,6 +41,30 @@ pub enum MaterialOperation {
     Validate,
     /// Compile and return a stable artefact identity.
     Compile,
+}
+
+/// One renderer material slot which shall receive a compiled artefact.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MaterialPreviewTarget {
+    /// Stable scene entity identity.
+    pub entity: u128,
+    /// Mesh material-slot index.
+    pub slot: u32,
+}
+
+/// A typed live material parameter value.
+#[derive(Clone, PartialEq, Debug)]
+pub enum MaterialParameterValue {
+    /// Boolean scalar.
+    Bool(bool),
+    /// Signed integer scalar.
+    Int(i64),
+    /// Floating-point scalar.
+    Float(f64),
+    /// Four floating-point lanes.
+    Vec4([f32; 4]),
+    /// Stable texture asset identity.
+    Texture(String),
 }
 
 /// Stable severity carried by backend diagnostics.
@@ -162,6 +188,7 @@ pub enum MaterialPreviewState {
 enum PreviewOperation {
     Create,
     Reload { artefact: u64 },
+    Destroy,
 }
 
 /// Backend-service state owned by the editor rather than by a panel.
@@ -175,6 +202,7 @@ pub struct BackendServices {
     preview_request: Option<(RequestId, PreviewOperation)>,
     preview_pending_artefact: Option<u64>,
     preview_applied_artefact: Option<u64>,
+    preview_targets: Vec<MaterialPreviewTarget>,
     preview_state: MaterialPreviewState,
     connected: bool,
 }
@@ -191,6 +219,7 @@ impl Default for BackendServices {
             preview_request: None,
             preview_pending_artefact: None,
             preview_applied_artefact: None,
+            preview_targets: vec![MaterialPreviewTarget { entity: 0, slot: 0 }],
             preview_state: MaterialPreviewState::Idle,
             connected: false,
         }
@@ -223,7 +252,7 @@ impl BackendServices {
             }
             self.preview_handle = None;
             self.preview_request = None;
-            self.preview_pending_artefact = None;
+            self.preview_pending_artefact = self.preview_applied_artefact;
             return None;
         }
         if self.connected {
@@ -453,15 +482,126 @@ impl BackendServices {
         &self.preview_state
     }
 
+    /// Choose the selected viewport mesh slots which the next compile shall update.
+    pub fn set_material_preview_targets(
+        &mut self,
+        targets: Vec<MaterialPreviewTarget>,
+    ) -> cy_editor_core::problem::Result<()> {
+        if targets.is_empty() || targets.iter().any(|target| target.slot >= 16) {
+            return Err(Problem::new(
+                "select material preview targets",
+                "at least one renderer slot from zero through fifteen is required",
+            ));
+        }
+        self.preview_targets = targets;
+        Ok(())
+    }
+
+    /// Apply a typed value to the currently acknowledged artefact generation.
+    pub fn update_material_parameter(
+        &self,
+        runtime: &RuntimeSession,
+        parameter: u32,
+        value: MaterialParameterValue,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        let preview = self.preview_handle.ok_or_else(|| {
+            Problem::new("update a material parameter", "no preview world is alive")
+        })?;
+        let artefact = self.preview_applied_artefact.ok_or_else(|| {
+            Problem::new(
+                "update a material parameter",
+                "no compiled artefact is applied",
+            )
+        })?;
+        if parameter == 0 {
+            return Err(Problem::new(
+                "update a material parameter",
+                "parameter identity zero is reserved",
+            ));
+        }
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&preview.to_le_bytes());
+        payload.extend_from_slice(&artefact.to_le_bytes());
+        payload.extend_from_slice(&parameter.to_le_bytes());
+        match value {
+            MaterialParameterValue::Bool(value) => {
+                payload.push(1);
+                payload.push(u8::from(value));
+            }
+            MaterialParameterValue::Int(value) => {
+                payload.push(2);
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            MaterialParameterValue::Float(value) => {
+                payload.push(3);
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            MaterialParameterValue::Vec4(value) => {
+                payload.push(4);
+                for lane in value {
+                    payload.extend_from_slice(&lane.to_le_bytes());
+                }
+            }
+            MaterialParameterValue::Texture(value) => {
+                payload.push(5);
+                let length = u32::try_from(value.len()).map_err(|_| {
+                    Problem::new(
+                        "update a material parameter",
+                        "the texture identity is too long",
+                    )
+                })?;
+                payload.extend_from_slice(&length.to_le_bytes());
+                payload.extend_from_slice(value.as_bytes());
+            }
+        }
+        runtime.service_request(SERVICE_SCHEMA_VERSION, PREVIEW_PARAMETER_OPERATION, payload)
+    }
+
+    /// Destroy the session preview. Repeated calls after acknowledgement are harmless locally.
+    pub fn destroy_material_preview(
+        &mut self,
+        runtime: &RuntimeSession,
+    ) -> cy_editor_core::problem::Result<Option<RequestId>> {
+        let Some(preview) = self.preview_handle else {
+            return Ok(None);
+        };
+        if self.preview_request.is_some() {
+            return Err(Problem::new(
+                "destroy a material preview",
+                "another preview operation is pending",
+            ));
+        }
+        let request = runtime.service_request(
+            SERVICE_SCHEMA_VERSION,
+            PREVIEW_DESTROY_OPERATION,
+            preview.to_le_bytes().to_vec(),
+        )?;
+        self.preview_request = Some((request, PreviewOperation::Destroy));
+        self.preview_state = MaterialPreviewState::Pending {
+            request,
+            operation: PREVIEW_DESTROY_OPERATION.to_string(),
+        };
+        Ok(Some(request))
+    }
+
     fn advance_preview(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
         if self.preview_request.is_some() || self.preview_pending_artefact.is_none() {
             return None;
         }
         let artefact = self.preview_pending_artefact.expect("checked above");
         let (name, payload, operation) = if let Some(preview) = self.preview_handle {
-            let mut payload = Vec::with_capacity(16);
+            let mut payload = Vec::with_capacity(20 + self.preview_targets.len() * 20);
             payload.extend_from_slice(&preview.to_le_bytes());
             payload.extend_from_slice(&artefact.to_le_bytes());
+            payload.extend_from_slice(
+                &u32::try_from(self.preview_targets.len())
+                    .unwrap_or(u32::MAX)
+                    .to_le_bytes(),
+            );
+            for target in &self.preview_targets {
+                payload.extend_from_slice(&target.entity.to_le_bytes());
+                payload.extend_from_slice(&target.slot.to_le_bytes());
+            }
             (
                 PREVIEW_RELOAD_OPERATION,
                 payload,
@@ -510,10 +650,10 @@ impl BackendServices {
             .take()
             .expect("request identity matched");
         if schema_version != SERVICE_SCHEMA_VERSION {
-            return self.fail_preview(Problem::new(
+            return Some(self.fail_preview(Problem::new(
                 "apply a material preview",
                 "the runtime returned an unsupported preview schema",
-            ));
+            )));
         }
         match kind {
             ServiceEventKind::Completed => match operation {
@@ -530,14 +670,29 @@ impl BackendServices {
                             };
                             None
                         }
-                        Err(problem) => self.fail_preview(problem),
+                        Err(problem) => Some(self.fail_preview(problem)),
                     }
                 }
                 PreviewOperation::Reload { artefact } => {
                     let requested = read_u64_payload(payload, 0);
                     let applied = read_u64_payload(payload, 8);
-                    match (requested, applied) {
-                        (Ok(requested), Ok(applied))
+                    let acknowledged_targets = payload
+                        .get(16..20)
+                        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+                        .map(u32::from_le_bytes)
+                        .and_then(|count| usize::try_from(count).ok());
+                    let bindings_match = acknowledged_targets
+                        .is_some_and(|count| count == self.preview_targets.len())
+                        && payload.get(20..).is_some_and(|bindings| {
+                            let mut expected = Vec::with_capacity(self.preview_targets.len() * 20);
+                            for target in &self.preview_targets {
+                                expected.extend_from_slice(&target.entity.to_le_bytes());
+                                expected.extend_from_slice(&target.slot.to_le_bytes());
+                            }
+                            bindings == expected
+                        });
+                    match (requested, applied, bindings_match) {
+                        (Ok(requested), Ok(applied), true)
                             if requested == artefact && applied == artefact =>
                         {
                             self.preview_pending_artefact = None;
@@ -548,28 +703,42 @@ impl BackendServices {
                             };
                             None
                         }
-                        _ => self.fail_preview(Problem::new(
+                        _ => Some(self.fail_preview(Problem::new(
                             "reload a material preview",
                             "the acknowledgement did not name the requested artefact",
-                        )),
+                        ))),
+                    }
+                }
+                PreviewOperation::Destroy => {
+                    if payload.is_empty() {
+                        self.preview_handle = None;
+                        self.preview_pending_artefact = None;
+                        self.preview_applied_artefact = None;
+                        self.preview_state = MaterialPreviewState::Idle;
+                        None
+                    } else {
+                        Some(self.fail_preview(Problem::new(
+                            "destroy a material preview",
+                            "the destruction acknowledgement carried unexpected bytes",
+                        )))
                     }
                 }
             },
-            ServiceEventKind::Failed => self.fail_preview(decode_failure(payload)),
-            ServiceEventKind::Cancelled => self.fail_preview(Problem::new(
+            ServiceEventKind::Failed => Some(self.fail_preview(decode_failure(payload))),
+            ServiceEventKind::Cancelled => Some(self.fail_preview(Problem::new(
                 "apply a material preview",
                 "the preview request was cancelled",
-            )),
+            ))),
             ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
         }
     }
 
-    fn fail_preview(&mut self, problem: Problem) -> Option<Problem> {
+    fn fail_preview(&mut self, problem: Problem) -> Problem {
         self.preview_pending_artefact = None;
         self.preview_state = MaterialPreviewState::Failed {
             problem: problem.clone(),
         };
-        Some(problem)
+        problem
     }
 }
 
@@ -1001,6 +1170,9 @@ mod tests {
         let mut acknowledgement = Vec::new();
         acknowledgement.extend_from_slice(&artefact.to_le_bytes());
         acknowledgement.extend_from_slice(&artefact.to_le_bytes());
+        acknowledgement.extend_from_slice(&1_u32.to_le_bytes());
+        acknowledgement.extend_from_slice(&0_u128.to_le_bytes());
+        acknowledgement.extend_from_slice(&0_u32.to_le_bytes());
         assert!(
             backend
                 .accept(&Message::ServiceEvent {
@@ -1015,5 +1187,52 @@ mod tests {
             backend.material_preview_state(),
             &MaterialPreviewState::Applied { preview, artefact }
         );
+    }
+
+    #[test]
+    fn runtime_parameter_updates_carry_type_and_applied_generation() {
+        let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+        let mut backend = BackendServices::new();
+        backend.preview_handle = Some(0x1_0000_0001);
+        backend.preview_applied_artefact = Some(0xCAFE);
+
+        let request = backend
+            .update_material_parameter(
+                &runtime,
+                7,
+                MaterialParameterValue::Vec4([1.0, 2.0, 3.0, 4.0]),
+            )
+            .expect("submit a typed update");
+        let frame = read_frame(&mut runtime_reader).unwrap().unwrap();
+        let Message::ServiceRequest {
+            request: encoded_request,
+            operation,
+            payload,
+            ..
+        } = Message::decode(&frame).unwrap()
+        else {
+            panic!("the update was not a service request");
+        };
+        assert_eq!(encoded_request, request);
+        assert_eq!(operation, PREVIEW_PARAMETER_OPERATION);
+        assert_eq!(&payload[0..8], &0x1_0000_0001_u64.to_le_bytes());
+        assert_eq!(&payload[8..16], &0xCAFE_u64.to_le_bytes());
+        assert_eq!(&payload[16..20], &7_u32.to_le_bytes());
+        assert_eq!(payload[20], 4, "vec4 has a stable wire type");
+        assert_eq!(payload.len(), 37);
+        drop(runtime_writer);
+    }
+
+    #[test]
+    fn reconnect_recreates_and_rebinds_the_last_acknowledged_artefact() {
+        let mut backend = BackendServices::new();
+        backend.connected = true;
+        backend.preview_handle = Some(0x1_0000_0001);
+        backend.preview_applied_artefact = Some(0xCAFE);
+        backend.maintain(&RuntimeSession::none());
+        assert_eq!(backend.preview_handle, None);
+        assert_eq!(backend.preview_pending_artefact, Some(0xCAFE));
     }
 }

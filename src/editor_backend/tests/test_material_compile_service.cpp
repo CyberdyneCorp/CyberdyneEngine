@@ -156,21 +156,42 @@ CY_TEST_CASE("editor_backend: material preview vertical slice crosses the public
     cy::u8 preview[8];
     std::memcpy(preview, event.payload, sizeof(preview));
 
-    request = {sizeof(CyServiceRequest),   1,       5,
-               "preview.parameter.update", preview, sizeof(preview)};
-    event = submit_and_poll(*api, host, session, request);
-    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
-
-    cy::u8 reload[16];
+    cy::u8 reload[40] = {};
     std::memcpy(reload, preview, sizeof(preview));
     std::memcpy(reload + sizeof(preview), &artefact, sizeof(artefact));
-    request = {sizeof(CyServiceRequest), 1, 6, "preview.reload", reload, sizeof(reload)};
+    const cy::u32 target_count = 1;
+    std::memcpy(reload + 16, &target_count, sizeof(target_count));
+    const cy::u32 material_slot = 0;
+    std::memcpy(reload + 36, &material_slot, sizeof(material_slot));
+    request = {sizeof(CyServiceRequest), 1, 5, "preview.reload", reload, sizeof(reload)};
     event = submit_and_poll(*api, host, session, request);
-    CY_REQUIRE_EQ(event.payload_size, 16U);
+    CY_REQUIRE_EQ(event.payload_size, sizeof(reload));
     CY_CHECK_EQ(read_u64(event.payload), artefact);
     CY_CHECK_EQ(read_u64(event.payload + 8), artefact);
 
-    request = {sizeof(CyServiceRequest), 1, 7, "preview.destroy", preview, sizeof(preview)};
+    cy::u8 parameter[22] = {};
+    std::memcpy(parameter, preview, sizeof(preview));
+    std::memcpy(parameter + 8, &artefact, sizeof(artefact));
+    const cy::u32 parameter_id = 3;
+    std::memcpy(parameter + 16, &parameter_id, sizeof(parameter_id));
+    parameter[20] = 1;
+    parameter[21] = 1;
+    request = {sizeof(CyServiceRequest), 1, 6, "preview.parameter.update", parameter,
+               sizeof(parameter)};
+    event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+
+    cy::u8 mismatched[29] = {};
+    std::memcpy(mismatched, preview, sizeof(preview));
+    std::memcpy(mismatched + 8, &artefact, sizeof(artefact));
+    std::memcpy(mismatched + 16, &parameter_id, sizeof(parameter_id));
+    mismatched[20] = 3;
+    request = {sizeof(CyServiceRequest), 1, 7, "preview.parameter.update", mismatched,
+               sizeof(mismatched)};
+    event = submit_and_poll(*api, host, session, request);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+
+    request = {sizeof(CyServiceRequest), 1, 8, "preview.destroy", preview, sizeof(preview)};
     event = submit_and_poll(*api, host, session, request);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     api->service_close(&host, session);

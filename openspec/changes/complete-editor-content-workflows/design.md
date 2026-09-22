@@ -42,6 +42,13 @@ catalogue indexes those logical children separately from the source file. Refere
 stable sub-asset identity plus readable source/name migration metadata. A model source whose primary
 asset is a prefab is instantiated recursively; mesh nodes retain their extracted material bindings.
 
+The importer/editor JSON contract is schema version 3. Each logical asset carries `id`, `kind`,
+`name`, `source` and a deterministic dependency list. Each prefab mesh node carries a `materials`
+array indexed by the mesh section's stable material-slot number. Older version 1 and 2 results
+remain readable. The editor persists all imported slots in the authoring-only
+`ImportedMaterialSlots` component and mirrors slot zero onto `MeshRenderer.material` for ordinary
+runtime compatibility.
+
 ### 3. Material controls are entirely catalogue-driven
 
 Property descriptors carry stable identity, value kind, default, optional numeric bounds/step,
@@ -55,6 +62,12 @@ A successful compile result is not considered visible merely because it returned
 The editor creates or reuses a session-scoped preview world, requests reload with the compiled
 identity, waits for an acknowledgement containing requested and applied identities, and only then
 marks the viewport current. Stale acknowledgements are ignored by request and preview generation.
+
+Reload requests also carry the selected scene entity identity and material-slot index for every
+target renderer. Acknowledgements echo the exact bindings; the editor does not report the viewport
+current when an acknowledgement omits or changes a target. Runtime parameter messages address the
+preview generation, applied artefact generation and stable parameter identity, followed by an
+explicit bool, integer, float, vector or texture-asset value kind.
 
 ### 5. Terrain edits are modifiers, not destructive heightmap writes
 

@@ -47,3 +47,13 @@ preserve references when stable sub-asset identities are unchanged.
 #### Scenario: Reimport preserves instance references
 - **WHEN** a source is reimported without changing a referenced sub-asset identity
 - **THEN** existing scene instances SHALL continue to resolve that mesh or material
+
+#### Scenario: External OBJ companions are staged together
+- **WHEN** an author imports an external OBJ which declares an MTL and texture files
+- **THEN** the editor SHALL copy the resolvable declared companions while preserving relative paths
+- **AND** missing companions SHALL remain importer diagnostics rather than partial editor assets
+
+#### Scenario: Mesh sections retain material slots
+- **WHEN** an imported mesh contains surfaces using more than one material index
+- **THEN** the import result SHALL carry stable material identities indexed by slot
+- **AND** save, reload and reimport SHALL preserve those slot references

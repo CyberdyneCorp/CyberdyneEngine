@@ -144,7 +144,9 @@ that going wrong as 1 hit / 0 miss, and adding a format is exactly when it would
 
 **`--json`** (task 3.1). `cy_import_cli` can print the run as JSON instead of the human report:
 per source, the importer, the identity, the cache outcome, the counts, the absent steps, and the
-sub-asset name-to-identity table read back out of the `.import` record. It exists because the
+schema-versioned sub-asset records read back out of the `.import` record. Schema 3 adds stable kind,
+source and dependency metadata plus prefab instance mesh/material-slot bindings; readers still
+accept schema 1 and 2. It exists because the
 editor's `asset.import` command has to know WHICH sub-assets an import produced, and a tool boundary
 crossed by prose is a source of bugs rather than an interface.
 

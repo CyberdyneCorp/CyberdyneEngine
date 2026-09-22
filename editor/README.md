@@ -360,7 +360,10 @@ tool listing both carry it now, with its parameters and its effect class.
   `ProjectService` runs `cy_swift_module.py`. It is found through `CY_IMPORT_CLI` first, then by
   walking up from the project for `build/<profile>/tools/import/cy_import_cli`.
 * **`--json`, not prose.** The command reads a machine-readable report: which importer ran, the
-  identity the source holds, what the cache did, and every sub-asset with the identity bound to it.
+  identity the source holds, what the cache did, and every sub-asset with its stable kind, source,
+  dependencies and identity. Schema 3 also projects complete prefab transforms, mesh identities and
+  material slots. Imported slots persist in `ImportedMaterialSlots`; slot zero is mirrored to the
+  engine-owned `MeshRenderer.material` field.
   An agent that had to parse a paragraph to find the mesh is an agent that will get it wrong.
 * **The entity is built by `create_mesh_instance`**, the same function `scene.create-primitive`
   calls. Undo removes the entity; the cooked assets and their sidecars stay, because they belong to
@@ -371,6 +374,10 @@ tool listing both carry it now, with its parameters and its effect class.
   cannot express "is not a warning about the file and SHALL NOT be reported as one".
 * **A refusal names what this build can import**, read from the importer itself, so a project's own
   importer appears in that list the day it is registered.
+* **External companion files are staged with their source.** OBJ `mtllib` files and their declared
+  texture maps retain relative paths; FBX relative texture references and the conventional `.fbm`
+  folder are copied before the ordinary importer command runs. Reimport replaces the project-owned
+  staged bytes while stable sub-asset identities continue to come from the sidecar.
 
 `crates/cy-editor-services/tests/importing_from_inside_the_editor.rs` drives all of it through the
 registry against a recording double; `assets.rs`' own unit tests parse the exact bytes a real

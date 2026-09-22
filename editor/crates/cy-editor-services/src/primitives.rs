@@ -441,6 +441,15 @@ pub struct MaterialBinding {
     pub material: cy_editor_core::ids::FieldId,
 }
 
+/// Authoring references for every imported mesh material slot.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct MaterialSlotsBinding {
+    /// Authoring-only component retained by world serialization.
+    pub component: cy_editor_core::ids::TypeId,
+    /// Stable slot fields in numeric order.
+    pub slots: Vec<cy_editor_core::ids::FieldId>,
+}
+
 impl MeshBinding {
     /// The component's name. The engine's own, unqualified — `src/scene/src/node_template.cpp`
     /// names `cy::render::MeshRenderer`, and `authoring_name_of` is what drops the namespace.
@@ -519,6 +528,66 @@ impl MaterialBinding {
             component,
             material,
         }
+    }
+}
+
+impl MaterialSlotsBinding {
+    /// Maximum imported slots retained on one mesh instance.
+    pub const MAX_SLOTS: usize = 16;
+    /// Component name used by saved editor documents.
+    pub const COMPONENT: &'static str = "ImportedMaterialSlots";
+
+    /// Find an already-declared slot component.
+    #[must_use]
+    pub fn of_schema(schema: &DocumentSchema) -> Option<Self> {
+        let definition = schema.type_named(Self::COMPONENT)?;
+        let mut slots = Vec::new();
+        for index in 0..Self::MAX_SLOTS {
+            let name = format!("slot_{index}");
+            let Some(field) = definition.field_named(&name) else {
+                break;
+            };
+            slots.push(field.id);
+        }
+        Some(Self {
+            component: definition.id,
+            slots,
+        })
+    }
+
+    /// Declare every slot field once so their identities survive save/reload and reimport.
+    pub fn declare(schema: &mut DocumentSchema) -> Self {
+        if let Some(found) = Self::of_schema(schema)
+            && found.slots.len() == Self::MAX_SLOTS
+        {
+            return found;
+        }
+        let component = match schema.type_named(Self::COMPONENT) {
+            Some(definition) => definition.id,
+            None => schema.declare_type(Self::COMPONENT, true),
+        };
+        let mut slots = Vec::with_capacity(Self::MAX_SLOTS);
+        for index in 0..Self::MAX_SLOTS {
+            let name = format!("slot_{index}");
+            let existing = schema
+                .type_of(component)
+                .and_then(|definition| definition.field_named(&name))
+                .map(|field| field.id);
+            let field = if let Some(field) = existing {
+                field
+            } else {
+                schema
+                    .declare_field(
+                        component,
+                        name,
+                        ValueKind::Text,
+                        "Imported material identity for this mesh slot.",
+                    )
+                    .expect("the slot component exists")
+            };
+            slots.push(field);
+        }
+        Self { component, slots }
     }
 }
 
@@ -605,6 +674,78 @@ pub fn material_of(document: &Document, node: NodeId) -> Option<String> {
         Value::Text(asset) if !asset.is_empty() => Some(asset.clone()),
         _ => None,
     }
+}
+
+/// Assign imported material slots, keeping slot zero mirrored onto the runtime `material` field.
+pub fn set_material_slots(document: &mut Document, node: NodeId, assets: &[String]) -> Result<()> {
+    if assets.is_empty() {
+        return Ok(());
+    }
+    if assets.len() > MaterialSlotsBinding::MAX_SLOTS {
+        return Err(Problem::new(
+            "assign imported material slots",
+            format!(
+                "the mesh has {} slots; this editor contract supports {}",
+                assets.len(),
+                MaterialSlotsBinding::MAX_SLOTS
+            ),
+        ));
+    }
+    let primary = MaterialBinding::declare(document.schema_mut());
+    let slots = MaterialSlotsBinding::declare(document.schema_mut());
+    document.add_component(
+        node,
+        slots.component,
+        slots
+            .slots
+            .iter()
+            .map(|field| (*field, Value::Text(String::new())))
+            .collect(),
+    )?;
+    for (index, asset) in assets.iter().enumerate() {
+        if asset.is_empty() {
+            continue;
+        }
+        document.record(Operation::SetAssetReference {
+            node,
+            component: slots.component,
+            field: slots.slots[index],
+            before: String::new(),
+            after: asset.clone(),
+        })?;
+    }
+    if let Some(asset) = assets.first().filter(|asset| !asset.is_empty()) {
+        document.record(Operation::SetAssetReference {
+            node,
+            component: primary.component,
+            field: primary.material,
+            before: String::new(),
+            after: asset.clone(),
+        })?;
+    }
+    Ok(())
+}
+
+/// Imported material references in slot order.
+#[must_use]
+pub fn material_slots_of(document: &Document, node: NodeId) -> Vec<String> {
+    let Some(binding) = MaterialSlotsBinding::of_schema(document.schema()) else {
+        return material_of(document, node).into_iter().collect();
+    };
+    let mut assets: Vec<String> = binding
+        .slots
+        .iter()
+        .map(
+            |field| match document.content().field(node, binding.component, *field) {
+                Some(Value::Text(asset)) => asset.clone(),
+                _ => String::new(),
+            },
+        )
+        .collect();
+    while assets.last().is_some_and(String::is_empty) {
+        assets.pop();
+    }
+    assets
 }
 
 // --- The commands ------------------------------------------------------------------------------

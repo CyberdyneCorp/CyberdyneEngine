@@ -62,7 +62,8 @@ pub use asset_catalogue::{AssetCatalogueService, AssetEntry, AssetMove};
 pub use assets::{AssetImportService, ExternalImportCompletion};
 pub use backend::{
     BackendServices, MaterialCatalogueState, MaterialDiagnostic, MaterialDiagnosticLocation,
-    MaterialDiagnosticSeverity, MaterialOperation, MaterialPreviewState, MaterialRequestState,
+    MaterialDiagnosticSeverity, MaterialOperation, MaterialParameterValue, MaterialPreviewState,
+    MaterialPreviewTarget, MaterialRequestState,
 };
 pub use cy_editor_sdk::HostingMode;
 pub use documents::{CloseDecision, CloseOutcome, DocumentService};

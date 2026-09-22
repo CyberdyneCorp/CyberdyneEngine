@@ -60,7 +60,9 @@ use cy_editor_viewport::gizmo::{Transform3, TransformBinding};
 use cy_editor_viewport::math::{Quat, Vec3};
 
 use crate::OperationService;
-use crate::primitives::{MaterialBinding, MeshBinding, create_mesh_instance, material_of, mesh_of};
+use crate::primitives::{
+    MaterialBinding, MeshBinding, create_mesh_instance, material_of, mesh_of, set_material_slots,
+};
 
 /// Domain operation used to make a filesystem move eligible for ordinary undo/redo.
 pub const ASSET_MOVE_DOMAIN: &str = "asset.move";
@@ -360,15 +362,9 @@ fn stage_external_source(root: &Path, external: &Path, destination: &str) -> Res
         )
     })?;
     let target = folder.join(name);
-    if target.exists() {
-        return Err(Problem::new(
-            format!("copy {}", external.display()),
-            format!("{} already exists", target.display()),
-        )
-        .with_remedy("rename the source or remove the existing project asset"));
-    }
     std::fs::copy(&external, &target)
         .map_err(|error| Problem::new(format!("copy {}", external.display()), error.to_string()))?;
+    stage_declared_companions(&external, &target)?;
     target
         .strip_prefix(&root)
         .map(|path| path.to_string_lossy().replace('\\', "/"))
@@ -378,6 +374,154 @@ fn stage_external_source(root: &Path, external: &Path, destination: &str) -> Res
                 "the copied file left the project",
             )
         })
+}
+
+fn stage_declared_companions(source: &Path, target: &Path) -> Result<()> {
+    let extension = source
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut companions = match extension.as_str() {
+        "obj" => obj_companions(source)?,
+        "fbx" => fbx_companions(source, target)?,
+        _ => Vec::new(),
+    };
+    companions.sort();
+    companions.dedup();
+    for relative in companions {
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        let Some(source_parent) = source.parent() else {
+            continue;
+        };
+        let Some(target_parent) = target.parent() else {
+            continue;
+        };
+        let from = source_parent.join(&relative);
+        if !from.is_file() {
+            continue;
+        }
+        let to = target_parent.join(&relative);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                Problem::new(format!("create {}", parent.display()), error.to_string())
+            })?;
+        }
+        std::fs::copy(&from, &to).map_err(|error| {
+            Problem::new(
+                format!("copy companion {}", from.display()),
+                error.to_string(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn obj_companions(source: &Path) -> Result<Vec<PathBuf>> {
+    let text = std::fs::read_to_string(source)
+        .map_err(|error| Problem::new(format!("read {}", source.display()), error.to_string()))?;
+    let mut companions: Vec<PathBuf> = text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("mtllib "))
+        .map(|value| PathBuf::from(value.trim()))
+        .collect();
+    for library in companions.clone() {
+        let Some(parent) = source.parent() else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(parent.join(library)) else {
+            continue;
+        };
+        for line in text.lines() {
+            let mut words = line.split_whitespace();
+            let Some(keyword) = words.next() else {
+                continue;
+            };
+            if is_mtl_texture_keyword(keyword)
+                && let Some(path) = words.last()
+            {
+                companions.push(PathBuf::from(path));
+            }
+        }
+    }
+    Ok(companions)
+}
+
+fn is_mtl_texture_keyword(keyword: &str) -> bool {
+    matches!(
+        keyword,
+        "map_Ka"
+            | "map_Kd"
+            | "map_Ks"
+            | "map_Ke"
+            | "map_Bump"
+            | "map_bump"
+            | "bump"
+            | "disp"
+            | "decal"
+            | "norm"
+            | "map_Pr"
+            | "map_Pm"
+    )
+}
+
+fn fbx_companions(source: &Path, target: &Path) -> Result<Vec<PathBuf>> {
+    let bytes = std::fs::read(source)
+        .map_err(|error| Problem::new(format!("read {}", source.display()), error.to_string()))?;
+    let text = String::from_utf8_lossy(&bytes);
+    let companions = text
+        .lines()
+        .filter(|line| line.contains("RelativeFilename"))
+        .filter_map(|line| line.split_once('"').map(|(_, quoted)| quoted))
+        .filter_map(|quoted| quoted.split_once('"').map(|(path, _)| path))
+        .map(|path| PathBuf::from(path.replace('\\', "/")))
+        .collect();
+    if let (Some(stem), Some(source_parent), Some(target_parent)) = (
+        source.file_stem().and_then(std::ffi::OsStr::to_str),
+        source.parent(),
+        target.parent(),
+    ) {
+        let folder = PathBuf::from(format!("{stem}.fbm"));
+        if source_parent.join(&folder).is_dir() {
+            copy_companion_directory(&source_parent.join(&folder), &target_parent.join(&folder))?;
+        }
+    }
+    Ok(companions)
+}
+
+fn copy_companion_directory(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)
+        .map_err(|error| Problem::new(format!("create {}", to.display()), error.to_string()))?;
+    let mut entries = std::fs::read_dir(from)
+        .map_err(|error| Problem::new(format!("read {}", from.display()), error.to_string()))?
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|error| Problem::new(format!("read {}", from.display()), error.to_string()))?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let source = entry.path();
+        let destination = to.join(entry.file_name());
+        if entry
+            .file_type()
+            .map_err(|error| Problem::new("inspect an FBX companion", error.to_string()))?
+            .is_dir()
+        {
+            copy_companion_directory(&source, &destination)?;
+        } else {
+            std::fs::copy(&source, &destination).map_err(|error| {
+                Problem::new(
+                    format!("copy companion {}", source.display()),
+                    error.to_string(),
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 impl AssetHost for AssetImportService {
@@ -701,14 +845,81 @@ fn float_array<const N: usize>(text: &str, key: &str) -> Option<[f32; N]> {
     values.try_into().ok()
 }
 
+fn string_array(text: &str, key: &str) -> Vec<String> {
+    let needle = format!("\"{key}\":");
+    let Some(rest) = text
+        .find(&needle)
+        .and_then(|start| text.get(start + needle.len()..))
+        .map(str::trim_start)
+        .and_then(|rest| rest.strip_prefix('['))
+    else {
+        return Vec::new();
+    };
+    let Some(body) = rest.split(']').next() else {
+        return Vec::new();
+    };
+    body.split(',')
+        .filter_map(|item| {
+            let item = item.trim();
+            item.strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .map(ToOwned::to_owned)
+        })
+        .collect()
+}
+
+fn material_slot_array(text: &str) -> Vec<String> {
+    let Some(body) = array_body(text, "materials") else {
+        return Vec::new();
+    };
+    body.split(',')
+        .map(|item| {
+            let item = item.trim();
+            item.strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect()
+}
+
+fn array_body<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("\"{key}\":");
+    let start = text.find(&needle)? + needle.len();
+    let open = text.get(start..)?.find('[')? + start;
+    let mut depth = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (offset, character) in text.get(open..)?.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => quoted = true,
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return text.get(open + 1..open + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn scene_nodes(text: &str) -> Vec<ImportedSceneNode> {
-    let Some(table) = text.find("\"instances\":") else {
+    let Some(body) = array_body(text, "instances") else {
         return Vec::new();
     };
-    let Some(body) = text[table..].split_once('[').map(|(_, body)| body) else {
-        return Vec::new();
-    };
-    let body = body.split("\n    ]").next().unwrap_or(body);
     let mut nodes = Vec::new();
     let mut cursor = 0;
     while let Some(open) = body[cursor..].find('{').map(|offset| cursor + offset) {
@@ -729,6 +940,7 @@ fn scene_nodes(text: &str) -> Vec<ImportedSceneNode> {
             rotation: float_array(object, "rotation").unwrap_or([0.0, 0.0, 0.0, 1.0]),
             scale: float_array(object, "scale").unwrap_or([1.0; 3]),
             mesh,
+            materials: material_slot_array(object),
         });
         cursor = close;
     }
@@ -738,7 +950,7 @@ fn scene_nodes(text: &str) -> Vec<ImportedSceneNode> {
 /// The first source's row, which is the only one a single-source import produces.
 fn parse_json_outcome(text: &str) -> Option<AssetImportOutcome> {
     let schema_version = number_field(text, "schema_version", 0).unwrap_or(1);
-    if schema_version > 2 {
+    if schema_version > 3 {
         return None;
     }
     let mut outcome = AssetImportOutcome {
@@ -755,13 +967,26 @@ fn parse_json_outcome(text: &str) -> Option<AssetImportOutcome> {
     };
     // The sub-asset table lives after `"assets": [`, and each entry is a name and an id. Walking
     // from that offset is what keeps the row's own `"id"` from being read as the first entry's.
-    if let Some(table) = text.find("\"assets\":") {
-        let mut at = table;
-        while let Some(name) = string_field(text, "name", at) {
-            let name_at = text[at..].find("\"name\":")? + at;
-            let id = string_field(text, "id", name_at).unwrap_or_default();
-            outcome.sub_assets.push(ImportedSubAsset { name, id });
-            at = name_at + "\"name\":".len();
+    if let Some(assets) = array_body(text, "assets") {
+        let mut cursor = 0;
+        while let Some(open) = assets[cursor..].find('{').map(|offset| cursor + offset) {
+            let Some(close) = assets[open..].find('}').map(|offset| open + offset + 1) else {
+                break;
+            };
+            let object = &assets[open..close];
+            let Some(name) = string_field(object, "name", 0) else {
+                break;
+            };
+            let id = string_field(object, "id", 0).unwrap_or_default();
+            outcome.sub_assets.push(ImportedSubAsset {
+                kind: string_field(object, "kind", 0)
+                    .unwrap_or_else(|| name.split('/').next().unwrap_or("unknown").to_string()),
+                source: string_field(object, "source", 0).unwrap_or_else(|| outcome.source.clone()),
+                dependencies: string_array(object, "dependencies"),
+                name,
+                id,
+            });
+            cursor = close;
         }
     }
     Some(outcome)
@@ -1443,7 +1668,9 @@ fn place_imported(
                     local.translation = local.translation + placement.translation;
                 }
                 let instance = if let Some(mesh) = &source.mesh {
-                    create_mesh_instance(document, source_parent, mesh, local)?
+                    let instance = create_mesh_instance(document, source_parent, mesh, local)?;
+                    set_material_slots(document, instance, &source.materials)?;
+                    instance
                 } else {
                     create_transform_node(document, source_parent, local)?
                 };
@@ -1543,7 +1770,7 @@ mod tests {
     }
 
     #[test]
-    fn an_external_source_is_copied_under_the_project_and_never_overwrites() {
+    fn an_external_source_is_copied_under_the_project_and_can_be_reimported() {
         let root = temporary_project("stage");
         let outside = root.with_extension("obj");
         std::fs::write(&outside, b"o triangle\n").expect("write source");
@@ -1554,8 +1781,52 @@ mod tests {
             format!("Models/{}", outside.file_name().unwrap().to_string_lossy())
         );
         assert_eq!(std::fs::read(root.join(&staged)).unwrap(), b"o triangle\n");
-        assert!(stage_external_source(&root, &outside, "Models").is_err());
+        std::fs::write(&outside, b"o changed\n").expect("change source");
+        assert_eq!(
+            stage_external_source(&root, &outside, "Models").unwrap(),
+            staged
+        );
+        assert_eq!(std::fs::read(root.join(&staged)).unwrap(), b"o changed\n");
 
+        std::fs::remove_file(outside).ok();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn obj_staging_copies_declared_material_libraries_and_textures() {
+        let root = temporary_project("obj-companions");
+        let outside = temporary_project("obj-source");
+        std::fs::create_dir_all(outside.join("textures")).unwrap();
+        std::fs::write(outside.join("chair.obj"), "mtllib chair.mtl\no Chair\n").unwrap();
+        std::fs::write(
+            outside.join("chair.mtl"),
+            "newmtl Oak\nmap_Kd textures/oak.png\n",
+        )
+        .unwrap();
+        std::fs::write(outside.join("textures/oak.png"), b"png").unwrap();
+
+        let staged = stage_external_source(&root, &outside.join("chair.obj"), "Models")
+            .expect("stage the declared companion set");
+        assert_eq!(staged, "Models/chair.obj");
+        assert!(root.join("Models/chair.mtl").is_file());
+        assert_eq!(
+            std::fs::read(root.join("Models/textures/oak.png")).unwrap(),
+            b"png"
+        );
+
+        std::fs::remove_dir_all(outside).ok();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_missing_obj_companion_is_left_for_the_importer_to_diagnose() {
+        let root = temporary_project("obj-missing-companion");
+        let outside = root.with_extension("obj");
+        std::fs::write(&outside, "mtllib missing.mtl\no Chair\n").unwrap();
+        let staged =
+            stage_external_source(&root, &outside, "Models").expect("staging itself remains valid");
+        assert!(root.join(staged).is_file());
+        assert!(!root.join("Models/missing.mtl").exists());
         std::fs::remove_file(outside).ok();
         std::fs::remove_dir_all(root).ok();
     }
@@ -1580,6 +1851,7 @@ mod tests {
                 sub_assets: vec![ImportedSubAsset {
                     name: "mesh/Triangle".into(),
                     id: "mesh-id".into(),
+                    ..ImportedSubAsset::default()
                 }],
                 ..AssetImportOutcome::default()
             })
@@ -1662,26 +1934,40 @@ mod tests {
     #[test]
     fn a_versioned_prefab_result_keeps_hierarchy_transforms_and_mesh_identity() {
         let report = r#"{
-  "schema_version": 2,
+  "schema_version": 3,
   "sources": [{
     "source": "models/robot.fbx", "importer": "fbx", "id": "prefab-id",
     "cache": "miss", "warnings": 0, "errors": 0, "steps_not_reached": "",
-    "assets": [{"name": "mesh/Body", "id": "body-mesh"}],
+    "assets": [{"name": "mesh/Body", "id": "body-mesh", "kind": "mesh",
+                "source": "models/robot.fbx", "dependencies": ["body-material"]}],
     "instances": [
       {"identity": "root-source", "name": "Robot", "parent": -1,
        "translation": [1, 2, 3], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1], "mesh": null},
       {"identity": "body-source", "name": "Body", "parent": 0,
-       "translation": [0, 1, 0], "rotation": [0, 0, 0, 1], "scale": [2, 2, 2], "mesh": "body-mesh"}
+       "translation": [0, 1, 0], "rotation": [0, 0, 0, 1], "scale": [2, 2, 2],
+       "mesh": "body-mesh", "materials": ["body-material", null, "detail-material"]}
     ]
   }]
 }"#;
 
-        let outcome = parse_json_outcome(report).expect("version two is supported");
-        assert_eq!(outcome.schema_version, 2);
+        let outcome = parse_json_outcome(report).expect("version three is supported");
+        assert_eq!(outcome.schema_version, 3);
         assert_eq!(outcome.scene.len(), 2);
         assert_eq!(outcome.scene[1].parent, Some(0));
         assert_eq!(outcome.scene[1].mesh.as_deref(), Some("body-mesh"));
-        assert_eq!(outcome.scene[1].scale, [2.0, 2.0, 2.0]);
+        assert_eq!(
+            outcome.scene[1].materials,
+            vec!["body-material", "", "detail-material"]
+        );
+        assert_eq!(outcome.sub_assets[0].kind, "mesh");
+        assert_eq!(outcome.sub_assets[0].source, "models/robot.fbx");
+        assert_eq!(outcome.sub_assets[0].dependencies, vec!["body-material"]);
+        assert!(
+            outcome.scene[1]
+                .scale
+                .iter()
+                .all(|lane| (*lane - 2.0).abs() < f32::EPSILON)
+        );
     }
 
     #[test]

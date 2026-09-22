@@ -23,6 +23,8 @@ struct CyServiceSession_T {
     bool failed_event = false;
     cy::u32 preview_generation[16] = {};
     bool preview_live[16] = {};
+    cy::u64 preview_artefact[16] = {};
+    cy::u8 preview_parameter_types[16][32] = {};
 };
 
 namespace {
@@ -62,6 +64,14 @@ u64 read_u64(const Array<u8>& bytes, usize offset) noexcept {
     u64 value = 0;
     for (usize byte = 0; byte < 8; ++byte) {
         value |= static_cast<u64>(bytes[offset + byte]) << (byte * 8);
+    }
+    return value;
+}
+
+u32 read_u32(const Array<u8>& bytes, usize offset) noexcept {
+    u32 value = 0;
+    for (usize byte = 0; byte < 4; ++byte) {
+        value |= static_cast<u32>(bytes[offset + byte]) << (byte * 8);
     }
     return value;
 }
@@ -289,6 +299,9 @@ CyResult preview_destroy(CyServiceSession_T& session) noexcept {
         return CY_RESULT_OK;
     }
     session.preview_live[slot] = false;
+    session.preview_artefact[slot] = 0;
+    std::memset(session.preview_parameter_types[slot], 0,
+                sizeof(session.preview_parameter_types[slot]));
     ++session.preview_generation[slot];
     if (session.preview_generation[slot] == 0) {
         session.preview_generation[slot] = 1;
@@ -297,7 +310,7 @@ CyResult preview_destroy(CyServiceSession_T& session) noexcept {
     return CY_RESULT_OK;
 }
 
-CyResult preview_update(CyServiceSession_T& session, bool reload) noexcept {
+CyResult preview_reload(CyServiceSession_T& session) noexcept {
     if (session.request_payload.size() < 8) {
         return failed(session, "preview-handle-invalid", "the request has no preview handle");
     }
@@ -305,14 +318,75 @@ CyResult preview_update(CyServiceSession_T& session, bool reload) noexcept {
     if (!preview_slot(session, read_u64(session.request_payload, 0), slot)) {
         return failed(session, "preview-stale", "the preview world was destroyed or replaced");
     }
-    session.event_payload.clear();
-    if (reload) {
-        const u64 requested =
-            session.request_payload.size() >= 16 ? read_u64(session.request_payload, 8) : 0;
-        if (!put_u64(session.event_payload, requested) ||
-            !put_u64(session.event_payload, requested)) {
-            return CY_RESULT_OUT_OF_MEMORY;
+    if (session.request_payload.size() < 20) {
+        return failed(session, "preview-reload-invalid",
+                      "reload requires a preview, artefact and target count");
+    }
+    const u64 requested = read_u64(session.request_payload, 8);
+    const u32 targets = read_u32(session.request_payload, 16);
+    const usize expected = 20 + static_cast<usize>(targets) * 20;
+    if (requested == 0 || targets == 0 || session.request_payload.size() != expected) {
+        return failed(session, "preview-reload-rejected",
+                      "reload requires a non-zero artefact and at least one exact target binding");
+    }
+    for (u32 target = 0; target < targets; ++target) {
+        const usize offset = 20 + static_cast<usize>(target) * 20;
+        const u32 material_slot = read_u32(session.request_payload, offset + 16);
+        if (material_slot >= 16) {
+            return failed(session, "material-slot-unsupported",
+                          "the runtime supports material slots zero through fifteen");
         }
+    }
+    session.preview_artefact[slot] = requested;
+    session.event_payload.clear();
+    if (!put_u64(session.event_payload, requested) ||
+        !put_u64(session.event_payload, requested) || !put_u32(session.event_payload, targets)) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    return session.event_payload.append(
+               {session.request_payload.data() + 20, session.request_payload.size() - 20})
+               ? CY_RESULT_OK
+               : CY_RESULT_OUT_OF_MEMORY;
+}
+
+CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
+    if (session.request_payload.size() < 21) {
+        return failed(session, "parameter-payload-invalid",
+                      "a parameter update requires preview, artefact, identity and type");
+    }
+    usize slot = 0;
+    if (!preview_slot(session, read_u64(session.request_payload, 0), slot)) {
+        return failed(session, "preview-stale", "the preview world was destroyed or replaced");
+    }
+    if (read_u64(session.request_payload, 8) != session.preview_artefact[slot]) {
+        return failed(session, "artefact-stale",
+                      "the parameter update does not address the applied artefact generation");
+    }
+    const u32 parameter = read_u32(session.request_payload, 16);
+    const u8 kind = session.request_payload[20];
+    if (parameter == 0 || parameter > 32 || kind == 0 || kind > 5) {
+        return failed(session, "parameter-unsupported",
+                      "the parameter identity or value type is not supported");
+    }
+    const usize value_size = session.request_payload.size() - 21;
+    const bool valid_size = (kind == 1 && value_size == 1) ||
+                            ((kind == 2 || kind == 3) && value_size == 8) ||
+                            (kind == 4 && value_size == 16) ||
+                            (kind == 5 && value_size >= 4 &&
+                             read_u32(session.request_payload, 21) == value_size - 4);
+    if (!valid_size) {
+        return failed(session, "parameter-payload-invalid",
+                      "the encoded value does not match its declared type");
+    }
+    u8& established = session.preview_parameter_types[slot][parameter - 1];
+    if (established != 0 && established != kind) {
+        return failed(session, "parameter-type-mismatch",
+                      "the parameter was previously established with another type");
+    }
+    established = kind;
+    session.event_payload.clear();
+    if (!put_u32(session.event_payload, parameter) || !put_u8(session.event_payload, kind)) {
+        return CY_RESULT_OUT_OF_MEMORY;
     }
     return CY_RESULT_OK;
 }
@@ -426,9 +500,9 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
     } else if (!session->cancelled && operation == "preview.destroy") {
         result = preview_destroy(*session);
     } else if (!session->cancelled && operation == "preview.parameter.update") {
-        result = preview_update(*session, false);
+        result = preview_parameter_update(*session);
     } else if (!session->cancelled && operation == "preview.reload") {
-        result = preview_update(*session, true);
+        result = preview_reload(*session);
     } else if (!session->cancelled) {
         result = failed(*session, "operation-unsupported",
                         "this backend does not support the operation");

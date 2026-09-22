@@ -26,6 +26,17 @@ before reporting the viewport current. Failed or stale reloads SHALL retain the 
 - **THEN** the previous preview artefact SHALL remain applied
 - **AND** the editor SHALL show the structured rejection
 
+#### Scenario: Compilation targets the selected viewport mesh
+- **WHEN** an author compiles a material while one or more mesh entities are selected
+- **THEN** the reload SHALL name every selected entity and material-slot identity
+- **AND** the viewport SHALL become current only after the runtime acknowledges those exact bindings
+
+#### Scenario: Runtime parameter values are typed
+- **WHEN** the editor updates a live parameter
+- **THEN** the request SHALL name the preview generation, applied artefact generation, stable
+  parameter identity and explicit value type
+- **AND** stale generations, unknown parameters and type changes SHALL be structured refusals
+
 ### Requirement: Terrain and VFX specialised editors are operational
 The terrain specialised editor SHALL provide heightfield import, non-destructive sculpting and
 material-layer painting through the shared painting surface and ordinary transactions. The VFX

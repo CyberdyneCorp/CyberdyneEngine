@@ -6,9 +6,9 @@
 
 ## 2. Sub-assets and prefab instantiation
 
-- [ ] 2.1 Extend the import result/CLI schema with stable sub-asset ID, kind, name, source and dependency/binding metadata; preserve deterministic ordering and compatibility.
+- [x] 2.1 Extend the import result/CLI schema with stable sub-asset ID, kind, name, source and dependency/binding metadata; preserve deterministic ordering and compatibility.
 - [x] 2.2 Index extracted meshes, materials and textures as browsable logical assets with typed thumbnails and stable references.
-- [ ] 2.3 Instantiate imported prefab hierarchy, transforms, mesh bindings and material slots atomically; verify undo, save/reload and source reimport identity stability.
+- [x] 2.3 Instantiate imported prefab hierarchy, transforms, mesh bindings and material slots atomically; verify undo, save/reload and source reimport identity stability.
 
 ## 3. Typed material authoring
 
@@ -18,8 +18,8 @@
 
 ## 4. Material preview and reload
 
-- [ ] 4.1 Complete generational preview-world create/destroy, typed parameter update and explicit reload acknowledgement operations over C ABI and live transport.
-- [ ] 4.2 Drive compile success through preview creation/reuse and reload acknowledgement before marking the viewport current; ignore stale results and retain the previous artefact on failure.
+- [x] 4.1 Complete generational preview-world create/destroy, typed parameter update and explicit reload acknowledgement operations over C ABI and live transport.
+- [x] 4.2 Drive compile success through preview creation/reuse and reload acknowledgement before marking the viewport current; ignore stale results and retain the previous artefact on failure.
 - [ ] 4.3 Verify compile, cancellation, disconnect, rejected reload, live parameter update and repeated preview lifetime on the Mac Metal runtime.
 
 ## 5. Terrain import and authoring
@@ -36,5 +36,5 @@
 
 ## 7. Validation and documentation
 
-- [ ] 7.1 Run strict OpenSpec validation, ABI/identity gates, focused C++ and Rust suites, and cognitive-complexity checks for changed production code.
+- [x] 7.1 Run strict OpenSpec validation, ABI/identity gates, focused C++ and Rust suites, and cognitive-complexity checks for changed production code.
 - [ ] 7.2 Update editor/import/material/terrain/VFX documentation and capture screenshots of each completed visible workflow.
