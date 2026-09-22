@@ -590,7 +590,8 @@ and transform-gizmo input. Remove `--no-validation` when diagnosing Metal API us
 headless pixel and control probes. `just run-editor-window --hold` is the automated X11/XTEST
 artefact and is not the interactive macOS launcher.
 
-Windows remains a supported target. Its CI workflow is currently the authoritative build recipe.
+Windows x86_64 remains a supported CI target. The build and test matrix covers Linux x86_64 and
+ARM64, macOS ARM64, and Windows x86_64; macOS x86_64 and Windows ARM64 are not CI targets.
 
 ## Building and running on iOS
 

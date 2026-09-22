@@ -2,7 +2,7 @@
 #include <cy/import/heightfield.h>
 #include <cy/test/test.h>
 
-#include <ranges>
+#include <algorithm>
 #include <string_view>
 #include <vector>
 
