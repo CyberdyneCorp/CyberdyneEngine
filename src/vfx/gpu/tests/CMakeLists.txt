@@ -45,6 +45,11 @@ function(cy_vfx_gpu_declare_tests)
                 "${tests_dir}/test_vfx_gpu_pass.cpp"
             DEPENDENCIES cy::vfx cy::vfx-gpu cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
         target_include_directories(cy_test_render_vfx_gpu PRIVATE "${tests_dir}" "${effects_dir}")
+        # Diagnostic dumps go where the run owns. A bare filename lands in the caller's working
+        # directory — it left .slang files in the repository root and blocked a proof, because
+        # `falsify --mutate-the-tree` refuses a tree it cannot tell its own mutation from.
+        target_compile_definitions(cy_test_render_vfx_gpu PRIVATE
+                                   CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     endif()
 
     if(CY_RENDERER_METAL AND APPLE)
@@ -55,10 +60,12 @@ function(cy_vfx_gpu_declare_tests)
                 "${effects_dir}/effects.cpp"
                 "${tests_dir}/test_vfx_gpu_pass.cpp"
             DEPENDENCIES cy::vfx cy::vfx-gpu cy::rendering-graph cy::rhi-null cy::rhi-metal)
-        target_compile_definitions(cy_test_render_vfx_gpu_metal PRIVATE CY_TEST_VFX_METAL=1)
+        target_compile_definitions(cy_test_render_vfx_gpu_metal PRIVATE CY_TEST_VFX_METAL=1
+                                   CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
         target_include_directories(cy_test_render_vfx_gpu_metal PRIVATE "${tests_dir}"
                                                                          "${effects_dir}")
     endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_vfx_gpu_declare_tests)
+

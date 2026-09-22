@@ -107,6 +107,12 @@ function(cy_pipeline_declare_tests)
                      cy::rhi-null cy::rhi-vulkan)
     target_include_directories(cy_test_render_forward_material_texture
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
+    # WHERE ITS DIAGNOSTIC FRAMES GO, and it is not the caller's working directory. A bare filename
+    # landed two PNGs in the repository root, they were committed, and they later blocked a
+    # falsifiability proof: `falsify --mutate-the-tree` refuses a dirty tree because a mutation
+    # applied to one "could not be told from what is already there".
+    target_compile_definitions(cy_test_render_forward_material_texture
+                               PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_pipeline_declare_tests)

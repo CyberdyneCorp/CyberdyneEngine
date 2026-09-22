@@ -69,6 +69,11 @@ function(cy_vfx_declare_tests)
             "${tests_dir}/test_vfx_compiler.cpp"
         DEPENDENCIES cy::vfx)
     target_include_directories(cy_test_integration_vfx_compiler PRIVATE "${tests_dir}")
+    # Diagnostic dumps go where the run owns. A bare filename lands in the caller's working
+    # directory — it left .slang files in the repository root and blocked a proof, because
+    # `falsify --mutate-the-tree` refuses a tree it cannot tell its own mutation from.
+    target_compile_definitions(cy_test_integration_vfx_compiler PRIVATE
+                               CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 
     cy_add_test(
         NAME vfx
@@ -104,3 +109,4 @@ function(cy_vfx_declare_tests)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_vfx_declare_tests)
+

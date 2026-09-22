@@ -50,8 +50,31 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
+
+namespace {
+
+/// Where a diagnostic dump goes: a directory the run owns, never the caller's working directory.
+///
+/// A bare filename lands wherever the suite was invoked from, which for `just test-unit` run by
+/// hand is the repository root. Three suites did it and the output was committed twice; it also
+/// blocked a falsifiability proof, because `falsify --mutate-the-tree` refuses a dirty tree.
+[[nodiscard]] std::FILE* open_diagnostic(const char* name) noexcept {
+    const char* directory = std::getenv("CY_TEST_ARTEFACT_DIR");
+    if (directory == nullptr || *directory == '\0') {
+        directory = CY_TEST_BINARY_DIR;
+    }
+    char path[1024];
+    const int written = std::snprintf(path, sizeof(path), "%s/%s", directory, name);
+    if (written <= 0 || static_cast<std::size_t>(written) >= sizeof(path)) {
+        return nullptr;
+    }
+    return std::fopen(path, "wb");
+}
+
+}  // namespace
 
 using namespace cy;
 using namespace cy::vfx;
@@ -281,7 +304,7 @@ private:
         // broken", and this is the file that tells them apart.
         const Span<const char> source = pass.generated_source();
         if (!source.empty()) {
-            if (std::FILE* file = std::fopen("vfx-dispatch-rejected.slang", "wb");
+            if (std::FILE* file = open_diagnostic("vfx-dispatch-rejected.slang");
                 file != nullptr) {
                 (void)std::fwrite(source.data(), 1, source.size(), file);
                 (void)std::fclose(file);
