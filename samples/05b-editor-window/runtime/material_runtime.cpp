@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "material_runtime.h"
 
 #include <cy/backends/shader/compiler.h>

@@ -80,7 +80,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | 9 |  |  |  |  |  |  |  |  |  |  |  | S |  |  |  | **C** |  |  |  |  |  | **C** | M13 |
+| [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | 9 |  |  |  |  |  |  |  |  |  |  |  | S |  |  |  |  |  |  |  |  |  | **C** | M13 |
 | [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |  | W |  |  |  | **C** |  |  |  |  |  |  |  | M11.a |
 | **6 — Content and tooling** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
@@ -158,11 +158,13 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M9** · Integrity | 4 | 0 | — |
 | **M10** · Worlds | 10 | 2 | `diagnostics-profiling-and-crash`, `gameplay-framework` |
 | **M11.a** · Foundations | 12 | 12 | the environment substrate and its four consumers, world streaming, determinism, replay, network, save, audio |
-| **M11.b** · Authoring | 24 | 24 | the editor, the authoring surface, and the gameplay rows authored through it |
+| **M11.b** · Authoring | 23 | 23 | the editor, the authoring surface, and the gameplay rows authored through it |
 | **M11.c** · Image | 15 | 15 | materials and shaders first, then the eight rows the picture is made of, culling, the sky |
 | **M11.d** · Desktop | 9 | 9 | the native platform backend, the foundations the port audits, the build and quality gates |
 | **M11.d.5** · Backends | 1 | 1 | `rhi-and-render-graph` |
 | **M11.e** · Ship | 4 | 4 | mobile and the full matrix, the dependency set, the forward pipeline, the roadmap itself |
+| **M12** · The Game | 0 | 0 | — |
+| **M13** · After 1.0 | 2 | 2 | `ml-inference`, `xr-support` |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not

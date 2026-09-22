@@ -526,48 +526,60 @@ into the Rust editor's wgpu Metal device. It needs a real Apple GPU; a hosted ma
 exercise the Apple-family tile-memory or Tier 2 argument-buffer paths.
 
 Install Xcode Command Line Tools, CMake 3.28 or newer, Ninja, `just`, Python 3.10 or newer, and the
-repository's Rust toolchain. Then configure the engine and build the runtime and editor from the
-repository root:
+repository's Rust toolchain. Run `just env-doctor` after installing them. If `/usr/bin/python3` is
+Apple's older Python 3.9, install `uv` and prefix each recipe with `uv run --python 3.12`, as in
+`uv run --python 3.12 just build-all`.
+
+Build both processes from the repository root:
 
 ```bash
 xcode-select --install
 brew install cmake ninja just python
 # Install Rust with https://rustup.rs if `cargo --version` is unavailable.
 
-cmake -S . -B build/macos-metal -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCY_RENDERER_METAL=ON \
-  -DCY_RENDERER_VULKAN=OFF \
-  -DCY_RENDERER_D3D12=OFF \
-  -DCY_SHADER_DXIL=OFF \
-  -DCY_PHYSICS=OFF \
-  -DCY_AI=OFF \
-  -DCY_AUDIO=OFF \
-  -DCY_NAVIGATION=OFF
-cmake --build build/macos-metal --target cy_editor_window_runtime -j
-just build-editor --profile dev
+just env-doctor
+just build-all --profile dev
 ```
 
-Run the engine in the first terminal. The paths passed as `--project` and `--world` must match the
-project and document the editor opens:
+The editor currently opens declared projects; it does not yet expose the backend project templates
+through a New Project window. A project directory must contain `project.json`. To start from the
+shipped editable project while that workflow is being completed, copy it somewhere writable:
 
 ```bash
-build/macos-metal/samples/05b-editor-window/runtime/cy_editor_window_runtime \
+mkdir -p "$HOME/CyberdyneProjects"
+cp -R samples/05b-editor-window/project "$HOME/CyberdyneProjects/MyGame"
+```
+
+The editor can run without an engine connection, which is useful for document and content-browser
+work but does not display an engine-rendered viewport:
+
+```bash
+just run-editor --profile dev \
+  --project "$HOME/CyberdyneProjects/MyGame" \
+  --open worlds/city.cyworld
+```
+
+For the live Metal viewport, run the engine and editor in two terminals. The project and world must
+match on both sides because their stable document and entity identities cross the live protocol.
+
+Terminal 1 — engine runtime:
+
+```bash
+build/dev/samples/05b-editor-window/runtime/cy_editor_window_runtime \
   --socket /tmp/cy-metal-viewport.sock \
   --host /tmp/cy-metal-control.sock \
-  --project samples/05b-editor-window/project \
+  --project "$HOME/CyberdyneProjects/MyGame" \
   --world worlds/city.cyworld \
   --width 960 --height 540 --buffers 4 --rate 60 \
   --no-validation
 ```
 
-Run the editor in a second terminal. Starting it in the sample project keeps the editor's document
-identity identical to the runtime's `--world` value:
+Terminal 2 — editor:
 
 ```bash
-cd samples/05b-editor-window/project
 CY_VIEWPORT_SOCKET=/tmp/cy-metal-viewport.sock \
-  ../../../build/editor/development/cyberdyne-editor \
+just run-editor --profile dev \
+  --project "$HOME/CyberdyneProjects/MyGame" \
   --host /tmp/cy-metal-control.sock \
   --open worlds/city.cyworld
 ```
@@ -575,7 +587,8 @@ CY_VIEWPORT_SOCKET=/tmp/cy-metal-viewport.sock \
 The viewport should show the engine-rendered scene and remain interactive for resize, selection,
 and transform-gizmo input. Remove `--no-validation` when diagnosing Metal API use. The lower-level
 [viewport transport README](editor/crates/cy-editor-viewport-transport/README.md) documents the
-headless pixel and control probes.
+headless pixel and control probes. `just run-editor-window --hold` is the automated X11/XTEST
+artefact and is not the interactive macOS launcher.
 
 Windows remains a supported target. Its CI workflow is currently the authoritative build recipe.
 

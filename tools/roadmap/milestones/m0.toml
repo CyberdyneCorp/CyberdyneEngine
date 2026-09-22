@@ -35,6 +35,12 @@ kind = "recipe"
 run = "just env-doctor"
 ci_job = "build-and-test"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "just/env.just"
+token = "cmake    | cmake"
+note = "renaming the required tool and binary makes the doctor report the missing dependency"
+
 [[criterion]]
 id = "layering"
 describe = "the layering check passes, and fails on each deliberately introduced violation"
@@ -42,6 +48,12 @@ source = "tasks 5.5"
 kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
 
 [[criterion]]
 id = "specs"

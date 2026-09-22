@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/abi/cy_abi.h>
 #include <cy/abi/host.h>
 #include <cy/core/memory/system_allocator.h>

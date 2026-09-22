@@ -105,6 +105,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
+
 [[criterion]]
 id = "workflows"
 describe = "every permanent gate M5 declared is run by a job in .github/workflows/, and no job reimplements a recipe. This is the criterion that fails if a gate is declared and its job is not, which is why the two land in the same change"

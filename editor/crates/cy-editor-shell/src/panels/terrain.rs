@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The visible terrain editor built on the one shared painting surface.
 
 use cy_editor_commands::Arguments;

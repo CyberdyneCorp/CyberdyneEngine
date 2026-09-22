@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/backends/rhi-metal/backend.h>
 #include <cy/backends/rhi/backend.h>
 #include <cy/core/memory/system_allocator.h>

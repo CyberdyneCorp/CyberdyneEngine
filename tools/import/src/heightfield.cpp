@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/import/heightfield.h>
 
 #include <bit>

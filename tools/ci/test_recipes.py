@@ -281,6 +281,35 @@ def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
     return failures
 
 
+def windows_target_resolution_uses_native_python(root: pathlib.Path) -> list[str]:
+    """Windows ARM must not resolve the target table through the WSL python3 alias.
+
+    The hosted Windows ARM image has native Python from setup-python as `python.exe`, but its
+    `python3` App Execution Alias redirects to WSL. `build-engine` therefore stopped in
+    `_resolve-target` before CMake started. Keep the native spelling first and retain python3 only
+    as the Unix fallback.
+    """
+    text = (root / "just" / "build.just").read_text(encoding="utf-8")
+    bodies = dict(_recipe_bodies(text))
+    commands = "\n".join(
+        line for line in bodies["_resolve-target"] if not line.lstrip().startswith("#")
+    )
+    native = commands.find("command -v python.exe")
+    native_exec = commands.find("exec python.exe")
+    fallback = commands.find("exec python3")
+    if min(native, native_exec, fallback) < 0:
+        return [
+            "build.just: `_resolve-target` must select native python.exe on Windows and retain "
+            "python3 as the Unix fallback"
+        ]
+    if not native < native_exec < fallback:
+        return [
+            "build.just: `_resolve-target` reaches python3 before native python.exe; Windows ARM "
+            "will redirect that spelling to WSL"
+        ]
+    return []
+
+
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
@@ -403,6 +432,9 @@ def main() -> int:
             a_recipe_that_disables_a_feature_disables_what_needs_it
         ),
         "macOS CI recipes use system Bash syntax": macos_ci_recipes_use_system_bash_syntax,
+        "Windows target resolution uses native Python": (
+            windows_target_resolution_uses_native_python
+        ),
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
         ),

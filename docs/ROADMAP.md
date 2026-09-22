@@ -1470,6 +1470,11 @@ streaming, and specialised editors whose domains have no canonical writer remain
 continues to show an explicit unavailable state rather than a fake frame, preview, capture or domain
 editor.
 
+`ml-inference` also remained at Seed: M11.b produced neither the game-side consumer nor the
+recorded deferral its exit criterion required. M13 is now its explicit re-entry point, so the M11.b
+Complete cell and tier expectation are intentionally absent even though the original work table
+above is preserved.
+
 ---
 
 ## M11.c — Image

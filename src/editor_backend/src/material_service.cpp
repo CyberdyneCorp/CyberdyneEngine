@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/editor/material_service.h>
 
 #include <cy/graph/material/canvas.h>

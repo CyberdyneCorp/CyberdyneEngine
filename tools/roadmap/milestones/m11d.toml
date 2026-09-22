@@ -84,6 +84,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token = "platform/"
+note = "renaming the SDL exemption makes the layer check reject the real SDL includes outside its recognised platform directory"
+
 [[criterion]]
 id = "workflows"
 describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11d` is green above the newest ledger any workflow evaluates"
@@ -538,6 +544,12 @@ source = "tasks, testing-and-quality, ROADMAP M11.d exit criteria"
 kind = "recipe"
 run = "just quality-docs"
 ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/graph/include/cy/graph/cybergraph.h"
+token = "A stable, manifest-assigned pin identity"
+note = "removing one public alias's documentation makes the documentation gate name PinId as newly undocumented"
 
 [[criterion]]
 id = "full-gate-set"

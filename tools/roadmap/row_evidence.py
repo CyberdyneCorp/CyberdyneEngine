@@ -194,11 +194,12 @@ def _records(report: Path) -> list[list[str]]:
     return [line.split("|") for line in text.splitlines() if line.strip()]
 
 
-#: `set_tests_properties([=[<test>]=] PROPERTIES  LABELS "unit" TIMEOUT "60" ...)`, as CMake's
-#: generator writes it into CTestTestfile.cmake. This file is the generator's output, not the
-#: project's input: nothing in this repository chooses what it says.
-_CTEST_PROPERTIES_RE = re.compile(r"^set_tests_properties\(\[=\[([^\]]+)\]=\] PROPERTIES\s+(.*)$",
-                                  re.MULTILINE)
+#: CMake 3.x writes the test name as `[=[<test>]=]`; CMake 4.4 writes it as `"<test>"`.
+#: Both are generator output in CTestTestfile.cmake, not syntax this repository controls.
+_CTEST_PROPERTIES_RE = re.compile(
+    r'^set_tests_properties\((?:\[=\[([^\]]+)\]=\]|"([^"]+)") PROPERTIES\s+(.*)$',
+    re.MULTILINE,
+)
 
 
 def ctest_properties(build: Path) -> dict[str, dict[str, str]]:
@@ -207,7 +208,10 @@ def ctest_properties(build: Path) -> dict[str, dict[str, str]]:
     registered: dict[str, dict[str, str]] = {}
     if not testfile.is_file():
         return registered
-    for name, body in _CTEST_PROPERTIES_RE.findall(testfile.read_text(encoding="utf-8")):
+    for bracket_name, quoted_name, body in _CTEST_PROPERTIES_RE.findall(
+        testfile.read_text(encoding="utf-8")
+    ):
+        name = bracket_name or quoted_name
         given = dict(re.findall(r'(\w+) "([^"]*)"', body))
         registered[name] = {key: given[key] for key in ("LABELS", "TIMEOUT") if key in given}
     return registered

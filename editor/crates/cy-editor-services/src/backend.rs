@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! State for engine-owned editor backend services.
 //!
 //! The wire stays generic, while this service records the material catalogue the editor currently

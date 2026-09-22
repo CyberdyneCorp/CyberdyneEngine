@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The visible material graph: engine palette at the left, the shared graph canvas at the right.
 //!
 //! This module is a renderer and interaction adapter only. Node identity, catalogue membership,

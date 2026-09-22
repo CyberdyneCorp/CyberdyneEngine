@@ -55,6 +55,7 @@ import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import record as record_module  # noqa: E402
+import row_evidence as row_evidence_module  # noqa: E402
 import requirements as requirements_module  # noqa: E402
 import roadmap as roadmap_module  # noqa: E402
 
@@ -210,7 +211,8 @@ def test_record_rules(root: Path) -> None:
 # a Linux host can still judge, the artefact, the tier and the handover.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
                     "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 62,
-                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11d5": 16, "m11e": 25}
+                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11d5": 16, "m11e": 25,
+                    "m12": 1, "m13": 1}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -914,6 +916,22 @@ def test_plan_documents(root: Path) -> None:
 
     agreement_findings = plan_module.check_documents_agree(matrix, sections, claimed, expected)
     check("the four plan documents agree", not agreement_findings, "\n".join(agreement_findings))
+
+
+def test_ctest_property_syntax(root: Path) -> None:
+    """The evidence reader accepts the CMake 3.x and 4.x generated test-name spellings."""
+    build = root / "build"
+    build.mkdir()
+    (build / "CTestTestfile.cmake").write_text(
+        'set_tests_properties([=[unit.old]=] PROPERTIES LABELS "unit" TIMEOUT "60")\n'
+        'set_tests_properties("unit.new" PROPERTIES LABELS "unit" TIMEOUT "60")\n',
+        encoding="utf-8",
+    )
+    properties = row_evidence_module.ctest_properties(build)
+    check("CTest evidence accepts bracket-quoted names emitted by CMake 3.x",
+          properties.get("unit.old") == {"LABELS": "unit", "TIMEOUT": "60"})
+    check("CTest evidence accepts quoted names emitted by CMake 4.x",
+          properties.get("unit.new") == {"LABELS": "unit", "TIMEOUT": "60"})
 
 
 def test_plan_checks_can_fail(root: Path) -> None:
@@ -2138,6 +2156,7 @@ def main() -> int:
         test_requirements(_area(root, "requirements"))
         test_gates(_area(root, "gates"))
         test_plan_documents(_area(root, "plan"))
+        test_ctest_property_syntax(_area(root, "ctest-syntax"))
         test_plan_checks_can_fail(_area(root, "plan-negative"))
         test_just_arguments(_area(root, "just-arguments"))
         test_matrix_requirement_counts(_area(root, "reqs-column"))

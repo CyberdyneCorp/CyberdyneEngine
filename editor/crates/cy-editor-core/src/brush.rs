@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Versioned spatial brush values shared by editor surfaces and domain services.
 
 use crate::codec::{Reader, Writer};

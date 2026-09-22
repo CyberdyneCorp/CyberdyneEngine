@@ -40,19 +40,15 @@ gate did.
 | M11.c <br> *retroactive, over M11.a's green gate* | `steam-audio-simulates` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `thirdparty-dependencies-at-working` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `world-streams` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `editor-at-complete-grade` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `editor-window` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.b's green gate* | `gameplay-at-complete-grade` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `import-from-the-editor` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `ml-inference-or-a-deferral` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.b's green gate* | `roadmap-tiers` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `the-game-drawn` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `the-game-exists` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.b | `the-game-is-honest-about-its-content` | **M11.e** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `the-game-is-playable` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.b's green gate* | `view-modes` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M8.c | `steam-audio-configures` | **M11.e** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
 | M9 | `record-matches-plan-history` | **M11.e** | FOUR CELLS OVER FOUR CLOSED MILESTONES: M3 `testing-and-quality`, M4 `build-system-and-platforms`, M6 `developer-workflow-and-just`, M8.b `thirdparty-dependencies` — each column claims Working and … |
+| M11.c <br> *retroactive, over M11.b's green gate* | `the-game-drawn` | **M12** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.c <br> *retroactive, over M11.b's green gate* | `the-game-exists` | **M12** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `the-game-is-honest-about-its-content` | **M12** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.c <br> *retroactive, over M11.b's green gate* | `the-game-is-playable` | **M12** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.c <br> *retroactive, over M11.b's green gate* | `ml-inference-or-a-deferral` | **M13** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 
 ## 2. Red criteria under a green gate
 
@@ -85,7 +81,7 @@ runs `just roadmap-falsify prove --record`. Nineteen of the twenty-one below are
 that state, and reading this section off the verdict alone would have deleted them.
 
 **THE GATES OF M11.a AND M11.b SHOULD NOT STAND AS THEY ARE READ TODAY.**
-19 criteria below were red when those gates were flipped to
+15 criteria below were red when those gates were flipped to
 `state = "green"` in `tools/roadmap/gates.toml`, and by the ledger's own arithmetic —
 "an ordinary failure beside a declared gap still fails the milestone" — a rung with a
 red criterion nobody declared is not closed. The declarations written over them since
@@ -105,20 +101,14 @@ so this document states the finding and moves nothing.
 | M11.a | `save-inspector` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 45 skipped |
 | M11.a | `steam-audio-simulates` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 31 skipped |
 | M11.a | `thirdparty-dependencies-at-working` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree |
-| M11.a | `world-budget-headless` | — nobody | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … the three largest bands: terrain_shade_ms 66.5 ms, sky_ms 24.4 ms, water_ms 12.9 ms |
-| M11.a | `world-budget-on-a-device` | — nobody | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … 64 frames written to /tmp/tmp.aTIedgqP86/frames, vulkan validation errors: 0 |
 | M11.a | `world-streams` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49 tiles_resident: 49 evicted: 0 stitched_vertices: 0 |
-| M11.b | `editor-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-… |
-| M11.b | `editor-window` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> cargo build profile=dev cargo-profile=development target=/home/leonardo/work/CyberdyneEngine/build/repair-1-4/editor |
 | M11.b | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
 | M11.b | `gameplay-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-a… |
-| M11.b | `import-from-the-editor` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_editor_import — the suite integration.editor_import does not exist |
-| M11.b | `ml-inference-or-a-deferral` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_ai — the suite integration.ai does not exist |
-| M11.b | `roadmap-tiers` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete' |
+| M11.b | `ml-inference-or-a-deferral` | M11.c | red against a built tree | red unmutated against the build tree build/dev (exit 1): override: CY_BUILD_DIR=build/dev … no build/dev/cy_test_integration_ai — the suite integration.ai does not exist |
+| M11.b | `roadmap-tiers` | M11.c | not recorded | the prover has no entry for this criterion; the row stands on the declaration a later rung wrote over a gate that was already green |
 | M11.b | `the-game-drawn` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
 | M11.b | `the-game-exists` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/ |
 | M11.b | `the-game-is-playable` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/ |
-| M11.b | `view-modes` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_editor_views — the suite unit.editor_views does not exist |
 
 ## 3. Behind the plan
 
@@ -136,7 +126,7 @@ rather than accept a claim, and each one is a piece of work the plan still expec
 | [`camera-system`](../../openspec/specs/camera-system/spec.md) | complete | **working** | M11.b |
 | [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | working | **seed** | M6 |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | complete | **working** | M11.b |
-| [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | complete | **seed** | M11.b |
+| [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | complete | **working** | M11.b |
 | [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | complete | **working** | M11.b |
 | [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | complete | **working** | M11.b |
 | [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | complete | **working** | M11.b |
@@ -146,8 +136,7 @@ rather than accept a claim, and each one is a piece of work the plan still expec
 | [`foliage`](../../openspec/specs/foliage/spec.md) | complete | **working** | M11.a |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | complete | **working** | M11.b |
 | [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | complete | **working** | M11.b |
-| [`live-editing`](../../openspec/specs/live-editing/spec.md) | complete | **seed** | M11.b |
-| [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | complete | **seed** | M11.b |
+| [`live-editing`](../../openspec/specs/live-editing/spec.md) | complete | **working** | M11.b |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | complete | **working** | M11.b |
 | [`networking-and-replication`](../../openspec/specs/networking-and-replication/spec.md) | complete | **working** | M11.a |
 | [`physics`](../../openspec/specs/physics/spec.md) | complete | **working** | M11.b |
