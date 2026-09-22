@@ -310,6 +310,38 @@ def windows_target_resolution_uses_native_python(root: pathlib.Path) -> list[str
     return []
 
 
+def swift_package_tests_cannot_be_silently_omitted(root: pathlib.Path) -> list[str]:
+    """A Swift compiler probe must not stand in for the package's real test command.
+
+    Apple's Swift compiler can reject a direct `import XCTest` while SwiftPM supplies the test SDK
+    paths when it runs the package. The old configure probe treated that compiler result as a reason
+    to omit `integration.swift_package`, giving CI a green test list that never ran the package.
+    Once the general Swift toolchain probe succeeds, CTest must register `swift test` unconditionally
+    and let that command report whether the package-test environment works.
+    """
+    cmake = (root / "bindings" / "swift" / "CMakeLists.txt").read_text(encoding="utf-8")
+    driver = (
+        root / "bindings" / "swift" / "tools" / "cy_swift_module.py"
+    ).read_text(encoding="utf-8")
+    failures = []
+    if "--probe-tests" in cmake or "--probe-tests" in driver:
+        failures.append(
+            "Swift package tests are guarded by a raw compiler probe; register the real SwiftPM "
+            "test command and let it pass or fail"
+        )
+    declaration = re.search(
+        r"add_test\(NAME\s+integration\.swift_package\s+"
+        r"COMMAND\s+\"\$\{Python3_EXECUTABLE\}\"\s+\"\$\{CY_SWIFT_DRIVER\}\"\s+--test",
+        cmake,
+    )
+    if declaration is None:
+        failures.append(
+            "bindings/swift/CMakeLists.txt does not register integration.swift_package through "
+            "the driver's real --test command"
+        )
+    return failures
+
+
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
@@ -434,6 +466,9 @@ def main() -> int:
         "macOS CI recipes use system Bash syntax": macos_ci_recipes_use_system_bash_syntax,
         "Windows target resolution uses native Python": (
             windows_target_resolution_uses_native_python
+        ),
+        "Swift package tests cannot be silently omitted": (
+            swift_package_tests_cannot_be_silently_omitted
         ),
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
