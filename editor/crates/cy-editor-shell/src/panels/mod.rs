@@ -34,6 +34,7 @@ mod semantic_merge;
 mod settings;
 mod source;
 mod source_control;
+mod terrain;
 mod viewport;
 
 use cy_editor_commands::{Arguments, Registry, Scope};
@@ -147,6 +148,16 @@ pub struct Inputs {
     pub material_link_problem: Option<String>,
     /// The latest typed material-property refusal, shown beside the generated controls.
     pub material_property_problem: Option<String>,
+    /// Active terrain sculpt or paint tool keyword.
+    pub terrain_tool: String,
+    /// Stable material layer receiving paint gestures.
+    pub terrain_layer: Option<cy_editor_core::ids::NodeId>,
+    /// New terrain layer's author-facing name.
+    pub terrain_layer_name: String,
+    /// New terrain layer's material asset reference.
+    pub terrain_layer_material: String,
+    /// Most recent painting-surface refusal.
+    pub terrain_problem: Option<String>,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -206,6 +217,11 @@ impl Default for Inputs {
             material_link_source: None,
             material_link_problem: None,
             material_property_problem: None,
+            terrain_tool: "raise".into(),
+            terrain_layer: None,
+            terrain_layer_name: String::new(),
+            terrain_layer_material: String::new(),
+            terrain_problem: None,
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {
@@ -314,6 +330,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "inspector" => inspector::show(self, ui),
                 "content-browser" => browser::show(self, ui),
                 "editor-materials" => material_graph::show(self, ui),
+                "editor-terrain" => terrain::show(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

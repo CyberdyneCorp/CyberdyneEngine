@@ -116,6 +116,7 @@ mod tests {
             "viewport",
             "inspector",
             "editor-materials",
+            "editor-terrain",
             "script-graph",
             "animation",
             "console",

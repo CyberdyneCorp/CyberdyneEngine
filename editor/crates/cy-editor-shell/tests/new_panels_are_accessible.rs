@@ -19,13 +19,14 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 8] = [
+const NEW_PANELS: [(&str, &str); 9] = [
     ("undo-history", "Undo"),
     ("settings", "Apply"),
     ("source-control", "Refresh"),
     ("agent-sessions", "No agent is connected."),
     ("swift-workspace", "No Swift source is open."),
     ("editor-materials", "Engine catalogue"),
+    ("editor-terrain", "No world is open."),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
 ];

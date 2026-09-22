@@ -49,6 +49,7 @@ pub mod settings;
 pub mod source_control;
 pub mod source_language;
 pub mod source_workspace;
+pub mod terrain;
 pub mod viewports;
 pub mod workspace;
 pub mod workspace_store;

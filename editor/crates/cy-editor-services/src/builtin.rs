@@ -54,6 +54,8 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
+    // Shared painting gestures committed as stable terrain layers and non-destructive modifiers.
+    crate::terrain::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;
@@ -580,9 +582,13 @@ mod tests {
         // The editor-completion change adds identity-based rename/reparent, six typed settings
         // commands, seven provider-neutral source-control commands, two semantic-merge commands,
         // and six asset-browser operations, including asynchronous external import.
+        // Terrain authoring adds create, add-layer, commit-stroke, enable, and reorder commands.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(registry.len(), 8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6);
+        assert_eq!(
+            registry.len(),
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5
+        );
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

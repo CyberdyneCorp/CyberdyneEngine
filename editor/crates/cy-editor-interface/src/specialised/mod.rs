@@ -19,6 +19,7 @@
 //! | each names the row that owns its subject | [`Domain::owning_row`] against `openspec/specs/` |
 //! | every graph editor shares ONE canvas | every [`Session::graph`] carries the same [`graph::CanvasId`] |
 //! | every keyed-time editor shares ONE surface | every [`Session::timeline`] carries the same [`timeline::SurfaceId`] |
+//! | every spatial brush editor shares ONE surface | every [`Session::painting`] carries the same [`painting::SurfaceId`] |
 //! | the palette offers what the engine can lower | [`Domain::node_types`] against `src/graph/src/lower_*.cpp` |
 //! | the timeline offers what the engine can dispatch | [`timeline::TrackKind`] against `cy::sequencing::TrackKind` |
 //! | the active editor is drawn in the reserved region | [`SpecialisedEditors::REGION`] against `chrome.rs` |
@@ -28,8 +29,8 @@
 //!
 //! --- A DOMAIN THIS TREE CANNOT OPEN REFUSES BY NAME -------------------------------------------------
 //!
-//! Sixteen editors are named by the requirement and this tree can open the three whose authoring
-//! vocabulary the engine already declares. **The other thirteen are registered and refuse**, naming
+//! Sixteen editors are named by the requirement and this tree can open the four whose authoring
+//! vocabulary this milestone declares. **The other twelve are registered and refuse**, naming
 //! themselves and the capability row that owes the vocabulary — because the alternative is the one
 //! outcome this project has decided is worse than a refutation. M11.b's own gate wrote it down:
 //!
@@ -40,6 +41,7 @@
 
 pub mod graph;
 pub mod material;
+pub mod painting;
 pub mod timeline;
 
 use std::collections::BTreeMap;
@@ -50,6 +52,7 @@ use cy_editor_visual::chrome::Region;
 use crate::panels::PanelKey;
 
 use graph::{Catalogue, GraphCanvas, NodeType};
+use painting::PaintingSurface;
 use timeline::{TimelineSurface, TrackKind};
 
 /// Which shared surface an editor is built on.
@@ -378,13 +381,16 @@ pub struct Session<'a> {
     pub graph: Option<&'a mut GraphCanvas>,
     /// The one timeline surface, where this editor is a keyed-time editor.
     pub timeline: Option<&'a mut TimelineSurface>,
+    /// The one brush surface, where this editor authors spatial strokes.
+    pub painting: Option<&'a mut PaintingSurface>,
 }
 
-/// The host of the specialised editors: one canvas, one timeline, and which editor is active.
+/// The host: one graph canvas, one timeline, one painting surface, and the active editor.
 #[derive(Debug)]
 pub struct SpecialisedEditors {
     canvas: GraphCanvas,
     timeline: TimelineSurface,
+    painting: PaintingSurface,
     active: Option<Domain>,
     catalogues: BTreeMap<Domain, Catalogue>,
 }
@@ -426,6 +432,7 @@ impl SpecialisedEditors {
         Ok(Self {
             canvas: GraphCanvas::new(1),
             timeline: TimelineSurface::new(1, 30.0)?,
+            painting: PaintingSurface::new(1),
             active: None,
             catalogues,
         })
@@ -472,7 +479,9 @@ impl SpecialisedEditors {
 
     /// Whether this tree can open an editor for the domain.
     pub fn can_open(&self, domain: Domain) -> bool {
-        self.catalogues.contains_key(&domain) || !domain.track_kinds().is_empty()
+        self.catalogues.contains_key(&domain)
+            || !domain.track_kinds().is_empty()
+            || domain == Domain::Terrain
     }
 
     /// Every editor this tree can open, in the requirement's order.
@@ -530,6 +539,9 @@ impl SpecialisedEditors {
             timeline: surfaces
                 .contains(&Surface::Timeline)
                 .then_some(&mut self.timeline),
+            painting: surfaces
+                .contains(&Surface::Painting)
+                .then_some(&mut self.painting),
         })
     }
 
@@ -699,24 +711,31 @@ mod tests {
     #[test]
     fn a_domain_this_tree_cannot_open_refuses_by_name_and_opens_nothing() {
         let mut host = host();
-        let open = host
-            .open(Domain::GameplayAndUtilityGraphs)
-            .expect("the gameplay graph editor opens");
-        assert_eq!(open.domain, Domain::GameplayAndUtilityGraphs);
+        let open = host.open(Domain::Terrain).expect("terrain now opens");
+        assert_eq!(open.domain, Domain::Terrain);
 
         let refused = host
-            .open(Domain::Terrain)
-            .expect_err("terrain has no vocabulary here");
+            .open(Domain::Foliage)
+            .expect_err("foliage has no authoring vocabulary here");
         assert!(
-            refused.because.contains("terrain")
-                && refused.because.contains(Domain::Terrain.owning_row()),
+            refused.because.contains("foliage")
+                && refused.because.contains(Domain::Foliage.owning_row()),
             "the refusal names neither the editor nor the row that owes it: {refused:?}"
         );
         assert_eq!(
             host.active(),
-            Some(Domain::GameplayAndUtilityGraphs),
+            Some(Domain::Terrain),
             "a refused open cleared the region and lost what was being edited"
         );
+    }
+
+    #[test]
+    fn terrain_opens_the_shared_painting_surface() {
+        let mut host = host();
+        let terrain = host.open(Domain::Terrain).expect("terrain opens");
+        assert!(terrain.graph.is_none());
+        assert!(terrain.timeline.is_none());
+        assert_eq!(terrain.painting.expect("painting surface").id().as_u64(), 1);
     }
 
     #[test]

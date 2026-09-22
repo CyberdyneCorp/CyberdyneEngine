@@ -25,7 +25,7 @@
 ## 5. Terrain import and authoring
 
 - [x] 5.1 Add versioned heightfield import with declared units, range, resolution, tiling and structured diagnostics for unsupported or ambiguous inputs.
-- [ ] 5.2 Implement the shared painting surface and a terrain specialised editor with non-destructive sculpt modifiers, material-layer painting, brush controls, transactions and undo/redo.
+- [x] 5.2 Implement the shared painting surface and a terrain specialised editor with non-destructive sculpt modifiers, material-layer painting, brush controls, transactions and undo/redo.
 - [ ] 5.3 Evaluate changed tiles asynchronously, update collision/render data through stable terrain assets, and verify save/reload, cancellation and local recomputation.
 
 ## 6. VFX catalogue and GPU lowering
