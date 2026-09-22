@@ -1439,7 +1439,8 @@ jobs:
       - uses: extractions/setup-just@v4
       # `just roadmap-test`'s falsifiability sweep runs every check the milestone gates depend on,
       # so this job needs the same tools those checks need: openspec for the spec queries,
-      # clang-format 22.1.8 for the format gate, and Pillow for the M11.c beauty-shot renders.
+      # clang-format 22.1.8 for the format gate, codespell for the spelling gate, and Pillow for the
+      # M11.c beauty-shot renders.
       # Without them the sweep reports every check as "was recorded as proven and is now red in the
       # tree" for tool-missing reasons the runner cannot verify against, and the whole job fails
       # for infrastructure rather than for drift.
@@ -1449,7 +1450,7 @@ jobs:
       - name: Install the tools the falsifiability sweep runs
         run: |
           npm install -g @fission-ai/openspec
-          pip install clang-format==22.1.8 clang-tidy==22.1.8 Pillow
+          pip install clang-format==22.1.8 clang-tidy==22.1.8 codespell==2.4.3 Pillow
       - name: Status matches the specification set
         run: just roadmap-status
       # The drift detection's own negative fixtures: a status recipe that stopped failing on drift
