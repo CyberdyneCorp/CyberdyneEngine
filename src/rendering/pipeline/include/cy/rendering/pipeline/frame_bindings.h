@@ -104,6 +104,23 @@ public:
     /// allocated from that frame's pool.
     [[nodiscard]] Status upload(u32 frame_slot, const FrameUpload& upload) noexcept;
 
+    /// Name the material textures this frame's set 0 makes reachable. M11.c task 3.7.
+    ///
+    /// The slots are the DEVICE's — `MaterialTextureTable::slots()` reports what
+    /// `bind_texture_globally` handed out — and this module allocates none of its own, so a
+    /// material's slot word means the same thing here as it does in the device's own table.
+    /// Held rather than written straight away, because set 0 is allocated again every frame: the
+    /// writes go in beside the globals block in `write_sets`, which is the one place that set is
+    /// filled.
+    ///
+    /// REFUSED, NAMING BOTH NUMBERS, when a slot is at or past `kMaterialTextureSlots` or when
+    /// there are more entries than the layer holds. A frame that quietly dropped a texture would
+    /// sample an unwritten descriptor, which is undefined and looks like a texture.
+    [[nodiscard]] Status set_material_textures(Span<const MaterialTextureSlot> slots) noexcept;
+    /// How many the last `set_material_textures` accepted. Zero is the state of every caller that
+    /// has not asked for one, and of every frame before this task.
+    [[nodiscard]] u32 material_textures() const noexcept { return material_texture_count_; }
+
     /// Point the pass set's texture at the frame's scene colour, for the tonemapping resolve.
     /// Separate from `upload` because the view only exists once the graph has realised its
     /// transients, which is after `upload` and inside the record callback's own frame.
@@ -144,6 +161,10 @@ private:
 
     [[nodiscard]] Status create_slot(rhi::Device& device, u32 index) noexcept;
     [[nodiscard]] Status write_sets(u32 frame_slot) noexcept;
+    /// Take a NEW pass set out of this frame's pool, because the two calls below write theirs from
+    /// inside a record callback and a set a command buffer has already bound may not be updated.
+    /// See the comment on the definition: the alternative was 776 validation errors a run.
+    [[nodiscard]] Status reallocate_pass_set() noexcept;
 
     rhi::Device* device_ = nullptr;
     const FramePipelines* pipelines_ = nullptr;
@@ -151,6 +172,9 @@ private:
     Slot slots_[rhi::kMaxFramesInFlight];
     u32 slot_count_ = 0;
     rhi::DescriptorSetHandle sets_[kSetCount];
+    /// The material textures set 0 names, held across frames because the set is not.
+    MaterialTextureSlot material_textures_[kMaterialTextureSlots];
+    u32 material_texture_count_ = 0;
     u32 current_slot_ = 0;
     u64 staged_light_bytes_ = 0;
     u64 staged_draw_bytes_ = 0;

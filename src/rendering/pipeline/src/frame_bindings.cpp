@@ -169,11 +169,44 @@ Status FrameBindings::write_sets(u32 frame_slot) noexcept {
         sets_[index] = *allocated;
     }
 
-    const rhi::DescriptorWrite globals[] = {
-        buffer_write(0, rhi::DescriptorKind::UniformBuffer, slot.globals),
-    };
-    if (Status written = device.update_descriptor_set(sets_[kGlobalSet],
-                                                      Span<const rhi::DescriptorWrite>(globals, 1));
+    // SET 0 IS WRITTEN ONCE, WITH BOTH HALVES. M11.c task 3.7: the globals block at binding 0 and
+    // the material textures at binding 1 with their sampler at binding 2 — the arrangement that
+    // lets one pipeline have the frame's globals AND the global texture table, which a pipeline
+    // binding one set per index could not have while set 0 carried only the first of them.
+    //
+    // Every frame, because the set is allocated every frame; `kMaterialTextureSlots` writes is the
+    // ceiling and a frame with no material textures writes exactly one descriptor, as before.
+    rhi::DescriptorWrite globals[kMaterialTextureSlots + 2];
+    usize writes = 0;
+    globals[writes++] =
+        buffer_write(kGlobalBindingGlobals, rhi::DescriptorKind::UniformBuffer, slot.globals);
+
+    // THE SAMPLER IS WRITTEN WHETHER OR NOT THERE ARE TEXTURES, and the asymmetry with the array
+    // is a Vulkan rule rather than tidiness. Only the ARRAY is partially bound — a table has holes
+    // by construction — and a descriptor that a bound shader statically uses must be valid unless
+    // its binding says otherwise. The compiled fragment shader names `cyMaterialSampler` on every
+    // path, including the one that samples nothing, so a frame that skipped this write would draw
+    // correctly and report a validation error a reader would have to trace back to a texture count.
+    rhi::DescriptorWrite sampler;
+    sampler.binding = kGlobalBindingMaterialSampler;
+    sampler.kind = rhi::DescriptorKind::Sampler;
+    sampler.sampler = pipelines_->material_sampler();
+    globals[writes++] = sampler;
+
+    for (u32 index = 0; index < material_texture_count_; ++index) {
+        const MaterialTextureSlot& entry = material_textures_[index];
+        rhi::DescriptorWrite texture;
+        texture.binding = kGlobalBindingMaterialTextures;
+        // THE ARRAY INDEX IS THE DEVICE'S SLOT, which is what makes this set and the device's own
+        // table two writings of one numbering rather than two numberings.
+        texture.array_index = entry.slot;
+        texture.kind = rhi::DescriptorKind::SampledTexture;
+        texture.texture_view = entry.view;
+        texture.use = rhi::ImageUse::SampledRead;
+        globals[writes++] = texture;
+    }
+    if (Status written = device.update_descriptor_set(
+            sets_[kGlobalSet], Span<const rhi::DescriptorWrite>(globals, writes));
         !written) {
         return written;
     }
@@ -260,9 +293,65 @@ rhi::BufferHandle FrameBindings::staged_draws() const noexcept {
     return ready_ ? slots_[current_slot_].draws : rhi::BufferHandle{};
 }
 
+Status FrameBindings::set_material_textures(Span<const MaterialTextureSlot> slots) noexcept {
+    if (slots.size() > kMaterialTextureSlots) {
+        return fail(ErrorCode::OutOfRange,
+                    "frame bindings: more material textures than set 0 declares slots for");
+    }
+    for (const MaterialTextureSlot& entry : slots) {
+        // REFUSED RATHER THAN DROPPED, and the whole list is refused rather than the entry: a
+        // frame that bound some of its textures would shade some of its surfaces from a descriptor
+        // nothing wrote, and no picture says which.
+        if (entry.slot >= kMaterialTextureSlots) {
+            return fail(ErrorCode::OutOfRange,
+                        "frame bindings: a material texture's slot is past what set 0 declares");
+        }
+        if (entry.view.is_null()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "frame bindings: a material texture has no view to bind");
+        }
+    }
+    material_texture_count_ = 0;
+    for (const MaterialTextureSlot& entry : slots) {
+        material_textures_[material_texture_count_++] = entry;
+    }
+    return ok();
+}
+
+Status FrameBindings::reallocate_pass_set() noexcept {
+    // A DESCRIPTOR SET A COMMAND BUFFER HAS ALREADY BOUND MAY NOT BE UPDATED, and this is the
+    // second regression M11.c task 3.7 found in this layer rather than brought to it.
+    //
+    // The pass set is written from INSIDE a record callback, because the scene colour and the
+    // history are transients whose views do not exist until the graph has realised them — the
+    // comment in `record_post_process` says so. By then `bind_frame_sets` has bound all three sets
+    // in the depth, opaque and transparent passes of the same command buffer, so writing this one
+    // in place invalidates that command buffer: "vkCmdBeginRendering() was called in
+    // VkCommandBuffer X which is invalid because bound VkDescriptorSet Y was destroyed or updated",
+    // and then every later command in the frame repeats it. 776 of those in a `render.pipeline`
+    // run, from `6514c3d` — which added a SECOND mid-frame write, `bind_temporal`, ahead of the one
+    // that was already there — until here.
+    //
+    // A FRESH SET RATHER THAN A BARRIER OR A FLAG: sets are allocated per frame from the frame's
+    // own pool and each of these two writes fills every binding its own pass reads, so taking a new
+    // one costs an allocation out of a pool that is reset each time the slot comes round, and the
+    // set the earlier passes bound stays exactly as they bound it. Every pass binds the sets again
+    // before it draws, so the new handle is the one its draw reads.
+    Expected<rhi::DescriptorSetHandle, Error> allocated =
+        device_->allocate_descriptor_set(pipelines_->set_layout(kPassSet), true);
+    if (!allocated.has_value()) {
+        return make_unexpected(allocated.error());
+    }
+    sets_[kPassSet] = *allocated;
+    return ok();
+}
+
 Status FrameBindings::bind_scene_color(rhi::TextureViewHandle view) noexcept {
     if (!ready_ || sets_[kPassSet].is_null()) {
         return fail(ErrorCode::Unavailable, "frame bindings: no pass set to write");
+    }
+    if (Status fresh = reallocate_pass_set(); !fresh) {
+        return fresh;
     }
     rhi::DescriptorWrite writes[2];
     writes[0].binding = kPassBindingSceneColor;
@@ -281,6 +370,9 @@ Status FrameBindings::bind_temporal(rhi::TextureViewHandle current, rhi::Texture
                                     rhi::TextureViewHandle depth) noexcept {
     if (!ready_ || sets_[kPassSet].is_null()) {
         return fail(ErrorCode::Unavailable, "frame bindings: no pass set to write");
+    }
+    if (Status fresh = reallocate_pass_set(); !fresh) {
+        return fresh;
     }
     rhi::DescriptorWrite writes[kPassBindingCount];
     const rhi::TextureViewHandle views[] = {current, history, velocity, depth};

@@ -356,6 +356,20 @@ rhi::BindlessIndex MaterialTextureTable::slot_of(render::TextureHandle texture) 
     return rhi::kInvalidBindlessIndex;
 }
 
+usize MaterialTextureTable::slots(Span<MaterialTextureSlot> out) const noexcept {
+    usize written = 0;
+    for (const Entry& entry : entries_) {
+        if (written >= out.size()) {
+            break;
+        }
+        MaterialTextureSlot slot;
+        slot.slot = entry.slot;
+        slot.view = entry.view;
+        out[written++] = slot;
+    }
+    return entries_.size();
+}
+
 rhi::DescriptorSetLayoutHandle MaterialTextureTable::layout() const noexcept {
     return device_ != nullptr ? device_->global_texture_table_layout()
                               : rhi::DescriptorSetLayoutHandle{};

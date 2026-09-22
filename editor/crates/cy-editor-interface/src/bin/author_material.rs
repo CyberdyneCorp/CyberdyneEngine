@@ -296,6 +296,15 @@ fn wire_nodes(material: &mut MaterialAuthoring<'_>, n: &Nodes) -> Result<(), Str
 /// two nodes rather than a `lerp` — because that is what dragging boxes around produces, and
 /// `graph.h` is explicit that the front end must produce it so the compiler has something to remove.
 fn author(recipe: &Recipe, editors: &mut SpecialisedEditors) -> Result<String, String> {
+    // CLOSED FIRST, AND THE CLOSE IS THE WHOLE OF THIS LINE'S REASON. Re-opening the domain that is
+    // ALREADY active deliberately preserves what is on the canvas — a failed or repeated open that
+    // emptied the region would lose an author's work to a mis-click, and
+    // `reopening_the_active_material_editor_preserves_authored_nodes` asserts it. This program
+    // authors three materials in one process, so without the close the second material is authored
+    // on top of the first: 20 nodes, then 40, then 60, and the committed canvases stop matching what
+    // the editor produces. Closing between materials is what a person does between two materials,
+    // and it is what makes each one's ordinals start at 1 the way the committed files do.
+    editors.close();
     let session = editors
         .open(Domain::Materials)
         .map_err(|problem| problem.to_string())?;

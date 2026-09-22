@@ -18,6 +18,8 @@ spelling would satisfy the compiler and nothing else.
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 
 class TypeError_(Exception):
     """A C type spelling this generator has no Swift rule for."""
@@ -61,8 +63,19 @@ _POINTERS = {
 }
 
 
-def _named_pointer(spelling: str) -> str | None:
-    """`const CyVar*` -> `UnsafePointer<CyVar>`, `CyVar*` -> `UnsafeMutablePointer<CyVar>`."""
+def _named_pointer(spelling: str, handles: Collection[str] = ()) -> str | None:
+    """`const CyVar*` -> `UnsafePointer<CyVar>`, `CyVar*` -> `UnsafeMutablePointer<CyVar>`.
+
+    A POINTER TO A HANDLE HAS AN OPTIONAL POINTEE, and that is the importer's decision rather than
+    this generator's. `CyServiceSession` is `typedef struct CyServiceSession_T*`, so the C importer
+    presents it as `OpaquePointer` and presents `CyServiceSession*` as
+    `UnsafeMutablePointer<CyServiceSession?>` — every imported pointer-to-pointer carries the inner
+    `?`, because C cannot say the inner pointer is non-null. `UnsafeMutablePointer<CyServiceSession>`
+    is therefore a type the importer never produces, and an overlay spelling it that way does not
+    compile. ABI 1.2's `service_open` is the first entry in this table with a handle
+    out-parameter, and it is where that was found: on a Swift toolchain the generated overlay
+    stopped building, and with it every target that links the Swift module.
+    """
     if not spelling.endswith("*"):
         return None
     pointee = spelling[:-1].strip()
@@ -73,22 +86,29 @@ def _named_pointer(spelling: str) -> str | None:
     if not pointee.startswith("Cy"):
         return None
     kind = "UnsafeMutablePointer" if mutable else "UnsafePointer"
-    return f"{kind}<{pointee}>"
+    inner = f"{pointee}?" if pointee in handles else pointee
+    return f"{kind}<{inner}>"
 
 
-def imported(spelling: str, *, optional: bool = False) -> str:
+def imported(spelling: str, *, optional: bool = False,
+             handles: Collection[str] = ()) -> str:
     """The Swift type the C importer gives `spelling`.
 
     `optional` adds the `?` the importer puts on a nullable pointer. It is a caller's decision
     rather than something derivable, because C has no nullability annotations: the header says which
     entries may return null in prose, and `entries.py` records that per entry.
+
+    `handles` names the ABI's opaque handle typedefs, which the caller reads out of the same
+    description this generator renders. It governs the INNER `?` of a pointer to one — see
+    `_named_pointer` — and is empty by default because a caller that does not pass it is asking
+    about a type that is not one.
     """
     spelling = spelling.strip()
     if spelling in _SCALARS:
         return _SCALARS[spelling]
     if spelling in _POINTERS:
         return _POINTERS[spelling] + ("?" if optional else "")
-    named = _named_pointer(spelling)
+    named = _named_pointer(spelling, handles)
     if named is not None:
         return named + ("?" if optional else "")
     if spelling.startswith("Cy"):

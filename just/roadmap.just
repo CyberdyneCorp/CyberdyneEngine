@@ -17,12 +17,15 @@ roadmap-debts *args:
     @cd "{{root}}" && python3 tools/roadmap/debts.py {{args}}
 
 # Run a milestone's full exit criteria. Usage: just roadmap-milestone <id> [--list] [--ci]
+#   [--jobs n]  independent criteria at a time; 1 is the sequential ledger. Default
+#               CY_LEDGER_JOBS, else min(8, cores). What each criterion holds while it runs is
+#               in tools/roadmap/schedule.py; one whose needs cannot be read runs alone.
 roadmap-milestone *args:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
     if [ -z "{{args}}" ]; then
-        echo "usage: just roadmap-milestone <id> [--list] [--ci] [--json]" >&2
+        echo "usage: just roadmap-milestone <id> [--list] [--ci] [--json] [--jobs n]" >&2
         echo "  milestones with criteria: $(ls tools/roadmap/milestones/*.toml \
             | xargs -n1 basename | sed 's/\.toml$//' | tr '\n' ' ')" >&2
         exit 2

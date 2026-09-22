@@ -41,6 +41,7 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import schedule
 from record import MILESTONES, REPO_ROOT, TIERS, Entry
 
 MILESTONES_DIR = Path(__file__).resolve().parent / "milestones"
@@ -62,7 +63,7 @@ DEFAULT_TIMEOUT_S = 1800
 CRITERION_KEYS = frozenset(
     {"id", "describe", "source", "kind", "run", "path", "expect_tiers", "where", "ci_job",
      "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "known_gap_declared_by",
-     "falsifies", "evaluates", "ci_proof"}
+     "falsifies", "evaluates", "ci_proof", "needs"}
 )
 MILESTONE_KEYS = frozenset({"schema", "id", "name", "artefact", "notes", "criterion"})
 
@@ -146,6 +147,17 @@ class Criterion:
     #: `not provable here`, exactly as before. And it is refused on `requires` (a GPU, a display): no
     #: command constructs a graphics device, and pretending otherwise is the defect upside down.
     ci_proof: dict = field(default_factory=dict)
+    #: WHAT THIS CRITERION HOLDS WHILE IT RUNS, so that the ledger can run independent criteria at
+    #: the same time without producing a flake. A build tree, a Cargo target directory, the one
+    #: graphics device, a port: two criteria that share any of those are not independent.
+    #:
+    #: It is almost always absent, because `schedule.derive` reads the answer off the criterion's own
+    #: body — the `just` recipes it invokes and the build directories it redirects. This field is for
+    #: the criteria whose bodies that reading CANNOT settle, and it is the alternative to guessing:
+    #: an undeclared criterion whose body is underivable runs ALONE, so declaring is how a criterion
+    #: opts into concurrency rather than how it opts out. `schedule.needs` is where the two meet, and
+    #: a declaration always wins over the derivation.
+    needs: list = field(default_factory=list)
 
     @property
     def is_declared_gap(self) -> bool:
@@ -237,6 +249,7 @@ def _criterion(table: dict, source: str) -> Criterion:
     _check_falsifies(table, where)
     _check_ci_proof(table, where)
     _check_evaluates(table, where)
+    _check_needs(table, where)
     return Criterion(**{key: value for key, value in table.items()})
 
 
@@ -398,6 +411,24 @@ def _check_evaluates(table: dict, where: str) -> None:
         seen.add(row)
 
 
+def _check_needs(table: dict, where: str) -> None:
+    """A declared resource is one the scheduler knows how to hold, or it is not a declaration.
+
+    Same rule as `_check_falsifies`, and for the same reason: what is declared is ACTED ON, so it is
+    a token from a closed vocabulary rather than a sentence. `needs = ["build:m1-bench"]` tells the
+    scheduler that this criterion and every other criterion naming that tree take turns; a free-text
+    note saying "uses its own build directory" would tell it nothing and the criterion would go on
+    running alone.
+    """
+    declared = table.get("needs")
+    if declared is None:
+        return
+    try:
+        schedule.check_declaration(declared, where)
+    except schedule.ScheduleError as error:
+        raise CriteriaError(str(error)) from error
+
+
 def evaluators(entries, row: str) -> list:
     """The plan entries whose criterion DECLARES that it evaluates this row.
 
@@ -507,6 +538,14 @@ def _collapse(group: list[tuple[str, Criterion]], target_id: str) -> PlanEntry:
     budget = max(candidate.timeout_s for _, candidate in group)
     if budget != criterion.timeout_s:
         criterion = replace(criterion, timeout_s=budget)
+    # THE UNION, NOT THE FIRST DECLARER'S — and unlike the budget, this direction is a safety
+    # property. Two ledgers declaring the same check may describe what it holds differently; taking
+    # the first would let the other milestone's knowledge that the check also binds a port, or also
+    # drives Cargo, disappear into the collapse and the check would then run beside something it
+    # shares that with.
+    held = sorted({need for _, candidate in group for need in candidate.needs})
+    if held != list(criterion.needs):
+        criterion = replace(criterion, needs=held)
     return PlanEntry(criterion=criterion, declared_by=milestones,
                      permanent=milestones[0] != target_id)
 

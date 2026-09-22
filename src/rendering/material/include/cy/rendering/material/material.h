@@ -80,6 +80,15 @@ enum class ParameterKind : u8 {
     Count,
 };
 
+/// The value a `ParameterKind::Texture` carries when nothing is bound in that slot.
+///
+/// `rhi::kInvalidBindlessIndex`, and NOT ZERO — spelled here rather than included, because this
+/// module is below the RHI and may not name it. Zero is a perfectly good slot of the global table,
+/// so a zeroed block would name whatever texture happens to be resident at slot 0; a shader that
+/// reads this value knows the slot is empty and samples nothing. `cy/frame.slang`'s
+/// `kCyNoMaterialTexture` is the same number on the shader side.
+inline constexpr u32 kUnboundTexture = ~0U;
+
 [[nodiscard]] const char* parameter_kind_name(ParameterKind kind) noexcept;
 [[nodiscard]] u32 parameter_byte_size(ParameterKind kind) noexcept;
 

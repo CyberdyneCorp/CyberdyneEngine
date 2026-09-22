@@ -23,6 +23,9 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `falsifiability.toml` | Generated. What the ladder has shown can fail, and the list — which only shrinks — of what it has not. |
 | `requirements.py` | Every requirement of a capability row against the test, gate or recorded exemption that answers it. `just quality-requirements <row>…`. |
 | `requirements-coverage.toml` | Hand-written. The map `requirements.py` reads; every entry is resolved against the tree, so a renamed suite turns the row red. |
+| `schedule.py` | What each criterion HOLDS while it runs — a build tree, Cargo, the device, a port — and the scheduler that therefore runs independent ones at the same time. A criterion whose needs it cannot read runs alone. |
+| `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Six option sets between the five criteria that were half this ladder's clock. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
+| `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
 
@@ -393,6 +396,222 @@ M1 is the first milestone to have to obey that rule, and it did not: two of its 
 findings against the `lint` gate M0 closed with, which turned `just roadmap-milestone m0` red. So the
 rule became something the closing recipe executes rather than something a reviewer is expected to
 remember. **How it executes changed at M5**, and the section below is why.
+
+## Independent criteria run at the same time
+
+`just roadmap-milestone <id>` evaluates its criteria **concurrently, up to a cap**, and M11.c's
+ledger is 440 distinct checks of which 111 finish in under a second. Before this, every one of those
+111 waited its turn behind a twenty-five-minute rebuild it has nothing to do with: `criteria.evaluate`
+runs one criterion per `subprocess.run` and the caller was a plain `for` loop, on a machine with
+twenty-four cores.
+
+**The hard part is not running them at once; it is knowing which are independent.** Some criteria
+configure and build a CMake tree, some run `ctest` in one, some drive Cargo, some want the one
+graphics device or the one display, some bind a port, some write into the working tree. Two that
+share any of those are not independent, and running them together produces a **flake** — which here
+is strictly worse than being slow, because a verdict nobody can reproduce is a verdict nobody can
+act on.
+
+So **a criterion declares what it holds**, and `schedule.py` holds it exclusively for the duration:
+
+```toml
+[[criterion]]
+id = "job-throughput"
+run = 'd="${CY_BUILD_DIR:-build}/m1-bench"; CY_BUILD_DIR="$d" just test-bench-jobs --profile profile'
+needs = ["build:m1-bench"]
+```
+
+A token is a resource class — `build`, `cargo`, `gpu`, `display`, `net`, `tree` — optionally with an
+instance, so `build:m1-bench` and `build:off-ml` are two different trees and do not wait for each
+other. `needs` is validated where `falsifies` and `evaluates` are, against a closed vocabulary and
+for the same reason: **what is declared is acted on**, so it is a token rather than a sentence.
+
+Almost no criterion declares one, because `schedule.derive` reads the answer off the criterion's own
+body — but **only through facts it can see with certainty**:
+
+- the `just` recipes it invokes, each classified in `RECIPE_NEEDS` (`build-engine` and every `test-*`
+  recipe hold a build tree, because [every test recipe builds first](../../just/test.just);
+  `quality-layers` holds nothing; `roadmap-falsify` can reach anything);
+- the build-directory redirections it performs, each of which has to match a recognised idiom —
+  `${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ml}` is one, and `CY_BUILD_DIR="$base/agree-$p"` inside a loop
+  is deliberately not;
+- its own `requires = "gpu"` or `requires = "display"`.
+
+**Everything else is unknown, and an unknown criterion runs alone.** A shell function, a program not
+in the table, a heredoc fed to an interpreter, a redirection into the working tree, a `rm`/`mkdir`/
+`tee` whose target is an argument — each makes the body underivable, and an underivable criterion is
+a barrier: nothing runs beside it, and it does not start until the pool has drained. Guessing is what
+produces the flake, so nothing here guesses, and **declaring is how a criterion opts *into*
+concurrency** rather than out of it. On M11.c's 440:
+
+| | criteria |
+|---|---|
+| hold nothing — run with anything | 86 |
+| share the ledger's own build tree | 223 |
+| hold a build tree of their own (`off-ml`, `m1-bench`, `sanitize`, …) | 22 |
+| hold Cargo, a port, the device or the display | 28 |
+| **underivable — run alone** | **81** |
+
+**The order of results does not change.** A reader compares one ledger run against the previous one
+by eye, line by line, so the report is part of the contract: `schedule.run` returns one result per
+entry in ledger order whatever order they finished in, and `roadmap._evaluate_plan` holds a finished
+criterion's block back until every earlier one has been printed. Progress goes to stderr; the ledger
+itself is on stdout and stays byte-comparable between a sequential run and a parallel one.
+
+`--jobs 1` is the loop this replaced, kept so the two can be compared. `--jobs n` sets the cap;
+without it, `CY_LEDGER_JOBS` or `min(8, cores)`.
+
+### Proving it is safe, not merely faster
+
+A speedup that changes one verdict is a regression, so the claim is checked in two places rather
+than asserted.
+
+`selftest.py` holds the scheduler's rules against fixtures, in milliseconds, on every pull request:
+results come back in ledger order at every cap; nothing ever runs beside something it shares a
+resource with; the cap is respected; a criterion that runs alone really does run alone and is a
+barrier rather than starving; a declaration beats the derivation; every shape the derivation must
+refuse is refused; every recipe `RECIPE_NEEDS` classifies is still a recipe the justfile declares;
+and — the rule that would otherwise rot — **the derivation still reads most of the corpus**, because
+a derivation that quietly stopped working would make every criterion exclusive, which is *correct*
+and silently sequential.
+
+`ledger_equivalence.py` runs the real thing:
+
+```
+python3 tools/roadmap/ledger_equivalence.py m11c --jobs 8
+```
+
+It runs the same ledger twice against the same tree, once with `--jobs 1` and once in parallel, and
+compares the sequence of criterion labels, each criterion's verdict, and the whole report as text
+with durations masked. Fixtures cannot show that the corpus's own bodies were classified correctly,
+and the corpus cannot be run on every pull request; both are needed.
+
+**Governed by**: `delivery-roadmap`, `developer-workflow-and-just`.
+
+## Five criteria were half the ladder, and they were rebuilding each other's work
+
+Five criteria configure and build the whole engine with a different option set each —
+`m8c:feature-options-off`, `m8c:ml-option-off`, `m9:networking-option-off`,
+`m9:networking-defaults-on` and `m9:multiplayer-profiles-agree`. They are the most expensive five
+checks on the ladder by a wide margin — **98.6 minutes measured here**, against the 1.77 hours one
+whole 435-criterion evaluation took at `2ca9e15` — and between them they performed **seven full
+builds**.
+
+The compiling was never the cost. These three were:
+
+* **Seven builds for six configurations.** `networking-defaults-on` configures with no `-D` at all,
+  and so does the Development half of `multiplayer-profiles-agree` — one configuration compiled
+  twice, into two directories, because the two criteria live in two ledger files and neither could
+  see the other's.
+* **A different directory every run.** Every body spelled its tree
+  `"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ml}"`, hanging it under whatever the caller pointed
+  `CY_BUILD_DIR` at — so a run under `build/m11c-ci` and the next under `build/m11d-crit` shared
+  nothing and every evaluation was a cold build of the lot. **With `CY_BUILD_DIR` unset it was worse
+  than cold**: the expression collapses to the empty string, `just build-engine` falls back to
+  `build/dev`, and the option-off criteria reconfigured the developer's own tree with CY_VFX, then
+  CY_ML, then CY_NETWORKING off — each forcing a full rebuild of the last one's work, and the last
+  leaving `build/dev` in a state nobody asked for.
+* **`rm -rf` on a tree that only needed a clean cache.** `networking-defaults-on` deleted its whole
+  build tree every run. Its claim is about what a configure with no `-D` produces, and a remembered
+  cache cannot answer that — but an object file remembers nothing about an option's default, so
+  deleting them bought a full compile of the engine for information only the cache holds.
+
+`matrix.py` is the answer to all three: **one stable tree per distinct configuration**, under
+`build/ledger-matrix/`, named in one table that also says which criteria need each row.
+
+```
+$ python3 tools/roadmap/matrix.py list
+dev-default      dev    no -D at all                 needed by m9:networking-defaults-on,
+                                                               m9:multiplayer-profiles-agree
+debug-default    debug  no -D at all                 needed by m9:multiplayer-profiles-agree
+off-vfx          dev    -D CY_VFX=OFF                needed by m8c:feature-options-off
+off-vulkan       dev    -D CY_RENDERER_VULKAN=OFF …  needed by m8c:feature-options-off
+off-ml           dev    -D CY_ML=OFF                 needed by m8c:ml-option-off
+off-networking   dev    -D CY_NETWORKING=OFF         needed by m9:networking-option-off
+```
+
+### What sharing may not mean here
+
+Each of these criteria asserts **that the engine still configures and builds with an option off**.
+That claim IS the build, so the matrix may not stand in for it. It does not cache an answer, does
+not skip a configuration because a similar one passed, and never lets a criterion read a manifest
+in place of a compiler: `ensure` runs `just build-engine` for every row it is asked for, **every
+time it is asked**, and CMake and Ninja decide what is out of date — the rule `just/build.just`
+already states for the recipe itself. What changed is *where* the build happens, not *whether*.
+
+The one thing the matrix deletes is `dev-default`'s `CMakeCache.txt`, and only that row's, because
+only that row carries a claim about what CMake computes when nothing is remembered. `CMakeFiles/` is
+deliberately left alone: `cmake --fresh` would take it too, and under the Ninja generator that
+directory holds the object files of every top-level target.
+
+### Measured, on this workstation, both ledgers run in the same window
+
+`criteria.evaluate` timed every row — the ledger's own clock, not a stopwatch around it. Both
+columns were evaluated **at the same time on the same machine**, so they saw the same contention:
+the criteria as they were, into `build/before-matrix`, and the criteria over the matrix, into a
+matrix of their own. Every row PASSED in both.
+
+**A matrix that does not exist yet** — which, before this change, is EVERY run, because
+`${CY_BUILD_DIR}/off-ml` follows the caller's build directory and the caller's build directory is
+new each time (`build/m11c-final`, `build/m11c-ci`, `build/m11d-crit`…):
+
+| criterion | as it was | over the matrix |
+|---|---|---|
+| `m8c:feature-options-off` | 2055.9 s | **1585.0 s** |
+| `m8c:ml-option-off` | 1064.6 s | **852.7 s** |
+| `m9:networking-defaults-on` | 781.1 s | **780.7 s** |
+| `m9:networking-option-off` | 863.6 s | **806.8 s** |
+| `m9:multiplayer-profiles-agree` | 1151.5 s | **735.3 s** |
+| **total** | **5916.7 s — 98.6 min** | **4760.6 s — 79.3 min** |
+
+Seven builds became six, and the two `feature-options-off` needs are built side by side instead of
+one after the other. `networking-defaults-on` is unchanged here and should be: on an empty tree
+there is nothing for `rm -rf` to throw away.
+
+**A matrix that already exists**, which is what the stable location buys and what every run after
+the first one is:
+
+| criterion | as it was | over the matrix |
+|---|---|---|
+| `m8c:feature-options-off` | 16.4 s | **7.2 s** |
+| `m8c:ml-option-off` | 16.9 s | **16.7 s** |
+| `m9:networking-defaults-on` | **516.8 s** | **30.8 s** |
+| `m9:networking-option-off` | 16.4 s | **16.7 s** |
+| `m9:multiplayer-profiles-agree` | 20.9 s | **27.5 s** |
+| **total** | **587.4 s — 9.8 min** | **98.8 s — 1.6 min** |
+
+Those two columns were taken in matrices of their own so that neither could warm the other. The
+same five, run afterwards over the real `build/ledger-matrix` with nothing set in the environment at
+all — which is what a ledger run finds — came to **104.2 s**, all green.
+
+The 516.8 s is the `rm -rf`, and it is the whole of the difference: every other row was already
+cheap once its tree existed, and no run before this change ever got to find that out.
+
+So the five cost **98.6 minutes on a machine that has never evaluated this ledger, and 1.6 minutes
+on one that has** — against 98.6 minutes every single time, which is what a per-run build directory
+was buying.
+
+### Each of the five was broken, and each went red
+
+Not derived from the text: declared in the ledger as `[criterion.falsifies]`, applied to the working
+tree by `falsify.py`, and rebuilt against a real matrix. Watched by hand first, at the same targets:
+
+| criterion | what was broken | what the ledger said |
+|---|---|---|
+| `feature-options-off` | `CY_VFX` dropped from samples/08-vertical-slice's guard | red in 6.9 s — `Target "cy_sample_vertical-slice" links to cy::vfx but the target was not found`, the configure error naming the artefact that this criterion's own description forbids |
+| `ml-option-off` | a `static_assert(false)` in `src/ecs/src/entity.cpp`, which the CY_ML=OFF tree compiles | red in 8.2 s |
+| `networking-option-off` | `#error` unless `CY_NETWORKING` in `src/replay/src/readers.cpp` — the record put behind the transport's option | red in 8.0 s |
+| `multiplayer-profiles-agree` | one line of output behind `#if defined(__OPTIMIZE__)` | red in 31.0 s — `0a1 > mutation.optimised = 1`, `Debug and Development disagree about the session`. BOTH trees built; what failed is the comparison, which is the half a shared matrix could have quietly collapsed |
+| `networking-defaults-on` | `CY_NETWORKING|ON|` → `|OFF|` in cmake/features.cmake | red in 36.9 s — `a default configure left CY_NETWORKING off: CY_NETWORKING:BOOL=OFF`. That tree's cache said `ON` a minute earlier, which is the deletion of `CMakeCache.txt` doing exactly the work `rm -rf` used to |
+
+Every mutation was restored and md5-verified against the bytes taken before it, and `git status` was
+clean for the file after each one.
+
+Then the same five were put through `falsify.py` itself — `prove --build-dir build/ledger-matrix
+--mutate-the-tree --record`, which runs each criterion unmutated against a real matrix, applies the
+declared mutation to the working tree, requires RED, restores, and requires GREEN again. All five
+came back `proven against a built tree` and are recorded that way: **the unproven list shrank by
+five**, which is the only direction it is allowed to move.
 
 ## A ledger is flat, and every distinct criterion runs once
 

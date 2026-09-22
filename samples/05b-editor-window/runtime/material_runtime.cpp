@@ -1,7 +1,9 @@
 #include "material_runtime.h"
 
 #include <cy/backends/shader/compiler.h>
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
 #include <cy/backends/shader/slang/slang_compiler.h>
+#endif
 #include <cy/backends/shader/source.h>
 #include <cy/core/assets/vfs.h>
 #include <cy/rendering/material/slang_program.h>
@@ -376,8 +378,8 @@ struct MetalMaterialRuntime::Preview {
         u64 artefact = 0;
     };
 
-    Preview(Allocator& allocator, u64 identity) noexcept
-        : bindings(allocator), identity(identity) {}
+    Preview(Allocator& allocator, u64 preview_identity) noexcept
+        : bindings(allocator), identity(preview_identity) {}
     Preview(Preview&&) noexcept = default;
     Preview& operator=(Preview&&) noexcept = default;
     Preview(const Preview&) = delete;

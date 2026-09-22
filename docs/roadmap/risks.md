@@ -225,6 +225,40 @@ five rungs. **Each rung's spike runs at the head of its rung rather than inside 
 only deliverable is a decision, consumed in that rung's `design.md` where the rows depending on it
 can read it.
 
+**M11.c's has run, and it came back "no" — four of six junctions close and the two that do not are
+the two ENDS of the path.** Run on an RTX 5060 against `build/m11c-spike` at commit `cfb989c`; the
+numbers, the transcripts, the mutations and the five captures are
+`~/cyberdyne-spikes/m11c-material-spike/RESULT.txt`. **Author** was REFUSED —
+`SpecialisedEditors::open(Domain::Materials)` had no authoring vocabulary to offer — and **bind** was
+ABSENT: nothing in the tree bound the bindless material table, so the spike had to write the binding
+itself. **Encode** was partial, naming BC7 and delivering uncompressed RGBA8. The middle is the
+best-finished thing in the path: a graph carrying every wart and the same material written as text
+compile to the *same* cook key, `0x2e810237312fe3e5`, and to 3065 bytes of Slang that `slangc`
+accepts against the shipping standard library with no edit.
+
+**So the bad answer's cost was paid as scoped, and it was paid as a rung boundary rather than as a
+fix.** Making a material authorable needs three pieces in two languages, and the second of them runs
+into a prohibition written before this rung started — `specialised/graph.rs` assigns writing
+`.cygraph` from Rust to M11.e — so the `material.*` editor commands and the front end that saves
+through them **moved to M11.e**, beside the `.cygraph` writing they depend on. M11.c kept and built
+what did not need them: `src/graph/material/`'s 25 node types, `Domain::Materials` opening rather
+than refusing, and an interchange that hands the engine's own `write_graph` the canonical file
+instead of adding a second writer of it. The rung's own sentence was corrected rather than left
+standing: the artefact is authored on the editor's authoring MODEL, not in a material editor panel,
+and `m11c:the-shot-does-not-overclaim-the-editor` is the criterion that goes red the day that stops
+being true.
+
+**The most useful thing in it is the defect no reading would have found.** The same frame with eight
+of a texture's nine cooked mip levels never uploaded is **byte-identical** — mean |Δ| 0.000/255,
+and 0.00% of texels differ — because the prelude's `cy_material_sample` calls
+`cyMaterialSampleTextureLevel(..., 0.0)`, an *explicit* level, since a material program is compiled
+before it is placed in a stage. A mip pipeline could therefore have been built, cooked, shipped and
+photographed without one level below the top ever being read, and no image comparison in the rung
+would have said so.
+
+`openspec/changes/implement-m11c-image/design.md` §1.3b is the measurement in full and §1.3c is the
+scope move.
+
 **M11.d's has run, and it produced a sixth rung.** Its second question — can a hosted runner present
 a graphics device at all — was answered by two throwaway workflow runs that created a device on each
 leg, drew, read the pixel back and presented. Every allocated leg has a device and **not one of them

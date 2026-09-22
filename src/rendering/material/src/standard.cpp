@@ -119,6 +119,22 @@ Status apply_standard_defaults(const MaterialProgram& program, MaterialTable& ta
         !set) {
         return set;
     }
+    // AND EVERY TEXTURE SLOT SAYS "NOTHING HERE", which is what the comment at the top of this
+    // function has always claimed and what the block did not say. A slot left at the zero of a
+    // fresh block names SLOT 0 OF THE GLOBAL TEXTURE TABLE — a real, resident texture on any frame
+    // that has one — so a default material would have sampled whichever texture happened to be
+    // uploaded first as soon as a frame started reading these slots. `cy/frame.slang` does now.
+    // Written by kind rather than by a list of identifiers: a texture parameter added to the
+    // standard material later is defaulted by this loop without anybody remembering to add it.
+    for (const MaterialParameter& parameter : program.parameters()) {
+        if (parameter.kind != ParameterKind::Texture) {
+            continue;
+        }
+        if (Status set = table.set_texture(program, index, parameter.id, kUnboundTexture); !set) {
+            return set;
+        }
+    }
+
     // A tiling of (1, 1) and an offset of (0, 0): the identity, spelled rather than assumed,
     // because a zeroed block would mean a tiling of zero and a material that samples one texel.
     return table.set_vec4(program, index, ids.uv_tiling_offset, Vec4{1.0F, 1.0F, 0.0F, 0.0F});

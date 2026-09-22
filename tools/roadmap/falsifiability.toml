@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 240 proven, 429 not yet shown able to fail.
+# 246 proven, 424 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -839,9 +839,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11c"
 criterion = "layering"
 digest = "af09d70ad7f7be87"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 2): cd \"/repo\" && python3 tools/layercheck/layercheck.py … error: Recipe `quality-layers` failed on line 115 with exit code 2"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -930,6 +930,14 @@ digest = "2c77edc2a0fde575"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'config.device_supports_ray_tracing = capabilities.has(rhi::Capability::RayTracing);' in src/rendering/raytracing/src/capability.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "remaining-rows-at-complete-grade"
+digest = "7a666c40354f6cdc"
+verdict = "proven"
+mutation = "rename-token 'vfx_compiler' in src/vfx/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -1725,6 +1733,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8c"
+criterion = "feature-options-off"
+digest = "2e978516cb96be71"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'if(CY_VFX)' in src/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (exit 1: off-vulkan       FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m8c"
 criterion = "layering"
 digest = "013d16d0f90d9149"
 verdict = "red in the tree"
@@ -1738,6 +1754,14 @@ digest = "85c0f6b07a2bc442"
 verdict = "proven"
 mutation = "delete-path in openspec/changes/**/*m9*/proposal.md (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8c"
+criterion = "ml-option-off"
+digest = "1dd8b3128d750d56"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'if(CY_ML)' in src/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (exit 1: off-ml           FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m8c"
@@ -1858,6 +1882,30 @@ digest = "286b46af20c2714e"
 verdict = "proven"
 mutation = "delete-path in openspec/changes/**/*m10*/proposal.md (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m9"
+criterion = "multiplayer-profiles-agree"
+digest = "ee7ad4b8243c6ba6"
+verdict = "proven against a built tree"
+mutation = "delete-path in samples/09-multiplayer/net.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (exit 1: dev-default      FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m9"
+criterion = "networking-defaults-on"
+digest = "4f62c753002db9ef"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'CY_NETWORKING|ON|' in cmake/features.cmake (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (exit 1: a default configure left CY_NETWORKING off:), and green again once restored"
+
+[[proof]]
+ledger = "m9"
+criterion = "networking-option-off"
+digest = "bd7c3a49463c1d4d"
+verdict = "proven against a built tree"
+mutation = "delete-path in src/replay/src/readers.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (exit 1: off-networking   FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m9"
@@ -4813,14 +4861,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
-criterion = "feature-options-off"
-digest = "99768e8cfd0507da"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8c"
 criterion = "firewall-cook"
 digest = "8a6093c6227f9fe6"
 verdict = "not provable here"
@@ -4895,14 +4935,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 ledger = "m8c"
 criterion = "ml-onnxruntime"
 digest = "c264f79f7746d4ea"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8c"
-criterion = "ml-option-off"
-digest = "322ff0481cd161fa"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
@@ -5205,14 +5237,6 @@ detail = "it needs a built tree ('just run'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
-criterion = "multiplayer-profiles-agree"
-digest = "cb2fef5f7d560ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m9"
 criterion = "multiplayer-recipe"
 digest = "242cbc65190d5d0a"
 verdict = "not provable here"
@@ -5242,22 +5266,6 @@ digest = "445f45b4ee9f43f5"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m9"
-criterion = "networking-defaults-on"
-digest = "106b0fef9df72b1d"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m9"
-criterion = "networking-option-off"
-digest = "781f4b8b4be311a0"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"

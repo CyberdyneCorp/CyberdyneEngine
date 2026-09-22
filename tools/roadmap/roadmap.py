@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import criteria as criteria_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import record as record_module  # noqa: E402
+import schedule as schedule_module  # noqa: E402
 
 OK_EXIT, FAILED_EXIT, DATA_EXIT = 0, 1, 2
 FAILURE_OUTPUT_LINES = 30
@@ -155,13 +156,44 @@ def command_milestone(arguments: argparse.Namespace) -> int:
         return _list_criteria(plan, arguments.json)
 
     entries = record_module.load(arguments.record)
-    _print_plan(plan)
-    results = [_evaluate_and_report(entry, entries, arguments.ci) for entry in plan.entries]
+    jobs = max(1, arguments.jobs if arguments.jobs else schedule_module.default_jobs())
+    _print_plan(plan, jobs)
+    results = _evaluate_plan(plan, entries, arguments.ci, jobs)
     print()
     return _summarise(plan, results, arguments.json)
 
 
-def _print_plan(plan: criteria_module.Plan) -> None:
+def _evaluate_plan(plan: criteria_module.Plan, entries, force_ci: bool, jobs: int) -> list:
+    """Every criterion evaluated, and every result PRINTED IN LEDGER ORDER whatever order it arrived.
+
+    A reader compares a ledger run against the previous one by eye, line by line, so the report is
+    part of the contract and not decoration: criterion n's block is printed after criterion n-1's
+    block and before criterion n+1's, with the same text, however the scheduler interleaved them.
+    `report` therefore holds a finished result until every earlier one has been printed.
+    """
+    blocks: dict[int, str] = {}
+    next_to_print = 0
+
+    def evaluate(entry):
+        return criteria_module.evaluate(entry.criterion, entries, force_ci)
+
+    def report(index, entry, result):
+        nonlocal next_to_print
+        blocks[index] = _render(entry, result)
+        while next_to_print in blocks:
+            print(blocks.pop(next_to_print), end="", flush=True)
+            next_to_print += 1
+
+    return schedule_module.run(plan.entries, evaluate, jobs,
+                               started=_announce if jobs > 1 else None, finished=report)
+
+
+def _announce(entry: criteria_module.PlanEntry) -> None:
+    """Progress, on stderr. The ledger's own text is on stdout and stays byte-comparable."""
+    print(f"[ledger] start {entry.label}", file=sys.stderr, flush=True)
+
+
+def _print_plan(plan: criteria_module.Plan, jobs: int = 1) -> None:
     """What is about to run, and — the point of the flattening — what is NOT about to run twice."""
     print(f"{plan.milestone.id.upper()} — {plan.milestone.name}: "
           f"{len(plan.entries)} exit criteria, each evaluated once")
@@ -173,6 +205,11 @@ def _print_plan(plan: criteria_module.Plan) -> None:
               f"no ledger runs another")
     if plan.milestone.artefact:
         print(f"artefact: {plan.milestone.artefact}")
+    if jobs > 1:
+        alone = sum(1 for entry in plan.entries
+                    if schedule_module.EXCLUSIVE in schedule_module.needs(entry.criterion))
+        print(f"  {jobs:>3} at a time, each holding what it declares or what its body shows; "
+              f"{alone} run alone")
     print()
 
 
@@ -187,26 +224,26 @@ def _check_criteria_are_gated(plan: criteria_module.Plan, gate_set: gates_module
             )
 
 
-def _evaluate_and_report(entry: criteria_module.PlanEntry, entries,
-                         force_ci: bool) -> criteria_module.Result:
+def _render(entry: criteria_module.PlanEntry, result: criteria_module.Result) -> str:
+    """One criterion's block of the ledger, as text, so that it can be held back and printed in
+    order."""
     criterion = entry.criterion
-    print(f"==> {entry.label:<24} {criterion.command}", flush=True)
-    result = criteria_module.evaluate(criterion, entries, force_ci)
+    lines = [f"==> {entry.label:<24} {criterion.command}"]
     if result.status == criteria_module.OK:
-        print(f"    ok               {criterion.describe}  ({result.seconds:.1f} s)")
+        lines.append(f"    ok               {criterion.describe}  ({result.seconds:.1f} s)")
     elif result.status == criteria_module.NOT_EVALUATED:
-        print(f"    not evaluated    {result.detail}")
+        lines.append(f"    not evaluated    {result.detail}")
     else:
-        _print_failure(entry, result)
-    return result
+        lines.extend(_failure_lines(entry, result))
+    return "".join(f"{line}\n" for line in lines)
 
 
-def _print_failure(entry: criteria_module.PlanEntry, result: criteria_module.Result) -> None:
-    print(f"    FAILED           {result.detail}  ({result.seconds:.1f} s)")
-    print(f"    {result.criterion.describe}")
+def _failure_lines(entry: criteria_module.PlanEntry, result: criteria_module.Result) -> list[str]:
+    out = [f"    FAILED           {result.detail}  ({result.seconds:.1f} s)",
+           f"    {result.criterion.describe}"]
     if len(entry.declared_by) > 1:
-        print(f"    declared by {', '.join(name.upper() for name in entry.declared_by)} — "
-              f"one failure, not one per milestone")
+        out.append(f"    declared by {', '.join(name.upper() for name in entry.declared_by)} — "
+                   f"one failure, not one per milestone")
     lines = [line for line in result.output.splitlines() if line.strip()]
     # THE LAST LINES ARE NOT WHERE THE FAILURE IS NAMED, and printing only those cost M5.5's gate a
     # day: `just test-all` deliberately runs every suite after a failing one and prints its verdict
@@ -220,11 +257,12 @@ def _print_failure(entry: criteria_module.PlanEntry, result: criteria_module.Res
     previous: int | None = None
     for index in keep:
         if previous is not None and index > previous + 1:
-            print(f"      | ... {index - previous - 1} line(s)")
-        print(f"      | {lines[index]}")
+            out.append(f"      | ... {index - previous - 1} line(s)")
+        out.append(f"      | {lines[index]}")
         previous = index
     if keep and keep[0] > 0:
-        print(f"      | reproduce with: {result.criterion.command}")
+        out.append(f"      | reproduce with: {result.criterion.command}")
+    return out
 
 
 #: Substrings that mean "this line names what failed". Deliberately small: a wider net would bury the
@@ -258,6 +296,12 @@ def _list_criteria(plan: criteria_module.Plan, as_json: bool) -> int:
         criterion = entry.criterion
         where = "CI only" if criterion.where == "ci" else criterion.requires or "here"
         print(f"  {entry.label:<24} {where:<9} {criterion.ci_job:<16} {criterion.source}")
+        # WHAT IT HOLDS IS PART OF THE LISTING, because it is the one thing here that is DERIVED
+        # rather than written down, and a derivation nobody can read is a derivation nobody checks.
+        # `declared` marks the criteria that said it themselves.
+        held = schedule_module.needs(criterion)
+        source = "declared" if criterion.needs else "derived"
+        print(f"  {'':<24} holds {', '.join(held) or 'nothing'} ({source})")
         print(f"  {'':<24} {criterion.describe}")
     return OK_EXIT
 
@@ -293,6 +337,8 @@ def _criterion_document(entry: criteria_module.PlanEntry, result) -> dict:
         "ci_job": criterion.ci_job,
         "known_gap": criterion.known_gap,
         "known_gap_closes": criterion.known_gap_closes,
+        "needs": list(schedule_module.needs(criterion)),
+        "needs_declared": bool(criterion.needs),
         "status": result.status if result else None,
         "detail": result.detail if result else "",
     }
@@ -435,6 +481,9 @@ def _parser() -> argparse.ArgumentParser:
     milestone.add_argument("--ci", action="store_true",
                            help="also run criteria marked as requiring continuous integration")
     milestone.add_argument("--json", action="store_true", help="machine-readable output")
+    milestone.add_argument("--jobs", type=int, default=0,
+                           help="how many criteria to evaluate at once; 1 is the sequential ledger "
+                                "(default: CY_LEDGER_JOBS, else min(8, cores))")
     milestone.add_argument("--record", type=Path, default=record_module.DEFAULT_RECORD)
     milestone.set_defaults(handler=command_milestone)
 

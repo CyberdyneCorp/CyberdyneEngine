@@ -46,6 +46,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
+#include <cy/rendering/pipeline/frame_pipelines.h>
 #include <cy/servers/render/server.h>
 
 namespace cy::rendering::pipeline {
@@ -93,6 +94,18 @@ public:
     /// The slot a shader indexes `cyMaterialTextures[]` with, or `kInvalidBindlessIndex` for a
     /// texture this table has not uploaded.
     [[nodiscard]] rhi::BindlessIndex slot_of(render::TextureHandle texture) const noexcept;
+
+    /// Every resident texture as a (slot, view) pair, written into `out`; the return is how many
+    /// are resident, so a caller that sized `out` too small can tell.
+    ///
+    /// WHAT THE FRAME'S OWN SET 0 NEEDS. `set()` above is the DEVICE's table and is what a program
+    /// whose set 0 is only that table binds — the material probe of `render.material_binding` is
+    /// one. The engine's forward pipeline cannot: its set 0 also carries `cy/globals.slang`'s
+    /// block at binding 0, and a pipeline binds one set per index. So `FrameBindings` writes the
+    /// same views, at the same slots, into the set that carries both — see
+    /// `FrameBindings::set_material_textures`. The slots are this table's either way, which is
+    /// what stops the two descriptions of one texture from disagreeing.
+    [[nodiscard]] usize slots(Span<MaterialTextureSlot> out) const noexcept;
 
     /// The two halves a pipeline needs: the layout to name as set `rhi::kGlobalTableSet`, and the
     /// set to bind there. Both are the DEVICE's — this module does not own them and does not

@@ -487,11 +487,10 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
             usize choice_start = 0;
             for (usize choice = 0; choice < choice_count; ++choice) {
                 const usize separator = property.choices.find('|', choice_start);
-                const usize choice_end = separator == std::string_view::npos
-                                             ? property.choices.size()
-                                             : separator;
-                if (Status status = text(property.choices.substr(choice_start,
-                                                                  choice_end - choice_start));
+                const usize choice_end =
+                    separator == std::string_view::npos ? property.choices.size() : separator;
+                if (Status status =
+                        text(property.choices.substr(choice_start, choice_end - choice_start));
                     !status) {
                     return status;
                 }

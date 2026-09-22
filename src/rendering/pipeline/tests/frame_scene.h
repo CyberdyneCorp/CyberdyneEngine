@@ -118,6 +118,23 @@ public:
 
     [[nodiscard]] Status render(RecordMode mode, AssemblyReport& out) noexcept;
 
+    /// Point every material's base colour at one slot of the global texture table, and declare to
+    /// the frame where a material's slot word lives. M11.c task 3.7.
+    ///
+    /// `resident` is what `MaterialTextureTable::slots()` reported: the (slot, view) pairs the
+    /// frame's own set 0 has to name, because that set carries the globals block at binding 0 and
+    /// the table at binding 1 and a pipeline binds one set per index.
+    ///
+    /// Called with a different slot, this is the NEGATIVE CONTROL the whole comparison rests on:
+    /// the same scene, the same lights, the same material constants, and a different texture.
+    [[nodiscard]] Status bind_material_texture(rhi::BindlessIndex slot,
+                                               Span<const MaterialTextureSlot> resident) noexcept;
+    /// What the last `bind_material_texture` declared, or `kNoMaterialTexture` — which is what a
+    /// scene that never called it uploads, and what makes its picture the picture it always was.
+    [[nodiscard]] u32 material_texture_offset() const noexcept {
+        return material_texture_offsets_[0];
+    }
+
     [[nodiscard]] const RecorderReport& recorded() const noexcept { return recorder_.report(); }
     [[nodiscard]] const particles::ParticleReport& particle_report() const noexcept {
         return effect_.report();
@@ -169,6 +186,13 @@ private:
     /// exactly what a windowed host does with its swapchain image.
     rhi::TextureHandle output_;
     u32 material_offsets_[4] = {0, 0, 0, 0};
+    /// Word offsets of the material block's texture slots; x is the base colour texture's. "None"
+    /// until `bind_material_texture` says otherwise.
+    u32 material_texture_offsets_[4] = {kNoMaterialTexture, kNoMaterialTexture, kNoMaterialTexture,
+                                        kNoMaterialTexture};
+    /// The slots `create_materials` allocated, in order, rather than the assumption that a fresh
+    /// table hands out 0, 1, 2, 3.
+    u32 material_slots_[kMaterialCount] = {};
     Mat4 view_ = Mat4::identity();
     Mat4 projection_ = Mat4::identity();
     bool read_back_ = false;

@@ -86,6 +86,25 @@ samplers, destroyed — and never placed in a pipeline layout or bound in a comm
 `cy/material.slang` declares the table at **set 0, binding 1** with a separate sampler at binding 2.
 Nothing outside `src/backends/rhi/` names `DescriptorKind::Bindless` at all.
 
+**AND THE BACK IS NOW CLOSED FOR THE ENGINE'S OWN FRAME — task 3.7, reported here because the rows
+above read this section.** The paragraph above is the state the spike measured; what it names is now
+true in the other direction, in two steps that were measured rather than assumed. Junction 4 closed
+first: the device's table reaches a pipeline layout and a command buffer, `MaterialTextureTable`
+makes cooked pixels resident in it, and `render.material_binding` samples through it. What stayed
+open was the middle — `src/rendering/pipeline/`'s set 0 carried `cy/globals.slang`'s block at
+binding 0 and **a pipeline binds one set per index**, so the engine's forward pipeline could not
+bind the table beside it. That set now carries both, `surfaceOf()` multiplies its base colour factor
+by the texel it samples at binding 1, and `render.forward_material_texture` renders `FrameScene`
+three times to say so: **60 712 of 129 600 texels shaded; 46.90% of them differ from the same frame
+with the texture replaced by its declared average, at mean |Δ| 20.881/255; 47.00% differ from the
+constant-shaded frame at 26.434/255; 0 validation errors**. Junction 5 — *"no assembled frame in the
+tree draws a compiled material program"* — is still open and still M11.d's: what the frame draws is
+`cy/frame.slang`'s own fragment stage, not a program the material compiler generated, and the
+fragment-stage lowering behind that is the permutation-and-pipeline-cache question `slang_program.h`
+names. Metal is open for the same reason in a different form: `slangc -target metal` emits an
+unbounded texture array with no argument buffer behind it, so `frame_msl.h` is deliberately not
+regenerated and `cy/frame.slang`'s header says so where the invocations are.
+
 **What the spike proved is possible**, which is the useful half: the generated program compiled into
 a fragment stage, `cyMaterialTextures[]` satisfied at the binding the standard library declares, the
 importer's own mip chain uploaded, and the picture captured. The engine's Vulkan backend already
