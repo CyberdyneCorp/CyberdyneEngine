@@ -104,8 +104,8 @@ so this document states the finding and moves nothing.
 | M11.a | `world-streams` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49 tiles_resident: 49 evicted: 0 stitched_vertices: 0 |
 | M11.b | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
 | M11.b | `gameplay-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-a… |
-| M11.b | `ml-inference-or-a-deferral` | M11.c | red against a built tree | red unmutated against the build tree build/dev (exit 1): override: CY_BUILD_DIR=build/dev … no build/dev/cy_test_integration_ai — the suite integration.ai does not exist |
-| M11.b | `roadmap-tiers` | M11.c | not recorded | the prover has no entry for this criterion; the row stands on the declaration a later rung wrote over a gate that was already green |
+| M11.b | `ml-inference-or-a-deferral` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_ai — the suite integration.ai does not exist |
+| M11.b | `roadmap-tiers` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): visual-scripting: recorded 'working', below this milestone's exit of 'complete' |
 | M11.b | `the-game-drawn` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
 | M11.b | `the-game-exists` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/ |
 | M11.b | `the-game-is-playable` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/ |
