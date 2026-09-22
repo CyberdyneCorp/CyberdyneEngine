@@ -1263,9 +1263,9 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): 18 depen
 ledger = "m11e"
 criterion = "every-deferral-carries-its-three-parts"
 digest = "6227ad7b834d5656"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): roadmap-debts: docs/roadmap/open-debts.md is stale — a debt was declared, closed or demoted and the document was not regenerated. … error: recipe `roadmap-debts` failed on line 17 with exit code 1"
+verdict = "proven"
+mutation = "delete-lines 'known_gap_closes = \"m13\"' in tools/roadmap/milestones/m11b.toml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11e"
