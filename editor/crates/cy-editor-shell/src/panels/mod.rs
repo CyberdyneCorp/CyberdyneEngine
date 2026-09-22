@@ -134,6 +134,8 @@ pub struct Inputs {
     pub material_link_source: Option<(u64, u32, String, String)>,
     /// The latest refused material-canvas gesture, kept visible until the next successful edit.
     pub material_link_problem: Option<String>,
+    /// The latest typed material-property refusal, shown beside the generated controls.
+    pub material_property_problem: Option<String>,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -192,6 +194,7 @@ impl Default for Inputs {
             material_filter: String::new(),
             material_link_source: None,
             material_link_problem: None,
+            material_property_problem: None,
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {

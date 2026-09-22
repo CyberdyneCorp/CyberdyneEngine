@@ -56,6 +56,11 @@ semantic role, asset-kind constraint, enum choices and tooltip. The editor maps 
 shared controls. A texture picker queries the project asset catalogue by the descriptor's required
 asset kind. No node-name switch is permitted in the editor.
 
+Catalogue payload schema 2/catalogue version 3 carries those fields separately, plus the consuming
+stage, graph domain, vector lane count and required target-capability bits. Schema 1 remains readable.
+Authored values are retained by stable node and property identity; readable property names remain
+migration metadata and are resolved from the current catalogue when compiling.
+
 ### 4. Compilation publication drives preview reload
 
 A successful compile result is not considered visible merely because it returned an artefact ID.

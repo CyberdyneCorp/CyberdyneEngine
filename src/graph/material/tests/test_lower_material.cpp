@@ -111,8 +111,8 @@ CY_TEST_CASE("graph_material: the service catalogue is deterministic and version
                (static_cast<u32>(first[offset + 2]) << 16U) |
                (static_cast<u32>(first[offset + 3]) << 24U);
     };
-    CY_CHECK_EQ(read_u32(0), 1U);
-    CY_CHECK_EQ(read_u32(4), 2U);
+    CY_CHECK_EQ(read_u32(0), 2U);
+    CY_CHECK_EQ(read_u32(4), 3U);
     CY_CHECK_EQ(read_u32(8), material_node_types().size());
 }
 

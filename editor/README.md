@@ -345,6 +345,19 @@ by-name relationship `TransformBinding` has, and the engine's own name for the c
 (`src/scene/src/node_template.cpp` declares `cy::render::MeshRenderer` and no build registers it
 yet). Until a renderer does, the reference is authoring data that round-trips through `.cyworld`.
 
+## Catalogue-driven material properties
+
+The Material Graph does not identify node names to decide which widgets to draw. Catalogue schema
+2 describes each property by stable identity, kind, typed default, numeric constraints, enum
+choices, required asset kind, semantic role, compiler/runtime stage, graph domain and target
+capabilities. The shared graph canvas validates authored literals before mutation and retains values
+by node and property identity across compatible catalogue refreshes. Texture controls query the
+project asset catalogue for stable identities whose kind is `texture`; the compiled dependency list
+therefore contains asset identities rather than display paths.
+
+Schema-1 catalogues remain readable. Their combined textual constraint is migrated into the schema-2
+shape when decoded, so reconnecting an older runtime does not discard the graph being authored.
+
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 
 `asset.import` cooks a source file the project already holds — a glTF, an FBX, an **OBJ with its

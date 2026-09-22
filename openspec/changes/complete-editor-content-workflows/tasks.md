@@ -12,9 +12,9 @@
 
 ## 3. Typed material authoring
 
-- [ ] 3.1 Complete versioned material catalogue property descriptors with stable IDs, types, defaults, constraints, enum choices, asset-kind constraints, stage/domain metadata and capabilities.
-- [ ] 3.2 Decode descriptors in the editor and render generic property controls without node-name switches, including project texture selection and structured refusal of invalid values.
-- [ ] 3.3 Persist property edits by stable node/property identity and verify validation/compilation receives texture dependencies and survives disconnect/reconnect.
+- [x] 3.1 Complete versioned material catalogue property descriptors with stable IDs, types, defaults, constraints, enum choices, asset-kind constraints, stage/domain metadata and capabilities.
+- [x] 3.2 Decode descriptors in the editor and render generic property controls without node-name switches, including project texture selection and structured refusal of invalid values.
+- [x] 3.3 Persist property edits by stable node/property identity and verify validation/compilation receives texture dependencies and survives disconnect/reconnect.
 
 ## 4. Material preview and reload
 

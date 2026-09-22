@@ -120,7 +120,7 @@ pub enum PropertyKind {
 }
 
 /// One catalogue-driven node property.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Property {
     /// Stable identity within the node type.
     pub identity: u32,
@@ -130,14 +130,114 @@ pub struct Property {
     pub kind: PropertyKind,
     /// Typed default encoded in the graph's readable literal form.
     pub default: String,
-    /// Range, choices, identifier rule, or required asset kind.
+    /// Legacy schema-1 range, choices, identifier rule, or required asset kind.
     pub constraint: String,
     /// Backend-owned authoring explanation.
     pub tooltip: String,
+    /// Optional inclusive numeric minimum.
+    pub minimum: Option<f64>,
+    /// Optional inclusive numeric maximum.
+    pub maximum: Option<f64>,
+    /// Optional numeric editing increment.
+    pub step: Option<f64>,
+    /// Declared enumeration choices, in presentation order.
+    pub choices: Vec<String>,
+    /// Required project asset kind, empty for non-asset properties.
+    pub asset_kind: String,
+    /// Backend-owned semantic role such as `identifier` or `linear-colour`.
+    pub semantic: String,
+    /// Compiler/runtime stage that consumes this property.
+    pub stage: String,
+    /// Graph domain which owns the property.
+    pub domain: String,
+    /// Target feature bits required to author or compile this property.
+    pub required_capabilities: u64,
+    /// Required vector lane count, or zero when another property determines it.
+    pub vector_lanes: u8,
+}
+
+impl Property {
+    /// Validate the readable literal before it enters authored graph state.
+    pub fn validate_literal(&self, value: &str) -> Result<()> {
+        let invalid = |because: String| {
+            Problem::new(format!("set the {} property", self.name), because)
+                .with_remedy(format!("enter a value accepted by {}", self.tooltip))
+        };
+        match self.kind {
+            PropertyKind::Text => {
+                if self.semantic == "identifier"
+                    && !value.is_empty()
+                    && !value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                {
+                    return Err(invalid("the value is not an ASCII identifier".into()));
+                }
+            }
+            PropertyKind::Bool => {
+                if !matches!(value, "true" | "false") {
+                    return Err(invalid("a boolean is `true` or `false`".into()));
+                }
+            }
+            PropertyKind::Scalar => {
+                let parsed = value
+                    .parse::<f64>()
+                    .map_err(|_| invalid("the value is not a number".into()))?;
+                self.validate_number(parsed, &invalid)?;
+            }
+            PropertyKind::Vector => {
+                let values = value
+                    .split(',')
+                    .map(str::trim)
+                    .map(str::parse::<f64>)
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(|_| invalid("every vector lane must be a number".into()))?;
+                if values.is_empty()
+                    || self.vector_lanes != 0 && values.len() != usize::from(self.vector_lanes)
+                {
+                    return Err(invalid(format!(
+                        "the value needs {} numeric lane(s)",
+                        self.vector_lanes
+                    )));
+                }
+                for value in values {
+                    self.validate_number(value, &invalid)?;
+                }
+            }
+            PropertyKind::Enumeration => {
+                if !self.choices.iter().any(|choice| choice == value) {
+                    return Err(invalid(format!(
+                        "{value:?} is not one of {}",
+                        self.choices.join(", ")
+                    )));
+                }
+            }
+            PropertyKind::Asset => {}
+        }
+        Ok(())
+    }
+
+    fn validate_number(&self, value: f64, invalid: &impl Fn(String) -> Problem) -> Result<()> {
+        if !value.is_finite() {
+            return Err(invalid("the value must be finite".into()));
+        }
+        if self.minimum.is_some_and(|minimum| value < minimum)
+            || self.maximum.is_some_and(|maximum| value > maximum)
+        {
+            return Err(invalid(format!(
+                "{value} is outside {} through {}",
+                self.minimum
+                    .map_or_else(|| "−∞".into(), |minimum| minimum.to_string()),
+                self.maximum
+                    .map_or_else(|| "+∞".into(), |maximum| maximum.to_string())
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// A node type as a domain registers it: what it is called, and what it connects by.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct NodeType {
     /// Stable engine-assigned identity, or zero for a legacy catalogue.
     pub identity: u32,
@@ -196,7 +296,7 @@ impl NodeType {
 /// A domain brings a vocabulary. It does not bring a canvas, a selection model, an undo model or a
 /// diff — which is the whole of "a sixth bespoke graph editor SHALL NOT be created", expressed as
 /// the only thing the type system lets a domain hand over.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct Catalogue {
     types: BTreeMap<String, NodeType>,
 }
@@ -255,6 +355,10 @@ pub struct Node {
     pub type_name: String,
     /// What the author typed into it, by property name.
     pub properties: BTreeMap<String, String>,
+    /// The same authored values addressed by stable catalogue property identity.
+    pub property_identities: BTreeMap<u32, String>,
+    /// Last readable name seen for each stable property identity, used only for migration cleanup.
+    pub property_names: BTreeMap<u32, String>,
 }
 
 /// Where a node sits and what colour it was given. A SIDE TABLE, outside the semantic model.
@@ -417,6 +521,8 @@ impl GraphCanvas {
                 key,
                 type_name: type_name.to_owned(),
                 properties: BTreeMap::new(),
+                property_identities: BTreeMap::new(),
+                property_names: BTreeMap::new(),
             },
         );
         self.layout.insert(key, at);
@@ -454,12 +560,99 @@ impl GraphCanvas {
         name: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<()> {
+        let name = name.into();
+        let value = value.into();
+        let descriptor = self
+            .nodes
+            .get(&key)
+            .and_then(|node| self.catalogue.get(&node.type_name))
+            .and_then(|node_type| {
+                node_type
+                    .properties
+                    .iter()
+                    .find(|property| property.name == name)
+            })
+            .cloned();
+        if let Some(descriptor) = descriptor {
+            return self.set_property_by_identity(key, descriptor.identity, value);
+        }
         let node = self
             .nodes
             .get_mut(&key)
             .ok_or_else(|| Self::no_such_node(key))?;
-        node.properties.insert(name.into(), value.into());
+        node.properties.insert(name, value);
         Ok(())
+    }
+
+    /// Set a catalogue property by stable identity, validating its typed constraints first.
+    pub fn set_property_by_identity(
+        &mut self,
+        key: NodeKey,
+        identity: u32,
+        value: impl Into<String>,
+    ) -> Result<()> {
+        let value = value.into();
+        let descriptor = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| Self::no_such_node(key))
+            .and_then(|node| {
+                self.catalogue
+                    .get(&node.type_name)
+                    .and_then(|node_type| {
+                        node_type
+                            .properties
+                            .iter()
+                            .find(|property| property.identity == identity)
+                    })
+                    .cloned()
+                    .ok_or_else(|| {
+                        Problem::new(
+                            format!("set property {identity} on {}", node.type_name),
+                            "the current catalogue does not declare that property identity",
+                        )
+                    })
+            })?;
+        descriptor.validate_literal(&value)?;
+        let node = self
+            .nodes
+            .get_mut(&key)
+            .expect("the descriptor lookup found the node");
+        node.properties
+            .insert(descriptor.name.clone(), value.clone());
+        node.property_identities.insert(identity, value);
+        node.property_names.insert(identity, descriptor.name);
+        Ok(())
+    }
+
+    /// Read an authored value by stable identity, falling back to readable legacy metadata.
+    #[must_use]
+    pub fn property_value(&self, key: NodeKey, property: &Property) -> Option<&str> {
+        let node = self.nodes.get(&key)?;
+        node.property_identities
+            .get(&property.identity)
+            .or_else(|| node.properties.get(&property.name))
+            .map(String::as_str)
+    }
+
+    /// Authored values resolved through the current catalogue names, in deterministic order.
+    #[must_use]
+    pub fn resolved_properties(&self, key: NodeKey) -> BTreeMap<String, String> {
+        let Some(node) = self.nodes.get(&key) else {
+            return BTreeMap::new();
+        };
+        let mut resolved = node.properties.clone();
+        if let Some(node_type) = self.catalogue.get(&node.type_name) {
+            for property in &node_type.properties {
+                if let Some(value) = node.property_identities.get(&property.identity) {
+                    if let Some(previous_name) = node.property_names.get(&property.identity) {
+                        resolved.remove(previous_name);
+                    }
+                    resolved.insert(property.name.clone(), value.clone());
+                }
+            }
+        }
+        resolved
     }
 
     /// Wire an output pin to an input pin.
@@ -618,7 +811,10 @@ impl GraphCanvas {
             match before.nodes.get(key) {
                 None => changes.push(Change::NodeAdded(*key)),
                 Some(was)
-                    if was.type_name != node.type_name || was.properties != node.properties =>
+                    if was.type_name != node.type_name
+                        || was.properties != node.properties
+                        || was.property_identities != node.property_identities
+                        || was.property_names != node.property_names =>
                 {
                     changes.push(Change::NodeChanged(*key));
                 }
@@ -762,6 +958,69 @@ mod tests {
         let mut canvas = GraphCanvas::new(7);
         canvas.load(catalogue());
         canvas
+    }
+
+    fn scalar_property(name: &str) -> Property {
+        Property {
+            identity: 7,
+            name: name.into(),
+            kind: PropertyKind::Scalar,
+            default: "0.5".into(),
+            constraint: String::new(),
+            tooltip: "A bounded scalar".into(),
+            minimum: Some(0.0),
+            maximum: Some(1.0),
+            step: Some(0.1),
+            choices: Vec::new(),
+            asset_kind: String::new(),
+            semantic: "unit-interval".into(),
+            stage: "runtime".into(),
+            domain: "test".into(),
+            required_capabilities: 0,
+            vector_lanes: 0,
+        }
+    }
+
+    #[test]
+    fn typed_properties_refuse_invalid_values_before_mutating_the_canvas() {
+        let node_type = NodeType::identified(9, 1, "test.typed".into(), Vec::new())
+            .with_properties(vec![scalar_property("roughness")]);
+        let mut canvas = GraphCanvas::new(9);
+        canvas.load(Catalogue::new(vec![node_type]).unwrap());
+        let node = canvas.add("test.typed", Layout::default()).unwrap();
+
+        let refused = canvas
+            .set_property_by_identity(node, 7, "1.5")
+            .expect_err("the declared maximum is authoritative");
+        assert!(refused.because.contains("outside"));
+        assert!(
+            canvas
+                .property_value(node, &scalar_property("roughness"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn property_values_survive_a_catalogue_rename_by_stable_identity() {
+        let original = NodeType::identified(9, 1, "test.typed".into(), Vec::new())
+            .with_properties(vec![scalar_property("roughness")]);
+        let mut canvas = GraphCanvas::new(9);
+        canvas.load(Catalogue::new(vec![original]).unwrap());
+        let node = canvas.add("test.typed", Layout::default()).unwrap();
+        canvas
+            .set_property_by_identity(node, 7, "0.8")
+            .expect("valid typed value");
+
+        let renamed = NodeType::identified(9, 2, "test.typed".into(), Vec::new())
+            .with_properties(vec![scalar_property("surface_roughness")]);
+        canvas.replace_catalogue(Catalogue::new(vec![renamed]).unwrap());
+        let descriptor = &canvas.catalogue().get("test.typed").unwrap().properties[0];
+        assert_eq!(canvas.property_value(node, descriptor), Some("0.8"));
+        assert_eq!(
+            canvas.resolved_properties(node).get("surface_roughness"),
+            Some(&"0.8".to_string())
+        );
+        assert!(!canvas.resolved_properties(node).contains_key("roughness"));
     }
 
     #[test]

@@ -69,6 +69,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                         preview: &preview_state,
                     },
                     &panels.editor.asset_catalogue,
+                    &mut panels.inputs.material_property_problem,
                 );
             },
         );
@@ -149,6 +150,7 @@ fn palette(
     filter: &mut String,
     backend: PaletteBackendState<'_>,
     assets: &AssetCatalogueService,
+    property_problem: &mut Option<String>,
 ) -> Option<PaletteAction> {
     let mut action = None;
     ui.heading("Engine catalogue");
@@ -178,7 +180,7 @@ fn palette(
     });
     material_request_status(ui, shell, canvas, backend.request);
     material_preview_status(ui, shell, backend.preview);
-    material_properties(ui, canvas, assets);
+    material_properties(ui, canvas, assets, property_problem);
     ui.add_space(shell.metrics().gap() * 0.5);
     ui.add(
         egui::TextEdit::singleline(filter)
@@ -275,6 +277,7 @@ fn material_properties(
     ui: &mut egui::Ui,
     canvas: &mut GraphCanvas,
     assets: &AssetCatalogueService,
+    problem: &mut Option<String>,
 ) {
     let Some(key) = canvas.selection().first().copied() else {
         return;
@@ -283,7 +286,6 @@ fn material_properties(
         return;
     };
     let type_name = node.type_name.clone();
-    let authored = node.properties.clone();
     let properties = canvas
         .catalogue()
         .get(&type_name)
@@ -294,14 +296,19 @@ fn material_properties(
     ui.separator();
     ui.strong("Properties");
     for property in properties {
-        let mut value = authored
-            .get(&property.name)
-            .cloned()
-            .unwrap_or_else(|| property.default.clone());
+        let mut value = canvas
+            .property_value(key, &property)
+            .map_or_else(|| property.default.clone(), ToOwned::to_owned);
         let changed = property_control(ui, &property, &mut value, assets);
         if changed {
-            let _ = canvas.set_property(key, &property.name, value);
+            match canvas.set_property_by_identity(key, property.identity, value) {
+                Ok(()) => *problem = None,
+                Err(refused) => *problem = Some(refused.to_string()),
+            }
         }
+    }
+    if let Some(problem) = problem {
+        ui.colored_label(egui::Color32::from_rgb(232, 96, 96), problem.as_str());
     }
 }
 
@@ -327,14 +334,8 @@ fn property_control(
                 egui::ComboBox::from_id_salt("value")
                     .selected_text(value.as_str())
                     .show_ui(ui, |ui| {
-                        for choice in property
-                            .constraint
-                            .split('|')
-                            .filter(|item| !item.is_empty())
-                        {
-                            changed |= ui
-                                .selectable_value(value, choice.to_string(), choice)
-                                .changed();
+                        for choice in &property.choices {
+                            changed |= ui.selectable_value(value, choice.clone(), choice).changed();
                         }
                     });
             }
@@ -349,7 +350,7 @@ fn property_control(
                     .show_ui(ui, |ui| {
                         changed |= ui.selectable_value(value, String::new(), "None").changed();
                         for asset in assets.entries().iter().filter(|asset| {
-                            asset.kind == property.constraint && asset.identity.is_some()
+                            asset.kind == property.asset_kind && asset.identity.is_some()
                         }) {
                             let identity = asset.identity.clone().expect("filtered above");
                             changed |= ui
@@ -358,15 +359,54 @@ fn property_control(
                         }
                     });
             }
-            PropertyKind::Text | PropertyKind::Scalar | PropertyKind::Vector => {
+            PropertyKind::Scalar => {
+                let mut number = value.parse::<f64>().unwrap_or_default();
+                let mut control =
+                    egui::DragValue::new(&mut number).speed(property.step.unwrap_or(0.01));
+                if property.minimum.is_some() || property.maximum.is_some() {
+                    control = control.range(
+                        property.minimum.unwrap_or(f64::NEG_INFINITY)
+                            ..=property.maximum.unwrap_or(f64::INFINITY),
+                    );
+                }
+                if ui
+                    .add(control)
+                    .on_hover_text(property_metadata(property))
+                    .changed()
+                {
+                    *value = number.to_string();
+                    changed = true;
+                }
+            }
+            PropertyKind::Text | PropertyKind::Vector => {
                 changed = ui
                     .add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY))
-                    .on_hover_text(&property.constraint)
+                    .on_hover_text(property_metadata(property))
                     .changed();
             }
         }
     });
     changed
+}
+
+fn property_metadata(property: &Property) -> String {
+    let mut metadata = vec![format!("{} · {}", property.domain, property.stage)];
+    if !property.semantic.is_empty() {
+        metadata.push(property.semantic.clone());
+    }
+    if property.required_capabilities != 0 {
+        metadata.push(format!(
+            "capabilities 0x{:x}",
+            property.required_capabilities
+        ));
+    }
+    if property.minimum.is_some() || property.maximum.is_some() || property.step.is_some() {
+        metadata.push(format!(
+            "range {:?}…{:?}, step {:?}",
+            property.minimum, property.maximum, property.step
+        ));
+    }
+    metadata.join("\n")
 }
 
 fn material_request_status(

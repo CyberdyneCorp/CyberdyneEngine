@@ -37,7 +37,6 @@
 //! The interchange is deliberately NOT a format anything reads twice — nothing loads it, nothing
 //! diffs it, and it is not committed. It exists for the length of one pipe.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use cy_editor_core::codec::Reader;
@@ -142,14 +141,161 @@ pub fn material_catalogue() -> Vec<NodeType> {
         .collect()
 }
 
-/// Decode schema 1 returned by `material.catalogue.get`.
+fn decode_pin(reader: &mut Reader<'_>) -> Result<Pin> {
+    let identity = reader.u32()?;
+    let direction = match reader.u8()? {
+        0 => PinDirection::Input,
+        1 => PinDirection::Output,
+        value => {
+            return Err(Problem::new(
+                "read the material catalogue",
+                format!("pin direction {value} is not supported"),
+            ));
+        }
+    };
+    let mut pin = Pin::new(reader.text()?, direction, reader.text()?);
+    pin.identity = identity;
+    Ok(pin)
+}
+
+fn decode_property_kind(value: u8) -> Result<PropertyKind> {
+    match value {
+        0 => Ok(PropertyKind::Text),
+        1 => Ok(PropertyKind::Bool),
+        2 => Ok(PropertyKind::Scalar),
+        3 => Ok(PropertyKind::Vector),
+        4 => Ok(PropertyKind::Enumeration),
+        5 => Ok(PropertyKind::Asset),
+        value => Err(Problem::new(
+            "read the material catalogue",
+            format!("property kind {value} is not supported"),
+        )),
+    }
+}
+
+struct PropertyMetadata {
+    constraint: String,
+    tooltip: String,
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    step: Option<f64>,
+    choices: Vec<String>,
+    asset_kind: String,
+    semantic: String,
+    stage: String,
+    domain: String,
+    required_capabilities: u64,
+    vector_lanes: u8,
+}
+
+fn legacy_property_metadata(
+    reader: &mut Reader<'_>,
+    kind: PropertyKind,
+) -> Result<PropertyMetadata> {
+    let constraint = reader.text()?;
+    let tooltip = reader.text()?;
+    Ok(PropertyMetadata {
+        choices: if kind == PropertyKind::Enumeration {
+            constraint
+                .split('|')
+                .filter(|choice| !choice.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        },
+        asset_kind: if kind == PropertyKind::Asset {
+            constraint.clone()
+        } else {
+            String::new()
+        },
+        semantic: if constraint == "identifier" {
+            constraint.clone()
+        } else {
+            String::new()
+        },
+        constraint,
+        tooltip,
+        minimum: None,
+        maximum: None,
+        step: None,
+        stage: String::new(),
+        domain: "material".into(),
+        required_capabilities: 0,
+        vector_lanes: 0,
+    })
+}
+
+fn property_metadata(reader: &mut Reader<'_>) -> Result<PropertyMetadata> {
+    let tooltip = reader.text()?;
+    let semantic = reader.text()?;
+    let asset_kind = reader.text()?;
+    let choice_count = reader.u32()?;
+    let choices = (0..choice_count)
+        .map(|_| reader.text())
+        .collect::<Result<Vec<_>>>()?;
+    let stage = reader.text()?;
+    let domain = reader.text()?;
+    let required_capabilities = reader.u64()?;
+    let vector_lanes = reader.u8()?;
+    let flags = reader.u8()?;
+    let encoded_minimum = reader.f64()?;
+    let encoded_maximum = reader.f64()?;
+    let encoded_step = reader.f64()?;
+    Ok(PropertyMetadata {
+        constraint: String::new(),
+        tooltip,
+        minimum: (flags & 1 != 0).then_some(encoded_minimum),
+        maximum: (flags & 2 != 0).then_some(encoded_maximum),
+        step: (flags & 4 != 0).then_some(encoded_step),
+        choices,
+        asset_kind,
+        semantic,
+        stage,
+        domain,
+        required_capabilities,
+        vector_lanes,
+    })
+}
+
+fn decode_property(reader: &mut Reader<'_>, schema: u32) -> Result<Property> {
+    let identity = reader.u32()?;
+    let kind = decode_property_kind(reader.u8()?)?;
+    let name = reader.text()?;
+    let default = reader.text()?;
+    let metadata = if schema == 1 {
+        legacy_property_metadata(reader, kind)?
+    } else {
+        property_metadata(reader)?
+    };
+    Ok(Property {
+        identity,
+        name,
+        kind,
+        default,
+        constraint: metadata.constraint,
+        tooltip: metadata.tooltip,
+        minimum: metadata.minimum,
+        maximum: metadata.maximum,
+        step: metadata.step,
+        choices: metadata.choices,
+        asset_kind: metadata.asset_kind,
+        semantic: metadata.semantic,
+        stage: metadata.stage,
+        domain: metadata.domain,
+        required_capabilities: metadata.required_capabilities,
+        vector_lanes: metadata.vector_lanes,
+    })
+}
+
+/// Decode the versioned catalogue returned by `material.catalogue.get`.
 pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
     let mut reader = Reader::new(bytes);
     let schema = reader.u32()?;
-    if schema != 1 {
+    if !matches!(schema, 1 | 2) {
         return Err(Problem::new(
             "read the material catalogue",
-            format!("schema {schema} is not supported; this editor supports schema 1"),
+            format!("schema {schema} is not supported; this editor supports schemas 1 and 2"),
         ));
     }
     let _catalogue_version = reader.u32()?;
@@ -160,50 +306,13 @@ pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
         let node_schema = reader.u32()?;
         let name = reader.text()?;
         let pin_count = reader.u32()?;
-        let mut pins = Vec::with_capacity(pin_count as usize);
-        for _ in 0..pin_count {
-            let pin_identity = reader.u32()?;
-            let direction = match reader.u8()? {
-                0 => PinDirection::Input,
-                1 => PinDirection::Output,
-                value => {
-                    return Err(Problem::new(
-                        "read the material catalogue",
-                        format!("pin direction {value} is not supported"),
-                    ));
-                }
-            };
-            let mut pin = Pin::new(reader.text()?, direction, reader.text()?);
-            pin.identity = pin_identity;
-            pins.push(pin);
-        }
+        let pins = (0..pin_count)
+            .map(|_| decode_pin(&mut reader))
+            .collect::<Result<Vec<_>>>()?;
         let property_count = reader.u32()?;
-        let mut properties = Vec::with_capacity(property_count as usize);
-        for _ in 0..property_count {
-            let identity = reader.u32()?;
-            let kind = match reader.u8()? {
-                0 => PropertyKind::Text,
-                1 => PropertyKind::Bool,
-                2 => PropertyKind::Scalar,
-                3 => PropertyKind::Vector,
-                4 => PropertyKind::Enumeration,
-                5 => PropertyKind::Asset,
-                value => {
-                    return Err(Problem::new(
-                        "read the material catalogue",
-                        format!("property kind {value} is not supported"),
-                    ));
-                }
-            };
-            properties.push(Property {
-                identity,
-                kind,
-                name: reader.text()?,
-                default: reader.text()?,
-                constraint: reader.text()?,
-                tooltip: reader.text()?,
-            });
-        }
+        let properties = (0..property_count)
+            .map(|_| decode_property(&mut reader, schema))
+            .collect::<Result<Vec<_>>>()?;
         nodes.push(
             NodeType::identified(identity, node_schema, name, pins).with_properties(properties),
         );
@@ -303,8 +412,7 @@ pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
     let _ = writeln!(out, "material {name}");
     for node in canvas.nodes() {
         let _ = writeln!(out, "node {} {}", node.key.ordinal(), node.type_name);
-        let ordered: BTreeMap<&String, &String> = node.properties.iter().collect();
-        for (property, value) in ordered {
+        for (property, value) in canvas.resolved_properties(node.key) {
             let _ = writeln!(out, "prop {} {} {}", node.key.ordinal(), property, value);
         }
     }
@@ -411,6 +519,44 @@ mod tests {
         assert_eq!(property.identity, 2);
         assert_eq!(property.kind, PropertyKind::Asset);
         assert_eq!(property.constraint, "texture");
+    }
+
+    #[test]
+    fn schema_two_keeps_authoring_metadata_and_stable_property_identity() {
+        let mut bytes = Writer::new();
+        bytes.u32(2);
+        bytes.u32(3);
+        bytes.u32(1);
+        bytes.u32(24);
+        bytes.u32(1);
+        bytes.text("material.texture_sample");
+        bytes.u32(0);
+        bytes.u32(1);
+        bytes.u32(2);
+        bytes.u8(5);
+        bytes.text("texture");
+        bytes.text("");
+        bytes.text("Project texture asset");
+        bytes.text("texture");
+        bytes.text("texture");
+        bytes.u32(0);
+        bytes.text("fragment");
+        bytes.text("material");
+        bytes.u64(1);
+        bytes.u8(0);
+        bytes.u8(0);
+        bytes.f64(0.0);
+        bytes.f64(0.0);
+        bytes.f64(0.0);
+
+        let decoded = catalogue_from_service(&bytes.finish()).expect("schema 2 decodes");
+        let property = &decoded[0].properties[0];
+        assert_eq!(property.identity, 2);
+        assert_eq!(property.asset_kind, "texture");
+        assert_eq!(property.semantic, "texture");
+        assert_eq!(property.stage, "fragment");
+        assert_eq!(property.domain, "material");
+        assert_eq!(property.required_capabilities, 1);
     }
 
     /// THE CROSS-LANGUAGE JOIN, AND IT IS READ RATHER THAN COPIED.

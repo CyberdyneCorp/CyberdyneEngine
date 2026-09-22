@@ -2,6 +2,7 @@
 
 #include <cy/graph/material/lower_material.h>
 
+#include <cstring>
 #include <iterator>
 
 namespace cy::graph::material {
@@ -89,34 +90,57 @@ struct PropertySpec {
     std::string_view name;
     PropertyKind kind;
     std::string_view fallback;
-    std::string_view constraint;
     std::string_view tooltip;
+    std::string_view semantic;
+    std::string_view choices;
+    std::string_view asset_kind;
+    std::string_view stage;
+    u8 vector_lanes = 0;
+    u8 constraint_flags = 0;
+    f64 minimum = 0.0;
+    f64 maximum = 0.0;
+    f64 step = 0.0;
+    u64 capabilities = 0;
 };
 
 constexpr PropertySpec kConstantProperties[] = {
-    {1, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Value type"},
-    {2, "value", PropertyKind::Vector, "0", "", "Constant value"},
+    {1, "type", PropertyKind::Enumeration, "float", "Value type", "value-type",
+     "float|vec2|vec3|vec4", "", "compile"},
+    {2, "value", PropertyKind::Vector, "0", "Constant value", "numeric", "", "", "compile"},
 };
 constexpr PropertySpec kParameterProperties[] = {
-    {1, "symbol", PropertyKind::Text, "parameter", "identifier", "Shader parameter name"},
-    {2, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Value type"},
-    {3, "default", PropertyKind::Vector, "0", "", "Default runtime value"},
-    {4, "static", PropertyKind::Bool, "false", "", "Request static specialisation"},
+    {1, "symbol", PropertyKind::Text, "parameter", "Shader parameter name", "identifier", "", "",
+     "compile"},
+    {2, "type", PropertyKind::Enumeration, "float", "Value type", "value-type",
+     "float|vec2|vec3|vec4", "", "compile"},
+    {3, "default", PropertyKind::Vector, "0", "Default runtime value", "numeric", "", "",
+     "runtime"},
+    {4, "static", PropertyKind::Bool, "false", "Request static specialisation", "specialisation",
+     "", "", "compile"},
 };
 constexpr PropertySpec kNamedProperties[] = {
-    {1, "symbol", PropertyKind::Text, "", "identifier", "Engine attribute or field name"},
-    {2, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Value type"},
+    {1, "symbol", PropertyKind::Text, "", "Engine attribute or field name", "identifier", "", "",
+     "compile"},
+    {2, "type", PropertyKind::Enumeration, "float", "Value type", "value-type",
+     "float|vec2|vec3|vec4", "", "compile"},
 };
 constexpr PropertySpec kTextureProperties[] = {
-    {1, "symbol", PropertyKind::Text, "texture", "identifier", "Bindless texture slot name"},
-    {2, "texture", PropertyKind::Asset, "", "texture", "Project texture asset"},
-    {3, "type", PropertyKind::Enumeration, "vec4", "float|vec2|vec3|vec4", "Sample value type"},
-    {4, "average", PropertyKind::Vector, "1,1,1,1", "", "Fallback and analysis average"},
-    {5, "shadow_critical", PropertyKind::Bool, "false", "", "Retain in shadow derivations"},
-    {6, "microdetail", PropertyKind::Bool, "false", "", "Mark as microdetail"},
+    {1, "symbol", PropertyKind::Text, "texture", "Bindless texture slot name", "identifier", "", "",
+     "compile"},
+    {2, "texture", PropertyKind::Asset, "", "Project texture asset", "texture", "", "texture",
+     "fragment", 0, 0, 0.0, 0.0, 0.0, 1},
+    {3, "type", PropertyKind::Enumeration, "vec4", "Sample value type", "value-type",
+     "float|vec2|vec3|vec4", "", "compile"},
+    {4, "average", PropertyKind::Vector, "1,1,1,1", "Fallback and analysis average",
+     "linear-colour", "", "", "fragment", 4},
+    {5, "shadow_critical", PropertyKind::Bool, "false", "Retain in shadow derivations",
+     "derivation", "", "", "compile"},
+    {6, "microdetail", PropertyKind::Bool, "false", "Mark as microdetail", "derivation", "", "",
+     "compile"},
 };
 constexpr PropertySpec kTypedProperties[] = {
-    {1, "type", PropertyKind::Enumeration, "float", "float|vec2|vec3|vec4", "Result value type"},
+    {1, "type", PropertyKind::Enumeration, "float", "Result value type", "value-type",
+     "float|vec2|vec3|vec4", "", "compile"},
 };
 
 [[nodiscard]] Span<const PropertySpec> properties_for(std::string_view type) noexcept {
@@ -371,12 +395,27 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
         }
         return out.append({reinterpret_cast<const u8*>(value.data()), value.size()});
     };
+    const auto u64_value = [&](u64 value) -> Status {
+        for (usize byte = 0; byte < 8; ++byte) {
+            if (Status pushed = out.push_back(static_cast<u8>((value >> (byte * 8)) & 0xFFU));
+                !pushed) {
+                return pushed;
+            }
+        }
+        return ok();
+    };
+    const auto f64_value = [&](f64 value) -> Status {
+        u64 bits = 0;
+        static_assert(sizeof(bits) == sizeof(value));
+        std::memcpy(&bits, &value, sizeof(bits));
+        return u64_value(bits);
+    };
 
     out.clear();
-    if (Status status = u32_value(1); !status) {
+    if (Status status = u32_value(2); !status) {
         return status;  // schema
     }
-    if (Status status = u32_value(2); !status) {
+    if (Status status = u32_value(3); !status) {
         return status;  // catalogue version
     }
     const auto types = material_node_types();
@@ -429,10 +468,57 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
             if (Status status = text(property.fallback); !status) {
                 return status;
             }
-            if (Status status = text(property.constraint); !status) {
+            if (Status status = text(property.tooltip); !status) {
                 return status;
             }
-            if (Status status = text(property.tooltip); !status) {
+            if (Status status = text(property.semantic); !status) {
+                return status;
+            }
+            if (Status status = text(property.asset_kind); !status) {
+                return status;
+            }
+            u32 choice_count = property.choices.empty() ? 0U : 1U;
+            for (const char character : property.choices) {
+                choice_count += character == '|' ? 1U : 0U;
+            }
+            if (Status status = u32_value(choice_count); !status) {
+                return status;
+            }
+            usize choice_start = 0;
+            for (usize choice = 0; choice < choice_count; ++choice) {
+                const usize separator = property.choices.find('|', choice_start);
+                const usize choice_end = separator == std::string_view::npos
+                                             ? property.choices.size()
+                                             : separator;
+                if (Status status = text(property.choices.substr(choice_start,
+                                                                  choice_end - choice_start));
+                    !status) {
+                    return status;
+                }
+                choice_start = choice_end + 1;
+            }
+            if (Status status = text(property.stage); !status) {
+                return status;
+            }
+            if (Status status = text("material"); !status) {
+                return status;
+            }
+            if (Status status = u64_value(property.capabilities); !status) {
+                return status;
+            }
+            if (Status status = u8_value(property.vector_lanes); !status) {
+                return status;
+            }
+            if (Status status = u8_value(property.constraint_flags); !status) {
+                return status;
+            }
+            if (Status status = f64_value(property.minimum); !status) {
+                return status;
+            }
+            if (Status status = f64_value(property.maximum); !status) {
+                return status;
+            }
+            if (Status status = f64_value(property.step); !status) {
                 return status;
             }
         }
