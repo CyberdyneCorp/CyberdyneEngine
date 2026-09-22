@@ -283,6 +283,10 @@ bool preview_slot(const CyServiceSession_T& session, u64 handle, usize& slot) no
 
 CyResult preview_create(CyServiceSession_T& session,
                         cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
+    if (preview_runtime == nullptr) {
+        return failed(session, "preview-runtime-unavailable",
+                      "this host has no renderer-owned material preview runtime");
+    }
     for (usize slot = 0; slot < 16; ++slot) {
         if (session.preview_live[slot]) {
             continue;
@@ -291,10 +295,8 @@ CyResult preview_create(CyServiceSession_T& session,
             session.preview_generation[slot] = 1;
         }
         const u64 handle = (static_cast<u64>(session.preview_generation[slot]) << 32U) | (slot + 1);
-        if (preview_runtime != nullptr) {
-            if (Status created = preview_runtime->create(handle); !created) {
-                return failed(session, "preview-create-rejected", created.error().message);
-            }
+        if (Status created = preview_runtime->create(handle); !created) {
+            return failed(session, "preview-create-rejected", created.error().message);
         }
         session.preview_live[slot] = true;
         session.event_payload.clear();
@@ -438,7 +440,8 @@ CyResult preview_parameter_update(CyServiceSession_T& session,
     return CY_RESULT_OK;
 }
 
-CyResult capabilities(CyServiceSession_T& session) noexcept {
+CyResult capabilities(CyServiceSession_T& session,
+                      const cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     constexpr const char* operations[] = {
         "capabilities.get",         "material.catalogue.get", "material.validate",
         "material.compile",         "preview.create",         "preview.destroy",
@@ -456,7 +459,8 @@ CyResult capabilities(CyServiceSession_T& session) noexcept {
     }
     // Target feature bits: material compilation and preview lifecycle. Device-specific shader
     // features are queried by the compiler profile in later schema versions rather than guessed.
-    return put_u64(session.event_payload, 0x3U) ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
+    const u64 features = 0x1U | (preview_runtime != nullptr ? 0x2U : 0U);
+    return put_u64(session.event_payload, features) ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
 }
 
 }  // namespace
@@ -542,7 +546,7 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
         result = failed(*session, "schema-unsupported", "this operation supports schema 1");
         out_event.kind = CY_SERVICE_EVENT_FAILED;
     } else if (!session->cancelled && operation == "capabilities.get") {
-        result = capabilities(*session);
+        result = capabilities(*session, preview_runtime_);
     } else if (!session->cancelled && operation == "material.catalogue.get") {
         if (Status encoded = graph::material::encode_material_catalogue(session->event_payload);
             !encoded) {

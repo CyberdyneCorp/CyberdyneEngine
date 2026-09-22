@@ -296,6 +296,23 @@ CY_TEST_CASE("editor_backend: preview handles are generational and reload is ack
     api->service_close(&host, session);
 }
 
+CY_TEST_CASE("editor_backend: a host without a renderer cannot claim a preview") {
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+
+    const CyServiceRequest create{sizeof(CyServiceRequest), 1, 1, "preview.create", nullptr, 0};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, create);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    cy::usize cursor = 4;
+    CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                "preview-runtime-unavailable");
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: a renderer rejection is not acknowledged or made current") {
     cy::abi::Host host(allocator());
     PreviewRuntime preview_runtime;

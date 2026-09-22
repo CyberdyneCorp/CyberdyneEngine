@@ -155,7 +155,8 @@ CY_TEST_CASE("editor_backend: the visible editor canvas crosses the service comp
 
 CY_TEST_CASE("editor_backend: material preview vertical slice crosses the public ABI") {
     cy::abi::Host host(allocator());
-    cy::editor::MaterialService service(allocator());
+    PublicationRuntime preview_runtime;
+    cy::editor::MaterialService service(allocator(), &preview_runtime);
     host.bind_editor_service(&service);
     const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
     CyServiceSession session = nullptr;

@@ -28,3 +28,5 @@ materials are published to that interface before their identities are returned, 
 reload, parameter-update and destroy acknowledgements are emitted only after the runtime accepts
 the operation. The interface carries engine-owned compiled material and stable binding data; no
 renderer, Metal or compiler type crosses the C ABI/live protocol or enters the Rust editor.
+Hosts without that interface reject `preview.create` with `preview-runtime-unavailable` and omit
+the preview feature bit rather than reporting a protocol-only echo as a visible reload.
