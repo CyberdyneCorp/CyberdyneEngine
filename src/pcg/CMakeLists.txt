@@ -70,6 +70,17 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
                         cy::environment cy::world)
 
+# Raster stages fold floating-point bits into the cross-architecture world digest. Keep multiply
+# and add separate on every target, including ARM hosts where contraction is otherwise available.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(cy_pcg PRIVATE -ffp-contract=off)
+elseif(MSVC)
+    target_compile_options(cy_pcg PRIVATE /fp:precise)
+endif()
+cy_declare_determinism_profile(cy_pcg
+    PROFILE SamePlatform
+    REASON "PCG raster stages feed the cross-leg digest; CI compares their output across platforms")
+
 # The representations. Read after cy::pcg because it consumes it, and it is the ONLY target in this
 # directory that may name a representation module.
 cy_add_module(

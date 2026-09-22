@@ -359,6 +359,14 @@ CY_TEST_CASE("cross-leg: the published digests are the same twice in one process
     CY_CHECK_EQ(taken.first.pcg_identity, taken.second.pcg_identity);
 }
 
+CY_TEST_CASE("cross-leg: the PCG world matches the cross-architecture golden") {
+    const Measurements& taken = measurements();
+    CY_REQUIRE(taken.first.complete);
+    // This was measured on Linux x86_64 and macOS ARM64 with contraction disabled. The old ARM64
+    // build fused PCG raster arithmetic and disagreed while the accepted-point identities matched.
+    CY_CHECK_EQ(taken.first.pcg_world, 0x7bc3'77fd'2fc0'872bULL);
+}
+
 CY_TEST_CASE("cross-leg: a published digest carries every field the comparison needs") {
     const Measurements& taken = measurements();
     CY_REQUIRE(taken.first.complete);
