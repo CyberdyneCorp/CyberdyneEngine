@@ -20,7 +20,7 @@
 
 - [x] 4.1 Complete generational preview-world create/destroy, typed parameter update and explicit reload acknowledgement operations over C ABI and live transport.
 - [x] 4.2 Drive compile success through preview creation/reuse and reload acknowledgement before marking the viewport current; ignore stale results and retain the previous artefact on failure.
-- [ ] 4.3 Verify compile, cancellation, disconnect, rejected reload, live parameter update and repeated preview lifetime on the Mac Metal runtime.
+- [x] 4.3 Verify compile, cancellation, disconnect, rejected reload, live parameter update and repeated preview lifetime on the Mac Metal runtime.
 
 ## 5. Terrain import and authoring
 

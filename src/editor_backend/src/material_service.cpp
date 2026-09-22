@@ -25,6 +25,7 @@ struct CyServiceSession_T {
     cy::u32 preview_generation[16] = {};
     bool preview_live[16] = {};
     cy::u64 preview_artefact[16] = {};
+    cy::u32 preview_parameter_ids[16][32] = {};
     cy::u8 preview_parameter_types[16][32] = {};
 };
 
@@ -326,6 +327,8 @@ CyResult preview_destroy(CyServiceSession_T& session,
     session.preview_artefact[slot] = 0;
     std::memset(session.preview_parameter_types[slot], 0,
                 sizeof(session.preview_parameter_types[slot]));
+    std::memset(session.preview_parameter_ids[slot], 0,
+                sizeof(session.preview_parameter_ids[slot]));
     ++session.preview_generation[slot];
     if (session.preview_generation[slot] == 0) {
         session.preview_generation[slot] = 1;
@@ -378,6 +381,10 @@ CyResult preview_reload(CyServiceSession_T& session,
         }
     }
     session.preview_artefact[slot] = requested;
+    std::memset(session.preview_parameter_ids[slot], 0,
+                sizeof(session.preview_parameter_ids[slot]));
+    std::memset(session.preview_parameter_types[slot], 0,
+                sizeof(session.preview_parameter_types[slot]));
     session.event_payload.clear();
     if (!put_u64(session.event_payload, requested) || !put_u64(session.event_payload, requested) ||
         !put_u32(session.event_payload, targets)) {
@@ -387,6 +394,20 @@ CyResult preview_reload(CyServiceSession_T& session,
                {session.request_payload.data() + 20, session.request_payload.size() - 20})
                ? CY_RESULT_OK
                : CY_RESULT_OUT_OF_MEMORY;
+}
+
+usize preview_parameter_slot(const CyServiceSession_T& session, usize preview,
+                             u32 parameter) noexcept {
+    usize empty = 32;
+    for (usize index = 0; index < 32; ++index) {
+        if (session.preview_parameter_ids[preview][index] == parameter) {
+            return index;
+        }
+        if (empty == 32 && session.preview_parameter_ids[preview][index] == 0) {
+            empty = index;
+        }
+    }
+    return empty;
 }
 
 CyResult preview_parameter_update(CyServiceSession_T& session,
@@ -405,7 +426,7 @@ CyResult preview_parameter_update(CyServiceSession_T& session,
     }
     const u32 parameter = read_u32(session.request_payload, 16);
     const u8 kind = session.request_payload[20];
-    if (parameter == 0 || parameter > 32 || kind == 0 || kind > 5) {
+    if (parameter == 0 || kind == 0 || kind > 5) {
         return failed(session, "parameter-unsupported",
                       "the parameter identity or value type is not supported");
     }
@@ -418,8 +439,13 @@ CyResult preview_parameter_update(CyServiceSession_T& session,
         return failed(session, "parameter-payload-invalid",
                       "the encoded value does not match its declared type");
     }
-    u8& established = session.preview_parameter_types[slot][parameter - 1];
-    if (established != 0 && established != kind) {
+    const usize parameter_slot = preview_parameter_slot(session, slot, parameter);
+    if (parameter_slot == 32) {
+        return failed(session, "parameter-limit",
+                      "this preview already tracks thirty-two live parameters");
+    }
+    u8& established = session.preview_parameter_types[slot][parameter_slot];
+    if (session.preview_parameter_ids[slot][parameter_slot] == parameter && established != kind) {
         return failed(session, "parameter-type-mismatch",
                       "the parameter was previously established with another type");
     }
@@ -432,6 +458,7 @@ CyResult preview_parameter_update(CyServiceSession_T& session,
             return failed(session, "parameter-update-rejected", applied.error().message);
         }
     }
+    session.preview_parameter_ids[slot][parameter_slot] = parameter;
     established = kind;
     session.event_payload.clear();
     if (!put_u32(session.event_payload, parameter) || !put_u8(session.event_payload, kind)) {

@@ -37,6 +37,13 @@ before reporting the viewport current. Failed or stale reloads SHALL retain the 
   parameter identity and explicit value type
 - **AND** stale generations, unknown parameters and type changes SHALL be structured refusals
 
+#### Scenario: Mac viewport installs the compiled program
+- **WHEN** the Mac runtime accepts a published material artefact and exact entity/slot reload
+- **THEN** it SHALL compile the retained generated program to MSL and bind its Metal pipeline and
+  typed parameter block to that renderer object
+- **AND** destroying the preview SHALL remove that binding without linking Metal or renderer code
+  into the editor
+
 ### Requirement: Terrain and VFX specialised editors are operational
 The terrain specialised editor SHALL provide heightfield import, non-destructive sculpting and
 material-layer painting through the shared painting surface and ordinary transactions. The VFX

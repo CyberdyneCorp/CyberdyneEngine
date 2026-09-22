@@ -350,7 +350,7 @@ CY_TEST_CASE("editor_backend: a renderer rejection is not acknowledged or made c
     cy::u8 parameter[22] = {};
     std::memcpy(parameter, preview, sizeof(preview));
     std::memcpy(parameter + 8, &accepted, sizeof(accepted));
-    const cy::u32 parameter_id = 4;
+    const cy::u32 parameter_id = cy::rendering::parameter_id("live_tint");
     std::memcpy(parameter + 16, &parameter_id, sizeof(parameter_id));
     parameter[20] = 1;
     parameter[21] = 1;

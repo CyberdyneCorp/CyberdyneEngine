@@ -78,6 +78,7 @@
 #include <cy/servers/render/viewport_transport.h>
 #include <cy_reflect_generated_scene.h>
 
+#include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
 #include "world_view.h"
@@ -1183,7 +1184,12 @@ int main(int argc, char** argv) {
         }
 
         Host host;
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+        MetalMaterialRuntime material_runtime(allocator, renderer, view_world);
+        editor::MaterialService editor_service(allocator, &material_runtime);
+#else
         editor::MaterialService editor_service(allocator);
+#endif
         CyServiceSession service_session = nullptr;
         if (editor_service.open(&service_session) != CY_RESULT_OK) {
             report("editor service", Error{ErrorCode::OutOfMemory,

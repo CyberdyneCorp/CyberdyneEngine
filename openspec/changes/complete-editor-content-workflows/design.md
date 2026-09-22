@@ -80,6 +80,16 @@ the viewport host. Session state is committed and an acknowledgement is emitted 
 runtime accepts the operation. This prevents a protocol-level echo from being mistaken for a GPU
 program installation and keeps renderer/Metal types out of the ABI and Rust editor.
 
+On Mac development builds the viewport host implements that interface with a renderer-owned Metal
+adapter. Publication retains the compiled primary/high material program, assembles the engine vertex
+and fragment stages around its generated Slang, emits MSL through the ordinary shader compiler, and
+creates a pipeline plus a 256-byte typed parameter block. Reload resolves the stable 128-bit wire
+entity to the world view's exact render object and refuses a material-slot index the proxy mesh does
+not expose. Live updates resolve the stable `ParameterId` in the retained compiler layout and
+convert the wire value to the GPU type before acknowledging it. The first-light proxy currently
+exposes slot zero and its resident checker texture; other slots and non-resident texture identities
+are structured capability refusals rather than approximate bindings.
+
 ### 5. Terrain edits are modifiers, not destructive heightmap writes
 
 Heightmaps import into tiled terrain source data. Sculpt and paint gestures append or edit stable

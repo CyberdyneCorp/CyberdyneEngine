@@ -86,6 +86,12 @@ struct PreludeOptions {
     /// `cy/backends/shader/reflection.h`'s convention, which is exactly what a material instance
     /// is.
     u32 material_set = 3;
+    /// Binding within `material_set`. Keeping this explicit lets a host place the material block
+    /// beside existing per-draw resources without rewriting generated material source.
+    u32 material_binding = 0;
+    /// Emit the parameter block as a Slang `ParameterBlock`, which becomes the argument buffer the
+    /// Metal RHI binds for one descriptor set. Other targets keep the direct constant-buffer form.
+    bool argument_buffer = false;
 };
 
 /// What the prelude declared. Every number is counted off the module rather than predicted.
