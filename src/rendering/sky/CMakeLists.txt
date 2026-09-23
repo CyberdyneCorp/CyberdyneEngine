@@ -46,6 +46,12 @@
 #   cy::rendering-arbiter  THE PRICED LADDER. "Tier selection SHALL follow the renderer profile and
 #                          the budget arbiter." `sky_quality_ladder()` returns a
 #                          `rendering::QualityLadder` in the arbiter's own currency.
+#   cy::core-jobs          THE FRAME'S INTEGRALS ON WORKERS. `SkyViewTable::update()` and
+#                          `sky_irradiance()` take an optional `jobs::JobSystem`: every direction is
+#                          a pure function written to its own slot, so the parallel answer is the
+#                          serial one bit for bit. `FrameAssembly` rebuilds both every frame the sun
+#                          or the eye moves, and serially that was over half of the world demo's
+#                          submit band.
 #
 # AND ONE DEPENDENCY THAT IS DELIBERATELY ABSENT: cy::rendering-shadows. "Cloud shadows SHALL NOT be
 # produced through the virtual shadow page system." There is no expression in this module that can
@@ -68,8 +74,8 @@ cy_add_module(
         src/sky_light.cpp
         src/tables.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
-                        cy::environment cy::rendering-arbiter cy::rendering-post
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-jobs cy::core-math
+                        cy::core-memory cy::environment cy::rendering-arbiter cy::rendering-post
                         cy::rendering-temporal cy::world)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

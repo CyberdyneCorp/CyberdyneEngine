@@ -23,7 +23,7 @@ here. `atmosphere.h`, `celestial.h` and `sky_light.h` are M7's and their public 
 |---|---|---|
 | `atmosphere.h` | Rayleigh, Mie, ozone, ground albedo and stellar illuminance; transmittance, single scattering, the sun's disc, the sunlight that reaches the ground, and aerial perspective from the same parameters | M7 |
 | `celestial.h` | sun and moon from time, latitude and axial tilt, on a declared time domain — and a model a project bypasses by writing a direction | M7 |
-| `sky_light.h` | spherical-harmonic irradiance, the three-colour gradient `rendering-global-illumination` consumes, and `SkyViewTable` — the full-rebuild sky view | M7 |
+| `sky_light.h` | spherical-harmonic irradiance, the three-colour gradient `rendering-global-illumination` consumes, and `SkyViewTable` — the full-rebuild sky view. The table's rebuild and `sky_irradiance()` also take a `jobs::JobSystem` and return the serial answer bit for bit (every direction in its own slot, summed in index order); `FrameAssembly` uses them when a caller lends it workers | M7, M11.c |
 | `tables.h` | `TransmittanceTable`, `MultipleScatteringTable`, `IncrementalSkyView` and `AerialPerspectiveTable`: the four tables the requirement names, and the two halves M7 declared as gaps | M10 |
 | `clouds.h` | the coarse weather map, the layers, `drive_cloud_layers()`, the procedural reconstruction, the ray march and its cost, and the cloud half of temporal reprojection | M10 |
 | `cloud_shadows.h` | the coarse world-scale cloud shadow field, produced into `cy::environment` under one `ProducerToken` | M10 |

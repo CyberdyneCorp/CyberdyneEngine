@@ -362,6 +362,17 @@ public:
     /// Whether the device cull dispatch is available and will be used.
     [[nodiscard]] bool device_culling() const noexcept { return cull_pass_ready_; }
 
+    /// Lend the assembly a job system for the frame's processor-side integrals. Null takes it back.
+    ///
+    /// THE SKY IS THE ONE THAT NEEDS IT. `update_sky()` rebuilds the sky view table and the
+    /// ambient irradiance whenever the sun or the eye moves, and a camera that flies through a
+    /// day moves both every frame: that is a few thousand atmosphere ray marches on the thread
+    /// that assembles the frame, measured at over half of `samples/10-world`'s submit band. With
+    /// workers the same integrals are spread over them, and the answers are bit-identical to the
+    /// serial ones — every direction is written to its own slot and summed in index order — so
+    /// lending a job system changes when the frame is ready and never what it contains.
+    void set_jobs(jobs::JobSystem* jobs) noexcept { jobs_ = jobs; }
+
     /// Attach one virtual texture, so the frame declares its feedback recording, resolve and
     /// read-back. Requires `attach_device` first.
     ///
@@ -465,6 +476,11 @@ private:
     Array<LightPose> light_poses_;
     sky::SkyViewTable sky_;
     Vec3 sky_irradiance_{0.0F, 0.0F, 0.0F};
+    /// Where the parallel irradiance writes one term per direction. Sized on first use and kept,
+    /// so a steady-state frame does not allocate for it.
+    Array<Vec3> irradiance_terms_;
+    /// Borrowed, never owned; see `set_jobs()`.
+    jobs::JobSystem* jobs_ = nullptr;
     TemporalFramework temporal_;
     ConsumerId temporal_consumer_;
     HistoryId history_;

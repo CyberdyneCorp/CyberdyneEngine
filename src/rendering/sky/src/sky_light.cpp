@@ -1,5 +1,7 @@
 #include <cy/rendering/sky/sky_light.h>
 
+#include <cy/core/jobs/job_system.h>
+#include <cy/core/jobs/parallel.h>
 #include <cy/core/math/math.h>
 
 #include <cmath>
@@ -57,6 +59,72 @@ constexpr f32 kCosineBand[9] = {kCosineBand0, kCosineBand1, kCosineBand1,
                                 kCosineBand1, kCosineBand2, kCosineBand2,
                                 kCosineBand2, kCosineBand2, kCosineBand2};
 
+/// The ray-march steps one irradiance direction takes. One constant for the serial and the parallel
+/// forms, because two that could drift apart would be two integrals.
+constexpr u32 kIrradianceSteps = 16;
+
+/// Directions per partition of the parallel irradiance. Consecutive indices share an azimuth and
+/// sweep the polar angle, so every partition holds the same mix of lit and back-facing directions.
+constexpr u64 kIrradianceGrain = 64;
+
+/// The inputs one irradiance direction reads, which is everything but its index.
+struct IrradianceInputs {
+    const Atmosphere* atmosphere = nullptr;
+    Vec3 view_position;
+    Vec3 sun_direction;
+    Vec3 unit;
+    SphereSampler sampler{4};
+    f32 weight = 0.0F;
+};
+
+/// One direction's contribution, or zero for a direction the surface faces away from. The serial
+/// and the parallel forms both call this and both fold its results the same way — in index order,
+/// skipping what `faces()` rejects — so their answers are the same bits by construction.
+[[nodiscard]] Vec3 irradiance_term(const IrradianceInputs& in, u32 index) noexcept {
+    const Vec3 direction = in.sampler.direction(index);
+    const f32 cosine = dot(direction, in.unit);
+    if (cosine <= 0.0F) {
+        return Vec3{0.0F, 0.0F, 0.0F};
+    }
+    return sky_radiance(*in.atmosphere, in.view_position, direction, in.sun_direction,
+                        kIrradianceSteps) *
+           (cosine * in.weight);
+}
+
+/// Whether a direction contributes. Skipping the back-facing ones rather than adding their zero
+/// is what the serial loop always did, and adding +0 to a running sum is not always a no-op.
+[[nodiscard]] bool faces(const IrradianceInputs& in, u32 index) noexcept {
+    return dot(in.sampler.direction(index), in.unit) > 0.0F;
+}
+
+[[nodiscard]] IrradianceInputs irradiance_inputs(const Atmosphere& atmosphere, Vec3 view_position,
+                                                 Vec3 sun_direction, Vec3 normal,
+                                                 u32 samples) noexcept {
+    const SphereSampler sampler{math::max(samples, 4U)};
+    return IrradianceInputs{&atmosphere,   view_position,
+                            sun_direction, normalized_or(normal, Vec3{0.0F, 1.0F, 0.0F}),
+                            sampler,       sampler.weight()};
+}
+
+/// One row of the sky view table: the non-linear latitude parameterisation, and every azimuth.
+void write_table_row(Span<Vec3> radiance, u32 width, u32 height, u32 y,
+                     const Atmosphere& atmosphere, Vec3 view_position, Vec3 sun) noexcept {
+    // The row index goes as the square of the distance from the horizon, so half the rows cover
+    // the twenty degrees above it where the sky's whole gradient lives. A linear map spends four
+    // fifths of its rows on the smooth part and bands the interesting one.
+    const f32 v = ((static_cast<f32>(y) + 0.5F) / static_cast<f32>(height) * 2.0F) - 1.0F;
+    const f32 elevation = (v < 0.0F ? -1.0F : 1.0F) * v * v * (math::kPi * 0.5F);
+    const f32 cos_elevation = std::cos(elevation);
+    for (u32 x = 0; x < width; ++x) {
+        const f32 azimuth =
+            2.0F * math::kPi * (static_cast<f32>(x) + 0.5F) / static_cast<f32>(width);
+        const Vec3 direction{cos_elevation * std::cos(azimuth), std::sin(elevation),
+                             cos_elevation * std::sin(azimuth)};
+        radiance[(static_cast<usize>(y) * width) + x] =
+            sky_radiance(atmosphere, view_position, direction, sun, 16);
+    }
+}
+
 }  // namespace
 
 Vec3 SkyIrradianceSh::irradiance(Vec3 normal) const noexcept {
@@ -104,18 +172,45 @@ SkyIrradianceSh project_sky_irradiance(const Atmosphere& atmosphere, Vec3 view_p
 
 Vec3 sky_irradiance(const Atmosphere& atmosphere, Vec3 view_position, Vec3 sun_direction,
                     Vec3 normal, u32 samples) noexcept {
-    const Vec3 unit = normalized_or(normal, Vec3{0.0F, 1.0F, 0.0F});
-    const SphereSampler sampler{math::max(samples, 4U)};
-    const f32 weight = sampler.weight();
+    const IrradianceInputs in =
+        irradiance_inputs(atmosphere, view_position, sun_direction, normal, samples);
     Vec3 total{0.0F, 0.0F, 0.0F};
-    for (u32 index = 0; index < sampler.count(); ++index) {
-        const Vec3 direction = sampler.direction(index);
-        const f32 cosine = dot(direction, unit);
-        if (cosine <= 0.0F) {
-            continue;
+    for (u32 index = 0; index < in.sampler.count(); ++index) {
+        if (faces(in, index)) {
+            total = total + irradiance_term(in, index);
         }
-        total = total + sky_radiance(atmosphere, view_position, direction, sun_direction, 16) *
-                            (cosine * weight);
+    }
+    return total;
+}
+
+u32 sky_irradiance_directions(u32 samples) noexcept {
+    return SphereSampler{math::max(samples, 4U)}.count();
+}
+
+Expected<Vec3, Error> sky_irradiance(const Atmosphere& atmosphere, Vec3 view_position,
+                                     Vec3 sun_direction, Vec3 normal, u32 samples,
+                                     jobs::JobSystem& jobs, Span<Vec3> terms) noexcept {
+    const IrradianceInputs in =
+        irradiance_inputs(atmosphere, view_position, sun_direction, normal, samples);
+    const u32 count = in.sampler.count();
+    if (terms.size() < count) {
+        return fail(ErrorCode::InvalidArgument,
+                    "sky_irradiance: the terms span is smaller than sky_irradiance_directions()");
+    }
+    auto body = [&in, terms](const jobs::TaskContext&, u64 begin, u64 end) noexcept {
+        for (u64 index = begin; index < end; ++index) {
+            terms[index] = irradiance_term(in, static_cast<u32>(index));
+        }
+    };
+    if (Status ran = jobs::parallel_for(jobs, count, kIrradianceGrain, body, "sky irradiance");
+        !ran) {
+        return sky_irradiance(atmosphere, view_position, sun_direction, normal, samples);
+    }
+    Vec3 total{0.0F, 0.0F, 0.0F};
+    for (u32 index = 0; index < count; ++index) {
+        if (faces(in, index)) {
+            total = total + terms[index];
+        }
     }
     return total;
 }
@@ -254,7 +349,7 @@ Status SkyViewTable::configure(SkyTableQuality quality) noexcept {
 }
 
 Expected<bool, Error> SkyViewTable::update(const Atmosphere& atmosphere, Vec3 view_position,
-                                           Vec3 sun_direction) noexcept {
+                                           Vec3 sun_direction, jobs::JobSystem* jobs) noexcept {
     if (radiance_.empty()) {
         if (auto configured = configure(quality_); !configured) {
             return fail(configured.error().code, configured.error().message);
@@ -284,22 +379,17 @@ Expected<bool, Error> SkyViewTable::update(const Atmosphere& atmosphere, Vec3 vi
 
     const u32 width = sky_table_width(quality_);
     const u32 height = sky_table_height(quality_);
-    for (u32 y = 0; y < height; ++y) {
-        // The non-linear latitude parameterisation: the row index goes as the square of the
-        // distance from the horizon, so half the rows cover the twenty degrees above it where the
-        // sky's whole gradient lives. A linear map spends four fifths of its rows on the smooth
-        // part and bands the interesting one.
-        const f32 v = ((static_cast<f32>(y) + 0.5F) / static_cast<f32>(height) * 2.0F) - 1.0F;
-        const f32 elevation = (v < 0.0F ? -1.0F : 1.0F) * v * v * (math::kPi * 0.5F);
-        const f32 cos_elevation = std::cos(elevation);
-        for (u32 x = 0; x < width; ++x) {
-            const f32 azimuth =
-                2.0F * math::kPi * (static_cast<f32>(x) + 0.5F) / static_cast<f32>(width);
-            const Vec3 direction{cos_elevation * std::cos(azimuth), std::sin(elevation),
-                                 cos_elevation * std::sin(azimuth)};
-            radiance_[(static_cast<usize>(y) * width) + x] =
-                sky_radiance(atmosphere, view_position, direction, sun, 16);
+    const Span<Vec3> radiance(radiance_.data(), radiance_.size());
+    auto rows = [&](const jobs::TaskContext&, u64 begin, u64 end) noexcept {
+        for (u64 y = begin; y < end; ++y) {
+            write_table_row(radiance, width, height, static_cast<u32>(y), atmosphere, view_position,
+                            sun);
         }
+    };
+    const bool parallel =
+        jobs != nullptr && jobs::parallel_for(*jobs, height, 1, rows, "sky view table").has_value();
+    if (!parallel) {
+        rows(jobs::TaskContext{}, 0, height);
     }
 
     last_sun_ = sun;

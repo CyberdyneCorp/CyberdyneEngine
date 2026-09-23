@@ -19,6 +19,8 @@
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/core/determinism/commit.h>
+#include <cy/core/jobs/diagnostics.h>
+#include <cy/core/jobs/job_system.h>
 #include <cy/core/math/matrix.h>
 #include <cy/core/math/projection.h>
 #include <cy/core/memory/system_allocator.h>
@@ -860,4 +862,69 @@ CY_TEST_CASE(
         CY_REQUIRE(device.value()->wait_idle().has_value());
     }
     cy::rhi::destroy_device(allocator(), device.value());
+}
+
+CY_TEST_CASE("a frame lent a job system integrates its sky on it, and gets the serial bits") {
+    // REGRESSION (M11.c, `m11a:world-budget-on-a-device`). `update_sky()` rebuilds the sky view
+    // table and the ambient irradiance whenever the sun or the eye moves, and it did both on the
+    // assembling thread: about 1 500 atmosphere ray marches a frame, measured at 4.7 ms of
+    // `samples/10-world`'s 7.5 ms submit band on the RTX 5060 host, and doubling to the band's
+    // single-frame spikes when a loaded host slowed that thread. The world demo's camera and sun
+    // move every frame, so no cache could have saved it; spreading it over the frame's workers did.
+    //
+    // Two claims, and each one is the other's control. The lent assembly SUBMITS WORK to the job
+    // system while it assembles — without it this is a frame that ignored the workers it was given
+    // — and what it produces is bit-identical, frame by frame, to an assembly that was never lent
+    // one.
+    cy::jobs::JobSystem jobs;
+    cy::jobs::JobSystemConfig config;
+    config.worker_count = 4;
+    config.task_slots_per_participant = 256;
+    config.deque_capacity = 256;
+    config.scratch_bytes_per_participant = cy::usize{64} * 1024;
+    CY_REQUIRE(jobs.start(config).has_value());
+
+    FrameAssembly serial(allocator());
+    FrameAssembly lent(allocator());
+    CY_REQUIRE(serial.initialize(make_description()).has_value());
+    CY_REQUIRE(lent.initialize(make_description()).has_value());
+    lent.set_jobs(&jobs);
+
+    SpatialIndex index(allocator());
+    const cy::render::LightDescription lights[] = {sun(1)};
+    u32 rebuilt = 0;
+    for (u32 frame = 0; frame < 3; ++frame) {
+        // A camera climbing and a sun rising, as a flown day moves them: past both of the
+        // table's reuse thresholds on every frame, so every frame integrates.
+        AssemblyView view = make_view({lights, 1});
+        view.cull.camera_position = Vec3{0.0F, 40.0F * static_cast<f32>(frame), 0.0F};
+        view.sun_direction = normalize(Vec3{0.8F, 0.2F + (0.25F * static_cast<f32>(frame)), 0.1F});
+
+        RenderGraph serial_graph(allocator());
+        RenderGraph lent_graph(allocator());
+        AssemblyReport serial_report;
+        AssemblyReport lent_report;
+        CY_REQUIRE(
+            serial.assemble(index, view, FrameSinks{}, serial_graph, serial_report).has_value());
+        const u64 submitted_before = jobs.stats().tasks_submitted;
+        CY_REQUIRE(lent.assemble(index, view, FrameSinks{}, lent_graph, lent_report).has_value());
+        CY_CHECK_GT(jobs.stats().tasks_submitted, submitted_before);
+
+        CY_CHECK_EQ(lent_report.sky_rebuilt, serial_report.sky_rebuilt);
+        rebuilt += lent_report.sky_rebuilt ? 1U : 0U;
+        const Vec3 a = serial.sky_irradiance();
+        const Vec3 b = lent.sky_irradiance();
+        CY_CHECK_GT(a.y, 0.0F);
+        CY_CHECK_EQ(b.x, a.x);
+        CY_CHECK_EQ(b.y, a.y);
+        CY_CHECK_EQ(b.z, a.z);
+        const Vec3 up_serial = serial.sky().sample(Vec3{0.2F, 0.3F, 0.9F});
+        const Vec3 up_lent = lent.sky().sample(Vec3{0.2F, 0.3F, 0.9F});
+        CY_CHECK_EQ(up_lent.x, up_serial.x);
+        CY_CHECK_EQ(up_lent.y, up_serial.y);
+        CY_CHECK_EQ(up_lent.z, up_serial.z);
+    }
+    CY_CHECK_EQ(rebuilt, 3U);
+    lent.set_jobs(nullptr);
+    jobs.shutdown();
 }
