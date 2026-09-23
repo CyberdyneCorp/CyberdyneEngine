@@ -307,6 +307,23 @@ what makes 6.1 mandatory rather than advisory.
       - [x] Neither row may be recorded Complete on a count alone: `quality-requirements` reporting
         16 of 16 is the floor, and the mutation evidence is the claim
 
+- [ ] 6.1b **Implement the navigation and physics specifications behind the sweep.** The
+      requirement map is an inventory, not completion of behavior. Replace each `exempt:m11e` in
+      these two rows only after a named case observes the complete requirement, and repair mapped
+      cases that survive deletion of the behavior they claim to observe.
+      - [ ] Route agents, meshes, obstacles, and queries through independent navigation worlds;
+        implement volume navigation through the shared query contract.
+      - [x] Accept 2D collision polygons and tilemap chunks through planar navigation and rebuild
+        only the changed chunk.
+      - [ ] Expose navigation debug geometry and query, repath, and rebuild measurements.
+      - [ ] Map the declared constraint vocabulary to the Jolt solver, including limits, motors,
+        breaking, and the capability-gated kinds.
+      - [ ] Integrate supported soft bodies, vehicles, and ragdoll activation and blending with
+        animation, and keep unsupported capabilities explicit.
+      - [ ] Expose every physics debug view and the step-phase timing breakdown.
+      - [ ] Mutation-check the repaired mappings, run the affected suites in both physics backend
+        configurations, and update the module documentation and requirement map.
+
 - [ ] 6.2 **Each row demoted by a rung above arrives with the reason that demoted it.** Six are named
       in advance — `save-and-persistence` and `audio` (M11.a), `ml-inference` and `swift-scripting`
       (M11.b), `rendering-culling-and-lod` (M11.c), `build-and-packaging` (M11.d) — and an unknown

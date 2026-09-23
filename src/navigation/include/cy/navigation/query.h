@@ -152,6 +152,7 @@ public:
     PathQueue& operator=(const PathQueue&) = delete;
 
     [[nodiscard]] u32 latency() const noexcept { return latency_; }
+    [[nodiscard]] const NavMesh& mesh() const noexcept { return *mesh_; }
 
     /// Enqueue. `owner` is the caller's own identifier, returned with the result so a batch of
     /// completions can be applied without a second table.

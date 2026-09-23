@@ -140,6 +140,12 @@ namespace {
 Status update_agents(World& world, const NavComponents& components, const NavMesh& mesh,
                      PathQueue& queue, u32 tick, u32 repath_interval,
                      NavAgentReport& report) noexcept {
+    return update_agents(world, components, mesh, queue, 0, tick, repath_interval, report);
+}
+
+Status update_agents(World& world, const NavComponents& components, const NavMesh& mesh,
+                     PathQueue& queue, u32 navigation_world, u32 tick, u32 repath_interval,
+                     NavAgentReport& report) noexcept {
     report = NavAgentReport{};
     if (!components.registered()) {
         return make_unexpected(Error{ErrorCode::InvalidArgument,
@@ -162,6 +168,9 @@ Status update_agents(World& world, const NavComponents& components, const NavMes
         const Span<const ecs::Entity> entities = chunk.entities();
         const Span<NavAgent> agents = chunk.write<NavAgent>(components.agent);
         for (u32 row = 0; row < agents.size(); ++row) {
+            if (agents[row].world != navigation_world) {
+                continue;
+            }
             ++out->agents;
             if (!refresh_agent(agents[row], *subject, tick, repath_interval, *out)) {
                 continue;
@@ -169,6 +178,64 @@ Status update_agents(World& world, const NavComponents& components, const NavMes
             (void)request_path(agents[row], entities[row], *subject, *pending, tick, *out);
         }
     });
+}
+
+Status NavWorlds::bind(u32 id, NavMesh& mesh, PathQueue& queue) noexcept {
+    if (&queue.mesh() != &mesh) {
+        return fail(ErrorCode::InvalidArgument, "navigation world queue searches a different mesh");
+    }
+    if (this->mesh(id) != nullptr) {
+        return fail(ErrorCode::AlreadyExists, "navigation world id is already bound");
+    }
+    return bindings_.push_back(Binding{id, &mesh, &queue});
+}
+
+Status NavWorlds::unbind(u32 id) noexcept {
+    for (usize index = 0; index < bindings_.size(); ++index) {
+        if (bindings_[index].id == id) {
+            bindings_.remove_unordered(index);
+            return ok();
+        }
+    }
+    return fail(ErrorCode::NotFound, "navigation world id is not bound");
+}
+
+NavMesh* NavWorlds::mesh(u32 id) const noexcept {
+    for (const Binding& binding : bindings_.span()) {
+        if (binding.id == id) {
+            return binding.mesh;
+        }
+    }
+    return nullptr;
+}
+
+PathQueue* NavWorlds::queue(u32 id) const noexcept {
+    for (const Binding& binding : bindings_.span()) {
+        if (binding.id == id) {
+            return binding.queue;
+        }
+    }
+    return nullptr;
+}
+
+Status NavWorlds::update(World& world, const NavComponents& components, u32 tick,
+                         u32 repath_interval, NavAgentReport& report) noexcept {
+    report = NavAgentReport{};
+    for (const Binding& binding : bindings_.span()) {
+        NavAgentReport partial;
+        if (Status updated = update_agents(world, components, *binding.mesh, *binding.queue,
+                                           binding.id, tick, repath_interval, partial);
+            !updated) {
+            return updated;
+        }
+        report.agents += partial.agents;
+        report.repaths_issued += partial.repaths_issued;
+        report.repaths_rate_limited += partial.repaths_rate_limited;
+        report.corridors_invalidated += partial.corridors_invalidated;
+        report.arrived += partial.arrived;
+        report.failed += partial.failed;
+    }
+    return ok();
 }
 
 }  // namespace cy::navigation

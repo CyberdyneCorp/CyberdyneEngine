@@ -1,5 +1,17 @@
 # Design: M11.e — Ship
 
+## Navigation and physics implementation following the evidence sweep
+
+The 6.1a map identifies seven requirements that currently answer through M11.e exemptions. Task
+6.1b treats the baseline `openspec/specs/navigation/spec.md` and `openspec/specs/physics/spec.md`
+as the behavior contract. Navigation worlds select a mesh and deterministic query queue by world
+identity; planar and volume representations reuse the query concepts of area costs, masks,
+budgets, partial paths and scheduled delivery. Debug data is emitted through engine-owned sinks,
+with bounded counters and no renderer dependency. Physics constraints and optional simulation map
+through `PhysicsServer` to Jolt, and capability flags reflect the operations actually supported.
+The reference backend continues to report unsupported solver features explicitly. A mapping moves
+from exemption to test only when the named case fails under a targeted behavior mutation.
+
 ## 1. The spike, and why it has not run
 
 **M8.c's design opened by saying there was no spike and explaining why; this one opens by saying

@@ -185,4 +185,37 @@ struct NavAgentReport {
                                    const NavMesh& mesh, PathQueue& queue, u32 tick,
                                    u32 repath_interval, NavAgentReport& report) noexcept;
 
+/// Update only agents assigned to one navigation world. The overload above is the default world
+/// (id zero) for existing single-world callers.
+[[nodiscard]] Status update_agents(World& world, const NavComponents& components,
+                                   const NavMesh& mesh, PathQueue& queue, u32 navigation_world,
+                                   u32 tick, u32 repath_interval, NavAgentReport& report) noexcept;
+
+/// Binds independently owned meshes and deterministic query queues to the world ids authored on
+/// NavAgent, NavMeshSurface, NavObstacle and NavLinkComponent. A binding does not own either
+/// object; its caller keeps both alive until it is removed. The registry checks that the queue
+/// searches the mesh it is paired with, so one world's agents cannot silently receive another
+/// world's paths.
+class NavWorlds {
+public:
+    explicit NavWorlds(Allocator& allocator) noexcept : bindings_(allocator) {}
+
+    [[nodiscard]] Status bind(u32 id, NavMesh& mesh, PathQueue& queue) noexcept;
+    [[nodiscard]] Status unbind(u32 id) noexcept;
+    [[nodiscard]] NavMesh* mesh(u32 id) const noexcept;
+    [[nodiscard]] PathQueue* queue(u32 id) const noexcept;
+    [[nodiscard]] usize size() const noexcept { return bindings_.size(); }
+
+    [[nodiscard]] Status update(World& world, const NavComponents& components, u32 tick,
+                                u32 repath_interval, NavAgentReport& report) noexcept;
+
+private:
+    struct Binding {
+        u32 id = 0;
+        NavMesh* mesh = nullptr;
+        PathQueue* queue = nullptr;
+    };
+    Array<Binding> bindings_;
+};
+
 }  // namespace cy::navigation

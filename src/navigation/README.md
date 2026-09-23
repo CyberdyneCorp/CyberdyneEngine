@@ -35,10 +35,25 @@ still runs.
 | Tiles, polygons, adjacency, obstacles, off-mesh links | `navmesh.h` |
 | Generation from source geometry, and the Recast boundary | `build.h` |
 | A\*, the funnel, simplification, corner rounding, the async queue | `query.h` |
+| Chunk-local tilemap polygons and planar path queries | `navigation2d.h` |
 | Regions, the abstract graph, deferred refinement | `hierarchy.h` |
 | Flow fields and the cache that shares them | `flow_field.h` |
 | Local avoidance, the crowd, path and field following | `crowd.h` |
 | `NavMeshSurface`, `NavAgent`, `NavObstacle`, `NavLink`, `NavArea` | `components.h` |
+
+`NavWorlds` binds each navigation world ID to a mesh and its deterministic query queue. An agent
+is updated only by the binding matching `NavAgent::world`; obstacles and links are authored with the
+same world ID and must be published to that world's mesh. The default `update_agents` overload
+continues to update only world zero. Bindings are non-owning, so remove a binding before destroying
+its mesh or queue.
+
+`NavMesh2D` accepts the navigation polygons authored for each tilemap cell and publishes one mesh
+tile per chunk. Rebuilding a changed chunk leaves other chunks' polygon references valid; empty
+chunks remove only their own tile. Its path query takes and returns `Vec2` coordinates. Polygons
+must fit within a cell, be convex and consistently wound, and use the same units as `cell_size`.
+For 2D collision geometry, `rebuild_chunk_from_collision` voxelises convex world-space collision
+footprints into the same chunk grid and conservatively excludes every overlapping cell. Its
+resolution is `cell_size`, so narrow passages need a correspondingly small cell size.
 
 ## Four properties the whole module is shaped by
 

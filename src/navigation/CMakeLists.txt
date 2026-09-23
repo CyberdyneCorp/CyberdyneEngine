@@ -37,6 +37,7 @@ set(cy_navigation_sources
     src/flow_field.cpp
     src/hierarchy.cpp
     src/navmesh.cpp
+    src/navigation2d.cpp
     src/query.cpp)
 
 # THE ONE TRANSLATION UNIT THAT NAMES AN `rc` SYMBOL, and it is compiled only when the option is on.

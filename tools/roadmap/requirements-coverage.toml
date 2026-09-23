@@ -125,14 +125,16 @@ note = "The component system observes a newer mesh version, invalidates the held
 [[coverage]]
 row = "navigation"
 requirement = "Multiple navigation worlds"
-evidence = "exempt:m11e"
-note = "DECLARED BUT NOT OBSERVED. NavSurface and NavAgent carry a navigation-world identity, but no owner routes two independent meshes through those identities and no case proves isolation. Replace this exemption with overlapping walking and flying worlds whose identical coordinates return different paths without cross-world references."
+evidence = "test:unit.navigation"
+case = "overlapping navigation worlds route agents and obstacles only to their own mesh"
+note = "NavWorlds binds independent mesh/queue pairs by world ID and rejects a queue paired with the wrong mesh. At identical coordinates an obstacle blocks the walking world while an agent in the other world still receives a path query; the agents' world IDs select the correct binding."
 
 [[coverage]]
 row = "navigation"
 requirement = "2D navigation"
-evidence = "exempt:m11e"
-note = "NOT BUILT. Navigation currently exposes Vec3 surface-mesh queries and has no Vec2 polygon representation or 2D query API. Replace this exemption with a tilemap-derived polygon case whose Vec2 path goes around a blocked cell and whose public types contain no third-axis detail."
+evidence = "test:unit.navigation"
+case = "tilemap path detours around a blocked cell"
+note = "The Vec2 API consumes tilemap-authored polygons per chunk, preserves references in unchanged chunks and routes around a removed cell. A companion case generates the same planar graph from convex 2D collision footprints and checks that the blocked cell cannot be queried."
 
 [[coverage]]
 row = "navigation"
