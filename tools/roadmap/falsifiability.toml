@@ -958,10 +958,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "roadmap-tiers"
-digest = "d8b5e8dc0f03fc99"
+digest = "f6f94de09dc945ac"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): denoising: recorded 'working', below this milestone's exit of 'complete' … rendering-culling-and-lod: recorded 'working', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11c"
