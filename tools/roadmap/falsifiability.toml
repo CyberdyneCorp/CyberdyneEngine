@@ -1481,7 +1481,7 @@ criterion = "xr-prerequisites"
 digest = "2dbbcf49cd8271c7"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'command.d = info.view_mask;' in src/backends/rhi/null/src/null_command_buffer.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-san/xr-dev (exit 8: error: Recipe `test-render` failed with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m4"
