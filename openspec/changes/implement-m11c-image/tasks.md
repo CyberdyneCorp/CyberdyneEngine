@@ -2945,3 +2945,77 @@ the rung that owns each one can act on it without re-running the prover for fift
 shape that matters most for whoever runs the next ledger-wide `--record` is the third row: **twenty
 of the fifty-two are one unformatted `#include`**, so the disagreement count will fall by more than
 a third the moment that file is formatted, with nothing else changing.
+
+### THE CLOSE, FOURTH ATTEMPT — ONE COMPLETE LEDGER RUN AT `ad6edff`, AND M11.c DOES NOT CLOSE
+
+**Run**: `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, alone on the host, 03:56 to
+06:18 (2 h 22 m). HEAD was `ad6edff` (the plan-document commit above) before and after, and the
+tree was clean before and after. **`M11C is not closed: 3 of 442 evaluated criteria failed.`**
+
+| bucket | count |
+|---|---|
+| declared | **447** (410 permanent, 37 new in M11.c) |
+| evaluated on this host | **442** |
+| FAIL (not a declared gap) | **3** |
+| declared gaps, still open (do not block) | **20** |
+| declared gaps that now pass (these block) | **0** |
+| NOT EVALUATED, legitimately | **5**: `m0:three-platforms`, `m5:editor-three-platforms`, `m10:pcg-gpu-domain-agreement`, `m11a:lockstep-agrees-across-architectures`, `m11a:pcg-regenerates-across-architectures` |
+
+**M11.c's own 37 criteria: 35 ok, 2 red.**
+
+- `m11c:roadmap-tiers`: "3 capability tier(s) below this milestone's". It is red until the closing
+  change writes `denoising`, `ray-tracing-infrastructure` and `rendering-culling-and-lod` at Complete
+  in `status.yaml`, and it is meant to be. It is not a reason the rung fails. It is also not written,
+  because the two reds below block the close.
+- `m11c:every-shader-reaches-every-target`: a declared gap that closes at M11.d. It does not block.
+
+**Inherited reds, which block:**
+
+- **`m1:four-profiles`**: debug, dev and profile are green end to end. **Release** fails two tests.
+  Both reproduce deterministically when rerun alone against `build/m11c-final/release`:
+  - `integration.graph_compiler`: `src/graph/tests/test_lowering.cpp:1118`
+    `CHECK( any_constant_has_dirty_padding(program.value()) )` is false. The check asserts that the
+    four uninitialised padding bytes of a `script::Value` constant are non-zero, which is a property
+    of stack and heap layout, not of the code under test. The release optimiser leaves them zero. The
+    line beside it that carries the invariant (`digest() == digest_from_the_fields()`) passes. The
+    MSVC branch already reports this case instead of failing it.
+  - `render.virtual_geometry_shaded`: "2 differing (2 off edge) of 57600, edge budget 8529, worst
+    delta 10 at (297, 14)" against `tests/render/references/virtual_geometry_shaded.png`.
+  - Neither was reachable at the earlier closes: the criterion's loop runs `test-all ... || exit 1`
+    per profile in the order debug, dev, profile, release, and debug was red at every earlier close.
+    Between `eae101a` and HEAD, nothing under `src/graph`, `src/script`, `src/core`, `tests/harness`
+    or the build configuration changed, and `src/rendering` changed only by SPDX lines and READMEs.
+    So the fix phase did not cause either one. They are not reproduced on a release build of
+    `eae101a` here, so it is not claimed that they are older than that.
+- **`m9:determinism-core`**: one case, `determinism: a purpose selects its own field set, and the
+  four differ` (`src/core/determinism/tests/test_codec.cpp:52`), tripped the harness's stall
+  detector. It took 655.4 ms of wall clock against a 234.9 ms ceiling, while spending 0.21 ms of CPU
+  and 0 ms waiting for a core. Rerun alone three times against the same build tree, it passed 3/3.
+  That makes it a transient wait on the host (I/O or scheduling), not a defect in the suite. It was
+  still red in the gate run, and a gate run is the verdict.
+
+**Now green, the inherited reds the fix phase took on**: `m0:test`, `m0:lint`, `m0:format`,
+`m3:xr-prerequisites`, `m4:sanitizers`, `m5b:agent-artefact`, `m5b:agent-recipe`,
+`m5b:window-artefact`, `m5b:window-recipe`, `m7:plan-consistency` and
+`m11a:world-budget-on-a-device`.
+
+**Three findings the ledger does not show, carried from the gate that refuted the fix phase:**
+
+1. `m4:sanitizers` is partly green because a threshold was raised. In
+   `src/gameplay/abilities/tests/test_scale.cpp` (5682d4e), the 10 us/tick budget is now multiplied
+   by `cy::test::budget_scale()`, and the check is skipped when the scale is 0. It measured
+   27.2 us/tick under ASan.
+2. `m11a:world-budget-on-a-device` passed in this run. Its fixer measured 3 failures in 6 runs of the
+   final binary on a loaded host (18.9 to 20.5 ms worst frame against 16.7 ms), each one a single
+   `stage_submit` spike. One green run in a quiet window does not show that the margin holds.
+3. `m11c:forward-path-reads-the-mip-chain`'s `describe` still said the shot samples at level 0. That
+   stopped being true at 0e618d6. It is corrected here. `describe` is not digest material, and the
+   recorded digest `1425008e37c68c8b` is unchanged.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`gates.toml`, `ci.yml` and `status.yaml` are unchanged. `milestone-m11c` stays at
+`state = "joins-on-close"`. `capability-matrix.md` and `ROADMAP.md` changed only by the twelve cell
+moves the re-judgement handed over (committed before the run as `ad6edff`), and they plan three
+Completes at M11.c. None of those three is written into the record, because the rung did not close.
+The gate items 9.1 and 9.2 stay unticked.
