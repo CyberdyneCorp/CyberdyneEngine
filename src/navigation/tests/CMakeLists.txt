@@ -56,6 +56,7 @@ function(cy_navigation_declare_tests)
             "${cy_navigation_tests_dir}/test_navmesh.cpp"
             "${cy_navigation_tests_dir}/test_navigation2d.cpp"
             "${cy_navigation_tests_dir}/test_query.cpp"
+            "${cy_navigation_tests_dir}/test_volume.cpp"
         DEPENDENCIES cy::navigation cy::ecs cy::core-reflect)
 
     cy_add_test(

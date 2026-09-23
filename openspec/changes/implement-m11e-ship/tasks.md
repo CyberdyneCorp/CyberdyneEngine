@@ -311,7 +311,7 @@ what makes 6.1 mandatory rather than advisory.
       requirement map is an inventory, not completion of behavior. Replace each `exempt:m11e` in
       these two rows only after a named case observes the complete requirement, and repair mapped
       cases that survive deletion of the behavior they claim to observe.
-      - [ ] Route agents, meshes, obstacles, and queries through independent navigation worlds;
+      - [x] Route agents, meshes, obstacles, and queries through independent navigation worlds;
         implement volume navigation through the shared query contract.
       - [x] Accept 2D collision polygons and tilemap chunks through planar navigation and rebuild
         only the changed chunk.

@@ -43,6 +43,7 @@
 #include <cy/core/math/shapes.h>
 #include <cy/ecs/world.h>
 #include <cy/navigation/crowd.h>
+#include <cy/navigation/volume.h>
 
 namespace cy::navigation {
 
@@ -97,6 +98,7 @@ struct NavAgent {
     u32 last_repath_tick = 0;
     f32 arrival_distance = 0.5F;
     u32 world = 0;
+    NavigationRepresentation representation = NavigationRepresentation::Surface;
     NavPathStatus status = NavPathStatus::Idle;
     /// True for one tick after arrival or failure. `navigation`: "events for path completion and
     /// failure" — as a flag a system reads and clears, because an event queue per agent is the
@@ -198,13 +200,23 @@ struct NavAgentReport {
 /// world's paths.
 class NavWorlds {
 public:
-    explicit NavWorlds(Allocator& allocator) noexcept : bindings_(allocator) {}
+    explicit NavWorlds(Allocator& allocator) noexcept
+        : bindings_(allocator), volume_bindings_(allocator) {}
 
     [[nodiscard]] Status bind(u32 id, NavMesh& mesh, PathQueue& queue) noexcept;
     [[nodiscard]] Status unbind(u32 id) noexcept;
     [[nodiscard]] NavMesh* mesh(u32 id) const noexcept;
     [[nodiscard]] PathQueue* queue(u32 id) const noexcept;
-    [[nodiscard]] usize size() const noexcept { return bindings_.size(); }
+    [[nodiscard]] Expected<ObstacleId, Error> add_obstacle(u32 id,
+                                                           const NavObstacleShape& shape) noexcept;
+    [[nodiscard]] Status remove_obstacle(u32 id, ObstacleId obstacle) noexcept;
+    [[nodiscard]] Expected<LinkId, Error> add_link(u32 id, const NavLink& link, Vec3 snap) noexcept;
+    [[nodiscard]] Status remove_link(u32 id, LinkId link) noexcept;
+    [[nodiscard]] Status bind_volume(u32 id, NavVolume& volume, SpatialPathQueue& queue) noexcept;
+    [[nodiscard]] Status unbind_volume(u32 id) noexcept;
+    [[nodiscard]] NavVolume* volume(u32 id) const noexcept;
+    [[nodiscard]] SpatialPathQueue* volume_queue(u32 id) const noexcept;
+    [[nodiscard]] usize size() const noexcept { return bindings_.size() + volume_bindings_.size(); }
 
     [[nodiscard]] Status update(World& world, const NavComponents& components, u32 tick,
                                 u32 repath_interval, NavAgentReport& report) noexcept;
@@ -216,6 +228,12 @@ private:
         PathQueue* queue = nullptr;
     };
     Array<Binding> bindings_;
+    struct VolumeBinding {
+        u32 id = 0;
+        NavVolume* volume = nullptr;
+        SpatialPathQueue* queue = nullptr;
+    };
+    Array<VolumeBinding> volume_bindings_;
 };
 
 }  // namespace cy::navigation

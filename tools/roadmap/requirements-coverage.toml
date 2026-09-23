@@ -56,8 +56,9 @@ note = "The mesh version and tile generation stay unchanged while the affected p
 [[coverage]]
 row = "navigation"
 requirement = "Navigation volumes"
-evidence = "exempt:m11e"
-note = "NOT BUILT. The tree has surface NavMesh data only; there is no sparse-voxel or octree navigation representation and no representation-neutral query dispatch. Replace this exemption with one suite that runs the same cost, mask, budget, partial-path and deterministic-async cases over a three-dimensional canyon volume and a surface mesh."
+evidence = "test:unit.navigation"
+case = "a flying path climbs over a blocked canyon cell"
+note = "A sparse six-connected NavVolume climbs over a blocked 3D canyon cell. Companion cases apply area costs and masks, force budget and unreachable-target partial paths, and issue surface and volume point-path queries through the same NavigationSpace and deterministic SpatialPathQueue. NavAgent declares its representation; a mixed-world case verifies walker and flyer use separate queues."
 
 [[coverage]]
 row = "navigation"
