@@ -3019,3 +3019,64 @@ tree was clean before and after. **`M11C is not closed: 3 of 442 evaluated crite
 moves the re-judgement handed over (committed before the run as `ad6edff`), and they plan three
 Completes at M11.c. None of those three is written into the record, because the rung did not close.
 The gate items 9.1 and 9.2 stay unticked.
+
+### THE CLOSE, FIFTH ATTEMPT — ONE COMPLETE LEDGER RUN AT `699f95d`, AND M11.c DOES NOT CLOSE
+
+**Run**: `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, alone on the host, 11:59 to
+19:27 (7 h 28 m; `build/m11c-final` had been reaped, so every per-label tree built from empty). HEAD
+was `699f95d` before and after, and the tree was clean before and after.
+**`M11C is not closed: 2 of 442 evaluated criteria failed.`**
+
+| bucket | count |
+|---|---|
+| declared | **447** |
+| evaluated on this host | **442** (420 ok, 22 failed) |
+| FAIL (not a declared gap) | **2** |
+| declared gaps, still open (do not block) | **20** |
+| declared gaps that now pass (these block) | **0** |
+| NOT EVALUATED, legitimately | **5**, the same five as the fourth close |
+
+**The three reds of the fourth close are green in this run**: `m1:four-profiles` (all four profiles,
+release included, 4470.9 s), `m9:determinism-core` and `m11a:world-budget-on-a-device`. Two of those
+greens are not taken at face value; see below.
+
+**The two reds:**
+
+- `m11c:roadmap-tiers`: red until the closing change writes `denoising`,
+  `ray-tracing-infrastructure` and `rendering-culling-and-lod` at Complete. It is meant to be red
+  here. The closing change is not written, for the reasons below.
+- **`m5:editor`** (inherited, declared by M5, M5B and M8.a): one Rust test,
+  `the_editor_survives_the_runtime_being_killed`
+  (`editor/crates/cy-editor-viewport-transport/tests/across_a_process_boundary.rs:199`), failed its
+  first assertion: the probe process exited non-zero after its runtime was SIGKILLed. The binary's
+  three tests took 11.74 s against about 6.7 s normally. Rerun alone against the ledger's own test
+  binary, it passed 5/5, and the whole binary passed 5/5. So it is intermittent and was not
+  reproduced. No file under `editor/crates/cy-editor-viewport-transport/` changed after `eae101a`.
+  It was not reproduced on a build of `eae101a` either, so it is not claimed to be older. It was
+  still red in the gate run, and a gate run is the verdict.
+
+**Two greens the fix phase's gate refuted, and which are therefore not counted as honest:**
+
+- **`m9:determinism-core` is green because the stall detector got more lenient, not because the
+  cause was found.** `757b3d9` subtracts every uninterruptible (`D`-state) wait of the case's own
+  thread from the stall ceiling. That includes waits the case causes itself. Reproduced here on an
+  idle host with the gate's probe, linked against this tree's harness: a case whose `vfork` child
+  holds it for 300 ms is **failed** as `stalled:` by the harness before `757b3d9` and is **reported
+  and passed** as `contended:` by the harness at HEAD ("300.040 ms blocked on the host's disk or a
+  page fault"). The 655 ms trip at the fourth close was never reproduced, before or after the
+  change. So this green cannot tell a loaded host from a case that stalls on its own I/O.
+- **`m11a:world-budget-on-a-device` passes only on a quiet host.** `d18bd00` moved the sky
+  integration onto the job system and cut `stage_submit` from about 7 ms to about 3.9 ms. On a
+  loaded host the criterion still fails: the fix phase's own note measured 5 of 6 runs red, and the
+  gate measured 3 of 3 red, with worst frames of 58.6 to 285.9 ms against 16.7 ms. One green run
+  alone on the host does not show the margin holds.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`gates.toml`, `ci.yml` and `status.yaml` are unchanged. `milestone-m11c` stays at
+`state = "joins-on-close"`, `ci.yml`'s milestone job still runs `m11b`, and `capability-matrix.md`
+and `ROADMAP.md` are unchanged. Gate items 9.1 and 9.2 stay unticked. What would close it:
+`m5:editor` green in a gate run, and an owner's decision on each of the two refuted greens. Either
+accept them as they are and write that down, or fix them. For the stall detector, fixing means
+limiting the allowance to waits the case did not cause. For the world budget, it means a margin
+that holds under load, or a criterion that states the quiet host it assumes.
