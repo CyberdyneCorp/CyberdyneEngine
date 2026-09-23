@@ -242,8 +242,9 @@ note = "Two independently constructed runs compare every per-tick state hash rat
 [[coverage]]
 row = "physics"
 requirement = "Physics debugging"
-evidence = "exempt:m11e"
-note = "HALF-BUILT. PhysicsServer has debug-draw flags, body geometry output and statistics, but no case observes the full overlay set or broad/narrow/solve timing breakdown; the reference backend cannot provide those phases. Replace this exemption with a debug command-stream case per flag and a deliberately slow scene whose phase counters identify the bottleneck."
+evidence = "test:integration.physics_jolt"
+case = "a dense contact scene exposes narrow-phase cost in step diagnostics"
+note = "The dense-contact case demonstrates a narrow-phase bottleneck with broad, narrow and solve job costs. Companion Jolt cases assert solver-space collider geometry (including convex and mesh triangles), contacts, sleep, velocities, centres of mass, broad-phase bounds, joint anchors and limits, active/contact/constraint/island counters, and solver phase timings. unit.physics_server covers stateless query input/result overlays. Mutating the narrow-phase cost or solver-space shape centre fails the focused tests."
 
 [[coverage]]
 row = "physics"

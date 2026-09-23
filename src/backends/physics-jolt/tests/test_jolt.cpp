@@ -116,6 +116,7 @@ struct DebugCapture final : DebugDrawSink {
     u32 bounds = 0;
     u32 limits = 0;
     u32 limit_spheres = 0;
+    u32 asleep_markers = 0;
     Vec3 last_sphere_center{};
 
     void line(Vec3, Vec3, DebugColor color) noexcept override {
@@ -135,6 +136,8 @@ struct DebugCapture final : DebugDrawSink {
         last_sphere_center = center;
         if (color == DebugColor::ConstraintLimit) {
             ++limit_spheres;
+        } else if (color == DebugColor::DynamicAsleep) {
+            ++asleep_markers;
         }
     }
     void capsule(const Transform&, f32, f32, DebugColor) noexcept override { ++capsules; }
@@ -609,6 +612,57 @@ CY_TEST_CASE(
     CY_CHECK_EQ(state_capture.lines, 2U);
 }
 
+CY_TEST_CASE("Jolt collider debug emits hull and mesh triangles at solver transforms") {
+    Fixture fixture;
+    const Vec3 hull_points[] = {
+        {-0.5f, 0.0f, -0.5f}, {0.5f, 0.0f, -0.5f}, {0.0f, 0.0f, 0.5f}, {0.0f, 1.0f, 0.0f}};
+    ShapeDescription hull;
+    hull.type = ShapeType::ConvexHull;
+    hull.points = hull_points;
+    hull.point_count = 4;
+    const auto hull_shape = fixture.server->create_shape(hull);
+    CY_REQUIRE(hull_shape.has_value());
+    (void)fixture.body(*hull_shape, MotionType::Dynamic, Vec3{2.0f, 3.0f, 0.0f});
+
+    const Vec3 vertices[] = {{-1.0f, 0.0f, -1.0f}, {1.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 1.0f}};
+    const u32 indices[] = {0, 1, 2};
+    ShapeDescription mesh;
+    mesh.type = ShapeType::TriangleMesh;
+    mesh.vertices = vertices;
+    mesh.vertex_count = 3;
+    mesh.indices = indices;
+    mesh.index_count = 3;
+    const auto mesh_shape = fixture.server->create_shape(mesh);
+    CY_REQUIRE(mesh_shape.has_value());
+    (void)fixture.body(*mesh_shape, MotionType::Static, Vec3{0.0f, -1.0f, 0.0f});
+
+    DebugCapture capture;
+    CY_REQUIRE(
+        fixture.server->debug_draw(fixture.world, DebugDrawFlags::Colliders, capture).has_value());
+    CY_CHECK_GT(capture.lines, 3U);
+    CY_CHECK_EQ(capture.boxes, 0U);
+}
+
+CY_TEST_CASE("Jolt contact and sleep debug flags emit solver events and sleep state") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{5.0f, 0.5f, 5.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    (void)fixture.body(fixture.sphere(0.5f), MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    bool saw_contact = false;
+    for (u64 tick = 0; tick < 180; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+        DebugCapture capture;
+        CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::Contacts, capture)
+                       .has_value());
+        saw_contact |= capture.contacts > 0;
+    }
+    CY_CHECK(saw_contact);
+    DebugCapture sleeping;
+    CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::SleepState, sleeping)
+                   .has_value());
+    CY_CHECK_GT(sleeping.asleep_markers, 0U);
+}
+
 CY_TEST_CASE("Jolt constraint debug draws anchors and limit rays") {
     Fixture fixture;
     const ShapeHandle shape = fixture.sphere(0.2f);
@@ -674,6 +728,32 @@ CY_TEST_CASE("Jolt step statistics measure broad, narrow and solve job costs") {
     CY_CHECK_GT(stats->narrow_phase_ns, 0);
     CY_CHECK_GT(stats->solve_ns, 0);
     CY_CHECK_GT(stats->total_ns, 0);
+}
+
+CY_TEST_CASE("a dense contact scene exposes narrow-phase cost in step diagnostics") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{20.0f, 0.5f, 20.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    const ShapeHandle sphere = fixture.sphere(0.5f);
+    for (u32 x = 0; x < 12; ++x) {
+        for (u32 z = 0; z < 12; ++z) {
+            (void)fixture.body(sphere, MotionType::Dynamic,
+                               Vec3{static_cast<f32>(x) * 0.8f, 0.5f, static_cast<f32>(z) * 0.8f});
+        }
+    }
+    Nanoseconds broad = 0;
+    Nanoseconds narrow = 0;
+    Nanoseconds solve = 0;
+    for (u64 tick = 0; tick < 12; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+        const auto stats = fixture.server->statistics(fixture.world);
+        CY_REQUIRE(stats.has_value());
+        broad += stats->broad_phase_ns;
+        narrow += stats->narrow_phase_ns;
+        solve += stats->solve_ns;
+    }
+    CY_CHECK_GT(narrow, broad);
+    CY_CHECK_GT(solve, 0);
 }
 
 CY_TEST_CASE("Jolt island count joins active bodies by constraints and contacts") {

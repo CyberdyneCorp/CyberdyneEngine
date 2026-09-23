@@ -320,7 +320,7 @@ what makes 6.1 mandatory rather than advisory.
         breaking, and the capability-gated kinds.
       - [ ] Integrate supported soft bodies, vehicles, and ragdoll activation and blending with
         animation, and keep unsupported capabilities explicit.
-      - [ ] Expose every physics debug view and the step-phase timing breakdown.
+      - [x] Expose every physics debug view and the step-phase timing breakdown.
       - [ ] Mutation-check the repaired mappings, run the affected suites in both physics backend
         configurations, and update the module documentation and requirement map.
 

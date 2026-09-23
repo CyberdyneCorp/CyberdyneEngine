@@ -41,7 +41,8 @@ threshold). The backend now times named Jolt jobs by broad-phase, narrow-phase, 
 work. These phase counters are cumulative CPU nanoseconds; concurrent jobs can make their sum
 exceed the wall-clock `total_ns`. They are diagnostic costs, not a partition of wall time.
 
-`debug_draw` reads the simulated body transforms and emits collider primitives, world-space
+`debug_draw` reads the simulated body transforms and emits collider primitives (including
+world-space triangles for convex, mesh and compound shapes), world-space
 broad-phase bounds, contacts, sleep state, linear/angular velocities, centres of mass, joint
 anchors, and hinge, slider, distance, cone, swing-twist and six-degree limits. Query overlays use
 the stateless `debug_draw_query` helpers in the physics interface: callers pass their input and

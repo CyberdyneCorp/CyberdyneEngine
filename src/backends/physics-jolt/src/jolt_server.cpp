@@ -2283,6 +2283,30 @@ Status JoltServer::hash_state(WorldHandle world, determinism::StateHashTree& tre
 
 namespace {
 
+void draw_jolt_triangles(const JPH::Body& body, DebugDrawSink& sink, DebugColor color) noexcept {
+    constexpr int kBatchTriangles = 64;
+    JPH::Shape::GetTrianglesContext context;
+    const JPH::Shape* shape = body.GetShape();
+    shape->GetTrianglesStart(context, body.GetWorldSpaceBounds(), body.GetCenterOfMassPosition(),
+                             body.GetRotation(), JPH::Vec3::sReplicate(1.0f));
+    JPH::Float3 vertices[kBatchTriangles * 3];
+    for (;;) {
+        const int count = shape->GetTrianglesNext(context, kBatchTriangles, vertices);
+        if (count == 0) {
+            break;
+        }
+        for (int triangle = 0; triangle < count; ++triangle) {
+            const JPH::Float3* points = &vertices[triangle * 3];
+            const Vec3 a{points[0].x, points[0].y, points[0].z};
+            const Vec3 b{points[1].x, points[1].y, points[1].z};
+            const Vec3 c{points[2].x, points[2].y, points[2].z};
+            sink.line(a, b, color);
+            sink.line(b, c, color);
+            sink.line(c, a, color);
+        }
+    }
+}
+
 void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& sink,
                     DebugColor color) noexcept {
     const Transform transform{from_jolt(body.GetRotation()), from_jolt(body.GetPosition()),
@@ -2296,10 +2320,12 @@ void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& 
             const auto* capsule = static_cast<const JPH::CapsuleShape*>(shape);
             sink.capsule(transform, capsule->GetRadius(), capsule->GetHalfHeightOfCylinder(),
                          color);
-        } else {
+        } else if (shape->GetSubType() == JPH::EShapeSubType::Box) {
             const JPH::AABox local = shape->GetLocalBounds();
             sink.box(Aabb::from_min_max(from_jolt(local.mMin), from_jolt(local.mMax)), transform,
                      color);
+        } else {
+            draw_jolt_triangles(body, sink, color);
         }
     }
     if (has_flag(flags, DebugDrawFlags::BroadPhaseBounds)) {
