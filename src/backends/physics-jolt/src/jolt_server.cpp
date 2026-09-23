@@ -60,6 +60,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/hash_map.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -188,6 +189,11 @@ struct PendingContact {
     f32 impulse = 0.0f;
 };
 
+struct IslandContact {
+    u64 a = 0;
+    u64 b = 0;
+};
+
 /// The engine-side record of one body. Jolt owns the simulation state; this owns the identity.
 struct JoltBody {
     u32 generation = 0;
@@ -205,6 +211,7 @@ struct JoltBody {
     bool report_stay = true;
     bool teleported = false;
     bool pending_teleport = false;
+    u32 island_index = 0;
     f32 contact_impulse_threshold = 0.0f;
     /// Held so that `destroy_body` releases the cache's references. A body keeps its shapes alive.
     Array<ShapeHandle> shapes;
@@ -251,6 +258,8 @@ struct JoltWorld final : public JPH::ContactListener {
           broken(allocator),
           ignored(allocator),
           joint_ignored(allocator),
+          island_contacts(allocator),
+          island_parents(allocator),
           pending(allocator),
           previous(allocator) {}
 
@@ -311,6 +320,8 @@ struct JoltWorld final : public JPH::ContactListener {
     Array<ConstraintBroken> broken;
     HashMap<u64, u8> ignored;
     HashMap<u64, u32> joint_ignored;
+    Array<IslandContact> island_contacts;
+    Array<u32> island_parents;
 
     std::mutex pending_mutex;
     Array<PendingContact> pending;
@@ -438,6 +449,18 @@ public:
             return make_unexpected(reserved.error());
         }
         if (Status reserved = world->broken.reserve(description.body_capacity); !reserved) {
+            world->~JoltWorld();
+            allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
+            return make_unexpected(reserved.error());
+        }
+        if (Status reserved =
+                world->island_contacts.reserve(description.contact_constraint_capacity);
+            !reserved) {
+            world->~JoltWorld();
+            allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
+            return make_unexpected(reserved.error());
+        }
+        if (Status reserved = world->island_parents.reserve(description.body_capacity); !reserved) {
             world->~JoltWorld();
             allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
             return make_unexpected(reserved.error());
@@ -1021,6 +1044,7 @@ private:
     [[nodiscard]] Expected<ConstraintHandle, Error> register_constraint(
         WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
         JPH::Ref<JPH::TwoBodyConstraint> joint) noexcept;
+    [[nodiscard]] u32 count_islands(JoltWorld& world) noexcept;
 
     Allocator* allocator_;
     cy::jobs::JobSystem* jobs_;
@@ -1115,11 +1139,13 @@ void JoltWorld::record(const JPH::Body& body_a, const JPH::Body& body_b,
     const f32 threshold = a->contact_impulse_threshold > b->contact_impulse_threshold
                               ? a->contact_impulse_threshold
                               : b->contact_impulse_threshold;
-    if (threshold > 0.0f && contact.impulse < threshold) {
-        return;  // `physics` — "Contact filtering": below the threshold, no event
-    }
-
     const std::lock_guard<std::mutex> guard(pending_mutex);
+    if (!contact.trigger && phase != ContactPhase::Exit) {
+        (void)island_contacts.push_back(IslandContact{contact.a, contact.b});
+    }
+    if (threshold > 0.0f && contact.impulse < threshold) {
+        return;  // Below the reporting threshold, but still a solver contact and island edge.
+    }
     (void)pending.push_back(contact);
 }
 
@@ -1673,6 +1699,66 @@ Status JoltServer::set_constraint_motor(ConstraintHandle constraint,
     return update_constraint_motor(record->type, *record->joint, motor);
 }
 
+namespace {
+
+u32 island_root(Array<u32>& parents, u32 index) noexcept {
+    while (parents[index] != index) {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    return index;
+}
+
+void join_islands(Array<u32>& parents, u32 a, u32 b) noexcept {
+    const u32 root_a = island_root(parents, a);
+    const u32 root_b = island_root(parents, b);
+    if (root_a != root_b) {
+        parents[root_b] = root_a;
+    }
+}
+
+}  // namespace
+
+u32 JoltServer::count_islands(JoltWorld& world) noexcept {
+    constexpr u32 kInactive = static_cast<u32>(-1);
+    if (Status sized = world.island_parents.resize(world.bodies.size()); !sized) {
+        return 0;
+    }
+    const JPH::BodyInterface& interface = world.system.GetBodyInterfaceNoLock();
+    for (u32 index = 0; index < world.bodies.size(); ++index) {
+        JoltBody& record = bodies_[world.bodies[index]];
+        record.island_index = index;
+        world.island_parents[index] = interface.IsActive(record.id) ? index : kInactive;
+    }
+    const auto join = [&](BodyHandle handle_a, BodyHandle handle_b) noexcept {
+        const JoltBody* a = resolve(handle_a);
+        const JoltBody* b = resolve(handle_b);
+        if (a == nullptr || b == nullptr || a->world != b->world ||
+            world.island_parents[a->island_index] == kInactive ||
+            world.island_parents[b->island_index] == kInactive) {
+            return;
+        }
+        join_islands(world.island_parents, a->island_index, b->island_index);
+    };
+    for (const IslandContact& contact : world.island_contacts) {
+        join(BodyHandle::from_bits(contact.a), BodyHandle::from_bits(contact.b));
+    }
+    for (const u32 slot : world.constraints) {
+        const JoltConstraint& constraint = constraints_[slot];
+        if (!constraint.body_b.is_null() && constraint.joint->GetEnabled()) {
+            join(constraint.body_a, constraint.body_b);
+        }
+    }
+    u32 count = 0;
+    for (u32 index = 0; index < world.island_parents.size(); ++index) {
+        if (world.island_parents[index] != kInactive &&
+            island_root(world.island_parents, index) == index) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 // ================================================================================================
 // THE STEP
 // ================================================================================================
@@ -1699,6 +1785,7 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
     {
         const std::lock_guard<std::mutex> guard(found->pending_mutex);
         found->pending.clear();
+        found->island_contacts.clear();
     }
     found->events.clear();
     found->broken.clear();
@@ -1801,7 +1888,7 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
         found->system.GetNumActiveBodies(JPH::EBodyType::RigidBody);
     found->statistics.contact_count = found->events.size();
     found->statistics.constraint_count = static_cast<u32>(found->constraints.size());
-    found->statistics.island_count = 0;
+    found->statistics.island_count = count_islands(*found);
     found->statistics.tick = input.tick;
     // Named Jolt jobs are measured at execution on the worker that ran them. These phase values
     // are cumulative CPU time, so parallel jobs can make their sum exceed wall-clock total_ns.
@@ -2236,6 +2323,15 @@ void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& 
     }
 }
 
+void draw_angular_range(Vec3 origin, Vec3 axis, Vec3 reference, f32 min_angle, f32 max_angle,
+                        DebugDrawSink& sink) noexcept {
+    const Vec3 radius = reference * 0.25f;
+    sink.line(origin, origin + Quat::from_axis_angle(axis, min_angle) * radius,
+              DebugColor::ConstraintLimit);
+    sink.line(origin, origin + Quat::from_axis_angle(axis, max_angle) * radius,
+              DebugColor::ConstraintLimit);
+}
+
 void draw_constraint_limits(const ConstraintDescription& description, const Transform& anchor,
                             DebugDrawSink& sink) noexcept {
     const Vec3 origin = anchor.translation;
@@ -2244,18 +2340,39 @@ void draw_constraint_limits(const ConstraintDescription& description, const Tran
         sink.line(origin + axis * description.limit.min, origin + axis * description.limit.max,
                   DebugColor::ConstraintLimit);
     } else if (description.type == ConstraintType::Hinge && description.limit.limited()) {
-        const Vec3 normal = anchor.up() * 0.25f;
-        const Vec3 lower = Quat::from_axis_angle(axis, description.limit.min) * normal;
-        const Vec3 upper = Quat::from_axis_angle(axis, description.limit.max) * normal;
-        sink.line(origin, origin + lower, DebugColor::ConstraintLimit);
-        sink.line(origin, origin + upper, DebugColor::ConstraintLimit);
+        draw_angular_range(origin, axis, anchor.up(), description.limit.min, description.limit.max,
+                           sink);
+    } else if (description.type == ConstraintType::Distance) {
+        sink.sphere(origin, description.min_distance, DebugColor::ConstraintLimit);
+        sink.sphere(origin, description.max_distance, DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::Cone ||
+               description.type == ConstraintType::SwingTwist) {
+        const f32 normal = description.type == ConstraintType::Cone
+                               ? std::max(description.swing_limit_y, description.swing_limit_z)
+                               : description.swing_limit_y;
+        const f32 plane =
+            description.type == ConstraintType::Cone ? normal : description.swing_limit_z;
+        draw_angular_range(origin, anchor.up(), axis, -normal, normal, sink);
+        draw_angular_range(origin, -anchor.forward(), axis, -plane, plane, sink);
+        if (description.type == ConstraintType::SwingTwist && description.twist_limit.limited()) {
+            draw_angular_range(origin, axis, anchor.up(), description.twist_limit.min,
+                               description.twist_limit.max, sink);
+        }
     } else if (description.type == ConstraintType::SixDof) {
-        const Vec3 axes[] = {anchor.right(), anchor.up(), anchor.forward()};
+        const Vec3 axes[] = {anchor.right(), anchor.up(), -anchor.forward()};
         for (u32 index = 0; index < 3; ++index) {
             const AxisLimit& limit = description.dof_limits[index];
             if (limit.limited()) {
                 sink.line(origin + axes[index] * limit.min, origin + axes[index] * limit.max,
                           DebugColor::ConstraintLimit);
+            }
+        }
+        const Vec3 references[] = {axes[1], axes[2], axes[0]};
+        for (u32 index = 0; index < 3; ++index) {
+            const AxisLimit& limit = description.dof_limits[index + 3];
+            if (limit.limited()) {
+                draw_angular_range(origin, axes[index], references[index], limit.min, limit.max,
+                                   sink);
             }
         }
     }

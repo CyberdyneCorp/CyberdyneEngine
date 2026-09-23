@@ -43,9 +43,11 @@ exceed the wall-clock `total_ns`. They are diagnostic costs, not a partition of 
 
 `debug_draw` reads the simulated body transforms and emits collider primitives, world-space
 broad-phase bounds, contacts, sleep state, linear/angular velocities, centres of mass, joint
-anchors, and hinge/slider/linear six-degree limits. Query overlays use the stateless
-`debug_draw_query` helpers in the physics
-interface: callers pass their input and optional result, leaving parallel queries read-only.
+anchors, and hinge, slider, distance, cone, swing-twist and six-degree limits. Query overlays use
+the stateless `debug_draw_query` helpers in the physics interface: callers pass their input and
+optional result, leaving parallel queries read-only.
+The island count is derived from active bodies joined by solver contacts or enabled constraints;
+static and sleeping bodies are excluded.
 
 ## What is not implemented
 

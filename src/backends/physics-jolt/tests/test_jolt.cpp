@@ -114,6 +114,7 @@ struct DebugCapture final : DebugDrawSink {
     u32 contacts = 0;
     u32 bounds = 0;
     u32 limits = 0;
+    u32 limit_spheres = 0;
     Vec3 last_sphere_center{};
 
     void line(Vec3, Vec3, DebugColor color) noexcept override {
@@ -128,9 +129,12 @@ struct DebugCapture final : DebugDrawSink {
             ++bounds;
         }
     }
-    void sphere(Vec3 center, f32, DebugColor) noexcept override {
+    void sphere(Vec3 center, f32, DebugColor color) noexcept override {
         ++spheres;
         last_sphere_center = center;
+        if (color == DebugColor::ConstraintLimit) {
+            ++limit_spheres;
+        }
     }
     void capsule(const Transform&, f32, f32, DebugColor) noexcept override { ++capsules; }
     void contact(Vec3, Vec3, f32) noexcept override { ++contacts; }
@@ -326,6 +330,36 @@ CY_TEST_CASE("Jolt constraint debug draws anchors and limit rays") {
     CY_CHECK_EQ(capture.limits, 2U);
 }
 
+CY_TEST_CASE("Jolt constraint debug covers distance, cone, twist and six-axis limits") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.body_a = base;
+    description.body_b = driven;
+    description.type = ConstraintType::Distance;
+    description.min_distance = 0.25f;
+    description.max_distance = 1.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    description.type = ConstraintType::Cone;
+    description.swing_limit_y = 0.3f;
+    description.swing_limit_z = 0.4f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    description.type = ConstraintType::SwingTwist;
+    description.twist_limit = AxisLimit{-0.2f, 0.2f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    description.type = ConstraintType::SixDof;
+    description.dof_limits[0] = AxisLimit{-1.0f, 1.0f};
+    description.dof_limits[5] = AxisLimit{-0.5f, 0.5f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    DebugCapture capture;
+    CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::Constraints, capture)
+                   .has_value());
+    CY_CHECK_EQ(capture.limit_spheres, 2U);
+    CY_CHECK_EQ(capture.limits, 13U);
+}
+
 CY_TEST_CASE("Jolt step statistics measure broad, narrow and solve job costs") {
     Fixture fixture;
     (void)fixture.body(fixture.box(Vec3{10.0f, 0.5f, 10.0f}), MotionType::Static,
@@ -342,6 +376,37 @@ CY_TEST_CASE("Jolt step statistics measure broad, narrow and solve job costs") {
     CY_CHECK_GT(stats->narrow_phase_ns, 0);
     CY_CHECK_GT(stats->solve_ns, 0);
     CY_CHECK_GT(stats->total_ns, 0);
+}
+
+CY_TEST_CASE("Jolt island count joins active bodies by constraints and contacts") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.25f);
+    const BodyHandle a = fixture.body(shape, MotionType::Dynamic, Vec3{-3.0f, 2.0f, 0.0f});
+    const BodyHandle b = fixture.body(shape, MotionType::Dynamic, Vec3{3.0f, 2.0f, 0.0f});
+    CY_REQUIRE(fixture.step(1).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 2U);
+
+    ConstraintDescription description;
+    description.type = ConstraintType::Distance;
+    description.body_a = a;
+    description.body_b = b;
+    description.min_distance = 6.0f;
+    description.max_distance = 6.0f;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 1U);
+
+    CY_REQUIRE(fixture.server->destroy_constraint(*joint).has_value());
+    CY_REQUIRE(fixture.step(3).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 2U);
+
+    const BodyHandle c = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    const BodyHandle d = fixture.body(shape, MotionType::Dynamic, Vec3{0.3f, 2.0f, 0.0f});
+    CY_REQUIRE(fixture.step(4).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 3U);
+    (void)c;
+    (void)d;
 }
 
 CY_TEST_CASE("a dynamic body falls onto static geometry and stops on it") {
