@@ -44,6 +44,14 @@ rather than fabricated.
 
 ## What is not implemented
 
-Constraints, soft bodies and vehicles. Jolt has all three; the mapping is not in M4's task list.
+Constraints are available through `PhysicsServer` on this backend. Fixed, point, hinge,
+slider, distance, cone, swing-twist, six-degree, rack-and-pinion, and gear joints map to Jolt.
+Joint handles are invalidated when either body or the world is destroyed. Joined bodies do not
+collide unless `collide_connected` is set; breaking a force- or torque-limited joint disables it
+and emits a `ConstraintBroken` event for that step. Hinge and slider motors can be updated at
+runtime; six-degree motors are configured per axis at creation. A zero-frequency position drive
+uses a stiff 30 Hz spring in Jolt, not an exact rigid target.
+
+Soft bodies and vehicles are not implemented by this backend yet.
 `Capabilities` reports them false and creation fails with `NotImplemented` naming why — which is the
 honest form, because this is a gap in the engine's mapping and not a limit of the backend.

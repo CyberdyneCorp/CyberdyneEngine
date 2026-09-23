@@ -121,10 +121,130 @@ CY_TEST_CASE("the Jolt backend reports itself and what it can do") {
     CY_CHECK(capabilities.triangle_meshes);
     CY_CHECK(capabilities.convex_hulls);
     CY_CHECK(capabilities.continuous_collision);
+    CY_CHECK(capabilities.constraints);
     CY_CHECK_EQ(capabilities.determinism, DeterminismPolicy::SamePlatformDeterministic);
     // With no engine job system given, the work runs on the calling thread and the flag says so
     // rather than claiming a bridge that is not there.
     CY_CHECK_FALSE(capabilities.uses_engine_jobs);
+}
+
+CY_TEST_CASE("Jolt creates every declared joint type and invalidates handles with their bodies") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.25f, 0.25f, 0.25f});
+    const BodyHandle a = fixture.body(shape, MotionType::Dynamic, Vec3{-1.0f, 2.0f, 0.0f});
+    const BodyHandle b = fixture.body(shape, MotionType::Dynamic, Vec3{1.0f, 2.0f, 0.0f});
+    const ConstraintType types[] = {ConstraintType::Fixed,         ConstraintType::Point,
+                                    ConstraintType::Hinge,         ConstraintType::Slider,
+                                    ConstraintType::Distance,      ConstraintType::Cone,
+                                    ConstraintType::SwingTwist,    ConstraintType::SixDof,
+                                    ConstraintType::RackAndPinion, ConstraintType::Gear};
+    ConstraintHandle handles[10];
+    for (usize index = 0; index < 10; ++index) {
+        ConstraintDescription description;
+        description.type = types[index];
+        description.body_a = a;
+        description.body_b = b;
+        description.frame_a.translation = Vec3{1.0f, 0.0f, 0.0f};
+        description.frame_b.translation = Vec3{-1.0f, 0.0f, 0.0f};
+        description.min_distance = 2.0f;
+        description.max_distance = 2.0f;
+        description.swing_limit_y = 0.5f;
+        description.swing_limit_z = 0.5f;
+        const auto made = fixture.server->create_constraint(fixture.world, description);
+        CY_REQUIRE(made.has_value());
+        handles[index] = *made;
+        CY_CHECK(fixture.server->set_constraint_enabled(*made, false).has_value());
+    }
+    CY_REQUIRE(fixture.step(1).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->constraint_count, 10U);
+    CY_REQUIRE(fixture.server->destroy_body(a).has_value());
+    for (const ConstraintHandle handle : handles) {
+        CY_CHECK_FALSE(fixture.server->destroy_constraint(handle).has_value());
+    }
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->constraint_count, 10U);
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->constraint_count, 0U);
+}
+
+CY_TEST_CASE("a breakable Jolt joint reports one measured event and stops constraining") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.25f);
+    const BodyHandle ball = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Point;
+    description.body_a = ball;
+    description.frame_b.translation = Vec3{0.0f, 2.0f, 0.0f};
+    description.break_force = 0.01f;
+    description.user_data = 77;
+    const auto made = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(made.has_value());
+    CY_REQUIRE(fixture.server->add_impulse(ball, Vec3{10.0f, 0.0f, 0.0f}).has_value());
+    CY_REQUIRE(fixture.step(1).has_value());
+    const auto broken = fixture.server->broken_constraints(fixture.world);
+    CY_REQUIRE(broken.has_value());
+    CY_REQUIRE_EQ(broken->size(), 1U);
+    CY_CHECK_EQ((*broken)[0].constraint, *made);
+    CY_CHECK_EQ((*broken)[0].user_data, 77U);
+    CY_CHECK_GT((*broken)[0].force, description.break_force);
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_EQ(fixture.server->broken_constraints(fixture.world)->size(), 0U);
+}
+
+CY_TEST_CASE("a six-degree Jolt motor drives its configured linear axis") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::SixDof;
+    description.body_a = base;
+    description.body_b = driven;
+    description.dof_motors[1].target_velocity = 2.0f;
+    description.dof_motors[1].max_force = 1000.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    for (u64 tick = 0; tick < 30; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_GT(fixture.position_of(driven).y, 0.4f);
+}
+
+CY_TEST_CASE("a Jolt joint suppresses collision only while joined") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.5f);
+    const BodyHandle a = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    const BodyHandle b = fixture.body(shape, MotionType::Dynamic, Vec3{0.5f, 2.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Fixed;
+    description.body_a = a;
+    description.body_b = b;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    CY_REQUIRE(fixture.step(1).has_value());
+    CY_CHECK_EQ(fixture.server->events(fixture.world)->size(), 0U);
+    CY_REQUIRE(fixture.server->destroy_constraint(*joint).has_value());
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_GT(fixture.server->events(fixture.world)->size(), 0U);
+}
+
+CY_TEST_CASE("a Jolt hinge motor can be enabled at runtime and drives within its force cap") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Hinge;
+    description.body_a = base;
+    description.body_b = driven;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    MotorSettings motor;
+    motor.target_velocity = 3.0f;
+    motor.max_force = 100.0f;
+    CY_REQUIRE(fixture.server->set_constraint_motor(*joint, motor).has_value());
+    for (u64 tick = 0; tick < 30; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_GT(fixture.server->body_state(driven)->angular_velocity.x, 0.5f);
 }
 
 CY_TEST_CASE("a dynamic body falls onto static geometry and stops on it") {

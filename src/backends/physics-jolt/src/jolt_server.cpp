@@ -31,6 +31,7 @@
 
 #include <cy/backends/physics/jolt/server.h>
 
+#include "jolt_constraints.h"
 #include "jolt_jobs.h"
 #include "jolt_shapes.h"
 
@@ -38,6 +39,7 @@
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollidePointResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
@@ -209,6 +211,20 @@ struct JoltBody {
     explicit JoltBody(Allocator& allocator) noexcept : shapes(allocator) {}
 };
 
+struct JoltConstraint {
+    u32 generation = 1;
+    bool live = false;
+    u32 world = 0;
+    BodyHandle body_a;
+    BodyHandle body_b;
+    ConstraintType type = ConstraintType::Fixed;
+    JPH::Ref<JPH::TwoBodyConstraint> joint;
+    f32 break_force = 0.0F;
+    f32 break_torque = 0.0F;
+    UserData user_data = 0;
+    bool suppress_collision = false;
+};
+
 }  // namespace
 
 // --- The world
@@ -228,9 +244,11 @@ struct JoltWorld final : public JPH::ContactListener {
           temp(allocator, temp_arena_bytes(world_description)),
           job_system(jobs, kMaxJoltJobs, kMaxJoltBarriers),
           bodies(allocator),
+          constraints(allocator),
           events(allocator),
           broken(allocator),
           ignored(allocator),
+          joint_ignored(allocator),
           pending(allocator),
           previous(allocator) {}
 
@@ -286,9 +304,11 @@ struct JoltWorld final : public JPH::ContactListener {
     /// two runs must agree on — `JPH::PhysicsSystem`'s own body order is not exposed and would not
     /// be the same thing.
     Array<u32> bodies;
+    Array<u32> constraints;
     EventBuffer events;
     Array<ConstraintBroken> broken;
     HashMap<u64, u8> ignored;
+    HashMap<u64, u32> joint_ignored;
 
     std::mutex pending_mutex;
     Array<PendingContact> pending;
@@ -312,10 +332,12 @@ public:
           jobs_(jobs),
           worlds_(allocator),
           bodies_(allocator),
+          constraints_(allocator),
           shapes_(allocator),
           materials_(allocator),
           shape_cache_(allocator),
           free_bodies_(allocator),
+          free_constraints_(allocator),
           free_shapes_(allocator),
           free_materials_(allocator) {}
 
@@ -341,10 +363,12 @@ public:
         }
         worlds_.clear();
         bodies_.clear();
+        constraints_.clear();
         shapes_.clear();
         materials_.clear();
         shape_cache_.clear();
         free_bodies_.clear();
+        free_constraints_.clear();
         free_shapes_.clear();
         free_materials_.clear();
         initialized_ = false;
@@ -356,7 +380,7 @@ public:
     [[nodiscard]] Capabilities capabilities() const noexcept override {
         Capabilities caps;
         caps.contact_resolution = true;
-        caps.constraints = false;  // task 4.2.2 delivers bodies, shapes, events and queries
+        caps.constraints = true;
         caps.triangle_meshes = true;
         caps.convex_hulls = true;
         caps.height_fields = true;
@@ -407,6 +431,11 @@ public:
         apply_tuning(*world, description.tuning);
         if (Status reserved = world->events.reserve(description.contact_constraint_capacity);
             !reserved) {
+            world->~JoltWorld();
+            allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
+            return make_unexpected(reserved.error());
+        }
+        if (Status reserved = world->broken.reserve(description.body_capacity); !reserved) {
             world->~JoltWorld();
             allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
             return make_unexpected(reserved.error());
@@ -749,33 +778,15 @@ public:
         });
     }
 
-    // --- Constraints. Not in this milestone, and it says so -------------------------------------
+    // --- Constraints ---------------------------------------------------------------------------
 
     [[nodiscard]] Expected<ConstraintHandle, Error> create_constraint(
-        WorldHandle, const ConstraintDescription& description) noexcept override {
-        // `physics` — "Unsupported feature": the capability query reports it and creation fails
-        // with a clear diagnostic. Jolt HAS every constraint kind `physics` lists; what is missing
-        // is the mapping, which M4's task list does not include. Saying "not implemented, here is
-        // why" is the honest form — this is not a limit of the backend.
-        return fail(ErrorCode::NotImplemented,
-                    constraint_type_name(description.type) != nullptr
-                        ? "jolt: constraints are not mapped yet (M4 delivers bodies, shapes, "
-                          "events and queries); Capabilities::constraints reports false"
-                        : "jolt: constraints are not mapped yet");
-    }
-
-    [[nodiscard]] Status destroy_constraint(ConstraintHandle) noexcept override {
-        return fail(ErrorCode::NotImplemented, "jolt: constraints are not mapped yet");
-    }
-
-    [[nodiscard]] Status set_constraint_enabled(ConstraintHandle, bool) noexcept override {
-        return fail(ErrorCode::NotImplemented, "jolt: constraints are not mapped yet");
-    }
-
-    [[nodiscard]] Status set_constraint_motor(ConstraintHandle,
-                                              const MotorSettings&) noexcept override {
-        return fail(ErrorCode::NotImplemented, "jolt: constraints are not mapped yet");
-    }
+        WorldHandle world, const ConstraintDescription& description) noexcept override;
+    [[nodiscard]] Status destroy_constraint(ConstraintHandle constraint) noexcept override;
+    [[nodiscard]] Status set_constraint_enabled(ConstraintHandle constraint,
+                                                bool enabled) noexcept override;
+    [[nodiscard]] Status set_constraint_motor(ConstraintHandle constraint,
+                                              const MotorSettings& motor) noexcept override;
 
     // --- Queries ---------------------------------------------------------------------------------
 
@@ -963,6 +974,17 @@ private:
         const JoltBody& body = bodies_[handle.index()];
         return (body.live && body.generation == handle.generation()) ? &body : nullptr;
     }
+    [[nodiscard]] JoltConstraint* resolve(ConstraintHandle handle) noexcept {
+        return const_cast<JoltConstraint*>(static_cast<const JoltServer*>(this)->resolve(handle));
+    }
+    [[nodiscard]] const JoltConstraint* resolve(ConstraintHandle handle) const noexcept {
+        if (handle.is_null() || handle.index() >= constraints_.size()) {
+            return nullptr;
+        }
+        const JoltConstraint& constraint = constraints_[handle.index()];
+        return constraint.live && constraint.generation == handle.generation() ? &constraint
+                                                                               : nullptr;
+    }
     [[nodiscard]] ShapeSlot* resolve(ShapeHandle handle) noexcept {
         return const_cast<ShapeSlot*>(static_cast<const JoltServer*>(this)->resolve(handle));
     }
@@ -994,14 +1016,20 @@ private:
         return reject_query_during_step(stepping_);
     }
 
+    [[nodiscard]] Expected<ConstraintHandle, Error> register_constraint(
+        WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
+        JPH::Ref<JPH::TwoBodyConstraint> joint) noexcept;
+
     Allocator* allocator_;
     cy::jobs::JobSystem* jobs_;
     Array<JoltWorld*> worlds_;
     Array<JoltBody> bodies_;
+    Array<JoltConstraint> constraints_;
     Array<ShapeSlot> shapes_;
     Array<MaterialSlot> materials_;
     HashMap<u64, u32> shape_cache_;
     Array<u32> free_bodies_;
+    Array<u32> free_constraints_;
     Array<u32> free_shapes_;
     Array<u32> free_materials_;
     ShapeStatistics shape_statistics_;
@@ -1031,7 +1059,8 @@ JPH::ValidateResult JoltWorld::OnContactValidate(const JPH::Body& body_a, const 
     }
     const BodyHandle handle_a = BodyHandle::from_bits(body_a.GetUserData());
     const BodyHandle handle_b = BodyHandle::from_bits(body_b.GetUserData());
-    if (ignored.contains(contact_pair_key(handle_a, handle_b))) {
+    const u64 pair_key = contact_pair_key(handle_a, handle_b);
+    if (ignored.contains(pair_key) || joint_ignored.contains(pair_key)) {
         return JPH::ValidateResult::RejectAllContactsForThisBodyPair;
     }
     return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
@@ -1140,6 +1169,13 @@ void JoltServer::destroy_world_slot(u32 index) noexcept {
         return;
     }
     JoltWorld* world = worlds_[index];
+    for (const u32 slot : world->constraints) {
+        JoltConstraint& constraint = constraints_[slot];
+        constraint.joint = nullptr;
+        constraint.live = false;
+        ++constraint.generation;
+        (void)free_constraints_.push_back(slot);
+    }
     // Bodies go with the world, exactly as in the reference backend: a body that outlived its world
     // would hold a `JPH::BodyID` into a destroyed `PhysicsSystem`.
     for (const u32 slot : world->bodies) {
@@ -1457,6 +1493,15 @@ Status JoltServer::destroy_body(BodyHandle body) noexcept {
     }
     JoltWorld* world = worlds_[found->world];
     if (world != nullptr) {
+        for (usize index = 0; index < world->constraints.size();) {
+            const u32 slot = world->constraints[index];
+            const JoltConstraint& constraint = constraints_[slot];
+            if (constraint.body_a == body || constraint.body_b == body) {
+                (void)destroy_constraint(ConstraintHandle::from_slot(slot, constraint.generation));
+            } else {
+                ++index;
+            }
+        }
         JPH::BodyInterface& interface = world->system.GetBodyInterface();
         interface.RemoveBody(found->id);
         interface.DestroyBody(found->id);
@@ -1474,6 +1519,155 @@ Status JoltServer::destroy_body(BodyHandle body) noexcept {
     found->live = false;
     ++found->generation;
     return free_bodies_.push_back(body.index());
+}
+
+namespace {
+
+[[nodiscard]] Transform constraint_world_frame(const JPH::Body& body,
+                                               const Transform& local) noexcept {
+    const Quat rotation = from_jolt(body.GetRotation());
+    Transform frame;
+    frame.translation = from_jolt(body.GetPosition()) + rotation * local.translation;
+    frame.rotation = rotation * local.rotation;
+    return frame;
+}
+
+Expected<JPH::Ref<JPH::TwoBodyConstraint>, Error> build_jolt_constraint(
+    JoltWorld& world, const ConstraintDescription& description, JPH::BodyID id_a, JPH::BodyID id_b,
+    bool to_world) noexcept {
+    const JPH::BodyID ids[2] = {id_a, id_b};
+    JPH::BodyLockMultiWrite lock(world.system.GetBodyLockInterface(), ids, to_world ? 1 : 2);
+    JPH::Body* body_a = lock.GetBody(0);
+    JPH::Body* body_b = to_world ? nullptr : lock.GetBody(1);
+    if (body_a == nullptr || (!to_world && body_b == nullptr)) {
+        return fail(ErrorCode::NotFound, "jolt: constraint body is no longer live");
+    }
+    const Transform frame_a = constraint_world_frame(*body_a, description.frame_a);
+    const Transform frame_b =
+        to_world ? description.frame_b : constraint_world_frame(*body_b, description.frame_b);
+    return to_world
+               ? make_constraint(description, JPH::Body::sFixedToWorld, *body_a, frame_b, frame_a)
+               : make_constraint(description, *body_a, *body_b, frame_a, frame_b);
+}
+
+}  // namespace
+
+Expected<ConstraintHandle, Error> JoltServer::create_constraint(
+    WorldHandle world, const ConstraintDescription& description) noexcept {
+    JoltWorld* found = resolve(world);
+    if (found == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such world");
+    }
+    if (Status checked = validate(description); !checked) {
+        return make_unexpected(checked.error());
+    }
+    const JoltBody* a = resolve(description.body_a);
+    const JoltBody* b = description.body_b.is_null() ? nullptr : resolve(description.body_b);
+    if (a == nullptr || a->world != world.index() ||
+        (!description.body_b.is_null() && (b == nullptr || b->world != world.index()))) {
+        return fail(ErrorCode::NotFound, "jolt: constraint bodies must belong to this world");
+    }
+    const auto created = build_jolt_constraint(*found, description, a->id,
+                                               b == nullptr ? JPH::BodyID{} : b->id, b == nullptr);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    return register_constraint(world, *found, description, *created);
+}
+
+Expected<ConstraintHandle, Error> JoltServer::register_constraint(
+    WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
+    JPH::Ref<JPH::TwoBodyConstraint> joint) noexcept {
+    u32 slot = 0;
+    if (!free_constraints_.empty()) {
+        slot = free_constraints_[free_constraints_.size() - 1];
+        free_constraints_.pop_back();
+    } else {
+        if (Status pushed = constraints_.push_back(JoltConstraint{}); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+        slot = static_cast<u32>(constraints_.size() - 1);
+    }
+    JoltConstraint& record = constraints_[slot];
+    record.live = true;
+    record.world = world.index();
+    record.body_a = description.body_a;
+    record.body_b = description.body_b;
+    record.type = description.type;
+    record.joint = joint;
+    record.break_force = description.break_force;
+    record.break_torque = description.break_torque;
+    record.user_data = description.user_data;
+    record.suppress_collision = !description.collide_connected && !description.body_b.is_null();
+    if (Status pushed = storage.constraints.push_back(slot); !pushed) {
+        record.joint = nullptr;
+        record.live = false;
+        (void)free_constraints_.push_back(slot);
+        return make_unexpected(pushed.error());
+    }
+    if (record.suppress_collision) {
+        const u64 key = contact_pair_key(record.body_a, record.body_b);
+        const u32* previous = storage.joint_ignored.find(key);
+        const u32 prior = previous == nullptr ? 0 : *previous;
+        if (auto inserted = storage.joint_ignored.insert(key, prior + 1); !inserted) {
+            storage.constraints.pop_back();
+            record.joint = nullptr;
+            record.live = false;
+            (void)free_constraints_.push_back(slot);
+            return make_unexpected(inserted.error());
+        }
+    }
+    storage.system.AddConstraint(joint.GetPtr());
+    return ConstraintHandle::from_slot(slot, record.generation);
+}
+
+Status JoltServer::destroy_constraint(ConstraintHandle constraint) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    JoltWorld* world = worlds_[record->world];
+    if (world != nullptr) {
+        world->system.RemoveConstraint(record->joint.GetPtr());
+        if (record->suppress_collision) {
+            const u64 key = contact_pair_key(record->body_a, record->body_b);
+            if (u32* count = world->joint_ignored.find(key); count != nullptr) {
+                if (*count == 1) {
+                    (void)world->joint_ignored.remove(key);
+                } else {
+                    --*count;
+                }
+            }
+        }
+        for (usize index = 0; index < world->constraints.size(); ++index) {
+            if (world->constraints[index] == constraint.index()) {
+                world->constraints.erase(index);
+                break;
+            }
+        }
+    }
+    record->joint = nullptr;
+    record->live = false;
+    ++record->generation;
+    return free_constraints_.push_back(constraint.index());
+}
+
+Status JoltServer::set_constraint_enabled(ConstraintHandle constraint, bool enabled) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    record->joint->SetEnabled(enabled);
+    return ok();
+}
+
+Status JoltServer::set_constraint_motor(ConstraintHandle constraint,
+                                        const MotorSettings& motor) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    return update_constraint_motor(record->type, *record->joint, motor);
 }
 
 // ================================================================================================
@@ -1504,6 +1698,7 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
         found->pending.clear();
     }
     found->events.clear();
+    found->broken.clear();
 
     // Diagnostics only, never hashed — the same rule the reference backend states at length.
     const auto started = std::chrono::steady_clock::now();
@@ -1521,6 +1716,23 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
                     "jolt: the step overflowed a buffer — raise body_pair_capacity or "
                     "contact_constraint_capacity on the world",
                     static_cast<i64>(error));
+    }
+
+    for (const u32 slot : found->constraints) {
+        JoltConstraint& constraint = constraints_[slot];
+        if (!constraint.joint->GetEnabled() ||
+            (constraint.break_force <= 0.0F && constraint.break_torque <= 0.0F)) {
+            continue;
+        }
+        const ConstraintLoad load =
+            constraint_load(constraint.type, *constraint.joint, input.delta_seconds);
+        if ((constraint.break_force > 0.0F && load.force > constraint.break_force) ||
+            (constraint.break_torque > 0.0F && load.torque > constraint.break_torque)) {
+            constraint.joint->SetEnabled(false);
+            (void)found->broken.push_back(
+                ConstraintBroken{ConstraintHandle::from_slot(slot, constraint.generation),
+                                 constraint.user_data, load.force, load.torque});
+        }
     }
 
     // --- The deterministic order ---------------------------------------------------------------
@@ -1583,7 +1795,7 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
     found->statistics.active_body_count =
         found->system.GetNumActiveBodies(JPH::EBodyType::RigidBody);
     found->statistics.contact_count = found->events.size();
-    found->statistics.constraint_count = 0;
+    found->statistics.constraint_count = static_cast<u32>(found->constraints.size());
     found->statistics.island_count = 0;
     found->statistics.tick = input.tick;
     // ONE TIMER, NOT THREE, AND SAYING SO. `physics`' "Diagnosing a slow step" wants the cost split
