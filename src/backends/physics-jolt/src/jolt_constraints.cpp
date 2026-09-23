@@ -333,6 +333,36 @@ Status update_constraint_motor(ConstraintType type, JPH::TwoBodyConstraint& cons
                 "jolt: this constraint kind does not have one runtime motor axis");
 }
 
+Status update_constraint_orientation_motor(ConstraintType type, JPH::TwoBodyConstraint& constraint,
+                                           const OrientationMotorSettings& motor) noexcept {
+    const Quat& target = motor.target_orientation;
+    const f32 length = length_squared(target);
+    if (!std::isfinite(target.x) || !std::isfinite(target.y) || !std::isfinite(target.z) ||
+        !std::isfinite(target.w) || !std::isfinite(length) || length < 1.0e-6F ||
+        !std::isfinite(motor.max_torque) || motor.max_torque < 0.0F ||
+        !std::isfinite(motor.spring_frequency) || motor.spring_frequency < 0.0F ||
+        !std::isfinite(motor.spring_damping) || motor.spring_damping < 0.0F) {
+        return fail(ErrorCode::InvalidArgument, "jolt: invalid orientation motor settings");
+    }
+    if (type != ConstraintType::SwingTwist) {
+        return fail(ErrorCode::Unsupported,
+                    "jolt: orientation motor requires a swing-twist constraint");
+    }
+    auto& joint = static_cast<JPH::SwingTwistConstraint&>(constraint);
+    MotorSettings axis;
+    axis.max_force = motor.max_torque;
+    axis.spring_frequency = motor.spring_frequency;
+    axis.spring_damping = motor.spring_damping;
+    set_motor_settings(joint.GetSwingMotorSettings(), axis, true);
+    set_motor_settings(joint.GetTwistMotorSettings(), axis, true);
+    const JPH::EMotorState state =
+        motor.max_torque > 0.0F ? JPH::EMotorState::Position : JPH::EMotorState::Off;
+    joint.SetSwingMotorState(state);
+    joint.SetTwistMotorState(state);
+    joint.SetTargetOrientationBS(to_jolt(normalize(target)));
+    return ok();
+}
+
 ConstraintLoad constraint_load(ConstraintType type, const JPH::TwoBodyConstraint& constraint,
                                f32 delta_seconds) noexcept {
     ConstraintLoad load;

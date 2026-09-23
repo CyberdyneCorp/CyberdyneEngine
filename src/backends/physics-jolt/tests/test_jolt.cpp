@@ -471,6 +471,51 @@ CY_TEST_CASE("a Jolt hinge motor can be enabled at runtime and drives within its
     CY_CHECK_GT(fixture.server->body_state(driven)->angular_velocity.x, 0.5f);
 }
 
+CY_TEST_CASE("a Jolt swing-twist orientation motor follows a changing target and can be disabled") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{});
+    ConstraintDescription description;
+    description.type = ConstraintType::SwingTwist;
+    description.body_a = base;
+    description.body_b = driven;
+    description.swing_limit_y = 1.2f;
+    description.swing_limit_z = 1.2f;
+    description.twist_limit = AxisLimit{-1.2f, 1.2f};
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+
+    OrientationMotorSettings motor;
+    motor.target_orientation = Quat::from_axis_angle(kAxisX, 0.6f);
+    motor.max_torque = 80.0f;
+    motor.spring_frequency = 8.0f;
+    CY_REQUIRE(fixture.server->set_constraint_orientation_motor(*joint, motor).has_value());
+    for (u64 tick = 0; tick < 45; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const auto driven_state = fixture.server->body_state(driven);
+    CY_REQUIRE(driven_state.has_value());
+    CY_CHECK_LT(angle_between(driven_state->transform.rotation, motor.target_orientation), 0.2f);
+
+    motor.target_orientation = Quat::identity();
+    CY_REQUIRE(fixture.server->set_constraint_orientation_motor(*joint, motor).has_value());
+    for (u64 tick = 45; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(
+        angle_between(fixture.server->body_state(driven)->transform.rotation, Quat::identity()),
+        0.2f);
+
+    motor.max_torque = 0.0f;
+    CY_REQUIRE(fixture.server->set_constraint_orientation_motor(*joint, motor).has_value());
+    motor.max_torque = -1.0f;
+    CY_CHECK_EQ(fixture.server->set_constraint_orientation_motor(*joint, motor).error().code,
+                ErrorCode::InvalidArgument);
+    CY_CHECK_EQ(fixture.server->set_constraint_motor(*joint, MotorSettings{}).error().code,
+                ErrorCode::Unsupported);
+}
+
 CY_TEST_CASE("a Jolt hinge motor respects its torque cap and angular limit") {
     auto spin_after_one_step = [](f32 max_torque) noexcept {
         Fixture fixture;

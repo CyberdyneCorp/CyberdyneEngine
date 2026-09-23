@@ -17,6 +17,9 @@ namespace cy::physics::jolt {
 [[nodiscard]] Status update_constraint_motor(ConstraintType type,
                                              JPH::TwoBodyConstraint& constraint,
                                              const MotorSettings& motor) noexcept;
+[[nodiscard]] Status update_constraint_orientation_motor(
+    ConstraintType type, JPH::TwoBodyConstraint& constraint,
+    const OrientationMotorSettings& motor) noexcept;
 
 /// Force/torque magnitudes from Jolt's last-step solver impulses, divided by the fixed dt.
 struct ConstraintLoad {

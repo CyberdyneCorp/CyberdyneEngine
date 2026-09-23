@@ -24,7 +24,7 @@ the library, and it is why `-D CY_PHYSICS=OFF` still simulates.
 | `body.h` | Bodies and colliders, and the degree-of-freedom locks the 2D strategy is made of |
 | `events.h` | Contact and trigger events, and the buffer a step fills |
 | `queries.h` | Ray, shape cast, overlap and closest point, their one filter, and the mid-step guard |
-| `constraints.h` | Ten joint kinds, limits, motors and break thresholds |
+| `constraints.h` | Ten joint kinds, limits, motors (including runtime swing-twist orientation drive) and break thresholds |
 | `server.h` | The interface itself |
 | `character.h` | The capsule controller, written over the interface's queries |
 | `stepper.h` | One step per simulation tick, and the interpolation pair |
@@ -57,7 +57,9 @@ which is M3's `CY_RENDERER_VULKAN` mistake with a longer tail.
   motors, limits and break events. The reference backend reports constraints unsupported, so its
   capability-gated refusal remains explicit. The layer-4 ECS bridge lives in `src/physics/` and
   creates `Joint` components when the selected backend supports them.
-* **Ragdolls and buoyancy.** Jolt supports cloth through `create_soft_body` and world-space
+* **Ragdolls and buoyancy.** Jolt exposes a runtime swing-twist orientation motor for following an
+  animated joint pose, but a ragdoll profile and animation/physics blend are not yet integrated.
+  Jolt supports cloth through `create_soft_body` and world-space
   `soft_body_vertices` readback, and wheeled vehicles through a chassis body, suspension settings,
   differentials, driver input and wheel-state readback. Destroying a chassis or world removes its
   vehicle constraint and step listener. The reference backend reports both optional features

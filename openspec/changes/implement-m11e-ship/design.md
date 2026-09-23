@@ -35,6 +35,11 @@ current and previous animation poses; per-body weights vary continuously, with p
 following targets through motors while still receiving contacts and impulses. Partial ragdolls
 retain animation control outside the selected mask and blend at its boundary. The tests must prove
 pose transfer, partial/full blending, powered impulse recovery and lifetime cleanup.
+The powered path uses an engine-owned swing-twist orientation motor: the target is the child body
+rotation relative to its parent in body space, with a torque cap and spring tuning. Updating the
+target wakes sleeping dynamic bodies so animation changes reach the solver. This joint drive alone
+does not satisfy ragdoll coverage; profile generation, activation and blending remain separate
+requirements.
 
 ## 1. The spike, and why it has not run
 

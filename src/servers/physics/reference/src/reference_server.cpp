@@ -861,6 +861,12 @@ public:
                     "the reference physics backend implements no constraints");
     }
 
+    [[nodiscard]] Status set_constraint_orientation_motor(
+        ConstraintHandle, const OrientationMotorSettings&) noexcept override {
+        return fail(ErrorCode::Unsupported,
+                    "the reference physics backend implements no constraints");
+    }
+
     [[nodiscard]] Expected<VehicleHandle, Error> create_vehicle(
         WorldHandle, const VehicleDescription&) noexcept override {
         return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");

@@ -222,6 +222,8 @@ public:
                                                         bool enabled) noexcept = 0;
     [[nodiscard]] virtual Status set_constraint_motor(ConstraintHandle constraint,
                                                       const MotorSettings& motor) noexcept = 0;
+    [[nodiscard]] virtual Status set_constraint_orientation_motor(
+        ConstraintHandle constraint, const OrientationMotorSettings& motor) noexcept = 0;
 
     // --- Optional wheeled vehicles --------------------------------------------------------------
 

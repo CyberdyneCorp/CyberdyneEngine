@@ -838,6 +838,8 @@ public:
                                                 bool enabled) noexcept override;
     [[nodiscard]] Status set_constraint_motor(ConstraintHandle constraint,
                                               const MotorSettings& motor) noexcept override;
+    [[nodiscard]] Status set_constraint_orientation_motor(
+        ConstraintHandle constraint, const OrientationMotorSettings& motor) noexcept override;
 
     [[nodiscard]] Expected<VehicleHandle, Error> create_vehicle(
         WorldHandle world, const VehicleDescription& description) noexcept override;
@@ -1884,6 +1886,26 @@ Status JoltServer::set_constraint_motor(ConstraintHandle constraint,
         return fail(ErrorCode::NotFound, "jolt: no such constraint");
     }
     return update_constraint_motor(record->type, *record->joint, motor);
+}
+
+Status JoltServer::set_constraint_orientation_motor(
+    ConstraintHandle constraint, const OrientationMotorSettings& motor) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    if (Status updated = update_constraint_orientation_motor(record->type, *record->joint, motor);
+        !updated) {
+        return updated;
+    }
+    // A pose target can change while a ragdoll is asleep; the solver must see that change.
+    for (const BodyHandle handle : {record->body_a, record->body_b}) {
+        JoltBody* body = resolve(handle);
+        if (body != nullptr && body->motion == MotionType::Dynamic) {
+            worlds_[body->world]->system.GetBodyInterface().ActivateBody(body->id);
+        }
+    }
+    return ok();
 }
 
 Expected<VehicleHandle, Error> JoltServer::create_vehicle(
