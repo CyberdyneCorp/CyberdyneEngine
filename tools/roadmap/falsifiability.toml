@@ -3887,9 +3887,9 @@ detail = "this host cannot evaluate it, so it cannot judge it either: the transp
 ledger = "m5b"
 criterion = "window-artefact"
 digest = "8fee5b809cdd0b4c"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: this artefact is about a window: it needs an X server with the XTEST extension, a device that can import a dma-buf, python-xlib and Pillow. A hosted runner has none of them, and a check that reported green because the window never opened is the exact failure M5.5 exists to correct — CI job 'milestone-m5b'"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
