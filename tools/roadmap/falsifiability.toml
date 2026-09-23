@@ -1326,10 +1326,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 1
 [[proof]]
 ledger = "m11e"
 criterion = "roadmap-tiers"
-digest = "95914c0986eedbcb"
+digest = "a3ad79ced5f6a180"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): build-system-and-platforms: recorded 'seed', below this milestone's exit of 'complete' … thirdparty-dependencies: recorded 'seed', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11e"
