@@ -24,41 +24,42 @@ and §5 says why it cannot be the same artefact as the window: *"A single artefa
 both a person operating an editor and an agent authoring through it, and pretending otherwise would
 repeat M5's mistake in a different shape."*
 
-One editor process, started with `--mcp --agent-scope author`, and `authoring.py` on the other end of
-its standard input speaking newline-delimited JSON-RPC 2.0. The client is **hand written and depends
+One editor process, started with `--mcp --headless --agent-scope author --host <socket>`, and
+`authoring.py` on the other end of its standard input speaking newline-delimited JSON-RPC 2.0. The client is **hand written and depends
 on nothing**: a driver built out of the editor's own types would prove nothing about the wire.
+
+`--headless` because `--mcp` alone now opens a window and hosts the agent beside it; without it this
+artefact, which needs no display, opened a window and a graphics device on any machine that had one.
+`--host` attaches `cy-runtime-stub`, the stand-in runtime `samples/05-editor-session` uses, because
+play is the runtime's: `live-editing` lets the editor present Playing only after an attached runtime
+was asked, so with no runtime `play.enter` leaves the editor in Editing and says so. The stub speaks
+the live bridge's message set and holds no world. The project is given the engine's type manifest
+(`types.cytypes`, copied from `samples/05b-editor-window/project/`, the copy
+`render.authoring_schema` checks against the engine) so that an empty world has a Transform to place.
 
 ## What it does, act by act
 
 | Act | What is exercised | What is asserted |
 |---|---|---|
 | 1 · connect | `initialize`, `tools/list`, `resources/list` | every tool offered is a command the registry has. The same binary is run a second time with `--list-commands` and the two sets are compared, because **a hand-written tool entry is invisible from either side alone** and is the first of the twelve patterns `editor-agent-interface` forbids. |
-| 2 · compose | `scene.create-entity` ×3, `edit.select`, `hierarchy:`, `selection:` | three distinct entities in an empty project, read back, and the agent's selection *is* the editor's selection |
+| 2 · compose | `scene.create-entity` ×3, `edit.select`, `hierarchy:`, `selection:`, `scene.translate`, `history:` | three distinct entities in an empty project, read back, the agent's selection *is* the editor's selection, and the selection is placed |
 | 3 · author | `source.write`, `sources:`, `edit.undo`, `edit.redo` | the file appears on disk with the exact bytes; **undo removes it and redo restores it byte for byte** — which is the half of "a source edit is a transaction" that a document test cannot make |
 | 4 · attribute | `history:` | every entry carries `[agent]`, the session and the intent (task 5.5) |
 | 5 · scope | `source.write` outside `game/`, `project.build` | both refused, each naming the reason — the directory scope and the effect class |
-| 6 · play & look | `play.enter`, `play:`, `play.leave`, `viewport:`, `budget:` | play is entered and left; the budget reports what the connection has spent |
+| 6 · play & look | `play.enter`, `play:`, `play.leave`, `viewport:`, `budget:` | play is entered and left on the attached runtime, each answer naming the state the editor actually holds; the budget reports what the connection has spent |
 
-## The four steps that do not close, and what each is waiting on
+## The three steps that do not close, and what each is waiting on
 
 Every one of them is **attempted on every run** and reported by name, in the terminal and in the
 committed screenshot above. None is skipped, faked, or left out. The rule is
 `samples/05-editor-session`'s, set at M5: an artefact that quietly narrows its claim to what happens
 to work reports a milestone as closed that is not.
 
-### 1 · `scene.translate` — nothing in the scene can be placed
+There were four. `scene.translate` was the first: opening a document built an empty schema, so
+nothing could be placed. Opening a world now loads it and declares the project's component types
+(`cy_editor_services::worldfile`), and act 2 **requires** the placement and finds it in the history.
 
-> `this document's schema declares no Transform component with translation, rotation, scale fields`
-
-Opening a document constructs an empty one: `DocumentService::open` calls `Document::new`, a name
-and an empty schema, because there is no world loader. Nothing in the tree outside a test ever calls
-`DocumentSchema::declare_type`. So a scene can be **composed** — the entities are real, they are in
-the history, and undo restores them exactly — and nothing in it can be **placed**.
-
-The manipulation path itself is real and tested: `cy_editor_services::manipulate` opens the same
-`Drag` a gizmo press opens, against the focused viewport's own space, pivot and increments.
-
-### 2 · `project.build` — no agent connection can start one
+### 1 · `project.build` — no agent connection can start one
 
 > `the scope "author" does not grant the effect class external-effect`
 
@@ -71,7 +72,7 @@ and no third, so today there is no way to start the editor such that an agent co
 arm in that `match`, granting `EffectClass::ExternalEffect` under a name that says what it is, closes
 this step and the one below it.
 
-### 3 · `project.reload` — nothing has been built
+### 2 · `project.reload` — nothing has been built
 
 > `nothing has been built · What would help: invoke project.build first`
 
@@ -82,19 +83,19 @@ where the new image's type lookup finds the old image's metadata. **The C++ runt
 those two messages yet**, which is the second half of this step and is recorded in the agent-crate
 handoff.
 
-### 4 · `viewport:` — the agent cannot look at what it built
+### 3 · `viewport:` — the agent cannot look at what it built
 
 > `no frame has arrived from the runtime for this viewport · the editor shows nothing rather than an
 > approximation, and so does this`
 
 The transport is real, measured, and photographed by this milestone's other artefact: the editor's
 window composites the runtime's own dma-buf image with no copy through the CPU. But the code that
-claims frames from it — `ViewportLink` — lives in `cy-editor-shell` with the window, and `--mcp` runs
-without a window. So the **LOOK** step of the loop has an implementation and no host in this
+claims frames from it — `ViewportLink` — lives in `cy-editor-shell` with the window, and
+`--mcp --headless` runs without a window. So the **LOOK** step of the loop has an implementation and no host in this
 configuration.
 
 This is the gap that matters most, because looking is what makes the loop authoring rather than data
-entry. It is also the smallest of the four in code: a headless frame source for the agent's own
+entry. It is also the smallest of the three in code: a headless frame source for the agent's own
 viewport (`AGENT_VIEWPORT`), fed from the same `ViewportSession` the window uses.
 
 ## What the artefact proves that is not obvious

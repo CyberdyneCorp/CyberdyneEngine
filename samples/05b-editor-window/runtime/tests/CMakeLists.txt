@@ -76,8 +76,22 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../overlay.cpp"
         DEPENDENCIES cy::servers-render)
 
+    # THE `--layout` FILE, and the per-frame rewrites that wedged the runtime on a busy disk. See
+    # `layout_file.h`. `integration` because it writes a file, which is not a millisecond on a disk
+    # that is busy — which is the very condition it was found under.
+    cy_add_test(
+        NAME editor_window_layout_file
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_layout_file.cpp"
+            "${tests_dir}/../layout_file.cpp"
+        DEPENDENCIES cy::servers-render
+        DEFINITIONS
+            "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+
     foreach(target cy_test_unit_editor_window_runtime cy_test_integration_editor_window_overlay
-                   cy_test_integration_editor_window_one_world)
+                   cy_test_integration_editor_window_one_world
+                   cy_test_integration_editor_window_layout_file)
         target_include_directories(${target} PRIVATE "${tests_dir}/..")
     endforeach()
 endfunction()

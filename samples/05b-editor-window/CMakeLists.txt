@@ -104,6 +104,19 @@ if(NOT CY_WINDOW_TIMEOUT)
         "tests/CMakeLists.txt. If those variables were renamed, the lookup should move with them.")
 endif()
 
+# THE MAPPING'S OWN NEGATIVE CASE, and it needs no runtime, no editor and no display. The window
+# artefact aims its gizmo drag through `viewport_rect` and checks the aim against the handle the
+# engine drew; that check once fell back to the aim itself when it found no handle, so a dock that
+# had grown a row reported "the gizmo drag committed nothing" instead of "the mapping is wrong".
+# Separate from the artefact for the reason samples/05-editor-session gives for its own selftest.
+get_directory_property(CY_WINDOW_TIMEOUT_INTEGRATION DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                       DEFINITION CY_TEST_TIMEOUT_integration)
+add_test(NAME integration.editor_window_selftest
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/window.py" --selftest
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(integration.editor_window_selftest PROPERTIES
+                     LABELS "integration" TIMEOUT "${CY_WINDOW_TIMEOUT_INTEGRATION}")
+
 # `--runtime` IS THE PATH CMAKE ALREADY KNOWS. The driver can guess one from CY_BUILD_DIR, and that
 # guess is right for `just run-editor-window` and wrong here: CTest's environment does not carry
 # CY_BUILD_DIR, so a build tree named anything but `build/<profile>` sends the driver looking in the
