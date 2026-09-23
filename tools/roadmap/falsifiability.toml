@@ -3895,9 +3895,9 @@ detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be
 ledger = "m5b"
 criterion = "window-recipe"
 digest = "a38a919edc3930db"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: the same reason as `window-artefact`: there is no display on a hosted runner and this artefact is about a window — CI job 'milestone-m5b'"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m6"
