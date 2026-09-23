@@ -54,10 +54,10 @@ detail = "red under mutation of 8 file(s)"
 [[proof]]
 ledger = "m1"
 criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final/debug … test-all: failed — integration render"
+digest = "71436759ef2f8a62"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-prove4 (exit 1: error: Recipe `build-engine` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m1"
@@ -465,7 +465,7 @@ criterion = "world-budget-on-a-device"
 digest = "394ac08e6a878ace"
 verdict = "proven against a built tree"
 mutation = "rename-token '--budget-ms' in samples/10-world/main.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-budget (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-world (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -1097,7 +1097,7 @@ criterion = "virtual-geometry-image"
 digest = "5b3205b3b0037273"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'out.clusters[index].child_count = out.groups[from].member_count;' in src/rendering/virtual_geometry/src/build.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-world (exit 8: error: Recipe `test-render` failed with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -2137,7 +2137,7 @@ criterion = "test"
 digest = "d5d5e3c6e896c520"
 verdict = "no mutation"
 mutation = "-"
-detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
+detail = "it PASSES against the build tree build/m11c-world, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m0"
@@ -5175,9 +5175,9 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 ledger = "m9"
 criterion = "determinism-core"
 digest = "b2c75eead635f87f"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-world, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m9"
