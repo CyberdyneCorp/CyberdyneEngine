@@ -75,6 +75,29 @@ if(NOT CY_BUILD_TESTS)
     return()
 endif()
 
+# THE SHOT'S PROJECTION IS THE SAME BITS IN EVERY PROFILE. The release profile once folded the
+# tangent of the field of view at compile time while every other profile called `tanf`, and
+# `render.virtual_geometry_shaded` went red in release alone. tests/test_shot_projection.cpp has
+# the measurement. This suite needs no device, so a hosted runner catches that class of drift too,
+# not only a machine with a GPU. Declared here rather than under tests/unit/ for the reason
+# samples/04-character gives: tests/ is configured before samples/, so this library does not exist
+# yet when tests/unit/ is read. The budget and timeout are the taxonomy's, read rather than
+# restated.
+get_directory_property(CY_TEST_BUDGET_unit DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                       DEFINITION CY_TEST_BUDGET_unit)
+get_directory_property(CY_TEST_TIMEOUT_unit DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                       DEFINITION CY_TEST_TIMEOUT_unit)
+if(NOT CY_TEST_BUDGET_unit OR NOT CY_TEST_TIMEOUT_unit)
+    message(FATAL_ERROR
+        "samples/07-fidelity: the 'unit' entry of the test taxonomy could not be read from "
+        "tests/CMakeLists.txt. If those variables were renamed, this lookup should move with them.")
+endif()
+cy_add_test(
+    NAME fidelity_shot_projection
+    KIND unit
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shot_projection.cpp"
+    DEPENDENCIES cy::sample-fidelity-frame)
+
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
 if(NOT Python3_Interpreter_FOUND)
     message(STATUS "samples/07-fidelity: python3 is absent, so smoke.fidelity is not declared.")
