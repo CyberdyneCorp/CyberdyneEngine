@@ -1402,7 +1402,9 @@ jobs:
   # list of what is known to be open when it happens.
   milestone:
     name: milestone — the closed milestones' exit criteria (nightly)
-    needs: build
+    needs:
+      - build
+      - cross-leg-publish
     # Nightly and on demand only. The reasoning is the block above; the short form is that this is a
     # multi-hour ledger and `main` is pushed to many times a day.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -1411,6 +1413,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The two M11.a `where = "ci"` criteria run the same comparator as cross-leg-compare.
+      # Supply this job with the current run's actual publisher artifacts; --ci alone cannot
+      # manufacture the cross-architecture evidence it is being asked to evaluate.
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: cross-leg-digest-*
+          path: cross-leg-digests
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
