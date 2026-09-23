@@ -450,6 +450,21 @@ CY_TEST_CASE("a Jolt joint suppresses collision only while joined") {
     CY_CHECK_GT(fixture.server->events(fixture.world)->size(), 0U);
 }
 
+CY_TEST_CASE(
+    "a dynamic body contacting a kinematic body reports contact without treating it as mass") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.5f);
+    const BodyHandle moving = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Kinematic, Vec3{0.7f, 0.0f, 0.0f});
+    CY_REQUIRE(
+        fixture.server->set_body_velocity(driven, Vec3{-1.0f, 0.0f, 0.0f}, Vec3{}).has_value());
+    CY_REQUIRE(fixture.step(1).has_value());
+    const auto events = fixture.server->events(fixture.world);
+    CY_REQUIRE(events.has_value());
+    CY_CHECK_GT(events->size(), 0U);
+    CY_CHECK(fixture.server->body_alive(moving));
+}
+
 CY_TEST_CASE("a Jolt hinge motor can be enabled at runtime and drives within its force cap") {
     Fixture fixture;
     const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});

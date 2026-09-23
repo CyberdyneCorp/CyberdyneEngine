@@ -418,7 +418,7 @@ public:
         caps.height_fields = false;
         caps.soft_bodies = false;
         caps.vehicles = false;
-        caps.buoyancy = false;
+        caps.buoyancy = true;
         caps.continuous_collision = false;
         caps.uses_engine_jobs = false;
         // It genuinely is: the integration is a fixed sequence of float operations over a slot

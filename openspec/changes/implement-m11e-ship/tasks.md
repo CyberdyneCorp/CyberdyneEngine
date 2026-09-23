@@ -318,10 +318,12 @@ what makes 6.1 mandatory rather than advisory.
       - [x] Expose navigation debug geometry and query, repath, and rebuild measurements.
       - [x] Map the declared constraint vocabulary to the Jolt solver, including limits, motors,
         breaking, and the capability-gated kinds.
-      - [ ] Integrate supported soft bodies, vehicles, and ragdoll activation and blending with
+      - [x] Integrate supported soft bodies, vehicles, and ragdoll activation and blending with
         animation, and keep unsupported capabilities explicit.
+      - [x] Apply authoritative water buoyancy forces and torque through the physics interface,
+        and verify a floating body pitches under multi-point swell.
       - [x] Expose every physics debug view and the step-phase timing breakdown.
-      - [ ] Mutation-check the repaired mappings, run the affected suites in both physics backend
+      - [x] Mutation-check the repaired mappings, run the affected suites in both physics backend
         configurations, and update the module documentation and requirement map.
 
 - [ ] 6.2 **Each row demoted by a rung above arrives with the reason that demoted it.** Six are named

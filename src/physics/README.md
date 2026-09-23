@@ -26,6 +26,26 @@ the four things it verified missing rather than assumed. This is that module.
 | `components.h` | `PhysicsComponents`: the eight component ids in one world, and `register_all` |
 | `bridge.h` | `PhysicsBridge`: create, sweep, step, publish, tear down — and `install` into the `Physics` stage |
 | `state_schema.h` | The eight components declared to the state hash, so a divergence in a body is a divergence in the hash |
+| `ragdoll/` | Editable skeleton-derived body/constraint profiles and full, powered, partial ragdoll simulation over `PhysicsServer` |
+| `buoyancy/` | Applies authoritative `WaterSystem` buoyancy force and torque to dynamic physics bodies |
+
+The ragdoll module is present only with `CY_ANIMATION=ON`; it does not depend on Jolt. Generate a
+`ragdoll::Profile` from a finalized skeleton, refine its per-bone shape, mass, limits and motor
+settings, then construct `ragdoll::Ragdoll` with a physics world. `activate` takes current and previous
+model-space poses and actor transforms so bodies begin at the animated pose and velocity. Full mode
+simulates every body; powered mode keeps the root kinematic while motors follow the animated pose;
+partial mode takes a per-bone weight mask and keeps zero-weight bodies kinematic. Call
+`set_animation_target` before each fixed step, `advance_blend` after it, then `sample_pose` to obtain
+the blended model-space pose. Full mode intentionally ignores later animation targets so its
+bodies never become motor-driven. `apply_hit` adds an impulse and blends that bone back to its mode's
+base weight. Deactivate or destroy the ragdoll before destroying its physics world. The reference
+backend reports constraints unsupported and activation fails without allocating bodies.
+
+For floating bodies, construct `buoyancy::Driver` with the physics server and authoritative
+`WaterSystem`. Call `apply` before each fixed physics step with body-local hull samples and the
+physics world's absolute origin. The driver rotates the samples into world space, queries water at
+the absolute body position, then applies the resulting force and torque through `PhysicsServer`.
+Both reference and Jolt backends integrate these forces; only dynamic bodies are accepted.
 
 ## Read `samples/04-character`'s host before you change `bridge.cpp`
 

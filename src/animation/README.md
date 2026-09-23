@@ -135,7 +135,7 @@ approximated:
 | **Animation warping** | Absent. Motion, stride and orientation warping and distance matching |
 | **Control rig** | Absent as an asset. The constraint framework it would compile against is here; the rig graph and its compiler are not |
 | **Full-body IK, FABRIK, CCD, spline IK, spring bones, foot placement** | Refused **by name**: `solve_unimplemented()` returns `NotImplemented` for each, and `test_ik.cpp` asserts it. A chain solver answering to `FullBodyIk` would be worse than no answer |
-| **Physics animation** (powered/partial/full ragdoll, hit reactions) | Absent. It is a join with `physics` |
+| **Physics animation** (powered/partial/full ragdoll, hit reactions) | Implemented at the layer-4 join in `src/physics/ragdoll/`; animation itself remains backend-independent |
 | **Facial animation** (blendshapes, visemes, the ML path) | Absent. Blend shapes exist on the renderer's side in `cy::render::geometry::BlendShapeSet` |
 | **Tweens** | Absent. Property TRACKS are here; code-driven tweening with easing and sequencing is not |
 | **The rigging workspace** | Absent. Editor work |

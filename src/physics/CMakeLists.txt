@@ -46,6 +46,10 @@ cy_add_module(
                         cy::core-values cy::ecs cy::scene cy::servers-physics
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
+if(CY_ANIMATION)
+    add_subdirectory(ragdoll)
+endif()
+
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()

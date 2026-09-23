@@ -229,8 +229,9 @@ note = "The case compares weak and strong torque caps and verifies the hinge ang
 [[coverage]]
 row = "physics"
 requirement = "Soft bodies and additional simulation"
-evidence = "exempt:m11e"
-note = "PARTIAL. Jolt cloth steps from an engine-owned mesh and collides with rigid bodies; Jolt vehicles use chassis, wheels, suspension and a differential drivetrain with throttle, steering and braking. Both have solver conformance, readback and teardown cases, while the reference backend explicitly refuses them. Ragdoll profiles, animation-to-body activation and full/powered/partial blend paths remain missing. Keep this exemption until a ragdoll suite covers pose transfer, continuous blending and impulse recovery."
+evidence = "test:integration.physics_ragdoll"
+case = "powered ragdoll motor tracks animation after an impulse and hit weight recovers"
+note = "The named case exercises powered pose following, physical hit displacement and recovery; disabling authored motor torque makes it fail. Companion ragdoll cases generate/refine a profile, seed animated world pose and velocity, exercise continuous full-body blend, keep full mode simulation-driven despite later animation targets, preserve partial-body locomotion, and verify teardown, rollback and reference-backend refusal. Removing blend output or velocity transfer makes the full-ragdoll case fail. Jolt integration.physics_jolt separately verifies cloth contact/readback and vehicle drivetrain, wheel-state and lifecycle behavior; the reference backend refuses both optional features."
 
 [[coverage]]
 row = "physics"
@@ -256,9 +257,9 @@ note = "The case makes one invalid member abort an entire body batch and verifie
 [[coverage]]
 row = "physics"
 requirement = "Buoyancy and water interaction"
-evidence = "test:unit.water"
-case = "a long vessel pitches with the swell rather than translating rigidly"
-note = "Two hull samples on different authoritative wave heights produce torque, while a single centre sample cannot, directly observing multi-point pitch. Companion water cases pin submerged-volume force, angular and linear drag, current advection, character water states and agreement with authoritative render bands."
+evidence = "test:integration.physics_buoyancy"
+case = "a floating physics body pitches under multi-point authoritative swell"
+note = "The layer-4 driver transforms body-local hull samples, queries authoritative water, and applies force and torque through PhysicsServer. The named Jolt case observes actual angular velocity from multi-point spectral swell; removing torque application makes it fail. The reference-backend case observes lift after stepping and checks origin-rebased sampling and dynamic-only validation. Companion unit.water cases pin submerged-volume force, drag, current advection, character water states and render-band agreement."
 
 [[coverage]]
 row = "physics"

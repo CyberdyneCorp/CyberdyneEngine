@@ -234,6 +234,7 @@ struct Capabilities {
     bool height_fields = false;
     bool soft_bodies = false;
     bool vehicles = false;
+    /// Engine-owned water/physics driver can apply force and torque on this backend.
     bool buoyancy = false;
     /// Continuous collision detection for fast bodies.
     bool continuous_collision = false;

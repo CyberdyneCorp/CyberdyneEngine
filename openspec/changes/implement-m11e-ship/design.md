@@ -40,6 +40,25 @@ rotation relative to its parent in body space, with a torque cap and spring tuni
 target wakes sleeping dynamic bodies so animation changes reach the solver. This joint drive alone
 does not satisfy ragdoll coverage; profile generation, activation and blending remain separate
 requirements.
+The layer-4 ragdoll module now supplies those pieces over `PhysicsServer`. Its generated profile
+keeps an editable shape, mass, swing/twist limits and motor strength for each skeleton joint.
+Profiles retain only value-owned sphere, capsule or box shapes; array-backed shape descriptions
+would borrow transient caller buffers and are rejected before solver allocation.
+Activation creates bodies at the current actor/model pose, derives linear and angular velocity from
+the previous pose, and connects parent-child bodies with swing-twist constraints. Full mode drives
+all bodies dynamically; powered mode retains an animation-driven root and motor-driven children;
+partial mode uses a per-bone weight mask and kinematic zero-weight bones. A per-body timed blend
+interpolates animation and solver pose continuously. Hits apply impulses and temporarily expose
+the physical pose before recovering to the mode's base blend weight. The owner tears down joints,
+bodies and shapes in that order; reference-backend activation refuses before allocating them.
+
+The physics buoyancy requirement is not complete merely because `WaterSystem` computes lift and
+drag: a layer-4 physics/water adapter must read a dynamic body's transform and velocities, rotate
+its authored hull sample offsets into world space, query the authoritative water surface, and apply
+the resulting force and torque through `PhysicsServer` before the fixed step. Both Jolt and the
+reference backend can integrate those forces without a backend-specific water dependency. A solver
+case must observe actual pitch from multi-point swell; the existing water-only case remains the
+arithmetic and displacement-band contract, not the physics integration claim.
 
 ## 1. The spike, and why it has not run
 

@@ -417,7 +417,7 @@ public:
         caps.height_fields = true;
         caps.soft_bodies = true;
         caps.vehicles = true;
-        caps.buoyancy = false;
+        caps.buoyancy = true;
         caps.continuous_collision = true;
         // TRUE ONLY WHEN IT IS TRUE. A running engine job system was given and Jolt's work reaches
         // it; otherwise the work runs on the calling thread and this says so, which is the whole
@@ -1168,8 +1168,10 @@ void JoltWorld::record(const JPH::Body& body_a, const JPH::Body& body_b,
     // quantity an impact sound scales with and the one the threshold is written against.
     const JPH::MotionProperties* motion_a = body_a.GetMotionPropertiesUnchecked();
     const JPH::MotionProperties* motion_b = body_b.GetMotionPropertiesUnchecked();
-    const f32 inverse_a = motion_a != nullptr ? motion_a->GetInverseMass() : 0.0f;
-    const f32 inverse_b = motion_b != nullptr ? motion_b->GetInverseMass() : 0.0f;
+    // Kinematic bodies have motion properties (for velocity), but infinite mass. Jolt asserts if
+    // GetInverseMass() is asked of one; only dynamic bodies contribute to reduced mass.
+    const f32 inverse_a = body_a.IsDynamic() ? motion_a->GetInverseMass() : 0.0f;
+    const f32 inverse_b = body_b.IsDynamic() ? motion_b->GetInverseMass() : 0.0f;
     const f32 inverse_total = inverse_a + inverse_b;
     if (inverse_total > 0.0f) {
         // Read through the motion properties, NOT through `Body::GetLinearVelocity()`: that
