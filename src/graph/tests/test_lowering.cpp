@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <new>
 #include <utility>
@@ -1044,23 +1045,45 @@ namespace {
     return digest;
 }
 
-/// Whether any constant in the program has a non-zero byte where `Value`'s padding is — which is
-/// what makes the comparison above discriminating rather than lucky. Measured on this tree it is
-/// always true: the four bytes hold a fragment of a spilled stack address, so they vary with
-/// address-space layout and therefore between processes and not within one.
-[[nodiscard]] bool any_constant_has_dirty_padding(const script::ScriptProgram& program) noexcept {
-    constexpr usize kPaddingOffset = 20;
-    constexpr usize kPaddingBytes = 4;
+/// Where `Value`'s padding is: after `z`, before `handle`. Derived from the layout rather than
+/// written down, so a change to `Value` moves the poison with it instead of into a field.
+constexpr usize kPaddingOffset = offsetof(script::Value, z) + sizeof(f32);
+constexpr usize kPaddingBytes = offsetof(script::Value, handle) - kPaddingOffset;
+static_assert(kPaddingBytes > 0, "script::Value has no padding left to poison");
+
+/// Write `pattern` into the padding of every constant the compiled program holds.
+///
+/// THE TEST WRITES THE PADDING ITSELF. It used to observe it instead, and what it observed was
+/// whatever the compiler's stack temporary left there: a fragment of a spilled address under
+/// `--profile debug`, and under `--profile release` zero when the whole suite had run before it
+/// (non-zero when the case ran alone). The fourth M11.c close failed on that precondition while
+/// the digest it guards was correct. Writing the bytes makes the comparison discriminating in every
+/// profile and every run order.
+///
+/// The storage is the program's own non-const array; only the accessor hands out `const`, so
+/// writing through it is defined. Padding is no field's, so this changes no value the program has.
+void poison_constant_padding(script::ScriptProgram& program, unsigned char pattern) noexcept {
+    for (const script::Value& constant : program.constants()) {
+        auto& writable = const_cast<script::Value&>(constant);
+        std::memset(reinterpret_cast<unsigned char*>(&writable) + kPaddingOffset, pattern,
+                    kPaddingBytes);
+    }
+}
+
+/// Whether every constant's padding holds `pattern` — the precondition that makes the comparison
+/// in the case below mean something.
+[[nodiscard]] bool every_constant_padding_is(const script::ScriptProgram& program,
+                                             unsigned char pattern) noexcept {
     for (const script::Value& constant : program.constants()) {
         std::array<unsigned char, sizeof(script::Value)> raw{};
         std::memcpy(raw.data(), &constant, raw.size());
         for (usize index = kPaddingOffset; index < kPaddingOffset + kPaddingBytes; ++index) {
-            if (raw[index] != 0) {
-                return true;
+            if (raw[index] != pattern) {
+                return false;
             }
         }
     }
-    return false;
+    return true;
 }
 
 }  // namespace
@@ -1092,7 +1115,7 @@ CY_TEST_CASE("graph_script: a program digest does not close over a constant's pa
 
     // And the whole of it, over a real compilation: the program's own digest against the same sum
     // computed field by field. A `finish_digest` that went back to hashing the object would differ
-    // here on this tree every time, because the padding is never zero.
+    // here whatever the padding holds.
     NodeRegistry registry(allocator());
     CY_REQUIRE(script::register_script_nodes(registry).has_value());
     auto graph = script_graph();
@@ -1102,20 +1125,17 @@ CY_TEST_CASE("graph_script: a program digest does not close over a constant's pa
     const script::ScriptCompileOptions options;
     auto program = script::compile_script(graph.value(), registry, options, sink);
     CY_REQUIRE(program.has_value());
-    // MSVC's calling convention and default heap-block layout tend to leave zero in the four
-    // padding bytes rather than the spilled-stack-address fragment the header comment describes.
-    // The load-bearing invariant — that `digest()` matches a hash computed field by field — is
-    // checked below and stays authoritative on every platform; this "dirty padding was observed"
-    // check is a note-to-reader that on Windows the discrimination is currently theoretical, not
-    // caught in the act. Report it rather than fail the case.
-#if defined(_MSC_VER)
-    if (!any_constant_has_dirty_padding(program.value())) {
-        CY_TEST_MESSAGE(
-            "graph_script: constant padding was zero on this build — the discrimination "
-            "check is theoretical here; the digest-vs-fields invariant still holds");
+    CY_REQUIRE(!program.value().constants().empty());
+    const u64 published = program.value().digest();
+    CY_CHECK_EQ(published, digest_from_the_fields(program.value()));
+
+    // Then the padding, written by this case rather than left to the optimiser: the digest over the
+    // program's constants may not move whichever bytes it holds. Two patterns, so no single one
+    // can coincide with what the compiler happened to leave there.
+    for (const unsigned char pattern :
+         {static_cast<unsigned char>(0xAB), static_cast<unsigned char>(0x5C)}) {
+        poison_constant_padding(program.value(), pattern);
+        CY_REQUIRE(every_constant_padding_is(program.value(), pattern));
+        CY_CHECK_EQ(digest_from_the_fields(program.value()), published);
     }
-#else
-    CY_CHECK(any_constant_has_dirty_padding(program.value()));
-#endif
-    CY_CHECK_EQ(program.value().digest(), digest_from_the_fields(program.value()));
 }
