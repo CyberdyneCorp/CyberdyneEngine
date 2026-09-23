@@ -184,6 +184,10 @@ public:
     /// silent default, because a shot tuned against a file nobody read is an untuned shot.
     [[nodiscard]] Status read_grade(const char* path) noexcept;
 
+    /// The workers the per-frame plant proxies are written on — the world's own job system. Null,
+    /// the default, writes them on the calling thread; the streams hold the same bits either way.
+    void set_jobs(jobs::JobSystem* jobs) noexcept { jobs_ = jobs; }
+
     void close() noexcept;
 
 private:
@@ -215,17 +219,22 @@ private:
     u32 terrain_vertices_ = 0;
     u32 terrain_indices_ = 0;
     u32 dynamic_capacity_ = 0;
+    u32 dynamic_index_capacity_ = 0;
     u32 sky_vertices_ = 0;
     u32 water_first_vertex_ = 0;
     u32 water_vertices_ = 0;
     u32 visual_frame_index_ = 0;
     u64 field_image_bytes_[4] = {};
 
-    /// The dynamic half, rebuilt every frame. Held as members so the arrays keep their capacity
-    /// between frames and the per-frame cost is a memcpy rather than an allocation.
+    /// The dynamic half's sky, stars and sea, rebuilt every frame and copied to the front of the
+    /// dynamic buffers. Held as members so the arrays keep their capacity between frames. The
+    /// plant proxies after them are written straight into the mapped buffers; see `build_dynamic`.
     Array<Vertex> dynamic_vertices_;
     Array<Vec3> dynamic_colours_;
     Array<u32> dynamic_indices_;
+    /// This frame's chosen plants, as indices into `World::plants()`, in the order they are drawn.
+    Array<u32> drawn_plants_;
+    jobs::JobSystem* jobs_ = nullptr;
     Array<Vec3> terrain_colours_;
     /// Where each draw's run begins in the dynamic buffers.
     u32 sky_first_index_ = 0;

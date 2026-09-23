@@ -1,5 +1,6 @@
 #include "world.h"
 
+#include <cy/core/jobs/parallel.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/pcg/graph.h>
 #include <cy/rendering/sky/atmosphere.h>
@@ -36,6 +37,11 @@ constexpr const char* kFertilityNode = "world.fertility";
 constexpr const char* kScatterNode = "world.scatter";
 constexpr const char* kFilterNode = "world.filter";
 constexpr const char* kSpacingNode = "world.spacing";
+/// Workers the per-frame producers are spread over; the main thread helps while it waits. See
+/// `World::build`.
+constexpr u32 kFrameWorkers = 4;
+/// Plants one job evaluates. Each is a wind response and a handful of multiplies.
+constexpr u64 kPlantsPerJob = 512;
 constexpr const char* kOutputNode = "world.output";
 
 /// The elevation noise's amplitude and octave count. Named because the sea-level bias below is
@@ -626,6 +632,7 @@ World::World(Allocator& allocator, const WorldOptions& options) noexcept
       clusters_(allocator),
       wind_sampler_(allocator),
       plants_(allocator),
+      plant_sources_(allocator),
       stars_(allocator),
       cloud_map_(allocator),
       sky_dome_(allocator),
@@ -641,7 +648,26 @@ f32 World::extent_metres() const noexcept {
     return static_cast<f32>(static_cast<f64>(options_.region_edge) * kRegionMetres);
 }
 
+World::~World() {
+    if (jobs_started_) {
+        jobs_.shutdown();
+    }
+}
+
 Status World::build(BuildReport& report) noexcept {
+    // TWO PER-FRAME PRODUCERS ARE SPREAD OVER WORKERS: the ocean patch's rows here, and the plant
+    // proxies the stage writes (it borrows these workers through `jobs()`). Both are pure
+    // functions of their inputs written into disjoint slots, so a parallel frame is bit-identical
+    // to a serial one — `water_ocean_parallel` proves it for the patch, and every frame of the
+    // take was compared PNG for PNG against the serial build. Measured on the machine the budget is
+    // judged on, the ocean band went from about 5 ms to under one. Failing to start is not an
+    // error: everything is then built on this thread.
+    jobs::JobSystemConfig job_config;
+    job_config.worker_count = kFrameWorkers;
+    job_config.task_slots_per_participant = 256;
+    job_config.deque_capacity = 256;
+    job_config.scratch_bytes_per_participant = usize{64} * 1024;
+    jobs_started_ = jobs_.start(job_config).has_value();
     if (Status generated = generate(report); !generated) {
         return generated;
     }
@@ -681,6 +707,16 @@ Status World::build(BuildReport& report) noexcept {
     if (Status dome = build_sky_dome(); !dome) {
         return dome;
     }
+    // THE PLANT STORAGE IS SIZED HERE, NOT BY THE FIRST FRAME OF THE TAKE. The instance list is
+    // fixed once the foliage is placed, so listing it now allocates and faults every page the
+    // per-frame listing and evaluation will write; the take's first frame otherwise paid for it.
+    if (Status listed = list_plants(); !listed) {
+        return listed;
+    }
+    if (Status sized = plants_.resize(plant_sources_.size()); !sized) {
+        return sized;
+    }
+    plants_.clear();
     report.fields_declared = static_cast<u32>(registry_.size());
     report.field_bytes = fields_.bytes_resident();
     cooked_tiles_ = report.terrain_tiles;
@@ -1497,7 +1533,9 @@ Status World::advance(FrameCosts& costs) noexcept {
     }
     costs.water_ms = now_millis() - mark;
     mark = now_millis();
-    if (Status rebuilt = ocean_.build(*model, camera_focus_, water_.time()); !rebuilt) {
+    if (Status rebuilt =
+            ocean_.build(*model, camera_focus_, water_.time(), jobs_started_ ? &jobs_ : nullptr);
+        !rebuilt) {
         return rebuilt;
     }
     costs.ocean_ms = now_millis() - mark;
@@ -1751,6 +1789,91 @@ Expected<environment::FieldGpuImage, Error> World::terrain_field_image(u32 index
     return environment::build_deterministic_field_image(fields_, field);
 }
 
+namespace {
+
+/// What the parallel plant evaluation shares, read-only, between its partitions.
+struct PlantEvaluation {
+    Span<const PlantSource> sources;
+    Span<PlantDraw> plants;
+    f32 time = 0.0F;
+};
+
+/// Plants `[begin, end)` of this frame: each one's wind response at the top of its crown, and the
+/// proxy's shape and colour. A pure function of its own instance, written only to its own slot.
+void evaluate_plants(const PlantEvaluation& evaluation, u64 begin, u64 end) noexcept {
+    // The vertex at the top of the crown: the parameterisation a vertex shader would carry in its
+    // own stream. `evaluate_response()` is a pure function of these five arguments and is the
+    // shipped one — what this artefact does not do is evaluate it on a device, which is the gap
+    // src/foliage/'s README records against its own row.
+    foliage::VertexParameters crown;
+    crown.height_fraction = 1.0F;
+    crown.radial_fraction = 0.6F;
+    const f32 time = evaluation.time;
+    for (u64 index = begin; index < end; ++index) {
+        const PlantSource& source = evaluation.sources[index];
+        const foliage::FoliageCluster& cluster = *source.cluster;
+        const foliage::SpeciesDeclaration* species = source.species;
+        const u32 slot = source.slot;
+        const foliage::FoliageInstance* instance = cluster.at(slot);
+        const foliage::ClusterWind& wind = cluster.wind();
+        const WorldVec3d position = cluster.bounds().decode(*instance);
+        crown.vertex_phase = static_cast<f32>(slot & 0x3FU) / 64.0F;
+        const foliage::WindDisplacement response =
+            foliage::evaluate_response(*species, wind, *instance, crown, time);
+        PlantDraw plant;
+        plant.position = Vec3{static_cast<f32>(position.x), static_cast<f32>(position.y),
+                              static_cast<f32>(position.z)};
+        const f32 scale = species->scale_min + ((species->scale_max - species->scale_min) *
+                                                (static_cast<f32>(instance->scale) / 65'535.0F));
+        plant.yaw = (static_cast<f32>(instance->yaw) / 65'536.0F) * 6.28318F;
+        plant.crown_offset = response.offset;
+        plant.kind = kind_of(species->klass);
+        // The variation index picks the tint, so a stand of one species is not one
+        // colour. Every channel moves with it: a tint that lifted red and green and
+        // left blue where it was turned the most varied instances yellow, which is
+        // what the first still of this artefact showed in its forest.
+        const f32 variation = static_cast<f32>(instance->variation) * 0.09F;
+        plant.height = species->footprint_metres * height_ratio(plant.kind) * scale;
+        plant.radius = species->footprint_metres * radius_ratio(plant.kind) * scale;
+        plant.trunk_colour = Vec3{0.20F + (variation * 0.20F), 0.15F + (variation * 0.14F),
+                                  0.11F + (variation * 0.08F)};
+        plant.crown_colour = crown_colour_of(plant.kind, variation);
+        evaluation.plants[index] = plant;
+    }
+}
+
+}  // namespace
+
+/// This frame's plants, in draw order: which instance of which cluster fills each slot of
+/// `plants_`. See `update_plants()`.
+Status World::list_plants() noexcept {
+    plant_sources_.clear();
+    for (u32 population = 0; population < 2; ++population) {
+        const Span<const foliage::FoliageCluster> source =
+            population == 0 ? clusters_.span() : generated_clusters_.clusters();
+        for (const foliage::FoliageCluster& cluster : source) {
+            for (const foliage::SpeciesBlock& block : cluster.blocks()) {
+                const foliage::SpeciesDeclaration* species = species_.find(block.species);
+                if (species == nullptr) {
+                    continue;
+                }
+                for (u32 offset = 0; offset < block.count; ++offset) {
+                    const u32 slot = block.first + offset;
+                    if (cluster.at(slot) == nullptr) {
+                        continue;
+                    }
+                    if (Status pushed =
+                            plant_sources_.push_back(PlantSource{&cluster, species, slot});
+                        !pushed) {
+                        return pushed;
+                    }
+                }
+            }
+        }
+    }
+    return ok();
+}
+
 Status World::update_plants() noexcept {
     // ONE FIELD SAMPLE PER CLUSTER, NOT PER TREE. `WindSampler::prepare()` writes a `ClusterWind`
     // for each cluster and `WindPrepareReport` counts the samples it took; a forest does not need a
@@ -1766,69 +1889,29 @@ Status World::update_plants() noexcept {
         return make_unexpected(prepared.error());
     }
 
-    plants_.clear();
-    const f32 time = static_cast<f32>(seconds_);
-    // The vertex at the top of the crown: the parameterisation a vertex shader would carry in its
-    // own stream. `evaluate_response()` is a pure function of these five arguments and is the
-    // shipped one — what this artefact does not do is evaluate it on a device, which is the gap
-    // src/foliage/'s README records against its own row.
-    foliage::VertexParameters crown;
-    crown.height_fraction = 1.0F;
-    crown.radial_fraction = 0.6F;
-
-    // The two populations, drawn by one loop: the three species the PLACEMENT RULES put there, and
-    // the boulders the GENERATOR's own accepted points became through the output adapter. They are
-    // both `foliage::FoliageCluster`s and nothing downstream can tell them apart, which is the
-    // point of the adapter.
-    for (u32 population = 0; population < 2; ++population) {
-        const Span<const foliage::FoliageCluster> source =
-            population == 0 ? clusters_.span() : generated_clusters_.clusters();
-        for (const foliage::FoliageCluster& cluster : source) {
-            const foliage::ClusterWind& wind = cluster.wind();
-            for (const foliage::SpeciesBlock& block : cluster.blocks()) {
-                const foliage::SpeciesDeclaration* species = species_.find(block.species);
-                if (species == nullptr) {
-                    continue;
-                }
-                for (u32 offset = 0; offset < block.count; ++offset) {
-                    const u32 slot = block.first + offset;
-                    const foliage::FoliageInstance* instance = cluster.at(slot);
-                    if (instance == nullptr) {
-                        continue;
-                    }
-                    const WorldVec3d position = cluster.bounds().decode(*instance);
-                    crown.vertex_phase = static_cast<f32>(slot & 0x3FU) / 64.0F;
-                    const foliage::WindDisplacement response =
-                        foliage::evaluate_response(*species, wind, *instance, crown, time);
-                    PlantDraw plant;
-                    plant.position =
-                        Vec3{static_cast<f32>(position.x), static_cast<f32>(position.y),
-                             static_cast<f32>(position.z)};
-                    const f32 scale =
-                        species->scale_min + ((species->scale_max - species->scale_min) *
-                                              (static_cast<f32>(instance->scale) / 65'535.0F));
-                    plant.yaw = (static_cast<f32>(instance->yaw) / 65'536.0F) * 6.28318F;
-                    plant.crown_offset = response.offset;
-                    plant.kind = kind_of(species->klass);
-                    // The variation index picks the tint, so a stand of one species is not one
-                    // colour. Every channel moves with it: a tint that lifted red and green and
-                    // left blue where it was turned the most varied instances yellow, which is
-                    // what the first still of this artefact showed in its forest.
-                    const f32 variation = static_cast<f32>(instance->variation) * 0.09F;
-                    plant.height = species->footprint_metres * height_ratio(plant.kind) * scale;
-                    plant.radius = species->footprint_metres * radius_ratio(plant.kind) * scale;
-                    plant.trunk_colour =
-                        Vec3{0.20F + (variation * 0.20F), 0.15F + (variation * 0.14F),
-                             0.11F + (variation * 0.08F)};
-                    plant.crown_colour = crown_colour_of(plant.kind, variation);
-                    if (Status pushed = plants_.push_back(plant); !pushed) {
-                        return pushed;
-                    }
-                }
-            }
-        }
+    // THE PLANTS ARE LISTED IN ORDER, THEN EVALUATED ACROSS THE WORKERS. The listing walks the two
+    // populations — the three species the PLACEMENT RULES put there, and the boulders the
+    // GENERATOR's own accepted points became through the output adapter; both are
+    // `foliage::FoliageCluster`s and nothing downstream can tell them apart, which is the point of
+    // the adapter — and records which instance fills which slot of `plants_`. Each slot is then a
+    // pure function of its own instance, so the evaluation is spread over the job system and
+    // `plants_` holds the same plants, in the same order, whichever worker wrote which.
+    if (Status listed = list_plants(); !listed) {
+        return listed;
     }
-    return ok();
+    if (Status sized = plants_.resize(plant_sources_.size()); !sized) {
+        return sized;
+    }
+    const PlantEvaluation evaluation{plant_sources_.span(), plants_.span(),
+                                     static_cast<f32>(seconds_)};
+    if (!jobs_started_) {
+        evaluate_plants(evaluation, 0, plant_sources_.size());
+        return ok();
+    }
+    auto run = [&evaluation](const jobs::TaskContext& /*task*/, u64 begin, u64 end) noexcept {
+        evaluate_plants(evaluation, begin, end);
+    };
+    return jobs::parallel_for(jobs_, plant_sources_.size(), kPlantsPerJob, run, "world.plants");
 }
 
 // ================================================================================================

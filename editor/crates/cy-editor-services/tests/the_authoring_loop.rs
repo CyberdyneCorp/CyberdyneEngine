@@ -863,6 +863,14 @@ fn play_without_a_runtime_keeps_the_authoring_loop_in_editing() {
         cy_editor_commands::ProjectHost::play_state(&editor),
         "editing"
     );
+    // AND THE STRUCTURED ANSWER AGREES. An agent reads `values`, not the sentence: a `play` value
+    // of `playing` here told samples/05b-agent-authoring a simulation had started, and its next
+    // `play.leave` was then refused with "the runtime is already editing".
+    assert_eq!(
+        entered.values.get("play"),
+        Some(&Value::Text("editing".into())),
+        "the outcome names the state the editor holds, not the one that was asked for"
+    );
 
     let again = registry.availability("play.enter", &editor);
     assert!(

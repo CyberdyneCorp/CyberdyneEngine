@@ -134,9 +134,18 @@ CY_TEST_CASE("ability_scale: a hundred concurrent effects hold their declared bu
     // is what makes the number reproducible.
     (void)harness.advance_microseconds_per_tick(200);
     const double measured = harness.advance_microseconds_per_tick(1000);
+    // THE HARNESS'S SCALE APPLIES HERE AS IT DOES TO EVERY `CY_TEST_BUDGET_ns`. Without it this
+    // was the one budget in the tree an instrumented build was held to unscaled: m4:sanitizers
+    // selects this suite through `--tests abi` and measured 27.2 us/tick under AddressSanitizer
+    // against 10. A scale of zero is `CY_TEST_BUDGET_SCALE=0`, which switches budgets off.
+    const double scale = cy::test::budget_scale();
+    const double budget = kBudgetMicrosecondsPerTick * scale;
     CY_TEST_MESSAGE("100 concurrent gameplay effects: " << measured << " us/tick, budget "
-                                                        << kBudgetMicrosecondsPerTick << " us");
-    CY_CHECK_LT(measured, kBudgetMicrosecondsPerTick);
+                                                        << kBudgetMicrosecondsPerTick << " us x "
+                                                        << scale << " = " << budget << " us");
+    if (scale > 0.0) {
+        CY_CHECK_LT(measured, budget);
+    }
     // And they are still all live and still ticking exactly: the budget is not being held by
     // having quietly stopped doing the work.
     CY_CHECK_EQ(harness.effects.active_count(), 100U);

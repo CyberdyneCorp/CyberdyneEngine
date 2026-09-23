@@ -31,6 +31,7 @@
 #    include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #endif
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -427,7 +428,7 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
     Array<u8> staging_bytes(memory);
 
     const auto cook_one = [&](const std::string& path, const char* usage, bool srgb,
-                              ShotMaterial::Cooked& out) -> Status {
+                              u32 level_limit, ShotMaterial::Cooked& out) -> Status {
         Array<u8> source(memory);
         if (Status read = assets::fs::read_whole(path.c_str(), source); !read) {
             std::fprintf(stderr, "cy_sample_beauty: cannot read %s\n", path.c_str());
@@ -467,12 +468,17 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
         if (!format) {
             return make_unexpected(format.error());
         }
+        // The levels this run UPLOADS, which is the cooked chain unless a control asked for less.
+        // The texture and its view are created with exactly this many, so a level that was not
+        // uploaded is not a level the sampler can reach — rather than a level holding garbage.
+        const u32 levels = level_limit == 0U ? cooked.value().mip_count
+                                             : std::min(cooked.value().mip_count, level_limit);
 
         rhi::TextureDescription description;
         description.name = "beauty material texture";
         description.format = format.value();
         description.extent = rhi::Extent3D{cooked.value().width, cooked.value().height, 1};
-        description.mip_levels = static_cast<u16>(cooked.value().mip_count);
+        description.mip_levels = static_cast<u16>(levels);
         description.usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDestination;
         auto texture = device.create_texture(description);
         if (!texture) {
@@ -481,7 +487,7 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
         rhi::TextureViewDescription view_description;
         view_description.name = "beauty material view";
         view_description.texture = *texture;
-        view_description.range.mip_count = static_cast<u16>(cooked.value().mip_count);
+        view_description.range.mip_count = static_cast<u16>(levels);
         auto view = device.create_texture_view(view_description);
         if (!view) {
             return make_unexpected(view.error());
@@ -498,7 +504,7 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
         usize cursor = 0;
         u32 width = cooked.value().width;
         u32 height = cooked.value().height;
-        for (u32 mip = 0; mip < cooked.value().mip_count; ++mip) {
+        for (u32 mip = 0; mip < levels; ++mip) {
             const usize bytes = level_bytes(cooked.value(), width, height);
             if (cursor + bytes > cooked.value().levels.size()) {
                 return fail(ErrorCode::InvalidArgument,
@@ -524,7 +530,7 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
 
         out.width = cooked.value().width;
         out.height = cooked.value().height;
-        out.mip_count = cooked.value().mip_count;
+        out.mip_count = levels;
         out.format = static_cast<u32>(cooked.value().format);
         out.encoded = cooked.value().encoded;
         out.payload_bytes = result.assets()[0].payload.size();
@@ -537,15 +543,18 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
     };
 
     for (ShotMaterial& material : shot.materials) {
-        if (Status cooked = cook_one(material.albedo_path, "colour", true, material.albedo);
+        if (Status cooked = cook_one(material.albedo_path, "colour", true, albedo_level_limit_,
+                                     material.albedo);
             !cooked) {
             return cooked;
         }
-        if (Status cooked = cook_one(material.normal_path, "normal-map", false, material.normal);
+        if (Status cooked =
+                cook_one(material.normal_path, "normal-map", false, 0U, material.normal);
             !cooked) {
             return cooked;
         }
-        if (Status cooked = cook_one(material.data_path, "data", false, material.data); !cooked) {
+        if (Status cooked = cook_one(material.data_path, "data", false, 0U, material.data);
+            !cooked) {
             return cooked;
         }
     }

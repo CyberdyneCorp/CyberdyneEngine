@@ -1327,10 +1327,10 @@ evaluate on any machine it owns.
 |---|---:|---:|---|
 | **M11.a** · Foundations | 12 | 233 | the world demo inside its frame budget, on a device, streaming |
 | **M11.b** · Authoring | 24 | 420 | a real sample game, made through the editor |
-| **M11.c** · Image | 15 | 232 | an art-directed beauty shot, authored through that editor |
+| **M11.c** · Image | 3 | 21 | an art-directed beauty shot, authored through that editor (planned as 15 rows and 232 requirements; twelve rows moved to M11.e at its gate) |
 | **M11.d** · Desktop | 9 | 117 | `samples/11-ship` on desktop, and a native platform backend |
 | **M11.d.5** · Backends | 1 | 12 | one scene, three backends, the same picture |
-| **M11.e** · Ship | 4 | 55 | `samples/11-ship` on every target, and the 1.0 record |
+| **M11.e** · Ship | 16 | 266 | `samples/11-ship` on every target, and the 1.0 record (twelve of its rows moved here from M11.c) |
 | **M12** · The Game | 0 | 0 | a vertical slice that proves the engine by using it |
 | **M13** · After 1.0 | 2 | 17 | Android, `ml-inference` and `xr-support`, each deferred by decision |
 
@@ -1508,6 +1508,20 @@ picture is a constant. The mechanisms are real and gated; the **output** is not.
 | `rendering-architecture` / `rendering-geometry-and-resources` | C | Subsystem controllers reporting measured costs to the arbiter, and a skin pass with dual quaternions and blend shapes where the specification puts them |
 | `vfx-system` | C | Because an art-directed shot with no particles in it does not exercise the row |
 
+**What the gate re-judged.** The table above is the plan M11.c was written against. Its gate refuted
+the claim that all fifteen rows were Complete. The 232-of-232 requirement count it read counts a
+recorded `exempt:m11e` entry as mapped, and task 3.5 had already said that a recorded exemption is a
+deferral, not Complete. Judged row by row (`implement-m11c-image` task 9.4a), three rows answer every
+requirement with no exemption and stay Complete at M11.c: `denoising`, `ray-tracing-infrastructure`
+and `rendering-culling-and-lod`. The other twelve carry 56 exemptions between them and their **C**
+moved to M11.e, the only rung permitted to record a deferral: `material-compiler` (4 exemptions),
+`shader-system` (3), `virtual-geometry` (9, including the Forward+ material resolve the engine does
+not perform), `virtual-shadows` (6), `rendering-global-illumination` (9),
+`rendering-post-processing` (9), `temporal-rendering` (2), `rendering-lighting-and-shadows` (4),
+`atmosphere-sky-and-clouds` (2: cloud shadows and aerial perspective, which no frame calls),
+`rendering-architecture` (2), `rendering-geometry-and-resources` (1) and `vfx-system` (5).
+`m11c:roadmap-tiers` expects the three, and `m11e:roadmap-tiers` expects the twelve.
+
 **Closing artefact**: **an art-directed beauty shot** — real materials, tone mapping,
 anti-aliasing, tuned post — assembled **through the editor M11.b finished** rather than in C++, and
 published beside a statement of what was authored and what the renderer produced.
@@ -1652,7 +1666,8 @@ about it.
 
 **Why this rung is last.** Mobile is the only scope on the ladder this project cannot evaluate on
 any machine it owns, and the sweep — every row an earlier rung demoted — cannot be sized until the
-earlier rungs have run. **Four rows is the smallest count on the ladder and not the smallest rung**:
+earlier rungs have run. **Four rows was the smallest count on the ladder and not the smallest rung, and it is sixteen now,
+twelve of them moved from M11.c at its gate**:
 M11.a predicts demoting `save-and-persistence` and `audio`, M11.b `ml-inference` and
 `swift-scripting`, M11.c `rendering-culling-and-lod`, M11.d `build-and-packaging`, and this rung's
 real load is whatever arrives.

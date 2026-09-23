@@ -15,7 +15,7 @@ checkable.
 |---|---|
 | `include/cy/water/body.h` | `WaterBodyId`, `WaterBodyDesc`, the backend table and its Planned/Deferred refusals, `WaterOptics`, and `WaterRegistry` with the declared resolution order |
 | `include/cy/water/displacement.h` | **The displacement contract**: authoritative and visual-only bands, one `evaluate_displacement()`, the amplitude split, and `validate_model()`'s refusals |
-| `include/cy/water/ocean.h` | The fetch-limited Pierson-Moskowitz spectrum, the cascades it fills, and `OceanSurface` — the camera-relative patch |
+| `include/cy/water/ocean.h` | The fetch-limited Pierson-Moskowitz spectrum, the cascades it fills, and `OceanSurface` — the camera-relative patch, built with its trains resolved once per build (`resolve_trains()` / `evaluate_trains()`), the vertices the rings share copied rather than evaluated twice, and its rows optionally spread over a `jobs::JobSystem`; all three are bit-identical to evaluating `evaluate_displacement()` at every vertex |
 | `include/cy/water/river.h` | Spline networks, junctions, discharge, continuity, obstacle deflection, bends and drops, and the foam sources they generate |
 | `include/cy/water/query.h` | `WaterSample` — every member of the specification's own list — the resolution indicator, and the character water states |
 | `include/cy/water/buoyancy.h` | Multi-sample buoyancy, drag and the current's carry |
@@ -89,8 +89,9 @@ budget of their own — see `streaming.h` for why a *derived* payload has nothin
 
 | suite | kind | what it measures |
 |---|---|---|
-| `water` | unit | the registry and its refusals, the displacement contract, the spectrum and the camera-relative patch, rivers and their flow, the query, buoyancy, the navigation cost and the shading parameters — 53 cases |
+| `water` | unit | the registry and its refusals, the displacement contract, the spectrum and the camera-relative patch, rivers and their flow, the query, buoyancy, the navigation cost and the shading parameters — 56 cases |
 | `water_foam` | integration | persistence measured over time: a wake deposited, advected for a couple of hundred steps and watched to decay, with the memory bound held across it |
+| `water_ocean_parallel` | integration | the camera-relative patch built across a real job system's workers, compared with the serial build bit for bit |
 | `water_shoreline` | integration | a real field registry and store: the four fields declared, claimed, published, sampled, firewalled — and the refusal when a second producer wants `wetness` |
 | `water_streaming` | integration | a real cell event queue: segments bound, straddled, evicted, and the server profile's payload mask against the client's |
 

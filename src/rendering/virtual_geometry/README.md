@@ -146,10 +146,25 @@ moving.
 
   **What is still not done, and its re-entry point.** The forward frame does not SHADE virtual
   geometry: no stage reads the visibility target into `FrameResources::color`, so the picture is
-  still shaded by the sample on the CPU from the resolve's readback. A material resolve that
-  evaluates the forward pipeline's own material program per bin is the next rung, and it belongs
-  beside `cy::rendering-pipeline`'s opaque pass rather than in this module. Nor does anything
-  assemble such a frame through `FrameAssembly`; `FrameSinks::passes[VirtualGeometry]` is the seam.
+  still shaded by the sample on the CPU from the resolve's readback — `samples/07-fidelity/shade.cpp`
+  reconstructs the position, runs the virtual shadow and does ALL of the lighting. That is why
+  `m11c:virtual-geometry-image` is evidence about the traversal, the visibility buffer and the
+  shadow page residency and not about the engine's shading: M11.c's gate changed only sample code
+  and turned it red. A material resolve that evaluates the forward pipeline's own material program
+  per bin belongs beside `cy::rendering-pipeline`'s opaque pass rather than in this module, reached
+  through `FrameSinks::passes[VirtualGeometry]` in `FrameAssembly`, which nothing assembles yet.
+  **Closing rung: M11.e.** It is recorded as `exempt:m11e` on `Visibility buffer and material
+  resolve` in `tools/roadmap/requirements-coverage.toml` — the Forward+ half of that requirement asks
+  for clusters in the frame's colour pass — and M11.d and M11.d.5 carry no renderer feature row: a
+  resolve written before M11.d.5 would be written once for Vulkan and again for Metal and D3D12.
+  **Nor is the per-cluster path selection built.** The requirement's architecture paragraph asks for
+  a compute path `selected per cluster or per triangle by projected size`; the two rasterisers here
+  are alternatives chosen per FRAME by the caller (`samples/07-fidelity`'s `FrameOptions::
+  forward_frame`), with no classification of the visible-cluster list by projected triangle size,
+  no split between the two paths and no merge of two partial visibility buffers. The re-entry point
+  is a route chosen from the traversal's own projected-size estimate, and a case in
+  `render.virtual_geometry_forward` over a scene with both sub-pixel and large clusters; it is the
+  `exempt:m11e` note on `Rasterisation paths`.
   And an exact depth tie between two coincident surfaces is broken by draw order here, where the
   compute path breaks it by identity — measured stable across three processes on the artefact's
   frame, and not claimed stable in general.

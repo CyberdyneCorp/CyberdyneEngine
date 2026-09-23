@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 251 proven, 423 not yet shown able to fail.
+# 256 proven, 422 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -50,6 +50,14 @@ digest = "524458e3e0b5c928"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 8 file(s)"
+
+[[proof]]
+ledger = "m1"
+criterion = "four-profiles"
+digest = "021dbef044895d07"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final/debug … test-all: failed — integration render"
 
 [[proof]]
 ledger = "m1"
@@ -449,7 +457,7 @@ criterion = "world-budget-headless"
 digest = "e6e36b5502d339ec"
 verdict = "proven against a built tree"
 mutation = "rename-token '--budget-ms' in samples/10-world/main.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 2: error: recipe `run-sample` failed with exit code 2), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-budget (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -457,7 +465,7 @@ criterion = "world-budget-on-a-device"
 digest = "394ac08e6a878ace"
 verdict = "proven against a built tree"
 mutation = "rename-token '--budget-ms' in samples/10-world/main.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 2: error: recipe `run-sample` failed with exit code 2), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-budget (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -765,6 +773,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
+criterion = "beauty-shot-reads-the-mip-chain"
+digest = "646aa955660f5efe"
+verdict = "proven against a built tree"
+mutation = "delete-lines '#define CY_MATERIAL_PIXEL_STAGE 1' in samples/12-beauty/shaders/beauty.slang (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shotmip (exit 1: the measurement FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
 criterion = "beauty-textures-are-reproducible"
 digest = "a33d6a400627db66"
 verdict = "proven"
@@ -794,6 +810,14 @@ digest = "d85c446bbb2dd265"
 verdict = "proven"
 mutation = "delete-lines 'IndentWidth: 4' in .clang-format (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "forward-path-reads-the-mip-chain"
+digest = "1425008e37c68c8b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'info.maxLod = desc.max_lod;' in src/backends/rhi/vulkan/src/vulkan_device.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-mip (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -958,10 +982,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "roadmap-tiers"
-digest = "d8b5e8dc0f03fc99"
+digest = "f6f94de09dc945ac"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): denoising: recorded 'working', below this milestone's exit of 'complete' … rendering-culling-and-lod: recorded 'working', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11c"
@@ -1013,6 +1037,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 1:
 
 [[proof]]
 ledger = "m11c"
+criterion = "temporal-anti-aliasing-accumulates"
+digest = "389763d57a72a800"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'index_ = (index_ + 1U) % config_.length;' in src/rendering/temporal/src/jitter.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-taa (exit 1: the named case(s) in build/m11c-taa/cy_test_unit_render_temporal FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
 criterion = "the-cooked-header-cannot-claim-a-compression-that-did-not-happen"
 digest = "1985613a58061da9"
 verdict = "proven against a built tree"
@@ -1050,6 +1082,14 @@ digest = "e24b7c0c5b0c41b9"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;' in src/vfx/src/runtime.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "vfx-trails-in-the-shot"
+digest = "093ce8daf47ed449"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'commands.draw((renderer->live() - 1U) * kVerticesPerSegment, 1, 0, 0);' in src/rendering/particles/src/strip_renderer.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-vfx (exit 8: error: Recipe `test-render` failed with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -1326,10 +1366,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 1
 [[proof]]
 ledger = "m11e"
 criterion = "roadmap-tiers"
-digest = "95914c0986eedbcb"
+digest = "a3ad79ced5f6a180"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): build-system-and-platforms: recorded 'seed', below this milestone's exit of 'complete' … thirdparty-dependencies: recorded 'seed', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11e"
@@ -1457,7 +1497,7 @@ criterion = "xr-prerequisites"
 digest = "2dbbcf49cd8271c7"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'command.d = info.view_mask;' in src/backends/rhi/null/src/null_command_buffer.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-san/xr-dev (exit 8: error: Recipe `test-render` failed with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m4"
@@ -2095,9 +2135,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m0"
 criterion = "test"
 digest = "d5d5e3c6e896c520"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m0"
@@ -2122,14 +2162,6 @@ digest = "beef6a828a8d7952"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m1"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
@@ -3551,9 +3583,9 @@ detail = "it needs a built tree ('just run'); the sandbox is source only"
 ledger = "m4"
 criterion = "sanitizers"
 digest = "d9e17efae5157d60"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-san, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m4"
@@ -3743,17 +3775,17 @@ detail = "this host cannot evaluate it, so it cannot judge it either: this host 
 ledger = "m5b"
 criterion = "agent-artefact"
 digest = "d9dac7207f314b46"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "agent-recipe"
 digest = "22aa443d0cc9ad52"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just run'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
@@ -3863,17 +3895,17 @@ detail = "this host cannot evaluate it, so it cannot judge it either: the transp
 ledger = "m5b"
 criterion = "window-artefact"
 digest = "8fee5b809cdd0b4c"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: this artefact is about a window: it needs an X server with the XTEST extension, a device that can import a dma-buf, python-xlib and Pillow. A hosted runner has none of them, and a check that reported green because the window never opened is the exact failure M5.5 exists to correct — CI job 'milestone-m5b'"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
 criterion = "window-recipe"
 digest = "a38a919edc3930db"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: the same reason as `window-artefact`: there is no display on a hosted runner and this artefact is about a window — CI job 'milestone-m5b'"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m6"

@@ -28,25 +28,32 @@ because a gap whose reason changed is a different gap and the note recording it 
 
 An act that is expected to work and does not fails the run, always.
 
+--- THE HOSTED RUNTIME, AND WHY THERE IS ONE ---------------------------------------------------
+
+The editor is started with `--mcp --headless` — `--mcp` alone opens a window beside the agent
+interface — and `--host` to `cy-runtime-stub`, the same stand-in runtime samples/05-editor-session
+attaches. Play is the runtime's (`live-editing`: the editor presents Playing only after an attached
+runtime was asked), so an editor with no runtime does not enter play and says so. The stub speaks the
+live bridge's message set and holds no world; it needs no display and no graphics device either.
+
 --- THE THREE STEPS THAT DO NOT CLOSE, AS OF THIS COMMIT ----------------------------------------
 
-  1. `scene.translate` — "this document's schema declares no Transform component". Opening a
-     document constructs an empty `Document`: `cy_editor_services::documents::DocumentService::open`
-     calls `Document::new`, which is a name and an empty schema, because there is no world loader.
-     Nothing in the tree outside a test ever calls `DocumentSchema::declare_type`. So a scene can be
-     COMPOSED (entities are real, and undo restores them exactly) but nothing in it can be PLACED.
+  `scene.translate` used to be the first. It closed when opening a world gained a loader and the
+  project gained the engine's type manifest, and act 2 now requires the placement.
 
-  2. `project.build` — "the scope \"author\" does not grant the effect class external-effect". That
+  1. `project.build` — "the scope \"author\" does not grant the effect class external-effect". That
      refusal is CORRECT and this driver asserts it: running a compiler is an effect undo cannot
      reach, and `editor-agent-interface` requires it to be granted deliberately. The `operator`
      scope grants that class for an explicitly trusted connection; this sample keeps the narrower
      author scope so it proves ordinary content work cannot start external processes.
 
+  2. `project.reload` — nothing has been built, because of the step above.
+
   3. `viewport:` — "no frame has arrived from the runtime for this viewport". The viewport transport
      is real and measured, and this milestone's other artefact photographs the engine's own frame
      inside the editor's window. But the code that claims frames from it — `cy-editor-shell`'s
-     `ViewportLink` — belongs to the window, and `--mcp` runs without one. So the LOOK step of the
-     loop above has an implementation and no host in this configuration.
+     `ViewportLink` — belongs to the window, and `--mcp --headless` runs without one. So the LOOK
+     step of the loop above has an implementation and no host in this configuration.
 
 None of the three is a defect in this driver, and each is a few lines away in a file this artefact
 does not own. They are reported by name, with the refusal, on every run.
@@ -60,6 +67,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,6 +79,9 @@ ROOT = SAMPLE.parents[1]
 # samples/05-editor-session records: a document's identity is the asset it is the authoring form of,
 # and writing that asset is `file.save`'s job at a later task.
 WORLD = "worlds/opening.cyworld"
+
+# The engine's registered component types, as the editor names them. See `prepare`.
+MANIFEST = ROOT / "samples" / "05b-editor-window" / "project" / "types.cytypes"
 
 # The script the agent writes. Under `game/`, which is the one directory `--agent-scope author`
 # grants — so a write outside it is refused with the scope as the reason, which act 5 requires.
@@ -155,12 +166,17 @@ class Agent:
     client built out of the editor's own types would prove nothing about the wire.
     """
 
-    def __init__(self, binary: Path, root: Path, scope: str, intent: str, journal: Path | None):
+    def __init__(self, binary: Path, root: Path, scope: str, intent: str, journal: Path | None,
+                 host: Path | None = None):
         arguments = [
             str(binary),
             "--open",
             WORLD,
+            # `--mcp` ALONE NOW OPENS A WINDOW and hosts MCP beside it (38e86ed); stdio-only is
+            # `--mcp --headless`. Without this flag the artefact that "needs no display" opened a
+            # window and a graphics device on any machine that had a DISPLAY.
             "--mcp",
+            "--headless",
             "--agent-scope",
             scope,
             "--agent-intent",
@@ -168,6 +184,8 @@ class Agent:
         ]
         if journal is not None:
             arguments += ["--journal", str(journal)]
+        if host is not None:
+            arguments += ["--host", str(host)]
         self.scope = scope
         self.intent = intent
         self.process = subprocess.Popen(
@@ -303,21 +321,19 @@ def act_compose(agent: Agent, report: Report) -> list[str]:
 
 
 def act_place(agent: Agent, report: Report) -> None:
-    """Place what was composed. An OPEN STEP — see the module note, gap 1."""
+    """Place what was composed, and read the placement back.
+
+    Once an open step: opening a document built an empty schema, so nothing had a Transform to move.
+    The world loader and the project's type manifest (`worldfile::declare_project_types`) closed
+    it, and a step that has closed is asserted rather than left able to report a gap.
+    """
     ok, text, _ = agent.tool("scene.translate", amount="3 0 0")
-    if ok:
-        report.did("placed the selection", text.splitlines()[0])
-        return
-    expect(
-        "declares no Transform component" in text,
-        f"scene.translate was refused for an unrecorded reason:\n{text}",
-    )
-    report.gap(
-        "scene.translate",
-        "the document's schema declares no Transform, because opening a document builds an empty "
-        "one — DocumentService::open calls Document::new and there is no world loader. The gizmo "
-        "and the numeric entry are held by their own tests against a document that declares one",
-    )
+    expect(ok, f"scene.translate was refused: {text}")
+    ok, history = agent.read("history:")
+    expect(ok, f"history: was refused: {history}")
+    expect("Translate" in history or "translate" in history,
+           f"the placement is not in the history:\n{history}")
+    report.did("placed the selection", text.splitlines()[0])
 
 
 def act_author(agent: Agent, root: Path, report: Report) -> None:
@@ -458,8 +474,8 @@ def act_observe(agent: Agent, out: Path, report: Report) -> None:
     )
     report.gap(
         "viewport:",
-        "no frame has arrived: --mcp runs without a ViewportLink, which lives in cy-editor-shell "
-        "with the window. The transport itself is real and samples/05b-editor-window photographs "
+        "no frame has arrived: --mcp --headless runs without a ViewportLink, which lives in "
+        "cy-editor-shell with the window. The transport itself is real and samples/05b-editor-window photographs "
         "the engine's own frame inside the editor",
     )
 
@@ -596,7 +612,43 @@ def prepare(work: Path) -> Path:
         shutil.rmtree(root)
     shutil.copytree(SAMPLE / "project", root)
     (root / "worlds").mkdir(exist_ok=True)
+    # THE ENGINE'S TYPE MANIFEST, which a cooked project carries and which is what gives an empty
+    # world a Transform to place. Copied from the one committed copy rather than committed twice:
+    # `render.authoring_schema` holds that file to what `cy::scene::serialization` writes, and a
+    # second copy here would be one nothing checks. The project is still empty — no world, no node.
+    shutil.copyfile(MANIFEST, root / MANIFEST.name)
     return root
+
+
+def start_runtime(binary: Path) -> tuple[subprocess.Popen, Path]:
+    """A hosted runtime for the editor to attach, and the socket it listens on.
+
+    PLAY IS THE RUNTIME'S. `live-editing` requires the editor to present Playing only after an
+    attached runtime was asked, so an editor with none stays in Editing and `play.enter` enters
+    nothing. `cy-runtime-stub` is the runtime samples/05-editor-session attaches: it speaks the live
+    bridge's message set and holds no world, which is all an agent entering and leaving play needs.
+    The socket lives in a short temporary directory because `sun_path` is ~108 bytes and a build
+    tree is easily deeper than that.
+    """
+    stub = binary.parent / "cy-runtime-stub"
+    if not stub.is_file():
+        raise Failed(f"no hosted runtime at {stub}. Build it with: just build-editor")
+    socket = Path(tempfile.mkdtemp(prefix="cy-agent-")) / "runtime.sock"
+    runtime = subprocess.Popen(
+        [str(stub), str(socket)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    assert runtime.stdout is not None
+    ready = runtime.stdout.readline().strip()
+    if ready != "listening":
+        runtime.kill()
+        raise Failed(f"the hosted runtime did not start listening on {socket}; it said {ready!r}")
+    return runtime, socket
+
+
+def stop_runtime(runtime: subprocess.Popen, socket: Path) -> None:
+    runtime.kill()
+    runtime.wait(timeout=30)
+    shutil.rmtree(socket.parent, ignore_errors=True)
 
 
 def main() -> int:
@@ -618,7 +670,6 @@ def main() -> int:
     default = ROOT / os.environ.get("CY_BUILD_DIR", "build") / "agent-authoring"
     work = Path(options.work).resolve() if options.work else default
     work.mkdir(parents=True, exist_ok=True)
-    report = Report()
 
     try:
         binary = editor_binary(options.profile, options.build)
@@ -629,13 +680,29 @@ def main() -> int:
     root = prepare(work)
     print(f"==> agent-authoring  profile={options.profile}  project={root}")
     print(f"    editor           {binary}")
+    try:
+        runtime, socket = start_runtime(binary)
+    except Failed as problem:
+        print(f"agent-authoring: {problem}", file=sys.stderr)
+        return 2
+    print(f"    runtime          {socket}")
 
+    try:
+        return drive(binary, root, work, socket, options.shot)
+    finally:
+        stop_runtime(runtime, socket)
+
+
+def drive(binary: Path, root: Path, work: Path, socket: Path, shot: str) -> int:
+    """Every act, over one connection, and the summary. Returns the process's exit status."""
+    report = Report()
     agent = Agent(
         binary,
         root,
         scope="author",
         intent="compose the opening scene and give it a beacon",
         journal=work / "journal",
+        host=socket,
     )
     started = time.monotonic()
     try:
@@ -677,8 +744,8 @@ def main() -> int:
         )
     if stderr.strip():
         print(f"    the editor said: {stderr.strip().splitlines()[0]}")
-    if options.shot:
-        render_transcript(report, report.lines, Path(options.shot))
+    if shot:
+        render_transcript(report, report.lines, Path(shot))
     return 1 if report.failed else 0
 
 

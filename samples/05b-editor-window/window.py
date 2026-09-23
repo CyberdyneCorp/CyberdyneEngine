@@ -487,17 +487,27 @@ def rows_in_patch(patch) -> int:
     is what changes when undo removes an entity, and unlike reading a label it needs no font, no
     interface-scale assumption and no locale.
     """
+    return len(row_bands(patch))
+
+
+def row_bands(patch) -> list[tuple[int, int]]:
+    """The horizontal bands `rows_in_patch` counts, as (first, last) lines within the patch."""
     grey = patch.convert("L")
     columns, lines = grey.size
     pixels = grey.load()
-    rows, inside = 0, False
+    bands: list[tuple[int, int]] = []
+    start = None
     for y in range(lines):
         row = [pixels[x, y] for x in range(columns)]
         busy = max(row) - min(row) > 24
-        if busy and not inside:
-            rows += 1
-        inside = busy
-    return rows
+        if busy and start is None:
+            start = y
+        elif not busy and start is not None:
+            bands.append((start, y - 1))
+            start = None
+    if start is not None:
+        bands.append((start, lines - 1))
+    return bands
 
 
 def rows_in_hierarchy(session, image=None) -> int:
@@ -523,11 +533,16 @@ def viewport_rect(width: int, height: int) -> tuple[int, int, int, int]:
     a mapped point to the handle it can actually see, and that search has a colour to key on because
     the engine drew it.
     """
+    # MEASURED, and re-measured when the dock changes. 38e86ed put the open-document strip under the
+    # toolbar and moved the viewport's panel down 29 px, to (301, 120)-(1236, 661) in the 1600x950
+    # window; the proportions below were M7's (top 0.0958, bottom 0.6863) until the gizmo drag
+    # started landing 29 px above the X arrow. What catches the next such change is
+    # `handle_in_window`, which refuses a mapped point with no drawn handle near it.
     return (
         int(width * 0.1888),
-        int(height * 0.0958),
+        int(height * 0.1264),
         int(width * 0.7725),
-        int(height * 0.6863),
+        int(height * 0.6958),
     )
 
 
@@ -575,8 +590,14 @@ def handle_in_window(session, layout: dict, handle: str, image=None) -> tuple[in
          (`cy::render::rescale_gizmo_layout`), so this is the panel's origin and nothing else.
       2. **Refine.** Look for the handle the engine actually DREW, near where the translation says
          it is, by its axis colour. If the two agree the aim is the drawn handle; if the search
-         finds nothing the translated point stands, and the drag either lands inside the editor's
-         twelve-pixel acquisition slop or the act reports a gap.
+         finds nothing the answer is `None`, because the mapping is wrong.
+
+    **NO FALLBACK TO THE TRANSLATED POINT.** Until M11.c this returned the translated point when it
+    found no ink, and `act_drag` then compared that point with itself, found "0 px" of drift and
+    dragged at empty viewport. That is how a dock that had grown a row (38e86ed) reported itself as
+    "the gizmo drag committed nothing" — a gap in the editor — for weeks. A handle with no colour to
+    look for (the screen-space centre) still answers the translated point: there is nothing to
+    refine it with, and nothing claims otherwise.
 
     The refinement is what makes a wrong panel origin a smaller error than a wrong gizmo: it
     corrects for whatever the dock's proportions are on this window, using the one thing that is
@@ -588,8 +609,11 @@ def handle_in_window(session, layout: dict, handle: str, image=None) -> tuple[in
     if image is None:
         image = session.region(0, 0, session.width, session.height)
     left, top, _right, _bottom = viewport_rect(session.width, session.height)
-    return _nearest_ink(image, AXIS_INK.get(handle), int(round(left + spot[0])),
-                        int(round(top + spot[1])))
+    x, y = int(round(left + spot[0])), int(round(top + spot[1]))
+    ink = AXIS_INK.get(handle)
+    if ink is None:
+        return x, y
+    return _nearest_ink(image, ink, x, y)
 
 
 #: How far from the translated point the drawn handle is looked for, in pixels. Larger than any
@@ -599,10 +623,8 @@ def handle_in_window(session, layout: dict, handle: str, image=None) -> tuple[in
 INK_SEARCH = 22
 
 
-def _nearest_ink(image, ink, x: int, y: int) -> tuple[int, int]:
-    """The centroid of `ink`-coloured pixels near (x, y), or (x, y) when there are none."""
-    if ink is None:
-        return x, y
+def _nearest_ink(image, ink, x: int, y: int) -> tuple[int, int] | None:
+    """The centroid of `ink`-coloured pixels near (x, y), or `None` when there are none."""
     width, height = image.size
     box = (
         max(0, x - INK_SEARCH), max(0, y - INK_SEARCH),
@@ -616,7 +638,7 @@ def _nearest_ink(image, ink, x: int, y: int) -> tuple[int, int]:
         if _is_ink(patch.getpixel((px, py)), ink)
     ]
     if not found:
-        return x, y
+        return None
     return (
         box[0] + round(sum(p for p, _ in found) / len(found)),
         box[1] + round(sum(p for _, p in found) / len(found)),
@@ -741,12 +763,52 @@ def act_author(session: Session, journal: Path, shots: Path, keyboard: bool,
     return rows
 
 
-def act_select(session: Session, report: Report) -> None:
-    """Selection by pointer, in the outliner, which is where a person clicks."""
-    x = int(session.width * 0.06)
-    y = int(session.height * 0.148)
+#: The outliner's selected-row fill, `cy_editor_visual`'s selection role over the panel surface, as
+#: this window draws it. Measured from the screenshot, like `AXIS_INK`.
+SELECTED_ROW = (68, 60, 42)
+
+#: How many bands the outliner draws above its first entity: the search field, the row of buttons
+#: under it, and the "N visible · M selected" line.
+OUTLINER_HEADER_BANDS = 3
+
+
+def act_select(session: Session, journal: Path, report: Report) -> None:
+    """Selection by pointer, in the outliner, which is where a person clicks.
+
+    OBSERVED, NOT ASSUMED. Until M11.c this clicked a fixed 14.8 % down the window and reported
+    success. After 38e86ed gave the outliner a search field and a row of buttons, that point was
+    the "Create Empty Entity" button: the "selection" created a fourth entity, the gizmo drag then
+    moved that, and the outliner that act counted from had one row fewer than the one the undo act
+    counted — which surfaced as "undoing a gizmo drag changed the outliner from 9 to 10 rows". So
+    the act now aims at the first entity row it can SEE, and requires that the click selected it
+    and created nothing: the journal and the row count are unchanged and the row wears the selection
+    fill.
+    """
+    left, top, width, height = outliner_box(session.width, session.height)
+    records = journal_records(journal)
+    before = row_bands(session.region(left, top, width, height))
+    expect(
+        len(before) > OUTLINER_HEADER_BANDS,
+        f"the outliner draws {len(before)} band(s), none of them an entity row",
+    )
+    first, last = before[OUTLINER_HEADER_BANDS]
+    x, y = left + int(width * 0.3), top + (first + last) // 2
     session.click(x, y)
-    report.did("selection by pointer", f"clicked the first outliner row at ({x}, {y})")
+    time.sleep(0.4)
+    after = row_bands(session.region(left, top, width, height))
+    expect(
+        journal_records(journal) == records and len(after) == len(before),
+        f"clicking the outliner row at ({x}, {y}) changed the document: the journal went from "
+        f"{records} to {journal_records(journal)} records and the outliner from {len(before)} to "
+        f"{len(after)} rows. A selection is not an edit, so the click landed on a control",
+    )
+    fill = session.region(left + width - 8, y, 1, 1).getpixel((0, 0))
+    expect(
+        all(abs(fill[channel] - SELECTED_ROW[channel]) <= 12 for channel in range(3)),
+        f"the outliner row at ({x}, {y}) is filled {fill} after the click, not the selection's "
+        f"{SELECTED_ROW}",
+    )
+    report.did("selection by pointer", f"clicked the first entity row at ({x}, {y}) and it is selected")
 
 
 def act_drag(session: Session, journal: Path, shots: Path, rows: int, layout_file: Path,
@@ -794,8 +856,15 @@ def act_drag(session: Session, journal: Path, shots: Path, rows: int, layout_fil
     # centre the engine published is compared against the marker it drew — one number, from two
     # sides of a process boundary.
     left, top, _right, _bottom = viewport_rect(session.width, session.height)
+    expect("axis-x" in layout["handles"], "the engine published no X arrow for the selected object")
     grab = handle_in_window(session, layout, "axis-x", image)
-    expect(grab is not None, "the engine published no X arrow for the selected object")
+    expect(
+        grab is not None,
+        f"nothing is drawn in the X arrow's colour within {INK_SEARCH} px of where the published "
+        f"layout maps to ({left + layout['handles']['axis-x'][0]:.0f}, "
+        f"{top + layout['handles']['axis-x'][1]:.0f}) — the viewport's rectangle in this window is "
+        "not where `viewport_rect` says it is, so a drag would land beside the handle",
+    )
     # THE MAPPING IS CHECKED BEFORE IT IS USED, and it is checked against the pixels rather than
     # against itself: the point the dock's proportions predict and the point the engine's own red
     # arrow occupies must be the same point, within the slop a click is allowed. If they are not,
@@ -1229,6 +1298,52 @@ def prepare(work: Path) -> tuple[Path, Path, Path]:
     return root, journal, shots
 
 
+def selftest() -> int:
+    """The mapping's own negative case, with no display and no editor. `integration.editor_window_selftest`.
+
+    `handle_in_window` is the check that the viewport's rectangle in the window is where
+    `viewport_rect` says. It once answered the translated point when it found no handle there, so
+    it could not fail — and the drag landed 29 px above the X arrow for weeks while the run blamed
+    the editor. This draws the X arrow's colour on a synthetic window, once where the mapping puts
+    it and once 29 px lower, and requires the first to be found and the second to be refused.
+    """
+    from PIL import Image, ImageDraw
+
+    class Window:
+        width, height = 1600, 950
+
+    layout = {"handles": {"axis-x": [516.0, 296.0, 5.0, 18.0], "screen": [467.0, 270.0, 8.0, 18.0]}}
+    left, top, _right, _bottom = viewport_rect(Window.width, Window.height)
+    mapped = (int(left + 516), int(top + 296))
+
+    def drawn_at(offset: int):
+        image = Image.new("RGB", (Window.width, Window.height), (0x30, 0x30, 0x30))
+        x, y = mapped[0], mapped[1] + offset
+        ImageDraw.Draw(image).ellipse([x - 5, y - 5, x + 5, y + 5], fill=AXIS_INK["axis-x"])
+        return image
+
+    failures = []
+    found = handle_in_window(Window, layout, "axis-x", drawn_at(0))
+    if found is None or max(abs(found[0] - mapped[0]), abs(found[1] - mapped[1])) > 1:
+        failures.append(f"a handle drawn where the mapping puts it was not found: {found}")
+    missed = handle_in_window(Window, layout, "axis-x", drawn_at(INK_SEARCH + 7))
+    if missed is not None:
+        failures.append(
+            f"a handle drawn {INK_SEARCH + 7} px from where the mapping puts it was answered as "
+            f"{missed}; a wrong viewport rectangle must be refused, not dragged at"
+        )
+    if handle_in_window(Window, layout, "screen", drawn_at(0)) != (int(left + 467), int(top + 270)):
+        failures.append("a handle with no colour to refine by did not answer its translated point")
+    # The dock this driver was measured against: the viewport panel at (301, 120)-(1236, 661).
+    if abs(left - 301) > 2 or abs(top - 120) > 2:
+        failures.append(f"viewport_rect puts the panel at ({left}, {top}), not (301, 120)")
+    for failure in failures:
+        print(f"editor-window selftest: {failure}", file=sys.stderr)
+    print("editor-window selftest: FAILED" if failures else
+          "editor-window selftest: the mapping finds a drawn handle and refuses a missing one")
+    return 1 if failures else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="dev")
@@ -1258,7 +1373,11 @@ def main() -> int:
     # reference is made of: the session in the state act 4 leaves it in, after the transient
     # notifications have retired, so what is photographed is the editor rather than its toasts.
     parser.add_argument("--shot", default="", help="write the reference screenshot here")
+    parser.add_argument("--selftest", action="store_true",
+                        help="check the window mapping's negative case and exit; needs no display")
     options = parser.parse_args()
+    if options.selftest:
+        return selftest()
 
     # CY_BUILD_DIR, not `build/`. Every recipe in this tree honours it and a driver that wrote into
     # `build/` regardless would put one run's output into another agent's tree.
@@ -1378,7 +1497,7 @@ def main() -> int:
         act_open(session, journal, shots, report)
         print("--- act 2: a person authors, keyboard first ---")
         rows = act_author(session, journal, shots, keyboard, report)
-        act_select(session, report)
+        act_select(session, journal, report)
         print("--- act 3: a gizmo drag, and the undo that takes it back ---")
         committed = act_drag(session, journal, shots, rows, layout_file, keyboard,
                              report)

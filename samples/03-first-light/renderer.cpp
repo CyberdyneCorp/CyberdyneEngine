@@ -149,28 +149,50 @@ void draw_objects(const PassContext& context, Renderer::PassState& state,
     }
 }
 
+/// Bind the pipeline and descriptor sets one object draws with, and answer the layout they belong
+/// to. No `material_set` is the sample's own forward pipeline; one is a compiled material's
+/// program, which also takes the global texture table.
+rhi::PipelineLayoutHandle bind_forward_material(
+    const PassContext& context, const Renderer::PassState& state,
+    rhi::GraphicsPipelineHandle pipeline, const rhi::DescriptorSetHandle* material_set) noexcept {
+    context.commands->bind_graphics_pipeline(pipeline);
+    if (material_set == nullptr) {
+        context.commands->bind_descriptor_sets(
+            state.layout, 0, Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
+        return state.layout;
+    }
+    const rhi::DescriptorSetHandle sets[] = {state.global_textures, *material_set,
+                                             state.descriptor_set};
+    context.commands->bind_descriptor_sets(state.material_layout, 0, sets);
+    return state.material_layout;
+}
+
 void draw_forward_objects(const PassContext& context, Renderer::PassState& state) noexcept {
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
                                           Span<const u64>(&offset, 1));
     context.commands->bind_index_buffer(state.indices, 0, false);
 
+    // BIND ON A CHANGE OF MATERIAL, NOT PER OBJECT. The view travels in the descriptor-bound
+    // uniform buffer and reaches every draw through memory, which is the late-latch seam
+    // `render.xr_prerequisites` measures as one descriptor bind per pass. Rebinding per object
+    // (as this function did from af2c5e1) records nine binds for the default scene's forward and
+    // shadow passes and turned that check red; objects that share a material share one bind.
+    rhi::PipelineLayoutHandle layout = state.layout;
+    const void* bound = nullptr;
+    bool any_bound = false;
     for (u32 index = 0; index < state.object_count; ++index) {
         const u64 artefact = index < state.materials->object_artefacts.size()
                                  ? state.materials->object_artefacts[index]
                                  : 0;
         const auto* material = state.materials->find(artefact);
-        rhi::PipelineLayoutHandle layout = state.layout;
-        if (material == nullptr) {
-            context.commands->bind_graphics_pipeline(state.forward_pipeline);
-            context.commands->bind_descriptor_sets(
-                layout, 0, Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
-        } else {
-            layout = state.material_layout;
-            context.commands->bind_graphics_pipeline(material->pipeline);
-            const rhi::DescriptorSetHandle sets[] = {
-                state.global_textures, material->descriptor_set, state.descriptor_set};
-            context.commands->bind_descriptor_sets(layout, 0, sets);
+        if (!any_bound || material != bound) {
+            layout = material == nullptr
+                         ? bind_forward_material(context, state, state.forward_pipeline, nullptr)
+                         : bind_forward_material(context, state, material->pipeline,
+                                                 &material->descriptor_set);
+            bound = material;
+            any_bound = true;
         }
         const ObjectPush& push = state.pushes[index];
         context.commands->push_constants(

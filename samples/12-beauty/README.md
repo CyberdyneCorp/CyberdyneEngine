@@ -6,6 +6,7 @@
 > just capture-beauty-shot                          # the picture, the before/after and the manifest
 > just capture-beauty-shot --video                  # ... and the turntable
 > just capture-beauty-shot --regenerate-textures    # ... regenerating the source images first
+> just measure-beauty-mip-chain                     # does the shot read its cooked mip chain?
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -52,7 +53,8 @@ four.
 | `shot.cpp` | the `.cyshot` parser and the `.cyprim` loader. Every refusal is about something the picture would have been wrong about |
 | `stage.cpp` | the device: the cook, the uploads, the descriptor sets, the shadow map, the frame, and the two readbacks |
 | `shaders/beauty.slang` | five entry points and the one thing it decides that the material cannot — which attributes the material sees, and what the engine's light loop does with the surface it returns |
-| `main.cpp` | the command line, the sidecar check, and the turntable |
+| `main.cpp` | the command line, the sidecar check, and the turntable. `--albedo-levels 1` is a CONTROL: level 0 of every albedo map's cooked chain and nothing beneath it |
+| `measure_mip_chain.py` | `just measure-beauty-mip-chain`'s judge: the full chain rendered twice must agree, and against albedo level 0 alone must DIFFER and be the less aliased |
 
 ## Three things in here that were found by looking at a picture
 

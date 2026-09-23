@@ -423,9 +423,13 @@ fn play(
                 .to_string();
             let project = host(context)?;
             let said = project.set_play(value, &mode)?;
+            // THE STATE THE EDITOR HOLDS AFTERWARDS, not the one that was asked for. With no
+            // runtime attached `set_play` leaves every viewport in Editing (live-editing's
+            // "runtime-authoritative play state"), and a structured answer naming `playing` would
+            // tell an agent a simulation started that nothing accepted.
             Ok(Outcome::new(said)
-                .with("play", Value::Text(value.to_string()))
-                .with("mode", Value::Text(mode)))
+                .with("play", Value::Text(project.play_state()))
+                .with("mode", Value::Text(project.play_mode())))
         },
     )
     .available_when(move |context| {

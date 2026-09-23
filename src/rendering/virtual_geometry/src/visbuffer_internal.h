@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+// SPDX-License-Identifier: MIT
 // What `visbuffer.cpp` and `forward_visibility.cpp` share: the pass table, the binding table, the
 // push block and the argument layout — each of them a mirror of `vg_visbuffer.slang`, and each of
 // them a thing the two rasterisers must agree on. Private to this module's sources.

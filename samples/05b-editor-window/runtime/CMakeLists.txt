@@ -54,6 +54,7 @@ cy_add_module(
     LAYER tools
     TYPE EXECUTABLE
     SOURCES
+        layout_file.cpp
         main.cpp
         material_runtime.cpp
         overlay.cpp

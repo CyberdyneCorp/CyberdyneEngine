@@ -653,30 +653,7 @@ capture-beauty-shot *args:
     work="${build_dir}/beauty"
     rm -rf "${work}"
     mkdir -p "${work}"
-
-    echo "==> compile     the authored graphs, through the engine's own lowering"
-    for canvas in content/beauty/materials/*.cymatcanvas; do
-        name="$(basename "${canvas}" .cymatcanvas)"
-        "${cooker}" author "${canvas}" \
-            --graph "content/beauty/materials/${name}.cygraph" \
-            --module "${work}/${name}.slang" \
-            --info "${work}/${name}.cymatinfo"
-    done
-
-    echo "==> shader      the generated programs, through slangc"
-    for info in "${work}"/*.cymatinfo; do
-        name="$(basename "${info}" .cymatinfo)"
-        entry="$(awk '/^entry /{print $2}' "${info}")"
-        "${slangc}" samples/12-beauty/shaders/beauty.slang \
-            -target spirv -profile spirv_1_5 \
-            -entry sceneVertex -stage vertex -entry sceneFragment -stage fragment \
-            -entry shadowVertex -stage vertex \
-            -entry skyVertex -stage vertex -entry skyFragment -stage fragment \
-            -fvk-use-entrypoint-name \
-            -I src/rendering/shaders -I "${work}" \
-            -DCY_MATERIAL_MODULE="\"${name}.slang\"" -DCY_MATERIAL_ENTRY="${entry}" \
-            -o "${work}/${name}.spv"
-    done
+    just _beauty-programs "${build_dir}" "${work}" content/beauty/materials
 
     mkdir -p docs/design/images docs/design/videos
     frames=()
@@ -707,6 +684,103 @@ capture-beauty-shot *args:
         rm -rf "${work}/frames"
         echo "    docs/design/videos/m11c-beauty-shot.mp4"
     fi
+
+# STEPS 2 AND 3, SHARED BY THE CAPTURE AND BY ITS MEASUREMENT. `graphs` is where the canonical
+# `.cygraph` lands: the capture writes the committed one under content/beauty/materials, and the
+# measurement below writes into its own work directory so that it never touches the tree.
+#
+# THE PIXEL STAGE IS DECLARED IN `beauty.slang` AND NOT HERE, and that is a decision. The generated
+# prelude's `cy_material_sample` takes the implicit level of detail only under
+# `CY_MATERIAL_PIXEL_STAGE`; without it every albedo and data map in the shot read level 0 and the
+# cooked chain beneath it was never sampled (M11.c task 3.8, refuted at the gate by disassembling
+# these very modules). The file is the fragment-stage lowering — its header says so — so it is the
+# one place that knows it is one, and every caller of slangc on it gets the define. A `-D` on this
+# command line would have fixed this recipe and left the next caller to rediscover the defect.
+[private]
+_beauty-programs build_dir work graphs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    cooker="{{build_dir}}/tools/material/cy_material"
+    slangc="{{build_dir}}/Development/bin/slangc"
+    echo "==> compile     the authored graphs, through the engine's own lowering"
+    for canvas in content/beauty/materials/*.cymatcanvas; do
+        name="$(basename "${canvas}" .cymatcanvas)"
+        "${cooker}" author "${canvas}" \
+            --graph "{{graphs}}/${name}.cygraph" \
+            --module "{{work}}/${name}.slang" \
+            --info "{{work}}/${name}.cymatinfo"
+    done
+
+    echo "==> shader      the generated programs, through slangc"
+    for info in "{{work}}"/*.cymatinfo; do
+        name="$(basename "${info}" .cymatinfo)"
+        entry="$(awk '/^entry /{print $2}' "${info}")"
+        "${slangc}" samples/12-beauty/shaders/beauty.slang \
+            -target spirv -profile spirv_1_5 \
+            -entry sceneVertex -stage vertex -entry sceneFragment -stage fragment \
+            -entry shadowVertex -stage vertex \
+            -entry skyVertex -stage vertex -entry skyFragment -stage fragment \
+            -fvk-use-entrypoint-name \
+            -I src/rendering/shaders -I "{{work}}" \
+            -DCY_MATERIAL_MODULE="\"${name}.slang\"" -DCY_MATERIAL_ENTRY="${entry}" \
+            -o "{{work}}/${name}.spv"
+    done
+
+# DOES THE SHOT READ ITS COOKED MIP CHAIN? M11.c task 3.8, measured on the artefact.
+#
+# The shot photographed three times from the same compiled programs: twice with every cooked chain
+# uploaded and once with level 0 alone of every ALBEDO map (`--albedo-levels 1`) — the one texture
+# only the material samples; the file below says why. samples/12-beauty/measure_mip_chain.py
+# requires the repeat to be byte-identical, the level-0 picture to DIFFER, and the level-0 picture to
+# be the more aliased. Nothing is written into the tree; the pictures stay in the build directory.
+# It needs a graphics device, and says so and fails without one — a skip is not a measurement.
+
+# Measure whether the beauty shot reads its cooked mip chain. Usage: just measure-beauty-mip-chain [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+measure-beauty-mip-chain *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "measure-beauty-mip-chain: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-mip-chain"
+    rm -rf "${work}"
+    mkdir -p "${work}"
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    for run in chain repeat level-zero; do
+        levels=0
+        if [ "${run}" = level-zero ]; then
+            levels=1
+        fi
+        echo "==> capture     ${run}"
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --still "${work}/${run}.png" --albedo-levels "${levels}" \
+            ${rest} > "${work}/${run}.log" 2>&1 || {
+            cat "${work}/${run}.log"
+            exit 1
+        }
+        grep -E "^(device|textures?|albedo|data|normal) " "${work}/${run}.log" || true
+        if [ ! -f "${work}/${run}.png" ]; then
+            cat "${work}/${run}.log"
+            echo "measure-beauty-mip-chain: no picture was written — no graphics device, and a skip is not a measurement." >&2
+            exit 1
+        fi
+    done
+    python3 samples/12-beauty/measure_mip_chain.py \
+        "${work}/chain.png" "${work}/repeat.png" "${work}/level-zero.png"
 
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #

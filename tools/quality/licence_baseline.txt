@@ -1556,7 +1556,6 @@ src/rendering/material/tests/test_standard.cpp
 src/rendering/material/tests/test_validation.cpp
 src/rendering/particles/include/cy/rendering/particles/particle_renderer.h
 src/rendering/particles/shaders/embed_spirv.py
-src/rendering/particles/shaders/particle_spirv.h
 src/rendering/particles/src/particle_renderer.cpp
 src/rendering/pipeline/include/cy/rendering/pipeline/frame_bindings.h
 src/rendering/pipeline/include/cy/rendering/pipeline/frame_pipelines.h

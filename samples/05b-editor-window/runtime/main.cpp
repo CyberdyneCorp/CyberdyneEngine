@@ -49,10 +49,10 @@
 //                            [--adapter SUBSTRING] [--orbit TURNS-PER-SECOND]
 //                            [--layout PATH] [--no-validation]
 //
-// `--layout` writes the gizmo layout this runtime published, as one line of JSON, every time it
-// publishes one. It is how `window.py` aims a drag at a HANDLE rather than at a coordinate — M7
-// task 5b.4, whose defect was that M6's artefact dragged from a hard-coded (47 %, 38 %) hoping a
-// handle was there.
+// `--layout` writes the gizmo layout this runtime published, as one line of JSON, every time the
+// published geometry changes (`layout_file.h` says why not every time). It is how `window.py` aims
+// a drag at a HANDLE rather than at a coordinate — M7 task 5b.4, whose defect was that M6's
+// artefact dragged from a hard-coded (47 %, 38 %) hoping a handle was there.
 
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/device.h>
@@ -78,6 +78,7 @@
 #include <cy/servers/render/viewport_transport.h>
 #include <cy_reflect_generated_scene.h>
 
+#include "layout_file.h"
 #include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
@@ -234,38 +235,6 @@ constexpr f32 kFramingPhase = 0.12F;
                 static_cast<f32>(object.world_position[2] - camera.position[2])};
 }
 
-/// Write the published layout where the artefact's driver can read it.
-///
-/// One line of JSON, rewritten each time: a driver that wants to aim at a handle reads the file and
-/// gets the newest answer. It is written to a temporary and renamed, so a reader never sees half a
-/// line — the driver and the runtime are two processes and the file is the only thing between them.
-void write_layout(const char* path, const render::GizmoLayout& layout) noexcept {
-    if (path == nullptr || path[0] == '\0') {
-        return;
-    }
-    char temporary[512] = {};
-    (void)std::snprintf(temporary, sizeof(temporary), "%s.tmp", path);
-    std::FILE* file = std::fopen(temporary, "w");
-    if (file == nullptr) {
-        return;
-    }
-    (void)std::fprintf(file, R"({"frame":%llu,"mode":"%s","centre":[%.2f,%.2f],)",
-                       static_cast<unsigned long long>(layout.frame_id),
-                       render::gizmo_mode_name(layout.mode), static_cast<double>(layout.centre_x),
-                       static_cast<double>(layout.centre_y));
-    (void)std::fprintf(file, R"("extent":%.2f,"handles":{)", static_cast<double>(layout.extent));
-    bool first = true;
-    for (const render::GizmoHandleSpot& spot : layout.spots) {
-        (void)std::fprintf(file, R"(%s"%s":[%.2f,%.2f,%.2f])", first ? "" : ",",
-                           render::gizmo_handle_name(spot.handle), static_cast<double>(spot.x),
-                           static_cast<double>(spot.y), static_cast<double>(spot.radius));
-        first = false;
-    }
-    (void)std::fprintf(file, "}}\n");
-    (void)std::fclose(file);
-    (void)std::rename(temporary, path);
-}
-
 /// Everything the loop needs, gathered so the frame function is readable.
 struct Host {
     Options options;
@@ -320,6 +289,9 @@ struct Host {
     u64 published_frame = 0;
     /// The gizmo in the FRAME's pixels, which is what is drawn into the frame.
     render::GizmoLayout layout;
+    /// Where `--layout` is written, rewritten only when the geometry changes. See `layout_file.h`
+    /// for the quarter-second renames that made this necessary.
+    LayoutFile layout_file;
     /// The size the editor last said its viewport is, or zero. What the published layout is scaled
     /// into — see `cy::render::rescale_gizmo_layout` and `GizmoIntent::viewport_width`.
     u32 asked_width = 0;
@@ -416,7 +388,7 @@ void adopt_camera(Host& host, const render::GizmoIntent& intent) noexcept {
     if (Status sent = host.bridge->send_gizmo_geometry(request, bytes.span()); !sent) {
         return sent;
     }
-    write_layout(host.options.layout_path, published);
+    (void)host.layout_file.write(host.options.layout_path, published);
     return ok();
 }
 

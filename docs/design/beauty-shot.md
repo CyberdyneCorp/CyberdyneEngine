@@ -51,7 +51,7 @@ that function exists to make impossible.
 | | |
 |---|---|
 | **The material programs** | `lower_material` → `lower_graph` → `compile_material` → the emitter's Slang → `slangc`. Cook keys `0xd10b8e4404ad56c5`, `0x08f3975a2338abc4`, `0x159982f6f14a706e` |
-| **The cooked textures** | `cy::import::TextureImporter`: PNG in, **BC7 and BC5 blocks with a nine-level mip chain** out. 899 346 bytes of PNG became 786 852 bytes of blocks, and the blocks are what the device holds |
+| **The cooked textures** | `cy::import::TextureImporter`: PNG in, **BC7 and BC5 blocks with a nine-level mip chain** out. 899 346 bytes of PNG became 786 852 bytes of blocks, and the blocks are what the device holds — **and every level of the chain is read**, see [the mip chain](#the-mip-chain-and-why-this-picture-was-re-captured) |
 | **The sky** | `rendering::sky::compose_sky` over a 96 x 192 dome — the engine's atmosphere, its multiple-scattering table and its volumetric cloud march, 18 432 evaluations on the processor |
 | **The light** | `compose_sky_lighting` answered 102 333 / 76 288 / 47 310 lux of sun and 4 422 / 3 715 / 3 385 of mean sky radiance for this sun elevation. **No colour was typed anywhere**; a colour in the shot file would have been a second sun |
 | **The shadows** | one 2048 x 2048 directional shadow map, 3x3 percentage-closer filtered |
@@ -138,6 +138,56 @@ this whole record dishonest."* So:
   suite's writer stores rather than compresses, and it re-reads the file afterwards and refuses to
   keep one whose pixels changed. The same two lines of PIL, and the same argument,
   `tools/docs/collect_world.py` has made since M10.
+
+---
+
+## The mip chain, and why this picture was re-captured
+
+**Until M11.c's gate, the material programs in this shot sampled level 0 and nothing else**, and the
+still published before this section existed was captured that way. The importer cooks a nine-level
+chain for every texture and the frame uploaded all nine; the material never read eight of them.
+
+The reason was one missing line. The prelude the engine generates in front of every compiled
+material writes `cy_material_sample` twice, behind `CY_MATERIAL_PIXEL_STAGE`: the implicit level of
+detail for a pixel stage, the explicit level 0 for everything else, because a material program is
+compiled before anything knows which stage will call it. `samples/12-beauty/shaders/beauty.slang` IS
+the pixel stage — its header says so — and never said so to the preprocessor. Disassembled, each of
+the three compiled modules carried two `OpImageSampleImplicitLod` (the frame's own normal and
+occlusion samples) and two `OpImageSampleExplicitLod ... Lod %float_0` (the material's albedo and
+data maps). The engine's own forward path had been fixed in `cy/frame.slang`, and
+`m11c:forward-path-reads-the-mip-chain` proved that; it judges a test scene, and this shot does not
+draw through that shader.
+
+**The define is in `beauty.slang`, before the material is included**, and not on the recipe's
+`slangc` line: the file is the one place that knows it is a fragment-stage lowering, so every caller
+that compiles it gets the answer, and nobody writing the next recipe has to rediscover it. Every
+module is now four implicit samples and no explicit ones.
+
+**What says so is a measurement of THIS shot.** `just measure-beauty-mip-chain` photographs it twice
+with every chain and once with level 0 alone of every **albedo** map — the one texture only the
+material samples — and `m11c:beauty-shot-reads-the-mip-chain` requires the difference. At 960 x 540:
+
+| | before the define | after |
+|---|---|---|
+| albedo chain against albedo level 0 alone | **0 texels — byte-identical** | 64 833 texels (12.51%), mean \|delta\| 0.233/255 |
+| neighbour-to-neighbour energy, chain / level 0 | 6.023 / 6.023 | 5.881 / 5.945 — level 0 is the aliased one |
+| every chain cut, not just albedo | 15.17% | 15.65% |
+
+The last row is why the control is the albedo map alone: cutting every chain moves the picture
+whether or not the material reads it, because the frame's own implicit samples read the normal and
+data chains either way. A control that cannot fail is not one.
+
+**The published still changed, and it is the correct one.** Re-captured with
+`just capture-beauty-shot` at the published 3840 x 2160, box-filtered to 1920 x 1080: **45 594 of
+2 073 600 texels (2.20%) moved, mean |delta| 0.031/255, worst channel 37**, neighbour-to-neighbour
+energy 3.838/255 before and 3.832/255 after. The linear still moved in 55 texels by at most 2 steps.
+It is small at this size because the 2x supersample already resolves most footprints near level 0;
+at 960 x 540 without supersampling the same change moves 122 467 of 518 400 texels (23.6%) at
+0.436/255. **All of it is the define**: the old still is byte-identical (0 texels) to the same
+binary rendering programs compiled from the `beauty.slang` before this change, so nothing else in
+the frame — geometry, light, air, grade — moved. The manifest differs only in its three timings.
+**The turntable (`videos/m11c-beauty-shot.mp4`) was NOT re-encoded** and still shows level 0; it is
+regenerated by `just capture-beauty-shot --video`.
 
 ---
 

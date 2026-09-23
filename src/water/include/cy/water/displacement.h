@@ -56,6 +56,7 @@
 
 #include <cy/core/base/types.h>
 #include <cy/core/math/vec.h>
+#include <cy/core/memory/array.h>
 
 namespace cy::water {
 
@@ -170,6 +171,40 @@ struct Displacement {
 [[nodiscard]] Displacement evaluate_displacement(const DisplacementModel& model,
                                                  BandSelection selection, f64 horizontal_x,
                                                  f64 horizontal_z, f64 time) noexcept;
+
+/// One Gerstner train, resolved from the band it belongs to: its wavelength on the band's geometric
+/// spacing, its share of the band's amplitude, its direction and phase from the (seed, band, wave)
+/// substream, and the band's steepness.
+///
+/// RESOLVING A TRAIN IS MOST OF WHAT AN EVALUATION COSTS. Its direction and phase are two
+/// counter-based draws behind a hashed stream name, a `pow` and a `cos`/`sin` pair — per train, per
+/// evaluation. A caller that evaluates one model at thousands of positions (the ocean patch does
+/// 6 534 a frame) resolves the trains ONCE with `resolve_trains()` and sums them with
+/// `evaluate_trains()`. That is the same definition, not a second one: the train table is
+/// `train_of()`'s output in `evaluate_displacement()`'s order, and both entry points accumulate and
+/// finish the sum with the same functions, so the two answers are bit-identical.
+struct WaveTrain {
+    f32 wavelength = 1.0F;
+    f32 amplitude = 0.0F;
+    f32 dir_x = 1.0F;
+    f32 dir_z = 0.0F;
+    f32 phase = 0.0F;
+    f32 steepness = 0.0F;
+};
+
+/// How many trains `selection` sums: the size of the table `resolve_trains()` fills.
+[[nodiscard]] u32 count_trains(const DisplacementModel& model, BandSelection selection) noexcept;
+
+/// Resolve the trains `selection` sums, in the order `evaluate_displacement()` sums them. Writes at
+/// most `out.size()` and returns how many it wrote; a table shorter than `count_trains()` is a
+/// truncated sea, so a caller sizes it from that first.
+[[nodiscard]] u32 resolve_trains(const DisplacementModel& model, BandSelection selection,
+                                 Span<WaveTrain> out) noexcept;
+
+/// `evaluate_displacement()` over a table `resolve_trains()` filled. Bit-identical to it for the
+/// same model, selection, position and time.
+[[nodiscard]] Displacement evaluate_trains(Span<const WaveTrain> trains, f64 mean_level,
+                                           f64 horizontal_x, f64 horizontal_z, f64 time) noexcept;
 
 /// The amplitude split, reported so it is checkable. `water` — "the diagnostics SHALL report the
 /// amplitude of authoritative and visual-only bands at that location".

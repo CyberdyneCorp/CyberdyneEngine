@@ -122,6 +122,37 @@ And the second defect — a run that reported a gap and passed — is fixed wher
 `samples/harness/artefact.py`, whose `Report.exit_code` is **derived** from the recorded gaps. No
 later artefact can repeat it without deleting that module. M7 tasks 5b.4 and 5b.5.
 
+### And how it re-opened, found at M11.c
+
+From 38e86ed the run reported `GAP the gizmo drag … committed nothing` again, and this time the
+editor was not at fault. That change put the open-document strip under the toolbar and moved the
+viewport's panel down 29 px, to (301, 120)–(1236, 661) in the 1600×950 window. `viewport_rect`
+still held M7's proportions, so the drag was aimed 29 px above the X arrow and the editor correctly
+treated the press as the start of a selection. Instrumenting the shell showed it directly: the
+press arrived at viewport pixel (517, 267) and the published X arrow was at (516, 296).
+
+The mapping check this README describes above should have caught it and could not: when
+`handle_in_window` found no arrow colour near the mapped point it returned the mapped point, and
+the drift check compared that point with itself. It now returns `None`, the act fails naming the
+mapping, and `integration.editor_window_selftest` (`window.py --selftest`, no display needed) holds
+both halves — a handle drawn where the mapping puts it is found, one drawn 29 px away is refused, and
+`viewport_rect` puts the panel where the dock draws it.
+
+Two more defects stood behind that one, and the corrected mapping exposed both:
+
+* **The "selection by pointer" act was clicking a button.** It clicked a fixed 14.8 % down the
+  window, which after 38e86ed is the outliner's "Create Empty Entity" button, and reported success
+  without looking. The drag then moved the fourth entity that click created, and the undo check —
+  which counts outliner rows against the count act 2 took — failed with "9 to 10 rows". `act_select`
+  now aims at the first entity row it can see and requires the click to have selected it and
+  changed nothing: same journal, same row count, and the row wearing the selection fill.
+* **The runtime wedged on a busy disk.** It rewrote `--layout` on every published layout, and the
+  rename over the previous file made ext4 flush the new one first — 0.14 to 0.55 s per rename on the
+  render thread, measured under strace while other builds held the disk at 60 % full I/O pressure.
+  The heartbeat stopped, the editor declared the runtime wedged, and no frame with a gizmo in it
+  reached the window. `runtime/layout_file.{h,cpp}` now writes only when the geometry changed, and
+  `integration.editor_window_layout_file` holds it.
+
 ## The keyboard, and what M6 concluded about it
 
 M6 recorded that *"XTEST does not deliver synthesised key events in this X session"*, reproduced it
