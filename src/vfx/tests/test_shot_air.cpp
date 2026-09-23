@@ -58,8 +58,9 @@
 // renders the identical frame with the ring uploaded EMPTY — same passes, same clear, same resolve,
 // same exposure, same extension attached — and asserts the measured difference.
 //
-// MEASURED, on an RTX 5060 at 480x270: 4 713 of 129 600 texels differ, which is 3.64% of the
-// frame; mean |delta| is 0.753 of 255 over the whole frame and 20.7 over the texels that differ;
+// MEASURED, on an RTX 5060 at 480x270, trails included (M11.c task 6.3): 6 586 of 129 600 texels
+// differ, which is 5.08% of the frame; mean |delta| is 1.13 of 255 over the whole frame and 22.3
+// over the texels that differ (sprites alone, before the trails: 4 713, 3.64%, 20.7);
 // the worst channel moves by 255 — a fresh mote's core clips, which is what `embers.h` picked its
 // radiance to do. Every one of those is printed each run and three of them are floored, at roughly
 // half the measurement — because the repeat-render difference above is exactly zero, so there is
@@ -84,8 +85,10 @@ using namespace cy;
 using namespace cy::vfx_test;
 using cy::render_test::DeviceFixture;
 using cy::sample::beauty::cook_embers;
+using cy::sample::beauty::ember_trail_decl;
 using cy::sample::beauty::kEmberEmitters;
 using cy::sample::beauty::kEmberStep;
+using cy::sample::beauty::kEmberTrailInterval;
 using cy::sample::beauty::kEmberWarmup;
 using cy::sample::beauty::kShotExposureStops;
 using cy::sample::beauty::kShotEye;
@@ -193,6 +196,10 @@ CY_TEST_CASE("particles are in the assembled frame") {
     options.target = kShotTarget;
     options.fov_y_radians = shot_fov_y();
     options.exposure_stops = kShotExposureStops;
+    // THE TRAILS the published still draws behind every mote, at the still's own cadence.
+    const vfx::RendererDecl trails = ember_trail_decl();
+    options.trails = &trails;
+    options.trail_interval = kEmberTrailInterval;
 
     VfxScene scene(allocator);
     CY_REQUIRE(scene.build(fixture.device(), options).has_value());
@@ -218,6 +225,20 @@ CY_TEST_CASE("particles are in the assembled frame") {
     CY_CHECK_EQ(scene.particle_report().draws, 1U);
     CY_CHECK_EQ(scene.particle_report().particles, scene.published().particles);
     CY_CHECK_EQ(scene.particle_report().dropped, 0U);
+    // AND ONE DRAW FOR EVERY TRAIL, by the strip renderer's own count: strips as many as the
+    // publication derived, every vertex in the ring, and the segments that join two vertices of one
+    // strip — which is every vertex but each strip's first, so no quad bridges two motes.
+    const particles::StripReport& strips = scene.strip_report();
+    std::fprintf(stderr,
+                 "the shot's trails: %u vertices in %u strip(s), %u segment(s), %u draw(s), %u "
+                 "dropped; the publication derived %u trail(s)\n",
+                 strips.vertices, strips.strips, strips.segments, strips.draws, strips.dropped,
+                 scene.trailed().primitives);
+    CY_CHECK_EQ(strips.draws, 1U);
+    CY_CHECK_EQ(strips.dropped, 0U);
+    CY_CHECK_EQ(strips.strips, scene.trailed().primitives);
+    CY_CHECK_GT(strips.strips, 800U);
+    CY_CHECK_EQ(strips.segments, strips.vertices - strips.strips);
 
     Array<u32> with_air(allocator);
     CY_REQUIRE(keep(allocator, scene.pixels(), with_air).has_value());
@@ -248,8 +269,9 @@ CY_TEST_CASE("particles are in the assembled frame") {
                  control.differing, static_cast<u32>(with_air.size()),
                  100.0 * static_cast<f64>(control.differing) / static_cast<f64>(with_air.size()),
                  control.mean_delta, control.mean_delta_where_differing, control.max_delta);
-    // HOW MUCH, NAMED. Measured: 4 713 texels of 129 600 (3.64%), mean |delta| 20.7/255 where they
-    // differ, worst channel 255. The floors are about half of each. Three of them rather than one,
+    // HOW MUCH, NAMED. Measured: 6 586 texels of 129 600 (5.08%), mean |delta| 22.3/255 where they
+    // differ, worst channel 255 — trails included; the floors were set at the sprites-only 4 713
+    // and still hold. The floors are about half of each. Three of them rather than one,
     // because each fails on a different way for the air to stop being in the picture: a field that
     // shrank to a handful of motes drops the count, a field drawn at the wrong exposure or with the
     // blend inverted drops the mean, and a field whose sprites lost their cores drops the maximum.
@@ -257,6 +279,30 @@ CY_TEST_CASE("particles are in the assembled frame") {
     CY_CHECK_GT(control.mean_delta_where_differing, 10.0);
     CY_CHECK_GT(control.max_delta, 127U);
     scene.set_draw_particles(true);
+
+    // --- THE STRIP RENDERER'S OWN SHARE: the same frame with the sprites and without the trails --
+    //
+    // What the trails add to the picture, and nothing else: the motes are drawn in both frames.
+    // A trail pipeline that drew nothing — a collapsed strip, a width lost on the way, a fade that
+    // went to zero — leaves this at 0 and the case red, however healthy the sprites are.
+    scene.set_draw_trails(false);
+    CY_REQUIRE(scene.render(report).has_value());
+    CY_CHECK_EQ(scene.strip_report().vertices, 0U);
+    CY_CHECK_EQ(scene.particle_report().particles, scene.published().particles);
+    const Difference wake = difference(with_air.span(), scene.pixels());
+    std::fprintf(stderr,
+                 "the shot's trails against the same frame with the motes and none: %u of %u "
+                 "texel(s) differ (%.2f%%), mean |delta| %.1f/255 where they differ, max %u\n",
+                 wake.differing, static_cast<u32>(with_air.size()),
+                 100.0 * static_cast<f64>(wake.differing) / static_cast<f64>(with_air.size()),
+                 wake.mean_delta_where_differing, wake.max_delta);
+    // MEASURED, on an RTX 5060 at 480x270: 3 215 texels of 129 600 (2.48%), mean |delta| 15.2/255
+    // where they differ, worst channel 210. The floors are about half, as above, and for the same
+    // reason: the repeat render is exact, so they exist to catch trails that got WEAKER — narrower,
+    // shorter, fainter — and not only trails that vanished.
+    CY_CHECK_GT(wake.differing, 1500U);
+    CY_CHECK_GT(wake.mean_delta_where_differing, 7.0);
+    scene.set_draw_trails(true);
 
     // --- THE COMMITTED REFERENCE --------------------------------------------------------------
     render_test::Image rendered(allocator);

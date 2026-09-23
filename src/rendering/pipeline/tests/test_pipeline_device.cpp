@@ -20,7 +20,8 @@
 //   pipeline-frame-particles.png          the same frame again with the particle renderer attached
 //                                         through `PassExtension`
 //
-// They land in the suite's working directory; `docs/design/images/` holds the committed copies.
+// They land in CY_TEST_ARTEFACT_DIR, else the suite's build directory — never the caller's working
+// directory; `docs/design/images/` holds the committed copies.
 //
 // ================================================================================================
 // EVERY ASSERTION HERE CAN FAIL
@@ -46,7 +47,9 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/test/test.h>
 
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 using namespace cy;
 using namespace cy::pipeline_test;
@@ -127,13 +130,24 @@ private:
 };
 
 /// Write one capture, and say where. A picture nobody can find is a picture nobody looks at.
+///
+/// WHERE THE RUN OWNS, never the caller's working directory: a bare filename lands in whatever
+/// directory the suite was started from, which for a criterion is the repository root, and
+/// `falsify --mutate-the-tree` refuses the dirty tree that leaves behind. CY_TEST_ARTEFACT_DIR when
+/// the harness sets it, else the build tree this binary was configured into.
 void save(const char* name, Span<const u32> texels) noexcept {
     render_test::Image image(allocator());
     if (!render_test::adopt(image, texels, kWidth, kHeight).has_value()) {
         return;
     }
-    if (render_test::write_png(name, image).has_value()) {
-        std::fprintf(stderr, "wrote %s (%ux%u)\n", name, kWidth, kHeight);
+    const char* directory = std::getenv("CY_TEST_ARTEFACT_DIR");
+    if (directory == nullptr || *directory == '\0') {
+        directory = CY_TEST_BINARY_DIR;
+    }
+    char path[1024];
+    (void)std::snprintf(path, sizeof(path), "%s/%s", directory, name);
+    if (render_test::write_png(path, image).has_value()) {
+        std::fprintf(stderr, "wrote %s (%ux%u)\n", path, kWidth, kHeight);
     }
 }
 
@@ -299,5 +313,243 @@ CY_TEST_CASE("many frames on the device, and a teardown while it is still busy")
         CY_REQUIRE_EQ(fixture.validation_errors(), 0U);
     }
     delete scene;
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+// ================================================================================================
+// TEMPORAL ANTI-ALIASING, ON THE DEVICE. M11.c task 3.4.
+// ================================================================================================
+//
+// `temporal_resolves == 1` above says the resolve RAN. These say what it DID, with the same scene,
+// on the same device, and with the negative control inside the case rather than in a reader's
+// head. Three claims, each of which a working-looking frame can get wrong:
+//
+//   1. IT ACCUMULATES. A still camera under a moving jitter changes its picture every frame; a
+//      resolve that blends history damps that change and one that does not passes it straight
+//      through. The control is the same scene with the history CUT every frame — the invalidation
+//      path — which is exactly "a temporal pass that did nothing", and the two are compared.
+//   2. IT ANTI-ALIASES. A pinned capture must still MOVE its jitter. The frame after sixteen is a
+//      picture no single frame drew: its edges are averages.
+//   3. IT IS DETERMINISTIC. `temporal-rendering`'s "Determinism and capture": two runs in pinned
+//      mode give identical temporal state and identical images. Byte for byte, not within a
+//      tolerance — every committed reference in this tree depends on it.
+
+namespace {
+
+inline constexpr u32 kTemporalFrames = 16;
+/// `JitterConfig::length`'s default: the frames after which every jitter phase has been drawn once.
+inline constexpr u32 kJitterCycle = 8;
+
+/// Mean absolute difference per colour channel, in 8-bit steps, over the whole frame.
+[[nodiscard]] double mean_delta(Span<const u32> a, Span<const u32> b) noexcept {
+    if (a.size() != b.size() || a.empty()) {
+        return -1.0;
+    }
+    u64 total = 0;
+    for (usize index = 0; index < a.size(); ++index) {
+        for (u32 channel = 0; channel < 3U; ++channel) {
+            const auto x = static_cast<i32>((a[index] >> (channel * 8U)) & 0xFFU);
+            const auto y = static_cast<i32>((b[index] >> (channel * 8U)) & 0xFFU);
+            total += static_cast<u64>(x > y ? x - y : y - x);
+        }
+    }
+    return static_cast<double>(total) / (static_cast<double>(a.size()) * 3.0);
+}
+
+[[nodiscard]] Status keep(Array<u32>& into, Span<const u32> texels) noexcept {
+    if (Status sized = into.resize(texels.size()); !sized) {
+        return sized;
+    }
+    for (usize index = 0; index < texels.size(); ++index) {
+        into[index] = texels[index];
+    }
+    return ok();
+}
+
+/// What a run of `kTemporalFrames` frames left behind: the first frame, the last two, and whether
+/// every frame after the first blended a history.
+struct TemporalRun {
+    explicit TemporalRun(Allocator& alloc) noexcept
+        : first(alloc), penultimate(alloc), last(alloc), sums(alloc), cycle_average(alloc) {}
+    Array<u32> first;
+    Array<u32> penultimate;
+    Array<u32> last;
+    /// Per-channel sums over the last `kJitterCycle` frames, and their average: with the history
+    /// cut every frame, that is the box-filtered picture of every jitter phase once — what an
+    /// accumulating resolve on a still camera should approach.
+    Array<u32> sums;
+    Array<u32> cycle_average;
+    u32 resolves = 0;
+    u32 invalidated = 0;
+    Vec2 last_jitter{0.0F, 0.0F};
+    bool pinned = false;
+};
+
+void accumulate(TemporalRun& out, Span<const u32> texels) noexcept {
+    if (out.sums.size() != texels.size() * 3U && !out.sums.resize(texels.size() * 3U)) {
+        return;
+    }
+    for (usize index = 0; index < texels.size(); ++index) {
+        for (u32 channel = 0; channel < 3U; ++channel) {
+            out.sums[(index * 3U) + channel] += (texels[index] >> (channel * 8U)) & 0xFFU;
+        }
+    }
+}
+
+/// Build `FrameScene`, pin its jitter at index 0, and render. With `cut_every_frame` the history
+/// is invalidated through the framework's own `signal_cut` before each frame — the control.
+[[nodiscard]] Status run_temporal(rhi::Device& device, bool cut_every_frame,
+                                  TemporalRun& out) noexcept {
+    FrameScene scene(allocator());
+    if (Status built = scene.build(device); !built) {
+        return built;
+    }
+    scene.set_read_back(true);
+    scene.assembly().temporal().pin_jitter(0);
+    for (u32 frame = 0; frame < kTemporalFrames; ++frame) {
+        if (cut_every_frame) {
+            scene.assembly().temporal().signal_cut(rendering::TemporalInvalidation::Explicit);
+        }
+        rendering::assembly::AssemblyReport report;
+        if (Status rendered = scene.render(RecordMode::Callbacks, report); !rendered) {
+            return rendered;
+        }
+        out.resolves += scene.recorded().temporal_resolves;
+        out.invalidated += report.temporal_invalidated ? 1U : 0U;
+        out.last_jitter = report.jitter;
+        out.pinned = report.jitter_pinned;
+        if (frame + kJitterCycle >= kTemporalFrames) {
+            accumulate(out, scene.pixels());
+        }
+        if (frame == 0) {
+            if (Status kept = keep(out.first, scene.pixels()); !kept) {
+                return kept;
+            }
+        } else if (frame + 2U == kTemporalFrames) {
+            if (Status kept = keep(out.penultimate, scene.pixels()); !kept) {
+                return kept;
+            }
+        }
+    }
+    if (Status sized =
+            out.cycle_average.resize(out.last.empty() ? scene.pixels().size() : out.last.size());
+        !sized) {
+        return sized;
+    }
+    for (usize index = 0; index < out.cycle_average.size(); ++index) {
+        u32 packed = 0xFF000000U;
+        for (u32 channel = 0; channel < 3U; ++channel) {
+            const u32 sum = out.sums[(index * 3U) + channel];
+            packed |= ((sum + (kJitterCycle / 2U)) / kJitterCycle) << (channel * 8U);
+        }
+        out.cycle_average[index] = packed;
+    }
+    return keep(out.last, scene.pixels());
+}
+
+/// Texels that differ by more than one 8-bit step in any channel.
+[[nodiscard]] u32 differing(Span<const u32> a, Span<const u32> b) noexcept {
+    u32 count = 0;
+    for (usize index = 0; index < a.size() && index < b.size(); ++index) {
+        for (u32 channel = 0; channel < 3U; ++channel) {
+            const auto x = static_cast<i32>((a[index] >> (channel * 8U)) & 0xFFU);
+            const auto y = static_cast<i32>((b[index] >> (channel * 8U)) & 0xFFU);
+            if (x - y > 1 || y - x > 1) {
+                ++count;
+                break;
+            }
+        }
+    }
+    return count;
+}
+
+}  // namespace
+
+CY_TEST_CASE("temporal anti-aliasing accumulates a pinned history into a picture no frame drew") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+#if defined(CY_TEST_PIPELINE_METAL)
+    // The native Metal frame's geometry capture is black (see the first case), so there is no
+    // picture here to measure a resolve against.
+    return;
+#endif
+    TemporalRun blended(allocator());
+    CY_REQUIRE(run_temporal(fixture.device(), false, blended).has_value());
+    TemporalRun control(allocator());
+    CY_REQUIRE(run_temporal(fixture.device(), true, control).has_value());
+
+    const double settle = mean_delta(blended.last.span(), blended.penultimate.span());
+    const double settle_control = mean_delta(control.last.span(), control.penultimate.span());
+    const double moved = mean_delta(blended.last.span(), blended.first.span());
+    const u32 edges = differing(blended.last.span(), blended.first.span());
+    // HOW CLOSE EACH GETS TO THE BOX-FILTERED PICTURE, which is the cut control's eight phases
+    // averaged. A resolve that reprojects a still camera's history to anywhere but the same texel
+    // resamples it every frame, and that shows here as a blur the average does not have.
+    const double to_average = mean_delta(blended.last.span(), control.cycle_average.span());
+    const double single_to_average = mean_delta(control.last.span(), control.cycle_average.span());
+    std::fprintf(stderr,
+                 "temporal: against the %u-phase average, the resolved frame is %.4f/255 away and "
+                 "a single jittered frame %.4f/255\n",
+                 kJitterCycle, to_average, single_to_average);
+    save("pipeline-temporal-phase-average.png", control.cycle_average.span());
+    std::fprintf(stderr,
+                 "temporal: frame-to-frame change %.4f/255 blended against %.4f/255 cut every "
+                 "frame; frame %u against frame 1: %u texels, mean %.4f/255; jitter (%.3f, %.3f) "
+                 "%s\n",
+                 settle, settle_control, kTemporalFrames, edges, moved,
+                 static_cast<double>(blended.last_jitter.x),
+                 static_cast<double>(blended.last_jitter.y), blended.pinned ? "pinned" : "free");
+    save("pipeline-temporal-first.png", blended.first.span());
+    save("pipeline-temporal-converged.png", blended.last.span());
+
+    // The resolve ran every frame in both runs, and only the control was ever invalidated past the
+    // first frame. Without this the comparison below could be between two runs of nothing.
+    CY_CHECK_EQ(blended.resolves, kTemporalFrames);
+    CY_CHECK_EQ(control.resolves, kTemporalFrames);
+    CY_CHECK(blended.pinned);
+    CY_CHECK_LE(blended.invalidated, 1U);
+    CY_CHECK_EQ(control.invalidated, kTemporalFrames);
+
+    // 2 FIRST, because it is what makes 1 mean anything: THE PINNED JITTER MOVES. With it held at
+    // one sample the cut-every-frame control draws the same picture every frame, and so does the
+    // blended run — accumulation over identical frames is invisible and anti-aliases nothing.
+    CY_CHECK_GT(settle_control, 0.02);
+    CY_CHECK_GT(edges, 200U);
+
+    // 1. THE HISTORY IS BLENDED: frame-to-frame change is damped well below what the jitter alone
+    //    produces. A feedback of 0.9 predicts about a tenth; half is the bound, far from both.
+    CY_CHECK_LT(settle, settle_control * 0.5);
+    // 3. AND IT APPROACHES THE BOX-FILTERED PICTURE rather than blurring past it. Measured 0.426
+    //    against 0.821 for a single jittered frame; the resolve that re-sampled its history at the
+    //    wrong offset every frame measured 0.624, which this bound refuses.
+    CY_CHECK_LT(to_average, single_to_average * 0.7);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("temporal anti-aliasing is deterministic: two pinned runs draw the identical frame") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    TemporalRun one(allocator());
+    CY_REQUIRE(run_temporal(fixture.device(), false, one).has_value());
+    TemporalRun two(allocator());
+    CY_REQUIRE(run_temporal(fixture.device(), false, two).has_value());
+
+    CY_REQUIRE_EQ(one.last.size(), two.last.size());
+    u32 unequal = 0;
+    for (usize index = 0; index < one.last.size(); ++index) {
+        unequal += one.last[index] != two.last[index] ? 1U : 0U;
+    }
+    std::fprintf(stderr, "temporal determinism: %u of %zu texels differ after %u pinned frames\n",
+                 unequal, one.last.size(), kTemporalFrames);
+    // BYTE FOR BYTE. A tolerance here would be a tolerance in every golden image downstream.
+    CY_CHECK_EQ(unequal, 0U);
+    CY_CHECK_EQ(one.last_jitter.x, two.last_jitter.x);
+    CY_CHECK_EQ(one.last_jitter.y, two.last_jitter.y);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

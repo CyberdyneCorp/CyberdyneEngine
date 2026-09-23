@@ -352,6 +352,11 @@ public:
     ///
     /// Reports what it could and could not create rather than failing: a device with no compute
     /// queue gets the CPU cull path, and that is the same answer rather than a lesser one.
+    ///
+    /// THE DEVICE MUST OUTLIVE THE ASSEMBLY. What this creates — the cull pass, the virtual-texture
+    /// frame, the two temporal history images — is released through the device in the destructor,
+    /// so destroying the device first is a use after free. `integration.render_assembly` did
+    /// exactly that from the day the history images arrived, and crashed on it.
     [[nodiscard]] Status attach_device(rhi::Device& device) noexcept;
 
     /// Whether the device cull dispatch is available and will be used.
@@ -479,6 +484,11 @@ private:
     /// Two device images retained across frames. `temporal_read_` names the last successfully
     /// completed history; the other image is this frame's write target.
     rhi::TextureHandle temporal_images_[2];
+    /// What each history image was LEFT IN by the last executed frame, which is what it has to be
+    /// imported as. `Undefined` means "the contents are discarded" (`rhi/types.h`), so importing
+    /// the previous history as `Undefined` every frame told the device to throw away the one image
+    /// the temporal resolve exists to read.
+    rhi::ImageUse temporal_uses_[2] = {rhi::ImageUse::Undefined, rhi::ImageUse::Undefined};
     u32 temporal_read_ = 0;
     bool temporal_images_ready_ = false;
     bool temporal_declared_ = false;

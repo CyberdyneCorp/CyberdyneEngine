@@ -339,14 +339,80 @@ below is that work, named rather than discovered.
         and `invalidate_light` had no caller outside its own suite. `FrameAssembly` now compares
         each shadow-casting light's pose against the previous frame's, past a tenth of a degree,
         and reports `shadow_pages_invalidated` and `shadow_lights_moved`
-      - [ ] **Anti-aliasing itself is NOT in the frame, and nothing in this tree can put it there.**
-        The frame declares `FramePassKind::Temporal` and no module records it: there is no temporal
-        resolve shader under `src/rendering/`, `cy::rendering-pipeline` attaches no callback to that
-        stage, and `FrameRecorder::sinks()` names five stages and not that one. Motion vectors are
-        DERIVED (`TemporalFramework::surface_motion`) and the prepass allocates the velocity target
-        when a temporal stage is in the chain — the structure is there and the resolve is not. **A
-        rung that wants the word "anti-aliased" in a caption owes that shader**, and until then a
-        frame that enabled the stage would publish a manifest naming a pass that never ran
+      - [x] **ANTI-ALIASING IS IN THE ENGINE'S FRAME, AND NOW IT ACCUMULATES.** `6514c3d` put the
+        resolve in (`cy/fullscreen.slang`'s `temporalResolve`, recorded by `FrameRecorder` in
+        `FramePassKind::Temporal`), so the bullet this replaces — "nothing in this tree can put it
+        there" — stopped being true then. What nothing measured was what the pass DID, and its only
+        device assertion was `temporal_resolves == 1`. Measured on the RTX 5060 through
+        `render.pipeline`'s `FrameScene`, a still camera under pinned jitter, sixteen frames, with
+        the same scene with the history CUT every frame as the control: the resolved picture
+        changed frame to frame by **1.057/255 against 0.997/255 for no resolve at all**, and sat
+        0.624/255 from the eight-phase box average against 0.821/255 for a single frame. It was not
+        accumulating. Five defects, each fixed with a regression test proved red against the defect:
+        - **Pinned jitter held one sample forever** (`JitterSequence::advance` skipped the step when
+          pinned), so every pinned capture — which is every capture here — accumulated ONE offset.
+          The requirement says pinned jitter "follows a fixed sequence from a fixed starting index";
+          `pin` now fixes the start and the sequence steps. `unit.render_temporal`'s `pinned, the
+          sequence still MOVES` (red: 28 assertions)
+        - **The motion vector carried the current jitter** — the prepass divided the JITTERED clip
+          position — and the resolve then added `previous - current` jitter on top, so a still
+          camera re-sampled its history at a different sub-pixel offset every frame. The jitter is
+          now removed in `cyDepthFragment`, which is `temporal-rendering`'s convention and what
+          `src/rendering/temporal/README.md` already claimed, and the resolve reads `uv + motion`.
+          `depth_fragment` and `temporal_fragment` regenerated in `frame_spirv.h` and `frame_msl.h`
+          with the slangc 2026.9.2 that reproduces every other committed module word for word
+        - **History was imported as `ImageUse::Undefined` every frame**, which `rhi/types.h`
+          defines as "contents are discarded". `FrameAssembly` now tracks what each history image
+          was left in and imports it as that. `integration.render_assembly`'s `the temporal history
+          is imported as what the last frame left it in` (red: 4 assertions). No picture showed it
+          on this driver, which is why it is asserted on the graph's record
+        - **Frames with NO temporal stage were jittered**: the assembly registered its consumer as
+          needing jitter unconditionally, so every non-TAA frame drew up to half a pixel off, a
+          different half pixel each frame. `a chain with no temporal stage draws an UNJITTERED
+          frame` (red: 3 assertions)
+        - **Motion was derived against a WORLD view for camera-RELATIVE positions** in `upload_for`,
+          so a still camera anywhere but the origin had motion (`FrameScene` stands at the origin,
+          which is why nothing saw it). `integration.render_pipeline`'s `motion vectors are derived
+          about THIS frame's camera` (red: 4 assertions)
+
+        AFTER: frame-to-frame change **0.306/255 against the control's 0.997/255**, 0.426/255 from
+        the eight-phase average against 0.821/255, 1 755 edge texels different from frame 1, zero
+        validation errors; and **two pinned runs are byte-identical, 0 of 129 600 texels** — the
+        determinism the task says a beauty shot is tempted to skip, now measured on the resolved
+        picture rather than on the jitter state. `m11c:temporal-anti-aliasing-accumulates` runs all
+        of it; its declared mutation (delete the step in `JitterSequence::advance`) was run by hand
+        in `build/m11c-taa`: red on the unit case, and the device case red on four assertions with
+        the control's frame-to-frame change at 0.0000/255; restored by md5
+        (a24fb8539902c94f136bc58a7bd0ea3f) and green again. The RECORDED proof (`just
+        roadmap-falsify prove m11c --only temporal-anti-aliasing-accumulates --build-dir <tree>
+        --mutate-the-tree --record`) needs a clean tree and was not run in this phase's shared one
+      - [x] **A SIXTH DEFECT, found by running the suite: `integration.render_assembly` HAS CRASHED
+        ON EVERY RUN SINCE `6514c3d`.** Its `the assembled frame compiles and executes on a device`
+        destroyed the device before the assembly, whose destructor now releases the two history
+        images through it — a use after free, SIGSEGV, and the five cases after it never ran.
+        Verified against binaries built before this phase (`build/ledger-matrix/*`,
+        `build/m11c-verify`). The case and `ExecutedFrame` now destroy in the right order, and
+        `attach_device` documents that the device must outlive the assembly
+      - [ ] **WHAT THIS DOES TO THE COMMITTED REFERENCES.** No committed reference renders with a
+        temporal stage, so the resolve fixes move none. The unjittered non-TAA frame moves ONE:
+        `tests/render/references/beauty_shot_air.png`, rendered by `VfxScene` through `upload_for`.
+        Measured in a clean worktree of `9c5ec15` built into `build/m11c-taa/ref`: **at HEAD
+        `render.vfx`'s shot-air case is already RED** — 3 909 texels over tolerance, 2 489 away from
+        any edge — and **with this change 172, 5 away from any edge**, worst channel 17. The
+        reference was evidently taken of an unjittered frame, which `6514c3d` stopped producing;
+        this change restores it, and the reference is NOT regenerated. The same case's
+        `rendered twice` check is red at HEAD too (39 524 texels between two renders of identical
+        input) and unchanged by this (39 525): that nondeterminism is not the jitter, and it is
+        `m11c:vfx-in-the-shot`'s to find
+      - [ ] **NOT DONE, AND NOT THIS SECTION'S TO INVENT.** Motion vectors are derived from CAMERA
+        motion only: the prepass transforms one instance transform through two view-projections,
+        and there is no previous instance transform or previous pose in the GPU scene, so a moving
+        object reprojects as if it stood still (the neighbourhood clamp is what bounds the smear) —
+        `temporal-rendering`'s "Motion vectors are derived" row stays exempt to M11.e. And
+        `samples/10-world` and `samples/12-beauty` still publish without anti-aliasing: both draw
+        their own geometry through their own sinks, with no jitter, no velocity output and no
+        prepass, so the stage cannot honestly appear in their manifests; the beauty shot stays
+        supersampled and says so
 - [ ] 3.5 `rendering-lighting-and-shadows` finished against the assembled frame rather than against
       its own suite: shadow modes selected per light, the fallback chain exercised, and the
       `Approximation` rung reached by the caller that knows whether a trace is available this frame
@@ -362,12 +428,39 @@ below is that work, named rather than discovered.
         its own suite called — is now called when a shadow-casting light MOVES, which is what stops
         a moving sun leaving its shadows where it was. Checked by `unit.render_shadows`' six new
         cases
-      - [ ] **The ROW is not finished.** `just quality-requirements rendering-lighting-and-shadows`
-        reads 7 of 13 answered: `Light types` wants a mobility classification, `Point and spot shadow
-        projection` cube maps with per-face culling, `Shadow rendering optimisation` proxy meshes and
-        a depth-only pipeline, `Decals` GPU-scene residency, and `Stochastic many-light` ray-traced
-        or shadow-map visibility for the selected samples. Each is a device path and none of them is
-        this section's to invent
+      - [x] **JUDGED THROUGH THE ASSEMBLED FRAME, which until this rung nothing did.** The six cases
+        above are `unit.render_shadows`' and test `select_shadow_mode` as a pure function; NOTHING in
+        the tree read `AssemblyReport::shadow_modes`, `shadow_substitutions`, `shadow_lights_moved`
+        or `shadow_pages_invalidated`, so a frame that stopped calling any of the three mechanisms
+        would have kept every suite green. `src/rendering/assembly/tests/test_assembly_shadows.cpp`,
+        three cases in `integration.render_assembly` (now 14 cases, 231 assertions, green), asks it
+        of `FrameAssembly::assemble` itself: four lights declaring RayTraced, Virtual, Conventional
+        and Virtual-but-no-caster on a profile with no virtual pages come out 3 Conventional, 1 None,
+        2 degraded, 9 pages; a first frame walks all 6 page lookups to `Unshadowed` with no trace and
+        to `Approximation` when the caller sets `traced`; a sun that moves between frames dirties its
+        3 pages, attributed, and a receiver lands on `StalePage` rather than `Requested`. **Proved
+        red four ways in build/m11c-rows, each restored and md5-verified** (`frame_assembly.cpp`
+        2118c6a677a1239b2c4a680dc136a912): the declared mode ignored (`view.shadow_modes[index]` ->
+        `ShadowMode::Virtual`) -> 2 cases red; the profile ignored (`ShadowModeProfile{}`) -> 2 red;
+        the caller's `traced` ignored in `approximation_available` -> 6 Approximation become 3, red;
+        `invalidate_light` replaced by an empty `InvalidationReport{}` -> the moved-sun case red, 4
+        assertions. Two deletions that would have been simpler were refused by `-Werror`
+        (`unused-function`), which is why the mutations are substitutions
+      - [ ] **WHAT THE ASSEMBLED FRAME DOES NOT HAVE: a caller.** No program in the tree sets
+        `AssemblyView::shadow_modes` or `ShadowModeProfile::traced`. `samples/10-world` assembles its
+        sun with the default profile, so every shipped frame selects Virtual and the `Approximation`
+        rung is reached only in the case above. `ray-tracing-infrastructure` is not the blocker any
+        more (task 2.6: the RTX 5060 reports `RayTracing=1`, re-read in build/m11c-rows), but nothing
+        traces a shadow ray for a receiver, so there is no trace for a caller to report — see 4.4
+      - [ ] **The ROW is not finished, and it does not reach Complete at this rung.** `just
+        quality-requirements rendering-lighting-and-shadows` now reads 13 of 13 — but FOUR of the
+        thirteen are `exempt:m11e`, not answered: `Light types` (no mobility classification; three
+        of the six light types reach `GpuLight`), `Shadow rendering optimisation` (no proxy mesh, no
+        depth-only pipeline), `Decals` (no GPU-scene residency, no cluster element) and `Stochastic
+        many-light` (no ray-traced or shadow-map visibility for the selected samples). `Point and
+        spot shadow projection` moved from unanswered to a test (the cube-face case). A recorded
+        exemption is a deferral with a re-entry point, which is honest, and it is not Complete;
+        `m11c:roadmap-tiers` expecting `complete` for this row is what the Close phase has to demote
 - [ ] 3.6 **Nothing here is judged until M11.a's budget is real.** A frame tuned at 122 ms is not a
       tuned frame — design.md §5
       - [ ] **Measured, and the number did not move because this section does not touch that path.**
@@ -380,6 +473,29 @@ below is that work, named rather than discovered.
         960x540 against roughly 16 ms before, which is the resolve pass and the frame's own
         declarations; `producers_ms` is ~300 ms in the same rows and is where the budget actually
         goes. The gap stays M11.a's and stays open
+      - [ ] **RE-READ AFTER `close-world-frame-budget` (2ebd430), AND THE CONDITION IS MET ON APPLE
+        AND NOT ON THIS HOST.** That change put the three bands on the device and restated
+        `m10:world-frame-budget`: its headless run now measures authoritative simulation only, and
+        the claim about a DRAWN frame is carried by `m11a:world-budget-on-a-device`. Its evidence is
+        an Apple M3 Pro on Metal: 12.08 ms mean, 14.93 ms worst, inside 16.7. **Measured here, on
+        the RTX 5060 under Vulkan, with the same command line** (`--seed 20260913 --seconds 8 --fps 8
+        --width 960 --height 540 --frames <dir> --budget-ms 16.7`), the sample exits 1, OVER:
+        Development build (build/m11c-rows) 21.50 ms mean, 25.06 ms worst; Shipping build of the
+        working tree, twice, 18.6/21.2 and 18.7/23.1 ms; Shipping build of HEAD 9c5ec15 in a clean
+        worktree, twice, 18.6/21.6 and 18.5/21.3 ms — so the render phase's uncommitted changes are
+        not the cause, and this host is 1.3x over at the worst frame. Largest bands: `stage_submit_ms`
+        6.2, `ocean_ms` 4.5, `stage_build_ms` 4.0; 0 RHI validation errors, which is also a cost:
+        `stage.cpp` enables validation AND synchronisation validation unconditionally, in every
+        build. The headless take IS inside: 9.19 ms mean, 10.73 worst at 20260913, and `m10`'s own
+        run at 0x5EED 9.01/10.97. The authoritative digest is 0xFBA3CB7D3DF4E420 headless and drawn
+        on this host — agreeing with each other, and NOT with the M3 Pro's 0x796E233B79130401 at the
+        same seed, which this rung records and does not diagnose. **VERDICT: M11.a's budget is real
+        on one vendor and not on the other, so this section's condition is met only where it was
+        measured.** "Tuned" claims made on this host's frame are made on a frame 1.3x over.
+        **Found while reading it, not fixed here** (the file is another agent's): `main.cpp`'s device
+        banner prints `build: Shipping` as a string LITERAL, so a Development take reports itself as
+        Shipping — the Development run above did — and the M3 Pro evidence's `build: Shipping` line
+        is therefore not evidence of the build it names
 - [x] 3.7 **A material texture reaches the frame, which today nothing does.** Three pieces the spike
       measured as absent and one it measured as possible: a material texture binding in
       `cy/frame.slang` at the set and binding `cy/material.slang` already declares (set 0, binding 1
@@ -491,6 +607,32 @@ below is that work, named rather than discovered.
         program is compiled and reflected long before it is placed in a stage, and every byte of
         that emitter is in a cook key. A shot assembled from generated material programs still
         samples at level 0; a shot the engine's own forward path draws does not
+      - [x] **AND NOW SOMETHING CAN SAY SO.** The half above shipped with nothing able to fail:
+        the committed `frame_spirv.h` does carry one `OpImageSampleImplicitLod` in the forward
+        fragment module (and the unmutated slangc regeneration reproduces its 5 477 words exactly),
+        but substituting the explicit form back left `render.forward_material_texture` GREEN,
+        because a texture sampled at level 0 is still a texture. `render.forward_material_texture`'s
+        second case, **"the forward path reads the cooked mip chain, not level 0 alone"**, is the
+        measurement this task began from, repeated with the answer required to change: a minified
+        one-texel checker uploaded once as a full nine-level chain and once as a texture with NO
+        LEVEL BUT 0, the same level 0 byte for byte, and the frames must differ. Each frame is the
+        first of a freshly built `FrameScene` — the frame is temporally antialiased, and a static
+        camera under jitter supersamples aliasing away: rendered three times on one scene, two
+        frames of the SAME texture moved 15.41% of texels at 2.617/255, as much as the two textures
+        did. Fresh, two renders of the same chain are identical (0.00%). Measured in `build/m11c-mip`
+        on an RTX 5060: full chain against level 0 alone **39.10% of texels at mean |delta|
+        6.614/255**, neighbour-to-neighbour energy 6.804/255 through the chain against 25.242/255 at
+        level 0. **Proven red by the substitution**: `cyMaterialSampleTextureLevel(albedoSlot, uv,
+        0.0)` in `surfaceOf()` with the forward fragment module regenerated → **0.00% at
+        0.000/255, byte-identical again**, five assertions red, the first case still green. Restored
+        and md5-verified (frame.slang c2def8ab…, frame_spirv.h 206d3944…)
+      - [ ] **`m11c:forward-path-reads-the-mip-chain` IS WRITTEN AND NOT RECORDED.** Its declared
+        mutation is `delete-lines 'info.maxLod = desc.max_lod;'` in `vulkan_device.cpp` — the
+        chain made unreachable at the sampler, because no prover verb regenerates SPIR-V — and it
+        was measured by hand: 0.00% at 0.000/255, the same five red, restored to md5 2f22bbfd….
+        `prove --mutate-the-tree` refuses a dirty tree and this phase does not commit. **For the
+        Record phase**, on a clean tree: `just roadmap-falsify prove m11c --only
+        forward-path-reads-the-mip-chain --build-dir build/m11c-mip --mutate-the-tree --record`
 
 ## 4. The geometry rows and the one HZB they share — `virtual-geometry`, `virtual-shadows`, `rendering-culling-and-lod` → Complete
 
@@ -554,13 +696,47 @@ below is that work, named rather than discovered.
         device's occlusion parameters in `GpuTraversal::set_occlusion` mismatches 11 of the 24 VG
         views. Both restored, both green again. The first is the criterion's declared
         `[criterion.falsifies]`
-- [ ] 4.3 `virtual-geometry` wired into the forward frame's pass order, which is what the module's
+- [x] 4.3 `virtual-geometry` wired into the forward frame's pass order, which is what the module's
       README names as the condition for the hardware rasterisation path — the same visibility buffer
       written by a vertex and fragment shader over the same records
-      - [ ] **NOT DONE, and the link graph is the measurement**: nothing in the tree links
-        `cy::rendering-virtual-geometry` from `cy::rendering-forward`, so the compute rasteriser is
-        still the only path. Recorded in `src/rendering/virtual_geometry/README.md` as an absence
-        with its re-entry point rather than absorbed by a tier moving
+      - [x] **The link graph moved, and it is the measurement.** Before: nothing in the tree linked
+        `cy::rendering-virtual-geometry` from `cy::rendering-forward`, and every cluster ever drawn
+        was drawn by a harness graph with the compute rasteriser in it. Now `ForwardFrame` declares
+        a `virtual geometry` stage after the depth prepass (`FrameFeatures::virtual_geometry`,
+        `FramePassKind::VirtualGeometry`, an `R32Uint` visibility target and the frame's OWN depth),
+        and `cy::rendering-virtual-geometry` links `cy::rendering-forward` PUBLIC to record it:
+        `vg::ForwardVisibility` draws one indexed-indirect draw whose instances are the visible
+        clusters, `vgVisHwVertex`/`vgVisHwFragment` decode the SAME payload and write the SAME
+        `(identity << 8) | triangle` word, and a gather plus `vgVisHwUnpack` hand the classification,
+        the bins and the resolve the same `uint2` buffer the compute path fills. The edge runs this
+        way because the frame names the stage and owns no renderer
+      - [x] **Measured, and shown able to fail.** `render.virtual_geometry_forward` (3 cases): over
+        one traversal the two rasterisers agree on all 2,529 covered pixels, cluster AND triangle;
+        every resolved normal matches `reconstruct_surface`; a prepass plane at z = 0.8 leaves 1,325
+        of 2,529 pixels (53% from the geometry) and none behind it; validation and synchronisation
+        validation clean. `unit.render_forward` carries the device-free half. New criterion
+        `m11c:virtual-geometry-in-the-forward-frame`; its declared mutation — deleting the callback
+        assignment in `forward_visibility.cpp` — turns 10 assertions red (`stages_recorded` 0, 0
+        pixels drawn) and restoring it turns them green; `just roadmap-falsify prove m11c --only
+        virtual-geometry-in-the-forward-frame --build-dir build/m11c-vg --mutate-the-tree --record`
+        recorded it PROVEN AGAINST A BUILT TREE. ONE DEFECT FOUND AND FIXED ON THE WAY: the
+        corner-index buffer was first uploaded in a submit of its own with a host wait, and
+        synchronisation validation reported the draw's index fetch as
+        `SYNC-HAZARD-READ-AFTER-WRITE`; the copy is now a pass in the graph, and putting the old
+        upload back turns the suite's `validation_errors() == 0` red in two cases
+      - [x] **The golden criterion's SUBJECT CHANGED.** `samples/07-fidelity` draws through the
+        forward frame's stage by default (`FrameOptions::forward_frame`), so
+        `m11c:virtual-geometry-image` now judges the forward frame, and `render_shaded` asserts
+        `rasteriser == "forward-frame"`. With the compute path the old reference still matched
+        exactly (0 of 57,600); the forward path moved 15 texels, 7 beyond tolerance, one of them a
+        pixel the hardware rasteriser leaves uncovered. The reference was regenerated and is
+        bit-identical across three processes. `smoke.fidelity` and the artefact's four acts pass on
+        the forward path (median device frame 2.2 ms)
+      - [ ] **NOT DONE, and not this task's sentence: the forward frame does not SHADE virtual
+        geometry.** No stage reads the visibility target into `FrameResources::color`; the picture
+        is still shaded on the CPU from the resolve's readback. The re-entry point is a material
+        resolve beside `cy::rendering-pipeline`'s opaque pass, recorded in the module README, and
+        nothing assembles such a frame through `FrameAssembly` yet
 - [ ] 4.4 `virtual-shadows`' `RayTraced` and `Hybrid` modes, which `address_space.h` names and does
       not implement and which `src/rendering/shadows/README.md` says are
       `ray-tracing-infrastructure`'s to supply. **Downstream of 2.6**: with the RHI reporting no ray
@@ -569,6 +745,25 @@ below is that work, named rather than discovered.
         `Capability::RayTracing` is decided. `virtual-shadows` does not reach Complete on the
         strength of the HZB alone and this rung should say so rather than let one row's two open
         halves be settled by the other
+      - [ ] **RE-JUDGED: A DECLARED GAP, AND THE REASON IS NO LONGER THE ONE ABOVE.** Task 2.6 is
+        done and the capability is not the blocker: `render.ray_tracing_capability` in
+        build/m11c-rows prints `NVIDIA GeForce RTX 5060: acceleration_structure=1 ray_query=1
+        deferred_host_operations=1 accelerationStructure=1 rayQuery=1 enabled=1 -> RayTracing=1`.
+        What is absent is the MODE ITSELF: no shader in the tree issues a ray query (`grep -rn
+        RayQuery --include=*.slang src samples` is empty), `AccelerationService`'s `Shadow` query
+        kind traces `cy::Bvh` on the processor and no module calls it for a receiver, and no caller
+        sets `ShadowModeProfile::traced`. So `RayTraced` and `Hybrid` are SELECTED correctly — they
+        keep their mode when a caller says a trace is available and fall back to the paged path
+        with `NoTraceThisFrame` when not, both now judged through the assembled frame (3.5) — and
+        they are IMPLEMENTED BY NOTHING. No criterion is written for them: a check over a mode that
+        cannot be reached would pass for the mode's absence, which is the shape this ladder refuses.
+        **Closing rung: M11.e**, the sweep, with the four `exempt:m11e` rows of 3.5 and
+        `virtual-shadows`' own `Contact and traced refinement` exemption, which need the same traced
+        visibility. The three places that said `Capability::RayTracing` is unset on every device
+        (`mode.h`, `mode.cpp`'s diagnostic, `src/rendering/shadows/README.md`) and the coverage note
+        for `Contact and traced refinement` were false after 2.6 and are corrected; the `Shadow
+        modes` coverage note now says its case answers selection and not the RayTraced/Hybrid
+        behaviour. **`virtual-shadows` does not reach Complete at this rung**
 - [x] 4.5 The remaining named absences of `virtual-geometry`, each recorded in its own README rather
       than discovered: assemblies, a suballocator in the geometry cache, and a hash for the DAG visit
       marks. Each is either done or recorded as a deferral with its re-entry point — **not left to be
@@ -643,6 +838,26 @@ below is that work, named rather than discovered.
         `m11c:sky-as-an-image`, see 5.2. The TIER ITSELF is not moved here: `status.yaml` and
         `ROADMAP.md` are the Close phase's to write, and they write it off the ledger's verdict
         rather than off this line
+      - [ ] **JUDGED: the status.yaml condition is CLEARED, and the row still does not reach
+        Complete.** Re-run in build/m11c-rows rather than inherited: `integration.render_sky_fields`
+        prints `through CloudShadowField::sample: 5120 samples, lowest 0.00392157, highest 1,
+        disagreeing 0`, `integration.render_illumination_clouds` prints `authored 100000 lux, shaded
+        10980.4 lux, lit 100000 lux`, and m10.toml carries no `known_gap` on `sky-field-round-trip`.
+        So the gap status.yaml names is closed and its condition no longer blocks. **But the
+        condition was necessary, not sufficient, and two requirements are satisfied as LIBRARIES
+        that no frame calls.** `Cloud shadows` says the field is "consumed by terrain, foliage,
+        water, and illumination" and its scenario says "sampled by surfaces and by illumination":
+        the only consumer is `rendering::apply_cloud_shadows`, whose only caller is its own test;
+        `cy/cloud_shadow.slang` is imported by no shader; terrain, foliage and water read nothing;
+        and `samples/10-world` attenuates its sun by ONE scalar `cloud_transmittance`, not by the
+        field at a position. `Aerial perspective` requires attenuation "applied to opaque shading":
+        `sky::aerial_perspective()` and the froxel table are built and no frame, sample or shader
+        applies either to geometry (`grep -rni aerial` over `samples/`, `src/rendering/shaders`,
+        `forward`, `pipeline` and `assembly` finds nothing). The coverage map answers both with
+        unit and integration cases over the model, which is why it reads 13 of 13. **The row stays
+        at Working**; the re-entry point is the forward frame sampling the cloud shadow field and
+        the aerial-perspective table in its lit path, which is M11.e's unless the Close phase moves
+        it. Not written into status.yaml here — that is Close's
 - [ ] 5.2 The sky judged **as an image** in the artefact — aerial perspective on distant geometry
       consistent with the sky rather than a separately tuned fog, which is the requirement's own
       scenario and the one a table cannot answer
@@ -699,6 +914,19 @@ below is that work, named rather than discovered.
         `m10:sky-field-round-trip` is closed and holds today: `integration.render_sky_fields`
         prints `through CloudShadowField::sample: 5120 samples, lowest 0.00392157, highest 1,
         disagreeing 0`, so the sampler answers the substrate rather than its declared 1.0
+      - [ ] **JUDGED: NOT DONE, and the delivered suite is not this task's sentence.** Every
+        sub-box above is true and `render.sky_times_of_day` is green in build/m11c-rows (dawn +0.62,
+        noon +61.44, dusk -5.64, night -14.56 degrees). But it photographs the sky DOME as an
+        equirectangular panorama and contains no geometry at all — its own header says the device
+        does interpolation, exposure and tone mapping and nothing else. "Aerial perspective on
+        distant geometry consistent with the sky" is the requirement's scenario "WHEN distant
+        terrain is rendered THEN its attenuation SHALL come from the atmosphere", and no frame in
+        this engine attenuates distant terrain by the atmosphere at all (5.1), so there is no
+        picture of it to judge. Writing one inside a test would be a second sky written for a test,
+        which that suite's header rightly refuses. **Declared gap, closing with 5.1's re-entry
+        point**: once the forward frame applies the aerial-perspective table, the criterion this
+        needs is a capture of terrain at increasing distance against the horizon radiance of the
+        same sky, proved red by replacing the table lookup with a constant fog
 - [x] 5.3 **`rendering-architecture`: a subsystem controller under `src/` reports a *measured* cost
       to the arbiter.** The arbiter is built and certified over 71 step magnitudes; the seven
       `SubsystemController`s in the tree live in `samples/07-fidelity` over a hard-coded cost table.
@@ -1001,6 +1229,65 @@ work was done.
         *"`Shot::read` refuses a scene file whose camera is not these numbers"*; nothing in
         `shot.cpp` did. It does now — position, target, fov, near plane and exposure, to one part
         in ten thousand, naming the header to move the numbers in as well
+      - [x] **THE FIRST ABSENCE IS HALF CLOSED: THE THREE STRIP KINDS ARE COMPOSITED, AND THEY ARE IN
+        THE SHOT.** `cy::rendering::particles::StripRenderer` (`strip_renderer.h`, `cy/strip.slang`)
+        draws what `publish_ribbons`, `publish_trails` and `publish_beams` derive — one draw for every
+        strip in a frame, a quad per neighbouring pair, a pair that spans two strips collapsed in the
+        vertex shader so a broken chain stays broken — and `cy::vfx::to_strip_vertices` is the seam.
+        It shares `detail/transparent_draw.h` with `ParticleRenderer` rather than copying the two
+        layout rules that each cost a page of validation errors. `samples/12-beauty` publishes the
+        embers a second time through `publish_trails` and draws the trails before the motes; the
+        manifest's new `trails` line is **7 692 vertices in 984 strips, 6 708 segments, 1 draw, 0
+        dropped**, read off the renderer. Trails are ADDITIVE (alpha written 0): an occluding trail
+        behind a cooling mote photographed as a dark streak across the sky on the first capture
+      - [x] **THE PUBLISHED STILL MOVED, ONLY BRIGHTER, AND IS STILL BIT-REPRODUCIBLE.** Against HEAD's:
+        56 050 of 2 073 600 texels differ, 15 648 by more than ten, **every one of them brighter**,
+        worst +169. `just capture-beauty-shot` run twice end to end: byte-identical
+        (`a8be3211…`). `tests/render/references/beauty_shot_air.png` regenerated and looked at
+      - [x] **`m11c:vfx-trails-in-the-shot`, a new criterion, green, and proved red BY HAND.** Deleting
+        the strip draw call leaves the publication, the ring and the extension's own draw counter
+        untouched — `integration.vfx` stays green — and `render.vfx` goes red on four: the
+        trails-only control falls from 3 215 texels (2.48%, mean 15.2/255) to 0 and the frame moves
+        3 077 texels off the reference. Restored and md5-verified. **NOT RECORDED** in
+        `falsifiability.toml` for the reason the entry above gives — other phases were writing the
+        tree. For the Record phase: `just roadmap-falsify prove m11c --only vfx-trails-in-the-shot
+        --build-dir <tree> --mutate-the-tree --record`
+      - [x] **`m11c:vfx-in-the-shot` WAS RED AT HEAD — 4 of 507 assertions in `render.vfx` — AND
+        TWO DEFECTS MADE IT SO; ONE IS FIXED HERE.** (1) `particle_spirv.h` was compiled on 09-10;
+        the temporal work on 09-20 inserted `previousRelativeToClipRow0..3` into `cy/frame.slang`'s
+        per-view block and moved `FrameViewData` with it, and nothing noticed the embedded module
+        still read `relativeToViewRow0` at 64 against 128 — every sprite's billboard basis came out
+        of LAST FRAME'S CLIP MATRIX, and the shot rendered twice came back 39 524 texels apart.
+        Regenerated (`particle_spirv.h`, `particle_msl.h`), and **`unit.particle_modules`** now reads
+        every embedded module's own `OpMemberName`/`Offset` decorations and compares them with
+        `offsetof` — red with the stale module (eleven members at the wrong offset), green with the
+        new one, no device and no Slang compiler needed. (2) `FrameAssembly` registered its jitter
+        consumer `true` unconditionally, so a frame with no temporal stage was jittered a different
+        half pixel each frame: with (1) fixed, HEAD plus this change still renders the shot twice
+        8 943 texels apart. **That fix is a PEER'S** — the uncommitted `needs_jitter` change in
+        `src/rendering/assembly/src/frame_assembly.cpp` — and `render.vfx`, both criteria and the
+        regenerated reference are green WITH it and would be red without it
+      - [x] **TWO PUBLICATION DEFECTS THE TRAILS FOUND, EACH WITH A REGRESSION CASE PROVED RED.**
+        `PublicationHistory` was keyed by slot, and a slot is unique only inside its block: three
+        ember emitters shared one entry per slot, and a trail ran back to another emitter's mote
+        (`two effects' trails each follow their own particle, never the other effect's` — 100.045 m
+        before, 3 m after; the in-shot case measured 11.6 m). And a slot killed and re-spawned between
+        two publications was one particle to the history (`a slot killed and spawned into between
+        two publications starts a new trail` — 16 trails and no suppression before; the in-shot case
+        measured 2.26 m). Fixed by keying on the block base plus the slot (`publication_slots`, and a
+        refusal for an undersized history) and by `SimulationWorld::spawn_generations` with
+        `PublicationHistory::claim`. The motion-vector suppression had the same second hole
+      - [ ] **STILL NOT DONE, AND THE ROW STILL DOES NOT COMPLETE.** Decal, Light and Volume remain
+        rows nothing composites. Light was looked at and NOT wired, for a reason that is a finding
+        rather than a lack of time: `LightInstance::intensity` is `color × emission` with no unit,
+        its radius is derived treating that as a candela-like number (36 000 of ember radiance gives
+        an 850 m radius), and `render::LightDescription` requires candela — converting needs an
+        emitting area the row does not carry, and inventing one would publish a unit nobody chose.
+        Collision response and the one-level GPU event chain are unchanged. And **the motes over the
+        sky still photograph as dark discs** — they did at HEAD too; a cooled mote's 1 800 of
+        radiance is below the sky's blue and the sprite's premultiplied blend subtracts, which
+        `embers.h`'s own derivation says 36 000 should prevent and the still shows it does not for
+        old motes. Not changed here: it is the sprite's art direction, not this task's renderer
 - [ ] 6.4 The compositing half is renderer work and belongs here; **the authoring half is M11.b's
       editor surface** over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`,
       all three public for exactly that reason. If M11.b did not build it, `vfx-system` does not
@@ -1008,8 +1295,13 @@ work was done.
       - [ ] **M11.b DID NOT BUILD IT, MEASURED.** `Domain::VfxGraph::node_types()` is still the empty
         slice, so `SpecialisedEditors::open(Domain::VfxGraph)` refuses identically to the way
         `Domain::Materials` refused before this rung — the spike measured that pair and this rung
-        fixed one of them. The compositing half was not attempted either. **`vfx-system` stays at
-        Working**, which is design.md §4's own prediction coming true for the reason it named
+        fixed one of them. **Re-measured for this pass: unchanged** — `node_types()` still returns
+        `&[]` for `Domain::VfxGraph` in `editor/crates/cy-editor-interface/src/specialised/mod.rs`,
+        and this pass did NOT build the editor surface, by 6.4's own line. The COMPOSITING half is
+        now half done (6.3: Ribbon, Trail and Beam drawn; Decal, Light and Volume not). **`vfx-system`
+        stays at Working**, which is design.md §4's own prediction coming true for the reason it
+        named; the authoring half is M11.e task 5a.4's pointer, which sends the row to that rung's
+        section 6 sweep with this reason attached — not to a front end
 
 ## 7. The artefact — an art-directed beauty shot
 

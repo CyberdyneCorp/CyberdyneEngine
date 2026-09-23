@@ -23,20 +23,22 @@
 // comment on `kTrianglePayloadBits` for why that mattered and what it cost to remove.
 //
 // ================================================================================================
-// THE RASTERISER HERE IS THE COMPUTE ONE, AND THAT IS A STATED SCOPE RATHER THAN A PREFERENCE
+// TWO RASTERISERS, ONE VISIBILITY BUFFER
 // ================================================================================================
 //
 // `virtual-geometry` says visible clusters "SHALL be rasterised through a **hardware** path by
 // default" and that the architecture "SHALL permit a compute rasterisation path for micro-triangles
 // ... cluster dispatch, output format, and the visibility buffer SHALL not assume hardware
-// rasterisation exclusively". What M7 ships is the compute path: a workgroup per visible cluster,
-// a bounding-box scan per triangle, and an atomic depth test into a buffer.
+// rasterisation exclusively". M7 shipped the compute path: a workgroup per visible cluster, a
+// bounding-box scan per triangle, and an atomic depth test into a buffer (`vgVisRaster`).
 //
-// The hardware path is the same visibility buffer written by a vertex and fragment shader over the
-// same records, and it lands when virtual geometry is wired into the forward frame's pass order.
-// Said here rather than left to be discovered from a missing pipeline: everything downstream of the
-// visibility buffer — the classification, the bins, the resolve — is written against the FORMAT and
-// does not know which rasteriser filled it.
+// M11.c task 4.3 adds the hardware path, and it is what the forward frame runs: `vgVisHwVertex` and
+// `vgVisHwFragment` draw the SAME visible records, decode the SAME cluster payload through the SAME
+// `decodeVertex`, and write the SAME `(identity << 8) | triangle` word — into a colour target the
+// forward frame's `virtual geometry` stage owns, with the frame's own depth buffer doing the depth
+// test the compute path does with a 64-bit atomic. `vgVisHwUnpack` turns that target into the
+// `uint2` visibility buffer, and everything downstream — the classification, the bins, the resolve
+// — is written against the FORMAT and does not know which rasteriser filled it.
 //
 // ================================================================================================
 // REGENERATING
@@ -58,11 +60,21 @@
 //          -entry vgVisScatter  -stage compute -o vg_vis_scatter.spv
 //   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
 //          -entry vgVisResolve  -stage compute -o vg_vis_resolve.spv
+//   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
+//          -entry vgVisHwPrepare -stage compute -o vg_vis_hw_prepare.spv
+//   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
+//          -entry vgVisHwUnpack  -stage compute -o vg_vis_hw_unpack.spv
+//   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
+//          -entry vgVisHwVertex   -stage vertex   -o vg_vis_hw_vertex.spv
+//   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
+//          -entry vgVisHwFragment -stage fragment -o vg_vis_hw_fragment.spv
 //   python3 embed_spirv.py vg_visbuffer_spirv.h \
 //          kVgVisClearSpirv=vg_vis_clear.spv kVgVisPrepareSpirv=vg_vis_prepare.spv \
 //          kVgVisRasterSpirv=vg_vis_raster.spv kVgVisUnpackSpirv=vg_vis_unpack.spv \
 //          kVgVisClassifySpirv=vg_vis_classify.spv kVgVisScanSpirv=vg_vis_scan.spv \
-//          kVgVisScatterSpirv=vg_vis_scatter.spv kVgVisResolveSpirv=vg_vis_resolve.spv
+//          kVgVisScatterSpirv=vg_vis_scatter.spv kVgVisResolveSpirv=vg_vis_resolve.spv \
+//          kVgVisHwPrepareSpirv=vg_vis_hw_prepare.spv kVgVisHwUnpackSpirv=vg_vis_hw_unpack.spv \
+//          kVgVisHwVertexSpirv=vg_vis_hw_vertex.spv kVgVisHwFragmentSpirv=vg_vis_hw_fragment.spv
 //   clang-format -i vg_visbuffer_spirv.h
 
 struct VgCluster
@@ -150,6 +162,13 @@ struct VgVisPush
     // the largest cluster count of any asset in the scene. It is `GpuScene::cluster_stride()`, the
     // same number the traversal uses for its DAG visit marks, so the two name a surface identically.
     uint clusterStride;
+    // THE HARDWARE RASTERISER'S TWO NUMBERS, appended so that every compute entry point above reads
+    // the block exactly as it did. `drawIndexCount` is three times the largest triangle count of
+    // any cluster in the scene — the one draw's index count, every instance a visible cluster — and
+    // `visibleCapacity` is the length of `visible`, which bounds the instance count a traversal that
+    // overran its list can ask for.
+    uint drawIndexCount;
+    uint visibleCapacity;
 };
 
 [[vk::push_constant]]
@@ -174,6 +193,9 @@ ConstantBuffer<VgVisPush> push;
 // SHALL submit a small, bounded number of passes with indirect arguments" — applied one pass later.
 [[vk::binding(13, 0)]] StructuredBuffer<uint> counters;
 [[vk::binding(14, 0)]] RWStructuredBuffer<uint> visArgs;
+// The hardware rasteriser's visibility target, copied out of the forward frame's `visibility`
+// texture one word a texel. Read by `vgVisHwUnpack` and by nothing else.
+[[vk::binding(15, 0)]] RWStructuredBuffer<uint> hwPayload;
 
 // Counter slot 2 is the visible cluster count; see `vg_traversal.slang`.
 static const uint kCountVisible = 2;
@@ -181,6 +203,9 @@ static const uint kCountVisible = 2;
 // one thread per binned pixel.
 static const uint kArgsRaster = 0;
 static const uint kArgsResolve = 3;
+// visArgs[6..10] are the hardware rasteriser's `VkDrawIndexedIndirectCommand`: one draw, one
+// instance per visible cluster.
+static const uint kArgsDraw = 6;
 
 static const uint kNoSurface = 0xFFFFFFFFu;
 static const uint kFarDepth = 0xFFFFFFFFu;
@@ -534,6 +559,118 @@ void vgVisPrepare()
     visArgs[kArgsResolve + 0] = 0u;
     visArgs[kArgsResolve + 1] = 1u;
     visArgs[kArgsResolve + 2] = 1u;
+}
+
+// --- The hardware rasteriser ---------------------------------------------------------------------
+
+/// `vgVisPrepare` for the hardware path: the same resolve arguments, and ONE indexed draw whose
+/// instances are the visible clusters. The index buffer is `0 .. drawIndexCount - 1`, so an index is
+/// a corner of a triangle slot and the vertex shader decodes the corner the cluster's own index list
+/// names — the cluster's geometry never leaves the payload the compute path reads.
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void vgVisHwPrepare()
+{
+    uint count = min(counters[kCountVisible], push.visibleCapacity);
+    visArgs[kArgsRaster + 0] = count;
+    visArgs[kArgsRaster + 1] = 1u;
+    visArgs[kArgsRaster + 2] = 1u;
+    visArgs[kArgsResolve + 0] = 0u;
+    visArgs[kArgsResolve + 1] = 1u;
+    visArgs[kArgsResolve + 2] = 1u;
+    visArgs[kArgsDraw + 0] = push.drawIndexCount;
+    visArgs[kArgsDraw + 1] = count;
+    visArgs[kArgsDraw + 2] = 0u;  // firstIndex
+    visArgs[kArgsDraw + 3] = 0u;  // vertexOffset
+    visArgs[kArgsDraw + 4] = 0u;  // firstInstance
+}
+
+struct VgHwVaryings
+{
+    float4 position : SV_Position;
+    nointerpolation uint payload : VG_PAYLOAD;
+};
+
+/// One vertex of one triangle slot of one visible cluster.
+///
+/// `SV_VulkanVertexID` AND `SV_VulkanInstanceID`, not `SV_VertexID` and `SV_InstanceID`: Slang
+/// lowers the latter pair to `gl_*Index - gl_Base*`, which declares the `DrawParameters` capability,
+/// which the Vulkan backend does not request. `src/rendering/pipeline/README.md` measured the same
+/// thing for the forward frame's own shaders. The draw's first vertex and first instance are zero,
+/// so the two spellings name the same numbers.
+///
+/// A SLOT PAST THE CLUSTER'S LAST TRIANGLE IS DROPPED BY CLIPPING, not by a branch in the fragment
+/// shader: all three of its corners land at the same point outside the reversed-Z clip volume
+/// (`z < 0`), so the triangle is degenerate and outside at once and produces no fragment. The same
+/// holds for an instance past the visible count, which a traversal that overran its list reports.
+///
+/// Y IS NEGATED, and that is what keeps the two rasterisers' buffers byte-compatible. The RHI flips
+/// the viewport so that clip `+y` is the TOP row of an image, which is the engine's Y-up convention;
+/// `vgVisRaster` maps clip `+y` to the LAST row of its buffer, and every pass downstream —
+/// `vgVisResolve`'s pixel centre, `reconstruct_surface` on the host — reconstructs in that
+/// convention. Negating here puts row `r` of the target where row `r` of the compute buffer is. The
+/// winding flips with it, which is why the pipeline culls nothing, exactly as `vgVisRaster` tests
+/// both windings.
+[shader("vertex")]
+VgHwVaryings vgVisHwVertex(uint vertexId : SV_VulkanVertexID, uint instanceId : SV_VulkanInstanceID)
+{
+    VgHwVaryings output;
+    output.position = float4(0.0f, 0.0f, -1.0f, 1.0f);
+    output.payload = 0u;
+    if (instanceId >= min(counters[kCountVisible], push.visibleCapacity))
+    {
+        return output;
+    }
+    VgVisible record = visible[instanceId];
+    VgInstance instance = instances[record.instance];
+    VgAsset asset = assets[instance.asset];
+    uint clusterIndex = asset.clusterBase + record.cluster;
+    VgCluster cluster = clusters[clusterIndex];
+    VgClusterGeometry g = geometry[clusterIndex];
+    uint triangle = vertexId / 3u;
+    uint corner = vertexId - (triangle * 3u);
+    if (triangle >= g.indexCount / 3u)
+    {
+        return output;
+    }
+    uint indexBase = g.payloadOffset + (g.vertexCount * push.vertexStride) + (triangle * 3u);
+    Vertex vertex = decodeVertex(cluster, g, loadU8(indexBase + corner));
+    float4 clip = toClip(toWorld(instance, vertex.position));
+    output.position = float4(clip.x, -clip.y, clip.z, clip.w);
+    // The payload `vgVisRaster` packs, COMPLEMENTED: the target clears to zero, and the complement
+    // of zero is the "no surface" word. A payload of all ones would need identity 2^24 - 1 AND
+    // triangle 255, and `ForwardVisibility::initialise` refuses a scene whose identity space
+    // reaches 2^24 - 1, so a real payload is never stored as zero.
+    uint identity = record.instance * max(push.clusterStride, 1u) + record.cluster;
+    output.payload = ~((identity << kTrianglePayloadBits) | (triangle & kTrianglePayloadMask));
+    return output;
+}
+
+/// The whole fragment stage: the depth test already happened, in the frame's depth buffer.
+[shader("fragment")]
+uint vgVisHwFragment(VgHwVaryings input) : SV_Target0
+{
+    return input.payload;
+}
+
+/// The hardware path's unpack: the copied target, one word a texel, into the `uint2` visibility
+/// buffer `vgVisUnpack` produces from the compute path's packed depth.
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void vgVisHwUnpack(uint3 id : SV_DispatchThreadID)
+{
+    uint pixel = id.x;
+    if (pixel >= push.width * push.height)
+    {
+        return;
+    }
+    uint payload = ~hwPayload[pixel];
+    if (payload == kNoSurface)
+    {
+        visbuffer[pixel] = uint2(kNoSurface, 0u);
+        return;
+    }
+    visbuffer[pixel] = uint2(payload >> kTrianglePayloadBits, payload & kTrianglePayloadMask);
 }
 
 [shader("compute")]

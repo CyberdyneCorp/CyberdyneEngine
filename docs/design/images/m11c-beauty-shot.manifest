@@ -25,10 +25,11 @@ materials 3  (all 3 are textured; none is constants)
 textures 9  source 899346 bytes  cooked 786852 bytes
 supersample 2x
 particles 996 in 1 draw(s), 0 dropped  (courtyard_embers: 3 emitters, authored in samples/12-beauty/embers.cpp, drawn in the frame's TRANSPARENT stage)
+trails 7692 vertices in 984 strip(s), 6708 segment(s), 1 draw(s), 0 dropped  (the same motes through vfx-system's Trail renderer, drawn by StripRenderer in the same stage)
 validation-errors 0
 sun-illuminance 102332.5 76288.4 47310.0
 sky-irradiance 4421.6 3714.5 3384.7
-build-ms 355.9  sky-ms 121.6  submit-ms 12.67
+build-ms 357.7  sky-ms 122.1  submit-ms 12.55
 
 material stone
   authored content/beauty/materials/weathered_stone.cygraph

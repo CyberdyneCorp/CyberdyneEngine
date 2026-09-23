@@ -117,7 +117,7 @@ handover is M11.d's, and `cy/frame.slang`'s header says so at the regeneration i
 | Suite | Kind | What it proves |
 |---|---|---|
 | `integration.render_pipeline` | integration | the sinks carry six callbacks, including temporal resolve; a frame with them records every draw while an empty `FrameSinks` records nothing; the history and upload rings turn over beyond the frames-in-flight count |
-| `render.pipeline` | render | Vulkan compares captured pixels; Apple Metal creates native pipelines, executes the temporal pass on the GPU, and requires zero validation errors. The older fixture remains black on Metal with TAA disabled, so Metal is command-level evidence until that separate capture defect is fixed |
+| `render.pipeline` | render | Vulkan compares captured pixels, and measures the temporal resolve ACCUMULATING — a still camera's frame-to-frame change under pinned jitter against the same scene with its history cut every frame — and two pinned runs drawing byte-identical frames; Apple Metal creates native pipelines, executes the temporal pass on the GPU, and requires zero validation errors. The older fixture remains black on Metal with TAA disabled, so Metal is command-level evidence until that separate capture defect is fixed |
 | `render.forward_material_texture` | render | the same scene rendered three times on a Vulkan device — every texture slot unbound, a pattern bound as every material's base colour, and **that texture replaced by its declared average** — and the differences between the three pictures. Vulkan only, because the case needs a device with a global bindless table |
 
 Both go red when `FrameRecorder::sinks()` stops attaching callbacks — which was run, not assumed.

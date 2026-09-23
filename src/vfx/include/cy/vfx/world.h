@@ -256,6 +256,15 @@ public:
     /// a publication that could mutate the simulation would be a publication that had to be
     /// ordered against it — and liveness is exactly what they must see.
     [[nodiscard]] Span<const u8> alive_flags(u32 block) const noexcept;
+    /// How many times each slot of one block has been SPAWNED INTO — one counter a particle,
+    /// incremented by the initialise that brings a slot to life.
+    ///
+    /// It exists for the publications: a slot freed by a kill and re-used by a spawn is two
+    /// different particles, and liveness alone can only say so when somebody looked between the
+    /// two. A trail published every third step, or an effect simulated faster than the frame, kills
+    /// and re-uses a slot with nobody looking — and a motion vector or a trail drawn across that
+    /// re-use is the smear `vfx-system` requires be SUPPRESSED. The counter says it directly.
+    [[nodiscard]] Span<const u32> spawn_generations(u32 block) const noexcept;
 
     /// The scheduler's grouping key: emitters sharing a compiled kernel and compatible bindings
     /// become one dispatch. Public because `world.cpp`'s grouping helper is a free function — a
@@ -299,6 +308,8 @@ private:
     /// not an attribute: `vfx-system`'s layout is derived from the graphs, and a liveness bit no
     /// graph mentions has no business inflating the per-particle byte size an author is shown.
     Array<u8> alive_;
+    /// Parallel to `alive_`, at the same offsets: see `spawn_generations`.
+    Array<u32> generation_;
     Array<u32> alive_offset_;
     Array<f32> parameters_;
     Array<u32> parameter_offset_;

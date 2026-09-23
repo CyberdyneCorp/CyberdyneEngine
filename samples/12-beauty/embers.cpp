@@ -340,12 +340,25 @@ Expected<vfx::CompiledSystem, Error> cook_embers(Allocator& allocator, graph::Di
     return compile_system(*asset, registry, interfaces, options, sink, report);
 }
 
+vfx::RendererDecl ember_trail_decl() noexcept {
+    vfx::RendererDecl decl;
+    decl.kind = vfx::RendererKind::Trail;
+    decl.trail_history = static_cast<u8>(kEmberTrailHistory);
+    decl.width = kEmberTrailWidth;
+    // A still has no temporal pass to read a motion vector, and the turntable has none either.
+    decl.motion_vectors = false;
+    return decl;
+}
+
 EmberField::EmberField(Allocator& allocator) noexcept
     : allocator_(&allocator),
       sink_(allocator),
       cook_(allocator),
       world_(allocator),
-      records_(allocator) {}
+      records_(allocator),
+      history_(allocator),
+      trail_rows_(allocator),
+      trails_(allocator) {}
 
 Status EmberField::build() noexcept {
     Expected<vfx::CompiledSystem, Error> compiled = cook_embers(*allocator_, sink_, cook_);
@@ -369,12 +382,28 @@ Status EmberField::build() noexcept {
             return make_unexpected(played.error());
         }
     }
+    // SIZED FOR EVERY BLOCK, once every emitter is playing: three emitters are three blocks and a
+    // history keyed by slot alone would give each slot's three motes one trail between them.
+    if (Status sized = history_.resize(vfx::publication_slots(world_), kEmberTrailHistory);
+        !sized) {
+        return sized;
+    }
     built_ = true;
     return ok();
 }
 
 Status EmberField::publish(const Vec3& camera_position) noexcept {
     return publish_sprites(world_, camera_position, kEmberRing, records_, published_);
+}
+
+Status EmberField::publish_trails(const Vec3& camera_position) noexcept {
+    since_trail_ = 0;
+    if (Status published = vfx::publish_trails(world_, ember_trail_decl(), camera_position,
+                                               kEmberTrailRing, history_, trail_rows_, trailed_);
+        !published) {
+        return published;
+    }
+    return vfx::to_strip_vertices(trail_rows_.span(), trails_);
 }
 
 Status EmberField::settle(const Vec3& camera_position) noexcept {
@@ -384,9 +413,18 @@ Status EmberField::settle(const Vec3& camera_position) noexcept {
     // `lround` rather than `+ 0.5F` and a cast: the two agree here — the quotient is 360
     // exactly — and clang-tidy is right that they do not agree in general.
     const auto steps = static_cast<u32>(std::lround(kEmberWarmup / kEmberStep));
+    // THE TRAILS ARE RECORDED OVER THE LAST STEPS OF THE WARM-UP, every `kEmberTrailInterval` of
+    // them and ending on the last, so the head of every trail is exactly where its sprite is drawn.
+    const u32 trail_span = kEmberTrailHistory * kEmberTrailInterval;
     for (u32 step = 0; step < steps; ++step) {
         if (Status stepped = world_.step(kEmberStep, stepped_); !stepped) {
             return stepped;
+        }
+        const u32 remaining = steps - 1U - step;
+        if (remaining < trail_span && remaining % kEmberTrailInterval == 0) {
+            if (Status trailed = publish_trails(camera_position); !trailed) {
+                return trailed;
+            }
         }
     }
     return publish(camera_position);
@@ -398,6 +436,11 @@ Status EmberField::advance(const Vec3& camera_position, f32 dt) noexcept {
     }
     if (Status stepped = world_.step(dt, stepped_); !stepped) {
         return stepped;
+    }
+    if (++since_trail_ >= kEmberTrailInterval) {
+        if (Status trailed = publish_trails(camera_position); !trailed) {
+            return trailed;
+        }
     }
     return publish(camera_position);
 }

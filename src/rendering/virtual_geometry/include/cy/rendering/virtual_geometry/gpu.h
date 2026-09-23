@@ -187,6 +187,25 @@ public:
     [[nodiscard]] u32 visible_capacity() const noexcept { return options_.visible_capacity; }
     [[nodiscard]] static constexpr u32 visible_count_offset() noexcept { return 2U * sizeof(u32); }
 
+    /// The graph resources the last `record()` imported for the buffers a later pass reads, and
+    /// the graph it imported them into.
+    ///
+    /// For a consumer in ANOTHER STAGE than compute. `RenderGraph::import_buffer` does not
+    /// de-duplicate, so a pass that imported `visible_buffer()` a second time would have a resource
+    /// the traversal never wrote and the graph would derive no dependency on the dispatch that
+    /// did. A compute consumer is covered anyway by the compute-to-compute memory barriers between
+    /// its own passes; a VERTEX shader reading the list is not, and declaring against these ids is
+    /// what gives it a compute-to-vertex barrier. `ForwardVisibility` is that consumer.
+    struct GraphResources {
+        const RenderGraph* graph = nullptr;
+        ResourceId visible = kInvalidResource;
+        ResourceId counters = kInvalidResource;
+        ResourceId clusters = kInvalidResource;
+        ResourceId instances = kInvalidResource;
+        ResourceId assets = kInvalidResource;
+    };
+    [[nodiscard]] const GraphResources& graph_resources() const noexcept { return resources_; }
+
 private:
     /// What one recorded dispatch needs at record time. A plain struct because `RecordFn` is a
     /// function pointer and a `void*`: the lifetime of the captured state is this object's, said
@@ -239,6 +258,7 @@ private:
 
     rhi::Device& device_;
     GpuTraversalOptions options_;
+    GraphResources resources_{};
     GpuView view_{};
     u32 cluster_stride_ = 0;
     bool initialised_ = false;

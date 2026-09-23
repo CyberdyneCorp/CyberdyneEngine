@@ -5,77 +5,18 @@
 #include <cstring>
 
 #include "../shaders/vg_visbuffer_spirv.h"
+#include "visbuffer_internal.h"
 
 namespace cy::rendering::vg {
 
+using namespace detail;
+
 namespace {
 
-constexpr u32 kGroupSize = 64;
-
-/// The pass order, and the index of each pipeline. `vgVisScan` and `vgVisPrepare` are one thread
-/// each; the rest are one thread per pixel or one workgroup per visible cluster.
-enum VisPass : u32 {
-    kPassClear = 0,
-    kPassPrepare,
-    kPassRaster,
-    kPassUnpack,
-    kPassClassify,
-    kPassScan,
-    kPassScatter,
-    kPassResolve,
-    kPassCount,
-};
-
-/// The visibility payload is `(identity << 8) | triangle`, settled with the depth key in one 64-bit
-/// atomic. Both halves are bounded here and in `vg_visbuffer.slang`, and the two must move
-/// together.
-enum : u32 {
-    kTrianglePayloadBits = 8U,
-    kMaxTrianglesPacked = 1U << kTrianglePayloadBits,
-};
 static_assert(kMaxSurfaceIdentity == (1U << (32U - kTrianglePayloadBits)),
               "the identity takes what the triangle leaves of the 32-bit visibility payload");
 
-enum VisBinding : u32 {
-    kBindVisible = 0,
-    kBindClusters,
-    kBindGeometry,
-    kBindInstances,
-    kBindAssets,
-    kBindPayload,
-    kBindVisbuffer,
-    kBindDepth,
-    kBindBinCounts,
-    kBindBinOffsets,
-    kBindBinCursor,
-    kBindBinPixels,
-    kBindResolved,
-    kBindCounters,
-    kBindVisArgs,
-    kVisBindingCount,
-};
-
-/// The push block, matching `VgVisPush` in the shader field for field.
-struct VisPush {
-    f32 row0[4];
-    f32 row1[4];
-    f32 row2[4];
-    f32 row3[4];
-    u32 width;
-    u32 height;
-    u32 material_count;
-    u32 vertex_stride;
-    u32 normal_offset;
-    u32 uv_offset;
-    f32 position_scale;
-    f32 normal_scale;
-    f32 uv_scale;
-    u32 cluster_stride;
-};
-static_assert(sizeof(VisPush) == 104, "VisPush must match VgVisPush in vg_visbuffer.slang");
-
 constexpr u32 kNoOffset = 0xFFFFFFFFU;
-constexpr u64 kVisArgsBytes = 6 * sizeof(u32);
 
 /// The per-cluster geometry record the shader reads: where a cluster's vertices are in the
 /// concatenated payload, and how many of each there are.
@@ -342,7 +283,7 @@ VisbufferPass::~VisbufferPass() {
     }
     for (const rhi::BufferHandle buffer :
          {geometry_, payload_, visbuffer_, depth_, bin_counts_, bin_offsets_, bin_cursor_,
-          bin_pixels_, resolved_, vis_args_, staging_, readback_}) {
+          bin_pixels_, resolved_, vis_args_, hw_payload_, staging_, readback_}) {
         if (!buffer.is_null()) {
             device_.destroy_buffer(buffer);
         }
@@ -417,6 +358,7 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
     // rather than discovered as a wrong pixel.
     cluster_stride_ = scene.cluster_stride();
     const u64 identities = static_cast<u64>(scene.instances.size()) * cluster_stride_;
+    identity_count_ = identities;
     if (identities > kMaxSurfaceIdentity) {
         return fail(ErrorCode::InvalidArgument,
                     "VisbufferPass::initialise: the scene has more (instance, cluster) pairs than "
@@ -485,6 +427,7 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
                                 "the visibility payload packs (2^8)");
                 }
                 record.index_count = cluster.index_count;
+                max_cluster_indices_ = std::max(max_cluster_indices_, cluster.index_count);
                 if (Status pushed = geometry.push_back(record); !pushed) {
                     return pushed;
                 }
@@ -508,7 +451,10 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
                                (pixels * sizeof(u32)) + (pixels * sizeof(f32) * 4);
     const rhi::BufferUsage storage =
         rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDestination;
-    const u64 staging_bytes = payload.size() > geometry_bytes ? payload.size() : geometry_bytes;
+    // The staging buffer also carries `ForwardVisibility`'s index buffer at its initialise, which
+    // is at most one index per corner of the widest cluster the payload packs.
+    const u64 staging_bytes = std::max<u64>(
+        {payload.size(), geometry_bytes, static_cast<u64>(kMaxTrianglesPacked) * 3U * sizeof(u32)});
 
     struct Plan {
         rhi::BufferHandle* target;
@@ -536,6 +482,8 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
          storage | rhi::BufferUsage::TransferSource, rhi::MemoryUse::DeviceLocal},
         {&vis_args_, "vg.vis.args", kVisArgsBytes, storage | rhi::BufferUsage::Indirect,
          rhi::MemoryUse::DeviceLocal},
+        {&hw_payload_, "vg.vis.hw-payload", pixels * sizeof(u32), storage,
+         rhi::MemoryUse::DeviceLocal},
         {&staging_, "vg.vis.staging", staging_bytes, rhi::BufferUsage::TransferSource,
          rhi::MemoryUse::Upload},
         {&readback_, "vg.vis.readback", readback_bytes, rhi::BufferUsage::TransferDestination,
@@ -556,7 +504,9 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
-        bindings[index].stages = rhi::ShaderStage::Compute;
+        // Vertex too: the hardware rasteriser's vertex shader pulls the visible records and the
+        // cluster payload out of this same set, which is what "the same records" means.
+        bindings[index].stages = rhi::ShaderStage::Compute | rhi::ShaderStage::Vertex;
     }
     rhi::DescriptorSetLayoutDescription layout_description;
     layout_description.name = "vg.visbuffer";
@@ -602,6 +552,8 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
         {"vg.vis.scan", Span<const u32>(kVgVisScanSpirv)},
         {"vg.vis.scatter", Span<const u32>(kVgVisScatterSpirv)},
         {"vg.vis.resolve", Span<const u32>(kVgVisResolveSpirv)},
+        {"vg.vis.hw-prepare", Span<const u32>(kVgVisHwPrepareSpirv)},
+        {"vg.vis.hw-unpack", Span<const u32>(kVgVisHwUnpackSpirv)},
     };
     static_assert(kPassCount == VisbufferPass::kPassSlots,
                   "VisbufferPass::modules_/pipelines_ must have one slot per VisPass — adding a "
@@ -662,11 +614,8 @@ void VisbufferPass::record_pass(const PassContext& context, void* user) noexcept
     state->self->dispatch(context, *state);
 }
 
-Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
-                             const Mat4& world_to_clip) noexcept {
-    if (!initialised_) {
-        return fail(ErrorCode::Unavailable, "VisbufferPass::record: initialise() has not run");
-    }
+Status VisbufferPass::bind_frame(const GpuTraversal& traversal,
+                                 const Mat4& world_to_clip) noexcept {
     VisPush push{};
     // THE ROWS, TAKEN OUT OF A COLUMN-MAJOR Mat4 EXPLICITLY. `cy::Mat4` stores four COLUMNS and
     // multiplies a column vector on the left, so row `r` is the `r`th component of each column.
@@ -690,6 +639,8 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
     push.normal_scale = normal_scale_;
     push.uv_scale = uv_scale_;
     push.cluster_stride = cluster_stride_;
+    push.draw_index_count = max_cluster_indices_;
+    push.visible_capacity = traversal.visible_capacity();
     std::memcpy(push_, &push, sizeof(push));
 
     // The descriptor set is rewritten each frame because the traversal's buffers are the ones it
@@ -708,7 +659,8 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
                                                        bin_pixels_,
                                                        resolved_,
                                                        traversal.counter_buffer(),
-                                                       vis_args_};
+                                                       vis_args_,
+                                                       hw_payload_};
     rhi::DescriptorWrite writes[kVisBindingCount];
     for (u32 index = 0; index < kVisBindingCount; ++index) {
         writes[index] = rhi::DescriptorWrite{};
@@ -716,12 +668,12 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
         writes[index].kind = rhi::DescriptorKind::StorageBuffer;
         writes[index].buffer = bound[index];
     }
-    if (Status updated = device_.update_descriptor_set(
-            descriptors_, Span<const rhi::DescriptorWrite>(writes, kVisBindingCount));
-        !updated) {
-        return updated;
-    }
+    return device_.update_descriptor_set(
+        descriptors_, Span<const rhi::DescriptorWrite>(writes, kVisBindingCount));
+}
 
+VisbufferPass::FrameImports VisbufferPass::import_frame(RenderGraph& graph,
+                                                        const GpuTraversal& traversal) noexcept {
     auto import = [&graph](rhi::BufferHandle handle, const char* name, u64 bytes,
                            rhi::BufferUsage usage) noexcept {
         BufferRequest request;
@@ -732,117 +684,147 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
     };
     const rhi::BufferUsage storage = rhi::BufferUsage::Storage;
     const u64 pixels = static_cast<u64>(options_.width) * options_.height;
-    const ResourceId visbuffer =
+    FrameImports imports;
+    imports.visbuffer =
         import(visbuffer_, "vg.vis.visbuffer", pixels * sizeof(VisibilitySample), storage);
-    const ResourceId depth = import(depth_, "vg.vis.depth", pixels * sizeof(u64), storage);
-    const ResourceId bin_counts =
-        import(bin_counts_, "vg.vis.bin-counts",
-               static_cast<u64>(options_.material_count) * sizeof(u32), storage);
-    const ResourceId bin_offsets =
+    imports.depth = import(depth_, "vg.vis.depth", pixels * sizeof(u64), storage);
+    imports.bin_counts = import(bin_counts_, "vg.vis.bin-counts",
+                                static_cast<u64>(options_.material_count) * sizeof(u32), storage);
+    imports.bin_offsets =
         import(bin_offsets_, "vg.vis.bin-offsets",
                static_cast<u64>(options_.material_count + 1U) * sizeof(u32), storage);
-    const ResourceId bin_cursor =
-        import(bin_cursor_, "vg.vis.bin-cursor",
-               static_cast<u64>(options_.material_count) * sizeof(u32), storage);
-    const ResourceId bin_pixels =
-        import(bin_pixels_, "vg.vis.bin-pixels", pixels * sizeof(u32), storage);
-    const ResourceId resolved =
-        import(resolved_, "vg.vis.resolved", pixels * sizeof(f32) * 4, storage);
-    const ResourceId args =
+    imports.bin_cursor = import(bin_cursor_, "vg.vis.bin-cursor",
+                                static_cast<u64>(options_.material_count) * sizeof(u32), storage);
+    imports.bin_pixels = import(bin_pixels_, "vg.vis.bin-pixels", pixels * sizeof(u32), storage);
+    imports.resolved = import(resolved_, "vg.vis.resolved", pixels * sizeof(f32) * 4, storage);
+    imports.args =
         import(vis_args_, "vg.vis.args", kVisArgsBytes, storage | rhi::BufferUsage::Indirect);
-    const ResourceId visible =
+    imports.visible =
         import(traversal.visible_buffer(), "vg.visible",
                static_cast<u64>(traversal.visible_capacity()) * sizeof(GpuVisibleCluster), storage);
+    // `hw_payload` is left out: only the hardware path writes it, and it imports it itself.
+    return imports;
+}
 
+VisbufferPass::PassState* VisbufferPass::next_state(u32 pass, u32 groups) noexcept {
+    // Never past the reservation: `PassBuilder::record` keeps a pointer into this array, and a
+    // reallocation would leave every earlier pass pointing at freed memory.
+    if (states_.size() >= states_.capacity()) {
+        return nullptr;
+    }
+    if (Status pushed = states_.push_back(PassState{this, pass, groups}); !pushed) {
+        return nullptr;
+    }
+    return &states_.back();
+}
+
+Status VisbufferPass::declare_head(RenderGraph& graph, const FrameImports& imports, u32 prepare,
+                                   ResourceId counters) noexcept {
+    const u64 pixels = static_cast<u64>(options_.width) * options_.height;
+    const u32 pixel_groups = static_cast<u32>((pixels + kGroupSize - 1U) / kGroupSize);
+    PassState* clear = next_state(kPassClear, pixel_groups);
+    PassState* args = next_state(prepare, 1);
+    if (clear == nullptr || args == nullptr) {
+        return fail(ErrorCode::OutOfMemory, "VisbufferPass: the pass state table is full");
+    }
+    graph.add_pass("vg.vis.clear", rhi::QueueKind::Graphics)
+        .write(imports.visbuffer, rhi::Access::ComputeStorageWrite)
+        .write(imports.depth, rhi::Access::ComputeStorageWrite)
+        .write(imports.bin_counts, rhi::Access::ComputeStorageWrite)
+        .write(imports.bin_offsets, rhi::Access::ComputeStorageWrite)
+        .write(imports.bin_cursor, rhi::Access::ComputeStorageWrite)
+        .write(imports.bin_pixels, rhi::Access::ComputeStorageWrite)
+        .write(imports.resolved, rhi::Access::ComputeStorageWrite)
+        .record(&record_pass, clear);
+    PassBuilder arguments =
+        graph.add_pass(prepare == kPassHwPrepare ? "vg.vis.hw-prepare" : "vg.vis.prepare",
+                       rhi::QueueKind::Graphics);
+    if (counters != kInvalidResource) {
+        arguments.read(counters, rhi::Access::ComputeStorageRead);
+    }
+    arguments.write(imports.args, rhi::Access::ComputeStorageWrite).record(&record_pass, args);
+    return graph.status();
+}
+
+Status VisbufferPass::declare_resolve_chain(RenderGraph& graph,
+                                            const FrameImports& imports) noexcept {
+    const u64 pixels = static_cast<u64>(options_.width) * options_.height;
+    const u32 pixel_groups = static_cast<u32>((pixels + kGroupSize - 1U) / kGroupSize);
+    PassState* classify = next_state(kPassClassify, pixel_groups);
+    PassState* scan = next_state(kPassScan, 1);
+    PassState* scatter = next_state(kPassScatter, pixel_groups);
+    PassState* resolve = next_state(kPassResolve, pixel_groups);
+    if (classify == nullptr || scan == nullptr || scatter == nullptr || resolve == nullptr) {
+        return fail(ErrorCode::OutOfMemory, "VisbufferPass: the pass state table is full");
+    }
+    graph.add_pass("vg.vis.classify", rhi::QueueKind::Graphics)
+        .read(imports.visbuffer, rhi::Access::ComputeStorageRead)
+        .use(imports.bin_counts, rhi::Access::ComputeStorageReadWrite)
+        .record(&record_pass, classify);
+    graph.add_pass("vg.vis.scan", rhi::QueueKind::Graphics)
+        .read(imports.bin_counts, rhi::Access::ComputeStorageRead)
+        .write(imports.bin_offsets, rhi::Access::ComputeStorageWrite)
+        .write(imports.args, rhi::Access::ComputeStorageWrite)
+        .record(&record_pass, scan);
+    graph.add_pass("vg.vis.scatter", rhi::QueueKind::Graphics)
+        .read(imports.visbuffer, rhi::Access::ComputeStorageRead)
+        .read(imports.bin_offsets, rhi::Access::ComputeStorageRead)
+        .use(imports.bin_cursor, rhi::Access::ComputeStorageReadWrite)
+        .write(imports.bin_pixels, rhi::Access::ComputeStorageWrite)
+        .record(&record_pass, scatter);
+    graph.add_pass("vg.vis.resolve", rhi::QueueKind::Graphics)
+        .read(imports.args, rhi::Access::IndirectCommandRead)
+        .read(imports.visbuffer, rhi::Access::ComputeStorageRead)
+        .read(imports.bin_pixels, rhi::Access::ComputeStorageRead)
+        .read(imports.bin_offsets, rhi::Access::ComputeStorageRead)
+        .write(imports.resolved, rhi::Access::ComputeStorageWrite)
+        .record(&record_pass, resolve);
+    return graph.status();
+}
+
+Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
+                             const Mat4& world_to_clip) noexcept {
+    if (!initialised_) {
+        return fail(ErrorCode::Unavailable, "VisbufferPass::record: initialise() has not run");
+    }
+    if (Status bound = bind_frame(traversal, world_to_clip); !bound) {
+        return bound;
+    }
     // The visible list's capacity is no longer a packing constraint: a pixel keeps a surface
     // identity rather than an index into that list, and `initialise` bounds the identity space
-    // against the scene. Nothing here needs `traversal.visible_capacity()`.
+    // against the scene.
+    const FrameImports imports = import_frame(graph, traversal);
 
     states_.clear();
     if (Status reserved = states_.reserve(kPassCount); !reserved) {
         return reserved;
     }
+    if (Status head = declare_head(graph, imports, kPassPrepare); !head) {
+        return head;
+    }
+
+    const u64 pixels = static_cast<u64>(options_.width) * options_.height;
     const u32 pixel_groups = static_cast<u32>((pixels + kGroupSize - 1U) / kGroupSize);
-
-    if (Status pushed = states_.push_back(PassState{this, kPassClear, pixel_groups}); !pushed) {
-        return pushed;
-    }
-    graph.add_pass("vg.vis.clear", rhi::QueueKind::Graphics)
-        .write(visbuffer, rhi::Access::ComputeStorageWrite)
-        .write(depth, rhi::Access::ComputeStorageWrite)
-        .write(bin_counts, rhi::Access::ComputeStorageWrite)
-        .write(bin_offsets, rhi::Access::ComputeStorageWrite)
-        .write(bin_cursor, rhi::Access::ComputeStorageWrite)
-        .write(bin_pixels, rhi::Access::ComputeStorageWrite)
-        .write(resolved, rhi::Access::ComputeStorageWrite)
-        .record(&record_pass, &states_.back());
-
-    if (Status pushed = states_.push_back(PassState{this, kPassPrepare, 1}); !pushed) {
-        return pushed;
-    }
-    graph.add_pass("vg.vis.prepare", rhi::QueueKind::Graphics)
-        .write(args, rhi::Access::ComputeStorageWrite)
-        .record(&record_pass, &states_.back());
-
-    if (Status pushed = states_.push_back(PassState{this, kPassRaster, 0}); !pushed) {
-        return pushed;
+    PassState* raster = next_state(kPassRaster, 0);
+    PassState* unpack = next_state(kPassUnpack, pixel_groups);
+    if (raster == nullptr || unpack == nullptr) {
+        return fail(ErrorCode::OutOfMemory, "VisbufferPass: the pass state table is full");
     }
     graph.add_pass("vg.vis.raster", rhi::QueueKind::Graphics)
-        .read(args, rhi::Access::IndirectCommandRead)
-        .read(visible, rhi::Access::ComputeStorageRead)
-        .use(depth, rhi::Access::ComputeStorageReadWrite)
-        .record(&record_pass, &states_.back());
+        .read(imports.args, rhi::Access::IndirectCommandRead)
+        .read(imports.visible, rhi::Access::ComputeStorageRead)
+        .use(imports.depth, rhi::Access::ComputeStorageReadWrite)
+        .record(&record_pass, raster);
 
     // THE UNPACK, between the raster and everything that reads the visibility buffer. The raster
     // settles depth and payload in one atomic; this turns that into the `uint2` visibility buffer
     // the four passes below have always read, so the fix stops here rather than reaching them.
-    if (Status pushed = states_.push_back(PassState{this, kPassUnpack, pixel_groups}); !pushed) {
-        return pushed;
-    }
     graph.add_pass("vg.vis.unpack", rhi::QueueKind::Graphics)
-        .read(depth, rhi::Access::ComputeStorageRead)
-        .write(visbuffer, rhi::Access::ComputeStorageWrite)
-        .record(&record_pass, &states_.back());
+        .read(imports.depth, rhi::Access::ComputeStorageRead)
+        .write(imports.visbuffer, rhi::Access::ComputeStorageWrite)
+        .record(&record_pass, unpack);
 
-    if (Status pushed = states_.push_back(PassState{this, kPassClassify, pixel_groups}); !pushed) {
-        return pushed;
-    }
-    graph.add_pass("vg.vis.classify", rhi::QueueKind::Graphics)
-        .read(visbuffer, rhi::Access::ComputeStorageRead)
-        .use(bin_counts, rhi::Access::ComputeStorageReadWrite)
-        .record(&record_pass, &states_.back());
-
-    if (Status pushed = states_.push_back(PassState{this, kPassScan, 1}); !pushed) {
-        return pushed;
-    }
-    graph.add_pass("vg.vis.scan", rhi::QueueKind::Graphics)
-        .read(bin_counts, rhi::Access::ComputeStorageRead)
-        .write(bin_offsets, rhi::Access::ComputeStorageWrite)
-        .write(args, rhi::Access::ComputeStorageWrite)
-        .record(&record_pass, &states_.back());
-
-    if (Status pushed = states_.push_back(PassState{this, kPassScatter, pixel_groups}); !pushed) {
-        return pushed;
-    }
-    graph.add_pass("vg.vis.scatter", rhi::QueueKind::Graphics)
-        .read(visbuffer, rhi::Access::ComputeStorageRead)
-        .read(bin_offsets, rhi::Access::ComputeStorageRead)
-        .use(bin_cursor, rhi::Access::ComputeStorageReadWrite)
-        .write(bin_pixels, rhi::Access::ComputeStorageWrite)
-        .record(&record_pass, &states_.back());
-
-    if (Status pushed = states_.push_back(PassState{this, kPassResolve, pixel_groups}); !pushed) {
-        return pushed;
-    }
-    graph.add_pass("vg.vis.resolve", rhi::QueueKind::Graphics)
-        .read(args, rhi::Access::IndirectCommandRead)
-        .read(visbuffer, rhi::Access::ComputeStorageRead)
-        .read(bin_pixels, rhi::Access::ComputeStorageRead)
-        .read(bin_offsets, rhi::Access::ComputeStorageRead)
-        .write(resolved, rhi::Access::ComputeStorageWrite)
-        .record(&record_pass, &states_.back());
-
-    return graph.status();
+    return declare_resolve_chain(graph, imports);
 }
 
 Status VisbufferPass::read_back(VisbufferReadback& out) const noexcept {

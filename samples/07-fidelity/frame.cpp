@@ -5,10 +5,12 @@
 #include <cy/core/math/matrix.h>
 #include <cy/core/math/projection.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/forward/frame.h>
 #include <cy/rendering/gi/distance_field.h>
 #include <cy/rendering/gi/system.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/virtual_geometry/forward_visibility.h>
 #include <cy/rendering/virtual_geometry/visbuffer.h>
 
 #if defined(CY_SAMPLE_FIDELITY_VULKAN)
@@ -206,6 +208,25 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         return started;
     }
 
+    // THE FORWARD FRAME, whose `virtual geometry` stage is where the clusters are drawn. The frame
+    // switches off what this shot has no callback for — a sky, a transparent layer, an interface —
+    // and keeps its prepass declared; with no prepass callback the stage clears the depth itself.
+    rendering::vg::ForwardVisibility forward(holder.device());
+    rendering::ForwardFrame forward_frame(allocator);
+    rendering::FrameDescription frame_description;
+    frame_description.width = options.width;
+    frame_description.height = options.height;
+    frame_description.features.sky = false;
+    frame_description.features.transparency = false;
+    frame_description.features.ui = false;
+    if (options.forward_frame) {
+        if (Status started = forward.initialise(visbuffer, frame_description.depth_format);
+            !started) {
+            return started;
+        }
+    }
+    out.rasteriser = options.forward_frame ? "forward-frame" : "compute";
+
     GraphExecutor executor(allocator, holder.device());
     rendering::vg::TraversalReadback traversal_readback(allocator);
     rendering::vg::VisbufferReadback visbuffer_readback(allocator);
@@ -265,8 +286,11 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
             !recorded) {
             return recorded;
         }
-        if (Status recorded = visbuffer.record(graph, traversal, world_to_clip); !recorded) {
-            return recorded;
+        Status declared = options.forward_frame ? forward.build(graph, traversal, world_to_clip,
+                                                                forward_frame, frame_description)
+                                                : visbuffer.record(graph, traversal, world_to_clip);
+        if (!declared) {
+            return declared;
         }
         if (Status built = graph.status(); !built) {
             return built;
@@ -340,6 +364,7 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     }
 
     out.materials_seen = static_cast<u32>(std::popcount(material_bits));
+    out.forward_stages = forward.report().stages_recorded;
     out.validation_errors = holder.errors();
     out.device = true;
 

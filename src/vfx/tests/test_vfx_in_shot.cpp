@@ -159,3 +159,73 @@ CY_TEST_CASE("particles are in the assembled frame: the shot's air simulates and
     // would fall under it at once.
     CY_CHECK_GT(framed, (published * 3U) / 5U);
 }
+
+CY_TEST_CASE("particles are in the assembled frame: every mote's trail is its own and in shot") {
+    // THE TRAILS the published still draws behind every mote — `vfx-system`'s `Trail` renderer,
+    // composited by `StripRenderer` — and the half of them every machine can check. `render.vfx`
+    // photographs them; this case says they are the right SHAPE: one strip a mote, beginning where
+    // the mote is drawn, as long as the mote's last third of a second and no longer, and framed.
+    EmberField field(allocator());
+    CY_REQUIRE(field.build().has_value());
+    CY_REQUIRE(field.settle(kShotEye).has_value());
+
+    const Span<const rendering::particles::StripVertex> trails = field.trails();
+    const rendering::particles::StripReport counted = rendering::particles::count_strips(trails);
+    std::fprintf(stderr,
+                 "the shot's trails: %u vertices in %u strip(s), %u segment(s); %u mote(s) "
+                 "published; %u trail(s) derived, %u dropped\n",
+                 counted.vertices, counted.strips, counted.segments, field.published().particles,
+                 field.trailed().primitives, field.trailed().base.dropped);
+    CY_CHECK_EQ(field.trailed().base.dropped, 0U);
+    CY_CHECK_EQ(counted.strips, field.trailed().primitives);
+    // Every mote that has lived through the whole trail window has a full trail; the youngest
+    // third of a second's spawns have shorter ones or none. So most motes, never more than all.
+    CY_CHECK_GT(counted.strips, (field.published().particles * 4U) / 5U);
+    CY_CHECK_LE(counted.strips, field.published().particles);
+    CY_CHECK_LE(counted.vertices, counted.strips * kEmberTrailHistory);
+
+    // ONE MOTE'S TRAIL, NOT TWO MOTES JOINED. Every vertex of a strip is within the distance the
+    // head's mote can have flown in the window — at most 0.6 m/s for 0.4 s is 0.24 m, and the
+    // bound is a generous 0.5 m. The two defects this rung fixed each broke it by metres: a
+    // history keyed by slot alone joined the three emitters' motes across the courtyard, and a
+    // slot re-used between two trail publications joined a new mote to where the old one died.
+    f32 longest = 0.0F;
+    u32 strip = ~0U;
+    Vec3 head{};
+    for (const rendering::particles::StripVertex& vertex : trails) {
+        if (vertex.strip != strip) {
+            strip = vertex.strip;
+            head = Vec3{vertex.position[0], vertex.position[1], vertex.position[2]};
+            continue;
+        }
+        const f32 dx = vertex.position[0] - head.x;
+        const f32 dy = vertex.position[1] - head.y;
+        const f32 dz = vertex.position[2] - head.z;
+        const f32 distance = std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        longest = distance > longest ? distance : longest;
+    }
+    std::fprintf(stderr, "the shot's trails: the longest reaches %.3f m behind its mote\n",
+                 static_cast<double>(longest));
+    CY_CHECK_GT(longest, 0.01F);
+    CY_CHECK_LT(longest, 0.5F);
+
+    // FRAMED: the heads are where the motes are, so the same projection that counts motes counts
+    // trails, and the same three-fifths floor applies.
+    const Mat4 view_projection = shot_view_projection();
+    u32 framed = 0;
+    strip = ~0U;
+    for (const rendering::particles::StripVertex& vertex : trails) {
+        if (vertex.strip == strip) {
+            continue;
+        }
+        strip = vertex.strip;
+        rendering::particles::ParticleInstance probe;
+        for (u32 component = 0; component < 3U; ++component) {
+            probe.position[component] = vertex.position[component];
+        }
+        framed += inside_frame(view_projection, probe) ? 1U : 0U;
+    }
+    std::fprintf(stderr, "the shot's trails: %u of %u inside the artefact's frame\n", framed,
+                 counted.strips);
+    CY_CHECK_GT(framed, (counted.strips * 3U) / 5U);
+}

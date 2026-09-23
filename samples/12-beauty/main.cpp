@@ -182,6 +182,9 @@ void print_report(const Shot& shot, const ShotReport& report) {
                 report.frame_passes, report.post_stages, report.supersample);
     std::printf("air           %u mote(s) in %u draw(s), %u dropped\n", report.particles,
                 report.particle_draws, report.particles_dropped);
+    std::printf("trails        %u vertices in %u strip(s), %u segment(s), %u draw(s), %u dropped\n",
+                report.trail_vertices, report.trail_strips, report.trail_segments,
+                report.trail_draws, report.trail_dropped);
     std::printf("cost          build %.1f ms, submit %.2f ms\n", report.build_ms, report.submit_ms);
     std::printf("validation    %u error(s)\n", report.validation_errors);
 }

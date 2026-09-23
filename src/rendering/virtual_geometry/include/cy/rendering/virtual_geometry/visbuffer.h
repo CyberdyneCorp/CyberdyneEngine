@@ -185,8 +185,17 @@ struct VisbufferReadback {
     [[nodiscard]] u32 covered_pixels() const noexcept;
 };
 
+class ForwardVisibility;
+
 /// The visibility buffer and its resolve, on the device. Consumes the traversal's visible list
 /// without a round trip through the host.
+///
+/// TWO RASTERISERS FILL IT. `record()` declares the compute one — a workgroup per visible cluster
+/// and a 64-bit atomic depth test — into a graph of its own. `ForwardVisibility`
+/// (forward_visibility.h) declares the hardware one, which runs INSIDE the forward frame's pass
+/// order as its `virtual geometry` stage and writes the frame's own depth. Both end in the same
+/// `uint2` visibility buffer, and the classification, the bins and the resolve below are declared
+/// by the same code for either.
 class VisbufferPass {
 public:
     VisbufferPass(Allocator& allocator, rhi::Device& device) noexcept;
@@ -212,11 +221,46 @@ public:
     [[nodiscard]] Status read_back(VisbufferReadback& out) const noexcept;
 
 private:
+    friend class ForwardVisibility;
+
     struct PassState {
         VisbufferPass* self = nullptr;
         u32 pass = 0;
         u32 groups = 0;
     };
+
+    /// This frame's graph resources for the pass's own buffers, and the traversal's visible list.
+    struct FrameImports {
+        ResourceId visbuffer = kInvalidResource;
+        ResourceId depth = kInvalidResource;
+        ResourceId bin_counts = kInvalidResource;
+        ResourceId bin_offsets = kInvalidResource;
+        ResourceId bin_cursor = kInvalidResource;
+        ResourceId bin_pixels = kInvalidResource;
+        ResourceId resolved = kInvalidResource;
+        ResourceId args = kInvalidResource;
+        ResourceId visible = kInvalidResource;
+        ResourceId hw_payload = kInvalidResource;
+    };
+
+    /// The push block and the descriptor set for one frame over `traversal`'s buffers.
+    [[nodiscard]] Status bind_frame(const GpuTraversal& traversal,
+                                    const Mat4& world_to_clip) noexcept;
+    [[nodiscard]] FrameImports import_frame(RenderGraph& graph,
+                                            const GpuTraversal& traversal) noexcept;
+    /// A compute pass's recorded state, in `states_` — which is reserved before the first one, so
+    /// the pointer a graph pass keeps stays valid. Null only if the reservation was exceeded.
+    [[nodiscard]] PassState* next_state(u32 pass, u32 groups) noexcept;
+    /// The clear and the argument pass, before either rasteriser. `prepare` is the entry point:
+    /// `vgVisPrepare` for the compute path, `vgVisHwPrepare` for the hardware one. `counters`, when
+    /// valid, is the traversal's own counter resource in this graph, which the argument pass reads
+    /// the visible count out of and then declares.
+    [[nodiscard]] Status declare_head(RenderGraph& graph, const FrameImports& imports, u32 prepare,
+                                      ResourceId counters = kInvalidResource) noexcept;
+    /// Classification, the scan, the scatter and the resolve — everything that reads the `uint2`
+    /// visibility buffer and does not know which rasteriser filled it.
+    [[nodiscard]] Status declare_resolve_chain(RenderGraph& graph,
+                                               const FrameImports& imports) noexcept;
 
     [[nodiscard]] Expected<rhi::BufferHandle, Error> make_buffer(const char* name, u64 bytes,
                                                                  rhi::BufferUsage usage,
@@ -232,6 +276,11 @@ private:
     u32 vertex_stride_ = 0;
     /// `GpuScene::cluster_stride()`, captured at `initialise`: the identity's radix.
     u32 cluster_stride_ = 0;
+    /// Three times the largest triangle count of any cluster in the scene: the hardware
+    /// rasteriser's per-instance index count.
+    u32 max_cluster_indices_ = 0;
+    /// `instance_count * cluster_stride`: how many surface identities the scene can name.
+    u64 identity_count_ = 0;
     u32 normal_offset_ = 0xFFFFFFFFU;
     u32 uv_offset_ = 0xFFFFFFFFU;
     f32 position_scale_ = 1.0F;
@@ -249,6 +298,8 @@ private:
     rhi::BufferHandle bin_pixels_;
     rhi::BufferHandle resolved_;
     rhi::BufferHandle vis_args_;
+    /// The hardware rasteriser's target, copied out of the forward frame one word a texel.
+    rhi::BufferHandle hw_payload_;
     rhi::BufferHandle staging_;
     rhi::BufferHandle readback_;
 
@@ -258,7 +309,7 @@ private:
     /// One per pass in `VisPass`, which is the enum in visbuffer.cpp that orders them. These were
     /// two hand-written 7s; adding a pass overran both arrays and corrupted whatever followed, so
     /// the count lives in one named constant that the pass table is checked against.
-    static constexpr u32 kPassSlots = 8U;
+    static constexpr u32 kPassSlots = 10U;
     rhi::ShaderModuleHandle modules_[kPassSlots];
     rhi::ComputePipelineHandle pipelines_[kPassSlots];
 

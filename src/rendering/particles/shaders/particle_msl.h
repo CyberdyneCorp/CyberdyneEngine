@@ -6,7 +6,7 @@
 
 namespace cy::rendering::particles {
 
-/// particle_vertex.metal, 3306 bytes.
+/// cyParticleVertex.metal, 3338 bytes.
 inline constexpr char kParticleVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -35,7 +35,7 @@ struct ClusterGrid_0
 };
 
 
-#line 89 "src/rendering/shaders/cy/frame.slang"
+#line 124 "src/rendering/shaders/cy/frame.slang"
 struct CyFrameData_0
 {
     float4 relativeToClipRow0_0;
@@ -57,10 +57,11 @@ struct CyFrameData_0
     uint4 materialOffsets_0;
     float4 temporalFeedback_0;
     float4 temporalJitter_0;
+    uint4 materialTextures_0;
 };
 
 
-#line 89
+#line 124
 struct KernelContext_0
 {
     CyParticle_0 device* cyParticles_0;
@@ -68,7 +69,7 @@ struct KernelContext_0
 };
 
 
-#line 180
+#line 239
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
@@ -76,7 +77,7 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 183
+#line 242
 struct cyParticleVertex_Result_0
 {
     float4 position_0 [[position]];
@@ -138,7 +139,7 @@ struct CyParticleVertex_0
 
 )cy_msl";
 
-/// particle_fragment.metal, 743 bytes.
+/// cyParticleFragment.metal, 743 bytes.
 inline constexpr char kParticleFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>

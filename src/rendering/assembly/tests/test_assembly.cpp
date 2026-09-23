@@ -428,47 +428,55 @@ CY_TEST_CASE("the assembled frame compiles and executes on a device") {
     const auto device = cy::rhi::create_device(allocator(), "null", device_description, selection);
     CY_REQUIRE(device.has_value());
 
-    FrameAssembly assembly(allocator());
-    CY_REQUIRE(assembly.initialize(make_description()).has_value());
-    CY_REQUIRE(assembly.attach_device(*device.value()).has_value());
-
-    SpatialIndex index(allocator());
-    for (u32 which = 0; which < 4; ++which) {
-        SpatialEntry entry;
-        entry.bounds = cy::Aabb::from_center_extents(Vec3{static_cast<f32>(which), 0.0F, -6.0F},
-                                                     Vec3{0.5F, 0.5F, 0.5F});
-        entry.stable_id = 200U + which;
-        entry.radius = 0.9F;
-        CY_REQUIRE(index.insert(entry).has_value());
-    }
-    const cy::render::LightDescription lights[] = {sun(1), point_light(Vec3{0.0F, 0.0F, -6.0F}, 2)};
-
-    RenderGraph graph(allocator());
-    AssemblyReport report;
-    CY_REQUIRE(
-        assembly.assemble(index, make_view({lights, 2}), FrameSinks{}, graph, report).has_value());
-
+    // THE ASSEMBLY IS SCOPED INSIDE THE DEVICE'S LIFETIME, for the executor's reason below: since
+    // the assembly began owning two temporal history images it destroys them THROUGH THE DEVICE in
+    // its destructor, and this case used to destroy the device first — a use after free that
+    // crashed the suite on every run from `6514c3d` on and took the five cases after it with it.
     {
-        // INSIDE A DEVICE FRAME. The executor acquires its command buffer from the device's current
-        // frame, so the host's `begin_frame`/`end_frame` bracket is the caller's — see `execute()`.
-        //
-        // AND INSIDE A SCOPE THAT CLOSES BEFORE THE DEVICE DOES: `~GraphExecutor` releases the
-        // views it realised, through the device. An executor outliving its device is a use after
-        // free, and it is a crash in a destructor, which is the shape that reads as a test harness
-        // bug rather than as the ordering mistake it is.
-        CY_REQUIRE(device.value()->begin_frame().has_value());
-        GraphExecutor executor(allocator(), *device.value());
-        CY_REQUIRE(assembly.execute(executor, graph, report).has_value());
-        CY_CHECK(device.value()->end_frame().has_value());
-    }
-    CY_CHECK(report.executed);
-    CY_CHECK_GT(report.execution.passes_recorded, 0U);
-    CY_CHECK_GT(report.execution.submits, 0U);
-    // A frame that allocated nothing is a frame with no targets. The graph's own aliasing figure is
-    // what says the transient set was real.
-    CY_CHECK_GT(report.execution.transient_bytes, 0U);
+        FrameAssembly assembly(allocator());
+        CY_REQUIRE(assembly.initialize(make_description()).has_value());
+        CY_REQUIRE(assembly.attach_device(*device.value()).has_value());
 
-    CY_REQUIRE(device.value()->wait_idle().has_value());
+        SpatialIndex index(allocator());
+        for (u32 which = 0; which < 4; ++which) {
+            SpatialEntry entry;
+            entry.bounds = cy::Aabb::from_center_extents(Vec3{static_cast<f32>(which), 0.0F, -6.0F},
+                                                         Vec3{0.5F, 0.5F, 0.5F});
+            entry.stable_id = 200U + which;
+            entry.radius = 0.9F;
+            CY_REQUIRE(index.insert(entry).has_value());
+        }
+        const cy::render::LightDescription lights[] = {sun(1),
+                                                       point_light(Vec3{0.0F, 0.0F, -6.0F}, 2)};
+
+        RenderGraph graph(allocator());
+        AssemblyReport report;
+        CY_REQUIRE(assembly.assemble(index, make_view({lights, 2}), FrameSinks{}, graph, report)
+                       .has_value());
+
+        {
+            // INSIDE A DEVICE FRAME. The executor acquires its command buffer from the device's
+            // current frame, so the host's `begin_frame`/`end_frame` bracket is the caller's — see
+            // `execute()`.
+            //
+            // AND INSIDE A SCOPE THAT CLOSES BEFORE THE DEVICE DOES: `~GraphExecutor` releases the
+            // views it realised, through the device. An executor outliving its device is a use
+            // after free, and it is a crash in a destructor, which is the shape that reads as a
+            // test harness bug rather than as the ordering mistake it is.
+            CY_REQUIRE(device.value()->begin_frame().has_value());
+            GraphExecutor executor(allocator(), *device.value());
+            CY_REQUIRE(assembly.execute(executor, graph, report).has_value());
+            CY_CHECK(device.value()->end_frame().has_value());
+        }
+        CY_CHECK(report.executed);
+        CY_CHECK_GT(report.execution.passes_recorded, 0U);
+        CY_CHECK_GT(report.execution.submits, 0U);
+        // A frame that allocated nothing is a frame with no targets. The graph's own aliasing
+        // figure is what says the transient set was real.
+        CY_CHECK_GT(report.execution.transient_bytes, 0U);
+
+        CY_REQUIRE(device.value()->wait_idle().has_value());
+    }
     cy::rhi::destroy_device(allocator(), device.value());
 }
 
@@ -533,6 +541,21 @@ namespace {
 
 /// A frame assembled and executed through the null backend, so both cases below observe a frame
 /// that RAN rather than one that was described.
+/// Owns the device and destroys it LAST: it is declared first in `ExecutedFrame`, so it outlives
+/// the assembly, whose destructor releases its temporal history images through the device.
+struct OwnedDevice {
+    OwnedDevice() noexcept = default;
+    ~OwnedDevice() {
+        if (device != nullptr) {
+            cy::rhi::destroy_device(allocator(), device);
+        }
+    }
+    OwnedDevice(const OwnedDevice&) = delete;
+    OwnedDevice& operator=(const OwnedDevice&) = delete;
+
+    cy::rhi::Device* device = nullptr;
+};
+
 struct ExecutedFrame {
     explicit ExecutedFrame(cy::Allocator& alloc) noexcept : assembly(alloc), graph(alloc) {}
 
@@ -545,7 +568,8 @@ struct ExecutedFrame {
         if (!opened) {
             return false;
         }
-        device = opened.value();
+        owned.device = opened.value();
+        device = owned.device;
         if (!assembly.initialize(description) || !assembly.attach_device(*device)) {
             return false;
         }
@@ -578,15 +602,12 @@ struct ExecutedFrame {
         return device->wait_idle().has_value();
     }
 
-    ~ExecutedFrame() {
-        if (device != nullptr) {
-            cy::rhi::destroy_device(allocator(), device);
-        }
-    }
+    ~ExecutedFrame() = default;
 
     ExecutedFrame(const ExecutedFrame&) = delete;
     ExecutedFrame& operator=(const ExecutedFrame&) = delete;
 
+    OwnedDevice owned;
     FrameAssembly assembly;
     RenderGraph graph;
     AssemblyReport report;
@@ -748,4 +769,95 @@ CY_TEST_CASE("the frame passes through anti-aliasing, and the structure under it
     const CaptionCheck wrong = check_caption(*bare, "1080p, tone mapped, with anti-aliasing.");
     CY_CHECK_FALSE(wrong.ok());
     CY_CHECK_EQ(wrong.missing, PostStage::TemporalAntiAliasing);
+}
+
+CY_TEST_CASE("a chain with no temporal stage draws an UNJITTERED frame, and one with it does not") {
+    // THE REGRESSION. The assembly registered its temporal consumer as needing jitter whatever the
+    // chain held, so a frame with no temporal stage was drawn up to half a pixel off — a different
+    // half pixel every frame — with nothing to resolve it. `AssemblyReport::jitter` documents zero
+    // for exactly this frame; the report now agrees with its own comment.
+    AssemblyDescription without = make_description();
+    without.post.temporal_antialiasing = false;
+    ExecutedFrame aliased(allocator());
+    CY_REQUIRE(aliased.run(without));
+    CY_CHECK_FALSE(aliased.assembly.temporal().jitter().enabled());
+    CY_CHECK_EQ(aliased.report.jitter.x, 0.0F);
+    CY_CHECK_EQ(aliased.report.jitter.y, 0.0F);
+
+    // The control: the same frame WITH the stage is jittered, or this case measures nothing.
+    ExecutedFrame antialiased(allocator());
+    CY_REQUIRE(antialiased.run(make_description()));
+    CY_CHECK(antialiased.assembly.temporal().jitter().enabled());
+    CY_CHECK_GT(std::fabs(antialiased.report.jitter.x) + std::fabs(antialiased.report.jitter.y),
+                0.0F);
+}
+
+namespace {
+
+void record_nothing(const PassContext& /*context*/, void* /*user*/) noexcept {}
+
+}  // namespace
+
+CY_TEST_CASE(
+    "the temporal history is imported as what the last frame left it in, never discarded") {
+    // THE REGRESSION. Both history images were imported as `ImageUse::Undefined` on every frame,
+    // and `rhi/types.h` defines that use as "contents are discarded" — so the barrier the graph
+    // derived told the device it could throw away the one image the resolve exists to read. A
+    // driver that happens to keep the bytes shows nothing, which is why this is asserted on the
+    // graph's own record of the import rather than on a picture.
+    (void)cy::rhi::null::register_null_backend();
+    cy::rhi::DeviceDescription device_description;
+    device_description.application_name = "cy_test_integration_render_assembly";
+    cy::rhi::BackendSelection selection{};
+    const auto device = cy::rhi::create_device(allocator(), "null", device_description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        FrameAssembly assembly(allocator());
+        CY_REQUIRE(assembly.initialize(make_description()).has_value());
+        CY_REQUIRE(assembly.attach_device(*device.value()).has_value());
+
+        SpatialIndex index(allocator());
+        SpatialEntry entry;
+        entry.bounds =
+            cy::Aabb::from_center_extents(Vec3{0.0F, 0.0F, -6.0F}, Vec3{0.5F, 0.5F, 0.5F});
+        entry.stable_id = 700U;
+        entry.radius = 0.9F;
+        CY_REQUIRE(index.insert(entry).has_value());
+        const cy::render::LightDescription lights[] = {sun(1)};
+
+        // A temporal stage with a recorder, which is what makes the history a history: without
+        // one the assembly declares the stage and never marks anything written.
+        FrameSinks sinks;
+        sinks.passes[static_cast<cy::usize>(FramePassKind::Temporal)] =
+            FramePassCallback{&record_nothing, nullptr};
+
+        cy::rhi::ImageUse previous[3] = {};
+        cy::rhi::ImageUse current[3] = {};
+        for (u32 frame = 0; frame < 3; ++frame) {
+            RenderGraph graph(allocator());
+            AssemblyReport report;
+            CY_REQUIRE(
+                assembly.assemble(index, make_view({lights, 1}), sinks, graph, report).has_value());
+            CY_REQUIRE_NE(assembly.resources().temporal_previous, kInvalidResource);
+            previous[frame] = graph.resource(assembly.resources().temporal_previous).initial_use;
+            current[frame] = graph.resource(assembly.resources().temporal_history).initial_use;
+            CY_REQUIRE(device.value()->begin_frame().has_value());
+            {
+                GraphExecutor executor(allocator(), *device.value());
+                CY_REQUIRE(assembly.execute(executor, graph, report).has_value());
+            }
+            CY_REQUIRE(device.value()->end_frame().has_value());
+        }
+        // The first frame has written nothing yet, so discarding is the truth there.
+        CY_CHECK_EQ(previous[0], cy::rhi::ImageUse::Undefined);
+        // Every frame after it reads the image the frame before it WROTE and the post pass
+        // SAMPLED, and says so to the graph.
+        CY_CHECK_EQ(previous[1], cy::rhi::ImageUse::SampledRead);
+        CY_CHECK_EQ(previous[2], cy::rhi::ImageUse::SampledRead);
+        // The image a frame writes is last frame's previous one, which the resolve sampled.
+        CY_CHECK_EQ(current[1], cy::rhi::ImageUse::SampledRead);
+        CY_CHECK_EQ(current[2], cy::rhi::ImageUse::SampledRead);
+        CY_REQUIRE(device.value()->wait_idle().has_value());
+    }
+    cy::rhi::destroy_device(allocator(), device.value());
 }

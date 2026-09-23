@@ -145,6 +145,29 @@ inline constexpr f32 kEmberOpacitySpan = 0.22F;
 /// `PublishReport::dropped` is zero and a non-zero one is a finding.
 inline constexpr u32 kEmberRing = 4096;
 
+/// THE TRAILS — what `vfx-system`'s `Trail` renderer puts behind every mote, and the reason this
+/// shot exercises more of the row than its sprites. M11.c task 6.3.
+///
+/// A trail is a strip through the positions a mote PUBLISHED, so its length is a cadence times a
+/// depth: `publish_trails` records one position each time it is called, and the field calls it
+/// every `kEmberTrailInterval` simulation steps for the last `kEmberTrailHistory` of them. Eight
+/// samples three steps apart is a strip through the last 0.35 s of a mote's flight — ten to fifteen
+/// centimetres for a mote rising at 0.3-0.4 m/s, a short streak of its own light rather than a
+/// comet — and it tapers to nothing at the tail and fades as it goes (`cy/strip.slang`).
+inline constexpr u32 kEmberTrailHistory = 8;
+inline constexpr u32 kEmberTrailInterval = 3;
+/// The trail's half-width at its head, as a fraction of the mote's own half-extent. Narrower than
+/// the mote so the sprite stays the bright core and the trail reads as its wake.
+inline constexpr f32 kEmberTrailWidth = 0.45F;
+/// The strip renderer's ring: eight vertices a mote, and room for the field to grow a quarter.
+inline constexpr u32 kEmberTrailRing = 12288;
+
+/// The declaration the trails are published under. The emitter declares `Sprite` for its motes;
+/// a trail is a SECOND publication of the same particles, which is exactly what a host is allowed
+/// to do with `RendererDecl` — the declaration is authoring data a host may override per
+/// publication.
+[[nodiscard]] vfx::RendererDecl ember_trail_decl() noexcept;
+
 /// Author the ember system. Every node is placed and wired here; nothing is read from a file,
 /// because nothing in this tree writes one.
 [[nodiscard]] Expected<vfx::VfxSystemAsset, Error> build_embers(Allocator& allocator) noexcept;
@@ -181,6 +204,12 @@ public:
     [[nodiscard]] Span<const rendering::particles::ParticleInstance> records() const noexcept {
         return records_.span();
     }
+    /// Every mote's trail, strip after strip, camera-relative, ready for `StripRenderer::upload`.
+    /// Empty until `kEmberTrailHistory` trail publications have been made.
+    [[nodiscard]] Span<const rendering::particles::StripVertex> trails() const noexcept {
+        return trails_.span();
+    }
+    [[nodiscard]] const vfx::RenderPublishReport& trailed() const noexcept { return trailed_; }
     [[nodiscard]] const vfx::PublishReport& published() const noexcept { return published_; }
     [[nodiscard]] const vfx::StepReport& stepped() const noexcept { return stepped_; }
     [[nodiscard]] const vfx::CompileReport& cooked() const noexcept { return cook_; }
@@ -188,6 +217,8 @@ public:
 
 private:
     [[nodiscard]] Status publish(const Vec3& camera_position) noexcept;
+    /// Record one trail position for every mote and rebuild the strips from the history.
+    [[nodiscard]] Status publish_trails(const Vec3& camera_position) noexcept;
 
     Allocator* allocator_ = nullptr;
     graph::DiagnosticSink sink_;
@@ -197,6 +228,12 @@ private:
     vfx::StepReport stepped_;
     vfx::PublishReport published_;
     Array<rendering::particles::ParticleInstance> records_;
+    vfx::PublicationHistory history_;
+    vfx::RenderPublishReport trailed_;
+    Array<vfx::RibbonVertex> trail_rows_;
+    Array<rendering::particles::StripVertex> trails_;
+    /// Steps since the last trail publication, so `advance` keeps the cadence `settle` used.
+    u32 since_trail_ = 0;
     bool built_ = false;
 };
 

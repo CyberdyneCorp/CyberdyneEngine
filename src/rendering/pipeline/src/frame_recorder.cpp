@@ -18,6 +18,25 @@ void write_rows(const Mat4& matrix, f32 out[16]) noexcept {
     }
 }
 
+/// LAST FRAME'S PROJECTION, EXPRESSED ABOUT THIS FRAME'S CAMERA. The frame's positions are
+/// camera-RELATIVE (`transformToRelative`), and the prepass derives motion by pushing that same
+/// relative position through both matrices. The framework's previous view is a WORLD view, so
+/// handing it over as it stands put every surface `camera_position` metres from where it was: the
+/// motion vector of a still camera anywhere but the origin pointed off screen, and the resolve
+/// rejected — or worse, clamped in — a history it had reprojected to the wrong place. The
+/// translation is rebuilt from the camera's DISPLACEMENT rather than by composing a world
+/// translation back in, because at a large world coordinate that subtraction is where float
+/// precision goes.
+[[nodiscard]] Mat4 previous_relative_to_clip(const TemporalFramework& temporal) noexcept {
+    const TemporalView& previous = temporal.previous_view();
+    const Vec3 moved = temporal.view().camera_position - previous.camera_position;
+    Mat4 relative = previous.view;
+    const Vec4 translation = (relative.columns[0] * moved.x) + (relative.columns[1] * moved.y) +
+                             (relative.columns[2] * moved.z);
+    relative.columns[3] = Vec4{translation.x, translation.y, translation.z, 1.0F};
+    return previous.projection * relative;
+}
+
 [[nodiscard]] FrameRecorder* recorder_of(void* user) noexcept {
     return static_cast<FrameRecorder*>(user);
 }
@@ -452,7 +471,7 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
         }
     }
     write_rows(jittered, upload.view.relative_to_clip);
-    write_rows(assembly.temporal().previous_view().view_projection(),
+    write_rows(previous_relative_to_clip(assembly.temporal()),
                upload.view.previous_relative_to_clip);
     write_rows(relative_to_view, upload.view.relative_to_view);
     const Vec3 ambient = assembly.sky_irradiance();

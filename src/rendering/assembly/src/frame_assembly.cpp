@@ -139,11 +139,15 @@ Status FrameAssembly::initialize(const AssemblyDescription& description) noexcep
     if (Status ready = temporal_.initialize(description.temporal); !ready) {
         return ready;
     }
-    // ONE CONSUMER, and it needs jitter: the temporal stage of the post chain. `needs_jitter` is
-    // what makes the projection unjittered when nothing temporal is on, and a frame that registered
-    // no consumer at all would get no jitter even with TAA enabled.
+    // ONE CONSUMER, and it needs jitter ONLY WHEN THE CHAIN HAS A TEMPORAL STAGE. `needs_jitter` is
+    // what makes the projection unjittered when nothing temporal is on. It was registered `true`
+    // unconditionally, so every frame without TAA was drawn up to half a pixel off, a different
+    // half pixel each frame, with no resolve to average it back: `AssemblyReport::jitter` says
+    // "zero is what a chain with no temporal stage gets", and it was not.
+    const bool needs_jitter =
+        description.post.temporal_antialiasing || description.post.temporal_upscaling;
     const Expected<ConsumerId, Error> consumer =
-        temporal_.register_consumer("frame-assembly", true);
+        temporal_.register_consumer("frame-assembly", needs_jitter);
     if (!consumer) {
         return make_unexpected(consumer.error());
     }
@@ -201,6 +205,8 @@ Status FrameAssembly::attach_device(rhi::Device& device) noexcept {
             }
             image = *created;
         }
+        temporal_uses_[0] = rhi::ImageUse::Undefined;
+        temporal_uses_[1] = rhi::ImageUse::Undefined;
         temporal_images_ready_ = true;
     }
 
@@ -652,10 +658,10 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
         history.height = description_.height;
         history.name = "temporal previous";
         description.temporal_previous = graph.import_texture(
-            history, temporal_images_[temporal_read_], rhi::ImageUse::Undefined);
+            history, temporal_images_[temporal_read_], temporal_uses_[temporal_read_]);
         history.name = "temporal current";
         description.temporal_current = graph.import_texture(
-            history, temporal_images_[temporal_read_ ^ 1U], rhi::ImageUse::Undefined);
+            history, temporal_images_[temporal_read_ ^ 1U], temporal_uses_[temporal_read_ ^ 1U]);
     }
     for (u32 kind = 0; kind < kFramePassKindCount; ++kind) {
         description.callbacks[kind] = sinks.passes[kind];
@@ -747,6 +753,14 @@ Status FrameAssembly::execute(GraphExecutor& executor, RenderGraph& graph,
     out.executed = true;
     if (temporal_declared_) {
         temporal_.mark_history_written(history_);
+        // What each history was left in, which is what the next frame imports it as, so the
+        // barrier it derives preserves the history instead of discarding it. The resolve SAMPLES
+        // the previous one; the one it wrote is sampled by the post pass or, with no post pass,
+        // copied out by `ForwardFrame`'s composite blit.
+        const bool post_reads_it = frame_.pass_of(FramePassKind::PostProcess) != kInvalidPass;
+        temporal_uses_[temporal_read_] = rhi::ImageUse::SampledRead;
+        temporal_uses_[temporal_read_ ^ 1U] =
+            post_reads_it ? rhi::ImageUse::SampledRead : rhi::ImageUse::TransferSource;
         temporal_read_ ^= 1U;
     }
 

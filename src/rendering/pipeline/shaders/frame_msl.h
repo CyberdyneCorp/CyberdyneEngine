@@ -235,7 +235,7 @@ struct CyDepthVertex_0
 
 )cy_msl";
 
-/// depth_fragment.metal, 1479 bytes.
+/// depth_fragment.metal, 2602 bytes.
 inline constexpr char kFrameDepthFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -275,7 +275,7 @@ float2 encodeOctahedral_0(float3 normal_0)
 }
 
 
-#line 265 "src/rendering/shaders/cy/frame.slang"
+#line 378 "src/rendering/shaders/cy/frame.slang"
 struct CyDepthOutput_0
 {
     float4 normalRoughness_0 [[color(0)]];
@@ -283,7 +283,7 @@ struct CyDepthOutput_0
 };
 
 
-#line 265
+#line 378
 struct pixelInput_0
 {
     float3 normal_1 [[user(TEXCOORD)]];
@@ -291,11 +291,54 @@ struct pixelInput_0
     float4 previousClip_0 [[user(TEXCOORD_2)]];
 };
 
-[[fragment]] CyDepthOutput_0 cyDepthFragment(pixelInput_0 _S4 [[stage_in]], float4 position_0 [[position]])
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 124 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+};
+
+
+#line 385
+[[fragment]] CyDepthOutput_0 cyDepthFragment(pixelInput_0 _S4 [[stage_in]], float4 position_0 [[position]], CyFrameData_0 constant* cyFrame_0 [[buffer(0)]])
 {
     thread CyDepthOutput_0 output_0;
     (&output_0)->normalRoughness_0 = float4(encodeOctahedral_0(normalize(_S4.normal_1)), 1.0, 1.0);
-    float2 _S5 = _S4.currentClip_0.xy / float2(_S4.currentClip_0.w) ;
+
+#line 396
+    float2 _S5 = _S4.currentClip_0.xy / float2(_S4.currentClip_0.w)  - cyFrame_0->temporalJitter_0.xy * float2(2.0)  * cyFrame_0->extentAndInverse_0.zw;
+
     float2 _S6 = _S4.previousClip_0.xy / float2(_S4.previousClip_0.w) ;
     (&output_0)->velocity_0 = float2((_S6.x - _S5.x) * 0.5, (_S5.y - _S6.y) * 0.5);
 
@@ -1380,7 +1423,7 @@ struct KernelContext_0
 
 )cy_msl";
 
-/// temporal_fragment.metal, 3900 bytes.
+/// temporal_fragment.metal, 3816 bytes.
 inline constexpr char kFrameTemporalFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -1451,155 +1494,153 @@ struct KernelContext_0
 
     float2 _S2 = viewSet_1->frame_0->rows_0[int(13)].zw;
     float4 _S3 = viewSet_1->frame_0->temporalFeedback_0;
-    float4 _S4 = viewSet_1->frame_0->temporalJitter_0;
-    float4 _S5 = ((passSet_1->sceneColor_0).sample((passSet_1->linearClamp_0), (_S1.uv_0), level((0.0))));
+    float4 _S4 = ((passSet_1->sceneColor_0).sample((passSet_1->linearClamp_0), (_S1.uv_0), level((0.0))));
 
-    float3 _S6 = _S5.xyz;
+    float3 _S5 = _S4.xyz;
 
-#line 131
-    float3 minimum_0 = _S6;
+#line 130
+    float3 minimum_0 = _S5;
 
-#line 131
-    float3 maximum_0 = _S6;
+#line 130
+    float3 maximum_0 = _S5;
 
-#line 131
+#line 130
     int y_0 = int(-1);
 
     for(;;)
     {
 
-#line 133
+#line 132
         if(y_0 <= int(1))
         {
         }
         else
         {
 
-#line 133
+#line 132
             break;
         }
 
-#line 133
+#line 132
         int x_0 = int(-1);
 
         for(;;)
         {
 
-#line 135
+#line 134
             if(x_0 <= int(1))
             {
             }
             else
             {
 
-#line 135
+#line 134
                 break;
             }
 
-            float3 _S7 = ((passSet_1->sceneColor_0).sample((passSet_1->linearClamp_0), (_S1.uv_0 + float2(float(x_0), float(y_0)) * _S2), level((0.0)))).xyz;
-            float3 _S8 = min(minimum_0, _S7);
-            float3 _S9 = max(maximum_0, _S7);
+            float3 _S6 = ((passSet_1->sceneColor_0).sample((passSet_1->linearClamp_0), (_S1.uv_0 + float2(float(x_0), float(y_0)) * _S2), level((0.0)))).xyz;
+            float3 _S7 = min(minimum_0, _S6);
+            float3 _S8 = max(maximum_0, _S6);
 
-#line 135
+#line 134
             int x_1 = x_0 + int(1);
 
-#line 135
-            minimum_0 = _S8;
+#line 134
+            minimum_0 = _S7;
 
-#line 135
-            maximum_0 = _S9;
+#line 134
+            maximum_0 = _S8;
 
-#line 135
+#line 134
             x_0 = x_1;
 
-#line 135
+#line 134
         }
 
-#line 133
+#line 132
         y_0 = y_0 + int(1);
 
-#line 133
+#line 132
     }
 
-#line 145
-    float _S10 = (((&kernelContext_0)->passSet_0->depth_0).sample((passSet_1->linearClamp_0), (_S1.uv_0), level((0.0))).x);
+#line 153
+    float _S9 = (((&kernelContext_0)->passSet_0->depth_0).sample((passSet_1->linearClamp_0), (_S1.uv_0), level((0.0))).x);
+    float2 _S10 = _S1.uv_0 + (((&kernelContext_0)->passSet_0->velocity_0).sample((passSet_1->linearClamp_0), (_S1.uv_0), level((0.0))).xy);
 
-    float2 _S11 = _S1.uv_0 + (((&kernelContext_0)->passSet_0->velocity_0).sample((passSet_1->linearClamp_0), (_S1.uv_0), level((0.0))).xy) + (_S4.zw - _S4.xy) * _S2;
-
-#line 147
-    bool _S12;
-    if(all(_S11 >= (float2(0.0) )))
+#line 154
+    bool _S11;
+    if(all(_S10 >= (float2(0.0) )))
     {
 
-#line 148
-        _S12 = all(_S11 <= (float2(1.0) ));
+#line 155
+        _S11 = all(_S10 <= (float2(1.0) ));
 
-#line 148
+#line 155
     }
     else
     {
 
-#line 148
-        _S12 = false;
+#line 155
+        _S11 = false;
 
-#line 148
+#line 155
     }
 
-    float3 _S13 = clamp((((&kernelContext_0)->passSet_0->historyColor_0).sample((passSet_1->linearClamp_0), (_S11), level((0.0)))).xyz, minimum_0, maximum_0);
+    float3 _S12 = clamp((((&kernelContext_0)->passSet_0->historyColor_0).sample((passSet_1->linearClamp_0), (_S10), level((0.0)))).xyz, minimum_0, maximum_0);
     if((_S3.x) > 0.5)
     {
     }
     else
     {
 
-#line 151
-        _S12 = false;
+#line 158
+        _S11 = false;
 
-#line 151
+#line 158
     }
 
-#line 151
-    if(_S12)
+#line 158
+    if(_S11)
     {
 
-#line 151
-        _S12 = _S10 > 0.0;
+#line 158
+        _S11 = _S9 > 0.0;
 
-#line 151
+#line 158
     }
     else
     {
 
-#line 151
-        _S12 = false;
+#line 158
+        _S11 = false;
 
-#line 151
+#line 158
     }
 
-#line 151
-    float _S14;
+#line 158
+    float _S13;
 
-#line 151
-    if(_S12)
+#line 158
+    if(_S11)
     {
 
-#line 151
-        _S14 = _S3.y;
+#line 158
+        _S13 = _S3.y;
 
-#line 151
+#line 158
     }
     else
     {
 
-#line 151
-        _S14 = 0.0;
+#line 158
+        _S13 = 0.0;
 
-#line 151
+#line 158
     }
 
-#line 151
-    pixelOutput_0 _S15 = { float4(mix(_S6, _S13, float3(_S14) ), _S5.w) };
-    return _S15;
+#line 158
+    pixelOutput_0 _S14 = { float4(mix(_S5, _S12, float3(_S13) ), _S4.w) };
+    return _S14;
 }
 
 )cy_msl";

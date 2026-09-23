@@ -5,6 +5,23 @@
 namespace cy::vfx {
 namespace {
 
+/// One publication row, as the strip renderer reads it.
+[[nodiscard]] rendering::particles::StripVertex strip_vertex(const RenderRowCommon& row,
+                                                             f32 half_width, f32 along,
+                                                             u32 strip) noexcept {
+    rendering::particles::StripVertex vertex;
+    for (u32 component = 0; component < 3U; ++component) {
+        vertex.position[component] = row.position[component];
+    }
+    for (u32 channel = 0; channel < 4U; ++channel) {
+        vertex.color[channel] = row.color[channel];
+    }
+    vertex.half_width = half_width;
+    vertex.along = along;
+    vertex.strip = strip;
+    return vertex;
+}
+
 /// One live particle's presentation attributes, read through the layout so a quantised attribute
 /// arrives quantised.
 ///
@@ -124,7 +141,53 @@ struct EmitterCursor {
     u32 emitter = 0;
     u32 block = 0;
     u32 count = 0;
+    /// Where this block's slots start in the caller's `PublicationHistory`: the capacities of every
+    /// block before it. See `history_slot`.
+    u32 history_base = 0;
 };
+
+/// The history entry a particle owns: its block's base plus its slot.
+///
+/// A SLOT IS ONLY UNIQUE INSIDE ITS BLOCK. Every block numbers its slots from zero, so a history
+/// keyed by the slot alone gave slot 5 of the first ember emitter and slot 5 of the second ONE
+/// entry: the second publication overwrote the first, and next frame the first particle's trail
+/// was drawn back to where the second one had been — metres away, across the courtyard. A world
+/// with one block could not show it, which is every case `integration.vfx` had.
+[[nodiscard]] u32 history_slot(const EmitterCursor& cursor, u32 slot) noexcept {
+    return cursor.history_base + slot;
+}
+
+/// Which particle occupies `slot` now: its block's spawn counter. See
+/// `SimulationWorld::spawn_generations` and `PublicationHistory::claim`.
+[[nodiscard]] u32 generation_of(const SimulationWorld& world, const EmitterCursor& cursor,
+                                u32 slot) noexcept {
+    const Span<const u32> generations = world.spawn_generations(cursor.block);
+    return slot < generations.size() ? generations[slot] : 0U;
+}
+
+/// The first history entry `block` owns.
+[[nodiscard]] u32 block_history_base(const SimulationWorld& world, u32 block) noexcept {
+    u32 base = 0;
+    for (u32 index = 0; index < block && index < world.blocks().size(); ++index) {
+        base += world.blocks()[index].particles;
+    }
+    return base;
+}
+
+/// Refuse a history too small for the world, rather than silently dropping the trails and motion
+/// vectors of whichever blocks do not fit: `PublicationHistory::record` ignores a slot past its
+/// end, so an undersized history would publish every row with its motion suppressed and every trail
+/// empty, and nothing would say why.
+[[nodiscard]] Status check_history(const SimulationWorld& world,
+                                   const PublicationHistory& history) noexcept {
+    if (history.slots() < publication_slots(world)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "this PublicationHistory has fewer slots than the world has particles across "
+                    "all of its blocks; size it with `publication_slots(world)` after every "
+                    "effect is played");
+    }
+    return ok();
+}
 
 /// Call `visit` for every active emitter of every active instance. Extracted because six
 /// publications would otherwise each carry the same three nested loops, and a seventh would carry a
@@ -148,6 +211,7 @@ template <typename Visit>
             cursor.emitter = emitter;
             cursor.block = block;
             cursor.count = world.blocks()[block].particles;
+            cursor.history_base = block_history_base(world, block);
             if (Status visited = visit(cursor); !visited) {
                 return visited;
             }
@@ -164,6 +228,10 @@ template <typename Visit>
 }
 
 }  // namespace
+
+u32 publication_slots(const SimulationWorld& world) noexcept {
+    return block_history_base(world, static_cast<u32>(world.blocks().size()));
+}
 
 const char* renderer_kind_name(RendererKind kind) noexcept {
     switch (kind) {
@@ -257,6 +325,19 @@ bool PublicationHistory::sample(u32 slot, u32 age, f32 out[3]) const noexcept {
     return true;
 }
 
+void PublicationHistory::claim(u32 slot, u32 generation) noexcept {
+    if (slot >= entries_.size()) {
+        return;
+    }
+    Entry& entry = entries_[slot];
+    if (entry.generation != generation) {
+        // A DIFFERENT PARTICLE. Everything recorded for this slot was its previous occupant's, and
+        // a trail or a motion vector drawn from it would join two particles that never met.
+        entry.present = 0;
+        entry.generation = generation;
+    }
+}
+
 void PublicationHistory::record(u32 slot, const f32 position[3]) noexcept {
     if (slot >= entries_.size()) {
         return;
@@ -283,6 +364,9 @@ Status publish_ribbons(const SimulationWorld& world, const RendererDecl& decl,
     report = RenderPublishReport{};
     if (Status reserved = out.reserve(capacity); !reserved) {
         return reserved;
+    }
+    if (Status sized = check_history(world, history); !sized) {
+        return sized;
     }
     history.begin_frame();
     u32 strip = 0;
@@ -314,9 +398,12 @@ Status publish_ribbons(const SimulationWorld& world, const RendererDecl& decl,
                 RibbonVertex vertex;
                 fill_common(presentation, *cursor.instance, camera_position, decl, slot,
                             vertex.row);
-                report.motion_suppressed +=
-                    fill_motion(history, slot, decl.motion_vectors, vertex.row) ? 0U : 1U;
-                history.record(slot, vertex.row.position);
+                history.claim(history_slot(cursor, slot), generation_of(world, cursor, slot));
+                report.motion_suppressed += fill_motion(history, history_slot(cursor, slot),
+                                                        decl.motion_vectors, vertex.row)
+                                                ? 0U
+                                                : 1U;
+                history.record(history_slot(cursor, slot), vertex.row.position);
                 const f32 along = run_length > 1
                                       ? static_cast<f32>(index) / static_cast<f32>(run_length - 1U)
                                       : 0.0F;
@@ -380,6 +467,9 @@ Status publish_trails(const SimulationWorld& world, const RendererDecl& decl,
     if (Status reserved = out.reserve(capacity); !reserved) {
         return reserved;
     }
+    if (Status sized = check_history(world, history); !sized) {
+        return sized;
+    }
     history.begin_frame();
     u32 strip = 0;
 
@@ -392,9 +482,11 @@ Status publish_trails(const SimulationWorld& world, const RendererDecl& decl,
             }
             RibbonVertex head;
             fill_common(presentation, *cursor.instance, camera_position, decl, slot, head.row);
-            const bool had_motion = fill_motion(history, slot, decl.motion_vectors, head.row);
+            history.claim(history_slot(cursor, slot), generation_of(world, cursor, slot));
+            const bool had_motion =
+                fill_motion(history, history_slot(cursor, slot), decl.motion_vectors, head.row);
             report.motion_suppressed += had_motion ? 0U : 1U;
-            history.record(slot, head.row.position);
+            history.record(history_slot(cursor, slot), head.row.position);
 
             // THE TRAIL IS EXACTLY AS LONG AS THE HISTORY THAT EXISTS. A particle spawned this
             // frame has one recorded position and therefore no trail at all; one whose slot was
@@ -404,7 +496,7 @@ Status publish_trails(const SimulationWorld& world, const RendererDecl& decl,
             u32 length = 1;
             f32 tail[kMaxTrailHistory][3] = {};
             for (u32 age = 1; age < decl.trail_history; ++age) {
-                if (!history.sample(slot, age, tail[age])) {
+                if (!history.sample(history_slot(cursor, slot), age, tail[age])) {
                     break;
                 }
                 ++length;
@@ -464,6 +556,9 @@ Status publish_beams(const SimulationWorld& world, const RendererDecl& decl,
         return reserved;
     }
     static const Name kBeamEnd = Name::intern("beam_end");
+    if (Status sized = check_history(world, history); !sized) {
+        return sized;
+    }
     history.begin_frame();
     u32 beam = 0;
 
@@ -479,9 +574,12 @@ Status publish_beams(const SimulationWorld& world, const RendererDecl& decl,
             }
             BeamVertex head;
             fill_common(presentation, *cursor.instance, camera_position, decl, slot, head.row);
+            history.claim(history_slot(cursor, slot), generation_of(world, cursor, slot));
             report.motion_suppressed +=
-                fill_motion(history, slot, decl.motion_vectors, head.row) ? 0U : 1U;
-            history.record(slot, head.row.position);
+                fill_motion(history, history_slot(cursor, slot), decl.motion_vectors, head.row)
+                    ? 0U
+                    : 1U;
+            history.record(history_slot(cursor, slot), head.row.position);
 
             // THE FAR END, and an emitter without a `beam_end` attribute beams back to its own
             // origin rather than being refused. `vfx-system` describes a beam as "point to point";
@@ -552,6 +650,9 @@ Status publish_decals(const SimulationWorld& world, const RendererDecl& decl,
     if (Status reserved = out.reserve(capacity); !reserved) {
         return reserved;
     }
+    if (Status sized = check_history(world, history); !sized) {
+        return sized;
+    }
     history.begin_frame();
 
     return for_each_emitter(world, report, [&](const EmitterCursor& cursor) noexcept -> Status {
@@ -567,9 +668,12 @@ Status publish_decals(const SimulationWorld& world, const RendererDecl& decl,
             }
             DecalInstance record;
             fill_common(presentation, *cursor.instance, camera_position, decl, slot, record.row);
+            history.claim(history_slot(cursor, slot), generation_of(world, cursor, slot));
             report.motion_suppressed +=
-                fill_motion(history, slot, decl.motion_vectors, record.row) ? 0U : 1U;
-            history.record(slot, record.row.position);
+                fill_motion(history, history_slot(cursor, slot), decl.motion_vectors, record.row)
+                    ? 0U
+                    : 1U;
+            history.record(history_slot(cursor, slot), record.row.position);
 
             // THE PROJECTION AXIS IS THE VELOCITY WHERE THERE IS ONE. A decal from a particle that
             // is moving should project the way the particle is going — a bullet impact's scorch
@@ -611,6 +715,9 @@ Status publish_lights(const SimulationWorld& world, const RendererDecl& decl,
     report = RenderPublishReport{};
     if (Status reserved = out.reserve(capacity); !reserved) {
         return reserved;
+    }
+    if (Status sized = check_history(world, history); !sized) {
+        return sized;
     }
     history.begin_frame();
 
@@ -655,9 +762,12 @@ Status publish_lights(const SimulationWorld& world, const RendererDecl& decl,
                 // frame's brightest light because a dim one was spawned earlier.
                 record.rank = peak / (1.0F + distance_squared);
 
-                report.motion_suppressed +=
-                    fill_motion(history, slot, decl.motion_vectors, record.row) ? 0U : 1U;
-                history.record(slot, record.row.position);
+                history.claim(history_slot(cursor, slot), generation_of(world, cursor, slot));
+                report.motion_suppressed += fill_motion(history, history_slot(cursor, slot),
+                                                        decl.motion_vectors, record.row)
+                                                ? 0U
+                                                : 1U;
+                history.record(history_slot(cursor, slot), record.row.position);
 
                 if (out.size() < budget) {
                     if (Status pushed = out.push_back(record); !pushed) {
@@ -699,6 +809,9 @@ Status publish_volumes(const SimulationWorld& world, const RendererDecl& decl,
     if (Status reserved = out.reserve(capacity); !reserved) {
         return reserved;
     }
+    if (Status sized = check_history(world, history); !sized) {
+        return sized;
+    }
     history.begin_frame();
 
     return for_each_emitter(world, report, [&](const EmitterCursor& cursor) noexcept -> Status {
@@ -714,9 +827,12 @@ Status publish_volumes(const SimulationWorld& world, const RendererDecl& decl,
             }
             VolumeInstance record;
             fill_common(presentation, *cursor.instance, camera_position, decl, slot, record.row);
+            history.claim(history_slot(cursor, slot), generation_of(world, cursor, slot));
             report.motion_suppressed +=
-                fill_motion(history, slot, decl.motion_vectors, record.row) ? 0U : 1U;
-            history.record(slot, record.row.position);
+                fill_motion(history, history_slot(cursor, slot), decl.motion_vectors, record.row)
+                    ? 0U
+                    : 1U;
+            history.record(history_slot(cursor, slot), record.row.position);
             record.radius = presentation.size * cursor.instance->scale;
             // EXTINCTION SCALES WITH THE OPACITY the author gave the particle, so a fading volume
             // thins rather than shrinking — a shrinking one would pop out of a froxel grid.
@@ -732,6 +848,38 @@ Status publish_volumes(const SimulationWorld& world, const RendererDecl& decl,
         }
         return ok();
     });
+}
+
+// --- Into the renderer ---------------------------------------------------------------------------
+
+Status to_strip_vertices(Span<const RibbonVertex> rows,
+                         Array<rendering::particles::StripVertex>& out) noexcept {
+    out.clear();
+    if (Status reserved = out.reserve(rows.size()); !reserved) {
+        return reserved;
+    }
+    for (const RibbonVertex& row : rows) {
+        if (Status pushed = out.push_back(strip_vertex(row.row, row.width, row.along, row.strip));
+            !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
+
+Status to_strip_vertices(Span<const BeamVertex> rows,
+                         Array<rendering::particles::StripVertex>& out) noexcept {
+    out.clear();
+    if (Status reserved = out.reserve(rows.size()); !reserved) {
+        return reserved;
+    }
+    for (const BeamVertex& row : rows) {
+        if (Status pushed = out.push_back(strip_vertex(row.row, row.width, row.along, row.beam));
+            !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
 }
 
 }  // namespace cy::vfx

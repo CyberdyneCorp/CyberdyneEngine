@@ -54,7 +54,8 @@ public:
     void advance(bool enabled) noexcept;
 
     /// Pin the sequence to a fixed starting index. Deterministic from here on, whatever frame the
-    /// capture started on.
+    /// capture started on: the next enabled `advance` draws `index`'s sample and the sequence then
+    /// steps on from there. It does NOT hold one sample — a resolve over one offset is unjittered.
     void pin(u32 index) noexcept;
 
     void unpin() noexcept;
@@ -85,6 +86,8 @@ private:
     Vec2 previous_{0.0F, 0.0F};
     u32 index_ = 0;
     bool pinned_ = false;
+    /// Set by `pin`: the next enabled frame draws the pinned index rather than stepping past it.
+    bool restart_ = false;
     bool enabled_ = false;
 };
 

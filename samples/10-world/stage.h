@@ -50,11 +50,13 @@
 // which is the seam `ForwardFrame` documents — "ForwardFrame knows the frame STRUCTURE and the
 // caller knows how to draw" — and not through the pipeline layer's own draw path.
 //
-// **There is no anti-aliasing.** `FramePassKind::Temporal` is declared by the frame and nothing in
-// this tree records it; there is no temporal resolve shader under `src/rendering/` at all. Turning
-// `temporal_antialiasing` on here would put a stage in the manifest that no pass ran, which is
-// precisely the dishonesty `cy/rendering/assembly/capture_manifest.h` exists to detect. The chain
-// this frame runs is the three unconditional stages and the manifest says three.
+// **There is no anti-aliasing in this program.** The engine's temporal resolve is recorded by
+// `cy::rendering-pipeline`'s `FrameRecorder`, but this program draws its own geometry through its
+// own sinks, with no jitter, no velocity output and no depth prepass, so nothing here could feed
+// it. Turning `temporal_antialiasing` on here would put a stage in the manifest that no pass of
+// this frame ran, which is precisely the dishonesty `cy/rendering/assembly/capture_manifest.h`
+// exists to detect. The chain this frame runs is the three unconditional stages and the manifest
+// says three.
 //
 // **No visibility buffer, no virtual geometry, no material system.** No terrain material page is
 // bound, no water surface is published into the GPU scene, and no grass blade is expanded on the

@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 251 proven, 422 not yet shown able to fail.
+# 251 proven, 423 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1058,6 +1058,14 @@ digest = "5b3205b3b0037273"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'out.clusters[index].child_count = out.groups[from].member_count;' in src/rendering/virtual_geometry/src/build.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "virtual-geometry-in-the-forward-frame"
+digest = "77a144033853cd97"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'description_.callbacks[stage] = FramePassCallback(&record_stage, this);' in src/rendering/virtual_geometry/src/forward_visibility.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-vg (exit 8: error: Recipe `test-render` failed with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m11c"

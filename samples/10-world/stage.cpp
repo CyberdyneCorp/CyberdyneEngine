@@ -747,11 +747,14 @@ Status Stage::create_pipeline() noexcept {
 // exactly the seam `ForwardFrame` documents: "ForwardFrame knows the frame STRUCTURE and the caller
 // knows how to draw".
 //
-// WHAT IS STILL ABSENT AND IS NOT CLAIMED: no anti-aliasing. `FramePassKind::Temporal` is declared
-// by the frame and NOTHING IN THIS TREE RECORDS IT — there is no temporal resolve shader anywhere
-// under `src/rendering/` — so switching `temporal_antialiasing` on here would put a stage in the
-// manifest that no pass ran, which is the exact dishonesty `capture_manifest.h` exists to detect.
-// The chain this frame runs is the three unconditional stages, and the manifest says three.
+// WHAT IS STILL ABSENT AND IS NOT CLAIMED: no anti-aliasing IN THIS PROGRAM. The engine's temporal
+// resolve exists — `cy::rendering-pipeline`'s `FrameRecorder` records `FramePassKind::Temporal`
+// with `cy/fullscreen.slang`'s `temporalResolve`, and `render.pipeline` measures it accumulating —
+// but this program supplies its own sinks, draws its own geometry with no velocity output and no
+// jitter, and runs no depth prepass to write motion vectors. Switching `temporal_antialiasing` on
+// here would put a stage in the manifest that no pass of THIS frame ran, which is the exact
+// dishonesty `capture_manifest.h` exists to detect. The chain this frame runs is the three
+// unconditional stages, and the manifest says three.
 
 Status Stage::create_frame() noexcept {
     rhi::Device& device = *device_->handle.value();

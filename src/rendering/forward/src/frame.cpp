@@ -34,6 +34,11 @@ void attach(PassBuilder& builder, const FrameDescription& description,
             builder.read(resource, Access::VertexAttributeRead);
         }
     }
+    for (const FrameResourceRead& read : callback.reads) {
+        if (valid(read.resource)) {
+            builder.read(read.resource, read.access);
+        }
+    }
     if (callback.record != nullptr) {
         builder.record(callback.record, callback.user);
     }
@@ -78,6 +83,16 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         request.name = "velocity";
         request.format = description.velocity_format;
         resources.velocity = graph.create_texture(request);
+    }
+    if (description.features.virtual_geometry) {
+        // A transfer source because virtual geometry's material resolve reads the payload out of it
+        // as a buffer — the same `uint2` visibility buffer its compute rasteriser fills — so the
+        // classification, the bins and the resolve do not know which rasteriser ran.
+        request.name = "visibility";
+        request.format = description.visibility_format;
+        request.extra_usage = rhi::TextureUsage::TransferSource;
+        resources.visibility = graph.create_texture(request);
+        request.extra_usage = rhi::TextureUsage::None;
     }
     if (description.features.ambient_occlusion) {
         request.name = "ambient occlusion";
@@ -206,6 +221,18 @@ PassId declare_depth_resolve(RenderGraph& graph, FrameState& state) noexcept {
     builder.read(resources.depth_multisampled, Access::FragmentSampledRead);
     builder.write(resources.depth, Access::DepthStencilAttachmentWrite);
     attach(builder, *state.description, FramePassKind::DepthResolve);
+    return builder.id();
+}
+
+/// Stage 2c. Virtual geometry's visibility pass — see `FramePassKind::VirtualGeometry` for why it
+/// sits here. It WRITES depth rather than reading it: the hardware depth test is how two clusters,
+/// or a cluster and a mesh the prepass drew, decide which one a pixel shows.
+PassId declare_virtual_geometry(RenderGraph& graph, FrameState& state) noexcept {
+    const FrameResources& resources = *state.resources;
+    PassBuilder builder = graph.add_pass("virtual geometry", QueueKind::Graphics);
+    builder.write(resources.visibility, Access::ColorAttachmentWrite);
+    builder.write(resources.depth, Access::DepthStencilAttachmentWrite);
+    attach(builder, *state.description, FramePassKind::VirtualGeometry);
     return builder.id();
 }
 
@@ -355,6 +382,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "depth prepass";
         case FramePassKind::DepthResolve:
             return "depth resolve";
+        case FramePassKind::VirtualGeometry:
+            return "virtual geometry";
         case FramePassKind::ClusterAssignment:
             return "cluster assignment";
         case FramePassKind::AmbientOcclusion:
@@ -433,6 +462,12 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
             stage(FramePassKind::DepthResolve, "depth resolve",
                   declare_depth_resolve(graph, state));
         }
+    }
+
+    // 2c. Virtual geometry, into the depth the prepass left.
+    if (features.virtual_geometry) {
+        stage(FramePassKind::VirtualGeometry, "virtual geometry",
+              declare_virtual_geometry(graph, state));
     }
 
     // 3. Cluster assignment.
@@ -574,6 +609,15 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
     const u32 samples = description.features.msaa_samples;
     if (samples != 1 && samples != 2 && samples != 4 && samples != 8) {
         return fail(ErrorCode::InvalidArgument, "forward frame: MSAA must be 1, 2, 4 or 8");
+    }
+    // ONE SAMPLE A PIXEL IS WHAT A VISIBILITY PAYLOAD MEANS. The resolve reconstructs a surface at
+    // the pixel's centre from the one triangle the payload names; a multisampled target would need
+    // a payload per sample and a resolve that shades them, and neither exists. Refused rather than
+    // drawn into a single-sample target beside a multisampled depth, which would not validate.
+    if (description.features.virtual_geometry && samples != 1) {
+        return fail(ErrorCode::Unsupported,
+                    "forward frame: virtual geometry's visibility target is single-sample, and "
+                    "this frame is multisampled");
     }
     // EVERY SCREEN-SPACE AND TEMPORAL FEATURE READS THE PREPASS'S OUTPUT. Allowing one without a
     // prepass would declare a pass that samples a depth target nothing wrote — which compiles,

@@ -51,6 +51,56 @@ colour of 1 is invisible at the exposure a 22 000 lux sun is viewed through. Tha
 physically-based frame rather than a fudge factor, and `render.pipeline`'s scene says so where it
 sets the numbers.
 
+## And its sibling: strips — M11.c task 6.3
+
+`StripRenderer` (`strip_renderer.h`, `cy/strip.slang`) draws what `vfx-system`'s `publish_ribbons`,
+`publish_trails` and `publish_beams` derive: an ordered run of camera-relative vertices, each with a
+half-width, a radiance, where along its strip it is, and which strip it belongs to. Until it existed
+those three publications produced rows nothing drew — `src/vfx/README.md` recorded it by name.
+
+It is `ParticleRenderer`'s arrangement exactly, and the two now share it rather than each carrying a
+copy: `detail/transparent_draw.h` is the pipeline whose layout reuses the frame's set layouts 0 and 1
+**and** its push-constant range, the ring per frame in flight at set 2, and the premultiplied,
+depth-tested, not-depth-written blend. The two rules above that each cost a page of validation errors
+to find are written once.
+
+* **One draw for every strip in the frame.** Six vertices for each neighbouring pair of records,
+  expanded from the vertex id; no vertex buffer, no index buffer, no per-strip call.
+* **A strip ends where its identifier changes.** A pair whose two records belong to different strips
+  collapses to a point in the vertex shader, so the ring is simply every strip back to back and a
+  ribbon broken mid-chain by a kill stays broken in the picture. `StripReport::segments` counts the
+  quads that join two vertices of ONE strip — the collapse is a number, not only a property of a
+  picture.
+* **It faces the camera.** The side a strip widens along is the cross product of its tangent with the
+  line of sight, which in camera-relative space is `-position`. So `RibbonVertex::twist` has nothing
+  to turn and is not read — named in `cy/vfx/renderers.h` beside the conversion, rather than dropped
+  silently.
+* **It does not know what a particle is.** `cy::vfx` links this module, not the other way round, so
+  the record is the renderer's `StripVertex` and `cy::vfx::to_strip_vertices` is where a ribbon,
+  trail or beam row becomes one.
+
+**Where it is in a picture somebody looks at**: `docs/design/images/m11c-beauty-shot.png`. Every
+ember carries a trail through the last third of a second of its flight, drawn by this renderer in
+the frame's transparent stage before the motes, and `render.vfx` photographs the same trails
+against a committed reference and measures what they add to the frame on their own.
+
+* **A trail is light, not matter.** The fragment writes a premultiplied colour and an alpha of
+  ZERO, so the shared blend adds and never takes away: a cooling mote's trail over a bright sky
+  photographed as a dark streak when it occluded.
+
+**The embedded modules are checked against the block they read.** `unit.particle_modules` reads the
+`OpMemberName` and `Offset` decorations out of the SPIR-V this module hands the driver and compares
+every member of `cy/frame.slang`'s per-view block with `FrameViewData`'s `offsetof`. It exists
+because `particle_spirv.h`, compiled before the temporal work inserted four rows into that block,
+read the sprite's billboard basis out of last frame's clip matrix for two days with every suite that
+did not render the same frame twice green. Regenerate both headers whenever `cy/frame.slang`'s block
+changes; this suite is what says so.
+
+**Compiled, and on Metal not run.** `strip_msl.h` is `slangc -target metal`'s output for the same two
+entry points, and its entry-point signature has the shape `particle_msl.h`'s has — a device buffer
+at `buffer(0)` and the frame block at `buffer(1)` — but no Metal device on the machine it was
+written on has drawn a strip.
+
 ## The picture
 
 `docs/design/images/pipeline-particles-m8c.png` — 512 particles in one draw, composited into the

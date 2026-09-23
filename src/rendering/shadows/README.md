@@ -131,9 +131,14 @@ no profile constrained one, and no frame selected one.
 > mode with a diagnostic, **not lose its shadow**
 
 — and `ShadowModeProfile` is the first. It is pure: the profile is an argument rather than a query,
-because `traced` moves frame to frame (`ray-tracing-infrastructure` answers on the processor while
-`cy::rhi::Capability::RayTracing` is unset, which on this tree is every device) and a function that
-asked a device for itself would give a different answer inside a test than in a frame.
+because `traced` moves frame to frame and a function that asked a device for itself would give a
+different answer inside a test than in a frame. Since M11.c task 2.6 the Vulkan backend sets
+`cy::rhi::Capability::RayTracing` where the driver reports it — an RTX 5060 does — but the rays
+still go to `cy::Bvh` on the processor, and **no caller in the tree sets `traced`**: every shipped
+frame assembles with the default profile, so a `RayTraced` or `Hybrid` light falls back to the paged
+path there. `integration.render_assembly`'s `test_assembly_shadows.cpp` is where the selection, the
+fallback chain and the `Approximation` rung are judged through the assembled frame rather than as
+functions.
 
 The one direction that matters is the last: a profile with nothing left reports
 `ShadowModeFallback::NothingAvailable` **by name** rather than quietly returning `None`, because a

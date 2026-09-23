@@ -30,6 +30,7 @@ set(CY_SHADER_STDLIB_MODULES
     cy/noise.slang
     cy/packing.slang
     cy/particle.slang
+    cy/strip.slang
     cy/sampling.slang
     cy/shadow.slang
     cy/terrain_shade.slang

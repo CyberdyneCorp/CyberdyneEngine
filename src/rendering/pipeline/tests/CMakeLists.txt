@@ -80,7 +80,10 @@ function(cy_pipeline_declare_tests)
         DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null ${device_backend})
     target_include_directories(cy_test_render_pipeline
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
-    target_compile_definitions(cy_test_render_pipeline PRIVATE ${device_define})
+    # CY_TEST_BINARY_DIR: where its captures go when the harness names no artefact directory,
+    # rather than the caller's working directory — see `save()` in test_pipeline_device.cpp.
+    target_compile_definitions(cy_test_render_pipeline PRIVATE ${device_define}
+                               CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 
     # THE FORWARD PATH WITH A TEXTURE ON IT. M11.c task 3.7's last mile.
     #

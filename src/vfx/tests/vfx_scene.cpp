@@ -55,6 +55,9 @@ VfxScene::VfxScene(Allocator& allocator) noexcept
       cook_(allocator),
       world_(allocator),
       records_(allocator),
+      history_(allocator),
+      trail_rows_(allocator),
+      trail_vertices_(allocator),
       assembly_(allocator),
       index_(allocator),
       graph_(allocator),
@@ -118,6 +121,16 @@ Status VfxScene::build(rhi::Device& device, const SceneOptions& options) noexcep
             return make_unexpected(played.error());
         }
     }
+    if (options.trails != nullptr) {
+        trail_decl_ = *options.trails;
+        trail_interval_ = options.trail_interval == 0 ? 1U : options.trail_interval;
+        if (Status sized =
+                history_.resize(vfx::publication_slots(world_), trail_decl_.trail_history);
+            !sized) {
+            return sized;
+        }
+        trails_enabled_ = true;
+    }
 
     assembly::AssemblyDescription description;
     description.width = kSceneWidth;
@@ -159,6 +172,11 @@ Status VfxScene::build(rhi::Device& device, const SceneOptions& options) noexcep
     }
     if (Status made = effect_.initialize(device, pipelines_, kRingCapacity); !made) {
         return made;
+    }
+    if (trails_enabled_) {
+        if (Status made = strips_.initialize(device, pipelines_, kStripCapacity); !made) {
+            return made;
+        }
     }
     if (Status made = create_dummy_geometry(device); !made) {
         return made;
@@ -231,6 +249,18 @@ Status VfxScene::simulate(f32 dt) noexcept {
     if (Status stepped = world_.step(dt, steps_); !stepped) {
         return stepped;
     }
+    if (trails_enabled_ && ++since_trail_ >= trail_interval_) {
+        since_trail_ = 0;
+        if (Status trailed = vfx::publish_trails(world_, trail_decl_, camera_position_,
+                                                 kStripCapacity, history_, trail_rows_, trailed_);
+            !trailed) {
+            return trailed;
+        }
+        if (Status converted = vfx::to_strip_vertices(trail_rows_.span(), trail_vertices_);
+            !converted) {
+            return converted;
+        }
+    }
     return publish_sprites(world_, camera_position_, kRingCapacity, records_, published_);
 }
 
@@ -254,6 +284,20 @@ Status VfxScene::render(assembly::AssemblyReport& out) noexcept {
         draw_particles_ ? records_.span() : Span<const particles::ParticleInstance>();
     if (Status uploaded = effect_.upload(slot, drawn); !uploaded) {
         return uploaded;
+    }
+    // THE TRAILS FIRST, so each mote's core composites over its own wake — the order
+    // `samples/12-beauty` draws them in. An empty upload for the control, as above.
+    if (trails_enabled_) {
+        strips_.reset_report();
+        const Span<const particles::StripVertex> strips =
+            draw_particles_ && draw_trails_ ? trail_vertices_.span()
+                                            : Span<const particles::StripVertex>();
+        if (Status uploaded = strips_.upload(slot, strips); !uploaded) {
+            return uploaded;
+        }
+        if (Status added = recorder_.add_extension(strips_.extension()); !added) {
+            return added;
+        }
     }
     if (Status added = recorder_.add_extension(effect_.extension()); !added) {
         return added;
@@ -374,6 +418,7 @@ void VfxScene::release() noexcept {
     }
     (void)device_->wait_idle();
     effect_.shutdown();
+    strips_.shutdown();
     bindings_.shutdown();
     pipelines_.shutdown();
     world_.shutdown();

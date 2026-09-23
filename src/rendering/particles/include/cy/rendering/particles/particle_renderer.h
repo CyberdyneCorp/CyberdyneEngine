@@ -38,6 +38,7 @@
 #include <cy/backends/rhi/device.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/rendering/particles/detail/transparent_draw.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 
 namespace cy::rendering::particles {
@@ -110,26 +111,18 @@ public:
     // function pointer and the callback is a free function.
 
     [[nodiscard]] const FramePipelines* pipelines() const noexcept { return pipelines_; }
-    [[nodiscard]] rhi::PipelineLayoutHandle layout() const noexcept { return layout_; }
-    [[nodiscard]] rhi::GraphicsPipelineHandle pipeline() const noexcept { return pipeline_; }
-    [[nodiscard]] rhi::DescriptorSetHandle set() const noexcept { return set_; }
+    [[nodiscard]] rhi::PipelineLayoutHandle layout() const noexcept { return draw_.layout(); }
+    [[nodiscard]] rhi::GraphicsPipelineHandle pipeline() const noexcept { return draw_.pipeline(); }
+    [[nodiscard]] rhi::DescriptorSetHandle set() const noexcept { return draw_.set(); }
+    [[nodiscard]] const detail::TransparentDraw& draw() const noexcept { return draw_; }
     [[nodiscard]] u32 live() const noexcept { return live_; }
     [[nodiscard]] ParticleReport& mutable_report() noexcept { return report_; }
 
 private:
-    [[nodiscard]] Status create_pipeline(rhi::Device& device,
-                                         const FramePipelines& pipelines) noexcept;
-
-    rhi::Device* device_ = nullptr;
     const FramePipelines* pipelines_ = nullptr;
-    rhi::ShaderModuleHandle vertex_;
-    rhi::ShaderModuleHandle fragment_;
-    rhi::DescriptorSetLayoutHandle set_layout_;
-    rhi::PipelineLayoutHandle layout_;
-    rhi::GraphicsPipelineHandle pipeline_;
-    rhi::BufferHandle rings_[rhi::kMaxFramesInFlight];
-    rhi::DescriptorSetHandle set_;
-    u32 slot_count_ = 0;
+    /// The pipeline, the ring and the set — shared in shape with `StripRenderer`, see
+    /// `detail/transparent_draw.h`.
+    detail::TransparentDraw draw_;
     u32 capacity_ = 0;
     u32 live_ = 0;
     ParticleReport report_;
