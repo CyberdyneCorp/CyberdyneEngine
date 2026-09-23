@@ -173,6 +173,15 @@ granularities because a cell that changed and a state that changed fail differen
   `CloudShadowField::sample`, and `integration.render_illumination_clouds` searches the written
   ground for the darkest and the brightest cell and reports both — 10 980 lux under the cloud against
   100 000 beside it. Terrain, foliage and water are still declared and still do not sample.
+* **AND NO FRAME CALLS EITHER HALF, WHICH IS WHY THE ROW IS NOT COMPLETE AT M11.c.** The illumination
+  consumer above is a library whose only caller is its own test; `cy/cloud_shadow.slang` is imported
+  by no shader; and `samples/10-world` dims its sun by one scalar `cloud_transmittance`, not by the
+  field at a position. `aerial_perspective()` and the froxel table are built from the same
+  `Atmosphere` as the sky — which is the requirement's prohibition, answered — and applied to no
+  opaque surface anywhere in the tree. M11.c task 5.1 measured both, and `Cloud shadows` and `Aerial
+  perspective` are `exempt:m11e` in `tools/roadmap/requirements-coverage.toml`, so
+  `atmosphere-sky-and-clouds` waits for M11.e. The re-entry point is the forward frame's lit path
+  sampling the field per surface position and the aerial-perspective table for opaque surfaces.
 * **The lighting integral's cloud term is a hemispherical mean.** `compose_sky_lighting()` measures
   the clouds' effect over twelve probes and applies one attenuation plus one addition. It is right in
   magnitude — thicker cover gives less irradiance — and wrong in DIRECTION: a cloud bank on one

@@ -2214,6 +2214,14 @@ note = "this requirement is a LIST, so the case checks every entry of it rather 
 # section names four of the eight from the module's own side; this map found the other four by
 # reading the specification against the tree.
 #
+# RE-READ AFTER M11.c's GATE, AND THE COUNT IS NINE. The hardware rasterisation path is built now
+# (task 4.3), so `Rasterisation paths` stays an exemption for a narrower reason — nothing routes a
+# cluster between the two rasterisers by projected size — and `Visibility buffer and material
+# resolve` moved from a test to an exemption, because its Forward+ half asks for clusters in the
+# frame's COLOUR pass and the engine does not shade virtual geometry at all: the gate showed the one
+# shaded picture is lit by sample code. Both notes say what would observe them. A recorded exemption
+# is a deferral, which is why `m11c:roadmap-tiers` no longer expects this row at Complete.
+#
 # THREE CASES WERE WRITTEN FOR THIS MAP. The classes an asset declares had no round-trip case, the
 # import report's figures were printed rather than asserted, and nothing anywhere asserted that the
 # renderable component exposes no cluster, page or hierarchy concept — which is the whole of the
@@ -2313,14 +2321,13 @@ note = "the same pyramid `rendering-culling-and-lod`'s occlusion cull reads, bui
 row = "virtual-geometry"
 requirement = "Rasterisation paths"
 evidence = "exempt:m11e"
-note = "THE DEFAULT PATH IS THE ONE THAT IS ABSENT. \"Visible clusters SHALL be rasterised through a **hardware** path by default\" — what ships is the compute rasteriser behind the visibility buffer, which the requirement accommodates explicitly but does not make the default. The module's README states it as a named absence with its re-entry point, and the link graph is the evidence: nothing in this tree links `cy::rendering-virtual-geometry` from `cy::rendering-forward`, so there is no frame in which a cluster reaches a vertex and fragment shader. The two scenarios are in a better state than the paragraph — mesh shaders are not required anywhere (the compute-plus-indirect path is what the device suite runs, on a device that has them), and the per-cluster routing the second scenario describes is a MAY. WHAT WOULD OBSERVE IT: the visibility buffer written by a vertex and fragment shader over the same records, selected per cluster by projected triangle size, with `render.virtual_geometry_gpu` comparing the two paths' buffers on one scene — which is task 4.3, unfinished at M11.c."
+note = "THE HARDWARE PATH IS BUILT AND IS DEFAULT WHERE IT IS USED; THE SELECTION BETWEEN THE TWO PATHS IS NOT. Until M11.c task 4.3 this note said nothing linked `cy::rendering-virtual-geometry` from `cy::rendering-forward`, and that is no longer true: `ForwardFrame` declares a `virtual geometry` stage after the depth prepass, `vg::ForwardVisibility` (`forward_visibility.h`) records one indexed-indirect draw whose instances are the visible clusters, and `vgVisHwVertex`/`vgVisHwFragment` write the SAME `(identity << 8) | triangle` word the compute rasteriser writes. `render.virtual_geometry_forward` draws one traversal through both and they agree on all 2,529 covered pixels, cluster and triangle, and `samples/07-fidelity` draws through the hardware stage by default (`FrameOptions::forward_frame = true`). The mesh-shader scenario is met by construction: nothing requires mesh shaders and the indirect-draw path is the one that runs. WHAT IS NOT BUILT, AND WHY THIS IS STILL AN EXEMPTION: the paragraph requires the architecture to permit a compute path `selected per cluster or per triangle by projected size`, and the two rasterisers in this tree are ALTERNATIVES chosen per frame by the caller — a boolean in the sample's options — with no per-cluster classification by projected triangle size, no split of the visible-cluster list between them, and no merge of two partial visibility buffers. The second scenario is a MAY, but the paragraph's routing is what makes the compute rasteriser a micro-triangle path rather than a second implementation of the same one, and a case asserting that the two paths agree answers neither. WHAT WOULD OBSERVE IT: a per-cluster route chosen from the traversal's own projected-size estimate, and a case in `render.virtual_geometry_forward` over a scene with both sub-pixel and large clusters requiring each set to be drawn by its path and the merged buffer to equal either path alone. Closing rung M11.e, with the row."
 
 [[coverage]]
 row = "virtual-geometry"
 requirement = "Visibility buffer and material resolve"
-evidence = "test:render.virtual_geometry_gpu"
-case = "the visibility buffer identifies surfaces, bins them, and resolves their attributes"
-note = "all three of the requirement's demands on one device pass and one resolve pass: every covered pixel identifies an instance and a primitive, the pixels are binned BY MATERIAL and each bin evaluated once, and the attributes are reconstructed from the identified triangle by `reconstruct_surface()` rather than interpolated through the geometry pass. `the visibility buffer resolves identically across runs` and `an exact depth tie is broken the same way on every run` are what make the identification a function of the scene rather than of scheduling, and `a scene too large for the surface identity is refused at initialise` is the packed identity refusing to overflow silently. The Forward+ scenario is not claimed here: virtual geometry is not wired into the forward frame in this tree, which is the same unbuilt link the exemption on `Rasterisation paths` names."
+evidence = "exempt:m11e"
+note = "THE VISIBILITY-BUFFER HALF IS ANSWERED; THE FORWARD+ HALF IS NOT, AND IT IS THE SHADING GAP. Built and observed: `render.virtual_geometry_gpu`'s `the visibility buffer identifies surfaces, bins them, and resolves their attributes` requires every covered pixel to identify an instance and a primitive, the pixels to be binned BY MATERIAL and each bin evaluated once, and the attributes to be reconstructed from the identified triangle by `reconstruct_surface()` rather than interpolated; `the visibility buffer resolves identically across runs` and `an exact depth tie is broken the same way on every run` make the identification a function of the scene. NOT BUILT: `Virtual geometry SHALL also function in the Forward+ pipeline, rasterising clusters into the existing depth AND COLOUR passes`, and its scenario `virtual geometry SHALL render correctly`. Since M11.c task 4.3 the clusters reach the forward frame's DEPTH (the `virtual geometry` stage writes the frame's own depth and a prepass plane hides exactly what is behind it, `render.virtual_geometry_forward`), and nothing reads the visibility target into `FrameResources::color`: no material program is evaluated for a cluster pixel anywhere in the engine. The only shaded picture of virtual geometry in the tree, `render.virtual_geometry_shaded`, is shaded on the processor by `samples/07-fidelity/shade.cpp` — the M11.c gate changed only sample code and turned `m11c:virtual-geometry-image` red — so it cannot answer this. Mapping the requirement to the device case would be a green tick over the half the row's picture most needs. WHAT WOULD OBSERVE IT: a material-resolve stage beside `cy::rendering-pipeline`'s opaque pass that evaluates the forward pipeline's own material program per bin into `FrameResources::color`, reached through `FrameSinks::passes[VirtualGeometry]` in `FrameAssembly`, and a golden case whose picture moves when a MATERIAL changes and not only when the geometry does. Closing rung M11.e: M11.d and M11.d.5 carry no renderer feature row, and a resolve written before M11.d.5 is written once for Vulkan and again for Metal and D3D12."
 
 [[coverage]]
 row = "virtual-geometry"
@@ -2629,7 +2636,16 @@ note = "THREE OF THE FOUR REQUIRED DIAGNOSTICS EXIST AND THE SCENARIO NEEDS THE 
 
 # --- atmosphere-sky-and-clouds ----------------------------------------------------------------------
 #
-# THIRTEEN OF THIRTEEN, and every one of them is a CASE rather than a deferral. That is not a
+# THIRTEEN OF THIRTEEN — ELEVEN CASES AND, SINCE M11.c's POST-GATE JUDGEMENT, TWO EXEMPTIONS. M11.c
+# task 5.1 read `Cloud shadows` and `Aerial perspective` against the frame rather than against the
+# model and found both satisfied as LIBRARIES that no frame calls: nothing samples the cloud shadow
+# field at a surface, and nothing applies aerial perspective to opaque shading. The cases named below
+# for them still pass and still decide the model's half; they cannot decide the half the
+# requirement's first sentence is about, and a map that says they do is how this row was once
+# expected at Complete while short. Both are `exempt:m11e` with what would observe them.
+#
+# What follows is the text written when every entry was a case, kept because it is still true of
+# the eleven. Every one of them was a CASE rather than a deferral. That is not a
 # statement about this row being easy; it is what four suites written from the requirement texts
 # themselves buy. Read requirement by requirement against
 # `openspec/specs/atmosphere-sky-and-clouds/spec.md`, and each note says which sentence of the
@@ -2668,9 +2684,8 @@ note = "the requirement's opening sentence, COUNTED rather than described: four 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
 requirement = "Aerial perspective"
-evidence = "test:unit.render_sky"
-case = "atmosphere: aerial perspective comes from the same model as the sky"
-note = "the prohibition is what this requirement turns on — `ad-hoc distance fog with independently tuned parameters SHALL NOT be the engine's model of distance` — and the case decides it on the SIGNATURE: `aerial_perspective()` takes the same `Atmosphere` the sky does and there is no second parameter set, so the distance haze is blue for the same reason the sky is. `atmosphere: a stylised distance override is declared and reaches the physical model` is the declared-override half, and `sky tables: aerial perspective is the atmosphere's, in the engine's froxel volume` is the same answer delivered into the engine's own volume rather than a second one."
+evidence = "exempt:m11e"
+note = "THE MODEL IS BUILT AND APPLIED TO NOTHING. The prohibition half is answered and stays answered: `unit.render_sky`'s `atmosphere: aerial perspective comes from the same model as the sky` decides it on the signature — `sky::aerial_perspective()` takes the same `Atmosphere` the sky does and there is no second parameter set — `atmosphere: a stylised distance override is declared and reaches the physical model` is the declared override, and `sky tables: aerial perspective is the atmosphere's, in the engine's froxel volume` delivers it into the engine's own volume. What the requirement's FIRST sentence asks is that the attenuation be `applied to opaque shading and to volumetric media consistently`, and its scenario is `WHEN distant terrain is rendered THEN its attenuation SHALL come from the atmosphere`. M11.c task 5.1 measured that no frame, sample or shader applies either the function or the froxel table to geometry: `aerial_perspective` has no caller outside `src/rendering/sky/` and its tests, and `grep -rni aerial` over `samples/`, `src/rendering/shaders`, `forward`, `pipeline` and `assembly` finds nothing. A case over the model answers the model, not the frame. WHAT WOULD OBSERVE IT: the forward frame's lit path sampling the aerial-perspective froxel table for opaque surfaces, and a golden case in which a distant surface's colour moves when the ATMOSPHERE changes. Closing rung M11.e, with the row; recorded at M11.c task 5.1 and moved from a test entry to this exemption by the post-gate judgement (task 9.4a)."
 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
@@ -2703,9 +2718,8 @@ note = "the requirement's first paragraph — the march over reconstructed densi
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
 requirement = "Cloud shadows"
-evidence = "test:integration.render_sky_fields"
-case = "cloud shadows: an update writes the field, and a storm darkens the ground"
-note = "THE ENTRY THAT WAS RE-VERIFIED RATHER THAN INHERITED, because `m10:sky-field-round-trip` once stayed green with the sampler replaced by `return 1.0F`. The case writes the field through a real `environment::FieldRegistry` and `FieldStore`, reads every cell centre back THROUGH the store and a second time through `CloudShadowField::sample`, and compares the two — and it judges three numbers over BROKEN cloud rather than overcast, since a uniformly black field satisfies `the darkest cell is dark` and contains no shadow. `clouds: a cloud shadow declaration that asks for a shadow map is refused` is the prohibition on virtual shadow pages, and `cloud shadows: the update rate is a budget lever that can be seen working` is the lever."
+evidence = "exempt:m11e"
+note = "THE FIELD IS WRITTEN AND READ BACK; NOTHING THE REQUIREMENT NAMES CONSUMES IT IN A FRAME. Answered and kept: `integration.render_sky_fields`' `cloud shadows: an update writes the field, and a storm darkens the ground` writes the field through a real `environment::FieldRegistry` and `FieldStore`, reads every cell centre back through the store and a second time through `CloudShadowField::sample`, and compares them (5,120 samples, 0 disagreeing); `clouds: a cloud shadow declaration that asks for a shadow map is refused` is the prohibition on virtual shadow pages; `cloud shadows: the update rate is a budget lever that can be seen working` is the lever; and `integration.render_illumination_clouds` shows the illumination consumer darkening the sun under a cloud (10,980 lux against 100,000). NOT ANSWERED: the field SHALL be `consumed by terrain, foliage, water, and illumination`, `sampled by surfaces and by illumination`. M11.c task 5.1 measured that `rendering::apply_cloud_shadows` has no caller outside its own test, `SkyIllumination`'s cloud source is set by nothing outside its module, `cy/cloud_shadow.slang` is imported by no shader, terrain, foliage and water read nothing, and `samples/10-world` attenuates its sun by one scalar `cloud_transmittance` rather than by the field at a position. So the producer and one consumer LIBRARY are built and no surface is shaded through them. WHAT WOULD OBSERVE IT: the forward frame's lit path sampling the field per surface position (through `cy/cloud_shadow.slang`), and a case in which one frame's ground is darker under a cloud than beside it. Closing rung M11.e, with the row; recorded at M11.c task 5.1 and moved from a test entry to this exemption by the post-gate judgement (task 9.4a)."
 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"

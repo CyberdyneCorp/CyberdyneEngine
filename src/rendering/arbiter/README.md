@@ -3,7 +3,11 @@
 The renderer's one budget arbiter, the subsystem controllers it allocates to, the four named
 renderer profiles, and the rendering configuration asset.
 
-**Governed by**: `rendering-architecture`, which reaches **Complete** here. M7 tasks 10.1 and 10.2.
+**Governed by**: `rendering-architecture`, which is at **Working**. M7 tasks 10.1 and 10.2. This
+line said the row reached Complete here; it did not at M7 and it does not at M11.c, whose post-gate
+judgement moved its Complete expectation to M11.e because two of its sixteen requirements are
+recorded exemptions rather than answers — `Pipelines are pluggable` and `Environment and
+post-process configuration` (`tools/roadmap/requirements-coverage.toml`).
 
 ## The files
 

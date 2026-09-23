@@ -126,7 +126,7 @@ note   = "the reflection metadata is COMMITTED, so its currency check is a compa
 
 [[criterion]]
 id = "roadmap-record"
-describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for fifteen rows"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for the three rows this rung records at Complete, and for the twelve it moved to M11.e, which stay at Working with their reason"
 source = "tasks 8.3"
 kind = "recipe"
 run = "just roadmap-status"
@@ -170,7 +170,7 @@ ci_job = "profiles"
 
 [[criterion]]
 id = "material-compiler-at-complete-grade"
-describe = "every requirement of `material-compiler` and `shader-system` maps to a test, a gate or a recorded exemption. They are first because image quality is expressed through them and because GI cannot be Complete on a material compiler that is not — twenty-one and thirteen requirements, both Working since M7 and M3 respectively"
+describe = "every requirement of `material-compiler` and `shader-system` maps to a test, a gate or a recorded exemption — twenty-one and thirteen requirements, Working since M7 and M3. THE COVERAGE FLOOR, NOT THE COMPLETE VERDICT: the recipe counts `exempt:m11e` as mapped, and by task 3.5's rule a recorded exemption is a deferral. `material-compiler` carries 4 and `shader-system` 3 (and `m11c:every-shader-reaches-every-target` is a declared gap closing at M11.d), so neither is expected Complete at this rung any more; both moved to `m11e:roadmap-tiers`. They are still first in this ledger because image quality is expressed through them"
 source = "tasks 1, material-compiler, shader-system, testing-and-quality"
 kind = "command"
 run = "just quality-requirements material-compiler shader-system"
@@ -697,7 +697,7 @@ note = "PENDING the Record phase: see openspec/changes/implement-m11c-image/task
 # reference was regenerated for it. The note under `[criterion.falsifies]` carries both measurements.
 [[criterion]]
 id = "virtual-geometry-image"
-describe = "the virtual-geometry and virtual-shadow evidence is an image of the SHADED result compared against a committed reference, rather than a normals debug view. The capture in the tree today is `docs/design/images/virtual-geometry-shaded.png`, written by `just capture-virtual-geometry` — a recipe a person runs, which nothing re-photographs and nothing compares — and the only cases in `render.virtual_geometry_gpu` are traversal, residency, occlusion and visibility-buffer cases. So the row's picture is asserted by nobody: this names the suite that would assert it and the reference it would assert against"
+describe = "a committed golden image of `samples/07-fidelity`'s frame, re-photographed by `render.virtual_geometry_shaded` and compared against `tests/render/references/virtual_geometry_shaded.png` — and WHAT THAT PICTURE IS EVIDENCE OF IS NARROWER THAN ITS NAME. FROM THE DEVICE, through the forward frame's `virtual geometry` stage (hardware rasterisation, task 4.3): which cluster and which triangle is visible at each pixel, and the resolved normal. FROM THE HOST, in sample code (`samples/07-fidelity/shade.cpp`, `shade_frame()`): the world position reconstructed from that identity, the virtual shadow — `src/rendering/shadows/`'s clipmap, page cache and fallback chain run on the processor, with the pages rasterised by the sample from level-0 cluster boxes — and ALL of the lighting. So a defect in the cluster hierarchy, the traversal, the visibility buffer or the shadow page residency moves this picture (the declared mutation moves 80% of it), and a defect in how the ENGINE shades virtual geometry cannot, because the engine does not shade it: no stage of the forward frame reads the visibility target into `FrameResources::color`. The M11.c gate proved that by changing only sample code and turning this criterion red. WHAT IT DOES NOT CLAIM: that the engine's frame shades virtual geometry. That is the Forward+ half of `virtual-geometry`'s `Visibility buffer and material resolve` requirement, recorded as `exempt:m11e` in `tools/roadmap/requirements-coverage.toml` with its re-entry point — a material resolve that evaluates the forward pipeline's material program per bin into the frame's colour — and it is one reason the row's Complete expectation moved to M11.e"
 source = "tasks 2, virtual-geometry, virtual-shadows"
 kind = "command"
 run = '''
@@ -829,7 +829,7 @@ note = "the rename is confined to one file and is applied to every occurrence in
 
 [[criterion]]
 id = "image-rows-at-complete-grade"
-describe = "every requirement of the eight image rows maps to a test, a gate or a recorded exemption — 26, 20, 29, 6, 6, 15, 8 and 13 requirements respectively, none of them read end to end at Complete grade by anybody"
+describe = "every requirement of the eight image rows maps to a test, a gate or a recorded exemption — 26, 20, 29, 6, 6, 15, 8 and 13 requirements respectively, 123 in all. THIS IS THE COVERAGE FLOOR AND NOT THE COMPLETE VERDICT, and the difference is task 3.5's rule: the recipe counts an `exempt:m11e` entry as mapped, and a recorded exemption is a deferral. Of the eight, only `denoising` (6 of 6) and `ray-tracing-infrastructure` (6 of 6) are answered with no exemption, and they are the two of the eight `m11c:roadmap-tiers` still expects at Complete. The other six carry 39 exemptions between them — `virtual-geometry` 9, `virtual-shadows` 6, `rendering-global-illumination` 9, `rendering-post-processing` 9, `temporal-rendering` 2, `rendering-lighting-and-shadows` 4 — and their Complete expectation is `m11e:roadmap-tiers`'. The floor still holds for all eight at this rung, because a row whose requirements stop being mapped at all is a regression whichever rung completes it"
 source = "tasks 2, testing-and-quality"
 kind = "command"
 run = "just quality-requirements virtual-geometry virtual-shadows rendering-global-illumination denoising ray-tracing-infrastructure rendering-post-processing temporal-rendering rendering-lighting-and-shadows"
@@ -1167,7 +1167,7 @@ token  = "commands.draw((renderer->live() - 1U) * kVerticesPerSegment, 1, 0, 0);
 note = "RUN BY HAND against build/m11c-vfx on an RTX 5060, NOT YET RECORDED — `prove --mutate-the-tree` refuses a tree other phases are writing, so the Record phase runs `just roadmap-falsify prove m11c --only vfx-trails-in-the-shot --build-dir <tree> --mutate-the-tree --record` on a clean one. UNMUTATED: the criterion exits 0; `integration.vfx` reports 7 692 vertices in 984 strips for 996 motes, 0 dropped, the longest trail 0.235 m behind its mote and 892 of 984 inside the artefact's frame; `render.vfx` renders the shot twice bit-identically, the trails alone move 3 215 of 129 600 texels (2.48%, mean |delta| 15.2/255 where they differ, worst 210) and the frame matches `beauty_shot_air.png`; the manifest reports 984 strips, 6 708 segments, 1 draw. MUTATED: the publication, the ring, the extension and its draw COUNTER are all unchanged — `integration.vfx` stays green and the strip report still says 1 draw — and `render.vfx` goes red on four: the trails-only control falls to 0 texels, its mean to 0, and the frame moves 3 077 texels from the committed reference, 1 824 of them away from any high-contrast edge. RESTORED: md5 verified, `render.vfx` green again"
 [[criterion]]
 id = "remaining-rows-at-complete-grade"
-describe = "the five rows this rung promotes that NO OTHER criterion reads at Complete grade — `rendering-culling-and-lod`, `atmosphere-sky-and-clouds`, `rendering-architecture`, `rendering-geometry-and-resources` and `vfx-system`, 9, 13, 16, 11 and 26 requirements — map to a test, a gate or a recorded exemption. The other ten of the fifteen are read by `material-compiler-at-complete-grade` and `image-rows-at-complete-grade`; these five were measured BY HAND at three successive closes and by nothing else, which is the one thing this ladder refuses everywhere it looks"
+describe = "five rows NO OTHER criterion reads at Complete grade — `rendering-culling-and-lod`, `atmosphere-sky-and-clouds`, `rendering-architecture`, `rendering-geometry-and-resources` and `vfx-system`, 9, 13, 16, 11 and 26 requirements — map to a test, a gate or a recorded exemption. Like `image-rows-at-complete-grade` this is the COVERAGE FLOOR, not the Complete verdict: only `rendering-culling-and-lod` is answered with no exemption and is still expected Complete here. `rendering-architecture` (2 exempt), `rendering-geometry-and-resources` (1), `vfx-system` (5) and `atmosphere-sky-and-clouds` (2, recorded after task 5.1 found its `Cloud shadows` and `Aerial perspective` mappings tested a library no frame calls) moved their Complete expectation to M11.e. These five were measured BY HAND at three successive closes and by nothing else before this criterion, which is the one thing this ladder refuses everywhere it looks"
 source = "tasks 4, 5, 6, testing-and-quality"
 kind = "command"
 run = "just quality-requirements rendering-culling-and-lod atmosphere-sky-and-clouds rendering-architecture rendering-geometry-and-resources vfx-system"
@@ -1425,6 +1425,36 @@ target = "docs/design/images/m11c-beauty-shot.manifest"
 token = "ExposureApply"
 note = "The exposure stage vanishes from the list the frame wrote about itself, and the stage count no longer matches the stages listed. Both legs catch it, which is deliberate: a manifest edited by hand is the one way a caption built from `AssemblyReport` could still lie."
 
+# THE SHOT, NOT THE TEST SCENE. `forward-path-reads-the-mip-chain` judges `FrameScene`, whose pixel
+# stage is the engine's own `cy/frame.slang`. M11.c's gate refuted the claim that this made the beauty
+# shot read its chain: the shot's pixel stage is `samples/12-beauty/shaders/beauty.slang`, its albedo
+# and data maps go through the generated prelude's `cy_material_sample`, and that was the explicit
+# level-0 form in all three compiled modules because nothing defined `CY_MATERIAL_PIXEL_STAGE` where
+# the shot compiles. This asks the task's question of the artefact itself.
+[[criterion]]
+id = "beauty-shot-reads-the-mip-chain"
+describe = "THE BEAUTY SHOT READS ITS COOKED MIP CHAIN — the artefact, `samples/12-beauty`, and not a test scene. `just measure-beauty-mip-chain` compiles the shot's three committed material graphs through the same `_beauty-programs` steps `capture-beauty-shot` runs, then photographs the shot three times: twice with every cooked chain uploaded, and once with level 0 of every ALBEDO map and nothing beneath it (`cy_sample_beauty --albedo-levels 1`, the same level 0 byte for byte). It requires the repeat to be byte-identical, the albedo-level-0 picture to DIFFER by at least 1% of texels, and the level-0 picture to be the more aliased by neighbour-to-neighbour energy. THE ALBEDO MAP ALONE because it is the one texture only the material samples: `beauty.slang` samples the normal map and the data map's occlusion itself with the implicit form, so cutting every chain moved the picture 15.17% even while the material read level 0 — a control that could not fail. Before `beauty.slang` declared itself a pixel stage the albedo control was BYTE-IDENTICAL, 0.00% of texels. The pictures stay in the build directory; nothing is written into the tree"
+source = "task 3.8, rendering-materials-and-shading, shader-system, ROADMAP M11.c closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+out="$(just measure-beauty-mip-chain --profile dev --width 960 --height 540 --supersample 1 2>&1)" || { printf '%s\n' "$out" | grep -vE "^graphics validation" | tail -30; echo "the measurement FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -E "^beauty mip chain:"
+printf '%s\n' "$out" | grep -q "the shot reads its cooked mip chain" || { echo "the judge did not say the chain was read"; exit 1; }
+'''
+requires = "gpu"
+reason = "whether the shot reads beneath level 0 is a question about what the sampler did with a derivative in the shot's own fragment stage, and only a rendered, read-back frame of the shot answers it. The opcode count is a necessary condition and not the answer: it was already implicit in `frame_spirv.h` while nothing could say the chain was reached. AND THIS HOST HAS ONE GPU VENDOR — design.md section 1.3"
+ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE DEFECT ITSELF: the line that tells the generated prelude it is in a pixel stage.
+# The criterion's own run compiles the shader from source, so no regeneration verb is needed and the
+# mutation reaches the picture the criterion judges.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "samples/12-beauty/shaders/beauty.slang"
+token = "#define CY_MATERIAL_PIXEL_STAGE 1"
+note = "measured in build/m11c-shotmip on an RTX 5060 at 960x540, 1x. UNMUTATED: every compiled material module carries 4 `OpImageSampleImplicitLod` and 0 explicit; two renders of the full chain differ in 0 of 518 400 texels; full chain against albedo level 0 alone 64 833 texels (12.51%) at mean |delta| 0.233/255; neighbour-to-neighbour |delta| 5.881/255 through the chain against 5.945/255 at level 0 alone; 0 validation errors. MUTATED (the define absent, which is HEAD before this change): each module is back to 2 implicit (the frame's own normal and occlusion) and 2 `OpImageSampleExplicitLod ... Lod %float_0` (the material's albedo and data); the albedo control is BYTE-IDENTICAL, 0 texels at 0.000/255, and the judge refuses under its 1% floor. THE CONTROL IT REPLACED, measured and rejected: cutting EVERY map's chain moved the unmutated frame 15.65% and the mutated one 15.17%, because the frame's own implicit samples read the normal and data chains either way. The published still moved between the two: 122 467 of 518 400 texels (23.6%) at mean |delta| 0.436/255 at this size."
+
 # --- THREE THINGS THIS RUNG DID NOT FINISH, AND THE CHECKS THAT KEEP THE CAPTION HONEST ABOUT THEM --
 #
 # NONE OF THESE IS A `known_gap`, AND THE REASON IS THE PROVER'S RULE RATHER THAN A PREFERENCE. A
@@ -1580,27 +1610,29 @@ note = "The line that makes the flag follow the encoder goes away and `encoded` 
 
 [[criterion]]
 id = "roadmap-tiers"
-describe = "the status record is at this rung's exit tiers: fifteen rows from Working to Complete. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO. This rung predicts demoting `rendering-culling-and-lod`, and `ray-tracing-infrastructure` and `vfx-system` if their cross-rung dependencies do not land; a demoted row is recorded at Working with its reason and the expectation moves to the rung that takes it"
-source = "tasks 8.3, ROADMAP M11.c, delivery-roadmap"
+describe = "the status record is at this rung's exit tiers: THREE rows from Working to Complete — `denoising`, `ray-tracing-infrastructure` and `rendering-culling-and-lod`. It was fifteen until the post-gate judgement (tasks 9.4a) read every row by task 3.5's rule: a row is Complete only if its requirements are EVALUATED, and a recorded exemption is a deferral, not an answer. Twelve rows carry `exempt:m11e` entries in `requirements-coverage.toml` or were judged short against their own specification by this rung's tasks, and their expectation moved to `m11e:roadmap-tiers`, the rung that takes them, with the reason beside each. IT FAILS UNTIL THE CLOSING CHANGE WRITES THE THREE AND IT IS MEANT TO"
+source = "tasks 8.3, 9.4a, ROADMAP M11.c, delivery-roadmap"
 kind = "tiers"
 ci_job = "milestone-m11c"
 
+# THE THREE THAT STAY ARE THE THREE WITH NO EXEMPTION, and that is the whole rule rather than a
+# preference: `just quality-requirements` reads 6 of 6, 6 of 6 and 9 of 9, every one a test or a
+# proven criterion. Rule 3.5 is a floor and not a sufficiency — `atmosphere-sky-and-clouds` read 13 of
+# 13 with no exemption and was still short, because two of its mappings tested a library no frame
+# calls (task 5.1) — so each of the three was also read against its own specification: denoising's
+# five signals have producers (`m11c:denoiser-signals-have-producers`), the ray-tracing service's six
+# requirements are service properties and the device capability is observed on this host
+# (`m11c:ray-tracing-on-the-device`; the rays themselves still go to `cy::Bvh` on the processor,
+# which no requirement forbids), and occlusion reads a device pyramid (`m11c:hierarchical-depth-on-a-device`).
+#
+# THE TWELVE THAT MOVED, EACH TO M11.e — `m11e.toml`'s `roadmap-tiers` carries them with the reason
+# per row. M11.e is the sweep and the only rung permitted to record a deferral; M11.d and M11.d.5 are
+# platform and backend rungs with no renderer feature row in their scope, and a material resolve or a
+# fog pass written before M11.d.5 would be written once for Vulkan and again for Metal and D3D12.
 [criterion.expect_tiers]
-material-compiler = "complete"
-shader-system = "complete"
-virtual-geometry = "complete"
-virtual-shadows = "complete"
-rendering-global-illumination = "complete"
 denoising = "complete"
 ray-tracing-infrastructure = "complete"
-rendering-post-processing = "complete"
-temporal-rendering = "complete"
-rendering-lighting-and-shadows = "complete"
 rendering-culling-and-lod = "complete"
-atmosphere-sky-and-clouds = "complete"
-rendering-architecture = "complete"
-rendering-geometry-and-resources = "complete"
-vfx-system = "complete"
 
 # THE HANDOVER CHECK, in the shape `implement-m11-reach` task 0.1 settled for all five rungs: the
 # double-star glob as the search, ENTRY rather than existence as the claim, because the five rung

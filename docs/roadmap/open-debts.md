@@ -27,7 +27,6 @@ gate did.
 
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
-| M11.a | `developer-workflow-at-working` | **M11.d** | THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the … |
 | M11.c | `every-shader-reaches-every-target` | **M11.d** | DECLARED BY THE RUNG THAT FOUND IT, WITH THE MEASUREMENT THAT SIZES IT, AND CLOSED BY THE RUNG THAT OWNS THE DECISION. `SV_VulkanVertexID` is the raw Vulkan vertex index; `SV_VertexID` is the porta… |
 | M10 | `pcg-gpu-domain-agreement` | **M11.e** | there is no GPU execution domain in this tree to compare. `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic — `procedural-content-generation`'s "CPU and GPU execution" requ… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `determinism-suites` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |

@@ -461,6 +461,10 @@ below is that work, named rather than discovered.
         spot shadow projection` moved from unanswered to a test (the cube-face case). A recorded
         exemption is a deferral with a re-entry point, which is honest, and it is not Complete;
         `m11c:roadmap-tiers` expecting `complete` for this row is what the Close phase has to demote
+      - [x] **THE RULE ABOVE, APPLIED TO ALL FIFTEEN ROWS AND NOT ONLY TO THIS ONE (task 9.4a).**
+        `m11c:roadmap-tiers` no longer expects this row at Complete; the expectation moved to
+        `m11e:roadmap-tiers` with the four exemptions as its reason. The same sentence — *a recorded
+        exemption is a deferral, not Complete* — moved eleven more rows, and 9.4a is the per-row table
 - [ ] 3.6 **Nothing here is judged until M11.a's budget is real.** A frame tuned at 122 ms is not a
       tuned frame — design.md §5
       - [ ] **Measured, and the number did not move because this section does not touch that path.**
@@ -633,6 +637,51 @@ below is that work, named rather than discovered.
         `prove --mutate-the-tree` refuses a dirty tree and this phase does not commit. **For the
         Record phase**, on a clean tree: `just roadmap-falsify prove m11c --only
         forward-path-reads-the-mip-chain --build-dir build/m11c-mip --mutate-the-tree --record`
+      - [x] **THE SHOT READS IT TOO — THE EMITTER'S HALF WAS NEVER THE EMITTER'S.** M11.c's gate
+        refuted "the beauty shot reads its mip chain": `forward-path-reads-the-mip-chain` judges
+        `FrameScene`, and the shot's pixel stage is `samples/12-beauty/shaders/beauty.slang`, not
+        `cy/frame.slang`. Disassembled as the gate did, each of the shot's three compiled modules
+        (`just/run.just`'s beauty recipe, `slangc -target spirv`) carried 2 `OpImageSampleImplicitLod`
+        — the frame's own normal and occlusion — and 2 `OpImageSampleExplicitLod ... Lod %float_0`,
+        the material's albedo and data map. The prelude ALREADY emitted both forms behind
+        `CY_MATERIAL_PIXEL_STAGE`; nothing where the shot compiles defined it. **Fixed by one line in
+        `beauty.slang`**, before the material is included, rather than on the recipe's `slangc`
+        line: the file is the fragment-stage lowering and says so, so every caller of slangc on it
+        gets the answer. Every module is now 4 implicit, 0 explicit. The emitter and every cook key
+        are unchanged. The recipe's steps 2 and 3 became `_beauty-programs`, shared by the capture
+        and by the new `just measure-beauty-mip-chain`
+      - [x] **`m11c:beauty-shot-reads-the-mip-chain` JUDGES THE SHOT.** The measurement this task
+        began from, repeated on `samples/12-beauty`: the shot twice with every chain, once with
+        level 0 alone of every ALBEDO map (`cy_sample_beauty --albedo-levels 1`), and the judge
+        `samples/12-beauty/measure_mip_chain.py` requires the repeat byte-identical, the control to
+        differ by ≥ 1%, and level 0 to be the more aliased. **The albedo map alone because the first
+        control could not fail**: cutting EVERY chain moved the unfixed shot 15.17% (the frame's own
+        implicit normal and occlusion samples read those chains whatever the material does).
+        Measured in `build/m11c-shotmip` on an RTX 5060 at 960x540, 1x: **before, 0 of 518 400
+        texels at 0.000/255 — byte-identical, the judge refuses; after, 64 833 texels (12.51%) at
+        mean |delta| 0.233/255**, neighbour energy 5.881/255 through the chain against 5.945/255 at
+        level 0; repeat 0 texels; 0 validation errors. Declared mutation: `delete-lines '#define
+        CY_MATERIAL_PIXEL_STAGE 1'` in `beauty.slang` — the criterion compiles the shader itself, so
+        the prover needs no regeneration verb. NOT RECORDED: the prover needs a clean tree. **For
+        the Record phase**: `just roadmap-falsify prove m11c --only beauty-shot-reads-the-mip-chain
+        --build-dir build/m11c-shotmip --mutate-the-tree --record`
+      - [x] **THE PUBLISHED STILL WAS RE-CAPTURED, DELIBERATELY.** The shot moved between the two
+        captures because every minified albedo and data sample now reads the level its footprint
+        asks for: `just capture-beauty-shot` at 3840x2160 box-filtered to 1920x1080 moved **45 594 of
+        2 073 600 texels (2.20%) at mean |delta| 0.031/255, worst channel 37**; the linear still 55
+        texels by ≤ 2; the manifest only its three timings. At 960x540 without supersampling the
+        same change is 122 467 texels (23.6%) at 0.436/255. ATTRIBUTED, not assumed: the old still
+        is byte-identical to the same binary rendering programs compiled from HEAD's `beauty.slang`,
+        so the define is the whole difference. `docs/design/beauty-shot.md` "The mip chain" says
+        so beside the picture. `tests/render/references/
+        beauty_shot_air.png` DID NOT change and could not: `render.vfx` draws the air over the
+        frame's clear with no material program (`src/vfx/tests/CMakeLists.txt` compiles
+        `embers.cpp` and `golden.cpp` from the sample, not `stage.cpp` or `beauty.slang`). The
+        turntable mp4 was NOT re-encoded and still shows level 0
+      - [ ] **ONE SENTENCE ELSEWHERE IS NOW FALSE AND IS NOT THIS PHASE'S TO EDIT.**
+        `m11c:forward-path-reads-the-mip-chain`'s `describe` still says "a shot assembled from
+        generated material programs samples at level 0". Editing it moves that criterion's digest
+        off its proof, so it is left to whoever records it
 
 ## 4. The geometry rows and the one HZB they share — `virtual-geometry`, `virtual-shadows`, `rendering-culling-and-lod` → Complete
 
@@ -737,6 +786,26 @@ below is that work, named rather than discovered.
         is still shaded on the CPU from the resolve's readback. The re-entry point is a material
         resolve beside `cy::rendering-pipeline`'s opaque pass, recorded in the module README, and
         nothing assembles such a frame through `FrameAssembly` yet
+      - [x] **THE CRITERION NOW SAYS WHAT IT JUDGES, BECAUSE THE GATE REFUTED THE OLD WORDING.** The
+        gate turned `m11c:virtual-geometry-image` red by changing ONLY sample code: the device
+        supplies visibility (cluster, triangle, resolved normal) and `samples/07-fidelity/shade.cpp`
+        supplies the position, the virtual shadow and all of the lighting. Its `describe` was
+        rewritten to say exactly that — evidence about the traversal, the visibility buffer and the
+        shadow page residency, not about engine shading. Its `run` and `[criterion.falsifies]` are
+        unchanged, so its digest and its recorded proof stand. No gap is declared on it: it passes,
+        and a `known_gap` on a passing criterion is a block, not a declaration
+      - [x] **THE SHADING GAP IS DECLARED WHERE THE REQUIREMENT IS, WITH ITS CLOSING RUNG.**
+        `Visibility buffer and material resolve` moved from a test entry to `exempt:m11e` in
+        `tools/roadmap/requirements-coverage.toml`: its Forward+ half asks for clusters in the
+        frame's COLOUR pass, and the device case it was mapped to never shades anything. **M11.e**,
+        because M11.d and M11.d.5 carry no renderer feature row and a resolve written before M11.d.5
+        is written once for Vulkan and again for Metal and D3D12. The stale `Rasterisation paths`
+        exemption — *"nothing in this tree links `cy::rendering-virtual-geometry` from
+        `cy::rendering-forward`"*, false since this task — is rewritten: the hardware path exists
+        and the exemption now stands on **the per-cluster selection by projected size, which is not
+        built** (the two rasterisers are chosen per frame by a boolean in the sample's options). The
+        module README says both, with re-entry points. `virtual-geometry` now carries nine
+        exemptions and its Complete expectation is M11.e's (9.4a)
 - [ ] 4.4 `virtual-shadows`' `RayTraced` and `Hybrid` modes, which `address_space.h` names and does
       not implement and which `src/rendering/shadows/README.md` says are
       `ray-tracing-infrastructure`'s to supply. **Downstream of 2.6**: with the RHI reporting no ray
@@ -764,6 +833,10 @@ below is that work, named rather than discovered.
         for `Contact and traced refinement` were false after 2.6 and are corrected; the `Shadow
         modes` coverage note now says its case answers selection and not the RayTraced/Hybrid
         behaviour. **`virtual-shadows` does not reach Complete at this rung**
+      - [x] **RECORDED IN THE LEDGER, NOT ONLY HERE (task 9.4a).** `m11c:roadmap-tiers` no longer
+        expects `virtual-shadows` at Complete; `m11e:roadmap-tiers` does, with its six exemptions
+        named — GPU-driven caster selection, residency-independent shadow rasterisation, paged
+        filtering, contact and traced refinement, caster policy, diagnostics
 - [x] 4.5 The remaining named absences of `virtual-geometry`, each recorded in its own README rather
       than discovered: assemblies, a suballocator in the geometry cache, and a hash for the DAG visit
       marks. Each is either done or recorded as a deferral with its re-entry point — **not left to be
@@ -858,6 +931,13 @@ below is that work, named rather than discovered.
         at Working**; the re-entry point is the forward frame sampling the cloud shadow field and
         the aerial-perspective table in its lit path, which is M11.e's unless the Close phase moves
         it. Not written into status.yaml here — that is Close's
+      - [x] **AND THE MAP NOW SAYS WHAT THIS ITEM FOUND (task 9.4a).** `Cloud shadows` and `Aerial
+        perspective` were test entries that answered the MODEL; they are `exempt:m11e` now, each note
+        keeping the cases that still decide the model's half and naming what would observe the
+        frame's. `quality-requirements atmosphere-sky-and-clouds` still reads 13 of 13 — two of them
+        exemptions — and `m11c:remaining-rows-at-complete-grade`, whose mutation is in
+        `src/vfx/tests/CMakeLists.txt`, is unaffected. The row's Complete expectation moved to
+        `m11e:roadmap-tiers`; `src/rendering/sky/README.md` says why
 - [ ] 5.2 The sky judged **as an image** in the artefact — aerial perspective on distant geometry
       consistent with the sky rather than a separately tuned fog, which is the requirement's own
       scenario and the one a table cannot answer
@@ -1140,7 +1220,10 @@ work was done.
         still calls `cyMaterialSampleTextureLevel(..., 0.0)`, so the albedo and the data map are
         sampled at mip 0 and the cooked chain below it is unread by the material. The frame's own
         normal and occlusion samples use the IMPLICIT form. Unchanged and unhidden: it is the
-        emitter's, and the emitter is M7's closed work whose every byte is in a cook key
+        emitter's, and the emitter is M7's closed work whose every byte is in a cook key.
+        **SUPERSEDED at M11.c's gate-repair**: it was never the emitter's — the prelude already
+        emitted the implicit form behind `CY_MATERIAL_PIXEL_STAGE` and `beauty.slang` did not define
+        it. It does now, and the shot reads the chain; task 3.8 has the measurement
 - [x] 6.2 **Every texture carries its licence and its provenance.** `thirdparty-dependencies`'
       governance applies to content the project ships as much as to code it links, and that row is
       **not this rung's** — design.md §5. What this rung owes is the record per file and a refusal to
@@ -1288,6 +1371,10 @@ work was done.
         radiance is below the sky's blue and the sprite's premultiplied blend subtracts, which
         `embers.h`'s own derivation says 36 000 should prevent and the still shows it does not for
         old motes. Not changed here: it is the sprite's art direction, not this task's renderer
+      - [x] **RECORDED IN THE LEDGER (task 9.4a).** `vfx-system` carries five exemptions — the
+        build option's removal, collision, authoring, two diagnostics paragraphs (M11.e) and
+        validation (M11.d) — beside the decal, light and volume renderers above, so
+        `m11c:roadmap-tiers` no longer expects it at Complete and `m11e:roadmap-tiers` does
 - [ ] 6.4 The compositing half is renderer work and belongs here; **the authoring half is M11.b's
       editor surface** over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`,
       all three public for exactly that reason. If M11.b did not build it, `vfx-system` does not
@@ -1982,6 +2069,57 @@ work was done.
         prediction — that `rendering-culling-and-lod`, `ray-tracing-infrastructure` and `vfx-system`
         were the three at risk — is refuted in the direction nobody costed: the seven rows §4 called
         "the well-understood half" are short too
+- [x] 9.4a **THE COMPLETE-GRADE TABLE, RE-JUDGED BY 3.5's RULE AFTER THE GATE REFUTED IT.** The
+      table above is the first reading (40 of 232 mapped) and is kept as that. Every later close
+      read the same fifteen rows at 232 of 232 and `roadmap-tiers` went on expecting all fifteen at
+      Complete — while 3.5 had already written the rule that refutes it: **a recorded exemption is a
+      deferral with a re-entry point, and it is not Complete.** `quality-requirements` counts an
+      `exempt:m11e` entry as mapped, so 232 of 232 is the coverage FLOOR; it never was the verdict.
+      Re-read per row, at this judgement, from `tools/roadmap/requirements-coverage.toml`:
+
+      | row | reqs | answered | exempt | verdict | expected Complete at |
+      |---|---:|---:|---:|---|---|
+      | `denoising` | 6 | 6 | 0 | **Complete-eligible** — five signals have producers (`denoiser-signals-have-producers`) | **M11.c** |
+      | `ray-tracing-infrastructure` | 6 | 6 | 0 | **Complete-eligible** — service properties, device capability observed on this host; rays still traverse `cy::Bvh` on the processor, which no requirement forbids | **M11.c** |
+      | `rendering-culling-and-lod` | 9 | 9 | 0 | **Complete-eligible** — occlusion reads a DEVICE pyramid (`hierarchical-depth-on-a-device`); the row this rung predicted demoting is one that stays | **M11.c** |
+      | `material-compiler` | 21 | 17 | 4 | deferral: surface closures, geometry attribute interface, material API, portability | M11.e |
+      | `shader-system` | 13 | 10 | 3 | deferral: compilation pipeline, hot reload, visual material editor — plus the declared gap `every-shader-reaches-every-target` (closes M11.d) | M11.e |
+      | `virtual-geometry` | 26 | 17 | 9 | deferral: the engine does not SHADE it (Forward+ half of `Visibility buffer and material resolve`, moved from a test entry here), no per-cluster rasteriser selection (`Rasterisation paths`, note rewritten), and seven more — 4.3, 4.5 | M11.e |
+      | `virtual-shadows` | 20 | 14 | 6 | deferral: RayTraced/Hybrid implemented by nothing, GPU caster selection, paged filtering — 4.4 | M11.e |
+      | `rendering-global-illumination` | 29 | 20 | 9 | deferral, and no shipping program lights its frame through the seam — 2.8 | M11.e |
+      | `rendering-post-processing` | 15 | 6 | 9 | deferral: AO, SSS, volumetric fog, DoF, motion blur, bloom, AA, temporal upscaling, VRS | M11.e |
+      | `temporal-rendering` | 8 | 6 | 2 | deferral, and `Reprojection and disocclusion` is mapped to a case known not to reach `framework.cpp:249` | M11.e |
+      | `rendering-lighting-and-shadows` | 13 | 9 | 4 | deferral: light types, shadow optimisation, decals, stochastic many-light — 3.5 | M11.e |
+      | `atmosphere-sky-and-clouds` | 13 | 11 | 2 | deferral: `Cloud shadows` and `Aerial perspective` are libraries no frame calls — 5.1; both moved from test entries to exemptions here | M11.e |
+      | `rendering-architecture` | 16 | 14 | 2 | deferral: pluggable pipelines, environment/post-process configuration | M11.e |
+      | `rendering-geometry-and-resources` | 11 | 10 | 1 | deferral: mesh and texture diagnostics | M11.e |
+      | `vfx-system` | 26 | 21 | 5 | deferral: build option, collision, authoring, diagnostics (M11.e), validation (M11.d); decal/light/volume uncomposited — 6.3, 6.4 | M11.e |
+      | **fifteen rows** | **232** | **176** | **56** | **3 Complete-eligible, 12 moved** | |
+
+      - [x] **WHAT CHANGED IN THE LEDGERS.** `m11c:roadmap-tiers` expects three rows; the twelve are in
+        `m11e:roadmap-tiers` with the reason per row in a comment beside them. Both criteria's
+        digests moved (`expect_tiers` is digest material), so their `falsifiability.toml` entries
+        (`red in the tree` for both) must be re-recorded by the Prove phase. The three
+        Complete-grade criteria keep their `run` and their mutation — their proofs stand — and
+        their `describe`s now say they are the floor, not the verdict:
+        `image-rows-at-complete-grade` names the two of its eight rows that stay and the 39
+        exemptions of the other six; `remaining-rows-at-complete-grade` and
+        `material-compiler-at-complete-grade` likewise
+      - [x] **WHY M11.e AND NOT M11.d OR M11.d.5.** M11.e is the sweep and the only rung permitted to
+        record a deferral (`m11e.toml`'s header), and 55 of the twelve rows' 56 exemptions already
+        name it — the one that does not is `vfx-system`'s `Validation`, which names M11.d. M11.d is the desktop platform and
+        M11.d.5 the Metal and D3D12 backends; neither has a renderer feature row in scope, and work
+        such as a virtual-geometry material resolve or a volumetric fog pass written before M11.d.5
+        is written once for Vulkan and again for two backends. No row of the twelve has been
+        demoted twice, so M11.e's 6.3 (a second demotion is a finding about the plan) does not fire
+      - [ ] **WHAT THIS DOES NOT DO: the plan documents.** `capability-matrix.md` and `ROADMAP.md`
+        still carry **C** at M11.c for all fifteen, and `m7:plan-consistency` checks the ledgers
+        against them as a FLOOR — a ledger may not expect more than the matrix plans, which moving
+        an expectation LATER never violates — so nothing here turns it red, and nothing here makes
+        the four documents agree either. The cell changes are the Close phase's and are listed in
+        this phase's hand-off: twelve **C** cells from the M11.c column to M11.e, their `Complete`
+        column M11.c → M11.e, the Milestone load table's M11.c row 15/15 → 3/3 and M11.e's 4/4 →
+        16/16, and ROADMAP.md's M11.c work table
 - [x] 9.5 Records verified against what the code supports, **including this rung's column against the
       status record** — `m9:record-matches-plan` is the check M9's gate added for exactly this and it
       is not milestone-specific in shape

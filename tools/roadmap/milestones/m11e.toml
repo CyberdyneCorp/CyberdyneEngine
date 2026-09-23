@@ -12,6 +12,11 @@
 # number of unnamed ones arrive here, and the honest position stated at proposal time is that this
 # rung's real load is whatever the four rungs above could not finish.
 #
+# AND THE UNNAMED ONES STARTED ARRIVING AT M11.c. Its gate judged its fifteen rows by task 3.5's rule
+# — a row is Complete only where its requirements are evaluated rather than exempted — and twelve
+# moved here with their reasons (`roadmap-tiers` below lists them). `rendering-culling-and-lod`, the
+# one M11.c predicted, is one of the three that stayed.
+#
 # THE SPIKE THAT COMES FIRST AND MAY REWRITE THE RUNG. Can a hosted runner produce a mobile artefact
 # at all? One empty project, cross-compiled, packaged and reported. If it cannot be done, the mobile
 # scope is a deferral with a re-entry point and this becomes the distribution and record rung — which
@@ -520,7 +525,7 @@ ci_job = "milestone-m11e"
 
 [[criterion]]
 id = "roadmap-tiers"
-describe = "the status record is at this rung's exit tiers: four rows to Complete, two of them recorded at Seed since M0. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM. `rendering-forward-clustered` is the row this rung predicts it may demote — if the closing gate judges that a row cannot be Complete while the scenario naming its hardware has never run, it is recorded at Working with the mobile half deferred and a re-entry point"
+describe = "the status record is at this rung's exit tiers: SIXTEEN rows to Complete — this rung's own four, two of them recorded at Seed since M0, and twelve renderer rows M11.c moved here after its gate judged them by task 3.5's rule (a recorded exemption is a deferral, not Complete). IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM. Each of the twelve arrives with the reason that moved it, and being the sweep this rung may instead record any of them as a deferral with its re-entry point — in which case its expectation is removed here with the deferral named in the record, not lowered in silence. `rendering-forward-clustered` is the row this rung predicts it may demote — if the closing gate judges that a row cannot be Complete while the scenario naming its hardware has never run, it is recorded at Working with the mobile half deferred and a re-entry point"
 source = "tasks 9.3, ROADMAP M11.e, delivery-roadmap"
 kind = "tiers"
 ci_job = "milestone-m11e"
@@ -530,6 +535,61 @@ build-system-and-platforms = "complete"
 thirdparty-dependencies = "complete"
 delivery-roadmap = "complete"
 rendering-forward-clustered = "complete"
+
+# THE TWELVE M11.c MOVED HERE, each with the reason that moved it. M11.c's post-gate judgement
+# (`implement-m11c-image` task 9.4a) read its fifteen rows by task 3.5's rule: Complete only where
+# `just quality-requirements` answers every requirement with a test, a gate or a proven criterion,
+# because an `exempt:m11e` entry is a deferral to THIS rung. Three rows met it and stay at M11.c;
+# these did not. The counts are the exemptions in `tools/roadmap/requirements-coverage.toml` at the
+# judgement, and each note there says what would observe the requirement.
+#
+#   material-compiler                4 exempt — surface closures, geometry attribute interface,
+#                                      material API, portability across pipelines and profiles
+#   shader-system                    3 exempt — compilation pipeline, hot reload, the visual material
+#                                      editor; plus `m11c:every-shader-reaches-every-target`, a gap
+#                                      closing at M11.d (two vertex entry points DXC refuses)
+#   virtual-geometry                 9 exempt — the forward frame does not SHADE it (the Forward+ half
+#                                      of `Visibility buffer and material resolve`), no per-cluster
+#                                      rasteriser selection, assemblies, tangents, budget controller,
+#                                      path selection, surface-class policy, visualisation, and an
+#                                      option that removes nothing
+#   virtual-shadows                  6 exempt — GPU-driven caster selection, residency-independent
+#                                      shadow rasterisation, paged filtering, contact and traced
+#                                      refinement (RayTraced and Hybrid are selected and implemented by
+#                                      nothing, M11.c task 4.4), caster policy, diagnostics
+#   rendering-global-illumination    9 exempt — and no shipping program lights its frame through the
+#                                      GI/atmosphere seam (M11.c task 2.8)
+#   rendering-post-processing        9 exempt — AO, SSS, volumetric fog, DoF, motion blur, bloom,
+#                                      anti-aliasing, temporal upscaling, VRS
+#   temporal-rendering               2 exempt — plus one mapping known not to observe its
+#                                      requirement (`Reprojection and disocclusion`, M11.c record)
+#   rendering-lighting-and-shadows   4 exempt — light types, shadow optimisation, decals,
+#                                      stochastic many-light (M11.c task 3.5)
+#   atmosphere-sky-and-clouds        2 exempt — cloud shadows and aerial perspective are libraries
+#                                      no frame calls (M11.c task 5.1)
+#   rendering-architecture           2 exempt — pluggable pipelines, environment/post configuration
+#   rendering-geometry-and-resources 1 exempt — mesh and texture diagnostics
+#   vfx-system                       5 exempt (4 to M11.e, `Validation` to M11.d) — the build
+#                                      option's removal, collision response, the VFX graph editor
+#                                      M11.b did not build, two of three diagnostics paragraphs; and
+#                                      outside the map, decal, light and volume renderers composited by
+#                                      nothing and a one-level GPU event chain (M11.c tasks 6.3, 6.4)
+#
+# ONE RULE THIS RUNG'S OWN 6.3 APPLIES: `rendering-culling-and-lod` was predicted here and did NOT
+# come — it met the rule at M11.c. None of the twelve has been demoted twice, so none is a finding
+# about the plan yet; a second move of any of them is.
+material-compiler = "complete"
+shader-system = "complete"
+virtual-geometry = "complete"
+virtual-shadows = "complete"
+rendering-global-illumination = "complete"
+rendering-post-processing = "complete"
+temporal-rendering = "complete"
+rendering-lighting-and-shadows = "complete"
+atmosphere-sky-and-clouds = "complete"
+rendering-architecture = "complete"
+rendering-geometry-and-resources = "complete"
+vfx-system = "complete"
 
 # THE LADDER ENDS HERE, AND THE END IS CHECKED RATHER THAN ASSUMED. There is no `m12-open` criterion
 # because there is no M12: this is the 1.0 gate. What could still go wrong is a rung added above this

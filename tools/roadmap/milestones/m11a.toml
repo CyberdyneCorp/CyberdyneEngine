@@ -957,8 +957,6 @@ source = "tasks 5.1, 5.2, developer-workflow-and-just, docs/roadmap/capability-m
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py developer-workflow-and-just"
 evaluates = ["developer-workflow-and-just"]
-known_gap = "THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the eleven categories the `Recipe surface` requirement names covers nothing — against a matrix row whose Working evidence reads `Every category of the required recipe surface does something from M6: Environment, Build, Run, Test, Quality, Generate, Content, Diagnose, Roadmap, Maintenance, Release`. THIS IS THE FIRST THING AN EVALUATING CRITERION FOUND, and it is exactly what §5 was written to make possible: the row's stated evidence was one quarter false and no check could say so, because the only expectation naming the row expected `seed` and an exit tier is a floor. It is declared rather than fixed here because the fix is M11.d's scope — `m11d:release-recipes-stop-refusing` is that criterion, and `developer-workflow-and-just` reaches Complete at M11.d `with the targets a release and a second platform bring`. What this rung owes is that the claim is now checked; what M11.d owes is that it becomes true. The other three legs pass, so a regression in any of them turns this from a one-line gap into a failure with a named cause"
-known_gap_closes = "m11d"
 ci_job = "milestone-m11a"
 # THE GAP HAS CLOSED, so the mutation below is not the gap's closing act any more — it is the
 # ordinary "prove the criterion CAN fail" shape every other criterion carries.
