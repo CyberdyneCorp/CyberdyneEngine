@@ -53,12 +53,10 @@ which is M3's `CY_RENDERER_VULKAN` mistake with a longer tail.
 
 ## What is not here yet
 
-* **The ECS bridge.** `src/physics/` at layer 4, mirroring `src/rendering/scene/`: it would register
-  the components in a world, create bodies from them, drive `PhysicsStepper` in the `Physics` stage
-  and write `cy::scene::LocalTransform` back through the sink. Everything it needs exists.
-* **Constraints in a backend.** The vocabulary is complete and validated; neither backend maps it
-  yet, and both report `Capabilities::constraints == false` and fail creation with a diagnostic
-  naming why — which is `physics`' "Unsupported feature" scenario rather than a silent gap.
+* **Constraint support in the reference backend.** Jolt maps all ten joint kinds, including
+  motors, limits and break events. The reference backend reports constraints unsupported, so its
+  capability-gated refusal remains explicit. The layer-4 ECS bridge lives in `src/physics/` and
+  creates `Joint` components when the selected backend supports them.
 * **Soft bodies, vehicles, ragdolls and buoyancy.** Declared in the capability model, unimplemented,
   and reported as unsupported. `physics` scopes ragdolls to `animation-and-skinning`, which is M6.
 * **Cross-platform determinism.** Not claimed and not tested; `determinism.h` says so at length and

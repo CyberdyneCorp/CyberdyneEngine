@@ -72,10 +72,11 @@ produces.
 
 ## What is not here yet
 
-* **Constraints.** `Joint` is registered and counted in `BridgeStatistics::joints_deferred` and
-  nothing is created, because neither backend maps constraints — both report
-  `Capabilities::constraints == false`. A bridge that tried would fail at every world with a
-  diagnostic about a component the author was entitled to add.
+* **Authored joints.** `Joint` components whose descriptions name live body handles become solver
+  constraints on a capable backend, and are torn down before bodies. The reference backend keeps
+  them deferred by capability. The component currently stores runtime body handles rather than
+  persistent scene references, so an authoring tool must resolve endpoints after bodies are
+  created; prefab endpoint remapping still needs a scene-level representation.
 * **The character controller.** `CharacterBody` is registered and counted the same way.
   `cy::physics::CharacterController` holds a pointer to the server and is not chunk-storable; who
   owns the controller object is a gameplay question this module cannot answer.

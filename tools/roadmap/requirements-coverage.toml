@@ -153,7 +153,7 @@ note = "The case holds the river and endpoints constant, reverses travel directi
 
 # --- physics --------------------------------------------------------------------------------------
 #
-# Swept for M11.e task 6.1a. Constraints, ragdolls and full debugging remain honest exemptions;
+# Swept for M11.e task 6.1a. Additional simulation and full debugging remain honest exemptions;
 # the other entries point at the case that makes the requirement observable rather than at a suite.
 
 [[coverage]]
@@ -222,8 +222,9 @@ note = "The platform is kinematic and the controller must inherit its displaceme
 [[coverage]]
 row = "physics"
 requirement = "Constraints"
-evidence = "exempt:m11e"
-note = "NOT BUILT. Both PhysicsServer implementations report constraints unsupported and creation returns NotImplemented; no motor, limit, spring, break threshold or ConstraintBroken event reaches a solver. Replace this exemption with backend-conformance cases for every joint kind, plus torque-limited hinge and break-event cases."
+evidence = "test:integration.physics_jolt"
+case = "a Jolt hinge motor respects its torque cap and angular limit"
+note = "The case compares weak and strong torque caps and verifies the hinge angle limit. Companion Jolt cases exercise fixed, point, slider, distance, cone, swing-twist, six-degree, gear and rack solver behavior, including per-axis limits, motors and springs, force/torque break events and handle lifetime. integration.physics_simulation verifies ECS Joint creation and teardown; the reference backend explicitly reports constraints unsupported. Reversing the Jolt gear ratio made its coupling case fail and the mapping was restored."
 
 [[coverage]]
 row = "physics"

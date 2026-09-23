@@ -316,7 +316,7 @@ what makes 6.1 mandatory rather than advisory.
       - [x] Accept 2D collision polygons and tilemap chunks through planar navigation and rebuild
         only the changed chunk.
       - [x] Expose navigation debug geometry and query, repath, and rebuild measurements.
-      - [ ] Map the declared constraint vocabulary to the Jolt solver, including limits, motors,
+      - [x] Map the declared constraint vocabulary to the Jolt solver, including limits, motors,
         breaking, and the capability-gated kinds.
       - [ ] Integrate supported soft bodies, vehicles, and ragdoll activation and blending with
         animation, and keep unsupported capabilities explicit.

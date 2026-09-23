@@ -53,10 +53,8 @@
 // module cannot answer. `character_body` is registered, and reported as not yet created, rather
 // than silently ignored.
 //
-// It does not map `Joint`. Neither backend maps constraints (`Capabilities::constraints == false`),
-// so a bridge that created them would fail at every world with a diagnostic about a component the
-// author was entitled to add. Joints are counted in `BridgeStatistics::joints_deferred` so the
-// number is visible rather than absent.
+// It maps `Joint` through `PhysicsServer` when the selected backend supports constraints and the
+// component names live body handles. The reference backend keeps them deferred by capability.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -100,6 +98,9 @@ struct BridgeStatistics {
     u64 transforms_marked = 0;
     /// `Joint` components seen and not created. See the header note.
     u64 joints_deferred = 0;
+    u64 joints_created = 0;
+    u64 joints_destroyed = 0;
+    u64 joints_refused = 0;
     /// `CharacterBody` components seen and not created. See the header note.
     u64 characters_deferred = 0;
     /// Steps run. A test asserts this against the clock's tick count, which is how "exactly once
@@ -221,10 +222,21 @@ private:
         u32 shape_count = 0;
     };
 
+    struct TrackedJoint {
+        ecs::Entity entity;
+        ConstraintHandle handle;
+        BodyHandle body_a;
+        BodyHandle body_b;
+    };
+
     [[nodiscard]] Status create_for(ecs::Entity entity, ComponentTypeId source) noexcept;
     [[nodiscard]] Status collect_colliders(ecs::Entity entity, Array<ColliderDescription>& out,
                                            u32& first_shape) noexcept;
     [[nodiscard]] Status sweep_removed() noexcept;
+    [[nodiscard]] Status sync_joints() noexcept;
+    void sweep_joints() noexcept;
+    [[nodiscard]] Status collect_pending_joints() noexcept;
+    [[nodiscard]] Status create_pending_joints() noexcept;
     void release(Tracked& tracked) noexcept;
 
     /// One entity waiting for a body, and the component that asked for it.
@@ -249,6 +261,8 @@ private:
     /// entity bits -> index into `tracked_`.
     HashMap<u64, u32> index_;
     Array<Tracked> tracked_;
+    Array<TrackedJoint> tracked_joints_;
+    Array<ecs::Entity> pending_joints_;
     /// Every shape the bridge created, in creation order. A `Tracked` names a range of it.
     Array<ShapeHandle> shapes_;
     /// Scratch for the sweep, a member so a tick allocates nothing.
