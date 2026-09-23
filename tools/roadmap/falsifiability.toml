@@ -3775,9 +3775,9 @@ detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be
 ledger = "m5b"
 criterion = "agent-recipe"
 digest = "22aa443d0cc9ad52"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just run'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
