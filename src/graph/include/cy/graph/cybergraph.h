@@ -88,10 +88,13 @@ struct Property {
 
 enum class PinDirection : u8 { Input = 0, Output };
 
-/// Manifest-assigned identities. Zero means an older/private descriptor that is not serialisable.
+/// A stable, manifest-assigned node-type identity; zero is reserved for private descriptors.
 using NodeTypeId = u32;
+/// A stable, manifest-assigned pin identity within a node type or subgraph interface.
 using PinId = u32;
+/// The reserved value used when a node type has no stable serialisable identity.
 inline constexpr NodeTypeId kInvalidNodeTypeId = 0;
+/// The reserved value used when a pin has no stable serialisable identity.
 inline constexpr PinId kInvalidPinId = 0;
 
 /// One pin on a node type, or one pin of a subgraph's interface.

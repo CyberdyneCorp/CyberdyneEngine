@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Versioned heightfield ingestion for CyberTerrain. The source is deliberately raw and explicit:
 // a raw grid does not carry dimensions, signedness, units, range, or tiling, so the importer

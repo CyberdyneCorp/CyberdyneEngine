@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/import/heightfield.h>
 
 #include <bit>
@@ -179,7 +180,7 @@ Status HeightfieldImporter::import(const ImportRequest& request, ImportResult& o
     }
 
     Array<u8> payload;
-    if (Status resized = payload.resize(CookedHeightfield::kHeaderBytes + sample_count * 2U);
+    if (Status resized = payload.resize(CookedHeightfield::kHeaderBytes + (sample_count * 2U));
         !resized) {
         return resized;
     }
@@ -197,10 +198,11 @@ Status HeightfieldImporter::import(const ImportRequest& request, ImportResult& o
     const u32 stride = bytes_per_sample(format.value().as_text());
     bool samples_valid = true;
     for (usize index = 0; index < sample_count; ++index) {
-        const u16 normalized = normalize_sample(request.bytes.data() + index * stride,
+        const u16 normalized = normalize_sample(request.bytes.data() + (index * stride),
                                                 format.value().as_text(), samples_valid);
-        payload[CookedHeightfield::kHeaderBytes + index * 2U] = static_cast<u8>(normalized & 0xFFU);
-        payload[CookedHeightfield::kHeaderBytes + index * 2U + 1U] =
+        payload[CookedHeightfield::kHeaderBytes + (index * 2U)] =
+            static_cast<u8>(normalized & 0xFFU);
+        payload[CookedHeightfield::kHeaderBytes + (index * 2U) + 1U] =
             static_cast<u8>((normalized >> 8U) & 0xFFU);
     }
     if (!samples_valid) {
@@ -229,7 +231,7 @@ Expected<CookedHeightfield, Error> read_cooked_heightfield(Span<const u8> payloa
     result.height_max_metres = read_f32(payload.data() + 32);
     const usize samples = static_cast<usize>(result.width) * result.height;
     if (result.width < 2 || result.height < 2 || result.tile_quads == 0 ||
-        payload.size() != CookedHeightfield::kHeaderBytes + samples * 2U) {
+        payload.size() != CookedHeightfield::kHeaderBytes + (samples * 2U)) {
         return fail(ErrorCode::InvalidArgument, "a cooked heightfield payload is inconsistent");
     }
     return result;

@@ -317,6 +317,9 @@ re-runs the proofs rather than believing the file, and fails in four directions:
 would be the escape hatch that makes the whole mechanism advisory. The one exception is
 `--baseline`, which wrote this ladder's existing debt once; it is a flag on a command line rather
 than a field in a file, so using it shows up in a review.
+When an existing `red in the tree` criterion changes, a declared gap that still fails in both the
+sandbox and repository can refresh that proof's digest. This preserves only the observed claim that
+the criterion goes red; it does not claim the missing work can already be completed.
 
 ## A gap a milestone ships knowingly
 

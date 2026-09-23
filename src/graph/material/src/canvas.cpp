@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/graph/material/canvas.h>
 
 #include <cy/rendering/material/ir.h>

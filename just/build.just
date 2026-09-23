@@ -474,7 +474,17 @@ build-clean *args:
 # milestone that is not on the ladder. See tools/workflow/README.md.
 [private]
 _resolve-target requested:
-    @cd "{{root}}" && python3 tools/workflow/targets.py resolve '{{requested}}'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    # setup-python installs python.exe on Windows. Prefer that explicit native executable there:
+    # the Windows ARM image also exposes a `python3` App Execution Alias which redirects to WSL and
+    # fails before this script starts. Unix hosts do not have python.exe and use their normal
+    # python3 command.
+    if command -v python.exe >/dev/null 2>&1; then
+        exec python.exe tools/workflow/targets.py resolve '{{requested}}'
+    fi
+    exec python3 tools/workflow/targets.py resolve '{{requested}}'
 
 # Reclaim the build directories nothing is using.
 # Usage: just build-reap [--older-than <minutes>] [--keep <name>] [--apply]

@@ -230,7 +230,7 @@ def selftest() -> int:
 
     with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as handle:
         handle.write('schema = 1\n[[target]]\nid = "x"\nkind = "os"\ndescribe = "d"\n'
-                     'hosts = []\nstate = "planned"\nowner = "m12"\nrequires = "r"\n')
+                     'hosts = []\nstate = "planned"\nowner = "not-a-rung"\nrequires = "r"\n')
         bogus = Path(handle.name)
     try:
         load(bogus)

@@ -47,6 +47,8 @@ import tempfile
 import time
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -56,6 +58,7 @@ import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import record as record_module  # noqa: E402
+import row_evidence as row_evidence_module  # noqa: E402
 import requirements as requirements_module  # noqa: E402
 import roadmap as roadmap_module  # noqa: E402
 import schedule as schedule_module  # noqa: E402
@@ -925,6 +928,22 @@ def test_plan_documents(root: Path) -> None:
 
     agreement_findings = plan_module.check_documents_agree(matrix, sections, claimed, expected)
     check("the four plan documents agree", not agreement_findings, "\n".join(agreement_findings))
+
+
+def test_ctest_property_syntax(root: Path) -> None:
+    """The evidence reader accepts the CMake 3.x and 4.x generated test-name spellings."""
+    build = root / "build"
+    build.mkdir()
+    (build / "CTestTestfile.cmake").write_text(
+        'set_tests_properties([=[unit.old]=] PROPERTIES LABELS "unit" TIMEOUT "60")\n'
+        'set_tests_properties("unit.new" PROPERTIES LABELS "unit" TIMEOUT "60")\n',
+        encoding="utf-8",
+    )
+    properties = row_evidence_module.ctest_properties(build)
+    check("CTest evidence accepts bracket-quoted names emitted by CMake 3.x",
+          properties.get("unit.old") == {"LABELS": "unit", "TIMEOUT": "60"})
+    check("CTest evidence accepts quoted names emitted by CMake 4.x",
+          properties.get("unit.new") == {"LABELS": "unit", "TIMEOUT": "60"})
 
 
 def test_plan_checks_can_fail(root: Path) -> None:
@@ -1860,9 +1879,34 @@ def test_falsifiability_of_a_declared_gap(root: Path) -> None:
           falsify_module.reconcile([stays], inventory) == [],
           falsify_module.reconcile([stays], inventory))
 
+    changed = falsify_module.Proof(stays.ledger, stays.criterion, "changed-check",
+                                   stays.verdict, stays.mutation, stays.detail,
+                                   unjudged=stays.unjudged)
+    ledger = SimpleNamespace(criteria=[gap("stays-red")])
+    with patch.object(falsify_module, "read_inventory", return_value=inventory), \
+            patch.object(falsify_module.criteria_module, "load", return_value=ledger), \
+            patch.object(falsify_module, "run_in_the_repository", return_value=(1, "still red")), \
+            patch.object(falsify_module, "write_inventory") as write:
+        refused = falsify_module._record([changed], ("m0",))
+        check("an observed additive gap refreshes an existing red-in-the-tree proof",
+              not refused and inventory.proofs[("m0", "stays-red")].digest == "changed-check"
+              and inventory.proofs[("m0", "stays-red")].verdict == falsify_module.RED_IN_THE_TREE
+              and write.called, refused)
+
+    with patch.object(falsify_module, "read_inventory", return_value=inventory), \
+            patch.object(falsify_module.criteria_module, "load", return_value=ledger), \
+            patch.object(falsify_module, "run_in_the_repository", return_value=(0, "green")), \
+            patch.object(falsify_module, "write_inventory") as write:
+        green = falsify_module.Proof(stays.ledger, stays.criterion, "another-check",
+                                     stays.verdict, stays.mutation, stays.detail,
+                                     unjudged=stays.unjudged)
+        refused = falsify_module._record([green], ("m0",))
+        check("a sandbox-only red cannot refresh a red-in-the-tree proof",
+              len(refused) == 1 and not write.called, refused)
+
     # THE RATCHET IS NOT LOOSENED BY THAT. A gap with no standing record is still refused, because
-    # `_record` carries an unjudged verdict only for a key the inventory already holds at the same
-    # digest — which is what stops "declare it a gap" from being the way onto the ladder.
+    # `_record` carries an unjudged verdict only for a key the inventory already holds; a new
+    # declared gap cannot enter the ladder by naming missing work.
     refused = falsify_module._record([none], ("m0",))
     check("but a declared gap nothing has judged is still REFUSED a place on the ladder",
           len(refused) == 1 and "has not been shown able to fail" in refused[0], refused)
@@ -2533,6 +2577,7 @@ def main() -> int:
         test_requirements(_area(root, "requirements"))
         test_gates(_area(root, "gates"))
         test_plan_documents(_area(root, "plan"))
+        test_ctest_property_syntax(_area(root, "ctest-syntax"))
         test_plan_checks_can_fail(_area(root, "plan-negative"))
         test_just_arguments(_area(root, "just-arguments"))
         test_matrix_requirement_counts(_area(root, "reqs-column"))

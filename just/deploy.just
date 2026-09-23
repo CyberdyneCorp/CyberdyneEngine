@@ -97,7 +97,7 @@ deploy-device *args:
     # no transport" are never confused with each other. This is the scenario the requirement writes:
     # the workflow says so, and states what is required.
     if [ -n "${requested}" ]; then
-        python3 tools/workflow/targets.py resolve "${requested}" > /dev/null
+        just _resolve-target "${requested}" > /dev/null
     fi
 
     echo "just deploy-device: there is no device transport in this tree." >&2

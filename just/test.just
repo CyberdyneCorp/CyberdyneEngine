@@ -85,8 +85,8 @@ test-d3d12-golden:
 #   just test-determinism --publish-digest <path>  one leg computes its state digest and writes it
 #   just test-determinism --compare-legs [--pcg]   every downloaded leg's digest, compared
 #
-# `ci.yml`'s matrices already run six legs independently; nothing published a digest and nothing
-# downloaded one to compare, which is why `m9:lockstep-cross-platform` is a declared gap and
+# `ci.yml`'s matrices run four legs independently. Before the cross-leg jobs, nothing published a
+# digest or downloaded one to compare, which is why `m9:lockstep-cross-platform` is a declared gap and
 # `m10:pcg-regeneration-cross-platform` and `m10:pcg-gpu-domain-agreement` are reported NOT
 # EVALUATED. The publish and compare halves are two modes of ONE recipe rather than two recipes,
 # because `developer-workflow-and-just` requires the local and remote invocations to be the same
