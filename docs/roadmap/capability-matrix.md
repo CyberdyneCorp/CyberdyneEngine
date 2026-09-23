@@ -47,7 +47,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`environment-fields`](../../openspec/specs/environment-fields/spec.md) | 12 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`procedural-content-generation`](../../openspec/specs/procedural-content-generation/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`weather-and-wind`](../../openspec/specs/weather-and-wind/spec.md) | 16 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
-| [`atmosphere-sky-and-clouds`](../../openspec/specs/atmosphere-sky-and-clouds/spec.md) | 13 |  |  |  |  |  |  |  |  | S |  |  |  |  | W |  |  | **C** |  |  |  |  |  | M11.c |
+| [`atmosphere-sky-and-clouds`](../../openspec/specs/atmosphere-sky-and-clouds/spec.md) | 13 |  |  |  |  |  |  |  |  | S |  |  |  |  | W |  |  |  |  |  | **C** |  |  | M11.e |
 | [`terrain`](../../openspec/specs/terrain/spec.md) | 15 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`foliage`](../../openspec/specs/foliage/spec.md) | 13 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`water`](../../openspec/specs/water/spec.md) | 17 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
@@ -56,25 +56,25 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 12 |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | **4 — Rendering** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 12 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  | M11.d.5 |
-| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
+| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | 9 |  |  |  | S |  |  |  | W |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`virtual-geometry`](../../openspec/specs/virtual-geometry/spec.md) | 26 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
+| [`virtual-geometry`](../../openspec/specs/virtual-geometry/spec.md) | 26 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`virtual-texturing`](../../openspec/specs/virtual-texturing/spec.md) | 16 |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  | M7 |
-| [`virtual-shadows`](../../openspec/specs/virtual-shadows/spec.md) | 20 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
+| [`virtual-shadows`](../../openspec/specs/virtual-shadows/spec.md) | 20 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`residency`](../../openspec/specs/residency/spec.md) | 8 |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  | M7 |
 | [`rendering-forward-clustered`](../../openspec/specs/rendering-forward-clustered/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
-| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
+| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-materials-and-shading`](../../openspec/specs/rendering-materials-and-shading/spec.md) | 9 |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  | M7 |
-| [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`rendering-lighting-and-shadows`](../../openspec/specs/rendering-lighting-and-shadows/spec.md) | 13 |  |  |  | S |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 29 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
+| [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`rendering-lighting-and-shadows`](../../openspec/specs/rendering-lighting-and-shadows/spec.md) | 13 |  |  |  | S |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 29 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`denoising`](../../openspec/specs/denoising/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
 | [`ray-tracing-infrastructure`](../../openspec/specs/ray-tracing-infrastructure/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 15 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
+| [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 15 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  | **C** |  |  |  |  |  | M11.c |
+| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  |  |  |  | **C** |  |  | M11.e |
 | **5 — Simulation** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
@@ -159,10 +159,10 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M10** · Worlds | 10 | 2 | `diagnostics-profiling-and-crash`, `gameplay-framework` |
 | **M11.a** · Foundations | 12 | 12 | the environment substrate and its four consumers, world streaming, determinism, replay, network, save, audio |
 | **M11.b** · Authoring | 23 | 23 | the editor, the authoring surface, and the gameplay rows authored through it |
-| **M11.c** · Image | 15 | 15 | materials and shaders first, then the eight rows the picture is made of, culling, the sky |
+| **M11.c** · Image | 3 | 3 | `denoising`, `ray-tracing-infrastructure`, `rendering-culling-and-lod` |
 | **M11.d** · Desktop | 9 | 9 | the native platform backend, the foundations the port audits, the build and quality gates |
 | **M11.d.5** · Backends | 1 | 1 | `rhi-and-render-graph` |
-| **M11.e** · Ship | 4 | 4 | mobile and the full matrix, the dependency set, the forward pipeline, the roadmap itself |
+| **M11.e** · Ship | 16 | 16 | mobile and the full matrix, the dependency set, the forward pipeline, the roadmap itself, and the twelve renderer rows M11.c's re-judgement moved here |
 | **M12** · The Game | 0 | 0 | — |
 | **M13** · After 1.0 | 2 | 2 | `ml-inference` and `xr-support`, each deferred here by decision |
 
@@ -190,6 +190,16 @@ showed sixteen, and said M11 completes thirty-six where the matrix shows thirty-
 "a gap worth a check rather than a paragraph". Every count and every name above was recomputed from
 the columns of the matrix at M6's gate. It is still two documents that can drift; what has changed
 is that they do not disagree today.
+
+**M11.c's column went from fifteen **C** cells to three, and M11.e's from four to sixteen.** The gate
+that followed M11.c's first close refuted the claim that all fifteen of its rows were Complete: the
+count it read, 232 of 232 requirements mapped, counts a recorded `exempt:m11e` entry as mapped, and
+M11.c's own task 3.5 had already said that a recorded exemption is a deferral with a re-entry point,
+not Complete. Re-judged row by row (`implement-m11c-image` task 9.4a), only `denoising`,
+`ray-tracing-infrastructure` and `rendering-culling-and-lod` answer every requirement with no
+exemption. The other twelve carry 56 exemptions between them, and 55 of those already named M11.e,
+the only rung permitted to record a deferral. So their **C** cells and their `Complete` column moved
+to M11.e, and `m11e:roadmap-tiers` expects them there. None of the twelve has been demoted twice.
 
 ## M11 is six rungs
 
@@ -221,12 +231,12 @@ for all six because every M11 row arrives at its rung already at Working or Seed
 |---|---:|---:|---|:-:|:-:|---|
 | **M11.a** · Foundations | 12 | 233 | the seven inherited gaps, the 122 ms frame budget, the one cross-leg digest job that answers three criteria, `save-and-persistence` re-scoped | the world demo inside a 16.7 ms budget on a device, streaming, with each gap closed or still red with its reason |
 | **M11.b** · Authoring | 24 | 420 | `editor-architecture` and `live-editing` off Seed, the rest of the editor, and the gameplay rows that are authored through it | **a real sample game**, made through the editor |
-| **M11.c** · Image | 15 | 232 | `material-compiler` and `shader-system` first, then the eight rows the picture is made of, plus culling and the sky | **an art-directed beauty shot**, authored through the editor M11.b finished |
+| **M11.c** · Image | 3 | 21 | planned as fifteen rows and 232 requirements, `material-compiler` and `shader-system` first; re-judged at its gate to the three rows with no exemption — `denoising`, `ray-tracing-infrastructure`, `rendering-culling-and-lod` — and the other twelve moved to M11.e | **an art-directed beauty shot**, authored through the editor M11.b finished |
 | **M11.d** · Desktop | 9 | 117 | the RHI interface settled on Vulkan and null, a native `Platform` and `DisplayServer`, the core rows the port audits, the build and quality gates | `samples/11-ship` on desktop |
 | **M11.d.5** · Backends | 1 | 12 | Metal native and D3D12 from nothing — **inserted by M11.d's spike**, because neither compiles on the Linux host this project works on | **one scene, three backends, the same picture** |
-| **M11.e** · Ship | 4 | 55 | mobile and cross-compilation, the full CI matrix, distribution, the sweep, the 1.0 record | every remaining row Complete or deferred with a re-entry point |
+| **M11.e** · Ship | 16 | 266 | mobile and cross-compilation, the full CI matrix, distribution, the sweep, the 1.0 record, and the twelve renderer rows M11.c moved here with their 56 exemptions | every remaining row Complete or deferred with a re-entry point |
 
-**M11.e's four rows are the smallest count on the ladder and not the smallest rung.** Its real load
+**M11.e's four rows were the smallest count on the ladder and not the smallest rung.** It now plans sixteen, twelve of them moved from M11.c. Its real load
 is whatever the five rungs above could not finish: M11.a predicts demoting `save-and-persistence`
 and `audio`, M11.b `ml-inference` and `swift-scripting`, M11.c `rendering-culling-and-lod`, M11.d
 `build-and-packaging`, and M11.d.5 predicts no demotion but four declared deferrals no hosted runner

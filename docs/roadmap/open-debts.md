@@ -91,6 +91,7 @@ so this document states the finding and moves nothing.
 
 | Rung | Criterion | Declared later by | Prover's verdict | What it said |
 |---|---|---|---|---|
+| M1 | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final/debug … test-all: failed — integration render |
 | M11.a | `determinism-suites` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3 suite(s) match ^(determinism.simulation\|integration.replay\|integration.network)$ |
 | M11.a | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
 | M11.a | `network-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 r… |

@@ -2112,7 +2112,7 @@ work was done.
         such as a virtual-geometry material resolve or a volumetric fog pass written before M11.d.5
         is written once for Vulkan and again for two backends. No row of the twelve has been
         demoted twice, so M11.e's 6.3 (a second demotion is a finding about the plan) does not fire
-      - [ ] **WHAT THIS DOES NOT DO: the plan documents.** `capability-matrix.md` and `ROADMAP.md`
+      - [x] **WHAT THIS DID NOT DO: the plan documents.** `capability-matrix.md` and `ROADMAP.md`
         still carry **C** at M11.c for all fifteen, and `m7:plan-consistency` checks the ledgers
         against them as a FLOOR — a ledger may not expect more than the matrix plans, which moving
         an expectation LATER never violates — so nothing here turns it red, and nothing here makes
@@ -2120,6 +2120,13 @@ work was done.
         this phase's hand-off: twelve **C** cells from the M11.c column to M11.e, their `Complete`
         column M11.c → M11.e, the Milestone load table's M11.c row 15/15 → 3/3 and M11.e's 4/4 →
         16/16, and ROADMAP.md's M11.c work table
+        **APPLIED BY THE CLOSE PHASE, before its ledger run.** The twelve **C** cells and their
+        `Complete` column now read M11.e; the Milestone load table reads M11.c 3/3 (naming the three)
+        and M11.e 16/16; the rung tables in both documents read M11.c 3 rows / 21 requirements and
+        M11.e 16 / 266. ROADMAP.md keeps the M11.c work table as the plan it was written against and
+        names the twelve rows, with their exemption counts, in a paragraph beneath it, which is how
+        `plan.py` accepts a documented divergence. `check_documents_agree` and
+        `check_dependency_rules` report nothing
 - [x] 9.5 Records verified against what the code supports, **including this rung's column against the
       status record** — `m9:record-matches-plan` is the check M9's gate added for exactly this and it
       is not milestone-specific in shape
