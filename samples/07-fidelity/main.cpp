@@ -167,6 +167,10 @@ void report_frame(const FrameReport& frame) {
         return;
     }
     std::printf("frames=%u\n", frame.frames);
+    // Which rasteriser drew the frame, and how many of the forward frame's `virtual geometry`
+    // stages recorded — warm-up frames included, because they run the identical path.
+    std::printf("rasteriser=%s\n", frame.rasteriser);
+    std::printf("forward_stages=%u\n", frame.forward_stages);
     std::printf("median_frame_ms=%.3f\n", static_cast<double>(frame.median_ms));
     std::printf("p90_frame_ms=%.3f\n", static_cast<double>(frame.p90_ms));
     std::printf("worst_frame_ms=%.3f\n", static_cast<double>(frame.worst_ms));

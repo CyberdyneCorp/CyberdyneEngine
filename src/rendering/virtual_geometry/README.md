@@ -38,6 +38,7 @@ above its children's — equal errors put a hole at exactly one threshold — an
 | `traversal.h/cpp` | Instances, the reference traversal, and the records the shaders read |
 | `gpu.h/cpp` | The compute traversal: instance cull, the iterated descent, cluster culling |
 | `visbuffer.h/cpp` | The visibility buffer, material classification and binning, attribute reconstruction |
+| `forward_visibility.h/cpp` | The hardware rasteriser, as the forward frame's `virtual geometry` stage |
 | `shaders/` | The Slang sources and their checked-in SPIR-V |
 
 The cook lives in `tools/cook/` (`cy/cook/geometry.h`), because a cluster hierarchy is cooked rather
@@ -119,14 +120,39 @@ moving.
   fixture in which only one of the two tests ever fires cannot detect the deletion of the other —
   and a single view is such a fixture: for a LEAF cluster `lod_sphere` is the cluster's own sphere,
   so the node prune answers first and the cluster test never runs.
-* **The hardware rasterisation path — STILL ABSENT AFTER M11.c (task 4.3 unfinished).** What ships
-  is the compute rasteriser, which the specification accommodates explicitly ("cluster dispatch,
-  output format, and the visibility buffer SHALL not assume hardware rasterisation exclusively").
-  The requirement's default is hardware, and that path is the same visibility buffer written by a
-  vertex and fragment shader over the same records; it lands when virtual geometry is wired into the
-  forward frame's pass order. **Nothing in the tree links `cy::rendering-virtual-geometry` from
-  `cy::rendering-forward`**, which is the link-graph fact behind that sentence and the re-entry
-  point for it.
+* **The hardware rasterisation path — SUPPLIED AT M11.c, task 4.3, as a stage of the forward
+  frame.** Through M11.c's first pass this line read "Nothing in the tree links
+  `cy::rendering-virtual-geometry` from `cy::rendering-forward`", and the link graph was the
+  measurement: every cluster ever drawn had been drawn by a harness graph with the compute rasteriser
+  in it. Now `ForwardFrame` declares a `virtual geometry` stage after the depth prepass
+  (`FrameFeatures::virtual_geometry`), with a one-word `R32Uint` visibility target and the frame's
+  OWN depth as its attachments, and `ForwardVisibility` (`forward_visibility.h`) records it: one
+  indexed-indirect draw whose instances are the visible clusters, `vgVisHwVertex` decoding the SAME
+  payload through the SAME `decodeVertex`, `vgVisHwFragment` writing the SAME
+  `(identity << 8) | triangle` word, and the frame's depth buffer doing the depth test. A gather and
+  `vgVisHwUnpack` turn the target into the `uint2` visibility buffer, and the classification, the
+  bins and the resolve are declared by the same `declare_resolve_chain` for either rasteriser. The
+  module now links `cy::rendering-forward` — the edge runs that way because the frame names the
+  stage and owns no renderer, as `cy::rendering-pipeline` fills its opaque pass.
+
+  Measured in `render.virtual_geometry_forward` on an RTX 5060, over one traversal: 2,529 pixels
+  covered by both rasterisers, none by one alone, every one naming the same cluster and the same
+  triangle; every resolved normal matching `reconstruct_surface`; and a prepass plane at z = 0.8
+  hiding exactly the part of the sphere behind it (1,325 of 2,529 pixels survive, 53% expected from
+  the geometry), with validation and synchronisation validation clean. **`samples/07-fidelity` draws
+  through this stage by default**, so `render.virtual_geometry_shaded` — and with it
+  `m11c:virtual-geometry-image` — now photographs the forward frame; its reference was regenerated
+  for that and moved 15 of 57,600 texels, 7 beyond tolerance (see that suite's header).
+
+  **What is still not done, and its re-entry point.** The forward frame does not SHADE virtual
+  geometry: no stage reads the visibility target into `FrameResources::color`, so the picture is
+  still shaded by the sample on the CPU from the resolve's readback. A material resolve that
+  evaluates the forward pipeline's own material program per bin is the next rung, and it belongs
+  beside `cy::rendering-pipeline`'s opaque pass rather than in this module. Nor does anything
+  assemble such a frame through `FrameAssembly`; `FrameSinks::passes[VirtualGeometry]` is the seam.
+  And an exact depth tie between two coincident surfaces is broken by draw order here, where the
+  compute path breaks it by identity — measured stable across three processes on the artefact's
+  frame, and not claimed stable in general.
 * **Assemblies — STILL ABSENT AFTER M11.c, and this is its re-entry point.** An asset referencing
   other assets with transforms is specified and not built. The seam is `GpuAsset`: an assembly
   resolves to more instances of an already-registered asset, which is what the instance buffer

@@ -18,7 +18,7 @@ cy_add_module(
     LAYER rendering
     ALIAS cy::rendering-particles
     TYPE STATIC
-    SOURCES src/particle_renderer.cpp
+    SOURCES src/particle_renderer.cpp src/strip_renderer.cpp src/transparent_draw.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
     PUBLIC_DEPENDENCIES

@@ -21,8 +21,16 @@
 // renderer's to invent.
 //
 // So this file is the SEAM, the same shape `publish_sprites` and `publish_mesh_instances` already
-// are: typed rows a host appends to whatever buffer its renderer reads. What is still not here is
-// the compositing, and `src/vfx/README.md` says so where the evidence is.
+// are: typed rows a host appends to whatever buffer its renderer reads.
+//
+// THE COMPOSITING, KIND BY KIND, as of M11.c task 6.3 — `src/vfx/README.md` has the evidence:
+//
+//   Ribbon, Trail, Beam   drawn. `to_strip_vertices` below turns their rows into
+//                         `cy::rendering::particles::StripVertex`, and `StripRenderer` draws every
+//                         strip of a frame in one draw in the transparent stage. The beauty shot's
+//                         embers carry trails.
+//   Decal, Light, Volume  still rows nothing composites. No pass projects a decal, feeds a
+//                         `LightInstance` to clustered assignment or marches a volume.
 //
 // ================================================================================================
 // A RENDERER IS DECLARED BY THE EMITTER, NOT INFERRED FROM ITS ATTRIBUTES
@@ -58,6 +66,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
+#include <cy/rendering/particles/strip_renderer.h>
 #include <cy/vfx/runtime.h>
 #include <cy/vfx/world.h>
 
@@ -261,8 +270,10 @@ public:
     PublicationHistory(PublicationHistory&&) noexcept = default;
     PublicationHistory& operator=(PublicationHistory&&) noexcept = default;
 
-    /// Size it for one world's blocks. Called once; a publication that resized here would allocate
-    /// on the frame path.
+    /// Size it for EVERY block of one world — `publication_slots(world)`, after every effect the
+    /// history will see is played. Called once; a publication that resized here would allocate on
+    /// the frame path, and a publication handed one that is too small refuses rather than dropping
+    /// the blocks that do not fit.
     [[nodiscard]] Status resize(u32 slots, u32 history) noexcept;
 
     /// Forget everything. What a teleport, a load or a camera cut does — and the reason it exists
@@ -278,6 +289,12 @@ public:
 
     /// The position `slot` published `age` frames ago, and whether it published at all.
     [[nodiscard]] bool sample(u32 slot, u32 age, f32 out[3]) const noexcept;
+    /// Say WHICH PARTICLE occupies `slot` this frame — its `SimulationWorld::spawn_generations`
+    /// counter. When it is not the one the history remembers, everything recorded for the slot is
+    /// forgotten: the slot was killed and spawned into since, perhaps with no publication in
+    /// between to notice, and what it recorded belongs to a particle that is gone. Called before
+    /// `sample` and `record` by every publication.
+    void claim(u32 slot, u32 generation) noexcept;
     /// Record this frame's position for `slot`, shifting its history.
     void record(u32 slot, const f32 position[3]) noexcept;
     /// Mark every slot absent, before a publication records the ones that are present. A slot that
@@ -290,12 +307,21 @@ private:
         f32 positions[kMaxTrailHistory][3] = {};
         /// One bit a history step: whether that step was recorded.
         u8 present = 0;
+        /// The spawn counter of the particle these steps belong to. See `claim`.
+        u32 generation = 0;
     };
 
     Array<Entry> entries_;
     u32 slots_ = 0;
     u32 history_ = 1;
 };
+
+/// How many entries a `PublicationHistory` needs for `world`: the capacity of every block, summed.
+///
+/// A slot is unique only inside its block — every block numbers from zero — so the history keys a
+/// particle by its block's base plus its slot, and a history sized for one block cannot hold a
+/// world of three.
+[[nodiscard]] u32 publication_slots(const SimulationWorld& world) noexcept;
 
 // --- The publications ----------------------------------------------------------------------------
 //
@@ -374,5 +400,26 @@ struct RenderPublishReport {
                                      const Vec3& camera_position, u32 capacity,
                                      PublicationHistory& history, Array<VolumeInstance>& out,
                                      RenderPublishReport& report) noexcept;
+
+// --- Into the renderer ---------------------------------------------------------------------------
+//
+// Ribbons, trails and beams are derived three different ways and drawn one way: an ordered run of
+// vertices, a strip identifier that says where each strip ends, a half-width and a radiance.
+// `cy::rendering::particles::StripRenderer` draws that, and these two are where a publication's
+// rows become its records — the same relationship `publish_sprites` has with `ParticleRenderer`,
+// kept as a separate step here because the rows carry more than the renderer reads (motion vectors,
+// the particle slot, the material) and a host may want those too.
+//
+// WHAT THE RENDERER DOES NOT READ, NAMED: `RibbonVertex::twist`. A camera-facing strip has no
+// orientation about its tangent for a twist to turn — it always faces the eye — so a twist is a
+// property only a strip with a fixed up vector could show, and `StripRenderer` does not draw one.
+
+/// Ribbon and trail vertices, into strip records. `width` is already a half-width.
+[[nodiscard]] Status to_strip_vertices(Span<const RibbonVertex> rows,
+                                       Array<rendering::particles::StripVertex>& out) noexcept;
+
+/// Beam vertices, into strip records: one strip a beam.
+[[nodiscard]] Status to_strip_vertices(Span<const BeamVertex> rows,
+                                       Array<rendering::particles::StripVertex>& out) noexcept;
 
 }  // namespace cy::vfx

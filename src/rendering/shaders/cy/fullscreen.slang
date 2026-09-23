@@ -125,7 +125,6 @@ public float4 temporalResolve(FullscreenVertex input) : SV_Target
 {
     let inverseExtent = viewSet.frame.rows[13].zw;
     let feedback = viewSet.frame.temporalFeedback;
-    let jitter = viewSet.frame.temporalJitter;
     let current = passSet.sceneColor.SampleLevel(passSet.linearClamp, input.uv, 0.0);
 
     float3 minimum = current.rgb;
@@ -141,10 +140,18 @@ public float4 temporalResolve(FullscreenVertex input) : SV_Target
         }
     }
 
+    // WHERE THIS PIXEL WAS LAST FRAME, and nothing else: the prepass removes the jitter from the
+    // motion vector (`temporal-rendering`'s convention), so a still camera reads its history at
+    // exactly this texel. The previous offset appears nowhere — last frame's jitter is already
+    // averaged into its history.
+    //
+    // THIS USED TO ADD `previous - current` jitter to a motion vector that still carried the
+    // current one, so a still camera re-sampled its history at a different sub-pixel offset every
+    // frame and the resolved picture changed from frame to frame as much as an unresolved one:
+    // `render.pipeline`'s temporal case measured 1.057/255 against 0.997/255 with the history cut.
     let motion = passSet.velocity.SampleLevel(passSet.linearClamp, input.uv, 0.0);
     let surfaceDepth = passSet.depth.SampleLevel(passSet.linearClamp, input.uv, 0.0);
-    let jitterDelta = (jitter.zw - jitter.xy) * inverseExtent;
-    let historyUv = input.uv + motion + jitterDelta;
+    let historyUv = input.uv + motion;
     let inBounds = all(historyUv >= float2(0.0)) && all(historyUv <= float2(1.0));
     let previous = passSet.historyColor.SampleLevel(passSet.linearClamp, historyUv, 0.0).rgb;
     let clampedHistory = clamp(previous, minimum, maximum);

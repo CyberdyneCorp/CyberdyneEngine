@@ -75,6 +75,12 @@ struct FrameOptions {
     f32 capture_shot = -1.0F;
     /// Covered pixels shaded through the illumination system, per shot.
     u32 shaded_samples = 512;
+    /// Rasterise through the FORWARD FRAME's `virtual geometry` stage — the hardware path, which
+    /// `virtual-geometry` names as the default — rather than through `VisbufferPass::record`'s own
+    /// compute rasteriser in a graph of this sample's. On by default since M11.c task 4.3; the
+    /// compute path stays selectable because it is what `render.virtual_geometry_gpu` checks
+    /// against the reference and what the requirement permits for micro-triangles.
+    bool forward_frame = true;
 };
 
 /// What one run of the device path measured. Every figure here is a count or a duration; nothing
@@ -86,6 +92,11 @@ struct FrameReport {
     /// report the act as NOT EVALUATED rather than as satisfied.
     bool device = false;
     const char* backend = "none";
+    /// Which rasteriser filled the visibility buffer: "forward-frame" or "compute".
+    const char* rasteriser = "none";
+    /// Frames whose forward-frame `virtual geometry` stage actually recorded. Equal to the frames
+    /// run when `forward_frame` is on; a smaller number is a stage the graph culled.
+    u32 forward_stages = 0;
     const char* reason = "";
     u32 validation_errors = 0;
 

@@ -17,7 +17,10 @@ The output is checked in, so it is subject to the formatting gate like any other
 `just quality-format` (or clang-format -i on the file) after regenerating.
 
 Usage:
-    embed_spirv.py <output.h> <name>=<module.spv> [<name>=<module.spv> ...]
+    embed_spirv.py [--source <slang file>] <output.h> <name>=<module.spv> [<name>=<module.spv> ...]
+
+`--source` names the Slang file the modules were compiled from, for the header's provenance line. It
+defaults to cy/particle.slang; the strip renderer's header passes cy/strip.slang.
 """
 
 import pathlib
@@ -28,7 +31,7 @@ HEADER = """#pragma once
 // Compiled SPIR-V for the particle renderer. GENERATED — do not edit by hand.
 //
 // Produced by src/rendering/particles/shaders/embed_spirv.py from
-// src/rendering/shaders/cy/particle.slang; that file names the entry points and cy/frame.slang's
+// src/rendering/shaders/{source}; that file names the entry points and cy/frame.slang's
 // header comment carries the exact slangc invocations.
 //
 // CHECKED IN RATHER THAN COMPILED BY THE BUILD, for the reason samples/03-first-light's copy gives:
@@ -44,12 +47,16 @@ namespace cy::rendering::particles {
 
 
 def main(argv: list[str]) -> int:
+    source = "cy/particle.slang"
+    if len(argv) > 2 and argv[1] == "--source":
+        source = argv[2]
+        argv = [argv[0], *argv[3:]]
     if len(argv) < 3:
         sys.stderr.write(__doc__)
         return 2
 
     out = pathlib.Path(argv[1])
-    body = [HEADER]
+    body = [HEADER.replace("{source}", source)]
     for pair in argv[2:]:
         name, _, path = pair.partition("=")
         data = pathlib.Path(path).read_bytes()

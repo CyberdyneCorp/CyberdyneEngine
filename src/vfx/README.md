@@ -168,11 +168,49 @@ the one thing in that shot that is not content, and the shot's provenance says s
 shot's air is not.** `render.vfx`'s `particles are in the assembled frame` renders the same cooked
 system through the same camera at 480x270 and compares it against
 `tests/render/references/beauty_shot_air.png`; the case also renders the identical frame with the
-ring uploaded EMPTY and asserts how far apart the two are — 4 713 of 129 600 texels, 3.64% of the
-frame, mean |delta| 20.7/255 where they differ, worst channel 255 — so a field that got weaker fails
+ring uploaded EMPTY and asserts how far apart the two are — 6 586 of 129 600 texels, 5.08% of the
+frame with the trails, mean |delta| 22.3/255 where they differ, worst channel 255 — so a field that got weaker fails
 as loudly as one that vanished. `integration.vfx`'s case of the same name projects every published
 record through the artefact's camera on a machine with no GPU at all, and counts the ones inside the
 frustum: 901 of 996.
+
+## The strips — M11.c task 6.3
+
+The beauty shot's embers carry TRAILS: `samples/12-beauty/embers.cpp` publishes the same motes a
+second time through `publish_trails`, every third simulation step for the last eight, turns the rows
+into strip records with `to_strip_vertices`, and `Stage` draws them with `StripRenderer` in the
+frame's transparent stage before the sprites. The manifest carries the renderer's own count on a
+`trails` line beside `particles`. Two suites check it:
+
+* `integration.vfx`'s `particles are in the assembled frame: every mote's trail is its own and in
+  shot` — one strip a mote, each within 0.5 m of its head, most of them inside the artefact's frame,
+  on a machine with no GPU;
+* `render.vfx`'s `particles are in the assembled frame` — the air photographed WITH the trails and
+  compared against `tests/render/references/beauty_shot_air.png`, plus a second control that renders
+  the identical frame with the sprites and without the trails and asserts how far apart they are:
+  that difference is the strip renderer and nothing else.
+
+### Two defects the trails found, which one effect on its own never could
+
+Every publication case before this rung played ONE effect, and both of these need more than one
+block or a publication slower than the simulation.
+
+* **The history was keyed by slot, and a slot is only unique inside its block.** Three ember
+  emitters are three blocks; slot 5 of each shared one `PublicationHistory` entry, the second
+  publication overwrote the first, and next frame the first mote's trail — and its motion vector —
+  was drawn back to where the other emitter's mote had been, metres across the courtyard. The history
+  is now keyed by the block's base plus the slot, sized by `publication_slots(world)`, and a
+  publication handed a history too small for the world REFUSES rather than dropping the blocks that
+  do not fit. Regression: `two effects' trails each follow their own particle, never the other
+  effect's` — 100 m before the fix, 3 m after.
+* **A slot killed and spawned into between two publications was the same particle to the
+  history.** The only thing that told a re-used slot from its previous occupant was a publication
+  that saw it DEAD in between, and a trail published every third step — or any effect simulated
+  faster than its frame — kills and re-spawns a slot with nobody looking. `SimulationWorld` now
+  counts spawns per slot (`spawn_generations`), and `PublicationHistory::claim` forgets a slot's
+  history when the counter moved. Regression: `a slot killed and spawned into between two
+  publications starts a new trail`. The motion-vector suppression `vfx-system` requires on "spawn,
+  kill, teleport" had the same hole and is closed by the same counter.
 
 ## Using it, in the order the pieces expect
 
@@ -221,13 +259,18 @@ pass.declare(graph);                            // spawn, compact, initialise*, 
 
 ```cpp
 PublicationHistory history(allocator);           // the caller's, not the world's: two cameras, two
-history.resize(block_capacity, 4);               //   histories, and that is correct
+history.resize(publication_slots(world), 4);     //   histories; sized for EVERY block, once
+                                                 //   every effect is playing
 
 RendererDecl decl;                               // what the emitter declared, plus the controller's
 decl.kind = RendererKind::Ribbon;                //   feature level where a host overrides it
 Array<RibbonVertex> strips(allocator);
 RenderPublishReport report;
 publish_ribbons(world, decl, camera_position, capacity, history, strips, report);
+
+Array<rendering::particles::StripVertex> drawn(allocator);
+to_strip_vertices(strips.span(), drawn);         // ribbons, trails and beams draw one way
+// ... strip_renderer.upload(frame_slot, drawn.span()); recorder.add_extension(strip_renderer.extension());
 ```
 
 **`asset.resolve(registry)` is not optional and `compile_system` cannot do it for you** — the asset
@@ -310,13 +353,16 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
 * **A kernel writes at most `kMaxKernelWrites` (16) attributes**, because the shared core's root
   table is the domain's and a domain is a static table. Exceeding it is `OutOfRange` naming the
   emitter, never a truncation.
-* **The six renderer kinds beyond `Sprite` and `Mesh` publish rows; nothing composites them.**
-  `renderers.h` derives the geometry and the instances each kind needs from particle state —
-  `publish_ribbons`, `publish_trails`, `publish_beams`, `publish_decals`, `publish_lights`,
+* **Three of the six renderer kinds beyond `Sprite` and `Mesh` are composited; three still only
+  publish rows.** `renderers.h` derives the geometry and the instances each kind needs from particle
+  state — `publish_ribbons`, `publish_trails`, `publish_beams`, `publish_decals`, `publish_lights`,
   `publish_volumes` — because that derivation is the simulation's and a renderer would be wrong to
-  invent it. What is still absent is the compositing: no pass draws a ribbon strip, projects a decal
-  or feeds a `LightInstance` to clustered assignment. The half M8.c called "compositing work in the
-  renderer's layer" is still exactly that, and the half it used as the reason not to start is done.
+  invent it. **Since M11.c task 6.3 the three STRIP kinds are drawn**: `to_strip_vertices` turns a
+  ribbon, trail or beam row into `cy::rendering::particles::StripVertex`, and `StripRenderer` draws
+  every strip of a frame in one draw in the transparent stage — see "The strips" below. **Still
+  absent: no pass projects a decal, feeds a `LightInstance` to clustered assignment, or marches a
+  volume.** Those three are rows and nothing more, and the half M8.c called "compositing work in the
+  renderer's layer" is still exactly that for them.
 * **Collision is not implemented.** The data interfaces it would read — `scene_sdf`,
   `scene_depth`, `physics_query` — are declared, versioned, cost-classed and cook-gated, and a graph
   can sample them; the RESPONSE (bounce, restitution, friction, sliding) does not exist. `kill` and

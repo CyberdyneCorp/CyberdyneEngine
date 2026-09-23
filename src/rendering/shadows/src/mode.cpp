@@ -79,8 +79,7 @@ ShadowModeSelection select_shadow_mode(const ShadowModeRequest& request,
             selection.fallback = ShadowModeFallback::NoTraceThisFrame;
             selection.diagnostic =
                 "no trace is available this frame, so the traced mode fell back to the paged one; "
-                "`cy::rhi::Capability::RayTracing` unset is what this reads like on every device "
-                "in this tree";
+                "no traced shadow path exists yet, so this is every frame in this tree";
             return degrade_to_paged(selection, profile);
         case ShadowMode::Virtual:
             if (profile.virtual_pages) {

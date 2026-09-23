@@ -43,7 +43,9 @@ function(cy_assembly_declare_tests)
     cy_add_test(
         NAME render_assembly
         KIND integration
-        SOURCES "${tests_dir}/test_assembly.cpp"
+        SOURCES
+            "${tests_dir}/test_assembly.cpp"
+            "${tests_dir}/test_assembly_shadows.cpp"
         DEPENDENCIES cy::rendering-assembly cy::rendering-scene cy::rhi-null cy::scene)
 
     if(NOT CY_RENDERER_VULKAN)

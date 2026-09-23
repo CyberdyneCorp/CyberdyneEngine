@@ -176,3 +176,87 @@ CY_TEST_CASE("the ring turns over many frames and tears down with the device sti
     // fixture's destructor does another.
     delete scene;
 }
+
+namespace {
+
+/// Two frames of a camera standing at `first` and then at `second`, told to the temporal
+/// framework the way `FrameAssembly::assemble` tells it, and the upload `upload_for` builds after
+/// the second. The positions are camera-RELATIVE, exactly as the frame's instances are.
+struct CameraAway {
+    Mat4 projection = perspective_reversed_z(0.9F, 16.0F / 9.0F, 0.1F, 400.0F);
+    Mat4 relative_view =
+        look_at(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
+
+    [[nodiscard]] static Mat4 world_view(Vec3 eye) noexcept {
+        return look_at(eye, eye + Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
+    }
+
+    [[nodiscard]] FrameUpload upload(FrameAssembly& assembly, Vec3 first, Vec3 second) const {
+        TemporalView view;
+        view.width = kWidth;
+        view.height = kHeight;
+        view.projection = projection;
+        view.view = world_view(first);
+        view.camera_position = first;
+        assembly.temporal().begin_frame(view);
+        view.view = world_view(second);
+        view.camera_position = second;
+        assembly.temporal().begin_frame(view);
+        // No jitter in the report, so `relative_to_clip` below is the unjittered matrix.
+        const AssemblyReport report;
+        const u32 offsets[4] = {0, 0, 0, 0};
+        return upload_for(assembly, report, projection * relative_view, relative_view, {},
+                          GlobalsData{}, offsets);
+    }
+};
+
+/// One row-major matrix from the upload applied to a point.
+[[nodiscard]] Vec4 apply_rows(const f32 rows[16], Vec3 point) noexcept {
+    f32 out[4] = {};
+    for (u32 row = 0; row < 4; ++row) {
+        out[row] = (rows[(row * 4U) + 0] * point.x) + (rows[(row * 4U) + 1] * point.y) +
+                   (rows[(row * 4U) + 2] * point.z) + rows[(row * 4U) + 3];
+    }
+    return Vec4{out[0], out[1], out[2], out[3]};
+}
+
+}  // namespace
+
+CY_TEST_CASE("motion vectors are derived about THIS frame's camera, wherever that camera stands") {
+    // THE REGRESSION. `upload_for` handed the prepass the framework's previous WORLD
+    // view-projection and the prepass multiplied a camera-RELATIVE position by it, so every motion
+    // vector was off by the camera's distance from the world origin. `FrameScene` stands its camera
+    // at the origin, which is the one place the two agree, and that is why no picture in this suite
+    // showed it.
+    FrameAssembly assembly(allocator());
+    AssemblyDescription description;
+    description.width = kWidth;
+    description.height = kHeight;
+    description.near_plane = 0.1F;
+    description.far_plane = 400.0F;
+    description.clusters = ClusterGridConfig{16, 8, 16};
+    description.post.temporal_antialiasing = true;
+    description.gpu_culling = false;
+    CY_REQUIRE(assembly.initialize(description).has_value());
+    const CameraAway camera;
+
+    // 1. A STILL CAMERA 120 m FROM THE ORIGIN HAS NO MOTION: last frame's matrix is this frame's.
+    const Vec3 eye{120.0F, 8.0F, -40.0F};
+    const FrameUpload still = camera.upload(assembly, eye, eye);
+    const Vec3 point{1.5F, -0.5F, -10.0F};
+    const Vec4 now = apply_rows(still.view.relative_to_clip, point);
+    const Vec4 before = apply_rows(still.view.previous_relative_to_clip, point);
+    CY_CHECK_NEAR(before.x / before.w, now.x / now.w, 1e-4F);
+    CY_CHECK_NEAR(before.y / before.w, now.y / now.w, 1e-4F);
+
+    // 2. A MOVING ONE: the previous matrix applied to a point RELATIVE TO THE CURRENT CAMERA lands
+    //    where that world point was on last frame's screen.
+    const Vec3 moved{120.25F, 8.0F, -40.5F};
+    const FrameUpload walking = camera.upload(assembly, eye, moved);
+    const Vec3 world{121.0F, 7.0F, -52.0F};
+    const Vec4 reprojected = apply_rows(walking.view.previous_relative_to_clip, world - moved);
+    const Vec4 expected =
+        camera.projection * (camera.world_view(eye) * Vec4{world.x, world.y, world.z, 1.0F});
+    CY_CHECK_NEAR(reprojected.x / reprojected.w, expected.x / expected.w, 1e-4F);
+    CY_CHECK_NEAR(reprojected.y / reprojected.w, expected.y / expected.w, 1e-4F);
+}

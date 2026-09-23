@@ -32,6 +32,21 @@ cannot exist with nothing writing it, and a normal buffer cannot be read by an e
 **A disabled feature is a pass that was never declared**, so its target was never created. "Their
 targets unallocated" is observable — `FrameResources` holds `kInvalidResource` — rather than asserted.
 
+## One stage that is not the specification's: virtual geometry
+
+M11.c task 4.3 added `FramePassKind::VirtualGeometry`, declared only when
+`FrameFeatures::virtual_geometry` is on. It sits after the depth prepass (and would sit after its MSAA
+resolve, except that a frame with virtual geometry refuses MSAA) and before every stage that reads
+depth, because it WRITES the frame's own depth: a mesh the prepass drew and a cluster occlude one
+another through one buffer. It also writes an `R32Uint` visibility target, `FrameResources::visibility`.
+
+This module still records nothing for it. `vg::ForwardVisibility` in
+`src/rendering/virtual_geometry/` supplies the callback, which is why that module links this one and
+not the other way round. Its callback draws indirectly and pulls vertices out of storage buffers, so
+`FramePassCallback` grew a general `reads` list beside `vertex_reads`: each entry is a resource and a
+READING intent, and the graph derives the dependency from it. `unit.render_forward` asserts the
+stage's place, its targets, a declared read producing a dependency, and the MSAA refusal.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in

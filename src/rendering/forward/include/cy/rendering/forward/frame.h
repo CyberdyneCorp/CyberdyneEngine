@@ -85,6 +85,11 @@ struct FrameFeatures {
     bool transparent_refraction = false;
     bool post_process = true;
     bool ui = true;
+    /// Virtual geometry's hardware rasteriser: a stage after the depth prepass that writes the
+    /// visibility target and the frame's own depth. Off by default, and a caller turns it on by
+    /// handing the frame to `vg::ForwardVisibility`, which supplies the stage's record callback —
+    /// see the header comment on `FramePassKind::VirtualGeometry`.
+    bool virtual_geometry = false;
     /// 1, 2, 4 or 8. Above 1 the colour and depth are resolved before the screen-space passes.
     u32 msaa_samples = 1;
 };
@@ -98,6 +103,16 @@ enum class FramePassKind : u8 {
     Prepare = 0,
     DepthPrepass,
     DepthResolve,
+    /// Virtual geometry's visibility pass: the visible clusters the traversal selected, drawn by a
+    /// vertex and fragment shader into a one-word visibility target and into the frame's depth.
+    ///
+    /// NOT ONE OF THE SPECIFICATION'S THIRTEEN, and placed where it is for a reason the pass order
+    /// can check. It writes the SAME depth the prepass wrote, so it comes after the prepass (and
+    /// its MSAA resolve, which a frame with virtual geometry refuses) and before every stage that
+    /// reads depth — the screen-space passes and the opaque pass's `Equal` test. A mesh and a
+    /// cluster hierarchy then occlude one another through one depth buffer rather than being
+    /// composited.
+    VirtualGeometry,
     ClusterAssignment,
     AmbientOcclusion,
     ScreenSpaceGi,
@@ -128,6 +143,15 @@ inline constexpr u32 kFramePassKindCount = static_cast<u32>(FramePassKind::Count
 
 [[nodiscard]] const char* frame_pass_kind_name(FramePassKind kind) noexcept;
 
+/// A read a stage's record callback performs on a resource some other pass produced, declared so
+/// the graph derives the dependency. `vertex_reads` below is the common case of this; a callback
+/// that draws indirectly or pulls vertices out of storage buffers needs the general one.
+struct FrameResourceRead {
+    ResourceId resource = kInvalidResource;
+    /// A READING intent. The graph refuses a writing one rather than deriving a wrong barrier.
+    rhi::Access access = rhi::Access::VertexStorageRead;
+};
+
 /// A caller's record callback for one stage.
 struct FramePassCallback {
     FramePassCallback() = default;
@@ -140,6 +164,8 @@ struct FramePassCallback {
     /// Device buffers read by commands recorded through this callback. Declaring them here lets
     /// the graph derive compute-to-vertex barriers for caller-owned geometry producers.
     Span<const ResourceId> vertex_reads;
+    /// Any other resources the callback reads, with the intent it reads them with.
+    Span<const FrameResourceRead> reads;
 };
 
 /// The resources one frame declares. `kInvalidResource` for anything the feature set left out —
@@ -168,6 +194,10 @@ struct FrameResources {
     ResourceId lights = kInvalidResource;
     /// `GpuDrawInstance` records, indexed by a draw's `first_instance`.
     ResourceId draw_instances = kInvalidResource;
+    /// Virtual geometry's visibility target: one `(identity << 8) | triangle` payload a pixel,
+    /// stored complemented so that a cleared texel reads as "no surface". Only with
+    /// `FrameFeatures::virtual_geometry`.
+    ResourceId visibility = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -186,6 +216,9 @@ struct FrameDescription {
     /// asks for 16-bit channels, which is what this format gives.
     rhi::Format normal_format = rhi::Format::Rgba16Sfloat;
     rhi::Format velocity_format = rhi::Format::Rg16Sfloat;
+    /// Thirty-two bits is the visibility payload exactly: 24 of surface identity and 8 of triangle,
+    /// the word `vg_visbuffer.slang`'s compute rasteriser packs beside its depth key.
+    rhi::Format visibility_format = rhi::Format::R32Uint;
     FrameFeatures features;
     /// The grid the assignment pass dispatches over. `cluster_count() == 0` skips the pass, which
     /// is what a view with no lights costs.

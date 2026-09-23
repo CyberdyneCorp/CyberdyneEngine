@@ -36,7 +36,9 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/particles/particle_renderer.h>
+#include <cy/rendering/particles/strip_renderer.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
+#include <cy/vfx/renderers.h>
 #include <cy/vfx/runtime.h>
 #include <cy/vfx/world.h>
 
@@ -74,7 +76,17 @@ struct SceneOptions {
     /// Read by the resolve. A particle's colour is a RADIANCE, so a frame graded at zero stops
     /// photographs an effect as a white rectangle.
     f32 exposure_stops = -11.4F;
+    /// TRAILS, through `vfx-system`'s `Trail` renderer and `StripRenderer`, drawn in the same stage
+    /// before the sprites. Null draws none — every picture committed before M11.c task 6.3.
+    const vfx::RendererDecl* trails = nullptr;
+    /// Publish the trails every this many `simulate` calls: the cadence `samples/12-beauty` uses,
+    /// so a trail here is as long as the one in the published still.
+    u32 trail_interval = 1;
 };
+
+/// The strip renderer's ring. Eight vertices for each of `kRingCapacity` particles would be 32 768;
+/// the shot's air settles under a thousand motes, so this is room for that field twice over.
+inline constexpr u32 kStripCapacity = 16384;
 
 /// The world, the frame, and one render of the two together.
 class VfxScene {
@@ -98,6 +110,9 @@ public:
     /// it must differ measurably", and the difference is only a measurement if the two frames
     /// differ in the effect and in nothing else.
     void set_draw_particles(bool on) noexcept { draw_particles_ = on; }
+    /// The same control for the trails alone: every other part of the frame, the sprites included,
+    /// is unchanged. That difference is how much of the picture the STRIP RENDERER is.
+    void set_draw_trails(bool on) noexcept { draw_trails_ = on; }
     void release() noexcept;
 
     /// Advance the simulation by one frame at 60 Hz.
@@ -123,6 +138,13 @@ public:
     [[nodiscard]] const particles::ParticleReport& particle_report() const noexcept {
         return effect_.report();
     }
+    [[nodiscard]] const particles::StripReport& strip_report() const noexcept {
+        return strips_.report();
+    }
+    [[nodiscard]] const vfx::RenderPublishReport& trailed() const noexcept { return trailed_; }
+    [[nodiscard]] Span<const particles::StripVertex> trails() const noexcept {
+        return trail_vertices_.span();
+    }
     [[nodiscard]] const RecorderReport& recorded() const noexcept { return recorder_.report(); }
 
 private:
@@ -139,6 +161,14 @@ private:
     vfx::StepReport steps_;
     vfx::PublishReport published_;
     Array<particles::ParticleInstance> records_;
+    vfx::RendererDecl trail_decl_;
+    vfx::PublicationHistory history_;
+    vfx::RenderPublishReport trailed_;
+    Array<vfx::RibbonVertex> trail_rows_;
+    Array<particles::StripVertex> trail_vertices_;
+    u32 trail_interval_ = 1;
+    u32 since_trail_ = 0;
+    bool trails_enabled_ = false;
 
     assembly::FrameAssembly assembly_;
     SpatialIndex index_;
@@ -147,6 +177,7 @@ private:
     FrameBindings bindings_;
     FrameRecorder recorder_;
     particles::ParticleRenderer effect_;
+    particles::StripRenderer strips_;
     Array<InstanceTransform> instances_;
     Array<render::LightDescription> lights_;
     Array<u32> pixels_;
@@ -164,6 +195,7 @@ private:
     f32 fov_y_radians_ = 0.9F;
     f32 exposure_stops_ = -11.4F;
     bool draw_particles_ = true;
+    bool draw_trails_ = true;
     bool read_back_ = false;
     bool built_ = false;
 };

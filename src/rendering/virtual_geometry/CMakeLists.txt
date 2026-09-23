@@ -49,6 +49,7 @@ cy_add_module(
         src/asset.cpp
         src/build.cpp
         src/cluster.cpp
+        src/forward_visibility.cpp
         src/gpu.cpp
         src/residency.cpp
         src/simplify.cpp
@@ -59,8 +60,15 @@ cy_add_module(
     # PUBLIC because both appear in this module's interface: `GpuTraversal::set_occlusion` names
     # `HzbPass`, and `TraversalView::occlusion` names `render::culling::OcclusionTester` — the SAME
     # interface `GpuCullOptions` takes, over the SAME pyramid. Two rows, one piece of device work.
+    #
+    # cy::rendering-forward joined at M11.c task 4.3, PUBLIC because `ForwardVisibility::build`
+    # names `ForwardFrame` and `FrameDescription`: virtual geometry is a stage of the forward
+    # frame's pass order now, and this module supplies that stage's record callback. The edge runs
+    # this way and not the other because `ForwardFrame` DECLARES and owns no renderer — it names the
+    # stage; the module that knows how to draw clusters fills it, as `cy::rendering-pipeline` fills
+    # the opaque pass.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-assets
-                        cy::rendering-hzb cy::servers-render-culling
+                        cy::rendering-forward cy::rendering-hzb cy::servers-render-culling
                         cy::servers-residency cy::rhi cy::rendering-graph
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 

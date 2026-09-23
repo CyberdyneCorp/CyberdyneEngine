@@ -9,7 +9,7 @@ task is the requirement.
 
 | File | What it holds |
 |---|---|
-| `jitter.h` | the Halton sequence, the current and previous offsets, the NDC conversion, and pinned mode |
+| `jitter.h` | the Halton sequence, the current and previous offsets, the NDC conversion, and pinned mode — which fixes where the sequence STARTS and then steps, because a pin that held one sample made every pinned capture an unjittered one |
 | `motion.h` | `derive_surface_motion()` and the one motion-vector convention, written down once |
 | `reprojection.h` | the four history states and the classification every consumer reads instead of deriving |
 | `history.h` | history declarations, their provenance, and what each costs |

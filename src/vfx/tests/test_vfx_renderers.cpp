@@ -629,3 +629,113 @@ CY_TEST_CASE("a volume thins rather than shrinking as its particle fades") {
     // The scattering colour is the radiance the sprite path would publish, emission folded in.
     CY_CHECK_GT(rows[0].scattering[0], 1.0F);
 }
+
+CY_TEST_CASE("two effects' trails each follow their own particle, never the other effect's") {
+    // THE DEFECT THIS CASE EXISTS FOR. `PublicationHistory` was keyed by the SLOT, and a slot is
+    // only unique inside its block: slot 5 of one effect and slot 5 of another shared one entry.
+    // The second publication overwrote the first, and next frame the first particle's trail was
+    // drawn back to where the SECOND particle had been. Every case above plays one effect, so none
+    // of them could see it; the beauty shot plays three, and its trails ran across the courtyard.
+    Fixture fixture(RendererKind::Trail);
+    constexpr f32 kApart = 100.0F;
+    EffectSpawn second;
+    second.position = Vec3{0.0F, 0.0F, kApart};
+    second.simulation_hz = 60.0F;
+    auto played = fixture.world.play(*fixture.system, second);
+    CY_REQUIRE(played.has_value());
+    const EffectHandle other = played.value();
+    fixture.step();
+
+    RendererDecl decl = decl_for(RendererKind::Trail);
+    decl.trail_history = 4;
+    Array<RibbonVertex> rows(allocator());
+    RenderPublishReport report;
+
+    // A HISTORY SIZED FOR ONE BLOCK IS REFUSED FOR A WORLD OF TWO, rather than publishing the
+    // second effect with every trail empty and every motion vector suppressed and saying nothing.
+    CY_CHECK_EQ(publication_slots(fixture.world), 2U * kCapacity);
+    PublicationHistory one_block(allocator());
+    CY_REQUIRE(one_block.resize(kCapacity, 4).has_value());
+    CY_CHECK(!publish_trails(fixture.world, decl, Vec3{}, 1024, one_block, rows, report));
+
+    PublicationHistory history(allocator());
+    CY_REQUIRE(history.resize(publication_slots(fixture.world), 4).has_value());
+    for (u32 frame = 0; frame < 4U; ++frame) {
+        const auto x = static_cast<f32>(frame);
+        CY_REQUIRE(fixture.world.set_transform(fixture.handle, Vec3{x, 0.0F, 0.0F}).has_value());
+        CY_REQUIRE(fixture.world.set_transform(other, Vec3{x, 0.0F, kApart}).has_value());
+        CY_REQUIRE(
+            publish_trails(fixture.world, decl, Vec3{}, 1024, history, rows, report).has_value());
+    }
+
+    // Both effects' particles each carry a full trail...
+    CY_CHECK_EQ(report.primitives, 2U * kCapacity);
+    CY_CHECK_EQ(static_cast<u32>(rows.size()), 2U * kCapacity * decl.trail_history);
+
+    // ...and every vertex of a strip is within the three metres its own particle moved, never the
+    // hundred between the two effects. Measured before the fix: a worst head-to-tail distance of
+    // 100 metres, every strip of the first effect drawn back to the second.
+    f32 worst = 0.0F;
+    Vec3 head{};
+    u32 strip = ~0U;
+    for (const RibbonVertex& vertex : rows) {
+        if (vertex.strip != strip) {
+            strip = vertex.strip;
+            head = Vec3{vertex.row.position[0], vertex.row.position[1], vertex.row.position[2]};
+        }
+        const f32 dx = vertex.row.position[0] - head.x;
+        const f32 dy = vertex.row.position[1] - head.y;
+        const f32 dz = vertex.row.position[2] - head.z;
+        const f32 distance = std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        worst = distance > worst ? distance : worst;
+    }
+    std::fprintf(stderr, "two effects' trails: worst head-to-vertex distance %.3f m\n",
+                 static_cast<double>(worst));
+    CY_CHECK_LE(worst, 3.0F + 1.0e-4F);
+}
+
+CY_TEST_CASE("a slot killed and spawned into between two publications starts a new trail") {
+    // THE DEFECT THIS CASE EXISTS FOR. A re-used slot was told apart from its previous occupant
+    // ONLY by a publication that saw it dead in between: `begin_frame` shifts an absence into
+    // every slot nobody records. A host that publishes trails every third step — the beauty
+    // shot's embers do — or an effect simulated faster than the frame kills and re-spawns a slot
+    // with nobody looking, and the new particle's trail and motion vector were drawn back to where
+    // the OLD one died. `PublicationHistory::claim` now compares the slot's spawn counter.
+    Fixture fixture(RendererKind::Trail);
+    fixture.step();
+
+    RendererDecl decl = decl_for(RendererKind::Trail);
+    decl.trail_history = 4;
+    PublicationHistory history(allocator());
+    CY_REQUIRE(history.resize(publication_slots(fixture.world), 4).has_value());
+    Array<RibbonVertex> rows(allocator());
+    RenderPublishReport report;
+    for (u32 frame = 0; frame < 2U; ++frame) {
+        const auto y = static_cast<f32>(frame);
+        CY_REQUIRE(fixture.world.set_transform(fixture.handle, Vec3{0.0F, y, 0.0F}).has_value());
+        CY_REQUIRE(
+            publish_trails(fixture.world, decl, Vec3{}, 1024, history, rows, report).has_value());
+    }
+    CY_CHECK_EQ(report.primitives, kCapacity);
+    const u32 before = fixture.world.spawn_generations(0)[3];
+
+    // Slot 3 dies and, in the SAME unobserved interval, the spawn stage fills it again: the
+    // initialise places the new particle at spawn index 0, three metres from where slot 3 was.
+    fixture.kill(3);
+    fixture.step();
+    CY_CHECK_EQ(fixture.live(), kCapacity);
+    CY_CHECK_EQ(fixture.world.spawn_generations(0)[3], before + 1U);
+
+    CY_REQUIRE(fixture.world.set_transform(fixture.handle, Vec3{0.0F, 2.0F, 0.0F}).has_value());
+    CY_REQUIRE(
+        publish_trails(fixture.world, decl, Vec3{}, 1024, history, rows, report).has_value());
+
+    // The fifteen survivors carry trails three vertices long; the newcomer has one recorded
+    // position and therefore no trail at all, and its head's motion vector is suppressed. Measured
+    // before the fix: sixteen trails, the newcomer's running back to x = 3, and no suppression.
+    CY_CHECK_EQ(report.primitives, kCapacity - 1U);
+    CY_CHECK_EQ(report.motion_suppressed, 1U);
+    for (const RibbonVertex& vertex : rows) {
+        CY_CHECK_NE(vertex.row.particle, 3U);
+    }
+}

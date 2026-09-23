@@ -626,6 +626,12 @@ Status GpuTraversal::record(RenderGraph& graph, const TraversalView& view, u32 i
         uploaded[slot] = import(upload_targets[slot], upload_names[slot], uploads_[slot].capacity,
                                 storage | rhi::BufferUsage::TransferDestination);
     }
+    resources_ = GraphResources{&graph,
+                                visible,
+                                counters,
+                                uploaded[kUploadClusters],
+                                uploaded[kUploadInstances],
+                                uploaded[kUploadAssets]};
     const ResourceId staging =
         import(staging_, "vg.staging",
                uploads_[kUploadCount - 1].staging_offset + uploads_[kUploadCount - 1].capacity,

@@ -182,6 +182,7 @@ SimulationWorld::SimulationWorld(Allocator& allocator) noexcept
       instances_(allocator),
       blocks_(allocator),
       alive_(allocator),
+      generation_(allocator),
       alive_offset_(allocator),
       parameters_(allocator),
       parameter_offset_(allocator) {}
@@ -196,6 +197,7 @@ Status SimulationWorld::initialize(const WorldDescription& description) noexcept
     instances_.clear();
     blocks_.clear();
     alive_.clear();
+    generation_.clear();
     alive_offset_.clear();
     parameters_.clear();
     parameter_offset_.clear();
@@ -212,6 +214,7 @@ void SimulationWorld::shutdown() noexcept {
     instances_.clear();
     blocks_.clear();
     alive_.clear();
+    generation_.clear();
     alive_offset_.clear();
     parameters_.clear();
     parameter_offset_.clear();
@@ -240,6 +243,18 @@ Span<const u8> SimulationWorld::alive_flags(u32 block) const noexcept {
         return {};
     }
     return {alive_.data() + offset, count};
+}
+
+Span<const u32> SimulationWorld::spawn_generations(u32 block) const noexcept {
+    if (block >= blocks_.size() || block >= alive_offset_.size()) {
+        return {};
+    }
+    const u32 offset = alive_offset_[block];
+    const u32 count = blocks_[block].particles;
+    if (static_cast<usize>(offset) + count > generation_.size()) {
+        return {};
+    }
+    return {generation_.data() + offset, count};
 }
 
 namespace {
@@ -279,6 +294,9 @@ Status SimulationWorld::acquire_blocks(const CompiledSystem& system, u32 first_b
             return pushed;
         }
         if (Status sized = alive_.resize(alive_.size() + block->particles); !sized) {
+            return sized;
+        }
+        if (Status sized = generation_.resize(alive_.size()); !sized) {
             return sized;
         }
     }
@@ -538,6 +556,8 @@ struct EmitterPass {
     const CompiledEmitter* emitter = nullptr;
     KernelContext context;
     Span<u8> alive;
+    /// Parallel to `alive`: bumped when a slot is spawned into. See `spawn_generations`.
+    Span<u32> generations;
     KernelRegisters* registers = nullptr;
     Array<SimulationWorld::DispatchGroup>* groups = nullptr;
     StepReport* report = nullptr;
@@ -601,6 +621,9 @@ struct EmitterPass {
         // its first frame. The marker is cleared in the loop below, so it costs one byte and no
         // branch anywhere else.
         pass.alive[particle] = 2;
+        if (particle < pass.generations.size()) {
+            ++pass.generations[particle];
+        }
         ++spawned;
         ++pass.report->spawned;
     }
@@ -703,6 +726,10 @@ Status SimulationWorld::simulate_emitter(EffectInstance& instance, u32 which,
     pass.context.emitter_age = instance.age;
     pass.context.events = &events_;
     pass.alive = alive_flags(block);
+    if (block < alive_offset_.size() &&
+        static_cast<usize>(alive_offset_[block]) + pass.alive.size() <= generation_.size()) {
+        pass.generations = {generation_.data() + alive_offset_[block], pass.alive.size()};
+    }
     pass.registers = &registers;
     pass.groups = &groups;
     pass.report = &report;

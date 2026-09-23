@@ -8,6 +8,16 @@
 it was a chart — because at M7 nothing in this engine could turn a frame into a file. M8.c built
 that layer. These are the frames.
 
+> **Which rasteriser drew them.** The images and figures on this page were captured with the
+> COMPUTE rasteriser, in a graph of the sample's own. Since M11.c task 4.3 the sample draws its
+> clusters in the forward frame's `virtual geometry` stage instead — the hardware rasteriser, into
+> the frame's own depth (`src/rendering/virtual_geometry/include/cy/rendering/virtual_geometry/forward_visibility.h`)
+> — and `render.virtual_geometry_shaded` asserts that path. The two write the same visibility
+> buffer and differ only where a fill rule decides: at 1280x720 the forward path covers 921,589
+> pixels where the figures below say 921,593, with the same 5,247 visible clusters, and at the
+> suite's 320x180 the regenerated reference differs from the old one in 15 of 57,600 texels.
+> `just capture-virtual-geometry` regenerates the images from the forward path.
+
 ## The scene
 
 One film-detail interior, cooked through the real builder with the crack-free check the cook is

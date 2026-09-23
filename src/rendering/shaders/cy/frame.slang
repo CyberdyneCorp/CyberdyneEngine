@@ -103,6 +103,10 @@
 // reads none of them, and shades the four constants it always did. Closing that is the Metal
 // backend's own rung — M11.d — and it is the same handover `slang_program.h` already records for
 // the fragment-stage lowering.
+//
+// `cyDepthFragment`'s MSL IS the one frame.slang module regenerated since, for M11.c task 3.4: it
+// reads no material table, and against the committed copy the regeneration changed only `#line`
+// numbers before the jitter removal below was made. The other three stay as described above.
 
 module frame;
 
@@ -382,7 +386,15 @@ public CyDepthOutput cyDepthFragment(CyDepthVertex input)
 {
     CyDepthOutput output;
     output.normalRoughness = float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
-    let currentNdc = input.currentClip.xy / input.currentClip.w;
+    // JITTER REMOVED HERE, which is `temporal-rendering`'s convention and the one
+    // `src/rendering/temporal/README.md` states: `history_uv = current_uv + motion`, and a still
+    // surface under a still camera has a motion vector of exactly zero. `currentClip` is the
+    // JITTERED position the rasteriser used and `previousClip` the unjittered one, so the offset
+    // `upload_for` added (2 * jitter / extent in NDC) is taken back out. Leaving it in made every
+    // still pixel's motion the current jitter, and the resolve re-sampled its history at a
+    // different sub-pixel offset every frame.
+    let currentNdc = input.currentClip.xy / input.currentClip.w -
+                     cyFrame.temporalJitter.xy * 2.0 * cyFrame.extentAndInverse.zw;
     let previousNdc = input.previousClip.xy / input.previousClip.w;
     output.velocity = float2((previousNdc.x - currentNdc.x) * 0.5,
                              (currentNdc.y - previousNdc.y) * 0.5);

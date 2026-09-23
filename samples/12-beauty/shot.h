@@ -188,6 +188,13 @@ struct ShotReport {
     u32 particles = 0;
     u32 particles_dropped = 0;
     u32 particle_draws = 0;
+    /// The motes' trails, as `StripRenderer` reported them: vertices in its ring, the strips they
+    /// form, the quads joining two vertices of one strip, the draws and the vertices it dropped.
+    u32 trail_vertices = 0;
+    u32 trail_strips = 0;
+    u32 trail_segments = 0;
+    u32 trail_draws = 0;
+    u32 trail_dropped = 0;
     f64 build_ms = 0.0;
     f64 submit_ms = 0.0;
     f64 sky_ms = 0.0;

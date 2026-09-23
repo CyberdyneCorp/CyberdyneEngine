@@ -415,3 +415,91 @@ CY_TEST_CASE("the scene colour chain is floating point, and the two targets that
                 cy::rhi::Format::R8Unorm);
     CY_CHECK_NE(graph.resource(resources.ambient_occlusion).texture.format, colour);
 }
+
+// --- Virtual geometry's stage. M11.c task 4.3 --------------------------------------------------
+
+CY_TEST_CASE(
+    "virtual geometry is a stage after the prepass and before everything that reads depth") {
+    // Off, it is a stage that does not exist: no pass, no visibility target. That is the frame
+    // every caller before task 4.3 built, and the one a caller that never asks still builds.
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    FrameDescription description = make_description();
+    description.features.ambient_occlusion = true;
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_CHECK_FALSE(declared(plain_frame, FramePassKind::VirtualGeometry));
+    CY_CHECK_EQ(plain_frame.resources().visibility, kInvalidResource);
+
+    // On, it sits between the prepass that wrote the depth it tests against and the first stage
+    // that reads that depth — the screen-space passes, then the opaque pass's `Equal` test. Any
+    // other place in the order draws clusters into a depth buffer something already consumed.
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    description.features.virtual_geometry = true;
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_REQUIRE(declared(frame, FramePassKind::VirtualGeometry));
+    CY_CHECK_LT(position_of(frame, FramePassKind::DepthPrepass),
+                position_of(frame, FramePassKind::VirtualGeometry));
+    CY_CHECK_LT(position_of(frame, FramePassKind::VirtualGeometry),
+                position_of(frame, FramePassKind::AmbientOcclusion));
+    CY_CHECK_LT(position_of(frame, FramePassKind::VirtualGeometry),
+                position_of(frame, FramePassKind::Opaque));
+
+    // One word a pixel, which is the visibility payload exactly, and it WRITES the frame's own
+    // depth: the same resource the prepass writes and the opaque pass reads.
+    const cy::rendering::ResourceId visibility = frame.resources().visibility;
+    CY_REQUIRE_NE(visibility, kInvalidResource);
+    CY_CHECK_EQ(graph.resource(visibility).texture.format, cy::rhi::Format::R32Uint);
+    bool writes_visibility = false;
+    bool writes_depth = false;
+    for (const cy::rendering::Use& use :
+         graph.pass_uses(frame.pass_of(FramePassKind::VirtualGeometry))) {
+        writes_visibility |=
+            use.resource == visibility && use.access == cy::rhi::Access::ColorAttachmentWrite;
+        writes_depth |= use.resource == frame.resources().depth &&
+                        use.access == cy::rhi::Access::DepthStencilAttachmentWrite;
+    }
+    CY_CHECK(writes_visibility);
+    CY_CHECK(writes_depth);
+}
+
+CY_TEST_CASE(
+    "virtual geometry's stage reads what its callback declares, and is refused with MSAA") {
+    // The stage's callback draws INDIRECTLY and pulls its vertices out of storage buffers, so
+    // `vertex_reads` — which declares vertex attributes — is the wrong intent for either. The
+    // general `reads` list is what makes the graph order the draw after the dispatch that wrote
+    // its arguments.
+    RenderGraph graph(allocator());
+    cy::rendering::BufferRequest request;
+    request.name = "draw arguments";
+    request.size = 64;
+    request.extra_usage = cy::rhi::BufferUsage::Storage | cy::rhi::BufferUsage::Indirect;
+    const cy::rendering::ResourceId arguments =
+        graph.import_buffer(request, cy::rhi::BufferHandle::from_slot(0, 1));
+    graph.add_pass("write arguments", cy::rhi::QueueKind::Graphics)
+        .write(arguments, cy::rhi::Access::ComputeStorageWrite);
+
+    ForwardFrame frame(allocator());
+    FrameDescription description = make_description();
+    description.features.virtual_geometry = true;
+    const cy::rendering::FrameResourceRead read{arguments, cy::rhi::Access::IndirectCommandRead};
+    description.callbacks[static_cast<cy::usize>(FramePassKind::VirtualGeometry)].reads =
+        cy::Span<const cy::rendering::FrameResourceRead>(&read, 1);
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    bool reads_arguments = false;
+    for (const cy::rendering::Use& use :
+         graph.pass_uses(frame.pass_of(FramePassKind::VirtualGeometry))) {
+        reads_arguments |=
+            use.resource == arguments && use.access == cy::rhi::Access::IndirectCommandRead;
+    }
+    CY_CHECK(reads_arguments);
+    cy::Expected<cy::rendering::CompiledGraph, cy::Error> plan = graph.compile(compile_options());
+    CY_REQUIRE(plan.has_value());
+
+    // A visibility payload names ONE triangle per pixel, so a multisampled frame is refused by
+    // name rather than drawn into a single-sample target beside a multisampled depth.
+    RenderGraph msaa_graph(allocator());
+    ForwardFrame msaa_frame(allocator());
+    description.features.msaa_samples = 4;
+    CY_CHECK_FALSE(msaa_frame.build(msaa_graph, description).has_value());
+}

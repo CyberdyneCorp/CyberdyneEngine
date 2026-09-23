@@ -25,6 +25,7 @@ void JitterSequence::configure(const JitterConfig& config) noexcept {
     config_.base_x = math::max(config_.base_x, 2U);
     config_.base_y = math::max(config_.base_y, 2U);
     index_ = 0;
+    restart_ = false;
     current_ = Vec2{0.0F, 0.0F};
     previous_ = Vec2{0.0F, 0.0F};
 }
@@ -38,7 +39,13 @@ void JitterSequence::advance(bool enabled) noexcept {
         current_ = Vec2{0.0F, 0.0F};
         return;
     }
-    if (!pinned_) {
+    // A PIN FIXES WHERE THE SEQUENCE STARTS, NOT WHERE IT STAYS. The first enabled frame after
+    // `pin` draws the pinned index's sample and every frame after it steps on, exactly as an
+    // unpinned sequence does. Holding the index instead gave every pinned frame one offset, and a
+    // temporal resolve over one offset accumulates one sample: no anti-aliasing at all.
+    if (restart_) {
+        restart_ = false;
+    } else {
         index_ = (index_ + 1U) % config_.length;
     }
     // Halton is indexed from one: index zero is the radical inverse of nothing, which is 0.0, and a
@@ -50,6 +57,7 @@ void JitterSequence::advance(bool enabled) noexcept {
 
 void JitterSequence::pin(u32 index) noexcept {
     pinned_ = true;
+    restart_ = true;
     index_ = index % config_.length;
 }
 

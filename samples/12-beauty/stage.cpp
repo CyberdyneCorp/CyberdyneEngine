@@ -18,6 +18,7 @@
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/particles/particle_renderer.h>
+#include <cy/rendering/particles/strip_renderer.h>
 #include <cy/rendering/pipeline/frame_bindings.h>
 #include <cy/rendering/pipeline/frame_pipelines.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
@@ -56,6 +57,7 @@ using cy::rendering::assembly::CapturePurpose;
 using cy::rendering::assembly::FrameAssembly;
 using cy::rendering::assembly::FrameSinks;
 using cy::rendering::particles::ParticleRenderer;
+using cy::rendering::particles::StripRenderer;
 using cy::rendering::pipeline::FrameBindings;
 using cy::rendering::pipeline::FramePipelineKind;
 using cy::rendering::pipeline::FramePipelines;
@@ -185,6 +187,8 @@ struct Stage::Device {
     // neither may outlive the other or the device.
     EmberField field;
     ParticleRenderer air;
+    /// The motes' trails, drawn by `vfx-system`'s strip renderer in the same stage as the motes.
+    StripRenderer trails;
     bool air_settled = false;
 
     rhi::BufferHandle vertices;
@@ -236,6 +240,7 @@ Stage::~Stage() {
             // THE FRAME'S OWN OBJECTS FIRST and before the device is destroyed: both hold device
             // handles, which is the contract every device-owning object in this tree states.
             device_->air.shutdown();
+            device_->trails.shutdown();
             device_->bindings.shutdown();
             device_->pipelines.shutdown();
         }
@@ -1576,6 +1581,9 @@ struct AirState {
     FramePipelines* pipelines = nullptr;
     FrameBindings* bindings = nullptr;
     ParticleRenderer* air = nullptr;
+    /// The trails behind the motes. Drawn FIRST, so each mote's bright core composites over its own
+    /// wake rather than under it.
+    StripRenderer* trails = nullptr;
     ResourceId color = kInvalidResource;
     ResourceId depth = kInvalidResource;
     u32 width = 0;
@@ -1611,7 +1619,6 @@ void record_air(const PassContext& context, void* user) noexcept {
     // it exists to prove — and its own ring is set 2.
     context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
 
-    const cy::rendering::pipeline::PassExtension extension = state->air->extension();
     cy::rendering::pipeline::ExtensionContext air;
     air.commands = context.commands;
     air.executor = state->executor;
@@ -1619,6 +1626,11 @@ void record_air(const PassContext& context, void* user) noexcept {
     air.width = state->width;
     air.height = state->height;
     air.inside_rendering = true;
+    if (state->trails != nullptr && state->trails->ready()) {
+        const cy::rendering::pipeline::PassExtension wake = state->trails->extension();
+        wake.record(air, wake.user);
+    }
+    const cy::rendering::pipeline::PassExtension extension = state->air->extension();
     extension.record(air, extension.user);
     context.commands->end_rendering();
 }
@@ -1870,6 +1882,11 @@ Status Stage::create_frame() noexcept {
         !made) {
         return made;
     }
+    if (Status made = device_->trails.initialize(device, device_->pipelines,
+                                                 cy::sample::beauty::kEmberTrailRing);
+        !made) {
+        return made;
+    }
     if (Status made = device_->field.build(); !made) {
         return made;
     }
@@ -1972,6 +1989,11 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         (void)device.end_frame();
         return uploaded;
     }
+    device_->trails.reset_report();
+    if (Status uploaded = device_->trails.upload(slot, device_->field.trails()); !uploaded) {
+        (void)device.end_frame();
+        return uploaded;
+    }
 
     cy::rendering::RenderGraph graph(*allocator_);
 
@@ -2033,6 +2055,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     air.pipelines = &device_->pipelines;
     air.bindings = &device_->bindings;
     air.air = &device_->air;
+    air.trails = &device_->trails;
     air.width = width_;
     air.height = height_;
 
@@ -2185,6 +2208,11 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     report.particles = device_->air.report().particles;
     report.particles_dropped = device_->air.report().dropped;
     report.particle_draws = device_->air.report().draws;
+    report.trail_vertices = device_->trails.report().vertices;
+    report.trail_strips = device_->trails.report().strips;
+    report.trail_segments = device_->trails.report().segments;
+    report.trail_draws = device_->trails.report().draws;
+    report.trail_dropped = device_->trails.report().dropped;
     report.validation_errors = device_->validation_errors;
     return frame;
 }
@@ -2418,6 +2446,12 @@ Status Stage::write_manifest(const Shot& shot, const ShotReport& report,
                        "authored in samples/12-beauty/embers.cpp, drawn in the frame's TRANSPARENT "
                        "stage)\n",
                        report.particles, report.particle_draws, report.particles_dropped);
+    (void)std::fprintf(file,
+                       "trails %u vertices in %u strip(s), %u segment(s), %u draw(s), %u dropped  "
+                       "(the same motes through vfx-system's Trail renderer, drawn by "
+                       "StripRenderer in the same stage)\n",
+                       report.trail_vertices, report.trail_strips, report.trail_segments,
+                       report.trail_draws, report.trail_dropped);
     (void)std::fprintf(file, "validation-errors %u\n", report.validation_errors);
     (void)std::fprintf(file, "sun-illuminance %.1f %.1f %.1f\n",
                        static_cast<double>(report.sun_illuminance.x),

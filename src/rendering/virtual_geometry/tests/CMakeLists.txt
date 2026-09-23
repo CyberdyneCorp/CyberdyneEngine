@@ -24,6 +24,11 @@
 #   render.virtual_geometry_gpu  the compute path on a real device, compared against the reference
 #                                buffer for buffer. Declared only when CY_RENDERER_VULKAN is on, and
 #                                it skips loudly on a machine that has the backend and no GPU.
+#
+#   render.virtual_geometry_forward
+#                                the hardware path, as the forward frame's `virtual geometry` stage,
+#                                compared against the compute path and tested against the frame's
+#                                own depth. Same declaration rule as the suite above.
 set_property(GLOBAL PROPERTY CY_VG_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_virtual_geometry_declare_tests)
@@ -79,6 +84,18 @@ function(cy_virtual_geometry_declare_tests)
             "${vg_tests_dir}/test_gpu_traversal.cpp"
             "${vg_tests_dir}/test_visbuffer.cpp"
         DEPENDENCIES cy::rendering-virtual-geometry cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
+
+    # The hardware path, as a stage of the forward frame's pass order. M11.c task 4.3. A suite of its
+    # own rather than a fourth case in the one above, because its subject is a different claim: not
+    # that the compute path agrees with the reference, but that the ENGINE'S frame draws clusters —
+    # compared against the compute path over one traversal, and tested against the frame's own
+    # depth.
+    cy_add_test(
+        NAME virtual_geometry_forward
+        KIND render
+        SOURCES "${vg_tests_dir}/test_forward_visibility.cpp"
+        DEPENDENCIES cy::rendering-virtual-geometry cy::rendering-forward cy::rendering-graph
+                     cy::rhi-null cy::rhi-vulkan)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_virtual_geometry_declare_tests)

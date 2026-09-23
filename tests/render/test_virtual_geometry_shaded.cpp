@@ -21,12 +21,14 @@
 // ================================================================================================
 //
 // The frame is `samples/07-fidelity`'s, reached through `cy::sample-fidelity-frame` — the library
-// half of the M7 artefact — at shot parameter 0, the same frame the documentation publishes. The
-// scene is the artefact's own: 4,478,208 source triangles from 116,928 distinct ones, cooked
-// through `virtual-geometry`'s real builder and drawn through the cluster traversal and the
-// visibility buffer on a real device. The viewport is smaller than the documentation's, and that is
-// the only difference: a committed reference is an uncompressed PNG and 1280x720 of one costs
-// 3.5 MB.
+// half of the M7 artefact — at shot parameter 0, the same frame the documentation publishes. Since
+// M11.c task 4.3 its clusters are drawn by the FORWARD FRAME: `ForwardFrame`'s `virtual geometry`
+// stage, rasterised in hardware into the frame's own depth, rather than by the compute rasteriser
+// in a graph of the sample's own. `render_shaded` asserts which one ran. The scene is the
+// artefact's own: 4,478,208 source triangles from 116,928 distinct ones, cooked through
+// `virtual-geometry`'s real builder and drawn through the cluster traversal and the visibility
+// buffer on a real device. The viewport is smaller than the documentation's, and that is the only
+// difference: a committed reference is an uncompressed PNG and 1280x720 of one costs 3.5 MB.
 //
 // ================================================================================================
 // THE TOLERANCE, AND WHERE THE NUMBER CAME FROM
@@ -53,6 +55,35 @@
 // page boundaries, a page per receiver picked from its projected texel density, a physical page
 // cache that allocates and evicts, pages rasterised once from the scene's level-0 clusters, and
 // every lookup walked through the fallback chain. `shade.h` carries that argument in full.
+//
+// ================================================================================================
+// THE REFERENCE WAS REGENERATED AT M11.c TASK 4.3, BECAUSE THE SUBJECT CHANGED
+// ================================================================================================
+//
+// Until task 4.3 this frame's clusters were drawn by the compute rasteriser in a graph of the
+// sample's own. They are now drawn by the forward frame's `virtual geometry` stage, in hardware
+// (`src/rendering/virtual_geometry/include/cy/rendering/virtual_geometry/forward_visibility.h`),
+// and `render_shaded` asserts that. The two rasterisers write the same visibility buffer and differ
+// only where a FILL RULE decides: the compute one takes a pixel whose centre is exactly on an edge
+// for both triangles, the hardware one applies the top-left rule and gives it to one.
+//
+// MEASURED, before regenerating anything. The same binary with the sample switched back to the
+// compute path matched the old reference exactly — 0 of 57,600 texels, worst delta 0 — which is
+// what shows the change is the rasteriser's and not a side effect of the refactor around it. The
+// forward path against the OLD reference: 7 texels beyond tolerance (4 off any high-contrast edge,
+// worst channel delta 54 at (22, 158)), 15 differing at all. Six of the seven are covered by both
+// paths and shaded differently — which a different triangle at a shared edge, or a depth tie broken
+// the other way, would each produce; which of the two it is per pixel was not measured. The
+// seventh, (84, 158), is a pixel the compute path covered and the hardware path leaves EMPTY. At
+// 1280x720 the hardware path leaves 11 of 921,600 pixels uncovered where the compute one leaves 7,
+// each an isolated pixel: hairline gaps an inclusive edge test papers over and the top-left rule
+// does not. Their cause is not established here; per-cluster quantisation of a shared boundary
+// vertex is the first suspect.
+//
+// The regenerated reference is BIT-IDENTICAL across three separate processes — the one that wrote
+// it and two that compared — so `differing == 0` below still holds, and the tolerance is unchanged.
+// The two mutations recorded next were measured on the compute path; the criterion's prover re-runs
+// the first against this one.
 //
 // ================================================================================================
 // PROVED RED BY BREAKING THE SUBJECT, TWICE — ONCE PER ROW
@@ -105,6 +136,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -180,6 +212,13 @@ bool render_shaded(cy::Allocator& allocator, const ShadeOptions& shade_options,
         return false;
     }
     CY_CHECK(report.validation_errors == 0);
+    // THE SUBJECT IS THE FORWARD FRAME. Since M11.c task 4.3 the sample draws its clusters in the
+    // forward frame's `virtual geometry` stage — the hardware rasteriser — and this picture is of
+    // that path. Pinned here, because a sample that quietly fell back to its own compute harness
+    // would still match the reference within tolerance and this suite would go on vouching for a
+    // frame the engine no longer draws.
+    CY_CHECK(std::strcmp(report.rasteriser, "forward-frame") == 0);
+    CY_CHECK(report.forward_stages == options.frames + options.warmup_frames);
 
     ShadedFrame shaded(allocator);
     const cy::Status lit =

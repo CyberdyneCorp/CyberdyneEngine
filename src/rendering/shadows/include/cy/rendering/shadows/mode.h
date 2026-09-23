@@ -23,12 +23,14 @@
 // WHY THE PROFILE IS AN ARGUMENT AND NOT A QUERY
 // ================================================================================================
 //
-// `traced` is the field that moves frame to frame: `ray-tracing-infrastructure` answers on the
-// processor over `cy::Bvh` when `cy::rhi::Capability::RayTracing` is unset, which on this tree is
-// EVERY device (M11.c task 2.6). A selection function that asked a device for itself would give a
-// different answer inside a test than in a frame, and "the caller that knows whether a trace is
-// available this frame" is the phrase the task list uses for exactly this — the knowledge belongs
-// to whoever assembled the frame, not to this file.
+// `traced` is the field that moves frame to frame. Since M11.c task 2.6 the Vulkan backend derives
+// `cy::rhi::Capability::RayTracing` from what the driver reports (an RTX 5060 reports it), but the
+// rays still go to `cy::Bvh` on the processor, and NO CALLER IN THE TREE SETS `traced` YET — so
+// a `RayTraced` or `Hybrid` light falls back in every shipped frame (M11.c task 4.4). A capability
+// bit is not a trace this frame either way: a selection function that asked a device for itself
+// would give a different answer inside a test than in a frame, and "the caller that knows whether a
+// trace is available this frame" is the phrase the task list uses for exactly this — the knowledge
+// belongs to whoever assembled the frame, not to this file.
 //
 // NOTHING HERE ALLOCATES, LOGS OR TOUCHES A CACHE. A selection is a pure function of what was
 // declared and what is available, so the same light in the same frame cannot be resolved to two

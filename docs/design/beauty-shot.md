@@ -107,9 +107,26 @@ this whole record dishonest."* So:
   **This is the half of `vfx-system` a picture can show, and something asserts it.**
   `render.vfx`'s `particles are in the assembled frame` renders the same field through the same
   camera at 480x270, compares it against `tests/render/references/beauty_shot_air.png`, and asserts
-  the difference between that frame and the identical frame with the ring uploaded empty — 4 713 of
-  129 600 texels, 3.64% of the frame, worst channel 255. `integration.vfx`'s case of the same name
-  projects every published record through the artefact's camera on a machine with no GPU at all.
+  the difference between that frame and the identical frame with the ring uploaded empty — 6 586 of
+  129 600 texels, 5.08% of the frame, worst channel 255, trails included. `integration.vfx`'s case of
+  the same name projects every published record through the artefact's camera on a machine with no
+  GPU at all.
+- **Every mote carries a TRAIL, and that is a second renderer kind in the frame.** M11.c task 6.3:
+  the same particles are published a second time through `vfx-system`'s `Trail` renderer — a
+  position every third simulation step for the last eight, so each trail is the last third of a
+  second of its mote's flight — and `cy::rendering::particles::StripRenderer` draws every trail in
+  ONE draw in the same `Transparent` stage, before the motes, so each bright core sits over its own
+  wake. The manifest's `trails` line is that renderer's own count. `render.vfx` renders the air with
+  and without the trails, motes present in both, and asserts what the trails alone add: 3 215 of
+  129 600 texels at 480x270, mean |delta| 15.2/255 where they differ. `m11c:vfx-trails-in-the-shot`
+  is the criterion. **Decals, particle lights and volumes are still not in this shot and not
+  composited anywhere** — `src/vfx/README.md` records it.
+- **Until task 6.3 the motes were drawn with the wrong billboard basis, and the still published
+  before it was captured that way.** `ParticleRenderer`'s embedded SPIR-V was compiled against the per-view
+  block before the temporal work inserted four rows into it, so it read the sprite's right and up
+  vectors out of LAST FRAME'S clip matrix. A single still hid it; `render.vfx` rendering the same
+  frame twice did not — 39 524 texels apart — and `unit.particle_modules` now compares every
+  embedded module's own layout with the C++ block on every machine.
 - **`draws 0` in the manifest is correct and is worth reading carefully, and `particles 996 in 1
   draw(s)` is a different number for the same reason.** The frame's own draw list
   is empty: this program draws its geometry inside the frame through `FrameSinks::passes`, which is

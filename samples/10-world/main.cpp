@@ -25,9 +25,10 @@
 //
 // IT STILL DOES NOT CLAIM the engine's mesh/material forward path. The geometry is this sample's,
 // while three render-graph compute passes now shade terrain from packed field images, compose the
-// sky, and evolve visual foam before the opaque draw. There is no temporal anti-aliasing: nothing
-// records `FramePassKind::Temporal`, so the chain remains exposure, tone mapping and output
-// encoding, and the manifest says three.
+// sky, and evolve visual foam before the opaque draw. There is no temporal anti-aliasing: this
+// program's sinks record no `FramePassKind::Temporal` (the engine's `FrameRecorder` does, and this
+// program does not use it), so the chain remains exposure, tone mapping and output encoding, and
+// the manifest says three.
 //
 // ================================================================================================
 // THE TIMESTEP IS FIXED, AND THAT IS A REPRODUCIBILITY CLAIM
@@ -817,7 +818,7 @@ int main(int argc, char** argv) {
                 std::printf(" %s", cy::rendering::post_stage_name(manifest.stages[step].stage));
             }
             std::printf(
-                "\n  NO anti-aliasing stage: nothing in this tree records the frame's "
+                "\n  NO anti-aliasing stage: this program's own sinks record no "
                 "temporal pass.\n");
         }
         std::printf("\n  %llu frames written to %s, RHI validation errors: %u\n",

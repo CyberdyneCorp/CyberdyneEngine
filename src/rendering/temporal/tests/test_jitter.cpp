@@ -107,6 +107,42 @@ CY_TEST_CASE("pinned, the sequence is reproducible whatever frame the capture st
     CY_CHECK_NE(early.index(), late.index());
 }
 
+CY_TEST_CASE("pinned, the sequence still MOVES: a pinned capture is jittered, not held") {
+    // THE REGRESSION. `pin` once meant "hold this sample forever": `advance` skipped the increment
+    // whenever the sequence was pinned, so a pinned frame drew the SAME sub-pixel offset every
+    // frame. A temporal resolve over identical offsets accumulates one sample, which is an
+    // unjittered picture wearing a temporal stage's cost — and pinned is exactly how every capture
+    // in this tree runs. The requirement says pinned jitter "follows a fixed sequence from a fixed
+    // starting index"; this is the "follows".
+    JitterConfig config;
+    config.length = 8;
+    JitterSequence sequence;
+    sequence.configure(config);
+    sequence.pin(3);
+
+    cy::Vec2 pinned[8];
+    for (cy::Vec2& sample : pinned) {
+        sequence.advance(true);
+        CY_CHECK(sequence.pinned());
+        sample = sequence.current();
+    }
+    // The first frame after the pin is the pinned index's sample: that is the "fixed start".
+    CY_CHECK_NEAR(pinned[0].x, cy::rendering::halton(4, 2) - 0.5F, 1e-6F);
+    CY_CHECK_NEAR(pinned[0].y, cy::rendering::halton(4, 3) - 0.5F, 1e-6F);
+    // And the following seven are the rest of the sequence, eight distinct samples.
+    for (cy::u32 a = 0; a < 8; ++a) {
+        for (cy::u32 b = a + 1; b < 8; ++b) {
+            CY_CHECK(std::fabs(pinned[a].x - pinned[b].x) + std::fabs(pinned[a].y - pinned[b].y) >
+                     1e-4F);
+        }
+    }
+    // Pinning again restarts at the same place, which is what makes a second capture the first.
+    sequence.pin(3);
+    sequence.advance(true);
+    CY_CHECK_EQ(sequence.current().x, pinned[0].x);
+    CY_CHECK_EQ(sequence.current().y, pinned[0].y);
+}
+
 CY_TEST_CASE("the NDC offset spans two units of clip space per pixel, not one") {
     JitterSequence sequence;
     JitterConfig config;
