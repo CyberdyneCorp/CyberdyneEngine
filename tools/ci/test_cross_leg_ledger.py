@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Ensure the CI-only roadmap criteria receive the real cross-leg artifacts."""
 
 from __future__ import annotations
