@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 253 proven, 423 not yet shown able to fail.
+# 254 proven, 423 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1066,6 +1066,14 @@ digest = "e24b7c0c5b0c41b9"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;' in src/vfx/src/runtime.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "vfx-trails-in-the-shot"
+digest = "093ce8daf47ed449"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'commands.draw((renderer->live() - 1U) * kVerticesPerSegment, 1, 0, 0);' in src/rendering/particles/src/strip_renderer.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-vfx (exit 8: error: Recipe `test-render` failed with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
