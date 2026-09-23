@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/servers/physics/soft_body.h>
 
 #include <cy/core/math/scalar.h>

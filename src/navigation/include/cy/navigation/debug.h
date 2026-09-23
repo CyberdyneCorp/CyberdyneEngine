@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Renderer-independent navigation debug command stream.
 
@@ -7,6 +8,7 @@
 
 namespace cy::navigation {
 
+/// Selects which navigation structures and runtime decisions a debug sink receives.
 enum class NavDebugFlags : u32 {
     None = 0,
     Polygons = 1U << 0U,
@@ -25,6 +27,7 @@ enum class NavDebugFlags : u32 {
     return static_cast<NavDebugFlags>(static_cast<u32>(a) | static_cast<u32>(b));
 }
 
+/// Tests whether a debug view is enabled in a flag set.
 [[nodiscard]] constexpr bool has_flag(NavDebugFlags set, NavDebugFlags one) noexcept {
     return (static_cast<u32>(set) & static_cast<u32>(one)) != 0U;
 }
@@ -44,11 +47,13 @@ public:
     virtual void obstacle(ObstacleId, const NavObstacleShape&) noexcept {}
 };
 
+/// A nearby agent's identity and location for avoidance visualization.
 struct NavDebugNeighbour {
     u64 id = 0;
     Vec3 position;
 };
 
+/// Agent motion and neighbours supplied to the renderer-independent debug stream.
 struct NavDebugAgent {
     u64 id = 0;
     Vec3 position;
@@ -57,9 +62,12 @@ struct NavDebugAgent {
     Span<const NavDebugNeighbour> neighbours;
 };
 
+/// Emits the selected mesh topology and tile bounds to a caller-owned sink.
 void draw_navigation_mesh(const NavMesh& mesh, NavDebugFlags flags, NavDebugSink& sink) noexcept;
+/// Emits a corridor and its straightened path without depending on a renderer.
 void draw_navigation_path(const PathCorridor& corridor, Span<const PathPoint> points,
                           NavDebugFlags flags, NavDebugSink& sink) noexcept;
+/// Emits selected agent velocities, neighbours and avoidance state.
 void draw_navigation_agents(Span<const NavDebugAgent> agents, NavDebugFlags flags,
                             NavDebugSink& sink) noexcept;
 

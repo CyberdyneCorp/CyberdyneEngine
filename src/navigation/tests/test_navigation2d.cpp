@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // A tilemap's authored polygons are rebuilt per chunk and searched on the same polygon graph.
 
 #include <cy/core/memory/system_allocator.h>

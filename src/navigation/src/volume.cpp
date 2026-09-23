@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Sparse-voxel paths and representation-neutral deterministic query delivery.
 
 #include <cy/navigation/debug.h>

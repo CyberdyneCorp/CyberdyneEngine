@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Translation of engine constraint descriptions into Jolt joint settings.
 

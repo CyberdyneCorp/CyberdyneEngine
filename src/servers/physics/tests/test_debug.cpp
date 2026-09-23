@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/servers/physics/debug.h>
 #include <cy/test/test.h>
 

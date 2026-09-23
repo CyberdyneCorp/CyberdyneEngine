@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Planar navigation uses the same tiled polygon graph and A* search as surface navigation. A
 // tilemap contributes its authored navigation polygons chunk by chunk; a changed chunk replaces
@@ -29,6 +30,7 @@ struct CollisionPolygon2D {
     Span<const Vec2> vertices;
 };
 
+/// Owns chunked planar navigation over authored tilemap polygons or collision footprints.
 class NavMesh2D {
 public:
     NavMesh2D(Allocator& allocator, Name name, u32 cells_per_chunk, f32 cell_size) noexcept;

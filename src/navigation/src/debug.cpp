@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Extracting debug primitives from navigation data without a renderer dependency.
 
 #include <cy/navigation/debug.h>

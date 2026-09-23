@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Sparse 3D navigation and the shared surface/volume point-path contract.
 
 #include <cy/core/memory/system_allocator.h>

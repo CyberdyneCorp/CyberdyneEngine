@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Apply WaterSystem's authoritative buoyancy calculation through the engine physics interface.
 

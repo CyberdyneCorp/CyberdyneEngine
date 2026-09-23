@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Engine joint frames and limits translated to Jolt's concrete constraint settings.
 
 #include "jolt_constraints.h"

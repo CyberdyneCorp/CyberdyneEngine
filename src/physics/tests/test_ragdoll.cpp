@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/animation/skeleton.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/physics/ragdoll/ragdoll.h>

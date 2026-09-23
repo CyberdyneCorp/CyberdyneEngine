@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Engine-owned wheeled vehicle vocabulary. The chassis is an ordinary dynamic physics body.
 

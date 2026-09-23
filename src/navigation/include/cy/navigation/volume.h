@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Sparse 3D navigation and a representation-neutral point-path query surface.
 
@@ -6,6 +7,7 @@
 
 namespace cy::navigation {
 
+/// Integer address of a navigable cell in a sparse three-dimensional volume.
 struct VolumeCoord {
     i32 x = 0;
     i32 y = 0;
@@ -14,6 +16,7 @@ struct VolumeCoord {
     friend constexpr bool operator==(VolumeCoord, VolumeCoord) noexcept = default;
 };
 
+/// Traversal area and cost stored at a navigable volume coordinate.
 struct VolumeCell {
     VolumeCoord coord;
     AreaType area = kAreaGround;
@@ -51,6 +54,7 @@ private:
     u32 version_ = 0;
 };
 
+/// Selects a surface polygon mesh or sparse volume behind the shared path query.
 enum class NavigationRepresentation : u8 { Surface = 0, Volume };
 
 /// Both representations answer the same filter/result/point-path query. The surface branch runs

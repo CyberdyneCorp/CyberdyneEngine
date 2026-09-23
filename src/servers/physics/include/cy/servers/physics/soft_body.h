@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Engine-owned cloth description and readback. A backend may decline this optional simulation.
 

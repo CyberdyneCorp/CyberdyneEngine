@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Every navigation debug family emits a renderer-independent command.
 
 #include <cy/core/memory/system_allocator.h>

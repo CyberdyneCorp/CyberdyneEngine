@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/servers/physics/vehicle.h>
 
 #include <cy/core/math/scalar.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/physics/ragdoll/ragdoll.h>
 
 #include <algorithm>

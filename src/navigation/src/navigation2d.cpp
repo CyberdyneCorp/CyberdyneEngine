@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The tilemap-to-polygon adapter and planar query surface.
 
 #include <cy/navigation/navigation2d.h>

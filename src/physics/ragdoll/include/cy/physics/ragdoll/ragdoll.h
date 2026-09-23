@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Ragdoll profiles and simulation live at the animation/physics join, never in a backend.
 
