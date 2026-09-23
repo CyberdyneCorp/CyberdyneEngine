@@ -5,6 +5,8 @@
 #include <cy/core/jobs/context.h>
 #include <cy/core/jobs/job_system.h>
 
+#include <chrono>
+#include <string_view>
 #include <thread>
 
 namespace cy::physics::jolt {
@@ -63,9 +65,42 @@ int EngineJobSystem::GetMaxConcurrency() const {
     return static_cast<int>(jobs_->worker_count()) + 1;
 }
 
+void EngineJobSystem::begin_timing_step() noexcept {
+    broad_phase_ns_.store(0, std::memory_order_relaxed);
+    narrow_phase_ns_.store(0, std::memory_order_relaxed);
+    solve_ns_.store(0, std::memory_order_relaxed);
+    timing_step_.store(true, std::memory_order_release);
+}
+
+EngineJobSystem::PhaseTimings EngineJobSystem::end_timing_step() noexcept {
+    timing_step_.store(false, std::memory_order_release);
+    return {broad_phase_ns_.load(std::memory_order_relaxed),
+            narrow_phase_ns_.load(std::memory_order_relaxed),
+            solve_ns_.load(std::memory_order_relaxed)};
+}
+
 JPH::JobHandle EngineJobSystem::CreateJob(const char* name, JPH::ColorArg color,
                                           const JobFunction& function, JPH::uint32 dependencies) {
-    const JPH::uint32 index = pool_.ConstructObject(name, color, this, function, dependencies);
+    const std::string_view job_name{name};
+    std::atomic<Nanoseconds>* counter = &solve_ns_;
+    if (job_name.starts_with("UpdateBroadPhase")) {
+        counter = &broad_phase_ns_;
+    } else if (job_name == "FindCollisions" || job_name == "FindCCDContacts") {
+        counter = &narrow_phase_ns_;
+    }
+    const JobFunction measured = [this, counter, function]() {
+        if (!timing_step_.load(std::memory_order_acquire)) {
+            function();
+            return;
+        }
+        const auto started = std::chrono::steady_clock::now();
+        function();
+        const auto finished = std::chrono::steady_clock::now();
+        const Nanoseconds elapsed =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(finished - started).count();
+        counter->fetch_add(elapsed, std::memory_order_relaxed);
+    };
+    const JPH::uint32 index = pool_.ConstructObject(name, color, this, measured, dependencies);
     if (index == JPH::FixedSizeFreeList<Job>::cInvalidObjectIndex) {
         // Jolt's own pool spins here. Returning an empty handle is the honest alternative for a
         // fixed-size pool that is genuinely exhausted: Jolt treats an unqueued job as one the

@@ -47,6 +47,7 @@
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
@@ -223,6 +224,7 @@ struct JoltConstraint {
     f32 break_torque = 0.0F;
     UserData user_data = 0;
     bool suppress_collision = false;
+    ConstraintDescription description;
 };
 
 }  // namespace
@@ -1599,6 +1601,7 @@ Expected<ConstraintHandle, Error> JoltServer::register_constraint(
     record.break_torque = description.break_torque;
     record.user_data = description.user_data;
     record.suppress_collision = !description.collide_connected && !description.body_b.is_null();
+    record.description = description;
     if (Status pushed = storage.constraints.push_back(slot); !pushed) {
         record.joint = nullptr;
         record.live = false;
@@ -1702,12 +1705,14 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
 
     // Diagnostics only, never hashed — the same rule the reference backend states at length.
     const auto started = std::chrono::steady_clock::now();
+    found->job_system.begin_timing_step();
     stepping_ = true;
     const JPH::EPhysicsUpdateError error =
         found->system.Update(input.delta_seconds, static_cast<int>(input.collision_steps),
                              &found->temp, &found->job_system);
     stepping_ = false;
     const auto finished = std::chrono::steady_clock::now();
+    const EngineJobSystem::PhaseTimings phases = found->job_system.end_timing_step();
 
     if (error != JPH::EPhysicsUpdateError::None) {
         // Jolt reports a capacity overflow rather than corrupting the simulation. Surfaced as an
@@ -1798,14 +1803,12 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
     found->statistics.constraint_count = static_cast<u32>(found->constraints.size());
     found->statistics.island_count = 0;
     found->statistics.tick = input.tick;
-    // ONE TIMER, NOT THREE, AND SAYING SO. `physics`' "Diagnosing a slow step" wants the cost split
-    // across broad phase, narrow phase and solve; Jolt does not publish that split without its own
-    // profiler, which cmake/dependencies.cmake deliberately leaves off (it is a second timeline
-    // beside the engine's trace). The total is real and the three parts are zero rather than
-    // fabricated — a made-up split is worse than an absent one.
-    found->statistics.broad_phase_ns = 0;
-    found->statistics.narrow_phase_ns = 0;
-    found->statistics.solve_ns = 0;
+    // Named Jolt jobs are measured at execution on the worker that ran them. These phase values
+    // are cumulative CPU time, so parallel jobs can make their sum exceed wall-clock total_ns.
+    // Solve includes gravity, integration, island work and callbacks besides constraint solving.
+    found->statistics.broad_phase_ns = phases.broad_phase_ns;
+    found->statistics.narrow_phase_ns = phases.narrow_phase_ns;
+    found->statistics.solve_ns = phases.solve_ns;
     found->statistics.total_ns =
         std::chrono::duration_cast<std::chrono::nanoseconds>(finished - started).count();
     return ok();
@@ -2191,41 +2194,111 @@ Status JoltServer::hash_state(WorldHandle world, determinism::StateHashTree& tre
     return tree.end();
 }
 
+namespace {
+
+void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& sink,
+                    DebugColor color) noexcept {
+    const Transform transform{from_jolt(body.GetRotation()), from_jolt(body.GetPosition()),
+                              Vec3{1.0f, 1.0f, 1.0f}};
+    if (has_flag(flags, DebugDrawFlags::Colliders)) {
+        const JPH::Shape* shape = body.GetShape();
+        if (shape->GetSubType() == JPH::EShapeSubType::Sphere) {
+            const auto* sphere = static_cast<const JPH::SphereShape*>(shape);
+            sink.sphere(transform.translation, sphere->GetRadius(), color);
+        } else if (shape->GetSubType() == JPH::EShapeSubType::Capsule) {
+            const auto* capsule = static_cast<const JPH::CapsuleShape*>(shape);
+            sink.capsule(transform, capsule->GetRadius(), capsule->GetHalfHeightOfCylinder(),
+                         color);
+        } else {
+            const JPH::AABox local = shape->GetLocalBounds();
+            sink.box(Aabb::from_min_max(from_jolt(local.mMin), from_jolt(local.mMax)), transform,
+                     color);
+        }
+    }
+    if (has_flag(flags, DebugDrawFlags::BroadPhaseBounds)) {
+        const JPH::AABox bounds = body.GetWorldSpaceBounds();
+        sink.box(Aabb::from_min_max(from_jolt(bounds.mMin), from_jolt(bounds.mMax)),
+                 Transform::identity(), DebugColor::Bounds);
+    }
+    if (has_flag(flags, DebugDrawFlags::CentersOfMass)) {
+        sink.sphere(from_jolt(body.GetCenterOfMassPosition()), 0.02f, color);
+    }
+    if (has_flag(flags, DebugDrawFlags::SleepState)) {
+        sink.sphere(transform.translation, 0.08f, color);
+    }
+    if (has_flag(flags, DebugDrawFlags::Velocities)) {
+        sink.line(transform.translation,
+                  transform.translation + from_jolt(body.GetLinearVelocity()),
+                  DebugColor::Velocity);
+        sink.line(transform.translation,
+                  transform.translation + from_jolt(body.GetAngularVelocity()) * 0.25f,
+                  DebugColor::Velocity);
+    }
+}
+
+void draw_constraint_limits(const ConstraintDescription& description, const Transform& anchor,
+                            DebugDrawSink& sink) noexcept {
+    const Vec3 origin = anchor.translation;
+    const Vec3 axis = anchor.right();
+    if (description.type == ConstraintType::Slider && description.limit.limited()) {
+        sink.line(origin + axis * description.limit.min, origin + axis * description.limit.max,
+                  DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::Hinge && description.limit.limited()) {
+        const Vec3 normal = anchor.up() * 0.25f;
+        const Vec3 lower = Quat::from_axis_angle(axis, description.limit.min) * normal;
+        const Vec3 upper = Quat::from_axis_angle(axis, description.limit.max) * normal;
+        sink.line(origin, origin + lower, DebugColor::ConstraintLimit);
+        sink.line(origin, origin + upper, DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::SixDof) {
+        const Vec3 axes[] = {anchor.right(), anchor.up(), anchor.forward()};
+        for (u32 index = 0; index < 3; ++index) {
+            const AxisLimit& limit = description.dof_limits[index];
+            if (limit.limited()) {
+                sink.line(origin + axes[index] * limit.min, origin + axes[index] * limit.max,
+                          DebugColor::ConstraintLimit);
+            }
+        }
+    }
+}
+
+}  // namespace
+
 Status JoltServer::debug_draw(WorldHandle world, DebugDrawFlags flags,
                               DebugDrawSink& sink) const noexcept {
     const JoltWorld* found = resolve(world);
     if (found == nullptr) {
         return fail(ErrorCode::NotFound, "jolt: no such world");
     }
-    // Jolt's own debug renderer is deliberately not built (cmake/dependencies.cmake: it is a second
-    // draw path beside `cy::physics::DebugDrawSink`). What is drawn here is what the engine's own
-    // vocabulary can express from the simulated state: bounds, centres of mass and velocities, plus
-    // this step's contacts — which is `physics`' "Colliders do not match visuals" for the parts a
-    // sink can render without knowing a Jolt shape.
-    const JPH::BodyInterface& interface = found->system.GetBodyInterfaceNoLock();
+    // The sink consumes solver state, never the caller's cached visual transform.
     for (const u32 slot : found->bodies) {
         const JoltBody& body = bodies_[slot];
-        const DebugColor color = body_color(body.motion, body.sensor, !interface.IsActive(body.id));
-        const Vec3 position = from_jolt(interface.GetPosition(body.id));
-        if (has_flag(flags, DebugDrawFlags::Colliders) ||
-            has_flag(flags, DebugDrawFlags::BroadPhaseBounds)) {
-            const JPH::RefConst<JPH::Shape> shape = interface.GetShape(body.id);
-            if (shape != nullptr) {
-                const JPH::AABox local = shape->GetLocalBounds();
-                const Aabb bounds =
-                    Aabb::from_min_max(from_jolt(local.mMin), from_jolt(local.mMax));
-                sink.box(bounds,
-                         Transform{from_jolt(interface.GetRotation(body.id)), position,
-                                   Vec3{1.0f, 1.0f, 1.0f}},
-                         color);
+        JPH::BodyLockRead lock(found->system.GetBodyLockInterface(), body.id);
+        if (lock.Succeeded()) {
+            const JPH::Body& jolt_body = lock.GetBody();
+            draw_jolt_body(jolt_body, flags, sink,
+                           body_color(body.motion, body.sensor, !jolt_body.IsActive()));
+        }
+    }
+    if (has_flag(flags, DebugDrawFlags::Constraints)) {
+        for (const u32 slot : found->constraints) {
+            const JoltConstraint& record = constraints_[slot];
+            const auto state_a = body_state(record.body_a);
+            if (!state_a) {
+                continue;
             }
-        }
-        if (has_flag(flags, DebugDrawFlags::CentersOfMass)) {
-            sink.sphere(from_jolt(interface.GetCenterOfMassPosition(body.id)), 0.02f, color);
-        }
-        if (has_flag(flags, DebugDrawFlags::Velocities)) {
-            sink.line(position, position + from_jolt(interface.GetLinearVelocity(body.id)),
-                      DebugColor::Velocity);
+            const Transform a = state_a->transform * record.description.frame_a;
+            Transform b = record.description.frame_b;
+            if (!record.body_b.is_null()) {
+                const auto state_b = body_state(record.body_b);
+                if (!state_b) {
+                    continue;
+                }
+                b = state_b->transform * record.description.frame_b;
+            }
+            sink.sphere(a.translation, 0.04f, DebugColor::Constraint);
+            sink.sphere(b.translation, 0.04f, DebugColor::Constraint);
+            sink.line(a.translation, b.translation, DebugColor::Constraint);
+            draw_constraint_limits(record.description, a, sink);
         }
     }
     if (has_flag(flags, DebugDrawFlags::Contacts)) {

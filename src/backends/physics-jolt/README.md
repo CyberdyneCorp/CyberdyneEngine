@@ -36,11 +36,16 @@ Each is marked in `src/jolt_server.cpp` where it bites, and none of them is pape
    buffer is sorted by pair and phase at the end of the step, so the event order is a function of the
    simulation rather than of the scheduler.
 
-Two smaller ones, recorded in the code beside the line that drops them: `Tuning`'s
-`sleep_angular_velocity` has no Jolt analogue (Jolt folds rotation into one linear threshold), and
-the step-time breakdown across broad phase, narrow phase and solve is not published without Jolt's
-own profiler, which is deliberately not built — so the total is real and the three parts are zero
-rather than fabricated.
+`Tuning`'s `sleep_angular_velocity` has no Jolt analogue (Jolt folds rotation into one linear
+threshold). The backend now times named Jolt jobs by broad-phase, narrow-phase, and solve/other
+work. These phase counters are cumulative CPU nanoseconds; concurrent jobs can make their sum
+exceed the wall-clock `total_ns`. They are diagnostic costs, not a partition of wall time.
+
+`debug_draw` reads the simulated body transforms and emits collider primitives, world-space
+broad-phase bounds, contacts, sleep state, linear/angular velocities, centres of mass, joint
+anchors, and hinge/slider/linear six-degree limits. Query overlays use the stateless
+`debug_draw_query` helpers in the physics
+interface: callers pass their input and optional result, leaving parallel queries read-only.
 
 ## What is not implemented
 

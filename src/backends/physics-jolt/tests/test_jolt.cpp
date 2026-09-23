@@ -106,6 +106,36 @@ struct Fixture {
     WorldHandle world;
 };
 
+struct DebugCapture final : DebugDrawSink {
+    u32 lines = 0;
+    u32 boxes = 0;
+    u32 spheres = 0;
+    u32 capsules = 0;
+    u32 contacts = 0;
+    u32 bounds = 0;
+    u32 limits = 0;
+    Vec3 last_sphere_center{};
+
+    void line(Vec3, Vec3, DebugColor color) noexcept override {
+        ++lines;
+        if (color == DebugColor::ConstraintLimit) {
+            ++limits;
+        }
+    }
+    void box(const Aabb&, const Transform&, DebugColor color) noexcept override {
+        ++boxes;
+        if (color == DebugColor::Bounds) {
+            ++bounds;
+        }
+    }
+    void sphere(Vec3 center, f32, DebugColor) noexcept override {
+        ++spheres;
+        last_sphere_center = center;
+    }
+    void capsule(const Transform&, f32, f32, DebugColor) noexcept override { ++capsules; }
+    void contact(Vec3, Vec3, f32) noexcept override { ++contacts; }
+};
+
 }  // namespace
 
 CY_TEST_CASE("the Jolt backend reports itself and what it can do") {
@@ -245,6 +275,73 @@ CY_TEST_CASE("a Jolt hinge motor can be enabled at runtime and drives within its
         CY_REQUIRE(fixture.step(tick).has_value());
     }
     CY_CHECK_GT(fixture.server->body_state(driven)->angular_velocity.x, 0.5f);
+}
+
+CY_TEST_CASE(
+    "Jolt debug flags emit distinct solver-space shape, sleep, velocity and bounds views") {
+    Fixture fixture;
+    const BodyHandle ball =
+        fixture.body(fixture.sphere(0.5f), MotionType::Dynamic, Vec3{2.0f, 3.0f, 4.0f});
+    DebugCapture capture;
+    CY_REQUIRE(
+        fixture.server->debug_draw(fixture.world, DebugDrawFlags::Colliders, capture).has_value());
+    CY_CHECK_EQ(capture.spheres, 1U);
+    CY_CHECK_EQ(capture.boxes, 0U);
+    CY_CHECK_NEAR(capture.last_sphere_center.x, fixture.position_of(ball).x, 0.001f);
+
+    DebugCapture bounds_capture;
+    CY_REQUIRE(
+        fixture.server->debug_draw(fixture.world, DebugDrawFlags::BroadPhaseBounds, bounds_capture)
+            .has_value());
+    CY_CHECK_EQ(bounds_capture.bounds, 1U);
+    CY_CHECK_EQ(bounds_capture.spheres, 0U);
+
+    DebugCapture state_capture;
+    CY_REQUIRE(fixture.server
+                   ->debug_draw(fixture.world,
+                                DebugDrawFlags::SleepState | DebugDrawFlags::CentersOfMass |
+                                    DebugDrawFlags::Velocities,
+                                state_capture)
+                   .has_value());
+    CY_CHECK_EQ(state_capture.spheres, 2U);
+    CY_CHECK_EQ(state_capture.lines, 2U);
+}
+
+CY_TEST_CASE("Jolt constraint debug draws anchors and limit rays") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Hinge;
+    description.body_a = base;
+    description.body_b = driven;
+    description.limit.min = -0.5f;
+    description.limit.max = 0.5f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    DebugCapture capture;
+    CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::Constraints, capture)
+                   .has_value());
+    CY_CHECK_EQ(capture.spheres, 2U);
+    CY_CHECK_EQ(capture.limits, 2U);
+}
+
+CY_TEST_CASE("Jolt step statistics measure broad, narrow and solve job costs") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{10.0f, 0.5f, 10.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    const ShapeHandle shape = fixture.sphere(0.5f);
+    for (u32 index = 0; index < 12; ++index) {
+        (void)fixture.body(shape, MotionType::Dynamic,
+                           Vec3{static_cast<f32>(index) * 0.8f, 0.6f, 0.0f});
+    }
+    CY_REQUIRE(fixture.step(1).has_value());
+    const auto stats = fixture.server->statistics(fixture.world);
+    CY_REQUIRE(stats.has_value());
+    CY_CHECK_GT(stats->broad_phase_ns, 0);
+    CY_CHECK_GT(stats->narrow_phase_ns, 0);
+    CY_CHECK_GT(stats->solve_ns, 0);
+    CY_CHECK_GT(stats->total_ns, 0);
 }
 
 CY_TEST_CASE("a dynamic body falls onto static geometry and stops on it") {
