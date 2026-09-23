@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // ONE PIPELINE, ONE RING, ONE DRAW — what the sprite renderer and the strip renderer share.
 // An implementation detail of `cy::rendering-particles`, in a public header only because the two

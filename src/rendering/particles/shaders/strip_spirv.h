@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled SPIR-V for the particle renderer. GENERATED — do not edit by hand.
 //

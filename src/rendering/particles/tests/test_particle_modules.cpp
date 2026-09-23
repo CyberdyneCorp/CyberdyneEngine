@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE EMBEDDED MODULES AGREE WITH THE BLOCK THEY READ. M11.c task 6.3.
 //
 // ================================================================================================

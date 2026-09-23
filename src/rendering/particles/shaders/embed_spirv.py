@@ -27,7 +27,8 @@ import pathlib
 import struct
 import sys
 
-HEADER = """#pragma once
+HEADER = """// SPDX-License-Identifier: MIT
+#pragma once
 // Compiled SPIR-V for the particle renderer. GENERATED — do not edit by hand.
 //
 // Produced by src/rendering/particles/shaders/embed_spirv.py from

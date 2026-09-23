@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // RIBBONS, TRAILS AND BEAMS, COMPOSITED. M11.c task 6.3.
 //

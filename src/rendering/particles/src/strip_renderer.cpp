@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Ribbons, trails and beams, composited. M11.c task 6.3. See strip_renderer.h.
 
 #include <cy/rendering/particles/strip_renderer.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/virtual_geometry/forward_visibility.h>
 
 #include <cy/rendering/graph/executor.h>
