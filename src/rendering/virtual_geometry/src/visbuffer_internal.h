@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 #pragma once
 // SPDX-License-Identifier: MIT
 // What `visbuffer.cpp` and `forward_visibility.cpp` share: the pass table, the binding table, the

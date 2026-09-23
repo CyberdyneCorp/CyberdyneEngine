@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 #pragma once
 // SPDX-License-Identifier: MIT
 // ONE PIPELINE, ONE RING, ONE DRAW — what the sprite renderer and the strip renderer share.
