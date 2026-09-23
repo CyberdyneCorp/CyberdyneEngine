@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE FOURTH CLOCK: time the case's thread spent BLOCKED BY THE HOST, as opposed to by itself.
 //
 // WHY IT EXISTS. The stall ceiling subtracts runqueue wait (budget.cpp, M9 task 7.5b), which is
