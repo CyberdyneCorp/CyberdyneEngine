@@ -46,7 +46,15 @@
 #include <cy/water/displacement.h>
 #include <cy/world/coordinates.h>
 
+namespace cy::jobs {
+class JobSystem;
+}  // namespace cy::jobs
+
 namespace cy::water {
+
+/// Rows of the ocean patch one job evaluates in a parallel `OceanSurface::build()`. A row of the
+/// default patch is 33 vertices of 16 trains; eight of them are enough work to amortise a task.
+inline constexpr u64 kOceanRowsPerJob = 8;
 
 /// The global parameters of an ocean. `water`: "its parameters (sea level, wind, tide, weather)
 /// remain global" — they are global because there is one sea, not because they are constants.
@@ -169,6 +177,13 @@ public:
     [[nodiscard]] Status build(const DisplacementModel& model, const world::WorldVec3d& camera,
                                f64 time) noexcept;
 
+    /// The same build, with its rows spread over `jobs` when one is given (null builds on the
+    /// calling thread). Every vertex is a pure function of the model, its lattice position and the
+    /// time, and each row writes only its own vertices, so the result is identical to the serial
+    /// build's in every schedule — `water`'s determinism is not traded for the frame time.
+    [[nodiscard]] Status build(const DisplacementModel& model, const world::WorldVec3d& camera,
+                               f64 time, jobs::JobSystem* jobs) noexcept;
+
     [[nodiscard]] Span<const Vec3> positions() const noexcept { return positions_.span(); }
     [[nodiscard]] Span<const Vec3> normals() const noexcept { return normals_.span(); }
     [[nodiscard]] Span<const f32> breaking() const noexcept { return breaking_.span(); }
@@ -192,6 +207,8 @@ private:
     Array<Vec3> normals_;
     Array<f32> breaking_;
     Array<u32> indices_;
+    /// The model's trains, resolved once per `build()` rather than once per vertex.
+    Array<WaveTrain> trains_;
     world::WorldVec3d origin_;
     f32 extent_ = 0.0F;
     bool configured_ = false;

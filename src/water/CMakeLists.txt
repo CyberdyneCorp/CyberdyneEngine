@@ -56,7 +56,7 @@ cy_add_module(
         src/streaming.cpp
         src/system.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-jobs cy::core-math cy::core-memory
                         cy::environment cy::world)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

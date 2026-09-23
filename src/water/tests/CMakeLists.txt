@@ -17,6 +17,10 @@
 #                    a field small enough to do that inside a millisecond would be a field whose
 #                    drift is one cell. The taxonomy's own instruction — "a test this expensive in
 #                    the next suite up" — applied rather than argued with.
+#   water_ocean_parallel
+#                    integration, because it starts a real `jobs::JobSystem` to build the ocean
+#                    patch across workers and compares the answer with the serial build bit for
+#                    bit; starting the workers alone costs more than a unit case's millisecond.
 #   water_shoreline  integration, because it drives a real `environment::FieldRegistry` and
 #                    `FieldStore`, claims real producer tokens and publishes real tiles over
 #                    thousands of lattice points — the only way "terrain reads fields and water
@@ -63,6 +67,12 @@ function(cy_water_declare_tests)
         NAME water_foam
         KIND integration
         SOURCES "${cy_water_tests_dir}/test_foam.cpp"
+        DEPENDENCIES cy::water)
+
+    cy_add_test(
+        NAME water_ocean_parallel
+        KIND integration
+        SOURCES "${cy_water_tests_dir}/test_ocean_parallel.cpp"
         DEPENDENCIES cy::water)
 
     cy_add_test(

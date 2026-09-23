@@ -258,3 +258,41 @@ CY_TEST_CASE("a steep sea breaks at its crests and a flat one does not") {
     CY_CHECK_NEAR(calm_breaking, 0.0F, 1e-6F);
     CY_CHECK_GT(steep_breaking, 0.1F);
 }
+
+CY_TEST_CASE("a train table resolved once evaluates bit-identically to the model") {
+    // `evaluate_trains()` is `evaluate_displacement()` with the trains resolved ahead of time, not
+    // a second surface. For both selections, at far-apart positions and times, every field agrees
+    // EXACTLY — and a table truncated below `count_trains()` is a different sea, which is why a
+    // caller sizes it from that count.
+    const DisplacementModel model = two_band_sea(0.03F);
+    for (const BandSelection selection : {BandSelection::All, BandSelection::Authoritative}) {
+        const cy::u32 count = cy::water::count_trains(model, selection);
+        CY_REQUIRE_EQ(count, selection == BandSelection::All ? 6u : 3u);
+        cy::water::WaveTrain table[8];
+        const cy::u32 written =
+            cy::water::resolve_trains(model, selection, cy::Span<cy::water::WaveTrain>(table, 8));
+        CY_REQUIRE_EQ(written, count);
+        const cy::Span<const cy::water::WaveTrain> trains(table, written);
+        const double positions[4][3] = {
+            {0.0, 0.0, 0.0}, {13.5, -7.25, 3.0}, {-40000.0, 125000.0, 611.5}, {2.0, 9.0, 86399.0}};
+        for (const auto& at : positions) {
+            const Displacement direct =
+                evaluate_displacement(model, selection, at[0], at[1], at[2]);
+            const Displacement tabled =
+                cy::water::evaluate_trains(trains, model.mean_level, at[0], at[1], at[2]);
+            CY_CHECK_EQ(tabled.height, direct.height);
+            CY_CHECK_EQ(tabled.offset.x, direct.offset.x);
+            CY_CHECK_EQ(tabled.offset.y, direct.offset.y);
+            CY_CHECK_EQ(tabled.offset.z, direct.offset.z);
+            CY_CHECK_EQ(tabled.normal.x, direct.normal.x);
+            CY_CHECK_EQ(tabled.normal.z, direct.normal.z);
+            CY_CHECK_EQ(tabled.velocity.y, direct.velocity.y);
+            CY_CHECK_EQ(tabled.breaking, direct.breaking);
+            CY_CHECK_EQ(tabled.trains, direct.trains);
+        }
+    }
+    cy::water::WaveTrain short_table[2];
+    CY_CHECK_EQ(cy::water::resolve_trains(model, BandSelection::All,
+                                          cy::Span<cy::water::WaveTrain>(short_table, 2)),
+                2u);
+}

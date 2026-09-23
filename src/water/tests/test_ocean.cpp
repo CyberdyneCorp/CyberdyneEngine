@@ -235,6 +235,105 @@ CY_TEST_CASE("the patch's vertices are the rendering evaluation of the same mode
     CY_CHECK_GT(surface.triangle_count(), 0u);
 }
 
+CY_TEST_CASE(
+    "every patch vertex is bit-identical to the model evaluated directly, across rebuilds") {
+    // THE PATCH RESOLVES ITS TRAINS ONCE PER BUILD (M11.c: it was most of the world demo's ocean
+    // cost to resolve them per vertex). This is what that must not change: every vertex, normal and
+    // breaking value of a multi-ring patch equals `evaluate_displacement()` at the same place
+    // EXACTLY, and a second build over a DIFFERENT model answers the second model — a train table
+    // kept from the first build would pass the first half and fail here.
+    OceanSurface surface(test::allocator());
+    OceanSurfaceParams params;
+    params.near_cell_metres = 3.0F;
+    params.ring_quads = 4;
+    params.rings = 3;
+    CY_REQUIRE(surface.configure(params).has_value());
+    const cy::world::WorldVec3d camera{-311.0, 0.0, 1207.5};
+
+    OceanParams calm = test::rough_sea();
+    calm.wind_speed_mps = 4.0F;
+    calm.trains_per_cascade = 3;
+    const auto first = cy::water::build_ocean_model(test::rough_sea(), 17);
+    const auto second = cy::water::build_ocean_model(calm, 18);
+    CY_REQUIRE(first.has_value());
+    CY_REQUIRE(second.has_value());
+
+    const cy::u32 side = params.ring_quads + 1U;
+    for (const cy::water::DisplacementModel* model : {&*first, &*second}) {
+        const cy::f64 time = 7.25;
+        CY_REQUIRE(surface.build(*model, camera, time).has_value());
+        CY_REQUIRE_EQ(surface.positions().size(),
+                      static_cast<cy::usize>(side * side * params.rings));
+        cy::u32 disagreeing = 0;
+        cy::usize index = 0;
+        for (cy::u32 ring = 0; ring < params.rings; ++ring) {
+            const cy::f32 cell = params.near_cell_metres * static_cast<cy::f32>(1U << ring);
+            const cy::f32 half = cell * static_cast<cy::f32>(params.ring_quads) * 0.5F;
+            for (cy::u32 z = 0; z < side; ++z) {
+                for (cy::u32 x = 0; x < side; ++x, ++index) {
+                    const cy::f32 local_x = (static_cast<cy::f32>(x) * cell) - half;
+                    const cy::f32 local_z = (static_cast<cy::f32>(z) * cell) - half;
+                    const cy::water::Displacement expected = evaluate_displacement(
+                        *model, BandSelection::All,
+                        surface.origin().x + static_cast<cy::f64>(local_x),
+                        surface.origin().z + static_cast<cy::f64>(local_z), time);
+                    const cy::Vec3 position = surface.positions()[index];
+                    const cy::Vec3 normal = surface.normals()[index];
+                    const bool same =
+                        position.x == local_x + expected.offset.x &&
+                        position.y == static_cast<cy::f32>(expected.height - surface.origin().y) &&
+                        position.z == local_z + expected.offset.z &&
+                        normal.x == expected.normal.x && normal.y == expected.normal.y &&
+                        normal.z == expected.normal.z &&
+                        surface.breaking()[index] == expected.breaking;
+                    disagreeing += same ? 0U : 1U;
+                }
+            }
+        }
+        CY_CHECK_EQ(disagreeing, 0u);
+    }
+}
+
+CY_TEST_CASE("a cell size inexact in binary shares no vertex between rings and is still exact") {
+    // The rings share a vertex only where the two f32 lattice coordinates are bit-equal. With a
+    // 0.3 m cell they are not everywhere, and a copy made on "the same point in exact arithmetic"
+    // would be a different evaluation's answer. Every vertex must still be the model's own.
+    const auto model = cy::water::build_ocean_model(test::rough_sea(), 5);
+    CY_REQUIRE(model.has_value());
+    OceanSurface surface(test::allocator());
+    OceanSurfaceParams params;
+    params.near_cell_metres = 0.3F;
+    params.ring_quads = 8;
+    params.rings = 3;
+    CY_REQUIRE(surface.configure(params).has_value());
+    CY_REQUIRE(surface.build(*model, cy::world::WorldVec3d{12.1, 0.0, -3.7}, 4.0).has_value());
+    const cy::u32 side = params.ring_quads + 1U;
+    cy::u32 disagreeing = 0;
+    cy::usize index = 0;
+    for (cy::u32 ring = 0; ring < params.rings; ++ring) {
+        const cy::f32 cell = params.near_cell_metres * static_cast<cy::f32>(1U << ring);
+        const cy::f32 half = cell * static_cast<cy::f32>(params.ring_quads) * 0.5F;
+        for (cy::u32 z = 0; z < side; ++z) {
+            for (cy::u32 x = 0; x < side; ++x, ++index) {
+                const cy::f32 local_x = (static_cast<cy::f32>(x) * cell) - half;
+                const cy::f32 local_z = (static_cast<cy::f32>(z) * cell) - half;
+                const cy::water::Displacement expected = evaluate_displacement(
+                    *model, BandSelection::All, surface.origin().x + static_cast<cy::f64>(local_x),
+                    surface.origin().z + static_cast<cy::f64>(local_z), 4.0);
+                const cy::Vec3 position = surface.positions()[index];
+                disagreeing +=
+                    (position.x == local_x + expected.offset.x &&
+                     position.y == static_cast<cy::f32>(expected.height - surface.origin().y) &&
+                     position.z == local_z + expected.offset.z &&
+                     surface.breaking()[index] == expected.breaking)
+                        ? 0U
+                        : 1U;
+            }
+        }
+    }
+    CY_CHECK_EQ(disagreeing, 0u);
+}
+
 CY_TEST_CASE("a patch shape that cannot be built is refused") {
     OceanSurface surface(test::allocator());
     OceanSurfaceParams odd;

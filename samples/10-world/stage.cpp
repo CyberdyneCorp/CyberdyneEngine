@@ -5,6 +5,7 @@
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/pipeline.h>
 #include <cy/backends/rhi/validation.h>
+#include <cy/core/jobs/parallel.h>
 #include <cy/core/math/projection.h>
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
@@ -30,6 +31,7 @@
 #include "shaders/world_visual_msl.h"
 #include "shaders/world_visual_spirv.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -95,6 +97,9 @@ constexpr f32 kPlantDrawMetres = 620.0F;
 constexpr u32 kCrownSides = 8;
 constexpr u32 kTrunkSides = 3;
 constexpr u32 kPlantVertices = (kCrownSides * 3) + (kTrunkSides * 2 * 3);
+/// Plant proxies one job writes. Each is about fifty flops of trigonometry and a square root per
+/// face; a few hundred of them amortise the task.
+constexpr u64 kProxiesPerJob = 256;
 
 [[nodiscard]] f64 now_millis() noexcept {
     const auto at = std::chrono::steady_clock::now().time_since_epoch();
@@ -331,8 +336,11 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
                  message != nullptr ? message : "");
 }
 
+/// Bytes one job copies in a parallel upload. Large enough that a task is cheap next to it.
+constexpr u64 kUploadBytesPerJob = u64{512} * 1024;
+
 [[nodiscard]] Status upload_bytes(rhi::Device& device, rhi::BufferHandle buffer, const void* source,
-                                  u64 bytes) noexcept {
+                                  u64 bytes, jobs::JobSystem* jobs = nullptr) noexcept {
     if (bytes == 0) {
         return ok();
     }
@@ -340,12 +348,24 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "a staged buffer is not mapped");
     }
-    const auto* from = static_cast<const u8*>(source);
+    // A BLOCK COPY, NOT A BYTE LOOP. The dynamic stream is about eleven megabytes a frame (seven
+    // thousand plant proxies of forty-two vertices, plus the sea and the sky), and GCC at -O2 did
+    // not turn the byte-at-a-time loop this was into one: a sampling profile of the take put about
+    // 2 ms of every frame there. Given workers, the copy is split into disjoint chunks across them,
+    // because one thread does not saturate the write path into the mapped buffer.
     auto* to = static_cast<u8*>(mapped);
-    for (u64 index = 0; index < bytes; ++index) {
-        to[index] = from[index];
+    const auto* from = static_cast<const u8*>(source);
+    if (jobs == nullptr || bytes <= kUploadBytesPerJob) {
+        std::memcpy(to, from, static_cast<usize>(bytes));
+        return ok();
     }
-    return ok();
+    const u64 chunks = (bytes + kUploadBytesPerJob - 1) / kUploadBytesPerJob;
+    auto body = [to, from, bytes](const jobs::TaskContext& /*task*/, u64 begin, u64 end) noexcept {
+        const u64 first = begin * kUploadBytesPerJob;
+        const u64 last = std::min(end * kUploadBytesPerJob, bytes);
+        std::memcpy(to + first, from + first, static_cast<usize>(last - first));
+    };
+    return jobs::parallel_for(*jobs, chunks, 1, body, "world.upload");
 }
 
 /// How much of a proxy's height is trunk. A boulder has none at all: its cone starts at the ground
@@ -547,6 +567,7 @@ Stage::Stage(Allocator& allocator) noexcept
       dynamic_vertices_(allocator),
       dynamic_colours_(allocator),
       dynamic_indices_(allocator),
+      drawn_plants_(allocator),
       terrain_colours_(allocator),
       pixels_(allocator) {}
 
@@ -1090,14 +1111,38 @@ Status Stage::stage_world(const World& world) noexcept {
         }
     }
 
-    if (Status reserved = dynamic_vertices_.reserve(capacity); !reserved) {
+    // THE DYNAMIC HALF IS FAULTED HERE, NOT BY THE FIRST FRAME OF THE TAKE. Mapping a buffer
+    // commits no page; the first write to each one does. The warm-up frame `open_stage()` draws
+    // before the take writes almost none of these — the world has not advanced yet, so it has no
+    // plants and no sea — which left the first frame of every take paying to fault in about eleven
+    // megabytes of proxy streams: 2 to 3 ms more `stage_build` on frame 0 than on any other frame,
+    // in every one of ten measured takes. Touching every page once, here, is what the warm-up
+    // comment in `main.cpp` already promised.
+    if (Status reserved = dynamic_vertices_.reserve(sky_vertices + water_vertices + star_vertices);
+        !reserved) {
         return reserved;
     }
-    if (Status reserved = dynamic_colours_.reserve(capacity); !reserved) {
+    if (Status reserved = dynamic_colours_.reserve(sky_vertices + water_vertices + star_vertices);
+        !reserved) {
         return reserved;
     }
     if (Status reserved = dynamic_indices_.reserve(index_capacity); !reserved) {
         return reserved;
+    }
+    if (Status reserved = drawn_plants_.reserve(kMaxDrawnPlants); !reserved) {
+        return reserved;
+    }
+    dynamic_index_capacity_ = static_cast<u32>(index_capacity);
+    const rhi::BufferHandle dynamic[3] = {device_->dynamic_vertices, device_->dynamic_colours,
+                                          device_->dynamic_indices};
+    const u64 dynamic_bytes[3] = {capacity * sizeof(Vertex), capacity * sizeof(Vec3),
+                                  index_capacity * sizeof(u32)};
+    for (u32 index = 0; index < 3; ++index) {
+        void* mapped = device.buffer_mapped_pointer(dynamic[index]);
+        if (mapped == nullptr) {
+            return fail(ErrorCode::Internal, "a dynamic buffer is not mapped");
+        }
+        std::memset(mapped, 0, static_cast<usize>(dynamic_bytes[index]));
     }
     return create_visual_pipelines();
 }
@@ -1105,6 +1150,106 @@ Status Stage::stage_world(const World& world) noexcept {
 // ================================================================================================
 // THE PER-FRAME STREAMS
 // ================================================================================================
+
+namespace {
+
+/// One plant's proxy — an eight-sided crown cone over a three-sided trunk prism — written into
+/// `kPlantVertices` consecutive slots of each stream. `first` is the slot's index in the dynamic
+/// vertex buffer, which the identity index run points at.
+///
+/// A FUNCTION OF ITS OWN PLANT ONLY, so the proxies are written in parallel: each writes its own
+/// block and nothing else, and the streams hold the same bits whichever worker wrote which plant.
+void write_plant_proxy(const PlantDraw& plant, const Vec3& base, u32 first, Vertex* vertices,
+                       Vec3* colours, u32* indices) noexcept {
+    const f32 trunk_fraction = trunk_fraction_of(plant.kind);
+    const f32 trunk_height = plant.height * trunk_fraction;
+    const f32 trunk_radius = plant.radius * (plant.kind == PlantKind::Tree ? 0.16F : 0.25F);
+    const Vec3 apex{base.x + plant.crown_offset.x, base.y + plant.height,
+                    base.z + plant.crown_offset.z};
+    const Vec3 crown_base{base.x + (plant.crown_offset.x * 0.25F), base.y + trunk_height,
+                          base.z + (plant.crown_offset.z * 0.25F)};
+
+    u32 written = 0;
+
+    // Each rim angle is shared by the two faces either side of it, so its cosine and sine are
+    // taken once. Side `s` spans angles `s` and `s + 1`, written with the same expression the
+    // faces used to evaluate twice each, so the proxy's vertices are unchanged bit for bit.
+    f32 crown_cos[kCrownSides + 1];
+    f32 crown_sin[kCrownSides + 1];
+    for (u32 side = 0; side <= kCrownSides; ++side) {
+        const f32 angle = plant.yaw + (6.28318F * static_cast<f32>(side) / kCrownSides);
+        crown_cos[side] = std::cos(angle);
+        crown_sin[side] = std::sin(angle);
+    }
+    // The crown: a cone whose apex carries the full wind displacement and whose skirt carries a
+    // quarter of it, which is the shear a trunk-and-branch response produces along the plant.
+    for (u32 side = 0; side < kCrownSides; ++side) {
+        const Vec3 left{crown_base.x + (crown_cos[side] * plant.radius), crown_base.y,
+                        crown_base.z + (crown_sin[side] * plant.radius)};
+        const Vec3 right{crown_base.x + (crown_cos[side + 1] * plant.radius), crown_base.y,
+                         crown_base.z + (crown_sin[side + 1] * plant.radius)};
+        const Vec3 normal = face_normal(apex, left, right);
+        const Vec3 corners[3] = {apex, left, right};
+        for (const Vec3& corner : corners) {
+            vertices[written] = Vertex{corner, normal};
+            colours[written] = plant.crown_colour;
+            ++written;
+        }
+    }
+    // The trunk: a three-sided prism, leaning by a quarter of the crown's displacement.
+    f32 trunk_cos[kTrunkSides + 1];
+    f32 trunk_sin[kTrunkSides + 1];
+    for (u32 side = 0; side <= kTrunkSides; ++side) {
+        const f32 angle = plant.yaw + (6.28318F * static_cast<f32>(side) / kTrunkSides);
+        trunk_cos[side] = std::cos(angle);
+        trunk_sin[side] = std::sin(angle);
+    }
+    for (u32 side = 0; side < kTrunkSides; ++side) {
+        const Vec3 low_a{base.x + (trunk_cos[side] * trunk_radius), base.y,
+                         base.z + (trunk_sin[side] * trunk_radius)};
+        const Vec3 low_b{base.x + (trunk_cos[side + 1] * trunk_radius), base.y,
+                         base.z + (trunk_sin[side + 1] * trunk_radius)};
+        const Vec3 high_a{low_a.x + (plant.crown_offset.x * 0.25F), base.y + trunk_height,
+                          low_a.z + (plant.crown_offset.z * 0.25F)};
+        const Vec3 high_b{low_b.x + (plant.crown_offset.x * 0.25F), base.y + trunk_height,
+                          low_b.z + (plant.crown_offset.z * 0.25F)};
+        const Vec3 normal = face_normal(low_a, high_a, low_b);
+        const Vec3 corners[6] = {low_a, high_a, low_b, low_b, high_a, high_b};
+        for (const Vec3& corner : corners) {
+            vertices[written] = Vertex{corner, normal};
+            colours[written] = plant.trunk_colour;
+            ++written;
+        }
+    }
+    for (u32 vertex = 0; vertex < kPlantVertices; ++vertex) {
+        indices[vertex] = first + vertex;
+    }
+}
+
+/// What the parallel proxy write shares, read-only, between its partitions.
+struct ProxyWrite {
+    Span<const PlantDraw> plants;
+    Span<const u32> chosen;
+    f32 middle_x = 0.0F;
+    f32 middle_z = 0.0F;
+    u32 first_vertex = 0;
+    Vertex* vertices = nullptr;
+    Vec3* colours = nullptr;
+    u32* indices = nullptr;
+};
+
+void write_proxies(const ProxyWrite& write, u64 begin, u64 end) noexcept {
+    for (u64 slot = begin; slot < end; ++slot) {
+        const PlantDraw& plant = write.plants[write.chosen[slot]];
+        const Vec3 base{plant.position.x - write.middle_x, plant.position.y,
+                        plant.position.z - write.middle_z};
+        const usize offset = static_cast<usize>(slot) * kPlantVertices;
+        write_plant_proxy(plant, base, write.first_vertex + static_cast<u32>(offset),
+                          write.vertices + offset, write.colours + offset, write.indices + offset);
+    }
+}
+
+}  // namespace
 
 Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageReport& out) noexcept {
     dynamic_vertices_.clear();
@@ -1204,6 +1349,11 @@ Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageRepo
     const Span<const Vec3> positions = ocean.positions();
     const Span<const Vec3> normals = ocean.normals();
     const Span<const f32> breaking = ocean.breaking();
+    // THE WATER'S COLOUR IS THE BODY'S OWN OPTICS, not a painted blue. `water_column_colour()` is
+    // src/water/'s Beer-Lambert absorption plus its in-scatter term over a nominal column, which is
+    // what makes deep water darken AND shift hue with nothing authored. The column is the same for
+    // every vertex, so it is evaluated once per frame rather than once per vertex.
+    const Vec3 deep = water::water_column_colour(optics, 14.0F, Vec3{0.02F, 0.05F, 0.07F});
     for (usize index = 0; index < positions.size(); ++index) {
         Vertex vertex;
         vertex.position = Vec3{static_cast<f32>(ocean.origin().x - middle.x) + positions[index].x,
@@ -1213,12 +1363,8 @@ Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageRepo
         if (Status pushed = dynamic_vertices_.push_back(vertex); !pushed) {
             return pushed;
         }
-        // THE WATER'S COLOUR IS THE BODY'S OWN OPTICS, not a painted blue. `water_column_colour()`
-        // is src/water/'s Beer-Lambert absorption plus its in-scatter term over a nominal column,
-        // which is what makes deep water darken AND shift hue with nothing authored — and the foam
-        // is the surface's own breaking indicator, which comes from the Jacobian of the Gerstner
-        // map rather than from a threshold on height.
-        const Vec3 deep = water::water_column_colour(optics, 14.0F, Vec3{0.02F, 0.05F, 0.07F});
+        // The foam is the surface's own breaking indicator, which comes from the Jacobian of the
+        // Gerstner map rather than from a threshold on height.
         const f32 foam = breaking.empty() ? 0.0F : breaking[index];
         const f32 white = clamp01(foam);
         if (Status pushed = dynamic_colours_.push_back(Vec3{deep.x + ((0.85F - deep.x) * white),
@@ -1236,86 +1382,66 @@ Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageRepo
     water_index_count_ = static_cast<u32>(dynamic_indices_.size()) - water_first_index_;
     out.water_triangles = water_index_count_ / 3;
 
-    // --- THE FOLIAGE, one proxy per plant near the camera.
+    // --- THE FOLIAGE, one proxy per plant near the camera. Chosen in order first — the nearest
+    // `kMaxDrawnPlants` inside the draw distance, exactly as a single loop chose them — and then
+    // written, each proxy into its own fixed block, across the world's workers when it has them.
+    //
+    // THE PROXIES ARE WRITTEN STRAIGHT INTO THE MAPPED DYNAMIC BUFFERS, after the sky, stars and
+    // sea that `upload_dynamic()` copies in front of them. They are about eleven megabytes a frame
+    // and nothing on the processor reads them back, so staging them in an array first cost a
+    // zero-fill, a write and a copy of all eleven for nothing. The previous frame is idle before
+    // `shoot()` builds this one, so no draw is still reading what is overwritten here.
     foliage_first_index_ = static_cast<u32>(dynamic_indices_.size());
-    out.plants_drawn = 0;
-    for (const PlantDraw& plant : world.plants()) {
-        if (out.plants_drawn >= kMaxDrawnPlants) {
-            break;
-        }
-        const Vec3 base{plant.position.x - static_cast<f32>(middle.x), plant.position.y,
-                        plant.position.z - static_cast<f32>(middle.z)};
-        const f32 dx = base.x - relative_eye.x;
-        const f32 dz = base.z - relative_eye.z;
+    drawn_plants_.clear();
+    const Span<const PlantDraw> plants = world.plants();
+    for (u32 index = 0; index < plants.size() && drawn_plants_.size() < kMaxDrawnPlants; ++index) {
+        const PlantDraw& plant = plants[index];
+        const f32 dx = (plant.position.x - static_cast<f32>(middle.x)) - relative_eye.x;
+        const f32 dz = (plant.position.z - static_cast<f32>(middle.z)) - relative_eye.z;
         if ((dx * dx) + (dz * dz) > kPlantDrawMetres * kPlantDrawMetres) {
             continue;
         }
-        const u32 first = static_cast<u32>(dynamic_vertices_.size());
-        const f32 trunk_fraction = trunk_fraction_of(plant.kind);
-        const f32 trunk_height = plant.height * trunk_fraction;
-        const f32 trunk_radius = plant.radius * (plant.kind == PlantKind::Tree ? 0.16F : 0.25F);
-        const Vec3 apex{base.x + plant.crown_offset.x, base.y + plant.height,
-                        base.z + plant.crown_offset.z};
-        const Vec3 crown_base{base.x + (plant.crown_offset.x * 0.25F), base.y + trunk_height,
-                              base.z + (plant.crown_offset.z * 0.25F)};
-
-        // The crown: a cone whose apex carries the full wind displacement and whose skirt carries a
-        // quarter of it, which is the shear a trunk-and-branch response produces along the plant.
-        for (u32 side = 0; side < kCrownSides; ++side) {
-            const f32 a = plant.yaw + (6.28318F * static_cast<f32>(side) / kCrownSides);
-            const f32 b = plant.yaw + (6.28318F * static_cast<f32>(side + 1) / kCrownSides);
-            const Vec3 left{crown_base.x + (std::cos(a) * plant.radius), crown_base.y,
-                            crown_base.z + (std::sin(a) * plant.radius)};
-            const Vec3 right{crown_base.x + (std::cos(b) * plant.radius), crown_base.y,
-                             crown_base.z + (std::sin(b) * plant.radius)};
-            const Vec3 normal = face_normal(apex, left, right);
-            const Vec3 corners[3] = {apex, left, right};
-            for (const Vec3& corner : corners) {
-                Vertex vertex;
-                vertex.position = corner;
-                vertex.normal = normal;
-                if (Status pushed = dynamic_vertices_.push_back(vertex); !pushed) {
-                    return pushed;
-                }
-                if (Status pushed = dynamic_colours_.push_back(plant.crown_colour); !pushed) {
-                    return pushed;
-                }
-            }
+        if (Status pushed = drawn_plants_.push_back(index); !pushed) {
+            return pushed;
         }
-        // The trunk: a three-sided prism, leaning by a quarter of the crown's displacement.
-        for (u32 side = 0; side < kTrunkSides; ++side) {
-            const f32 a = plant.yaw + (6.28318F * static_cast<f32>(side) / kTrunkSides);
-            const f32 b = plant.yaw + (6.28318F * static_cast<f32>(side + 1) / kTrunkSides);
-            const Vec3 low_a{base.x + (std::cos(a) * trunk_radius), base.y,
-                             base.z + (std::sin(a) * trunk_radius)};
-            const Vec3 low_b{base.x + (std::cos(b) * trunk_radius), base.y,
-                             base.z + (std::sin(b) * trunk_radius)};
-            const Vec3 high_a{low_a.x + (plant.crown_offset.x * 0.25F), base.y + trunk_height,
-                              low_a.z + (plant.crown_offset.z * 0.25F)};
-            const Vec3 high_b{low_b.x + (plant.crown_offset.x * 0.25F), base.y + trunk_height,
-                              low_b.z + (plant.crown_offset.z * 0.25F)};
-            const Vec3 normal = face_normal(low_a, high_a, low_b);
-            const Vec3 corners[6] = {low_a, high_a, low_b, low_b, high_a, high_b};
-            for (const Vec3& corner : corners) {
-                Vertex vertex;
-                vertex.position = corner;
-                vertex.normal = normal;
-                if (Status pushed = dynamic_vertices_.push_back(vertex); !pushed) {
-                    return pushed;
-                }
-                if (Status pushed = dynamic_colours_.push_back(plant.trunk_colour); !pushed) {
-                    return pushed;
-                }
-            }
-        }
-        for (u32 vertex = 0; vertex < kPlantVertices; ++vertex) {
-            if (Status pushed = dynamic_indices_.push_back(first + vertex); !pushed) {
-                return pushed;
-            }
-        }
-        ++out.plants_drawn;
     }
-    foliage_index_count_ = static_cast<u32>(dynamic_indices_.size()) - foliage_first_index_;
+    out.plants_drawn = static_cast<u32>(drawn_plants_.size());
+    const usize first_vertex = dynamic_vertices_.size();
+    const usize first_index = dynamic_indices_.size();
+    const usize proxy_slots = drawn_plants_.size() * kPlantVertices;
+    if (first_vertex + proxy_slots > dynamic_capacity_ ||
+        first_index + proxy_slots > dynamic_index_capacity_) {
+        return fail(ErrorCode::OutOfRange, "the frame's proxies exceed the dynamic buffers");
+    }
+    rhi::Device& device = *device_->handle.value();
+    auto* vertices = static_cast<Vertex*>(device.buffer_mapped_pointer(device_->dynamic_vertices));
+    auto* colours = static_cast<Vec3*>(device.buffer_mapped_pointer(device_->dynamic_colours));
+    auto* indices = static_cast<u32*>(device.buffer_mapped_pointer(device_->dynamic_indices));
+    if (vertices == nullptr || colours == nullptr || indices == nullptr) {
+        return fail(ErrorCode::Internal, "a dynamic buffer is not mapped");
+    }
+    ProxyWrite write;
+    write.plants = plants;
+    write.chosen = drawn_plants_.span();
+    write.middle_x = static_cast<f32>(middle.x);
+    write.middle_z = static_cast<f32>(middle.z);
+    write.first_vertex = static_cast<u32>(first_vertex);
+    write.vertices = vertices + first_vertex;
+    write.colours = colours + first_vertex;
+    write.indices = indices + first_index;
+    if (jobs_ == nullptr) {
+        write_proxies(write, 0, drawn_plants_.size());
+    } else {
+        auto body = [&write](const jobs::TaskContext& /*task*/, u64 begin, u64 end) noexcept {
+            write_proxies(write, begin, end);
+        };
+        if (Status ran = jobs::parallel_for(*jobs_, drawn_plants_.size(), kProxiesPerJob, body,
+                                            "world.proxies");
+            !ran) {
+            return ran;
+        }
+    }
+    foliage_index_count_ = static_cast<u32>(proxy_slots);
     out.foliage_triangles = foliage_index_count_ / 3;
 
     out.terrain_triangles = terrain_indices_ / 3;
@@ -1380,17 +1506,17 @@ Status Stage::upload_dynamic(const World& world, f32& field_origin_x,
     field_origin_x = static_cast<f32>(world.centre().x - origin_x);
     field_origin_z = static_cast<f32>(world.centre().z - origin_z);
     if (Status uploaded = upload_bytes(device, device_->dynamic_vertices, dynamic_vertices_.data(),
-                                       dynamic_vertices_.size() * sizeof(Vertex));
+                                       dynamic_vertices_.size() * sizeof(Vertex), jobs_);
         !uploaded) {
         return uploaded;
     }
     if (Status uploaded = upload_bytes(device, device_->dynamic_colours, dynamic_colours_.data(),
-                                       dynamic_colours_.size() * sizeof(Vec3));
+                                       dynamic_colours_.size() * sizeof(Vec3), jobs_);
         !uploaded) {
         return uploaded;
     }
     return upload_bytes(device, device_->dynamic_indices, dynamic_indices_.data(),
-                        dynamic_indices_.size() * sizeof(u32));
+                        dynamic_indices_.size() * sizeof(u32), jobs_);
 }
 
 Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d& target,

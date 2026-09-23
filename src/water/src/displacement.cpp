@@ -32,22 +32,15 @@ namespace {
                                      determinism::StreamPurpose::Presentation};
 }
 
-/// One train's constants, derived once from the band it belongs to.
-struct Train {
-    f32 wavelength = 1.0F;
-    f32 amplitude = 0.0F;
-    f32 dir_x = 1.0F;
-    f32 dir_z = 0.0F;
-    f32 phase = 0.0F;
-};
-
 /// The i-th train of a band. A pure function of (band, index), so the surface at a position is a
 /// function of the model and nothing else — no table built at load, nothing to keep in step.
-[[nodiscard]] Train train_of(const DisplacementModel& model, u32 band_index, u32 wave) noexcept {
+[[nodiscard]] WaveTrain train_of(const DisplacementModel& model, u32 band_index,
+                                 u32 wave) noexcept {
     const DisplacementBand& band = model.bands[band_index];
     const u32 count = (band.wave_count == 0) ? 1U : band.wave_count;
 
-    Train train;
+    WaveTrain train;
+    train.steepness = band.steepness;
     // Wavelengths spaced geometrically across the band: a band spanning a decade with four trains
     // puts one every 10^(1/3), which is how a spectrum is sampled. Linear spacing would crowd the
     // long end, where the energy is.
@@ -98,8 +91,7 @@ struct TrainAccumulator {
     u32 trains = 0;
 };
 
-void accumulate(TrainAccumulator& into, const Train& train, f32 steepness, f64 x, f64 z,
-                f64 time) noexcept {
+void accumulate(TrainAccumulator& into, const WaveTrain& train, f64 x, f64 z, f64 time) noexcept {
     const f32 k = (2.0F * std::numbers::pi_v<f32>) / train.wavelength;
     // Deep-water dispersion. See the header note on why this relation and not a shallow one.
     const f32 omega = std::sqrt(kGravity * k);
@@ -113,7 +105,7 @@ void accumulate(TrainAccumulator& into, const Train& train, f32 steepness, f64 x
     const auto cos_theta = static_cast<f32>(std::cos(theta));
 
     const f32 a = train.amplitude;
-    const f32 qa = steepness * a;
+    const f32 qa = train.steepness * a;
 
     into.offset_y += a * cos_theta;
     into.offset_x -= qa * train.dir_x * sin_theta;
@@ -132,6 +124,24 @@ void accumulate(TrainAccumulator& into, const Train& train, f32 steepness, f64 x
     into.dxdz -= qa * k * train.dir_x * train.dir_z * cos_theta;
     into.dzdx -= qa * k * train.dir_z * train.dir_x * cos_theta;
     ++into.trains;
+}
+
+/// The summed trains as a `Displacement`. Shared by every evaluation entry point, so a train table
+/// resolved once and the model evaluated directly finish the sum with the same arithmetic.
+[[nodiscard]] Displacement finish(const TrainAccumulator& sum, f64 mean_level) noexcept {
+    Displacement result;
+    result.offset = Vec3{sum.offset_x, sum.offset_y, sum.offset_z};
+    result.height = mean_level + static_cast<f64>(sum.offset_y);
+    result.velocity = Vec3{sum.velocity_x, sum.velocity_y, sum.velocity_z};
+    result.normal = normalize(Vec3{-sum.dydx, 1.0F, -sum.dydz});
+    // The Jacobian of the horizontal map. Where it falls below one the crest is pinching; where it
+    // would go negative the surface has folded through itself and is breaking. Reported in [0, 1]
+    // so a consumer can weight foam by it rather than threshold it.
+    const f32 jacobian = ((1.0F + sum.dxdx) * (1.0F + sum.dzdz)) - (sum.dxdz * sum.dzdx);
+    result.breaking = (jacobian >= 1.0F) ? 0.0F : (1.0F - jacobian);
+    result.breaking = std::min(result.breaking, 1.0F);
+    result.trains = sum.trains;
+    return result;
 }
 
 }  // namespace
@@ -176,23 +186,47 @@ Displacement evaluate_displacement(const DisplacementModel& model, BandSelection
         }
         const u32 count = (band.wave_count == 0) ? 1U : band.wave_count;
         for (u32 wave = 0; wave < count; ++wave) {
-            accumulate(sum, train_of(model, band_index, wave), band.steepness, x, z, time);
+            accumulate(sum, train_of(model, band_index, wave), x, z, time);
         }
     }
+    return finish(sum, model.mean_level);
+}
 
-    Displacement result;
-    result.offset = Vec3{sum.offset_x, sum.offset_y, sum.offset_z};
-    result.height = model.mean_level + static_cast<f64>(sum.offset_y);
-    result.velocity = Vec3{sum.velocity_x, sum.velocity_y, sum.velocity_z};
-    result.normal = normalize(Vec3{-sum.dydx, 1.0F, -sum.dydz});
-    // The Jacobian of the horizontal map. Where it falls below one the crest is pinching; where it
-    // would go negative the surface has folded through itself and is breaking. Reported in [0, 1]
-    // so a consumer can weight foam by it rather than threshold it.
-    const f32 jacobian = ((1.0F + sum.dxdx) * (1.0F + sum.dzdz)) - (sum.dxdz * sum.dzdx);
-    result.breaking = (jacobian >= 1.0F) ? 0.0F : (1.0F - jacobian);
-    result.breaking = std::min(result.breaking, 1.0F);
-    result.trains = sum.trains;
-    return result;
+u32 count_trains(const DisplacementModel& model, BandSelection selection) noexcept {
+    u32 count = 0;
+    for (u32 band_index = 0; band_index < model.band_count; ++band_index) {
+        const DisplacementBand& band = model.bands[band_index];
+        if (included(selection, band.authority)) {
+            count += (band.wave_count == 0) ? 1U : band.wave_count;
+        }
+    }
+    return count;
+}
+
+u32 resolve_trains(const DisplacementModel& model, BandSelection selection,
+                   Span<WaveTrain> out) noexcept {
+    u32 written = 0;
+    for (u32 band_index = 0; band_index < model.band_count; ++band_index) {
+        const DisplacementBand& band = model.bands[band_index];
+        if (!included(selection, band.authority)) {
+            continue;
+        }
+        const u32 count = (band.wave_count == 0) ? 1U : band.wave_count;
+        for (u32 wave = 0; wave < count && written < out.size(); ++wave) {
+            out[written] = train_of(model, band_index, wave);
+            ++written;
+        }
+    }
+    return written;
+}
+
+Displacement evaluate_trains(Span<const WaveTrain> trains, f64 mean_level, f64 x, f64 z,
+                             f64 time) noexcept {
+    TrainAccumulator sum;
+    for (const WaveTrain& train : trains) {
+        accumulate(sum, train, x, z, time);
+    }
+    return finish(sum, mean_level);
 }
 
 AmplitudeSplit amplitude_split(const DisplacementModel& model) noexcept {
@@ -258,7 +292,7 @@ u32 band_contributions(const DisplacementModel& model, f64 x, f64 z, f64 time,
         TrainAccumulator sum;
         const u32 count = (band.wave_count == 0) ? 1U : band.wave_count;
         for (u32 wave = 0; wave < count; ++wave) {
-            accumulate(sum, train_of(model, index, wave), band.steepness, x, z, time);
+            accumulate(sum, train_of(model, index, wave), x, z, time);
         }
         BandContribution contribution;
         contribution.band = index;

@@ -146,6 +146,30 @@ The three former CPU bands are absent from rendered `FrameCosts`: `terrain_shade
 clock without evolving visual foam. Device submission is therefore the largest rendered band,
 followed by the camera-relative ocean patch and construction of the sample's vertex streams.
 
+**On Linux, Vulkan and a Development build the gate was red at M11.c** — 21.8 ms mean and 25.8 ms
+worst on an RTX 5060, with the Khronos validation layer and synchronisation validation on, as
+`m11a:world-budget-on-a-device` runs it. A sampling profile of the take named the processor costs;
+five of them were this program's own and are fixed, none of them by changing an output bit (all 64
+frames of the take compare byte-identical, PNG for PNG, against the build before):
+
+| cost | was | now |
+|---|---|---|
+| the ocean patch resolved every wave train — two hashed-stream draws, a `pow`, a `cos`/`sin` — per train per vertex, and evaluated the vertices the rings share twice | about 5.5 ms | about 0.6 ms: trains resolved once per build, shared vertices copied, rows spread over four workers (`water_ocean_parallel` proves the parallel patch is the serial one bit for bit) |
+| the dynamic streams (eleven megabytes a frame) were built in arrays with nine hundred thousand checked pushes, then copied into the mapped buffers a byte at a time, which GCC did not turn into a block copy | about 6.5 ms of `stage_build` | about 0.9 ms: each plant proxy written straight into its own block of the mapped buffers across the workers, each rim angle's `cos`/`sin` taken once, the small sky/star/sea part copied with `memcpy` |
+| every plant's wind response evaluated serially | about 1.3 ms | about 0.5 ms: listed in order, evaluated across the workers |
+| the first frame of every take faulted in the proxy streams and the plant list, because the warm-up frame runs before the world has any plants | 2 to 3 ms extra on frame 0 | the dynamic buffers and plant storage are touched once while the stage and the world are built |
+
+Measured back to back on the same loaded host (load average about 12), the build before takes
+24.7 ms mean and 30.2 ms worst and this one 12.9 ms mean and 15.8 ms worst. Headless went from 10.4
+to 4.8 ms mean. **The margin is thin and it is not this program's to widen.** About 7.5 ms of every
+frame is `stage_submit`, and most of that is `FrameAssembly::update_sky()` — an unconditional
+`sky::sky_irradiance()` and a `SkyViewTable` rebuild every frame, because this take compresses a day
+into 64 frames and the sun moves about five degrees a frame — and the device wait. The frames
+nearest the horizon add `compose_sky_lighting()`'s gradient fit (`sky_ms` about 3.5 ms at sunset
+against 0.8 at night), which puts them at about 15.5–16 ms; a submit that stalls for a few
+milliseconds on a shared host is then enough to cross 16.7, and on this machine, shared with other
+builds and device runs, about half the takes still did.
+
 Headless has a narrower meaning now: it measures authoritative simulation and skips visual terrain,
 cloud, and foam work because there is no device to consume it. The same 64-frame take is committed
 separately as headless evidence. Save, replay, lockstep, PCG, and gameplay state do not depend on the

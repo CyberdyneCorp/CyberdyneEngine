@@ -43,6 +43,7 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/jobs/job_system.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
@@ -243,6 +244,15 @@ struct PlantDraw {
     PlantKind kind = PlantKind::Tree;
 };
 
+/// Which instance fills one slot of `World::plants()`: the cluster, its resolved species and the
+/// instance's slot in the cluster. Listed in draw order before the plants are evaluated in
+/// parallel.
+struct PlantSource {
+    const foliage::FoliageCluster* cluster = nullptr;
+    const foliage::SpeciesDeclaration* species = nullptr;
+    u32 slot = 0;
+};
+
 /// One vertex of the sky dome: a direction and the radiance written by the visual cloud pass.
 struct SkyVertex {
     Vec3 direction{0.0F, 1.0F, 0.0F};
@@ -323,6 +333,7 @@ public:
 
     World(const World&) = delete;
     World& operator=(const World&) = delete;
+    ~World();
 
     /// Generate, cook, claim and place. Everything that happens once.
     [[nodiscard]] Status build(BuildReport& report) noexcept;
@@ -384,6 +395,9 @@ public:
     [[nodiscard]] Span<const u32> sky_indices() const noexcept { return sky_indices_.span(); }
     [[nodiscard]] Span<const StarDraw> stars() const noexcept { return star_draws_.span(); }
     [[nodiscard]] const water::OceanSurface& ocean() const noexcept { return ocean_; }
+    /// The workers the world's per-frame producers are spread over, or null when they did not
+    /// start. The stage borrows them for the plant proxies.
+    [[nodiscard]] jobs::JobSystem* jobs() noexcept { return jobs_started_ ? &jobs_ : nullptr; }
     [[nodiscard]] const Lighting& lighting() const noexcept { return lighting_; }
     [[nodiscard]] const WorldState& state() const noexcept { return state_; }
     /// Field images consumed by the device terrain pass: water distance, wetness, snow and
@@ -418,6 +432,7 @@ private:
     [[nodiscard]] Status shade_terrain() noexcept;
     [[nodiscard]] Status shade_sky(bool shade_visual_dome) noexcept;
     [[nodiscard]] Status update_plants() noexcept;
+    [[nodiscard]] Status list_plants() noexcept;
     [[nodiscard]] Status publish_shoreline() noexcept;
 
     /// Simulated seconds one frame of the take advances the world by. A day across the take.
@@ -521,6 +536,7 @@ private:
     Array<foliage::FoliageCluster> clusters_;
     Array<foliage::WindSampler> wind_sampler_;  // one element; opened after weather claims `wind`
     Array<PlantDraw> plants_;
+    Array<PlantSource> plant_sources_;
 
     // --- sky
     rendering::sky::Atmosphere atmosphere_;
@@ -543,6 +559,11 @@ private:
     WorldVec3d camera_focus_;
     u64 tick_ = 0;
     f64 seconds_ = 0.0;
+
+    /// The workers the ocean patch's rows and the stage's plant proxies are spread over. Started by
+    /// `build()`; without them both are built on the calling thread, which gives the same bits.
+    jobs::JobSystem jobs_;
+    bool jobs_started_ = false;
 };
 
 }  // namespace cy::sample::world

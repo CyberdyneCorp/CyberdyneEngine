@@ -633,6 +633,9 @@ struct Band {
     if (!stage.available()) {
         return ok();
     }
+    // The plant proxies are written on the world's workers; the streams hold the same bits
+    // whether they are or not, so a world whose job system did not start still draws.
+    stage.set_jobs(world.jobs());
     if (Status staged = stage.stage_world(world); !staged) {
         return staged;
     }

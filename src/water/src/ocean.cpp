@@ -2,6 +2,8 @@
 
 #include <cy/water/ocean.h>
 
+#include <cy/core/jobs/parallel.h>
+
 #include <cmath>
 #include <numbers>
 
@@ -157,7 +159,11 @@ Expected<DisplacementModel, Error> build_ocean_model(const OceanParams& params, 
 // --- The camera-relative surface ------------------------------------------------------------
 
 OceanSurface::OceanSurface(Allocator& allocator) noexcept
-    : positions_(allocator), normals_(allocator), breaking_(allocator), indices_(allocator) {}
+    : positions_(allocator),
+      normals_(allocator),
+      breaking_(allocator),
+      indices_(allocator),
+      trains_(allocator) {}
 
 Status OceanSurface::configure(const OceanSurfaceParams& params) noexcept {
     if (params.near_cell_metres <= 0.0F || params.rings == 0 || params.ring_quads < 2 ||
@@ -207,66 +213,181 @@ Status OceanSurface::build_indices() noexcept {
     return ok();
 }
 
+namespace {
+
+/// Everything one row of the patch needs, shared read-only by every partition of a parallel build.
+/// The three outputs are written at disjoint indices, one row per call, so partitions never touch
+/// the same element and the result does not depend on which worker ran which row.
+struct PatchRows {
+    const OceanSurfaceParams* params = nullptr;
+    Span<const WaveTrain> trains;
+    f64 mean_level = 0.0;
+    world::WorldVec3d origin;
+    f64 time = 0.0;
+    Vec3* positions = nullptr;
+    Vec3* normals = nullptr;
+    f32* breaking = nullptr;
+};
+
+[[nodiscard]] f32 ring_cell(const OceanSurfaceParams& params, u32 ring) noexcept {
+    return params.near_cell_metres * static_cast<f32>(1U << ring);
+}
+
+/// Local coordinate of lattice line `index` of `ring`. The one expression every vertex uses.
+[[nodiscard]] f32 ring_local(const OceanSurfaceParams& params, u32 ring, u32 index) noexcept {
+    const f32 cell = ring_cell(params, ring);
+    const f32 half = cell * static_cast<f32>(params.ring_quads) * 0.5F;
+    return (static_cast<f32>(index) * cell) - half;
+}
+
+/// THE RINGS OVERLAP, AND WHERE THEY DO THE VERTICES ARE THE SAME POINT. Ring `r`'s cells are
+/// twice ring `r - 1`'s and its half-extent is twice as far, so its line `i` lies on ring
+/// `r - 1`'s line `2i - quads/2` whenever that line exists — the middle half of every ring beyond
+/// the first, which is the hole `build_indices()` leaves for the ring inside it. Where the two f32
+/// local coordinates are BIT-EQUAL the evaluation is the same call with the same arguments, so the
+/// vertex is copied rather than evaluated a second time. Where rounding makes them differ (a cell
+/// size that is not exact in binary) nothing is shared and the vertex is evaluated as before.
+[[nodiscard]] bool line_is_inner(const OceanSurfaceParams& params, u32 ring, u32 index,
+                                 u32& inner_index) noexcept {
+    if (ring == 0) {
+        return false;
+    }
+    const u32 twice = 2U * index;
+    const u32 offset = params.ring_quads / 2U;
+    if (twice < offset || twice - offset > params.ring_quads) {
+        return false;
+    }
+    inner_index = twice - offset;
+    return ring_local(params, ring, index) == ring_local(params, ring - 1U, inner_index);
+}
+
+void evaluate_rows(const PatchRows& rows, u64 begin, u64 end) noexcept {
+    const OceanSurfaceParams& params = *rows.params;
+    const u32 side = params.ring_quads + 1U;
+    for (u64 row = begin; row < end; ++row) {
+        const auto ring = static_cast<u32>(row / side);
+        const auto z = static_cast<u32>(row % side);
+        u32 unused = 0;
+        const bool inner_row = line_is_inner(params, ring, z, unused);
+        const f32 local_z = ring_local(params, ring, z);
+        for (u32 x = 0; x < side; ++x) {
+            if (inner_row && line_is_inner(params, ring, x, unused)) {
+                continue;  // Copied from the ring inside, after every ring is evaluated.
+            }
+            const f32 local_x = ring_local(params, ring, x);
+            const f64 world_x = rows.origin.x + static_cast<f64>(local_x);
+            const f64 world_z = rows.origin.z + static_cast<f64>(local_z);
+            // THE RENDERING PATH: every band, including the declared visual-only ones. What a
+            // physics query gets differs from this by exactly those bands.
+            const Displacement displacement =
+                evaluate_trains(rows.trains, rows.mean_level, world_x, world_z, rows.time);
+            const usize index = (static_cast<usize>(row) * side) + x;
+            rows.positions[index] = Vec3{local_x + displacement.offset.x,
+                                         static_cast<f32>(displacement.height - rows.origin.y),
+                                         local_z + displacement.offset.z};
+            rows.normals[index] = displacement.normal;
+            rows.breaking[index] = displacement.breaking;
+        }
+    }
+}
+
+/// Fill every shared vertex from the ring inside it, innermost ring first so that a vertex shared
+/// by three rings is copied from one that already holds its value.
+void copy_inner_vertices(const PatchRows& rows) noexcept {
+    const OceanSurfaceParams& params = *rows.params;
+    const u32 side = params.ring_quads + 1U;
+    const usize per_ring = static_cast<usize>(side) * side;
+    for (u32 ring = 1; ring < params.rings; ++ring) {
+        for (u32 z = 0; z < side; ++z) {
+            u32 inner_z = 0;
+            if (!line_is_inner(params, ring, z, inner_z)) {
+                continue;
+            }
+            for (u32 x = 0; x < side; ++x) {
+                u32 inner_x = 0;
+                if (!line_is_inner(params, ring, x, inner_x)) {
+                    continue;
+                }
+                const usize to = (ring * per_ring) + (static_cast<usize>(z) * side) + x;
+                const usize from =
+                    ((ring - 1U) * per_ring) + (static_cast<usize>(inner_z) * side) + inner_x;
+                rows.positions[to] = rows.positions[from];
+                rows.normals[to] = rows.normals[from];
+                rows.breaking[to] = rows.breaking[from];
+            }
+        }
+    }
+}
+
+}  // namespace
+
 Status OceanSurface::build(const DisplacementModel& model, const world::WorldVec3d& camera,
                            f64 time) noexcept {
+    return build(model, camera, time, nullptr);
+}
+
+Status OceanSurface::build(const DisplacementModel& model, const world::WorldVec3d& camera,
+                           f64 time, jobs::JobSystem* jobs) noexcept {
     if (!configured_) {
         return fail(ErrorCode::Unavailable,
                     "water: an ocean patch must be configured before it is built");
     }
     const u32 side = params_.ring_quads + 1U;
     const u32 total = side * side * params_.rings;
-    positions_.clear();
-    normals_.clear();
-    breaking_.clear();
-    if (Status reserved = positions_.reserve(total); !reserved) {
-        return reserved;
+    if (Status sized = positions_.resize(total); !sized) {
+        return sized;
     }
-    if (Status reserved = normals_.reserve(total); !reserved) {
-        return reserved;
+    if (Status sized = normals_.resize(total); !sized) {
+        return sized;
     }
-    if (Status reserved = breaking_.reserve(total); !reserved) {
-        return reserved;
+    if (Status sized = breaking_.resize(total); !sized) {
+        return sized;
     }
+    // THE TRAINS ARE RESOLVED ONCE PER BUILD, not once per vertex. See `WaveTrain`: resolving one
+    // is two hashed-stream draws, a `pow` and a `cos`/`sin` pair, and doing it for every train at
+    // every one of the patch's vertices was most of the ocean's frame cost. The table is the same
+    // trains in the same order, so every vertex is bit-identical to `evaluate_displacement()`.
+    if (Status sized = trains_.resize(count_trains(model, BandSelection::All)); !sized) {
+        return sized;
+    }
+    const Span<const WaveTrain> trains(trains_.data(),
+                                       resolve_trains(model, BandSelection::All, trains_.span()));
 
     // Snap the origin to the COARSEST ring's cell. A lattice snapped per ring would shear where two
     // rings meet; snapped to the coarsest, every ring's vertices land on their own multiples and
     // the patch slides under the camera in whole cells rather than swimming.
-    const f32 coarsest_cell =
-        params_.near_cell_metres * static_cast<f32>(1U << (params_.rings - 1U));
+    const f32 coarsest_cell = ring_cell(params_, params_.rings - 1U);
     const auto snap = [coarsest_cell](f64 value) noexcept {
         return std::floor(value / static_cast<f64>(coarsest_cell)) *
                static_cast<f64>(coarsest_cell);
     };
     origin_ = world::WorldVec3d{snap(camera.x), model.mean_level, snap(camera.z)};
 
-    for (u32 ring = 0; ring < params_.rings; ++ring) {
-        const f32 cell = params_.near_cell_metres * static_cast<f32>(1U << ring);
-        const f32 half = cell * static_cast<f32>(params_.ring_quads) * 0.5F;
-        for (u32 z = 0; z < side; ++z) {
-            for (u32 x = 0; x < side; ++x) {
-                const f32 local_x = (static_cast<f32>(x) * cell) - half;
-                const f32 local_z = (static_cast<f32>(z) * cell) - half;
-                const f64 world_x = origin_.x + static_cast<f64>(local_x);
-                const f64 world_z = origin_.z + static_cast<f64>(local_z);
-                // THE RENDERING PATH: every band, including the declared visual-only ones. What a
-                // physics query gets differs from this by exactly those bands.
-                const Displacement displacement =
-                    evaluate_displacement(model, BandSelection::All, world_x, world_z, time);
-                const Vec3 position{local_x + displacement.offset.x,
-                                    static_cast<f32>(displacement.height - origin_.y),
-                                    local_z + displacement.offset.z};
-                if (Status pushed = positions_.push_back(position); !pushed) {
-                    return pushed;
-                }
-                if (Status pushed = normals_.push_back(displacement.normal); !pushed) {
-                    return pushed;
-                }
-                if (Status pushed = breaking_.push_back(displacement.breaking); !pushed) {
-                    return pushed;
-                }
-            }
+    PatchRows rows;
+    rows.params = &params_;
+    rows.trains = trains;
+    rows.mean_level = model.mean_level;
+    rows.origin = origin_;
+    rows.time = time;
+    rows.positions = positions_.data();
+    rows.normals = normals_.data();
+    rows.breaking = breaking_.data();
+    const u64 row_count = static_cast<u64>(side) * params_.rings;
+    if (jobs == nullptr) {
+        evaluate_rows(rows, 0, row_count);
+    } else {
+        // Rows are independent — every vertex is a pure function of the model, its position and
+        // the time — so a parallel build writes exactly what a serial one does, in any schedule.
+        auto body = [&rows](const jobs::TaskContext& /*task*/, u64 begin, u64 end) noexcept {
+            evaluate_rows(rows, begin, end);
+        };
+        if (Status ran =
+                jobs::parallel_for(*jobs, row_count, kOceanRowsPerJob, body, "water.ocean_rows");
+            !ran) {
+            return ran;
         }
     }
+    copy_inner_vertices(rows);
     return ok();
 }
 
