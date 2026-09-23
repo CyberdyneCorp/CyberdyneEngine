@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 252 proven, 423 not yet shown able to fail.
+# 253 proven, 423 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1018,6 +1018,14 @@ digest = "9b3802a9e3d2d8ed"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'controller_.report_measured_ms(stats_.reported_ms);' in src/rendering/sky/src/budget.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "temporal-anti-aliasing-accumulates"
+digest = "389763d57a72a800"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'index_ = (index_ + 1U) % config_.length;' in src/rendering/temporal/src/jitter.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-taa (exit 1: the named case(s) in build/m11c-taa/cy_test_unit_render_temporal FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
