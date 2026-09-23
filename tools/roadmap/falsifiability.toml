@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 254 proven, 423 not yet shown able to fail.
+# 256 proven, 422 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -50,6 +50,14 @@ digest = "524458e3e0b5c928"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 8 file(s)"
+
+[[proof]]
+ledger = "m1"
+criterion = "four-profiles"
+digest = "021dbef044895d07"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final/debug … test-all: failed — integration render"
 
 [[proof]]
 ledger = "m1"
@@ -762,6 +770,14 @@ digest = "5c57569e681c7eb3"
 verdict = "proven"
 mutation = "delete-lines 'ExposureApply' in docs/design/images/m11c-beauty-shot.manifest (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "beauty-shot-reads-the-mip-chain"
+digest = "646aa955660f5efe"
+verdict = "proven against a built tree"
+mutation = "delete-lines '#define CY_MATERIAL_PIXEL_STAGE 1' in samples/12-beauty/shaders/beauty.slang (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shotmip (exit 1: the measurement FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -2146,14 +2162,6 @@ digest = "beef6a828a8d7952"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m1"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m1"
