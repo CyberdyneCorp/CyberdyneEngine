@@ -3,6 +3,7 @@
 
 #include <cy/servers/physics/soft_body.h>
 #include <cy/servers/physics/types.h>
+#include <cy/servers/physics/vehicle.h>
 #include <cy/test/test.h>
 
 using namespace cy;
@@ -101,4 +102,23 @@ CY_TEST_CASE("cloth topology rejects out-of-range and degenerate triangles") {
     cloth.solver_iterations = 5;
     cloth.transform.scale.x = 2.0f;
     CY_CHECK_FALSE(validate(cloth).has_value());
+}
+
+CY_TEST_CASE("vehicle descriptions reject missing drive and invalid wheel geometry") {
+    VehicleWheelDescription wheels[2];
+    VehicleDifferentialDescription differential;
+    VehicleDescription vehicle;
+    vehicle.chassis = BodyHandle::from_slot(0, 1);
+    vehicle.wheels = wheels;
+    vehicle.wheel_count = 2;
+    vehicle.differentials = &differential;
+    vehicle.differential_count = 1;
+    CY_CHECK(validate(vehicle).has_value());
+    wheels[0].radius = 0.0f;
+    CY_CHECK_FALSE(validate(vehicle).has_value());
+    wheels[0].radius = 0.3f;
+    differential.right_wheel = 0;
+    CY_CHECK_FALSE(validate(vehicle).has_value());
+    differential.right_wheel = 1;
+    CY_CHECK_FALSE(validate(VehicleInput{2.0f}).has_value());
 }

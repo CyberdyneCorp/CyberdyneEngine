@@ -861,6 +861,21 @@ public:
                     "the reference physics backend implements no constraints");
     }
 
+    [[nodiscard]] Expected<VehicleHandle, Error> create_vehicle(
+        WorldHandle, const VehicleDescription&) noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+    [[nodiscard]] Status destroy_vehicle(VehicleHandle) noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+    [[nodiscard]] Status set_vehicle_input(VehicleHandle, const VehicleInput&) noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+    [[nodiscard]] Expected<u32, Error> vehicle_wheels(
+        VehicleHandle, Span<VehicleWheelState>) const noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+
     // --- Queries -------------------------------------------------------------------------------
 
     [[nodiscard]] Expected<RayCastHit, Error> raycast(

@@ -230,7 +230,7 @@ note = "The case compares weak and strong torque caps and verifies the hinge ang
 row = "physics"
 requirement = "Soft bodies and additional simulation"
 evidence = "exempt:m11e"
-note = "PARTIAL. Jolt cloth now creates and steps from an engine-owned mesh, keeps pinned corners, reads back deformed vertices, and destroys through its body handle; the reference backend refuses it through capability gating. Vehicle simulation, ragdoll profiles, animation-to-body activation and powered/partial blend paths remain missing. Keep this exemption until capability-gated vehicle cases and a ragdoll suite cover pose transfer, continuous blending and impulse recovery."
+note = "PARTIAL. Jolt cloth steps from an engine-owned mesh and collides with rigid bodies; Jolt vehicles use chassis, wheels, suspension and a differential drivetrain with throttle, steering and braking. Both have solver conformance, readback and teardown cases, while the reference backend explicitly refuses them. Ragdoll profiles, animation-to-body activation and full/powered/partial blend paths remain missing. Keep this exemption until a ragdoll suite covers pose transfer, continuous blending and impulse recovery."
 
 [[coverage]]
 row = "physics"

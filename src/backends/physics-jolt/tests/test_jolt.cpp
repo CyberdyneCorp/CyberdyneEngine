@@ -211,6 +211,116 @@ CY_TEST_CASE("Jolt cloth keeps pinned corners and advances free vertices") {
     CY_CHECK_FALSE(fixture.server->soft_body_vertices(*cloth, Span<Vec3>(deformed, 5)).has_value());
 }
 
+CY_TEST_CASE("Jolt vehicle suspension supports its chassis and drivetrain drives and steers") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{50.0f, 0.5f, 50.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    ColliderDescription collider;
+    collider.shape = fixture.box(Vec3{0.9f, 0.2f, 2.0f});
+    BodyDescription chassis_description;
+    chassis_description.motion = MotionType::Dynamic;
+    chassis_description.transform = Transform::from_translation(Vec3{0.0f, 2.0f, 0.0f});
+    chassis_description.mass = 1500.0f;
+    chassis_description.colliders = &collider;
+    chassis_description.collider_count = 1;
+    const auto chassis = fixture.server->create_body(fixture.world, chassis_description);
+    CY_REQUIRE(chassis.has_value());
+
+    VehicleWheelDescription wheels[4];
+    wheels[0].position = Vec3{0.9f, -0.18f, 1.4f};
+    wheels[1].position = Vec3{-0.9f, -0.18f, 1.4f};
+    wheels[2].position = Vec3{0.9f, -0.18f, -1.4f};
+    wheels[3].position = Vec3{-0.9f, -0.18f, -1.4f};
+    wheels[0].max_steer_angle = 0.52f;
+    wheels[1].max_steer_angle = 0.52f;
+    VehicleDifferentialDescription rear;
+    rear.left_wheel = 2;
+    rear.right_wheel = 3;
+    VehicleDescription description;
+    description.chassis = *chassis;
+    description.wheels = wheels;
+    description.wheel_count = 4;
+    description.differentials = &rear;
+    description.differential_count = 1;
+    const auto vehicle = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(vehicle.has_value());
+    BodyDescription control_description = chassis_description;
+    control_description.transform.translation.x = 5.0f;
+    const auto control_chassis = fixture.server->create_body(fixture.world, control_description);
+    CY_REQUIRE(control_chassis.has_value());
+    description.chassis = *control_chassis;
+    description.max_engine_torque = 0.0f;
+    const auto control_vehicle = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(control_vehicle.has_value());
+    description.chassis = *chassis;
+    description.max_engine_torque = 500.0f;
+
+    for (u64 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    VehicleWheelState state[4];
+    const auto count = fixture.server->vehicle_wheels(*vehicle, Span<VehicleWheelState>(state, 4));
+    CY_REQUIRE(count.has_value());
+    CY_CHECK_EQ(*count, 4U);
+    for (const VehicleWheelState& wheel : state) {
+        CY_CHECK(wheel.grounded);
+        CY_CHECK_GE(wheel.suspension_length, 0.3f);
+        CY_CHECK_LE(wheel.suspension_length, 0.5f);
+    }
+    CY_CHECK_GE(fixture.server->statistics(fixture.world)->constraint_count, 1U);
+    const f32 parked_z = fixture.position_of(*chassis).z;
+    const f32 control_parked_z = fixture.position_of(*control_chassis).z;
+    determinism::StateHashTree before_input(allocator());
+    CY_REQUIRE(fixture.server->hash_state(fixture.world, before_input).has_value());
+    CY_REQUIRE(fixture.server->set_vehicle_input(*vehicle, VehicleInput{1.0f}).has_value());
+    determinism::StateHashTree after_input(allocator());
+    CY_REQUIRE(fixture.server->hash_state(fixture.world, after_input).has_value());
+    CY_CHECK_NE(before_input.root_hash(), after_input.root_hash());
+    CY_REQUIRE(fixture.server->set_vehicle_input(*control_vehicle, VehicleInput{1.0f}).has_value());
+    for (u64 tick = 90; tick < 210; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const f32 driven_distance = fixture.position_of(*chassis).z - parked_z;
+    const f32 inertial_distance = fixture.position_of(*control_chassis).z - control_parked_z;
+    CY_CHECK_GT(driven_distance, inertial_distance + 0.5f);
+    VehicleInput turning;
+    turning.throttle = 1.0f;
+    turning.steering = 1.0f;
+    CY_REQUIRE(fixture.server->set_vehicle_input(*vehicle, turning).has_value());
+    for (u64 tick = 210; tick < 270; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(fixture.server->body_state(*chassis)->angular_velocity.y, -0.05f);
+    VehicleInput braking;
+    braking.brake = 1.0f;
+    CY_REQUIRE(fixture.server->set_vehicle_input(*vehicle, braking).has_value());
+    for (u64 tick = 270; tick < 570; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(length(fixture.server->body_state(*chassis)->linear_velocity), 0.5f);
+    CY_REQUIRE(fixture.server->destroy_vehicle(*vehicle).has_value());
+    CY_CHECK(fixture.server->body_alive(*chassis));
+    CY_CHECK_FALSE(
+        fixture.server->vehicle_wheels(*vehicle, Span<VehicleWheelState>(state, 4)).has_value());
+    const auto again = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(again.has_value());
+    CY_REQUIRE(fixture.server->destroy_body(*chassis).has_value());
+    CY_CHECK_FALSE(
+        fixture.server->vehicle_wheels(*again, Span<VehicleWheelState>(state, 4)).has_value());
+    CY_REQUIRE(fixture.server->destroy_body(*control_chassis).has_value());
+    CY_CHECK_FALSE(
+        fixture.server->vehicle_wheels(*control_vehicle, Span<VehicleWheelState>(state, 4))
+            .has_value());
+    const auto new_chassis = fixture.server->create_body(fixture.world, chassis_description);
+    CY_REQUIRE(new_chassis.has_value());
+    description.chassis = *new_chassis;
+    const auto world_vehicle = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(world_vehicle.has_value());
+    CY_REQUIRE(fixture.server->destroy_world(fixture.world).has_value());
+    CY_CHECK_FALSE(fixture.server->vehicle_wheels(*world_vehicle, Span<VehicleWheelState>(state, 4))
+                       .has_value());
+}
+
 CY_TEST_CASE("Jolt creates every declared joint type and invalidates handles with their bodies") {
     Fixture fixture;
     const ShapeHandle shape = fixture.box(Vec3{0.25f, 0.25f, 0.25f});

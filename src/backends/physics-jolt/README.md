@@ -64,5 +64,9 @@ Cloth soft bodies are available from an engine-owned triangle mesh with per-vert
 zero inverse mass pins a corner. Jolt generates stretch and bend constraints and returns world-space
 deformed vertices after each step. Cloth uses a normal body handle and contributes its vertex
 positions and velocities to the deterministic state hash. The reference backend reports cloth
-unsupported. Vehicles and ragdoll animation integration are not yet implemented; vehicle
-capability remains false.
+unsupported. Wheeled vehicles use an authored dynamic chassis and per-wheel suspension geometry;
+one or more differential pairs distribute engine torque. Throttle, steering, braking and hand brake
+are set before the fixed step, and wheel contact, travel and rotation are read after it. The
+vehicle constraint is also a Jolt step listener and is removed before its chassis or world is
+destroyed. Vehicle and cloth capabilities are true only on this backend. Ragdoll animation
+integration remains unimplemented.

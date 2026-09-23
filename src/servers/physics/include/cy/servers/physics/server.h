@@ -66,6 +66,7 @@
 #include <cy/servers/physics/shapes.h>
 #include <cy/servers/physics/soft_body.h>
 #include <cy/servers/physics/types.h>
+#include <cy/servers/physics/vehicle.h>
 
 namespace cy::physics {
 
@@ -221,6 +222,16 @@ public:
                                                         bool enabled) noexcept = 0;
     [[nodiscard]] virtual Status set_constraint_motor(ConstraintHandle constraint,
                                                       const MotorSettings& motor) noexcept = 0;
+
+    // --- Optional wheeled vehicles --------------------------------------------------------------
+
+    [[nodiscard]] virtual Expected<VehicleHandle, Error> create_vehicle(
+        WorldHandle world, const VehicleDescription& description) noexcept = 0;
+    [[nodiscard]] virtual Status destroy_vehicle(VehicleHandle vehicle) noexcept = 0;
+    [[nodiscard]] virtual Status set_vehicle_input(VehicleHandle vehicle,
+                                                   const VehicleInput& input) noexcept = 0;
+    [[nodiscard]] virtual Expected<u32, Error> vehicle_wheels(
+        VehicleHandle vehicle, Span<VehicleWheelState> out) const noexcept = 0;
 
     // --- Queries. `const`, thread-safe, rejected mid-step
     // -----------------------------------------
