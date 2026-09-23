@@ -57,7 +57,9 @@ which is M3's `CY_RENDERER_VULKAN` mistake with a longer tail.
   motors, limits and break events. The reference backend reports constraints unsupported, so its
   capability-gated refusal remains explicit. The layer-4 ECS bridge lives in `src/physics/` and
   creates `Joint` components when the selected backend supports them.
-* **Soft bodies, vehicles, ragdolls and buoyancy.** Declared in the capability model, unimplemented,
-  and reported as unsupported. `physics` scopes ragdolls to `animation-and-skinning`, which is M6.
+* **Vehicles, ragdolls and buoyancy.** Vehicles and buoyancy remain unsupported. Jolt supports
+  cloth through `create_soft_body` and world-space `soft_body_vertices` readback; pinned vertices
+  have zero inverse mass, and `destroy_body` releases cloth exactly like a rigid body. The reference
+  backend reports soft bodies unsupported. Ragdolls are a physics/animation join still pending.
 * **Cross-platform determinism.** Not claimed and not tested; `determinism.h` says so at length and
   `validate_session()` rejects a configuration that assumes otherwise.

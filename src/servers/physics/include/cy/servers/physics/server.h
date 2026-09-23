@@ -64,6 +64,7 @@
 #include <cy/servers/physics/handles.h>
 #include <cy/servers/physics/queries.h>
 #include <cy/servers/physics/shapes.h>
+#include <cy/servers/physics/soft_body.h>
 #include <cy/servers/physics/types.h>
 
 namespace cy::physics {
@@ -160,6 +161,13 @@ public:
 
     [[nodiscard]] virtual Expected<BodyHandle, Error> create_body(
         WorldHandle world, const BodyDescription& description) noexcept = 0;
+
+    /// Optional cloth simulation. The returned body belongs to the world and is destroyed by
+    /// destroy_body(), like a rigid body. Readback returns world-space deformed vertices.
+    [[nodiscard]] virtual Expected<BodyHandle, Error> create_soft_body(
+        WorldHandle world, const SoftBodyDescription& description) noexcept = 0;
+    [[nodiscard]] virtual Expected<u32, Error> soft_body_vertices(
+        BodyHandle body, Span<Vec3> out) const noexcept = 0;
 
     /// `physics` — "A region's collision arrives at once": a cell's collision "SHALL be registered
     /// in bulk rather than one shape at a time". One call, one broad-phase rebuild.

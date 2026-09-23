@@ -51,6 +51,8 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/SoftBody/SoftBodyCreationSettings.h>
+#include <Jolt/Physics/SoftBody/SoftBodyMotionProperties.h>
 #include <Jolt/RegisterTypes.h>
 // clang-format on
 
@@ -208,6 +210,7 @@ struct JoltBody {
     MassProperties mass;
     u8 locked_axes = 0;
     bool sensor = false;
+    bool soft = false;
     bool report_stay = true;
     bool teleported = false;
     bool pending_teleport = false;
@@ -397,7 +400,7 @@ public:
         caps.triangle_meshes = true;
         caps.convex_hulls = true;
         caps.height_fields = true;
-        caps.soft_bodies = false;
+        caps.soft_bodies = true;
         caps.vehicles = false;
         caps.buoyancy = false;
         caps.continuous_collision = true;
@@ -583,6 +586,11 @@ public:
     [[nodiscard]] Expected<BodyHandle, Error> create_body(
         WorldHandle world, const BodyDescription& description) noexcept override;
 
+    [[nodiscard]] Expected<BodyHandle, Error> create_soft_body(
+        WorldHandle world, const SoftBodyDescription& description) noexcept override;
+    [[nodiscard]] Expected<u32, Error> soft_body_vertices(BodyHandle body,
+                                                          Span<Vec3> out) const noexcept override;
+
     [[nodiscard]] Status create_bodies(WorldHandle world, Span<const BodyDescription> descriptions,
                                        Span<BodyHandle> out) noexcept override {
         if (out.size() < descriptions.size()) {
@@ -698,6 +706,9 @@ public:
         JoltBody* found = resolve(body);
         if (found == nullptr) {
             return fail(ErrorCode::NotFound, "jolt: no such body");
+        }
+        if (found->soft) {
+            return fail(ErrorCode::Unsupported, "jolt: cloth motion type cannot be changed");
         }
         JPH::BodyInterface& interface = worlds_[found->world]->system.GetBodyInterface();
         interface.SetMotionType(found->id, to_jolt_motion(motion),
@@ -1466,6 +1477,7 @@ Expected<BodyHandle, Error> JoltServer::create_body(WorldHandle world,
     record.user_data = description.user_data;
     record.locked_axes = description.locked_axes;
     record.sensor = description.collider_count > 0 && description.colliders[0].is_trigger;
+    record.soft = false;
     record.report_stay = description.collider_count == 0 || description.colliders[0].report_stay;
     record.contact_impulse_threshold =
         description.collider_count > 0 ? description.colliders[0].contact_impulse_threshold : 0.0f;
@@ -1512,6 +1524,132 @@ Expected<BodyHandle, Error> JoltServer::create_body(WorldHandle world,
         return make_unexpected(pushed.error());
     }
     return handle;
+}
+
+Expected<BodyHandle, Error> JoltServer::create_soft_body(
+    WorldHandle world, const SoftBodyDescription& description) noexcept {
+    JoltWorld* found = resolve(world);
+    if (found == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such world");
+    }
+    if (Status valid = validate(description); !valid) {
+        return make_unexpected(valid.error());
+    }
+    JPH::Ref<JPH::SoftBodySharedSettings> shared = new JPH::SoftBodySharedSettings();
+    shared->mVertices.reserve(description.vertex_count);
+    bool pinned = false;
+    f32 total_mass = 0.0f;
+    for (u32 index = 0; index < description.vertex_count; ++index) {
+        const SoftBodyVertex& vertex = description.vertices[index];
+        shared->mVertices.emplace_back(
+            JPH::Float3(vertex.position.x, vertex.position.y, vertex.position.z), JPH::Float3{},
+            vertex.inverse_mass);
+        pinned |= vertex.inverse_mass == 0.0f;
+        if (vertex.inverse_mass > 0.0f) {
+            total_mass += 1.0f / vertex.inverse_mass;
+        }
+    }
+    if (!math::is_finite(total_mass)) {
+        return fail(ErrorCode::InvalidArgument, "jolt: cloth mass exceeds the supported range");
+    }
+    for (u32 index = 0; index < description.index_count; index += 3) {
+        shared->AddFace(JPH::SoftBodySharedSettings::Face(description.indices[index],
+                                                          description.indices[index + 1],
+                                                          description.indices[index + 2]));
+    }
+    const JPH::SoftBodySharedSettings::VertexAttributes springs;
+    shared->CreateConstraints(&springs, 1);
+    shared->Optimize();
+
+    u32 index = 0;
+    if (!free_bodies_.empty()) {
+        index = free_bodies_[free_bodies_.size() - 1];
+        free_bodies_.pop_back();
+    } else {
+        const Expected<JoltBody*, Error> fresh = bodies_.emplace_back(*allocator_);
+        if (!fresh) {
+            return make_unexpected(fresh.error());
+        }
+        (*fresh)->generation = 1;
+        index = static_cast<u32>(bodies_.size() - 1);
+    }
+    JoltBody& record = bodies_[index];
+    record.live = true;
+    record.world = world.index();
+    record.name = {};
+    record.motion = MotionType::Dynamic;
+    record.filter = description.filter;
+    record.material = {};
+    record.user_data = description.user_data;
+    record.mass = {};
+    record.mass.mass = total_mass;
+    record.locked_axes = 0;
+    record.sensor = false;
+    record.soft = true;
+    record.report_stay = true;
+    record.contact_impulse_threshold = 0.0f;
+    record.teleported = false;
+    record.pending_teleport = false;
+    record.shapes.clear();
+
+    const BodyHandle handle = BodyHandle::from_slot(index, record.generation);
+    JPH::SoftBodyCreationSettings settings(
+        shared,
+        JPH::RVec3(description.transform.translation.x, description.transform.translation.y,
+                   description.transform.translation.z),
+        to_jolt(description.transform.rotation), object_layer(description.filter.layer, true));
+    settings.mUserData = handle.bits();
+    settings.mNumIterations = description.solver_iterations;
+    settings.mLinearDamping = description.damping;
+    settings.mFriction = description.friction;
+    settings.mVertexRadius = description.vertex_radius;
+    settings.mAllowSleeping = description.allow_sleeping;
+    settings.mUpdatePosition = !pinned;
+    settings.mMakeRotationIdentity = false;
+    JPH::BodyInterface& interface = found->system.GetBodyInterface();
+    const JPH::BodyID id = interface.CreateAndAddSoftBody(settings, JPH::EActivation::Activate);
+    if (id.IsInvalid()) {
+        record.live = false;
+        (void)free_bodies_.push_back(index);
+        return fail(ErrorCode::OutOfRange, "jolt: unable to create cloth body");
+    }
+    record.id = id;
+    if (Status pushed = found->bodies.push_back(index); !pushed) {
+        interface.RemoveBody(id);
+        interface.DestroyBody(id);
+        record.live = false;
+        (void)free_bodies_.push_back(index);
+        return make_unexpected(pushed.error());
+    }
+    return handle;
+}
+
+Expected<u32, Error> JoltServer::soft_body_vertices(BodyHandle body,
+                                                    Span<Vec3> out) const noexcept {
+    const JoltBody* found = resolve(body);
+    if (found == nullptr || !found->soft) {
+        return fail(ErrorCode::NotFound, "jolt: no such cloth body");
+    }
+    if (Status ready = reject_if_stepping(); !ready) {
+        return make_unexpected(ready.error());
+    }
+    const JoltWorld* world = worlds_[found->world];
+    const JPH::BodyLockRead lock(world->system.GetBodyLockInterface(), found->id);
+    if (!lock.Succeeded()) {
+        return fail(ErrorCode::NotFound, "jolt: cloth body is no longer live");
+    }
+    const JPH::Body& source = lock.GetBody();
+    const auto* motion =
+        static_cast<const JPH::SoftBodyMotionProperties*>(source.GetMotionProperties());
+    const auto& vertices = motion->GetVertices();
+    if (out.size() < vertices.size()) {
+        return fail(ErrorCode::BufferTooSmall, "jolt: cloth vertex output is too small");
+    }
+    const JPH::RMat44 transform = source.GetCenterOfMassTransform();
+    for (u32 index = 0; index < vertices.size(); ++index) {
+        out[index] = from_jolt(transform * vertices[index].mPosition);
+    }
+    return static_cast<u32>(vertices.size());
 }
 
 Status JoltServer::destroy_body(BodyHandle body) noexcept {
@@ -2274,6 +2412,24 @@ Status JoltServer::hash_state(WorldHandle world, determinism::StateHashTree& tre
         tree.mix_f32(angular.z);
         tree.mix_u64(static_cast<u64>(body.motion));
         tree.mix_u64(interface.IsActive(body.id) ? 0U : 1U);
+        if (body.soft) {
+            const JPH::BodyLockRead lock(found->system.GetBodyLockInterface(), body.id);
+            if (!lock.Succeeded()) {
+                return fail(ErrorCode::NotFound, "jolt: cloth body vanished during state hash");
+            }
+            const auto* motion = static_cast<const JPH::SoftBodyMotionProperties*>(
+                lock.GetBody().GetMotionProperties());
+            const auto& vertices = motion->GetVertices();
+            tree.mix_u64(vertices.size());
+            for (const auto& vertex : vertices) {
+                tree.mix_f32(vertex.mPosition.GetX());
+                tree.mix_f32(vertex.mPosition.GetY());
+                tree.mix_f32(vertex.mPosition.GetZ());
+                tree.mix_f32(vertex.mVelocity.GetX());
+                tree.mix_f32(vertex.mVelocity.GetY());
+                tree.mix_f32(vertex.mVelocity.GetZ());
+            }
+        }
         if (Status closed = tree.end(); !closed) {
             return closed;
         }

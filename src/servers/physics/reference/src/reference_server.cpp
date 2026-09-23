@@ -582,6 +582,20 @@ public:
     [[nodiscard]] Expected<BodyHandle, Error> create_body(
         WorldHandle world, const BodyDescription& description) noexcept override;
 
+    [[nodiscard]] Expected<BodyHandle, Error> create_soft_body(
+        WorldHandle world, const SoftBodyDescription& description) noexcept override {
+        (void)world;
+        (void)description;
+        return fail(ErrorCode::Unsupported, "reference: soft bodies are not supported");
+    }
+
+    [[nodiscard]] Expected<u32, Error> soft_body_vertices(BodyHandle body,
+                                                          Span<Vec3> out) const noexcept override {
+        (void)body;
+        (void)out;
+        return fail(ErrorCode::Unsupported, "reference: soft bodies are not supported");
+    }
+
     [[nodiscard]] Status create_bodies(WorldHandle world, Span<const BodyDescription> descriptions,
                                        Span<BodyHandle> out) noexcept override {
         if (out.size() < descriptions.size()) {

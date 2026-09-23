@@ -40,6 +40,7 @@ cy_add_module(
         src/physics2d.cpp
         src/queries.cpp
         src/shapes.cpp
+        src/soft_body.cpp
         src/stepper.cpp
         src/types.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"

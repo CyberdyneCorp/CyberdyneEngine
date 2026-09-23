@@ -160,10 +160,55 @@ CY_TEST_CASE("the Jolt backend reports itself and what it can do") {
     CY_CHECK(capabilities.convex_hulls);
     CY_CHECK(capabilities.continuous_collision);
     CY_CHECK(capabilities.constraints);
+    CY_CHECK(capabilities.soft_bodies);
     CY_CHECK_EQ(capabilities.determinism, DeterminismPolicy::SamePlatformDeterministic);
     // With no engine job system given, the work runs on the calling thread and the flag says so
     // rather than claiming a bridge that is not there.
     CY_CHECK_FALSE(capabilities.uses_engine_jobs);
+}
+
+CY_TEST_CASE("Jolt cloth keeps pinned corners and advances free vertices") {
+    Fixture fixture;
+    const SoftBodyVertex vertices[] = {{{-1.0f, 0.0f, -1.0f}, 0.0f},
+                                       {{1.0f, 0.0f, -1.0f}, 0.0f},
+                                       {{1.0f, 0.0f, 1.0f}, 0.0f},
+                                       {{-1.0f, 0.0f, 1.0f}, 0.0f},
+                                       {{0.0f, 0.0f, 0.0f}, 1.0f}};
+    const u32 triangles[] = {0, 4, 1, 1, 4, 2, 2, 4, 3, 3, 4, 0};
+    SoftBodyDescription description;
+    description.transform = Transform::from_translation(Vec3{0.0f, 4.0f, 0.0f});
+    description.vertices = vertices;
+    description.vertex_count = 5;
+    description.indices = triangles;
+    description.index_count = 12;
+    const auto cloth = fixture.server->create_soft_body(fixture.world, description);
+    CY_REQUIRE(cloth.has_value());
+    const Status motion_change = fixture.server->set_body_motion_type(*cloth, MotionType::Static);
+    CY_REQUIRE_FALSE(motion_change.has_value());
+    CY_CHECK_EQ(motion_change.error().code, ErrorCode::Unsupported);
+    const BodyHandle falling =
+        fixture.body(fixture.sphere(0.2f), MotionType::Dynamic, Vec3{0.0f, 5.0f, 0.0f});
+    Vec3 short_buffer[4];
+    const auto short_read = fixture.server->soft_body_vertices(*cloth, Span<Vec3>(short_buffer, 4));
+    CY_REQUIRE_FALSE(short_read.has_value());
+    CY_CHECK_EQ(short_read.error().code, ErrorCode::BufferTooSmall);
+    Vec3 initial[5];
+    CY_REQUIRE(fixture.server->soft_body_vertices(*cloth, Span<Vec3>(initial, 5)).has_value());
+    for (u64 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    Vec3 deformed[5];
+    const auto count = fixture.server->soft_body_vertices(*cloth, Span<Vec3>(deformed, 5));
+    CY_REQUIRE(count.has_value());
+    CY_CHECK_EQ(*count, 5U);
+    CY_CHECK_NEAR(deformed[0].y, initial[0].y, 0.01f);
+    CY_CHECK_NEAR(deformed[1].y, initial[1].y, 0.01f);
+    CY_CHECK_LT(deformed[4].y, initial[4].y - 0.005f);
+    CY_CHECK_GT(fixture.position_of(falling).y, 3.0f);
+    CY_CHECK(fixture.server->body_alive(*cloth));
+    CY_REQUIRE(fixture.server->destroy_body(*cloth).has_value());
+    CY_CHECK_FALSE(fixture.server->body_alive(*cloth));
+    CY_CHECK_FALSE(fixture.server->soft_body_vertices(*cloth, Span<Vec3>(deformed, 5)).has_value());
 }
 
 CY_TEST_CASE("Jolt creates every declared joint type and invalidates handles with their bodies") {
@@ -1039,6 +1084,19 @@ CY_TEST_CASE("two runs of the same scene on Jolt produce identical state hashes"
                                                Vec3{0.2f, static_cast<f32>(index), 0.1f})
                            .has_value());
         }
+        const SoftBodyVertex cloth_vertices[] = {{{-1.0f, 0.0f, -1.0f}, 0.0f},
+                                                 {{1.0f, 0.0f, -1.0f}, 0.0f},
+                                                 {{1.0f, 0.0f, 1.0f}, 0.0f},
+                                                 {{-1.0f, 0.0f, 1.0f}, 0.0f},
+                                                 {{0.0f, 0.0f, 0.0f}, 1.0f}};
+        const u32 cloth_triangles[] = {0, 4, 1, 1, 4, 2, 2, 4, 3, 3, 4, 0};
+        SoftBodyDescription cloth;
+        cloth.transform = Transform::from_translation(Vec3{0.0f, 5.0f, 0.0f});
+        cloth.vertices = cloth_vertices;
+        cloth.vertex_count = 5;
+        cloth.indices = cloth_triangles;
+        cloth.index_count = 12;
+        CY_REQUIRE(fixture.server->create_soft_body(fixture.world, cloth).has_value());
         for (u32 tick = 0; tick < 90; ++tick) {
             CY_REQUIRE(fixture.step(tick).has_value());
             CY_REQUIRE(probe.record(*fixture.server, fixture.world, tick).has_value());

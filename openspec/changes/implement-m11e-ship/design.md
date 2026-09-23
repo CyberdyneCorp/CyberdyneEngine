@@ -12,6 +12,30 @@ through `PhysicsServer` to Jolt, and capability flags reflect the operations act
 The reference backend continues to report unsupported solver features explicitly. A mapping moves
 from exemption to test only when the named case fails under a targeted behavior mutation.
 
+### Optional simulation mapping for PR #8
+
+The engine-owned physics interface gains descriptions and readback for cloth and vehicles, without
+exposing Jolt types. A cloth description owns no caller memory after creation: vertices contain
+rest positions and inverse masses (zero pins a vertex), while triangle indices define its surface
+and spring topology. A soft body uses the ordinary generational `BodyHandle`, world ownership,
+destruction, and collision filtering; a vertex-readback call lets a renderer consume the deformed
+surface. Jolt constructs shared settings and edge/bend constraints, then stores the body in the
+same slot table as rigid bodies. The reference backend reports `soft_bodies = false` and returns a
+named `Unsupported` diagnostic. Neither backend may claim support before its creation, stepping,
+readback, destruction, and conformance cases pass.
+
+Vehicles are authored from a dynamic chassis body plus wheel placement and suspension/drivetrain
+parameters. The Jolt vehicle constraint is registered as both a constraint and a step listener;
+destroying the vehicle or chassis removes both registrations before freeing the chassis. Input
+throttle, brake and steering is supplied before the fixed step, and wheel state is read after it.
+The reference backend remains capability-gated. Ragdoll profiles are generated from a finalized
+skeleton at the layer-4 physics/animation join: bone shapes and mass, parent constraints and limits
+are editable asset data, not Jolt objects. Activation seeds body poses and velocities from the
+current and previous animation poses; per-body weights vary continuously, with powered bodies
+following targets through motors while still receiving contacts and impulses. Partial ragdolls
+retain animation control outside the selected mask and blend at its boundary. The tests must prove
+pose transfer, partial/full blending, powered impulse recovery and lifetime cleanup.
+
 ## 1. The spike, and why it has not run
 
 **M8.c's design opened by saying there was no spike and explaining why; this one opens by saying

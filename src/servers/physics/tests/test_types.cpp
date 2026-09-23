@@ -1,6 +1,7 @@
 // The physics vocabulary: collision filtering, the project matrix, material combining and the two
 // validations. Task 4.2.1 and 4.2.4.
 
+#include <cy/servers/physics/soft_body.h>
 #include <cy/servers/physics/types.h>
 #include <cy/test/test.h>
 
@@ -79,4 +80,25 @@ CY_TEST_CASE("a world with a zero capacity is rejected") {
     CY_CHECK(validate(description).has_value());
     description.body_capacity = 0;
     CY_CHECK_FALSE(validate(description).has_value());
+}
+
+CY_TEST_CASE("cloth topology rejects out-of-range and degenerate triangles") {
+    const SoftBodyVertex vertices[] = {{{0, 0, 0}, 0.0f}, {{1, 0, 0}, 1.0f}, {{0, 0, 1}, 1.0f}};
+    u32 indices[] = {0, 1, 2};
+    SoftBodyDescription cloth;
+    cloth.vertices = vertices;
+    cloth.vertex_count = 3;
+    cloth.indices = indices;
+    cloth.index_count = 3;
+    CY_CHECK(validate(cloth).has_value());
+    indices[2] = 3;
+    CY_CHECK_FALSE(validate(cloth).has_value());
+    indices[2] = 1;
+    CY_CHECK_FALSE(validate(cloth).has_value());
+    indices[2] = 2;
+    cloth.solver_iterations = 0;
+    CY_CHECK_FALSE(validate(cloth).has_value());
+    cloth.solver_iterations = 5;
+    cloth.transform.scale.x = 2.0f;
+    CY_CHECK_FALSE(validate(cloth).has_value());
 }

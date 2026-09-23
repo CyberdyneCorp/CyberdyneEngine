@@ -60,6 +60,9 @@ and emits a `ConstraintBroken` event for that step. Hinge and slider motors can 
 runtime; six-degree motors are configured per axis at creation. A zero-frequency position drive
 uses a stiff 30 Hz spring in Jolt, not an exact rigid target.
 
-Soft bodies and vehicles are not implemented by this backend yet.
-`Capabilities` reports them false and creation fails with `NotImplemented` naming why — which is the
-honest form, because this is a gap in the engine's mapping and not a limit of the backend.
+Cloth soft bodies are available from an engine-owned triangle mesh with per-vertex inverse mass;
+zero inverse mass pins a corner. Jolt generates stretch and bend constraints and returns world-space
+deformed vertices after each step. Cloth uses a normal body handle and contributes its vertex
+positions and velocities to the deterministic state hash. The reference backend reports cloth
+unsupported. Vehicles and ragdoll animation integration are not yet implemented; vehicle
+capability remains false.

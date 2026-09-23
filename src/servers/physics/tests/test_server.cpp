@@ -133,6 +133,18 @@ CY_TEST_CASE("the reference backend reports what it cannot do, and refuses it") 
         fixture.server->create_constraint(fixture.world, joint);
     CY_REQUIRE_FALSE(made.has_value());
     CY_CHECK_EQ(made.error().code, ErrorCode::Unsupported);
+
+    const SoftBodyVertex cloth_vertices[] = {
+        {{0, 0, 0}, 0.0f}, {{1, 0, 0}, 1.0f}, {{0, 0, 1}, 1.0f}};
+    const u32 cloth_indices[] = {0, 1, 2};
+    SoftBodyDescription cloth;
+    cloth.vertices = cloth_vertices;
+    cloth.vertex_count = 3;
+    cloth.indices = cloth_indices;
+    cloth.index_count = 3;
+    const auto unsupported_cloth = fixture.server->create_soft_body(fixture.world, cloth);
+    CY_REQUIRE_FALSE(unsupported_cloth.has_value());
+    CY_CHECK_EQ(unsupported_cloth.error().code, ErrorCode::Unsupported);
 }
 
 CY_TEST_CASE("gravity integrates on the delta it is given, not on a clock") {
