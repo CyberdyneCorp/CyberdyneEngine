@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The shadow half of the assembled frame, judged THROUGH the frame. M11.c task 3.5.
 //
 // ================================================================================================

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Virtual geometry in the forward frame's pass order, rasterised in hardware. M11.c task 4.3.
 //
 // Before this suite the only thing that ever drew a cluster was a harness — `VisbufferPass::record`

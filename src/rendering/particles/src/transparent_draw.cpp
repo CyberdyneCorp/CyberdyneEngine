@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // One pipeline, one ring, one draw. See transparent_draw.h.
 
 #include <cy/rendering/particles/detail/transparent_draw.h>

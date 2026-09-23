@@ -1,4 +1,5 @@
 #pragma once
+// SPDX-License-Identifier: MIT
 // Compiled SPIR-V for the particle renderer. GENERATED — do not edit by hand.
 //
 // Produced by src/rendering/particles/shaders/embed_spirv.py from

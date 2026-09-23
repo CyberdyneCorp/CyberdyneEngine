@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Particle strips — ribbons, trails and beams — drawn through the frame's own pipeline layer.
 // M11.c task 6.3.
 //

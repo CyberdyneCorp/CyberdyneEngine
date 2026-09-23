@@ -1,4 +1,5 @@
 #pragma once
+// SPDX-License-Identifier: MIT
 // Virtual geometry in the forward frame's pass order, rasterised in hardware. M11.c task 4.3.
 //
 // ================================================================================================
