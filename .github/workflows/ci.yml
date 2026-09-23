@@ -1407,7 +1407,9 @@ jobs:
       - cross-leg-publish
     # Nightly and on demand only. The reasoning is the block above; the short form is that this is a
     # multi-hour ledger and `main` is pushed to many times a day.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # A failed publisher leg must not silently skip the two architecture criteria: the other
+    # published legs may still be enough to compare. The download/comparator will fail if not.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled()
     runs-on: ubuntu-24.04
     timeout-minutes: 480
     steps:

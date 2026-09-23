@@ -29,6 +29,8 @@ def check(text: str) -> list[str]:
         needs = [needs]
     if "cross-leg-publish" not in needs:
         problems.append("milestone must wait for cross-leg-publish")
+    if "!cancelled()" not in str(milestone.get("if", "")):
+        problems.append("milestone must run after a failed publisher leg")
 
     uploads = [step.get("with", {}) for step in publisher.get("steps", [])
                if "upload-artifact" in str(step.get("uses", ""))]
@@ -52,6 +54,8 @@ def main() -> int:
         ("valid workflow", text, False),
         ("publisher dependency deleted", change_milestone(
             text, "needs:\n      - build\n      - cross-leg-publish", "needs: build"), True),
+        ("failed publisher skips the ledger", change_milestone(
+            text, " && !cancelled()", ""), True),
         ("download deleted", change_milestone(text,
             "      - uses: actions/download-artifact@v5\n"
             "        with:\n"
@@ -70,7 +74,7 @@ def main() -> int:
         if bool(problems) != must_fail:
             print(f"FAIL {name}: {problems}")
             return 1
-    print("cross-leg roadmap artifact routing: green and three mutations red")
+    print("cross-leg roadmap artifact routing: green and four mutations red")
     return 0
 
 

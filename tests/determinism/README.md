@@ -45,8 +45,9 @@ leg, so two runners of one architecture cannot be made into two by naming them d
 The nightly `milestone` job downloads the same publisher artifacts before running
 `just roadmap-milestone m11b --ci`. Without that download, its two M11.a cross-architecture
 criteria would fail for missing digests even when the separate comparison job succeeded.
-`tools/ci/test_cross_leg_ledger.py` checks the dependency, artifact routing, and `--ci` invocation
-with mutations that must fail. The real Linux arm64 and x86-64 CI digests for run
+`tools/ci/test_cross_leg_ledger.py` checks the dependency, artifact routing, the condition that
+still runs the ledger when one publisher fails, and the `--ci` invocation with mutations that must
+fail. The real Linux arm64 and x86-64 CI digests for run
 [`35843497860`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/35843497860)
 agree on both lockstep fields and both PCG fields; the comparison still runs in CI on every push.
 
