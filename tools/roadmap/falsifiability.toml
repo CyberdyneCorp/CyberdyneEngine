@@ -2119,9 +2119,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m0"
 criterion = "test"
 digest = "d5d5e3c6e896c520"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m0"
