@@ -3767,9 +3767,9 @@ detail = "this host cannot evaluate it, so it cannot judge it either: this host 
 ledger = "m5b"
 criterion = "agent-artefact"
 digest = "d9dac7207f314b46"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
