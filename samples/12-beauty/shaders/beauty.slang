@@ -52,6 +52,15 @@
 import cy.material;
 import cy.brdf;
 
+// THIS FILE IS A PIXEL STAGE, SO IT SAYS SO BEFORE THE MATERIAL IS INCLUDED. The generated prelude's
+// `cy_material_sample` takes the IMPLICIT level of detail only under `CY_MATERIAL_PIXEL_STAGE`, and
+// without it every albedo and data map in the shot was `OpImageSampleExplicitLod ... Lod 0` — the
+// cooked chain beneath level 0 was uploaded and never read (M11.c task 3.8, refuted at the gate by
+// disassembling these modules). It is defined HERE rather than on the recipe's slangc line because
+// this file is the one place that knows it is a fragment-stage lowering, so every compile of it gets
+// the answer. The material program is called only from `sceneFragment`, where derivatives exist.
+// `m11c:beauty-shot-reads-the-mip-chain` is the criterion; deleting this line turns it red.
+#define CY_MATERIAL_PIXEL_STAGE 1
 #include CY_MATERIAL_MODULE
 
 // --- What the frame hands every stage -------------------------------------------------------------

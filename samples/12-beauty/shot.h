@@ -115,6 +115,7 @@ struct ShotMaterial {
     struct Cooked {
         u32 width = 0;
         u32 height = 0;
+        /// The levels UPLOADED, which is the cooked chain unless `limit_albedo_levels` cut it.
         u32 mip_count = 0;
         u32 format = 0;
         bool encoded = false;
@@ -233,6 +234,17 @@ public:
     /// run and is what the manifest publishes.
     [[nodiscard]] Status stage_shot(Shot& shot, ShotReport& report) noexcept;
 
+    /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
+    /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
+    /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
+    /// and once with level 0 alone — byte for byte the same level 0 — and require the pictures to
+    /// differ. It is the albedo map and only the albedo map because that is the one texture the
+    /// MATERIAL alone samples: the normal map and the data map's occlusion channel are sampled by
+    /// `beauty.slang` itself with the implicit form, so cutting their chains moves the picture
+    /// whatever `cy_material_sample` does. Before M11.c task 3.8's pixel-stage define the two
+    /// pictures were byte-identical, because the material read level 0 whatever lay beneath it.
+    void limit_albedo_levels(u32 levels) noexcept { albedo_level_limit_ = levels; }
+
     /// Draw ONE frame and write BOTH images out of it.
     ///
     /// `png_path` is the tonemapped 8-bit image the resolve wrote; `linear_path` is the linear HDR
@@ -276,6 +288,7 @@ private:
     u32 width_ = 0;
     u32 height_ = 0;
     u32 supersample_ = 1;
+    u32 albedo_level_limit_ = 0;
     bool available_ = false;
     Array<u32> pixels_;
 };

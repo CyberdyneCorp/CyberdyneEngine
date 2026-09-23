@@ -203,6 +203,9 @@ int main(int argc, char** argv) {
     const u32 width = option_number(argc, argv, "--width", 1920);
     const u32 height = option_number(argc, argv, "--height", 1080);
     const u32 supersample = option_number(argc, argv, "--supersample", 2);
+    // A CONTROL, not a quality setting: `--albedo-levels 1` photographs the shot with level 0 of
+    // every albedo map's cooked chain and nothing beneath it. See `Stage::limit_albedo_levels`.
+    const u32 albedo_levels = option_number(argc, argv, "--albedo-levels", 0);
 
     std::string problem;
     auto parsed = Shot::read(shot_path.c_str(), problem);
@@ -256,6 +259,7 @@ int main(int argc, char** argv) {
     }
 
     ShotReport report;
+    stage.limit_albedo_levels(albedo_levels);
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
         return 1;
