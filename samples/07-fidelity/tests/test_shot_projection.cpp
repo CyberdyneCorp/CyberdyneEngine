@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The shot's view-projection is the same bits in every build profile.
 // `unit.fidelity_shot_projection`.
 //

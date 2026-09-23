@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The fourth clock's private seam: how budget.cpp starts and stops sampling the case's thread.
 // The public half — `blocked_on_host_ns()`, `budget_measures_host_blocking()` and
 // `thread_state_from_stat()` — is declared in cy/test/test.h. See host_blocking.cpp.
