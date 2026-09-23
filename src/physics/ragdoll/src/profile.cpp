@@ -34,7 +34,7 @@ Expected<Profile, Error> Profile::generate(const animation::Skeleton& skeleton,
             const f32 radius = std::max(0.035f, std::min(extent, distance * 0.25f));
             bone.shape.type = ShapeType::Capsule;
             bone.shape.radius = radius;
-            bone.shape.half_height = std::max(0.01f, distance * 0.5f - radius);
+            bone.shape.half_height = std::max(0.01f, (distance * 0.5f) - radius);
             bone.collider_local.translation = to_parent * 0.5f;
             if (distance > math::kSmallLength) {
                 bone.collider_local.rotation = Quat::from_to(kAxisUp, to_parent / distance);

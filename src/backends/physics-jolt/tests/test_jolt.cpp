@@ -762,7 +762,7 @@ CY_TEST_CASE("Jolt gears couple opposite angular speeds at the configured ratio"
     const f32 second_speed = fixture.server->body_state(second)->angular_velocity.x;
     CY_CHECK_GT(first_speed, 0.1f);
     CY_CHECK_LT(second_speed, -0.1f);
-    CY_CHECK_NEAR(first_speed + 2.0f * second_speed, 0.0f, 0.2f);
+    CY_CHECK_NEAR(first_speed + (2.0f * second_speed), 0.0f, 0.2f);
 }
 
 CY_TEST_CASE("Jolt rack and pinion transfers gear rotation into rack travel") {

@@ -576,7 +576,7 @@ Expected<NavTileData, Error> build_tile(Allocator& allocator, const NavBuildPara
     report = NavBuildReport{};
     struct Timer {
         NavBuildReport& report;
-        NavMetrics* metrics;
+        NavMetrics* metrics = nullptr;
         std::chrono::steady_clock::time_point started;
 
         ~Timer() {

@@ -207,11 +207,12 @@ public:
     [[nodiscard]] Status unbind(u32 id) noexcept;
     [[nodiscard]] NavMesh* mesh(u32 id) const noexcept;
     [[nodiscard]] PathQueue* queue(u32 id) const noexcept;
-    [[nodiscard]] Expected<ObstacleId, Error> add_obstacle(u32 id,
-                                                           const NavObstacleShape& shape) noexcept;
-    [[nodiscard]] Status remove_obstacle(u32 id, ObstacleId obstacle) noexcept;
-    [[nodiscard]] Expected<LinkId, Error> add_link(u32 id, const NavLink& link, Vec3 snap) noexcept;
-    [[nodiscard]] Status remove_link(u32 id, LinkId link) noexcept;
+    [[nodiscard]] Expected<ObstacleId, Error> add_obstacle(
+        u32 id, const NavObstacleShape& shape) const noexcept;
+    [[nodiscard]] Status remove_obstacle(u32 id, ObstacleId obstacle) const noexcept;
+    [[nodiscard]] Expected<LinkId, Error> add_link(u32 id, const NavLink& link,
+                                                   Vec3 snap) const noexcept;
+    [[nodiscard]] Status remove_link(u32 id, LinkId link) const noexcept;
     [[nodiscard]] Status bind_volume(u32 id, NavVolume& volume, SpatialPathQueue& queue) noexcept;
     [[nodiscard]] Status unbind_volume(u32 id) noexcept;
     [[nodiscard]] NavVolume* volume(u32 id) const noexcept;

@@ -259,7 +259,7 @@ void PhysicsBridge::sweep_joints() noexcept {
         }
         (void)server_->destroy_constraint(tracked.handle);
         if (authored) {
-            if (Joint* writable = world_->get_mut<Joint>(tracked.entity, components_.joint);
+            if (auto* writable = world_->get_mut<Joint>(tracked.entity, components_.joint);
                 writable != nullptr) {
                 writable->handle = ConstraintHandle();
             }
@@ -277,7 +277,7 @@ Status PhysicsBridge::collect_pending_joints() noexcept {
     }
     ecs::Query query(*world_, std::move(desc));
     Status collected = ok();
-    const Status walked = query.for_each_chunk([&](ecs::QueryChunk& chunk) noexcept {
+    Status walked = query.for_each_chunk([&](ecs::QueryChunk& chunk) noexcept {
         for (const ecs::Entity entity : chunk.entities()) {
             if (!collected) {
                 break;
@@ -305,7 +305,7 @@ Status PhysicsBridge::collect_pending_joints() noexcept {
 
 Status PhysicsBridge::create_pending_joints() noexcept {
     for (const ecs::Entity entity : pending_joints_) {
-        const Joint* component = world_->get<Joint>(entity, components_.joint);
+        const auto* component = world_->get<Joint>(entity, components_.joint);
         if (component == nullptr) {
             continue;
         }
@@ -326,7 +326,7 @@ Status PhysicsBridge::create_pending_joints() noexcept {
             (void)server_->destroy_constraint(*made);
             return kept;
         }
-        if (Joint* writable = world_->get_mut<Joint>(entity, components_.joint);
+        if (auto* writable = world_->get_mut<Joint>(entity, components_.joint);
             writable != nullptr) {
             writable->handle = *made;
         }
@@ -408,7 +408,7 @@ Status PhysicsBridge::sync() noexcept {
         return declared;
     }
     ecs::Query query(*world_, std::move(desc));
-    const Status walked = query.for_each_chunk([&](ecs::QueryChunk& chunk) noexcept {
+    Status walked = query.for_each_chunk([&](ecs::QueryChunk& chunk) noexcept {
         statistics_.characters_deferred += chunk.entities().size();
     });
     if (!walked) {

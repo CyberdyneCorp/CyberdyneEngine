@@ -338,7 +338,7 @@ Status Ragdoll::advance_blend(f32 delta_seconds) noexcept {
         }
         blend.elapsed = std::min(blend.duration, blend.elapsed + delta_seconds);
         const f32 alpha = blend.elapsed / blend.duration;
-        blend.weight = blend.from + (blend.target - blend.from) * alpha;
+        blend.weight = blend.from + ((blend.target - blend.from) * alpha);
     }
     return ok();
 }

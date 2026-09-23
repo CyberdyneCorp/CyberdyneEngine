@@ -257,7 +257,7 @@ CY_TEST_CASE("the bridge creates and tears down authored joints on a capable bac
     joint.description.max_distance = 2.0f;
     CY_REQUIRE(fixture.world.add(owner, fixture.components.joint, &joint).has_value());
     CY_REQUIRE(fixture.bridge->sync().has_value());
-    const Joint* created = fixture.world.get<Joint>(owner, fixture.components.joint);
+    const auto* created = fixture.world.get<Joint>(owner, fixture.components.joint);
     CY_REQUIRE(created != nullptr);
     CY_CHECK_FALSE(created->handle.is_null());
     CY_CHECK_EQ(fixture.bridge->statistics().joints_created, 1U);

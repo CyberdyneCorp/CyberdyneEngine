@@ -309,7 +309,7 @@ PathQueue* NavWorlds::queue(u32 id) const noexcept {
 }
 
 Expected<ObstacleId, Error> NavWorlds::add_obstacle(u32 id,
-                                                    const NavObstacleShape& shape) noexcept {
+                                                    const NavObstacleShape& shape) const noexcept {
     NavMesh* subject = mesh(id);
     if (subject == nullptr) {
         return fail(ErrorCode::NotFound, "navigation world id is not bound");
@@ -317,13 +317,13 @@ Expected<ObstacleId, Error> NavWorlds::add_obstacle(u32 id,
     return subject->add_obstacle(shape);
 }
 
-Status NavWorlds::remove_obstacle(u32 id, ObstacleId obstacle) noexcept {
+Status NavWorlds::remove_obstacle(u32 id, ObstacleId obstacle) const noexcept {
     NavMesh* subject = mesh(id);
     return subject == nullptr ? fail(ErrorCode::NotFound, "navigation world id is not bound")
                               : subject->remove_obstacle(obstacle);
 }
 
-Expected<LinkId, Error> NavWorlds::add_link(u32 id, const NavLink& link, Vec3 snap) noexcept {
+Expected<LinkId, Error> NavWorlds::add_link(u32 id, const NavLink& link, Vec3 snap) const noexcept {
     NavMesh* subject = mesh(id);
     if (subject == nullptr) {
         return fail(ErrorCode::NotFound, "navigation world id is not bound");
@@ -331,7 +331,7 @@ Expected<LinkId, Error> NavWorlds::add_link(u32 id, const NavLink& link, Vec3 sn
     return subject->add_link(link, snap);
 }
 
-Status NavWorlds::remove_link(u32 id, LinkId link) noexcept {
+Status NavWorlds::remove_link(u32 id, LinkId link) const noexcept {
     NavMesh* subject = mesh(id);
     return subject == nullptr ? fail(ErrorCode::NotFound, "navigation world id is not bound")
                               : subject->remove_link(link);

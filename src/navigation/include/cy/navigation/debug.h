@@ -84,18 +84,22 @@ struct NavStatistics {
     u64 tile_rebuild_time_ns = 0;
 
     [[nodiscard]] f64 mean_query_ms() const noexcept {
-        return queries == 0 ? 0.0 : static_cast<f64>(query_time_ns) / (queries * 1'000'000.0);
+        return queries == 0
+                   ? 0.0
+                   : static_cast<f64>(query_time_ns) / (static_cast<f64>(queries) * 1'000'000.0);
     }
     [[nodiscard]] f64 mean_path_length() const noexcept {
-        return queries == 0 ? 0.0 : static_cast<f64>(path_length_mm) / (queries * 1000.0);
+        return queries == 0
+                   ? 0.0
+                   : static_cast<f64>(path_length_mm) / (static_cast<f64>(queries) * 1000.0);
     }
     [[nodiscard]] f64 repaths_per_pass() const noexcept {
-        return agent_passes == 0 ? 0.0 : static_cast<f64>(repaths) / agent_passes;
+        return agent_passes == 0 ? 0.0 : static_cast<f64>(repaths) / static_cast<f64>(agent_passes);
     }
     [[nodiscard]] f64 mean_rebuild_ms() const noexcept {
-        return tile_rebuilds == 0
-                   ? 0.0
-                   : static_cast<f64>(tile_rebuild_time_ns) / (tile_rebuilds * 1'000'000.0);
+        return tile_rebuilds == 0 ? 0.0
+                                  : static_cast<f64>(tile_rebuild_time_ns) /
+                                        (static_cast<f64>(tile_rebuilds) * 1'000'000.0);
     }
 };
 

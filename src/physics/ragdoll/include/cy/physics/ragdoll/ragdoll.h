@@ -111,7 +111,7 @@ private:
     [[nodiscard]] Status initialize_motors(Span<const Transform> model_pose,
                                            const Transform& actor_world) noexcept;
     [[nodiscard]] bool dynamic_bone(u16 joint) const noexcept;
-    void start_blend(Blend& blend, f32 target, f32 seconds) noexcept;
+    static void start_blend(Blend& blend, f32 target, f32 seconds) noexcept;
 
     PhysicsServer& server_;
     WorldHandle world_;

@@ -73,7 +73,8 @@ struct Fixture {
     Fixture(const Fixture&) = delete;
     Fixture& operator=(const Fixture&) = delete;
 
-    BodyHandle body(Vec3 position, Vec3 half_extents, MotionType motion = MotionType::Dynamic) {
+    BodyHandle body(Vec3 position, Vec3 half_extents,
+                    MotionType motion = MotionType::Dynamic) const {
         ShapeDescription shape;
         shape.type = ShapeType::Box;
         shape.half_extents = half_extents;
@@ -93,7 +94,7 @@ struct Fixture {
         return *created;
     }
 
-    void step(u64 tick) {
+    void step(u64 tick) const {
         StepInput input;
         input.tick = tick;
         CY_REQUIRE(server->step(world, input).has_value());

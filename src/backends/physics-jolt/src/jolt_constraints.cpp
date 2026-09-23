@@ -4,6 +4,7 @@
 #include "jolt_constraints.h"
 
 // clang-format off
+#include <Jolt/Core/RTTI.h>
 #include <Jolt/Physics/Constraints/ConeConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
@@ -38,7 +39,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
 
 [[nodiscard]] JPH::RVec3 position(const Transform& frame) noexcept {
     const Vec3 value = frame.translation;
-    return JPH::RVec3(value.x, value.y, value.z);
+    return {value.x, value.y, value.z};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> fixed(const ConstraintDescription& description,
@@ -53,7 +54,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
     settings.mAxisX2 = axis_x(b);
     settings.mAxisY1 = axis_y(a);
     settings.mAxisY2 = axis_y(b);
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> point(const ConstraintDescription& description,
@@ -64,7 +65,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
     common(settings, description);
     settings.mPoint1 = position(a);
     settings.mPoint2 = position(b);
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> hinge(const ConstraintDescription& description,
@@ -83,7 +84,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
         settings.mLimitsMin = description.limit.min;
         settings.mLimitsMax = description.limit.max;
     }
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> slider(const ConstraintDescription& description,
@@ -102,7 +103,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
         settings.mLimitsMin = description.limit.min;
         settings.mLimitsMax = description.limit.max;
     }
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> distance(const ConstraintDescription& description,
@@ -115,7 +116,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
     settings.mPoint2 = position(b);
     settings.mMinDistance = description.min_distance;
     settings.mMaxDistance = description.max_distance;
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> cone(const ConstraintDescription& description,
@@ -129,7 +130,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
     settings.mTwistAxis1 = axis_x(a);
     settings.mTwistAxis2 = axis_x(b);
     settings.mHalfConeAngle = std::max(description.swing_limit_y, description.swing_limit_z);
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> swing_twist(const ConstraintDescription& description,
@@ -153,7 +154,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
         settings.mTwistMinAngle = -JPH::JPH_PI;
         settings.mTwistMaxAngle = JPH::JPH_PI;
     }
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> six_dof(const ConstraintDescription& description,
@@ -177,7 +178,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
             settings.MakeFreeAxis(axis);
         }
     }
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> gear(const ConstraintDescription& description,
@@ -189,7 +190,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
     settings.mHingeAxis1 = axis_x(a);
     settings.mHingeAxis2 = axis_x(b);
     settings.mRatio = description.ratio;
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::Ref<JPH::TwoBodyConstraint> rack_and_pinion(
@@ -200,7 +201,7 @@ void common(Settings& settings, const ConstraintDescription& description) noexce
     settings.mHingeAxis = axis_x(a);
     settings.mSliderAxis = axis_x(b);
     settings.mRatio = description.ratio;
-    return JPH::Ref<JPH::TwoBodyConstraint>(settings.Create(body_a, body_b));
+    return {settings.Create(body_a, body_b)};
 }
 
 [[nodiscard]] JPH::EMotorState motor_state(const MotorSettings& motor) noexcept {
@@ -298,7 +299,8 @@ Expected<JPH::Ref<JPH::TwoBodyConstraint>, Error> make_constraint(
         return fail(ErrorCode::Unsupported, "jolt: constraint settings were rejected");
     }
     if (description.type == ConstraintType::SixDof) {
-        apply_six_dof_motors(static_cast<JPH::SixDOFConstraint&>(*joint), description.dof_motors);
+        apply_six_dof_motors(*JPH::StaticCast<JPH::SixDOFConstraint>(joint),
+                             description.dof_motors);
     }
     if (description.motor.max_force > 0.0F) {
         if (Status driven = update_constraint_motor(description.type, *joint, description.motor);
@@ -315,7 +317,7 @@ Status update_constraint_motor(ConstraintType type, JPH::TwoBodyConstraint& cons
         return fail(ErrorCode::InvalidArgument, "jolt: invalid constraint motor settings");
     }
     if (type == ConstraintType::Hinge) {
-        auto& hinge = static_cast<JPH::HingeConstraint&>(constraint);
+        auto& hinge = *JPH::StaticCast<JPH::HingeConstraint>(&constraint);
         set_motor_settings(hinge.GetMotorSettings(), motor, true);
         hinge.SetMotorState(motor_state(motor));
         hinge.SetTargetAngularVelocity(motor.target_velocity);
@@ -323,7 +325,7 @@ Status update_constraint_motor(ConstraintType type, JPH::TwoBodyConstraint& cons
         return ok();
     }
     if (type == ConstraintType::Slider) {
-        auto& slider = static_cast<JPH::SliderConstraint&>(constraint);
+        auto& slider = *JPH::StaticCast<JPH::SliderConstraint>(&constraint);
         set_motor_settings(slider.GetMotorSettings(), motor, false);
         slider.SetMotorState(motor_state(motor));
         slider.SetTargetVelocity(motor.target_velocity);
@@ -349,7 +351,7 @@ Status update_constraint_orientation_motor(ConstraintType type, JPH::TwoBodyCons
         return fail(ErrorCode::Unsupported,
                     "jolt: orientation motor requires a swing-twist constraint");
     }
-    auto& joint = static_cast<JPH::SwingTwistConstraint&>(constraint);
+    auto& joint = *JPH::StaticCast<JPH::SwingTwistConstraint>(&constraint);
     MotorSettings axis;
     axis.max_force = motor.max_torque;
     axis.spring_frequency = motor.spring_frequency;
@@ -371,49 +373,49 @@ ConstraintLoad constraint_load(ConstraintType type, const JPH::TwoBodyConstraint
         return load;
     }
     if (type == ConstraintType::Fixed) {
-        const auto& fixed = static_cast<const JPH::FixedConstraint&>(constraint);
+        const auto& fixed = *JPH::StaticCast<JPH::FixedConstraint>(&constraint);
         load.force = fixed.GetTotalLambdaPosition().Length() / delta_seconds;
         load.torque = fixed.GetTotalLambdaRotation().Length() / delta_seconds;
     } else if (type == ConstraintType::Point) {
-        const auto& point = static_cast<const JPH::PointConstraint&>(constraint);
+        const auto& point = *JPH::StaticCast<JPH::PointConstraint>(&constraint);
         load.force = point.GetTotalLambdaPosition().Length() / delta_seconds;
     } else if (type == ConstraintType::Hinge) {
-        const auto& hinge = static_cast<const JPH::HingeConstraint&>(constraint);
+        const auto& hinge = *JPH::StaticCast<JPH::HingeConstraint>(&constraint);
         load.force = hinge.GetTotalLambdaPosition().Length() / delta_seconds;
         load.torque = (hinge.GetTotalLambdaRotation().Length() +
                        std::fabs(hinge.GetTotalLambdaRotationLimits()) +
                        std::fabs(hinge.GetTotalLambdaMotor())) /
                       delta_seconds;
     } else if (type == ConstraintType::Slider) {
-        const auto& slider = static_cast<const JPH::SliderConstraint&>(constraint);
+        const auto& slider = *JPH::StaticCast<JPH::SliderConstraint>(&constraint);
         load.force = (slider.GetTotalLambdaPosition().Length() +
                       std::fabs(slider.GetTotalLambdaPositionLimits()) +
                       std::fabs(slider.GetTotalLambdaMotor())) /
                      delta_seconds;
         load.torque = slider.GetTotalLambdaRotation().Length() / delta_seconds;
     } else if (type == ConstraintType::Distance) {
-        const auto& distance = static_cast<const JPH::DistanceConstraint&>(constraint);
+        const auto& distance = *JPH::StaticCast<JPH::DistanceConstraint>(&constraint);
         load.force = std::fabs(distance.GetTotalLambdaPosition()) / delta_seconds;
     } else if (type == ConstraintType::Cone) {
-        const auto& cone = static_cast<const JPH::ConeConstraint&>(constraint);
+        const auto& cone = *JPH::StaticCast<JPH::ConeConstraint>(&constraint);
         load.force = cone.GetTotalLambdaPosition().Length() / delta_seconds;
         load.torque = std::fabs(cone.GetTotalLambdaRotation()) / delta_seconds;
     } else if (type == ConstraintType::SwingTwist) {
-        const auto& swing = static_cast<const JPH::SwingTwistConstraint&>(constraint);
+        const auto& swing = *JPH::StaticCast<JPH::SwingTwistConstraint>(&constraint);
         load.force = swing.GetTotalLambdaPosition().Length() / delta_seconds;
         load.torque =
             (std::fabs(swing.GetTotalLambdaTwist()) + std::fabs(swing.GetTotalLambdaSwingY()) +
              std::fabs(swing.GetTotalLambdaSwingZ()) + swing.GetTotalLambdaMotor().Length()) /
             delta_seconds;
     } else if (type == ConstraintType::SixDof) {
-        const auto& six = static_cast<const JPH::SixDOFConstraint&>(constraint);
+        const auto& six = *JPH::StaticCast<JPH::SixDOFConstraint>(&constraint);
         load.force = six.GetTotalLambdaPosition().Length() / delta_seconds;
         load.torque = six.GetTotalLambdaRotation().Length() / delta_seconds;
     } else if (type == ConstraintType::Gear) {
-        const auto& gear = static_cast<const JPH::GearConstraint&>(constraint);
+        const auto& gear = *JPH::StaticCast<JPH::GearConstraint>(&constraint);
         load.torque = std::fabs(gear.GetTotalLambda()) / delta_seconds;
     } else if (type == ConstraintType::RackAndPinion) {
-        const auto& rack = static_cast<const JPH::RackAndPinionConstraint&>(constraint);
+        const auto& rack = *JPH::StaticCast<JPH::RackAndPinionConstraint>(&constraint);
         load.force = std::fabs(rack.GetTotalLambda()) / delta_seconds;
     }
     return load;

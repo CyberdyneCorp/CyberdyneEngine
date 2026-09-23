@@ -82,7 +82,7 @@ struct JoltFixture {
     JoltFixture(const JoltFixture&) = delete;
     JoltFixture& operator=(const JoltFixture&) = delete;
 
-    void step(u64 tick) noexcept {
+    void step(u64 tick) const noexcept {
         StepInput input;
         input.tick = tick;
         CY_REQUIRE(server->step(world, input).has_value());

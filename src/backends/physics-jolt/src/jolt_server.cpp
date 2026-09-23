@@ -37,6 +37,7 @@
 
 // clang-format off
 #include <Jolt/Core/Factory.h>
+#include <Jolt/Core/RTTI.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyLockMulti.h>
@@ -1089,7 +1090,7 @@ private:
 
     [[nodiscard]] Expected<ConstraintHandle, Error> register_constraint(
         WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
-        JPH::Ref<JPH::TwoBodyConstraint> joint) noexcept;
+        const JPH::Ref<JPH::TwoBodyConstraint>& joint) noexcept;
     [[nodiscard]] u32 count_islands(JoltWorld& world) noexcept;
 
     Allocator* allocator_;
@@ -1684,7 +1685,7 @@ Expected<u32, Error> JoltServer::soft_body_vertices(BodyHandle body,
     }
     const JPH::Body& source = lock.GetBody();
     const auto* motion =
-        static_cast<const JPH::SoftBodyMotionProperties*>(source.GetMotionProperties());
+        JPH::StaticCast<JPH::SoftBodyMotionProperties>(source.GetMotionProperties());
     const auto& vertices = motion->GetVertices();
     if (out.size() < vertices.size()) {
         return fail(ErrorCode::BufferTooSmall, "jolt: cloth vertex output is too small");
@@ -1761,12 +1762,12 @@ Expected<JPH::Ref<JPH::TwoBodyConstraint>, Error> build_jolt_constraint(
     if (body_a == nullptr || (!to_world && body_b == nullptr)) {
         return fail(ErrorCode::NotFound, "jolt: constraint body is no longer live");
     }
-    const Transform frame_a = constraint_world_frame(*body_a, description.frame_a);
-    const Transform frame_b =
+    const Transform body_frame = constraint_world_frame(*body_a, description.frame_a);
+    const Transform other_frame =
         to_world ? description.frame_b : constraint_world_frame(*body_b, description.frame_b);
-    return to_world
-               ? make_constraint(description, JPH::Body::sFixedToWorld, *body_a, frame_b, frame_a)
-               : make_constraint(description, *body_a, *body_b, frame_a, frame_b);
+    return to_world ? make_constraint(description, JPH::Body::sFixedToWorld, *body_a, other_frame,
+                                      body_frame)
+                    : make_constraint(description, *body_a, *body_b, body_frame, other_frame);
 }
 
 }  // namespace
@@ -1796,7 +1797,7 @@ Expected<ConstraintHandle, Error> JoltServer::create_constraint(
 
 Expected<ConstraintHandle, Error> JoltServer::register_constraint(
     WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
-    JPH::Ref<JPH::TwoBodyConstraint> joint) noexcept {
+    const JPH::Ref<JPH::TwoBodyConstraint>& joint) noexcept {
     u32 slot = 0;
     if (!free_constraints_.empty()) {
         slot = free_constraints_[free_constraints_.size() - 1];
@@ -1934,7 +1935,7 @@ Expected<VehicleHandle, Error> JoltServer::create_vehicle(
     settings.mWheels.reserve(description.wheel_count);
     for (u32 index = 0; index < description.wheel_count; ++index) {
         const VehicleWheelDescription& source = description.wheels[index];
-        JPH::WheelSettingsWV* wheel = new JPH::WheelSettingsWV();
+        auto* wheel = new JPH::WheelSettingsWV();
         wheel->mPosition = to_jolt(source.position);
         wheel->mRadius = source.radius;
         wheel->mWidth = source.width;
@@ -2025,7 +2026,8 @@ Status JoltServer::set_vehicle_input(VehicleHandle vehicle, const VehicleInput& 
     if (Status valid = validate(input); !valid) {
         return valid;
     }
-    auto* controller = static_cast<JPH::WheeledVehicleController*>(record->joint->GetController());
+    auto* controller =
+        JPH::StaticCast<JPH::WheeledVehicleController>(record->joint->GetController());
     controller->SetDriverInput(input.throttle, input.steering, input.brake, input.hand_brake);
     JoltWorld* world = worlds_[record->world];
     const JoltBody* chassis = resolve(record->chassis);
@@ -2640,7 +2642,7 @@ Status JoltServer::hash_state(WorldHandle world, determinism::StateHashTree& tre
             if (!lock.Succeeded()) {
                 return fail(ErrorCode::NotFound, "jolt: cloth body vanished during state hash");
             }
-            const auto* motion = static_cast<const JPH::SoftBodyMotionProperties*>(
+            const auto* motion = JPH::StaticCast<JPH::SoftBodyMotionProperties>(
                 lock.GetBody().GetMotionProperties());
             const auto& vertices = motion->GetVertices();
             tree.mix_u64(vertices.size());
@@ -2666,7 +2668,7 @@ Status JoltServer::hash_state(WorldHandle world, determinism::StateHashTree& tre
             return opened;
         }
         const auto* controller =
-            static_cast<const JPH::WheeledVehicleController*>(vehicle.joint->GetController());
+            JPH::StaticCast<JPH::WheeledVehicleController>(vehicle.joint->GetController());
         tree.mix_u64(vehicle.chassis.bits());
         tree.mix_f32(controller->GetForwardInput());
         tree.mix_f32(controller->GetRightInput());
@@ -2696,7 +2698,7 @@ namespace {
 
 void draw_jolt_triangles(const JPH::Body& body, DebugDrawSink& sink, DebugColor color) noexcept {
     constexpr int kBatchTriangles = 64;
-    JPH::Shape::GetTrianglesContext context;
+    JPH::Shape::GetTrianglesContext context{};
     const JPH::Shape* shape = body.GetShape();
     shape->GetTrianglesStart(context, body.GetWorldSpaceBounds(), body.GetCenterOfMassPosition(),
                              body.GetRotation(), JPH::Vec3::sReplicate(1.0f));
@@ -2707,7 +2709,8 @@ void draw_jolt_triangles(const JPH::Body& body, DebugDrawSink& sink, DebugColor 
             break;
         }
         for (int triangle = 0; triangle < count; ++triangle) {
-            const JPH::Float3* points = &vertices[triangle * 3];
+            const usize offset = static_cast<usize>(triangle) * 3U;
+            const JPH::Float3* points = &vertices[offset];
             const Vec3 a{points[0].x, points[0].y, points[0].z};
             const Vec3 b{points[1].x, points[1].y, points[1].z};
             const Vec3 c{points[2].x, points[2].y, points[2].z};
@@ -2725,10 +2728,10 @@ void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& 
     if (has_flag(flags, DebugDrawFlags::Colliders)) {
         const JPH::Shape* shape = body.GetShape();
         if (shape->GetSubType() == JPH::EShapeSubType::Sphere) {
-            const auto* sphere = static_cast<const JPH::SphereShape*>(shape);
+            const auto* sphere = JPH::StaticCast<JPH::SphereShape>(shape);
             sink.sphere(transform.translation, sphere->GetRadius(), color);
         } else if (shape->GetSubType() == JPH::EShapeSubType::Capsule) {
-            const auto* capsule = static_cast<const JPH::CapsuleShape*>(shape);
+            const auto* capsule = JPH::StaticCast<JPH::CapsuleShape>(shape);
             sink.capsule(transform, capsule->GetRadius(), capsule->GetHalfHeightOfCylinder(),
                          color);
         } else if (shape->GetSubType() == JPH::EShapeSubType::Box) {

@@ -109,8 +109,10 @@ CY_TEST_CASE("surface and volume share deterministic point-path delivery") {
     const auto surface_id = surface_queue.submit(7, surface_start, surface_end,
                                                  Vec3{0.1F, 0.2F, 0.1F}, PathFilter{}, 10);
     const auto volume_id = volume_queue.submit(8, volume_start, volume_end, {}, PathFilter{}, 10);
+    const Vec3 reverse_start = volume_end;
+    const Vec3 reverse_end = volume_start;
     const auto second_volume_id =
-        volume_queue.submit(9, volume_end, volume_start, {}, PathFilter{}, 10);
+        volume_queue.submit(9, reverse_start, reverse_end, {}, PathFilter{}, 10);
     CY_REQUIRE(surface_id.has_value());
     CY_REQUIRE(volume_id.has_value());
     CY_REQUIRE(second_volume_id.has_value());
