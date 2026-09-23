@@ -1296,7 +1296,10 @@ jobs:
         env:
           CY_CROSS_LEG_LABEL: ${{ matrix.label }}
         run: just test-determinism --publish-digest cross-leg-digests/${{ matrix.label }}.digest
+      # The test writes its measured digest even when a golden check finds a disagreement.
+      # Preserve that leg's value so the comparator can report the finding across runners.
       - uses: actions/upload-artifact@v5
+        if: always()
         with:
           name: cross-leg-digest-${{ matrix.label }}
           path: cross-leg-digests/${{ matrix.label }}.digest

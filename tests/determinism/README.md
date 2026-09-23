@@ -47,7 +47,8 @@ The nightly `milestone` job downloads the same publisher artifacts before runnin
 criteria would fail for missing digests even when the separate comparison job succeeded.
 `tools/ci/test_cross_leg_ledger.py` checks the dependency, artifact routing, the condition that
 still runs the ledger when one publisher fails, and the `--ci` invocation with mutations that must
-fail. The real Linux arm64 and x86-64 CI digests for run
+fail. The publisher uploads its digest even if its test reports a divergence, so the comparator can
+show the differing value. The real Linux arm64 and x86-64 CI digests for run
 [`35843497860`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/35843497860)
 agree on both lockstep fields and both PCG fields; the comparison still runs in CI on every push.
 

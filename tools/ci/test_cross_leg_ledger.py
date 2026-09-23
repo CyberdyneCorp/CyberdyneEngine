@@ -32,7 +32,7 @@ def check(text: str) -> list[str]:
     if "!cancelled()" not in str(milestone.get("if", "")):
         problems.append("milestone must run after a failed publisher leg")
 
-    uploads = [step.get("with", {}) for step in publisher.get("steps", [])
+    uploads = [step for step in publisher.get("steps", [])
                if "upload-artifact" in str(step.get("uses", ""))]
     downloads = [step.get("with", {}) for step in milestone.get("steps", [])
                  if "download-artifact" in str(step.get("uses", ""))]
@@ -41,6 +41,8 @@ def check(text: str) -> list[str]:
     elif not any(item.get("pattern") == "cross-leg-digest-*" and
                  item.get("path") == "cross-leg-digests" for item in downloads):
         problems.append("milestone must put all cross-leg digests where the criteria read them")
+    if not any(step.get("if") == "always()" for step in uploads):
+        problems.append("publisher must upload a digest after a test reports divergence")
 
     if not any("roadmap-milestone" in str(step.get("run", "")) and
                "--ci" in str(step.get("run", "")) for step in milestone.get("steps", [])):
@@ -68,13 +70,21 @@ def main() -> int:
             "          pattern: unrelated-*\n"
             "          path: cross-leg-digests\n"
             "      - name: Install the generator"), True),
+        ("failed publisher hides its digest", text.replace(
+            "      - uses: actions/upload-artifact@v5\n"
+            "        if: always()\n"
+            "        with:\n"
+            "          name: cross-leg-digest-${{ matrix.label }}",
+            "      - uses: actions/upload-artifact@v5\n"
+            "        with:\n"
+            "          name: cross-leg-digest-${{ matrix.label }}", 1), True),
     )
     for name, candidate, must_fail in cases:
         problems = check(candidate)
         if bool(problems) != must_fail:
             print(f"FAIL {name}: {problems}")
             return 1
-    print("cross-leg roadmap artifact routing: green and four mutations red")
+    print("cross-leg roadmap artifact routing: green and five mutations red")
     return 0
 
 
