@@ -3,6 +3,7 @@
 
 #include <cy/ecs/query.h>
 #include <cy/navigation/components.h>
+#include <cy/navigation/debug.h>
 
 namespace cy::navigation {
 namespace {
@@ -396,6 +397,9 @@ Status NavWorlds::update(World& world, const NavComponents& components, u32 tick
             return updated;
         }
         accumulate(report, partial);
+    }
+    if (metrics_ != nullptr) {
+        metrics_->record_agent_pass(report.repaths_issued);
     }
     return ok();
 }

@@ -84,6 +84,7 @@ public:
         return space_.representation();
     }
     [[nodiscard]] const NavigationSpace& space() const noexcept { return space_; }
+    void set_metrics(NavMetrics* metrics) noexcept { metrics_ = metrics; }
     [[nodiscard]] Expected<QueryId, Error> submit(u64 owner, Vec3 start, Vec3 end, Vec3 extents,
                                                   const PathFilter& filter, u32 tick) noexcept;
     [[nodiscard]] Status cancel(QueryId id) noexcept;
@@ -113,6 +114,7 @@ private:
     Array<Entry> entries_;
     Array<QueryId> completed_;
     u32 latency_ = 1;
+    NavMetrics* metrics_ = nullptr;
 };
 
 }  // namespace cy::navigation

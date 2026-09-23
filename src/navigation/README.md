@@ -37,6 +37,7 @@ still runs.
 | A\*, the funnel, simplification, corner rounding, the async queue | `query.h` |
 | Chunk-local tilemap polygons and planar path queries | `navigation2d.h` |
 | Sparse-voxel 3D paths and surface/volume query dispatch | `volume.h` |
+| Renderer-neutral debug overlays and aggregate diagnostics | `debug.h` |
 | Regions, the abstract graph, deferred refinement | `hierarchy.h` |
 | Flow fields and the cache that shares them | `flow_field.h` |
 | Local avoidance, the crowd, path and field following | `crowd.h` |
@@ -64,6 +65,14 @@ must fit within a cell, be convex and consistently wound, and use the same units
 For 2D collision geometry, `rebuild_chunk_from_collision` voxelises convex world-space collision
 footprints into the same chunk grid and conservatively excludes every overlapping cell. Its
 resolution is `cell_size`, so narrow passages need a correspondingly small cell size.
+
+`draw_navigation_mesh`, `draw_navigation_path`, and `draw_navigation_agents` emit into a
+renderer-neutral `NavDebugSink`. Flags select polygon areas, tile boundaries, adjacency, links,
+obstacle footprints, corridors, paths, avoidance velocities and neighbour sets independently.
+`NavMetrics` can be attached to `PathQueue`, `SpatialPathQueue`, and `NavWorlds` to collect query
+counts, elapsed time, path length and repath rate. Passing it to `build_tile` additionally records
+voxelisation time per tile. These timing measurements are diagnostic wall time and must never feed
+deterministic path or simulation decisions.
 
 ## Four properties the whole module is shaped by
 

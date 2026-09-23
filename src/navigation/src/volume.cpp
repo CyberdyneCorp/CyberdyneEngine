@@ -1,8 +1,10 @@
 // Sparse-voxel paths and representation-neutral deterministic query delivery.
 
+#include <cy/navigation/debug.h>
 #include <cy/navigation/volume.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace cy::navigation {
@@ -363,8 +365,18 @@ u32 SpatialPathQueue::update(u32 tick) noexcept {
         if (entry.state != QueryState::Pending || entry.deliver_tick > tick) {
             continue;
         }
+        const auto started = std::chrono::steady_clock::now();
         entry.result =
             space_.find_path(entry.start, entry.end, entry.extents, entry.filter, entry.points);
+        if (metrics_ != nullptr) {
+            f32 length = 0.0F;
+            for (usize point = 1; point < entry.points.size(); ++point) {
+                length += heuristic(entry.points[point - 1], entry.points[point]);
+            }
+            const auto elapsed = std::chrono::steady_clock::now() - started;
+            const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed);
+            metrics_->record_query(static_cast<u64>(nanoseconds.count()), entry.result, length);
+        }
         entry.state = QueryState::Ready;
         if (!completed_.push_back(static_cast<QueryId>(index))) {
             break;

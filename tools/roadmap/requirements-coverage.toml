@@ -140,8 +140,9 @@ note = "The Vec2 API consumes tilemap-authored polygons per chunk, preserves ref
 [[coverage]]
 row = "navigation"
 requirement = "Navigation debugging"
-evidence = "exempt:m11e"
-note = "NOT BUILT. Navigation exposes build and crowd reports but no debug-draw command stream or complete per-query diagnostic record for the requested overlays and timings. Replace this exemption with registry cases for every view plus a failed-path report that names visited nodes, costs and rejection reasons."
+evidence = "test:unit.navigation"
+case = "navigation debug exposes a disconnected gap behind a partial path"
+note = "The test requests a path across missing content, checks that it is partial, then verifies the debug command stream shows both polygon islands but no cross-tile adjacency. Companion tests cover all nine independently selectable overlay families, query counts and timing, path lengths and repath rates; integration.navigation_build measures tile voxelisation time. PathResult already reports cost, expanded/visited nodes and budget exhaustion."
 
 [[coverage]]
 row = "navigation"

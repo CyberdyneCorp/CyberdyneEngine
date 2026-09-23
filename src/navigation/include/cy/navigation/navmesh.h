@@ -348,6 +348,10 @@ public:
     [[nodiscard]] Expected<ObstacleId, Error> add_obstacle(const NavObstacleShape& shape) noexcept;
     [[nodiscard]] Status remove_obstacle(ObstacleId id) noexcept;
     [[nodiscard]] u32 obstacle_count() const noexcept;
+    [[nodiscard]] u32 obstacle_capacity() const noexcept {
+        return static_cast<u32>(obstacles_.size());
+    }
+    [[nodiscard]] const NavObstacleShape* obstacle(ObstacleId id) const noexcept;
     /// The area a polygon presents to a query: its own, unless an obstacle marks it.
     [[nodiscard]] AreaType effective_area(PolyRef ref) const noexcept;
 

@@ -2,6 +2,7 @@
 
 #include <cy/core/memory/system_allocator.h>
 #include <cy/navigation/components.h>
+#include <cy/navigation/debug.h>
 #include <cy/test/test.h>
 
 #include "nav_fixture.h"
@@ -153,6 +154,8 @@ CY_TEST_CASE("walking and flying agents in one world select separate path repres
     }
     SpatialPathQueue volume_queue(allocator(), NavigationSpace(volume), 1);
     NavWorlds worlds(allocator());
+    NavMetrics metrics;
+    worlds.set_metrics(&metrics);
     CY_REQUIRE(worlds.bind(7, mesh, surface_queue).has_value());
     CY_REQUIRE(worlds.bind_volume(7, volume, volume_queue).has_value());
 
@@ -174,6 +177,8 @@ CY_TEST_CASE("walking and flying agents in one world select separate path repres
     CY_CHECK_EQ(surface_queue.pending(), 1U);
     CY_CHECK_EQ(volume_queue.pending(), 1U);
     CY_CHECK_EQ(worlds.size(), usize{2});
+    CY_CHECK_EQ(metrics.snapshot().agent_passes, 1U);
+    CY_CHECK_EQ(metrics.snapshot().repaths, 2U);
 }
 
 CY_TEST_CASE("an agent already at its target arrives and raises its event") {

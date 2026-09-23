@@ -63,7 +63,9 @@ CY_TEST_CASE("tilemap path detours around a blocked cell") {
     Array<Vec2> points(allocator());
     CY_REQUIRE(mesh.straighten(corridor, start, target, points).has_value());
     CY_REQUIRE(points.size() >= usize{3});
-    CY_CHECK_GE(points[2].y, 1.0F);
+    if (points.size() > 2) {
+        CY_CHECK_GE(points[2].y, 1.0F);
+    }
     CY_CHECK_EQ(points[0].x, start.x);
     CY_CHECK_EQ(points[points.size() - 1].x, target.x);
 }

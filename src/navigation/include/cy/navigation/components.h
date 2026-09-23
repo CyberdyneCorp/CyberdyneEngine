@@ -217,6 +217,7 @@ public:
     [[nodiscard]] NavVolume* volume(u32 id) const noexcept;
     [[nodiscard]] SpatialPathQueue* volume_queue(u32 id) const noexcept;
     [[nodiscard]] usize size() const noexcept { return bindings_.size() + volume_bindings_.size(); }
+    void set_metrics(NavMetrics* metrics) noexcept { metrics_ = metrics; }
 
     [[nodiscard]] Status update(World& world, const NavComponents& components, u32 tick,
                                 u32 repath_interval, NavAgentReport& report) noexcept;
@@ -234,6 +235,7 @@ private:
         SpatialPathQueue* queue = nullptr;
     };
     Array<VolumeBinding> volume_bindings_;
+    NavMetrics* metrics_ = nullptr;
 };
 
 }  // namespace cy::navigation

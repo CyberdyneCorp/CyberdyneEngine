@@ -34,6 +34,7 @@ set(cy_navigation_sources
     src/build.cpp
     src/components.cpp
     src/crowd.cpp
+    src/debug.cpp
     src/flow_field.cpp
     src/hierarchy.cpp
     src/navmesh.cpp

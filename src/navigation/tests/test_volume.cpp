@@ -1,6 +1,7 @@
 // Sparse 3D navigation and the shared surface/volume point-path contract.
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/navigation/debug.h>
 #include <cy/navigation/volume.h>
 #include <cy/test/test.h>
 
@@ -97,6 +98,8 @@ CY_TEST_CASE("surface and volume share deterministic point-path delivery") {
     canyon(volume, false);
     SpatialPathQueue surface_queue(allocator(), NavigationSpace(mesh), 2);
     SpatialPathQueue volume_queue(allocator(), NavigationSpace(volume), 2);
+    NavMetrics metrics;
+    volume_queue.set_metrics(&metrics);
     const Vec3 surface_start{0.5F, 0.0F, 0.5F};
     const Vec3 surface_end{7.5F, 0.0F, 7.5F};
     const Vec3 volume_start = volume.center({0, 1, 0});
@@ -131,6 +134,8 @@ CY_TEST_CASE("surface and volume share deterministic point-path delivery") {
     CY_CHECK_FALSE(surface_result.partial);
     CY_CHECK_FALSE(volume_result.partial);
     CY_CHECK_GT(volume_points.size(), surface_points.size());
+    CY_CHECK_EQ(metrics.snapshot().queries, 2U);
+    CY_CHECK_GT(metrics.snapshot().path_length_mm, 0U);
 }
 
 CY_TEST_CASE("shared surface query stops a partial route on reachable ground") {

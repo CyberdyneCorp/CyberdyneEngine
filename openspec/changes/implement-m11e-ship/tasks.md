@@ -315,7 +315,7 @@ what makes 6.1 mandatory rather than advisory.
         implement volume navigation through the shared query contract.
       - [x] Accept 2D collision polygons and tilemap chunks through planar navigation and rebuild
         only the changed chunk.
-      - [ ] Expose navigation debug geometry and query, repath, and rebuild measurements.
+      - [x] Expose navigation debug geometry and query, repath, and rebuild measurements.
       - [ ] Map the declared constraint vocabulary to the Jolt solver, including limits, motors,
         breaking, and the capability-gated kinds.
       - [ ] Integrate supported soft bodies, vehicles, and ragdoll activation and blending with
