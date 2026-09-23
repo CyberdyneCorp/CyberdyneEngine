@@ -219,10 +219,13 @@ Status Card::parse(std::string_view document) noexcept {
         cursor = (newline == std::string_view::npos) ? document.size() + 1 : newline + 1;
 
         const Words words = split(line);
-        if (words.count == 0 || words.at(0).empty() || words.at(0)[0] == '#') {
+        // `Words::at` answers a default (null-data) view past `count`, so the keyword is bound once
+        // and tested through `starts_with` rather than indexed: GCC's -Wnull-dereference cannot
+        // carry an `empty()` guard across a second `at(0)` call in the sanitized build.
+        const std::string_view keyword = words.at(0);
+        if (keyword.empty() || keyword.starts_with('#')) {
             continue;
         }
-        const std::string_view keyword = words.at(0);
 
         if (keyword == "cycard") {
             if (words.at(1) != "1") {
