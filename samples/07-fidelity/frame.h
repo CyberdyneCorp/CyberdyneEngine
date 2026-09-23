@@ -150,6 +150,12 @@ struct Capture {
 [[nodiscard]] Status render_frames(const Scene& scene, const FrameOptions& options,
                                    FrameReport& out, Capture* capture = nullptr) noexcept;
 
+/// The view-projection the shot is rendered with at shot parameter `t`, for a viewport of `aspect`.
+/// `render_frames` renders with exactly this matrix. It is declared here so that
+/// `unit.fidelity_shot_projection` can hold it to the property frame.cpp states: it is the same
+/// bits in every build profile.
+[[nodiscard]] Mat4 shot_world_to_clip(const Scene& scene, f32 t, f32 aspect) noexcept;
+
 /// What the illumination system answered over the surfaces the device resolved.
 struct LightReport {
     u32 shaded = 0;

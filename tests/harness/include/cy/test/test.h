@@ -27,6 +27,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cstddef>
+
 // The budget for one test case, in nanoseconds of the case's own CPU time. tests/CMakeLists.txt
 // defines it per suite from the taxonomy in `testing-and-quality`: 1 ms for a unit test, 1 s for an
 // integration test, 30 s for a smoke test. The default here is the strictest of the three, so a
@@ -136,6 +138,10 @@ private:
     /// the first microseconds of the process — see `second_opinion_scale` in budget.cpp.
     unsigned long long declared_ns_;
     unsigned long long started_contended_ns_;
+    /// Whether this guard's thread is being sampled for host blocking, and the fourth clock's
+    /// reading when it started. See `blocked_on_host_ns`.
+    bool sampling_host_;
+    unsigned long long started_blocked_ns_;
     unsigned long long started_cpu_ns_;
     unsigned long long started_wall_ns_;
 };
@@ -165,22 +171,48 @@ unsigned long long contended_ns() noexcept;
 /// behaves exactly as it did before — named rather than silently different.
 bool budget_measures_contention() noexcept;
 
+/// Nanoseconds the calling thread has been observed BLOCKED BY THE HOST — in an uninterruptible
+/// sleep, which is where Linux puts a thread waiting for a block device, a major page fault or
+/// writeback — cumulative over the case's sampling session. Zero when this thread is not the one
+/// being sampled, and on every platform where `budget_measures_host_blocking()` is false.
+///
+/// M11.c's fourth close. Runqueue wait is what a CPU-saturated machine costs a case; this is what
+/// an I/O-saturated one costs it, and it is invisible to `contended_ns()` because a thread waiting
+/// for the disk is not runnable. `unit.determinism` measured it: 655 ms of wall clock, 0.21 ms of
+/// CPU, zero runqueue wait, beside a heavy build. The guard adds this clock to the runqueue clock
+/// before applying the stall ceiling. A futex, a sleep, a join and a pipe read are INTERRUPTIBLE
+/// sleeps and do not grow it, so a case that waits on itself still fails. How it is measured, and
+/// its limits, are in `host_blocking.cpp`.
+unsigned long long blocked_on_host_ns() noexcept;
+
+/// True where `blocked_on_host_ns()` measures something.
+bool budget_measures_host_blocking() noexcept;
+
+/// The scheduler state letter of a `/proc/<pid>/task/<tid>/stat` line — `R`, `S`, `D` and the
+/// rest — or `'\0'` when the text is not one. Exposed because the state is found after the LAST
+/// `)`, a thread may name itself anything including `) D (`, and that is worth a test of its own.
+char thread_state_from_stat(const char* text, std::size_t size) noexcept;
+
 /// What the wall-clock half of the budget concluded about one case.
 enum class StallVerdict {
     /// Inside the ceiling, or no ceiling at all.
     Fine,
-    /// Over the ceiling, and the time over it was spent waiting for a core on a busy machine.
+    /// Over the ceiling, and the time over it was spent waiting for the host: for a core on a busy
+    /// machine, or for a disk or a page fault on an I/O-saturated one.
     /// Reported and not failed: `testing-and-quality` asks for "a case that exceeds its budget only
     /// under load" to be reported as a case to reclassify rather than failing the build.
     Contended,
-    /// Over the ceiling on the case's own account: a sleep, a blocking read, a lock, a join.
+    /// Over the ceiling on the case's own account: a sleep, a lock, a join, a read from a pipe or
+    /// a socket.
     Stalled,
 };
 
 /// The stall decision, as a pure function of three numbers. Exposed so that the arithmetic is
-/// testable without arranging for a machine to be busy: the two empirical claims underneath it —
-/// that runqueue wait grows under preemption and does not grow while blocking — are asserted
-/// separately, and this is what they feed.
+/// testable without arranging for a machine to be busy: the empirical claims underneath it — that
+/// runqueue wait grows under preemption and does not grow while blocking, and that host blocking
+/// grows while waiting for the disk and does not grow while sleeping — are asserted separately, and
+/// this is what they feed. `contended_ns` is the HOST's share of the window: runqueue wait plus
+/// host blocking.
 StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long contended_ns,
                            unsigned long long ceiling_ns) noexcept;
 

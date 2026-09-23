@@ -12,6 +12,7 @@ cy_add_module(
     SOURCES
         src/budget.cpp
         src/fixtures.cpp
+        src/host_blocking.cpp
         src/main.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::dep::doctest)

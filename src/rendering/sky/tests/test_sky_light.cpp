@@ -11,7 +11,10 @@
 
 #include <cy/test/test.h>
 
+#include <cy/core/jobs/job_system.h>
 #include <cy/core/math/math.h>
+#include <cy/core/memory/array.h>
+#include <cy/core/memory/scope.h>
 #include <cy/rendering/sky/celestial.h>
 #include <cy/rendering/sky/sky_light.h>
 
@@ -29,6 +32,7 @@ using cy::rendering::sky::fit_sky_gradient;
 using cy::rendering::sky::ground_position;
 using cy::rendering::sky::project_sky_irradiance;
 using cy::rendering::sky::sky_irradiance;
+using cy::rendering::sky::sky_irradiance_directions;
 using cy::rendering::sky::sky_radiance;
 using cy::rendering::sky::SkyGradient;
 using cy::rendering::sky::SkyIrradianceSh;
@@ -298,4 +302,74 @@ CY_TEST_CASE("sky light: a day of sun positions produces a GI term that never go
             CY_CHECK_GE(colour.z, 0.0F);
         }
     }
+}
+
+CY_TEST_CASE("sky light: the table and the irradiance integrated on workers are the serial bits") {
+    // `FrameAssembly` rebuilds both every frame the sun or the eye moves, and `samples/10-world`
+    // measured them at over half of its submit band on one thread, so the frame now lends them its
+    // job system. What makes that safe is that the answer cannot depend on the schedule: every
+    // direction is written to its own slot and the irradiance is summed in index order. EQUALITY,
+    // not a tolerance — a parallel ambient that differed in the last bit would make a frame's
+    // pixels depend on whether a job system was attached.
+    cy::jobs::JobSystem jobs;
+    cy::jobs::JobSystemConfig config;
+    config.worker_count = 4;
+    config.task_slots_per_participant = 256;
+    config.deque_capacity = 256;
+    config.scratch_bytes_per_participant = cy::usize{64} * 1024;
+    CY_REQUIRE(jobs.start(config).has_value());
+
+    const Atmosphere earth = earth_atmosphere();
+    const Vec3 eye = ground_position(earth, 120.0F);
+    cy::Array<Vec3> terms(cy::current_allocator());
+    CY_REQUIRE(terms.resize(sky_irradiance_directions()).has_value());
+    const cy::Span<Vec3> slots(terms.data(), terms.size());
+
+    // A low sun and a high one, facing up and facing a wall: the lit half of the sphere moves with
+    // the normal, which is what the index-order fold has to follow.
+    const Vec3 suns[2] = {normalize(Vec3{0.9F, 0.12F, 0.1F}), normalize(Vec3{0.3F, 0.8F, 0.2F})};
+    const Vec3 normals[2] = {Vec3{0.0F, 1.0F, 0.0F}, normalize(Vec3{-1.0F, 0.2F, 0.3F})};
+    u32 compared = 0;
+    for (const Vec3 sun : suns) {
+        for (const Vec3 normal : normals) {
+            const Vec3 serial = sky_irradiance(earth, eye, sun, normal);
+            const auto parallel = sky_irradiance(earth, eye, sun, normal, 32, jobs, slots);
+            CY_REQUIRE(parallel.has_value());
+            CY_CHECK_GT(serial.y, 0.0F);
+            CY_CHECK_EQ(parallel->x, serial.x);
+            CY_CHECK_EQ(parallel->y, serial.y);
+            CY_CHECK_EQ(parallel->z, serial.z);
+            ++compared;
+        }
+
+        SkyViewTable serial_table;
+        SkyViewTable parallel_table;
+        CY_REQUIRE(serial_table.configure(SkyTableQuality::Low).has_value());
+        CY_REQUIRE(parallel_table.configure(SkyTableQuality::Low).has_value());
+        CY_REQUIRE(serial_table.update(earth, eye, sun).has_value());
+        CY_REQUIRE(parallel_table.update(earth, eye, sun, &jobs).has_value());
+        u32 differing = 0;
+        // Every cell is read through the bilinear sampler at its own centre and between cells, so
+        // a single differing cell anywhere in the table shows up.
+        for (u32 row = 0; row < 33; ++row) {
+            const f32 elevation = ((static_cast<f32>(row) / 32.0F) - 0.5F) * cy::math::kPi;
+            for (u32 column = 0; column < 64; ++column) {
+                const f32 azimuth = static_cast<f32>(column) / 64.0F * 2.0F * cy::math::kPi;
+                const Vec3 direction{std::cos(elevation) * std::cos(azimuth), std::sin(elevation),
+                                     std::cos(elevation) * std::sin(azimuth)};
+                const Vec3 a = serial_table.sample(direction);
+                const Vec3 b = parallel_table.sample(direction);
+                const bool same = a.x == b.x && a.y == b.y && a.z == b.z;
+                differing += same ? 0U : 1U;
+            }
+        }
+        CY_CHECK_EQ(differing, 0U);
+    }
+    CY_CHECK_EQ(compared, 4U);
+
+    // A span too short for the sampler is refused rather than written past.
+    const auto refused = sky_irradiance(earth, eye, suns[0], normals[0], 32, jobs,
+                                        slots.first(sky_irradiance_directions() - 1U));
+    CY_CHECK(!refused.has_value());
+    jobs.shutdown();
 }

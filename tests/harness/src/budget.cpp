@@ -7,6 +7,8 @@
 
 #include <cy/test/test.h>
 
+#include "host_blocking.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -352,6 +354,12 @@ double budget_scale() {
 //
 // So the ceiling is applied to wall clock MINUS contention, which is the time the case could have
 // been running and was not. A sleep is still caught; a busy machine is reported and not failed.
+//
+// M11.C'S FOURTH CLOSE FOUND THE HALF THIS DOES NOT SEE: a machine busy with I/O rather than CPU. A
+// thread waiting for the disk is not runnable, so it accumulates no runqueue wait, and a case whose
+// first touch of its own code took major page faults behind a build's writeback was charged 655 ms
+// it never spent. That is the fourth clock, `blocked_on_host_ns()`, in host_blocking.cpp; the
+// guard subtracts both.
 std::uint64_t contended_now_ns() {
 #if defined(__linux__)
     // One descriptor per thread, `pread` from offset zero: /proc regenerates the contents on each
@@ -401,7 +409,8 @@ std::atomic<std::uint64_t> contended_cases_{0};
 /// things: a case that WAITED — a sleep, a blocking read, a lock, a thread it joined — and a case
 /// that was simply not given a core while forty other processes wanted one. Only the first is a
 /// property of the test. Subtract the time the case spent runnable-and-not-running and what is left
-/// is the time it could have been working.
+/// is the time it could have been working. The same holds for time spent blocked on the host's
+/// disk, which the guard adds to `contended_ns` before calling this.
 StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long contended_ns,
                            unsigned long long ceiling_ns) noexcept {
     if (ceiling_ns == 0 || wall_ns <= ceiling_ns) {
@@ -451,6 +460,17 @@ unsigned long long scaled_budget(unsigned long long budget_ns) {
     return scaled == 0 ? 1ULL : scaled;
 }
 
+/// How often the fourth clock samples the case's thread. A two-hundredth of the ceiling keeps the
+/// sampling error, a few intervals, under two per cent of the thing it is compared against; the
+/// floor holds the sampler to a thousand wake-ups a second however small the ceiling, and the cap
+/// keeps an integration case (a ceiling of 100 s and more) from being sampled so coarsely that a
+/// 200 ms disk wait is seen as a handful of points.
+unsigned long long host_sampling_interval(unsigned long long ceiling_ns) {
+    constexpr unsigned long long kFloor = 1'000'000ULL;
+    constexpr unsigned long long kCap = 5'000'000ULL;
+    return std::clamp(ceiling_ns / 200ULL, kFloor, kCap);
+}
+
 /// The wall-clock ceiling for a case whose budget is `budget_ns`. See kStallMultiplier.
 unsigned long long stall_ceiling(unsigned long long budget_ns) {
     if (budget_ns == 0) {
@@ -474,6 +494,11 @@ BudgetGuard::BudgetGuard(const char* name, unsigned long long budget_ns, const c
       budget_ns_(scaled_budget(budget_ns)),
       declared_ns_(budget_ns),
       started_contended_ns_(contended_now_ns()),
+      // Before either clock starts, so that starting the sampler — once per process, a thread
+      // creation — is charged to no case.
+      sampling_host_(kHaveCpuClock && budget_ns_ != 0 &&
+                     host_blocking::begin(host_sampling_interval(stall_ceiling(budget_ns_)))),
+      started_blocked_ns_(sampling_host_ ? blocked_on_host_ns() : 0),
       started_cpu_ns_(cpu_now_ns()),
       started_wall_ns_(steady_now_ns()) {}
 
@@ -484,6 +509,11 @@ BudgetGuard::~BudgetGuard() {
     const std::uint64_t wall_ns = steady_now_ns() - started_wall_ns_;
     const std::uint64_t cpu_ns = cpu_now_ns() - started_cpu_ns_;
     const std::uint64_t contended = contended_now_ns() - started_contended_ns_;
+    std::uint64_t blocked = 0;
+    if (sampling_host_) {
+        blocked = blocked_on_host_ns() - started_blocked_ns_;
+        host_blocking::end();
+    }
 
     // THE RE-CHECK. See `second_opinion_scale`: the calibration is taken once at process start and
     // a governor that settles afterwards makes every later case look late. Re-measure now, beside
@@ -496,7 +526,7 @@ BudgetGuard::~BudgetGuard() {
         budget_ns = std::max(budget_ns, rebuilt);
     }
 
-    char message[640];
+    char message[1024];
     if (cpu_ns > budget_ns) {
         std::snprintf(
             message, sizeof(message),
@@ -517,7 +547,7 @@ BudgetGuard::~BudgetGuard() {
         return;
     }
     const unsigned long long ceiling = stall_ceiling(budget_ns);
-    const StallVerdict verdict = stall_verdict(wall_ns, contended, ceiling);
+    const StallVerdict verdict = stall_verdict(wall_ns, contended + blocked, ceiling);
     if (verdict == StallVerdict::Fine) {
         return;
     }
@@ -531,24 +561,27 @@ BudgetGuard::~BudgetGuard() {
         std::fprintf(stderr,
                      "cy::test: contended: '%s' held the suite for %.3f ms of wall clock against a "
                      "ceiling of %.3f ms, of which %.3f ms was spent waiting for a core on a busy "
-                     "machine and %.3f ms was CPU. Reported rather than failed: the machine was "
-                     "loaded, not the case. Run it on an idle machine to see its own figure.\n",
+                     "machine, %.3f ms blocked on the host's disk or a page fault, and %.3f ms was "
+                     "CPU. Reported rather than failed: the machine was loaded, not the case. Run "
+                     "it on an idle machine to see its own figure.\n",
                      name_, static_cast<double>(wall_ns) / 1e6, static_cast<double>(ceiling) / 1e6,
-                     static_cast<double>(contended) / 1e6, static_cast<double>(cpu_ns) / 1e6);
+                     static_cast<double>(contended) / 1e6, static_cast<double>(blocked) / 1e6,
+                     static_cast<double>(cpu_ns) / 1e6);
         return;
     }
 
     std::snprintf(
         message, sizeof(message),
         "stalled: '%s' held the suite for %.3f ms of wall clock (%llu ns) while spending %.3f ms "
-        "of CPU and %.3f ms waiting for a core, against a ceiling of %.3f ms — %llux its budget. A "
-        "case within its budget that takes this long is waiting rather than working: a sleep, a "
-        "blocking read, a lock, or a thread it joined. `testing-and-quality` places any of those "
-        "in "
-        "tests/integration/ or above. Contention is already subtracted, so this is the case's own "
-        "time. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
+        "of CPU, %.3f ms waiting for a core and %.3f ms blocked on the host's disk or a page fault "
+        "(%s), against a ceiling of %.3f ms — %llux its budget. A case within its budget that "
+        "takes this long is waiting rather than working: a sleep, a lock, a thread it joined, or a "
+        "read from a pipe or socket. `testing-and-quality` places any of those in "
+        "tests/integration/ or above. The host's share is already subtracted, so this is the "
+        "case's own time. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
         name_, static_cast<double>(wall_ns) / 1e6, static_cast<unsigned long long>(wall_ns),
         static_cast<double>(cpu_ns) / 1e6, static_cast<double>(contended) / 1e6,
+        static_cast<double>(blocked) / 1e6, sampling_host_ ? "sampled" : "not measured here",
         static_cast<double>(ceiling) / 1e6, kStallMultiplier);
     DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
 }

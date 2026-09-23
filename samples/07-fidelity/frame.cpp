@@ -131,6 +131,29 @@ struct Payload {
 
 }  // namespace
 
+Mat4 shot_world_to_clip(const Scene& scene, f32 t, f32 aspect) noexcept {
+    // THE FIELD OF VIEW IS READ THROUGH A VOLATILE, AND THAT IS LOAD-BEARING.
+    //
+    // `perspective_reversed_z_infinite` takes the tangent of half the field of view. Given a value
+    // only known at run time, that tangent is the C library's `tanf`. Given a value the optimiser
+    // can see, GCC works it out at compile time through MPFR instead, and the two answers are not
+    // the same number. For this shot's 60 degrees, glibc 2.39's `tanf` answers 0x1.279a76p-1 and
+    // MPFR answers 0x1.279a74p-1, the correctly rounded one. That is one ulp of the tangent and two
+    // of the focal length.
+    //
+    // Only the release profile got to see the value. Its link-time optimisation specialises
+    // `render_frames` for the golden suite's constant options (`render_frames.constprop.0`),
+    // inlines the projection and folds the tangent. Debug, dev and profile call `tanf`. That ulp
+    // moved two pixels of `render.virtual_geometry_shaded` onto the other triangle of a shared
+    // edge, in release only (worst channel delta 10 at (297, 14); M11.c's fourth close). A
+    // volatile read is a value no compiler may assume, so every profile goes through the same
+    // evaluator. `cy_pcg` turns off floating-point contraction for the same reason.
+    const volatile f32 fov_y = kShotFovY;
+    const Mat4 view = look_at(camera_at(scene, t), camera_target(scene, t), Vec3{0.0F, 1.0F, 0.0F});
+    const Mat4 projection = perspective_reversed_z_infinite(fov_y, aspect, 0.05F);
+    return projection * view;
+}
+
 Status render_frames(const Scene& scene, const FrameOptions& options, FrameReport& out,
                      Capture* capture) noexcept {
     DeviceHolder holder;
@@ -266,9 +289,7 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         const f32 swept = static_cast<f32>(timed ? frame - options.warmup_frames : 0U) / span;
         const f32 t = options.capture_shot >= 0.0F ? options.capture_shot : swept;
         const Vec3 camera = camera_at(scene, t);
-        const Mat4 view = look_at(camera, camera_target(scene, t), Vec3{0.0F, 1.0F, 0.0F});
-        const Mat4 projection = perspective_reversed_z_infinite(kShotFovY, aspect, 0.05F);
-        const Mat4 world_to_clip = projection * view;
+        const Mat4 world_to_clip = shot_world_to_clip(scene, t, aspect);
 
         rendering::vg::TraversalView traversal_view;
         traversal_view.frustum = Frustum::from_view_projection(world_to_clip);

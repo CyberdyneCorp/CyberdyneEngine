@@ -605,6 +605,19 @@ struct Band {
         static_cast<unsigned long long>(worst_frame), worst / static_cast<f64>(budget_ms));
     std::printf("  the three largest bands: %s %.1f ms, %s %.1f ms, %s %.1f ms\n", bands[0].name,
                 bands[0].mean_ms, bands[1].name, bands[1].mean_ms, bands[2].name, bands[2].mean_ms);
+    // THE WORST FRAME, BAND BY BAND. The means above say where a typical frame goes; a budget is
+    // missed by ONE frame, and the question a red run leaves is which band that frame spent it in —
+    // a submit that stalled on the device, or a producer the host slowed. Without this line the
+    // answer needed a second run with `--budget`, on a host that had moved on.
+    const FrameCosts& worst_cost = take.costs[worst_frame];
+    const StageReport& worst_drawn = take.drawn[worst_frame];
+    std::printf(
+        "  the worst frame's bands: weather_ms %.1f ms, water_ms %.1f ms, ocean_ms %.1f ms, sky_ms "
+        "%.1f ms, terrain_shade_ms %.1f ms, foliage_ms %.1f ms, stage_build_ms %.1f ms, "
+        "stage_submit_ms %.1f ms\n",
+        worst_cost.weather_ms, worst_cost.water_ms, worst_cost.ocean_ms, worst_cost.sky_ms,
+        worst_cost.terrain_shade_ms, worst_cost.foliage_ms, worst_drawn.build_ms,
+        worst_drawn.submit_ms);
     if (worst <= static_cast<f64>(budget_ms)) {
         std::printf("  INSIDE the budget at every frame of the cycle.\n");
         return true;

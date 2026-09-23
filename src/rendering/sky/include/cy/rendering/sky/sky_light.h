@@ -54,6 +54,10 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/sky/atmosphere.h>
 
+namespace cy::jobs {
+class JobSystem;
+}  // namespace cy::jobs
+
 namespace cy::rendering::sky {
 
 /// The nine coefficients of a second-order spherical-harmonic projection, per channel. The standard
@@ -108,6 +112,24 @@ struct SkyGradient {
 [[nodiscard]] Vec3 sky_irradiance(const Atmosphere& atmosphere, Vec3 view_position,
                                   Vec3 sun_direction, Vec3 normal, u32 samples = 32) noexcept;
 
+/// How many directions `sky_irradiance()` visits over the whole sphere for a `samples`, which is
+/// how many terms the parallel form below needs room for. Half of them face away from any given
+/// normal and contribute nothing, but which half depends on the normal.
+[[nodiscard]] u32 sky_irradiance_directions(u32 samples = 32) noexcept;
+
+/// `sky_irradiance()`, with the directions integrated on `jobs`, and BIT-IDENTICAL to it.
+///
+/// Each direction's term is a pure function of its index and is written to its own slot of
+/// `terms`; the slots are then summed on this thread in index order, which is the serial loop's
+/// order and its arithmetic. A parallel reduction would fold partitions and differ in the last bit,
+/// and an ambient term that depended on whether a job system was attached would be a frame that
+/// depended on the machine. `terms` must hold `sky_irradiance_directions(samples)` elements and is
+/// the caller's, so that a frame calling this does not allocate.
+[[nodiscard]] Expected<Vec3, Error> sky_irradiance(const Atmosphere& atmosphere, Vec3 view_position,
+                                                   Vec3 sun_direction, Vec3 normal, u32 samples,
+                                                   jobs::JobSystem& jobs,
+                                                   Span<Vec3> terms) noexcept;
+
 // ================================================================================================
 // THE SKY VIEW TABLE
 // ================================================================================================
@@ -157,8 +179,13 @@ public:
 
     /// Rebuild if the sun has moved past `kSunMovementThreshold` or the atmosphere changed.
     /// Returns whether it rebuilt.
+    ///
+    /// With `jobs`, the rows of a rebuild are integrated on its workers. Every cell is a pure
+    /// function of its direction written to its own slot, so the table is bit-identical to the
+    /// serial one; a job system that will not take the work leaves it on this thread.
     [[nodiscard]] Expected<bool, Error> update(const Atmosphere& atmosphere, Vec3 view_position,
-                                               Vec3 sun_direction) noexcept;
+                                               Vec3 sun_direction,
+                                               jobs::JobSystem* jobs = nullptr) noexcept;
 
     /// The radiance in a direction, bilinearly sampled. Zero before the first `update`.
     [[nodiscard]] Vec3 sample(Vec3 direction) const noexcept;

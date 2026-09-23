@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <thread>
 
 CY_TEST_CASE("harness: the budget is CPU time, so a descheduled case is not a failing case") {
@@ -166,4 +167,87 @@ CY_TEST_CASE("harness: the stall verdict separates a busy machine from a waiting
     // A clock that ran backwards, or a contention figure larger than the window, saturates at zero
     // rather than wrapping to something enormous.
     CY_CHECK(stall_verdict(150'000'000ULL, 400'000'000ULL, kCeiling) == StallVerdict::Contended);
+}
+
+// --- M11.c's fourth close: the fourth clock, time the case was blocked by the HOST ---------------
+
+CY_TEST_CASE("harness: a thread's state is read after the LAST parenthesis of its stat line") {
+    using cy::test::thread_state_from_stat;
+    const auto state = [](const char* text) {
+        return thread_state_from_stat(text, text == nullptr ? 0 : std::strlen(text));
+    };
+
+    CY_CHECK_EQ(state("4182225 (cat) R 4182220 4182225"), 'R');
+    CY_CHECK_EQ(state("17 (cy_test_unit_) D 1 17 17 0 -1"), 'D');
+    // A thread may call itself anything in sixteen bytes. A parser that stopped at the FIRST ')'
+    // would read this sleeping thread as blocked on the disk and excuse its sleep.
+    CY_CHECK_EQ(state("17 (x) D (y) S 1 17"), 'S');
+    CY_CHECK_EQ(state("17 (a b)) R 1"), 'R');
+    // Not a stat line, or cut short: no state rather than a guess.
+    CY_CHECK_EQ(state(""), '\0');
+    CY_CHECK_EQ(state("no parenthesis here"), '\0');
+    CY_CHECK_EQ(state("17 (cut)"), '\0');
+    CY_CHECK_EQ(state("17 (cut) "), '\0');
+    CY_CHECK_EQ(state(nullptr), '\0');
+}
+
+CY_TEST_CASE("harness: the instrument says whether it can see the case blocked by the host") {
+#if defined(__linux__)
+    CY_CHECK(cy::test::budget_measures_host_blocking());
+    // Cumulative and monotonic across the case, for the same reason as the runqueue clock.
+    const unsigned long long first = cy::test::blocked_on_host_ns();
+    const unsigned long long second = cy::test::blocked_on_host_ns();
+    CY_CHECK_GE(second, first);
+#else
+    CY_CHECK_FALSE(cy::test::budget_measures_host_blocking());
+    CY_CHECK_EQ(cy::test::blocked_on_host_ns(), 0ULL);
+#endif
+}
+
+CY_TEST_CASE(
+    "harness: a case that SLEEPS is not blocked by the host, so a sleep is still a stall") {
+    // THE NEGATIVE CONTROL FOR THE FOURTH CLOCK. A sleep, a futex, a join and a pipe read are
+    // interruptible sleeps; only a wait for the disk, a page fault or a kernel lock is not. If this
+    // clock grew across a sleep, the guard would subtract the sleep and the ceiling would catch
+    // nothing. Two milliseconds, the file's sanctioned exemption, which is two samples at the unit
+    // tier's interval — enough for a clock that counted sleeping to count it.
+    const unsigned long long blocked_before = cy::test::blocked_on_host_ns();
+    const auto started = std::chrono::steady_clock::now();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const unsigned long long blocked = cy::test::blocked_on_host_ns() - blocked_before;
+
+    const auto slept_ns =
+        static_cast<unsigned long long>(std::chrono::nanoseconds(elapsed).count());
+    CY_CHECK_GE(slept_ns, 1'500'000ULL);
+    CY_CHECK_LT(blocked, slept_ns / 10);
+}
+
+CY_TEST_CASE(
+    "harness: time blocked on the host's disk is the host's, and is excused like a queue") {
+    using cy::test::stall_verdict;
+    using cy::test::StallVerdict;
+
+    // THE FLAKE, WITH ITS OWN NUMBERS: `unit.determinism`'s first case at M11.c's fourth close held
+    // the suite for 655.4 ms of wall clock with 0.21 ms of CPU and no runqueue wait at all, against
+    // a 234.9 ms ceiling. With only the runqueue clock subtracted that is a stall, which is how it
+    // failed a gate run while passing three runs in three alone.
+    constexpr unsigned long long kCeiling = 234'900'000ULL;
+    constexpr unsigned long long kWall = 655'400'000ULL;
+    CY_CHECK(stall_verdict(kWall, 0, kCeiling) == StallVerdict::Stalled);
+
+    // The guard hands the verdict the host's WHOLE share — runqueue wait plus time blocked on the
+    // disk. 500 ms blocked leaves 155 ms of the case's own, inside the ceiling: excused.
+    constexpr unsigned long long kRunqueue = 0;
+    constexpr unsigned long long kBlocked = 500'000'000ULL;
+    CY_CHECK(stall_verdict(kWall, kRunqueue + kBlocked, kCeiling) == StallVerdict::Contended);
+
+    // And the two add: neither half alone accounts for the excess here, both together do.
+    CY_CHECK(stall_verdict(kWall, 250'000'000ULL, kCeiling) == StallVerdict::Stalled);
+    CY_CHECK(stall_verdict(kWall, 250'000'000ULL + 250'000'000ULL, kCeiling) ==
+             StallVerdict::Contended);
+
+    // Blocking that does not account for the excess excuses nothing: a case that slept 600 ms and
+    // took one 10 ms page fault is still a stall.
+    CY_CHECK(stall_verdict(kWall, 10'000'000ULL, kCeiling) == StallVerdict::Stalled);
 }

@@ -85,6 +85,7 @@ FrameAssembly::FrameAssembly(Allocator& allocator) noexcept
       materials_(allocator),
       shadows_(allocator),
       sky_(allocator),
+      irradiance_terms_(allocator),
       temporal_(allocator),
       frame_(allocator),
       published_(allocator) {}
@@ -596,15 +597,35 @@ Status FrameAssembly::update_sky(const AssemblyView& view, AssemblyReport& out) 
     // zero, which is what a camera at the planet's centre should always have seen.
     const Vec3 eye = sky::ground_position(view.atmosphere, view.cull.camera_position.y);
 
-    const Expected<bool, Error> rebuilt = sky_.update(view.atmosphere, eye, view.sun_direction);
+    const Expected<bool, Error> rebuilt =
+        sky_.update(view.atmosphere, eye, view.sun_direction, jobs_);
     if (!rebuilt) {
         return make_unexpected(rebuilt.error());
     }
     out.sky_rebuilt = *rebuilt;
     // Upward-facing, which is the ambient term a frame's sky contributes to a horizontal surface —
     // the reference `fit_sky_gradient` is measured against and the number a light meter would read.
-    sky_irradiance_ =
-        sky::sky_irradiance(view.atmosphere, eye, view.sun_direction, Vec3{0.0F, 1.0F, 0.0F});
+    const Vec3 up{0.0F, 1.0F, 0.0F};
+    // `sky_irradiance()`'s own default, named so that the serial and the lent forms cannot drift.
+    constexpr u32 kAmbientSamples = 32;
+    if (jobs_ == nullptr) {
+        sky_irradiance_ =
+            sky::sky_irradiance(view.atmosphere, eye, view.sun_direction, up, kAmbientSamples);
+        return ok();
+    }
+    const u32 directions = sky::sky_irradiance_directions(kAmbientSamples);
+    if (irradiance_terms_.size() < directions) {
+        if (Status sized = irradiance_terms_.resize(directions); !sized) {
+            return sized;
+        }
+    }
+    const Expected<Vec3, Error> irradiance =
+        sky::sky_irradiance(view.atmosphere, eye, view.sun_direction, up, kAmbientSamples, *jobs_,
+                            Span<Vec3>(irradiance_terms_.data(), irradiance_terms_.size()));
+    if (!irradiance) {
+        return make_unexpected(irradiance.error());
+    }
+    sky_irradiance_ = *irradiance;
     return ok();
 }
 

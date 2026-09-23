@@ -51,7 +51,7 @@ came out 3.2 ms rather than 3.7 leads with a figure half a millisecond lower and
 downstream of it moves together. The `worst modelled frame` printed beside it moved 13.5 to 14.2 ms
 over the same nine runs, which is why it is a figure and not the headline.
 
-## Three things this artefact found
+## Four things this artefact found
 
 **1. `check_watertight`'s monotonicity test is sensitive to the scale a mesh is cooked at, and the
 sensitivity is in single precision.** Cooked at world size — a terrain slab 44 m across — the check
@@ -91,6 +91,20 @@ slower. What the arbiter controls is the filtered frame time, driven to `budget 
 individual frame is that plus this scene's ±2 % noise — so a claim about individual frames is a
 claim the control law does not make. The artefact now asserts on where the filtered frame *settled*
 under the spike, and prints the count of individual frames over budget beside it as a figure.
+
+**4. The release profile rendered the shot through a different focal length, and only by one
+ulp of `tan`.** `render.virtual_geometry_shaded` went red in release alone: 2 of 57,600 texels,
+worst channel delta 10 at (297, 14). At both, the hardware rasteriser had given the pixel to the
+other triangle of a shared edge. Per-pixel dumps from both builds put the whole difference in
+`world_to_clip`, which differed by one or two ulps wherever the focal length enters. The camera was
+bit-identical. Link-time optimisation had specialised `render_frames` for the suite's constant
+options and folded `tan(fov / 2)` at compile time through MPFR (`0x1.279a74p-1`, correctly rounded),
+where debug, dev and profile call glibc's `tanf` at run time (`0x1.279a76p-1`). No FMA was involved:
+the binary is baseline x86-64 and has none. `shot_world_to_clip` now reads the field of view through
+a volatile, so every profile goes through the same evaluator, and the committed reference, which dev
+wrote, is unchanged. `unit.fidelity_shot_projection` holds the matrix to that without a device. The
+general lesson, which belongs to `core-math`: a transcendental with a constant argument is not the
+same number in every build.
 
 ## What the artefact does not claim
 

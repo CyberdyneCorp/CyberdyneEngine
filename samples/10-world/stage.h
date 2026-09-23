@@ -186,7 +186,13 @@ public:
 
     /// The workers the per-frame plant proxies are written on — the world's own job system. Null,
     /// the default, writes them on the calling thread; the streams hold the same bits either way.
-    void set_jobs(jobs::JobSystem* jobs) noexcept { jobs_ = jobs; }
+    ///
+    /// LENT TO THE FRAME ASSEMBLY TOO, once the stage is open. Its sky view table and ambient
+    /// irradiance are rebuilt every frame this camera and this sun move, which in a day compressed
+    /// into sixty-four frames is every frame, and on one thread that was over half of
+    /// `stage_submit_ms`: measured on the RTX 5060 host, 4.7 ms of a 7.5 ms band at a daytime
+    /// sun, 3.0 ms of it the irradiance alone. Same bits either way, for the same reason.
+    void set_jobs(jobs::JobSystem* jobs) noexcept;
 
     void close() noexcept;
 

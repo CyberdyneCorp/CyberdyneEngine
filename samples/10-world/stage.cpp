@@ -600,6 +600,13 @@ const char* Stage::device_name() const noexcept {
                : "none";
 }
 
+void Stage::set_jobs(jobs::JobSystem* jobs) noexcept {
+    jobs_ = jobs;
+    if (device_ != nullptr) {
+        device_->assembly.set_jobs(jobs);
+    }
+}
+
 Status Stage::open(u32 width, u32 height) noexcept {
     width_ = width;
     height_ = height;

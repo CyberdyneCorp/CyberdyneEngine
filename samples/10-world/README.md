@@ -161,14 +161,37 @@ frames of the take compare byte-identical, PNG for PNG, against the build before
 
 Measured back to back on the same loaded host (load average about 12), the build before takes
 24.7 ms mean and 30.2 ms worst and this one 12.9 ms mean and 15.8 ms worst. Headless went from 10.4
-to 4.8 ms mean. **The margin is thin and it is not this program's to widen.** About 7.5 ms of every
-frame is `stage_submit`, and most of that is `FrameAssembly::update_sky()` — an unconditional
-`sky::sky_irradiance()` and a `SkyViewTable` rebuild every frame, because this take compresses a day
-into 64 frames and the sun moves about five degrees a frame — and the device wait. The frames
-nearest the horizon add `compose_sky_lighting()`'s gradient fit (`sky_ms` about 3.5 ms at sunset
-against 0.8 at night), which puts them at about 15.5–16 ms; a submit that stalls for a few
-milliseconds on a shared host is then enough to cross 16.7, and on this machine, shared with other
-builds and device runs, about half the takes still did.
+to 4.8 ms mean.
+
+**`stage_submit` WAS MOSTLY THE SKY, INTEGRATED ON ONE THREAD.** Timed phase by phase inside
+`Stage::shoot()` (thread CPU time and context switches beside the wall clock), a daytime frame's
+7.5 ms of `stage_submit` was 4.7 ms of `FrameAssembly::assemble()`, 2 ms of device wait and under
+1 ms of recording and submission. The assembly's time was all `update_sky()`: a `SkyViewTable`
+rebuild (1.5 ms) and `sky::sky_irradiance()` over 1 024 upward directions (3.0 ms), both redone
+every frame because this take compresses a day into 64 frames and the sun moves about five degrees
+a frame, so no cache could have saved them. The spikes were that same work on a thread the host had
+slowed: no involuntary context switch in the spiking frames, but the thread's own CPU time doubled,
+and so did every other processor band in the same frame. The stage now lends the world's four
+workers to the assembly (`Stage::set_jobs` → `FrameAssembly::set_jobs`), and both integrals are
+spread over them with every direction written to its own slot and the irradiance summed in index
+order, so the answer is the serial one bit for bit (`render_sky_light` and `render_assembly` assert
+it, and all 64 frames of the take compare byte-identical, PNG for PNG, against the build before).
+The assembly's share went from about 4.7 ms to 1.3–1.8 ms, and `stage_submit`'s mean from about 7
+to about 4 ms.
+
+| same host, same command line, alternated with the build before | before: mean / worst | after: mean / worst |
+|---|---|---|
+| no build of this session's own beside it (load average 7–10 from other work) | 11.4–11.6 / 13.4–14.8 ms | 9.0–9.1 / 10.6–11.6 ms |
+| a `-j 8` clean rebuild beside it | 11.8–20.4 / 16.2–29.1 ms | 10.4–14.8 / 20.4–41.0 ms |
+
+**THE MARGIN STILL DOES NOT SURVIVE A BUILD BESIDE IT, AND IT IS NO LONGER THE SUBMIT.** With a
+build running, the worst frame is one of two things, and the take now prints the worst frame's own
+bands so that a red run says which. Either it is a frame near the horizon, where
+`compose_sky_lighting()`'s gradient fit and cloud probes make `sky_ms` about 3.4 ms on a quiet host
+and 7 ms on a slowed one; or it is a frame in which EVERY processor band is four to five times its
+median at once — weather 8.9 ms against 1.6, ocean 4.5 against 0.6, the stage's build and submit
+likewise — which is the process losing its processor, not any one band stalling. Neither is in the
+submit path.
 
 Headless has a narrower meaning now: it measures authoritative simulation and skips visual terrain,
 cloud, and foam work because there is no device to consume it. The same 64-frame take is committed
