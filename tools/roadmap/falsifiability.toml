@@ -457,7 +457,7 @@ criterion = "world-budget-on-a-device"
 digest = "394ac08e6a878ace"
 verdict = "proven against a built tree"
 mutation = "rename-token '--budget-ms' in samples/10-world/main.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 2: error: recipe `run-sample` failed with exit code 2), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-budget (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
