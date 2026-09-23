@@ -1438,7 +1438,11 @@ source = "task 3.8, rendering-materials-and-shading, shader-system, ROADMAP M11.
 kind = "command"
 run = '''
 set -eo pipefail
-out="$(just measure-beauty-mip-chain --profile dev --width 960 --height 540 --supersample 1 2>&1)" || { printf '%s\n' "$out" | grep -vE "^graphics validation" | tail -30; echo "the measurement FAILED"; exit 1; }
+# THE BUILD TREE IS NAMED, not left to the recipe's default: `falsify prove` routes a criterion to a
+# built tree only when its body says it needs one, and `just measure-*` is not a word it reads, so
+# this body was run in the source-only sandbox and timed out building there instead of being judged.
+d="${CY_BUILD_DIR:-build/dev}"
+out="$(CY_BUILD_DIR="$d" just measure-beauty-mip-chain --profile dev --width 960 --height 540 --supersample 1 2>&1)" || { printf '%s\n' "$out" | grep -vE "^graphics validation" | tail -30; echo "the measurement FAILED"; exit 1; }
 printf '%s\n' "$out" | grep -E "^beauty mip chain:"
 printf '%s\n' "$out" | grep -q "the shot reads its cooked mip chain" || { echo "the judge did not say the chain was read"; exit 1; }
 '''
