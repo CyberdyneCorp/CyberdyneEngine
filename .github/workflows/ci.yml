@@ -1296,7 +1296,10 @@ jobs:
         env:
           CY_CROSS_LEG_LABEL: ${{ matrix.label }}
         run: just test-determinism --publish-digest cross-leg-digests/${{ matrix.label }}.digest
+      # The test writes its measured digest even when a golden check finds a disagreement.
+      # Preserve that leg's value so the comparator can report the finding across runners.
       - uses: actions/upload-artifact@v5
+        if: always()
         with:
           name: cross-leg-digest-${{ matrix.label }}
           path: cross-leg-digests/${{ matrix.label }}.digest
@@ -1402,15 +1405,26 @@ jobs:
   # list of what is known to be open when it happens.
   milestone:
     name: milestone — the closed milestones' exit criteria (nightly)
-    needs: build
+    needs:
+      - build
+      - cross-leg-publish
     # Nightly and on demand only. The reasoning is the block above; the short form is that this is a
     # multi-hour ledger and `main` is pushed to many times a day.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # A failed publisher leg must not silently skip the two architecture criteria: the other
+    # published legs may still be enough to compare. The download/comparator will fail if not.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled()
     runs-on: ubuntu-24.04
     timeout-minutes: 480
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The two M11.a `where = "ci"` criteria run the same comparator as cross-leg-compare.
+      # Supply this job with the current run's actual publisher artifacts; --ci alone cannot
+      # manufacture the cross-architecture evidence it is being asked to evaluate.
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: cross-leg-digest-*
+          path: cross-leg-digests
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update

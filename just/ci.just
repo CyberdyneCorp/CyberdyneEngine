@@ -46,6 +46,8 @@ ci-check *args:
     # began refusing everything would otherwise read exactly like seventeen discriminating ones.
     echo "==> cross-leg   the audit behind m9:lockstep-cross-platform and two more, against a dummy job"
     python3 tools/ci/cross_leg_audit.py --selftest
+    echo "==> cross-leg   the nightly ledger receives the publisher artifacts"
+    python3 tools/ci/test_cross_leg_ledger.py
 
 # List the jobs of every workflow and the recipes each one invokes. The gate set, from the source.
 ci-jobs:

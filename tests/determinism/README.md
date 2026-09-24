@@ -42,6 +42,16 @@ fixtures hold that in `tools/ci/test_cross_leg_digests.py`, run by `just ci-chec
 The architecture compared is the one the **binary** detected, never the workflow's label for the
 leg, so two runners of one architecture cannot be made into two by naming them differently.
 
+The nightly `milestone` job downloads the same publisher artifacts before running
+`just roadmap-milestone m11b --ci`. Without that download, its two M11.a cross-architecture
+criteria would fail for missing digests even when the separate comparison job succeeded.
+`tools/ci/test_cross_leg_ledger.py` checks the dependency, artifact routing, the condition that
+still runs the ledger when one publisher fails, and the `--ci` invocation with mutations that must
+fail. The publisher uploads its digest even if its test reports a divergence, so the comparator can
+show the differing value. The real Linux arm64 and x86-64 CI digests for run
+[`35843497860`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/35843497860)
+agree on both lockstep fields and both PCG fields; the comparison still runs in CI on every push.
+
 **What this does not answer**, said here rather than left to be assumed: `cy::pcg::ExecutionDomain`
 is Editor, Cook, Runtime, Streaming and Dynamic — there is **no GPU execution domain in this tree**
 — and no hosted runner has a device, so `m10:pcg-gpu-domain-agreement` stays open. The last case in
