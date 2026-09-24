@@ -948,8 +948,11 @@ private:
                     ::close(pipe_ends[1]);
                     write_and_fsync_forever(paths_[index].c_str(), chunk_.data(), cpus[index]);
                 }
-                if (writer > 0) {
-                    (void)::write(pipe_ends[1], &writer, sizeof(writer));
+                // A writer whose pid never reaches the parent could never be killed by it, so a
+                // short write ends that writer here instead of leaking it.
+                if (writer > 0 && ::write(pipe_ends[1], &writer, sizeof(writer)) !=
+                                      static_cast<ssize_t>(sizeof(writer))) {
+                    (void)::kill(writer, SIGKILL);
                 }
             }
             ::_exit(0);
