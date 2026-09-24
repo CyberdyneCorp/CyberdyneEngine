@@ -55,6 +55,7 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES
         main.cpp
+        host_load.cpp
         world.cpp
         stage.cpp
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
@@ -86,7 +87,7 @@ if(CY_RENDERER_METAL)
 endif()
 
 # ================================================================================================
-# THERE IS NO CTest ENTRY HERE, AND THAT IS DELIBERATE
+# THE PICTURE HAS NO CTest ENTRY HERE, AND THAT IS DELIBERATE
 # ================================================================================================
 #
 # The picture needs a graphics device, and just/run.just:366's note about `capture-virtual-geometry`
@@ -99,3 +100,46 @@ endif()
 # `integration.water_*`, `unit.foliage`, `integration.foliage_*`, `unit.weather`,
 # `integration.weather_*`, `unit.pcg`, `integration.pcg_*` and `unit.sky` each test one of the parts
 # this artefact composes.
+
+# ================================================================================================
+# TWO ENTRIES THAT NEED NO DEVICE: THE QUIET-HOST CHECK, UNDER A HOST MADE BUSY ON PURPOSE
+# ================================================================================================
+#
+# `m11a:world-budget-on-a-device` measures on a quiet host and fails, saying "host too busy:", when
+# the host is not. `quiet_host_test.py` runs this binary HEADLESS, so every machine can judge it,
+# with four niced spinners it starts on purpose and kills by PID, and requires the run to fail with
+# that reason. Removing either check turns its entry red:
+#
+#   * `smoke.world_quiet_host_before` loads the host BEFORE the take. Judged on every host: a busy
+#     host is exactly what it needs, so it can never be "not evaluated".
+#   * `smoke.world_quiet_host_across` loads the host once the take has STARTED. It needs the pre-take
+#     check to pass first, which needs a host that is quiet to begin with; on a busy one it exits 3,
+#     SKIP_RETURN_CODE, and says why. It is a separate entry so that its skip never hides the other
+#     leg's verdict.
+#
+# RUN_SERIAL because both load four cores on purpose and no other suite should share the machine.
+if(NOT CY_BUILD_TESTS)
+    return()
+endif()
+find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+if(NOT Python3_Interpreter_FOUND OR NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(STATUS "samples/10-world: smoke.world_quiet_host_* need python3 and Linux's /proc, so "
+                   "they are not declared.")
+    return()
+endif()
+get_directory_property(CY_WORLD_QUIET_TIMEOUT DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                       DEFINITION CY_TEST_TIMEOUT_smoke)
+if(NOT CY_WORLD_QUIET_TIMEOUT)
+    message(FATAL_ERROR
+        "samples/10-world: the test taxonomy's timeouts could not be read from "
+        "tests/CMakeLists.txt. If those variables were renamed, this lookup should move with them.")
+endif()
+foreach(leg IN ITEMS before across)
+    add_test(NAME smoke.world_quiet_host_${leg}
+             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/quiet_host_test.py"
+                     --sample "$<TARGET_FILE:cy_sample_world>" --leg ${leg}
+             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    set_tests_properties(smoke.world_quiet_host_${leg} PROPERTIES
+                         LABELS "smoke" TIMEOUT "${CY_WORLD_QUIET_TIMEOUT}" RUN_SERIAL TRUE)
+endforeach()
+set_tests_properties(smoke.world_quiet_host_across PROPERTIES SKIP_RETURN_CODE 3)

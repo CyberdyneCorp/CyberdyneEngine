@@ -483,7 +483,7 @@ token  = "--budget-ms"
 note   = "THE MUTATION THIS CRITERION OWES THE DAY IT GOES GREEN, declared now rather than then. It is RED as written — the take costs about 114 ms a frame against 16.7 — so `falsify.prove` takes the `red in the tree` route and runs no mutation at all; what makes TODAY's red trustworthy is `_inspect_samples`, which refuses a sample name no `samples/*/CMakeLists.txt` declares and would have refused this criterion outright in the state the gate found it. When the three bands move into shaders and the budget is met, `reconcile` demands an ordinary mutation proof before the ladder will take the green, and this is it: rename the flag the sample parses and the run exits 2 at `unknown argument` instead of printing a measured verdict, so the criterion goes red again. Renaming `OVER the budget` was rejected — the criterion reads the sample's exit code and not its words, so that mutation would change nothing and be recorded as one that cannot fail."
 [[criterion]]
 id = "world-budget-on-a-device"
-describe = "the world demo stays inside 16.7 ms for every frame of the 64-frame day/night cycle while a real graphics device draws it. The rendered path must dispatch terrain field shading, cloud composition, and temporal foam once per frame, emit frame images, report zero RHI validation errors, and fail if a required dispatch or rendered-output manifest is absent"
+describe = "the world demo stays inside 16.7 ms for every frame of the 64-frame day/night cycle while a real graphics device draws it, MEASURED ON A QUIET HOST. The rendered path must dispatch terrain field shading, cloud composition, and temporal foam once per frame, emit frame images, report zero RHI validation errors, and fail if a required dispatch or rendered-output manifest is absent. THE QUIET HOST IS PART OF THE CLAIM because a frame budget on a loaded machine measures the machine: this binary held at 10.8 ms worst alone on the host and missed at 58 to 286 ms beside 24 spinning processes. `--quiet-host` waits up to ten minutes before the take for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, then judges the take again a second at a time, with this program's own CPU time subtracted, and requires its BUSIEST second to be quiet too, since one busy second is enough to make the worst frame. A host that is not quiet FAILS the criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.world_quiet_host_before` and `smoke.world_quiet_host_across` prove each check is live by loading the host on purpose"
 source = "tasks 1.2, ROADMAP M11.a exit criteria"
 kind = "command"
 run = '''
@@ -491,8 +491,12 @@ set -eo pipefail
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/frames"
-just run-sample world --seed 20260913 --seconds 8 --fps 8 --frames "$work/frames" --budget-ms 16.7
+just run-sample world --seed 20260913 --seconds 8 --fps 8 --frames "$work/frames" --budget-ms 16.7 --quiet-host
 '''
+# DECLARED, NOT LEFT TO DERIVATION: the body is underivable today and so runs alone anyway, but a
+# quiet host is this criterion's premise and it must not start running beside other criteria the day
+# the body becomes derivable.
+needs = ["exclusive"]
 requires = "gpu"
 reason = "the measurement with a device drawing needs one; `world-budget-headless` above carries the same claim on every machine, which is M8.c's rule that no claim is judgeable only where a GPU is"
 timeout_s = 3600

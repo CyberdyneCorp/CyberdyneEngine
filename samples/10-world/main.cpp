@@ -41,6 +41,7 @@
 // samples/09b-animated-character makes, and the same one `simulation-and-determinism` makes about a
 // simulation tick.
 
+#include "host_load.h"
 #include "stage.h"
 #include "world.h"
 
@@ -100,6 +101,16 @@ struct Options {
     /// seven-times defect one level up. The flag exists so the two are different runs.
     f32 budget_ms = 0.0F;
     bool headless = false;
+    /// MEASURE ON A QUIET HOST, OR FAIL SAYING THE HOST WAS NOT QUIET. A frame budget on a loaded
+    /// machine measures the machine: `m11a:world-budget-on-a-device` held at 10.8 ms worst alone
+    /// on the host and missed at 58 to 286 ms beside 24 spinning processes, same binary, same
+    /// world. `--quiet-host` waits up to `--quiet-wait-s` for the host to go quiet before the take
+    /// and judges the host again across the take; either one failing fails the run with a
+    /// "host too busy:" reason and the numbers. host_load.h says what "quiet" means.
+    bool quiet_host = false;
+    /// Ten minutes: a ledger that reaches this criterion just as something else finishes still
+    /// measures, and a host that stays busy for ten minutes is reported as busy.
+    u32 quiet_wait_s = 600;
 };
 
 /// `strtol` and `strtoull` rather than `atoi`, which reports no conversion error at all: a
@@ -223,7 +234,10 @@ private:
             cursor.number("--fps", out.fps) || cursor.number("--still-frame", out.still_frame) ||
             cursor.number("--regions", out.regions) || cursor.number("--seed", out.seed) ||
             cursor.number("--seconds", out.seconds) ||
-            cursor.number("--budget-ms", out.budget_ms) || cursor.flag("--headless", out.headless);
+            cursor.number("--budget-ms", out.budget_ms) ||
+            cursor.flag("--headless", out.headless) ||
+            cursor.flag("--quiet-host", out.quiet_host) ||
+            cursor.number("--quiet-wait-s", out.quiet_wait_s);
         if (!recognised) {
             const std::string_view argument = cursor.current();
             std::fprintf(stderr, "unknown argument: %.*s\n", static_cast<int>(argument.size()),
@@ -452,9 +466,9 @@ void print_hour(u64 frame, const WorldState& state) {
     return stage.write_manifest(out, manifest_path);
 }
 
-/// Simulate and film the whole cycle.
+/// Simulate and film the whole cycle. `watch`, when there is one, looks at the host between frames.
 [[nodiscard]] Status run_take(World& world, Stage& stage, const Options& options, u64 frames,
-                              u32 still_frame, bool wants_pictures, Take& take) {
+                              u32 still_frame, bool wants_pictures, Take& take, TakeWatch* watch) {
     for (u64 frame = 0; frame < frames; ++frame) {
         FrameCosts cost;
         if (Status advanced = world.advance(cost); !advanced) {
@@ -474,6 +488,9 @@ void print_hour(u64 frame, const WorldState& state) {
         }
         if ((frame % (frames / 24 == 0 ? 1 : frames / 24)) == 0) {
             print_hour(frame, world.state());
+        }
+        if (watch != nullptr) {
+            watch->sample();
         }
     }
     return ok();
@@ -696,6 +713,39 @@ struct Band {
     return ok();
 }
 
+/// Wait for the host to go quiet before the take. False, with the reason on stderr, when it was
+/// not.
+[[nodiscard]] bool host_quiet_before_take(u32 wait_seconds) noexcept {
+    std::printf("\n=== the host, before the take (waiting up to %u s for it to be quiet) ===\n",
+                wait_seconds);
+    std::fflush(stdout);
+    const QuietVerdict verdict = wait_for_quiet(wait_seconds, QuietLimits{});
+    if (!verdict.quiet) {
+        std::fprintf(stderr,
+                     "%s.\nThe take was not measured: a frame budget on a loaded machine "
+                     "measures the machine, so this run FAILS rather than passing or skipping.\n",
+                     verdict.reason);
+        return false;
+    }
+    std::printf("  %s\n", verdict.reason);
+    return true;
+}
+
+/// Judge the host across the take itself, by its busiest second. This program's own ticks are
+/// subtracted, so its own workers are not counted against the host.
+[[nodiscard]] bool host_quiet_during_take(TakeWatch& watch) noexcept {
+    const QuietVerdict verdict = watch.finish();
+    std::printf("\n=== the host, across the take (the busiest of %u windows) ===\n  %s\n",
+                watch.windows(), verdict.reason);
+    if (!verdict.quiet) {
+        std::fprintf(stderr,
+                     "%s.\nThe host was not quiet while the take was measured, so its frame times "
+                     "measure the machine and this run FAILS whatever they say.\n",
+                     verdict.reason);
+    }
+    return verdict.quiet;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -787,14 +837,25 @@ int main(int argc, char** argv) {
     const u32 still_frame =
         options.still_frame != 0 ? options.still_frame : static_cast<u32>((frames * 27) / 100);
 
+    if (options.quiet_host && !host_quiet_before_take(options.quiet_wait_s)) {
+        return 1;
+    }
+    TakeWatch watch(host_cores(), QuietLimits{});
+    watch.begin();
+
     Take take(allocator);
     std::printf("\n=== the take: %llu frames, one simulated day ===\n",
                 static_cast<unsigned long long>(frames));
-    if (Status ran = run_take(world, stage, options, frames, still_frame, wants_pictures, take);
+    // Flushed so a reader on a pipe sees the take START, not only the whole run at exit:
+    // quiet_host_test.py loads the host at exactly this line.
+    std::fflush(stdout);
+    if (Status ran = run_take(world, stage, options, frames, still_frame, wants_pictures, take,
+                              options.quiet_host ? &watch : nullptr);
         !ran) {
         std::fprintf(stderr, "the take failed: %s\n", ran.error().message);
         return 1;
     }
+    const bool host_held = !options.quiet_host || host_quiet_during_take(watch);
 
     print_budget(take);
     std::printf("  authoritative take digest 0x%016llX\n",
@@ -845,5 +906,5 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    return budget_held ? 0 : 1;
+    return budget_held && host_held ? 0 : 1;
 }

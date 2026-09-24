@@ -193,6 +193,24 @@ median at once — weather 8.9 ms against 1.6, ocean 4.5 against 0.6, the stage'
 likewise — which is the process losing its processor, not any one band stalling. Neither is in the
 submit path.
 
+**SO THE CRITERION NOW MEASURES ON A QUIET HOST, AND SAYS SO.** The owner's decision: a frame
+budget on a loaded machine measures the machine, so `m11a:world-budget-on-a-device` passes
+`--quiet-host` and states in its own text the host it assumes. `host_load.h` is the check. Before the
+take it looks at the host a second at a time, for up to `--quiet-wait-s` (ten minutes by default),
+until one window shows every other process together using at most two cores and CPU pressure at or
+under 10%. Across the take it looks again a second at a time, with this program's own CPU time
+subtracted from the machine's so its own workers do not count against the host, and the take is
+judged by its BUSIEST second: one busy second is enough to make the worst frame, and an average over
+the whole take would hide it. A host that is not quiet at either point FAILS the run with a
+`host too busy:` line that carries the numbers. It is never a pass and never a skip. The budget, frame count, warm-up and worst-frame judgement are unchanged.
+
+The bounded wait is there so that a ledger reaching this criterion as something else finishes still
+measures. A host that stays busy for ten minutes is reported as busy. There is no retake after a busy
+take: the take advances the world, and a second take would be a different measurement. `loadavg` is
+printed and not judged, because it counts this program's own threads and takes a minute to decay.
+Where `/proc` cannot be read (anything but Linux) the verdict is `host load unreadable:`, and that
+fails too.
+
 Headless has a narrower meaning now: it measures authoritative simulation and skips visual terrain,
 cloud, and foam work because there is no device to consume it. The same 64-frame take is committed
 separately as headless evidence. Save, replay, lockstep, PCG, and gameplay state do not depend on the
@@ -222,6 +240,8 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--budget <path>` | write the per-frame, per-producer cost as a CSV, including field publication and device-stage bands |
 | `--budget-ms <ms>` | fail when the worst frame exceeds the threshold, a required visual dispatch is absent, or a rendered frame has no manifest |
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
+| `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
+| `--quiet-wait-s <s>` | how long `--quiet-host` waits for a quiet host before failing. Default 600 |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |
 | `--fps <n>` | frames per second of the take. One frame is one simulated tick |
 | `--width`, `--height` | refused unless even, for the video encoder's 4:2:0 |
@@ -229,7 +249,16 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--regions <n>` | regions per side. 24 is the 24x24 grid M10's spike measured on |
 | `--still-frame <n>` | which frame the still is taken from |
 
-## There is no CTest entry here, and that is deliberate
+## The picture has no CTest entry here, and that is deliberate
+
+The two entries this directory does declare are `smoke.world_quiet_host_before` and
+`smoke.world_quiet_host_across` (`quiet_host_test.py --leg ...`). Each runs the binary headless on a
+4x4 world under four niced spinners, which it starts on purpose and kills by PID, and requires
+`--quiet-host` to fail the run with `host too busy:`: the first loads the host before the take, the
+second once the take has started. Removing either check turns its entry red. The second needs the
+pre-take check to pass first, so on a host that is already busy it reports NOT EVALUATED and exits
+3, which CTest records as a skip; it is a separate entry so that skip never hides the first one's
+verdict. Neither needs a device, and both run `RUN_SERIAL`.
 
 The picture needs a graphics device. `just/run.just`'s own note about `capture-virtual-geometry`
 states the rule this follows: "It needs a graphics device. On a machine without one the tool says so
