@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "authored_frame.h"
 
 #include <cy/core/assets/cooked.h>
