@@ -54,6 +54,7 @@ cy_add_module(
     LAYER tools
     TYPE EXECUTABLE
     SOURCES
+        authored_frame.cpp
         layout_file.cpp
         main.cpp
         material_runtime.cpp
@@ -61,6 +62,9 @@ cy_add_module(
         pick_wire.cpp
         world_view.cpp
     PRIVATE_DEPENDENCIES
+        cy::rendering-pipeline
+        cy::import
+        cy::core-assets
         cy::sample-first-light
         cy::scene-serialization
         cy::scene

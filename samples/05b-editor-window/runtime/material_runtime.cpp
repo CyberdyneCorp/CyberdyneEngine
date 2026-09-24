@@ -26,8 +26,8 @@ using rendering::material::ProgramKind;
 using rendering::material::QualityTier;
 using rendering::material::ValueType;
 
-inline constexpr const char* kVertexEntry = "editorMaterialVertex";
-inline constexpr const char* kFragmentEntry = "editorMaterialFragment";
+[[maybe_unused]] inline constexpr const char* kVertexEntry = "editorMaterialVertex";
+[[maybe_unused]] inline constexpr const char* kFragmentEntry = "editorMaterialFragment";
 
 class Writer {
 public:

@@ -91,22 +91,10 @@
 // reason samples/03-first-light's does: `CY_SHADER_SLANG` is off by default and a milestone
 // artefact that only runs on a machine with a shader toolchain is one nobody can run.
 //
-// AND `frame_msl.h` IS DELIBERATELY NOT REGENERATED FOR M11.c TASK 3.7 — said here because a
-// generated file that has quietly stopped matching its source is worse than one that has not been
-// regenerated on purpose. `slangc -target metal` accepts the sampling below, and what it emits for
-// `cyMaterialTextures[]` is an unbounded `texture2d<float, access::sample>[]` entry-point
-// parameter with no argument-buffer declaration behind it — which is exactly the case
-// `cy/material.slang`'s `CY_MATERIAL_METAL_ARGUMENT_BUFFER` exists for and which no Metal
-// translation unit in this tree supplies for the frame. Regenerating it here would commit a
-// shipped artefact nobody on this host can run, so the committed MSL stays the one compiled before
-// this change: on Metal the frame carries the extra `materialTextures` word offsets in its block,
-// reads none of them, and shades the four constants it always did. Closing that is the Metal
-// backend's own rung — M11.d — and it is the same handover `slang_program.h` already records for
-// the fragment-stage lowering.
-//
-// `cyDepthFragment`'s MSL IS the one frame.slang module regenerated since, for M11.c task 3.4: it
-// reads no material table, and against the committed copy the regeneration changed only `#line`
-// numbers before the jitter removal below was made. The other three stay as described above.
+// For Metal, compile with CY_FRAME_METAL=1 and CY_MATERIAL_METAL_ARGUMENT_BUFFER=1. The view
+// resources below form one argument buffer. `embed_msl.py` checks Slang's compacted entry indices
+// and maps them to the RHI's fixed set and push slots. Set 0 carries the bounded material texture
+// table at the RHI's argument indices: globals 0, textures 1..128, sampler 129.
 
 module frame;
 
@@ -210,20 +198,49 @@ public struct CyInstanceTransform
     public float4 tint;
 };
 
+public struct CyFrameViewSet
+{
+    public ConstantBuffer<CyFrameData> frame;
+    public StructuredBuffer<Light> lights;
+    public StructuredBuffer<uint2> clusterHeaders;
+    public StructuredBuffer<uint> clusterIndices;
+    public StructuredBuffer<CyDrawInstance> drawInstances;
+    public StructuredBuffer<CyInstanceTransform> instances;
+    public StructuredBuffer<uint> materialWords;
+};
+
 [[vk::binding(0, 1)]]
-public ConstantBuffer<CyFrameData> cyFrame;
-[[vk::binding(1, 1)]]
-public StructuredBuffer<Light> cyLights;
-[[vk::binding(2, 1)]]
-public StructuredBuffer<uint2> cyClusterHeaders;
-[[vk::binding(3, 1)]]
-public StructuredBuffer<uint> cyClusterIndices;
-[[vk::binding(4, 1)]]
-public StructuredBuffer<CyDrawInstance> cyDrawInstances;
-[[vk::binding(5, 1)]]
-public StructuredBuffer<CyInstanceTransform> cyInstances;
-[[vk::binding(6, 1)]]
-public StructuredBuffer<uint> cyMaterialWords;
+public ParameterBlock<CyFrameViewSet> cyFrameView;
+
+#define cyFrame cyFrameView.frame
+#define cyLights cyFrameView.lights
+#define cyClusterHeaders cyFrameView.clusterHeaders
+#define cyClusterIndices cyFrameView.clusterIndices
+#define cyDrawInstances cyFrameView.drawInstances
+#define cyInstances cyFrameView.instances
+#define cyMaterialWords cyFrameView.materialWords
+
+#if defined(CY_FRAME_METAL)
+public struct CyFrameGlobalSet
+{
+    public ConstantBuffer<CyGlobalsData> globals;
+    public Texture2D<float4> textures[128];
+    public SamplerState sampler;
+};
+
+[[vk::binding(0, 0)]]
+public ParameterBlock<CyFrameGlobalSet> cyFrameGlobals;
+
+public float4 cyMaterialSampleTexture(uint bindlessIndex, float2 uv)
+{
+    return cyFrameGlobals.textures[bindlessIndex].Sample(cyFrameGlobals.sampler, uv);
+}
+
+public float4 cyMaterialSampleTextureLevel(uint bindlessIndex, float2 uv, float level)
+{
+    return cyFrameGlobals.textures[bindlessIndex].SampleLevel(cyFrameGlobals.sampler, uv, level);
+}
+#endif
 
 /// The one push constant: which draw is being recorded.
 public struct CyDrawPush

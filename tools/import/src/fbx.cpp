@@ -3,6 +3,7 @@
 #include <cy/import/fbx_clip.h>
 #include <cy/import/fbx_skeleton.h>
 #include <cy/import/model.h>
+#include <cy/import/texture.h>
 
 #include <ufbx.h>
 
@@ -159,7 +160,8 @@ constexpr OptionSpec kFbxOptions[] = {
 
 constexpr std::string_view kExtensions[] = {".fbx"};
 constexpr assets::AssetKind kProduces[] = {assets::AssetKind::Mesh, assets::AssetKind::Material,
-                                           assets::AssetKind::Animation, assets::AssetKind::Prefab};
+                                           assets::AssetKind::Texture, assets::AssetKind::Animation,
+                                           assets::AssetKind::Prefab};
 
 // --- BEGIN step 8: animations (cy/import/fbx_clip.h) ---------------------------------------------
 //
@@ -478,6 +480,59 @@ struct MeshSkin {
     return material;
 }
 
+[[nodiscard]] Status import_base_color_texture(const ufbx_texture& texture, usize index,
+                                               const ImportRequest& request, SubAssetNames& names,
+                                               ImportResult& out, std::string& stable_name) noexcept {
+    if (texture.type != UFBX_TEXTURE_FILE) {
+        return ok();
+    }
+    const std::string_view relative = view_of(texture.relative_filename);
+    Span<const u8> bytes;
+    if (texture.content.size != 0) {
+        bytes = Span<const u8>(static_cast<const u8*>(texture.content.data), texture.content.size);
+    } else if (request.resolver != nullptr && !relative.empty()) {
+        Expected<Span<const u8>, Error> external = request.resolver->read(relative);
+        if (external) {
+            bytes = *external;
+        }
+    }
+    if (bytes.empty()) {
+        return out.report(ImportSeverity::Warning, "missing-texture",
+                          "the base-colour texture has neither embedded bytes nor a readable "
+                          "external file", relative);
+    }
+
+    const usize dot = relative.find_last_of('.');
+    std::string extension = dot == std::string_view::npos ? "" : std::string(relative.substr(dot));
+    if (extension.empty()) {
+        extension = bytes.size() >= 2 && bytes[0] == 0xFFU && bytes[1] == 0xD8U ? ".jpg" : ".png";
+    }
+    Expected<assets::VirtualPath, Error> virtual_source =
+        assets::VirtualPath::normalise(std::string("embedded/texture") + extension);
+    if (!virtual_source) {
+        return make_unexpected(virtual_source.error());
+    }
+    ImportRequest image_request = request;
+    image_request.source = *virtual_source;
+    image_request.bytes = bytes;
+    image_request.options = nullptr;
+    ImportResult image_result;
+    TextureImporter importer;
+    if (Status imported = importer.import(image_request, image_result); !imported) {
+        return imported;
+    }
+    if (image_result.has_errors() || image_result.assets().empty()) {
+        return out.report(ImportSeverity::Warning, "unreadable-texture",
+                          "the base-colour texture could not be cooked", relative);
+    }
+    Array<u8> payload;
+    if (Status copied = payload.append(image_result.assets()[0].payload.span()); !copied) {
+        return copied;
+    }
+    stable_name = names.unique("texture/", view_of(texture.name), index);
+    return out.add(assets::AssetKind::Texture, stable_name, std::move(payload), false);
+}
+
 }  // namespace
 
 OptionsSchema fbx_options() noexcept {
@@ -487,10 +542,8 @@ OptionsSchema fbx_options() noexcept {
 ImporterInfo FbxImporter::info() const noexcept {
     ImporterInfo info;
     info.name = "fbx";
-    // 2 at M11.b: a skinned mesh now carries its joint bindings, which it did not before — every
-    // cluster was parsed and dropped. The cooked mesh record moved to version 2 with it, so every
-    // FBX re-cooks, which is what a version is for.
-    info.version = 2;
+    // Embedded base-colour images and their material links change the cooked sub-asset set.
+    info.version = 3;
     info.extensions = Span<const std::string_view>(kExtensions);
     info.produces = Span<const assets::AssetKind>(kProduces);
     info.description =
@@ -605,32 +658,29 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
                           request.source.view());
     }
 
-    // --- Textures. Recorded as dependencies and referenced by path; the texture importer is what
-    // imports them. Two importers for one file would mean two cooked textures and two asset ids for
-    // the same image.
-    for (usize index = 0; index < scene->textures.count; ++index) {
-        const ufbx_texture& texture = *scene->textures.data[index];
-        if (texture.type != UFBX_TEXTURE_FILE) {
+    SubAssetNames names;
+    // Cook each connected base-colour image once. ufbx exposes embedded bytes even when the
+    // source's relative .fbm path does not exist beside the FBX.
+    std::vector<std::string> texture_names(scene->textures.count);
+    for (usize material_index = 0; material_index < scene->materials.count; ++material_index) {
+        const ufbx_material* material = scene->materials.data[material_index];
+        const ufbx_material_map& map = material->pbr.base_color;
+        const ufbx_texture* texture = map.texture;
+        if (!map.texture_enabled || texture == nullptr ||
+            texture->typed_id >= texture_names.size()) {
             continue;
         }
-        const std::string_view relative = view_of(texture.relative_filename);
-        if (relative.empty() || request.resolver == nullptr) {
+        std::string& stable = texture_names[texture->typed_id];
+        if (!stable.empty()) {
             continue;
         }
-        if (Expected<Span<const u8>, Error> bytes = request.resolver->read(relative); !bytes) {
-            if (Status reported = out.report(
-                    ImportSeverity::Warning, "missing-texture",
-                    "a texture this model references is not beside it; the material will resolve "
-                    "to a placeholder until it is added",
-                    relative);
-                !reported) {
-                ufbx_free_scene(scene);
-                return reported;
-            }
+        if (Status imported = import_base_color_texture(*texture, texture->typed_id, request,
+                                                        names, out, stable);
+            !imported) {
+            ufbx_free_scene(scene);
+            return imported;
         }
     }
-
-    SubAssetNames names;
 
     // --- 7. The skeleton. Everything about it is in cy/import/fbx_skeleton.h; this is the whole of
     // its call site, deliberately, because step 7 needs nothing from this file but the loaded scene
@@ -715,8 +765,14 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
         if (!state.import_materials) {
             continue;
         }
+        StandardMaterial material = standard_material_of(source);
+        const ufbx_texture* texture = source.pbr.base_color.texture;
+        if (source.pbr.base_color.texture_enabled && texture != nullptr &&
+            texture->typed_id < texture_names.size()) {
+            material.base_color_texture_name = texture_names[texture->typed_id];
+        }
         Array<u8> payload;
-        if (Status written = write_cooked_material(standard_material_of(source), payload);
+        if (Status written = write_cooked_material(material, payload);
             !written) {
             ufbx_free_scene(scene);
             return written;

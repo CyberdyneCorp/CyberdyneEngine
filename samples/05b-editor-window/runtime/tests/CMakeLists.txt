@@ -34,6 +34,21 @@ function(cy_editor_window_runtime_declare_tests)
 
     if(APPLE AND CY_RENDERER_METAL AND CY_SHADER_SLANG)
         cy_add_test(
+            NAME editor_authored_frame_metal
+            KIND smoke
+            SOURCES
+                "${tests_dir}/test_authored_frame_metal.cpp"
+                "${tests_dir}/../authored_frame.cpp"
+            DEPENDENCIES
+                cy::rendering-pipeline cy::import cy::core-assets
+                cy::sample-first-light cy::scene-serialization cy::scene
+                cy::rhi-metal
+            DEFINITIONS
+                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
+        target_include_directories(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                   "${tests_dir}/..")
+
+        cy_add_test(
             NAME editor_material_metal
             KIND smoke
             SOURCES

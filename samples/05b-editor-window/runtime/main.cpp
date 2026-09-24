@@ -79,6 +79,7 @@
 #include <cy_reflect_generated_scene.h>
 
 #include "layout_file.h"
+#include "authored_frame.h"
 #include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
@@ -129,6 +130,12 @@ struct Options {
     f64 rate = 60.0;
     f64 orbit = 0.008;
     bool validation = true;
+};
+
+struct DeviceOwner {
+    Allocator& allocator;
+    rhi::Device* device;
+    ~DeviceOwner() { rhi::destroy_device(allocator, device); }
 };
 
 [[nodiscard]] const char* value_of(int argc, char** argv, const char* key,
@@ -238,6 +245,7 @@ constexpr f32 kFramingPhase = 0.12F;
 /// Everything the loop needs, gathered so the frame function is readable.
 struct Host {
     Options options;
+    AuthoredFrame* authored_frame = nullptr;
     first_light::Scene* scene = nullptr;
     first_light::Renderer* renderer = nullptr;
     viewport::Publisher* publisher = nullptr;
@@ -431,7 +439,17 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     host.anchored = object;
     host.anchored_identity = intent.identities[0];
 
-    const Vec3 pivot = relative_position(host.scene->objects()[object], host.camera);
+    Vec3 pivot{};
+    if (host.authored_frame == nullptr) {
+        pivot = relative_position(host.scene->objects()[object], host.camera);
+    }
+    Vec3 world_pivot;
+    if (host.authored_frame != nullptr &&
+        host.authored_frame->pivot_for(intent.identities[0], world_pivot)) {
+        pivot = world_pivot - Vec3{static_cast<f32>(host.camera.position[0]),
+                                   static_cast<f32>(host.camera.position[1]),
+                                   static_cast<f32>(host.camera.position[2])};
+    }
     // THE FRAME THE EDITOR IS SHOWING, not the one this runtime has since rendered. The editor
     // refuses a layout that names a different frame, and it is right to: hit-testing a click
     // against a layout from another frame is the same defect as resolving a pick against a newer
@@ -520,6 +538,14 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
     host.moves_applied += report.applied;
     host.nodes_created += report.created;
     host.nodes_deleted += report.deleted;
+    if (host.authored_frame != nullptr) {
+        (void)host.view_world->present_authored();
+        if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
+            !prepared) {
+            std::fprintf(stderr, "%s: authored scene: %s\n", kTag,
+                         prepared.error().message);
+        }
+    }
     if (report.applied > 0 && !host.change_pending) {
         // TASK 1.3, MEASURED. The next frame published is the one that carries this change; the
         // report says how many frames it actually took, worst case over the run.
@@ -718,9 +744,9 @@ void serve_editor(Host& host) noexcept {
                 // viewport opens at the origin looking down −Z, and this runtime is the only side
                 // that knows where its world is. Sent on the handshake rather than on every frame,
                 // because a runtime that re-aimed the camera continuously would own it.
-                const first_light::Camera framed = host.view_world->loaded()
-                                                       ? host.view_world->framing(*host.scene)
-                                                       : host.scene->camera_at(kFramingPhase);
+                const first_light::Camera framed = host.authored_frame != nullptr
+                    ? host.authored_frame->framing(host.scene->camera_at(kFramingPhase))
+                    : host.scene->camera_at(kFramingPhase);
                 const f32 position[3] = {static_cast<f32>(framed.position[0]),
                                          static_cast<f32>(framed.position[1]),
                                          static_cast<f32>(framed.position[2])};
@@ -861,25 +887,34 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     }
 
     if (host.view_world->loaded()) {
-        (void)host.view_world->present(*host.scene);
-        // And the records a pick resolves against, from the same placement, before the draw.
-        if (Status published =
-                host.view_world->publish(*host.scene, host.camera, host.instances, host.draws);
-            !published) {
-            report("pick records", published.error());
-        }
+        if (host.authored_frame != nullptr) (void)host.view_world->present_authored();
+        else (void)host.view_world->present(*host.scene);
     }
 
-    const Expected<first_light::FrameReport, Error> frame =
-        host.renderer->render(*host.scene, host.camera);
-    if (!frame) {
-        report("frame", frame.error());
-        return false;
+    Span<const u32> texels;
+    if (host.authored_frame != nullptr) {
+        if (Status frame = host.authored_frame->render(host.view_world->world(), host.camera);
+            !frame) {
+            report("authored frame", frame.error());
+            return false;
+        }
+        texels = host.authored_frame->pixels();
+    } else {
+        const Expected<first_light::FrameReport, Error> frame =
+            host.renderer->render(*host.scene, host.camera);
+        if (!frame) {
+            report("frame", frame.error());
+            return false;
+        }
+        texels = host.renderer->color_texels();
     }
-    const Span<const u32> texels = host.renderer->color_texels();
     if (texels.empty()) {
         report("readback", Error{ErrorCode::Unavailable, "the renderer read back no pixels"});
         return false;
+    }
+    if (host.authored_frame != nullptr) {
+        if (Status published = host.authored_frame->publish(host.camera, host.instances, host.draws);
+            !published) report("pick records", published.error());
     }
 
     viewport::FrameStaging staging = host.publisher->begin_frame();
@@ -893,10 +928,19 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     // is the SAME layout, not a second computation: what a person aims at and what the editor
     // hit-tests came out of one call to `build_gizmo_layout`.
     const Canvas canvas{staging.pixels, staging.width, staging.height};
-    if (host.anchored != WorldView::kNoObject && host.anchored < host.scene->objects().size() &&
-        !host.layout.empty()) {
+    if (host.anchored != WorldView::kNoObject && !host.layout.empty()) {
         const u32 object = host.anchored;
-        const Vec3 pivot = relative_position(host.scene->objects()[object], host.camera);
+        Vec3 pivot{};
+        if (host.authored_frame == nullptr && object < host.scene->objects().size()) {
+            pivot = relative_position(host.scene->objects()[object], host.camera);
+        }
+        Vec3 world_pivot;
+        if (host.authored_frame != nullptr &&
+            host.authored_frame->pivot_for(host.anchored_identity, world_pivot)) {
+            pivot = world_pivot - Vec3{static_cast<f32>(host.camera.position[0]),
+                                       static_cast<f32>(host.camera.position[1]),
+                                       static_cast<f32>(host.camera.position[2])};
+        }
         Vec2 marker{0.0F, 0.0F};
         if (project_to_pixel(host.view, pivot, marker)) {
             draw_selection_marker(canvas, marker.x, marker.y, 26.0F);
@@ -975,10 +1019,10 @@ void print_report(const Host& host, const WorldView& view_world,
     // resolved against what was drawn rather than being refused by name.
     if (view_world.loaded()) {
         std::fprintf(stdout,
-                     "%s: world     %llu node(s) presented, %llu overflowed the %u slots; "
+                     "%s: world     %llu node(s) presented, %llu overflowed; "
                      "%llu transaction(s), %llu field(s) applied, %llu created, %llu deleted\n",
                      kTag, static_cast<unsigned long long>(view_world.presented()),
-                     static_cast<unsigned long long>(view_world.overflowed()), kWorldCapacity,
+                     static_cast<unsigned long long>(view_world.overflowed()),
                      static_cast<unsigned long long>(host.transactions_applied),
                      static_cast<unsigned long long>(host.moves_applied),
                      static_cast<unsigned long long>(host.nodes_created),
@@ -1058,21 +1102,18 @@ int main(int argc, char** argv) {
         report("device", device.error());
         return 1;
     }
+    DeviceOwner device_owner{allocator, device.value()};
     std::fprintf(stdout, "%s: device   backend=%s\n", kTag,
                  selection.selected != nullptr ? selection.selected : "(none)");
 
-    // THE SCENE IS BUILT WITH CAPACITY when a world is to be loaded: one ground plane and enough
-    // box slots for the world's nodes, which `WorldView::present` writes into and blanks the rest
-    // of. Without `--world` it is M3's ring, unchanged, which is what a headless run and
-    // `cy-viewport-transport-probe` still see.
-    const bool authoring = options.world[0] != '\0';
+    // The first-light scene remains the no-world fixture and supplies a fallback camera.
+    // Authored worlds use FrameAssembly and do not borrow its fixed box slots.
     first_light::SceneDescription scene_description;
-    scene_description.box_count = authoring ? kWorldCapacity : 6;
+    scene_description.box_count = 6;
     scene_description.sun_shadows = true;
     first_light::Scene scene(allocator);
     if (Status built = scene.build(scene_description); !built) {
         report("scene", built.error());
-        rhi::destroy_device(allocator, device.value());
         return 1;
     }
 
@@ -1080,7 +1121,6 @@ int main(int argc, char** argv) {
     WorldView view_world(allocator);
     if (Status opened = open_world(options, registry, view_world); !opened) {
         report("world", opened.error());
-        rhi::destroy_device(allocator, device.value());
         return 1;
     }
 
@@ -1094,8 +1134,19 @@ int main(int argc, char** argv) {
         first_light::Renderer renderer(allocator, *device.value());
         if (Status prepared = renderer.prepare(scene, renderer_options); !prepared) {
             report("renderer", prepared.error());
-            rhi::destroy_device(allocator, device.value());
             return 1;
+        }
+        AuthoredFrame authored_frame(allocator, *device.value());
+        if (view_world.loaded()) {
+            if (Status prepared = authored_frame.initialize(options.width, options.height,
+                                                            options.project); !prepared) {
+                report("authored frame", prepared.error());
+                return 1;
+            }
+            if (Status prepared = authored_frame.prepare_world(view_world.world()); !prepared) {
+                report("authored scene", prepared.error());
+                return 1;
+            }
         }
 
         viewport::PublisherOptions publisher_options;
@@ -1109,7 +1160,6 @@ int main(int argc, char** argv) {
             viewport::Publisher::create(publisher_options);
         if (!publisher) {
             report("publisher", publisher.error());
-            rhi::destroy_device(allocator, device.value());
             return 1;
         }
         if (const char* advisory = viewport::ring_advisory(options.buffers); advisory != nullptr) {
@@ -1124,7 +1174,6 @@ int main(int argc, char** argv) {
         if (options.host[0] != '\0') {
             if (Status listening = bridge.listen(options.host); !listening) {
                 report("bridge", listening.error());
-                rhi::destroy_device(allocator, device.value());
                 return 1;
             }
             std::fprintf(stdout, "%s: bridge   %s\n", kTag, options.host);
@@ -1168,6 +1217,7 @@ int main(int argc, char** argv) {
                                            "the material service session could not be created"});
         }
         host.options = options;
+        host.authored_frame = view_world.loaded() ? &authored_frame : nullptr;
         host.scene = &scene;
         host.view_world = &view_world;
         host.play = play.get();
@@ -1226,6 +1276,5 @@ int main(int argc, char** argv) {
         destroy_physics(allocator, physics_server, physics_backend);
     }
 
-    rhi::destroy_device(allocator, device.value());
     return exit_code;
 }

@@ -356,8 +356,12 @@ Status FrameScene::build(rhi::Device& device) noexcept {
                                          description.near_plane, description.far_plane);
     view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
 
-    Expected<rhi::BufferHandle, Error> readback = make_upload(
-        device, "pipeline readback", kReadbackBytes, rhi::BufferUsage::TransferDestination);
+    rhi::BufferDescription readback_description;
+    readback_description.name = "pipeline readback";
+    readback_description.size = kReadbackBytes;
+    readback_description.usage = rhi::BufferUsage::TransferDestination;
+    readback_description.memory = rhi::MemoryUse::Readback;
+    Expected<rhi::BufferHandle, Error> readback = device.create_buffer(readback_description);
     if (!readback.has_value()) {
         return make_unexpected(readback.error());
     }

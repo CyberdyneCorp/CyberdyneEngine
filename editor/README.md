@@ -351,7 +351,8 @@ The mesh reference lives on a `MeshRenderer` component with a `mesh` field, foun
 document's schema and declared there when the world does not already carry it — the same
 by-name relationship `TransformBinding` has, and the engine's own name for the component
 (`src/scene/src/node_template.cpp` declares `cy::render::MeshRenderer` and no build registers it
-yet). Until a renderer does, the reference is authoring data that round-trips through `.cyworld`.
+yet). The editor runtime resolves this authoring reference by name and draws its mesh through
+`FrameAssembly`; it does not require the component to be reflected to render saved worlds.
 
 ## Catalogue-driven material properties
 

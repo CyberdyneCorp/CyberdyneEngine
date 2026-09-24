@@ -93,12 +93,12 @@ uploaded and photographs the picture it always photographed. `apply_standard_def
 the same sentinel into every texture slot of a material, which the comment there had claimed since
 M3 while the block actually held zero — and zero is a perfectly good slot of the global table.
 
-**Metal is not closed here and the MSL is deliberately stale.** `slangc -target metal` accepts the
-sampling but emits an unbounded `texture2d<...>[]` entry-point parameter with no argument buffer
-behind it, which is what `CY_MATERIAL_METAL_ARGUMENT_BUFFER` exists for and which nothing supplies
-for the frame. `shaders/frame_msl.h` is therefore the artefact compiled before this change: on Metal
-the frame carries the new word offsets, reads none of them, and shades the four constants. That
-handover is M11.d's, and `cy/frame.slang`'s header says so at the regeneration invocations.
+**Metal now captures the frame.** The view resources in `cy/frame.slang` are one `ParameterBlock`,
+matching the Metal RHI's argument buffer for set 1. Slang compacts the MSL entry-point indices when
+other sets are unused; `shaders/embed_msl.py` checks and remaps the view to buffer 1 and the draw
+push constant to buffer 3. The captured geometry is committed as
+`docs/design/images/pipeline-frame-metal-recorded.png`. Metal still shades material constants: its
+bounded material texture argument buffer remains separate work.
 
 ## What is measured and recorded rather than hidden
 
@@ -117,7 +117,7 @@ handover is M11.d's, and `cy/frame.slang`'s header says so at the regeneration i
 | Suite | Kind | What it proves |
 |---|---|---|
 | `integration.render_pipeline` | integration | the sinks carry six callbacks, including temporal resolve; a frame with them records every draw while an empty `FrameSinks` records nothing; the history and upload rings turn over beyond the frames-in-flight count |
-| `render.pipeline` | render | Vulkan compares captured pixels, and measures the temporal resolve ACCUMULATING — a still camera's frame-to-frame change under pinned jitter against the same scene with its history cut every frame — and two pinned runs drawing byte-identical frames; Apple Metal creates native pipelines, executes the temporal pass on the GPU, and requires zero validation errors. The older fixture remains black on Metal with TAA disabled, so Metal is command-level evidence until that separate capture defect is fixed |
+| `render.pipeline` / `render.pipeline_metal` | render | Vulkan and Metal compare captured pixels, including a shaded frame against the same frame with no record callbacks, and measure temporal accumulation and determinism. Mixed backend builds register both suites; a machine without a requested backend is reported as skipped by CTest. |
 | `render.forward_material_texture` | render | the same scene rendered three times on a Vulkan device — every texture slot unbound, a pattern bound as every material's base colour, and **that texture replaced by its declared average** — and the differences between the three pictures. Vulkan only, because the case needs a device with a global bindless table |
 
 Both go red when `FrameRecorder::sinks()` stops attaching callbacks — which was run, not assumed.

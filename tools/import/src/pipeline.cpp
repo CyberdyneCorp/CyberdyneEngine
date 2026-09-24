@@ -7,6 +7,7 @@
 #include <cy/import/fbx.h>
 #include <cy/import/gltf.h>
 #include <cy/import/heightfield.h>
+#include <cy/import/model.h>
 #include <cy/import/obj.h>
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
@@ -29,7 +30,7 @@ constexpr u32 kBundleVersion = 1;
 /// It is a contribution to every derivation key this pipeline produces, so that a change to how a
 /// result is bundled, published or named re-cooks the project rather than serving entries laid out
 /// the old way. An importer's own version covers its own output; this covers everything around it.
-constexpr u32 kPipelineVersion = 1;
+constexpr u32 kPipelineVersion = 2;
 
 void put_u32(Array<u8>& out, u32 value) noexcept {
     for (u32 index = 0; index < 4; ++index) {
@@ -403,11 +404,30 @@ Status ImportPipeline::publish(Prepared& prepared, const ImportResult& result) n
     // from the payload's own format.
     assets::ContentHash primary_cooked_hash;
     for (usize index = 0; index < produced.size(); ++index) {
+        Array<u8> linked_material;
+        Span<const u8> payload = produced[index].payload.span();
+        if (produced[index].kind == assets::AssetKind::Material) {
+            StandardMaterial material;
+            if (Status read = read_cooked_material(payload, material); !read) {
+                return read;
+            }
+            if (!material.base_color_texture_name.empty()) {
+                material.base_color_texture =
+                    prepared.record.sub_asset(material.base_color_texture_name);
+                if (material.base_color_texture.is_nil()) {
+                    return fail(ErrorCode::NotFound,
+                                "a material names a texture sub-asset this import did not produce");
+                }
+                if (Status written = write_cooked_material(material, linked_material); !written) {
+                    return written;
+                }
+                payload = linked_material.span();
+            }
+        }
         Array<u8> cooked;
         if (Status written = assets::write_cooked_asset(
                 produced[index].kind, prepared.settings.variant,
-                Span<const u8>(produced[index].payload.data(), produced[index].payload.size()),
-                cooked);
+                payload, cooked);
             !written) {
             return written;
         }
@@ -419,8 +439,7 @@ Status ImportPipeline::publish(Prepared& prepared, const ImportResult& result) n
             // Computed BEFORE the profile's exclusion, and from the payload rather than from the
             // file: the sidecar is per SOURCE and not per profile, so a server cook that excluded
             // the primary must not write a zero hash into the sidecar the client cook filled in.
-            primary_cooked_hash = assets::content_hash(produced[index].payload.data(),
-                                                       produced[index].payload.size());
+            primary_cooked_hash = assets::content_hash(payload.data(), payload.size());
         }
         if (!profile_retains(prepared.settings.profile, produced[index].kind,
                              produced[index].view())) {

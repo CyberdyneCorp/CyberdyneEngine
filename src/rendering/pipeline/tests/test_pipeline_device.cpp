@@ -197,13 +197,7 @@ CY_TEST_CASE("the frame is CAPTURED: the layer's callbacks put shaded texels on 
     // Twelve cubes in front of the camera cover a real fraction of a 480x270 frame. The bound is
     // deliberately far from what the scene produces: it is a check that ANYTHING was drawn, and the
     // case that follows is what makes it a check that the RIGHT thing was.
-#if defined(CY_TEST_PIPELINE_METAL)
-    // The native Metal frame currently exposes command execution while its existing geometry
-    // capture remains black; the temporal regression is the executed pass and zero validation.
-    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
-#else
     CY_CHECK_GT(shaded, 2000U);
-#endif
     save("pipeline-frame-with-callbacks.png", scene.pixels());
 }
 
@@ -228,6 +222,7 @@ CY_TEST_CASE("the identical frame WITHOUT the callbacks is blank, and that diffe
     for (usize index = 0; index < before.size(); ++index) {
         before[index] = scene.pixels()[index];
     }
+    CY_CHECK_EQ(scene.differing_texels(before.span()), 0U);
     const u32 blank_shaded = shaded_texels(before.span());
     save("pipeline-frame-without-callbacks.png", before.span());
 
@@ -244,12 +239,8 @@ CY_TEST_CASE("the identical frame WITHOUT the callbacks is blank, and that diffe
     CY_CHECK_EQ(recorded.draws, blank.draws);
     CY_CHECK_EQ(recorded.passes_declared, blank.passes_declared);
     // And the pictures are different. Remove the callbacks and this number is zero.
-#if defined(CY_TEST_PIPELINE_METAL)
-    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
-#else
     CY_CHECK_GT(differing, 2000U);
     CY_CHECK_GT(shaded, blank_shaded);
-#endif
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
@@ -283,11 +274,7 @@ CY_TEST_CASE("the particle renderer draws through the layer, and the picture say
     // The effect is composited into the frame's own colour target through a pipeline whose layout
     // is compatible with the frame's. If the set layouts had diverged, the sets the recorder bound
     // would have been invalidated and this number would be zero — with validation errors beside it.
-#if defined(CY_TEST_PIPELINE_METAL)
-    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
-#else
     CY_CHECK_GT(differing, 500U);
-#endif
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
     save("pipeline-frame-particles.png", scene.pixels());
 }

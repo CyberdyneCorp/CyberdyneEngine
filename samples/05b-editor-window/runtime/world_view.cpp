@@ -158,6 +158,17 @@ u32 WorldView::present(first_light::Scene& scene) noexcept {
     return static_cast<u32>(placed_.size());
 }
 
+u32 WorldView::present_authored() noexcept {
+    placed_.clear();
+    overflowed_ = 0;
+    for (const ser::WorldNode& node : world_.nodes()) {
+        if (!node.live) continue;
+        const u32 index = static_cast<u32>(placed_.size());
+        if (Status pushed = placed_.push_back(Placed{node.identity, index}); !pushed) break;
+    }
+    return static_cast<u32>(placed_.size());
+}
+
 u32 WorldView::object_for(u64 identity) const noexcept {
     for (const Placed& entry : placed_) {
         if (entry.identity == identity) {

@@ -253,6 +253,8 @@ CY_TEST_CASE("a world larger than the scene's slots is reported, not truncated s
     const u32 presented = opened.view.present(opened.scene);
     CY_CHECK(opened.view.overflowed() > 0U);
     CY_CHECK_EQ(presented + opened.view.overflowed(), 3U + kWorldCapacity);
+    CY_CHECK_EQ(opened.view.present_authored(), 3U + kWorldCapacity);
+    CY_CHECK_EQ(opened.view.overflowed(), 0U);
 }
 
 // --- picking, M8.a task 1.4 -------------------------------------------------------------------

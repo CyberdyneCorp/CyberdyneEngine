@@ -24,6 +24,24 @@ those handles into the frame and publishes exactly those handles to the editor, 
 hit-tests what it was sent. Until M7 the viewport showed a magenta test pattern from a fixture in
 the editor's own Cargo workspace.
 
+## Authoring an empty scene with an FBX
+
+Open or create a `.cyworld` in the editor. Drop an FBX from Finder or the file manager into the
+editor window. The external import stages the FBX and companion textures in the project, cooks the
+mesh, and adds its mesh instance to the open world. Select the instance in the hierarchy or viewport,
+use the Move, Rotate, and Scale gizmo modes, then save the world. The runtime reads the same world
+transactions and shows the cooked geometry with its full node transform on the next frame.
+
+The authored viewport uses `FrameAssembly` and `FrameRecorder` on Metal or Vulkan. It reads `.cyprim`
+sources and imported cooked mesh identities, uses mesh section material assignments, and derives
+picking and camera framing from the transformed mesh bounds. An empty world starts with no fixture
+boxes. Missing cooked assets are reported by identity. On Metal, imported material constants render;
+the bounded sampled texture table remains pending, so a textured FBX can appear with its material
+base colour until that table is connected.
+
+The Metal pixel regression is `smoke.editor_authored_frame_metal`; it renders an empty world and then
+a mesh in the same session to catch temporal history hiding newly placed geometry.
+
 ## Why this artefact exists
 
 M5 closed on a scripted session, and `implement-m5b-operable/proposal.md` says plainly why that was
@@ -291,14 +309,8 @@ and which the runtime had never heard of when it started.
 
 ## What the runtime is still a stand-in for
 
-* **The scene has a fixed number of slots.** `first_light::Scene` is built once and its objects
-  cannot be grown, so the runtime builds it with `kWorldCapacity` box slots and blanks the ones the
-  world does not fill. A world with more nodes than that is reported with both numbers rather than
-  silently truncated.
-* **Every authored node is drawn as the unit box.** A mesh asset per node is `asset-import-pipeline`'s
-  and M8.a's later phases; what this artefact demonstrates is the seam, not the content.
-* **A rotation is rendered as its yaw.** `first_light::Object` holds one angle. The world keeps the
-  whole quaternion and writes it back out unchanged.
+* **Sampled textures on Metal are pending.** Imported material factors are applied, but the Metal
+  frame shader currently shades without its global sampled texture table.
 * **The frame reaches the shared image through host memory.** The engine renders on the RHI's device
   and the publisher owns its own, so the frame is read back and uploaded — 106 µs a frame at
   1280x720, measured. `src/backends/viewport/README.md` says what would remove it.

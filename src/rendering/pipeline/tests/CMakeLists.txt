@@ -60,30 +60,34 @@ function(cy_pipeline_declare_tests)
         DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null)
     target_include_directories(cy_test_integration_render_pipeline PRIVATE "${tests_dir}")
 
-    if(NOT CY_RENDERER_VULKAN AND NOT (APPLE AND CY_RENDERER_METAL))
-        return()
-    endif()
+    function(cy_pipeline_device_suite name backend define)
+        cy_add_test(
+            NAME ${name}
+            KIND render
+            SOURCES
+                "${tests_dir}/frame_scene.cpp"
+                "${tests_dir}/test_pipeline_device.cpp"
+                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+            DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null ${backend})
+        set(target "cy_test_render_${name}")
+        target_include_directories(${target} PRIVATE "${tests_dir}"
+                                                   "${CMAKE_SOURCE_DIR}/tests/render")
+        target_compile_definitions(${target} PRIVATE ${define}
+                                   CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+        set_tests_properties(render.${name} PROPERTIES
+                             SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+    endfunction()
+
     if(CY_RENDERER_VULKAN)
-        set(device_backend cy::rhi-vulkan)
-        set(device_define CY_TEST_PIPELINE_VULKAN=1)
-    else()
-        set(device_backend cy::rhi-metal)
-        set(device_define CY_TEST_PIPELINE_METAL=1)
+        cy_pipeline_device_suite(pipeline cy::rhi-vulkan CY_TEST_PIPELINE_VULKAN=1)
     endif()
-    cy_add_test(
-        NAME pipeline
-        KIND render
-        SOURCES
-            "${tests_dir}/frame_scene.cpp"
-            "${tests_dir}/test_pipeline_device.cpp"
-            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
-        DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null ${device_backend})
-    target_include_directories(cy_test_render_pipeline
-                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
-    # CY_TEST_BINARY_DIR: where its captures go when the harness names no artefact directory,
-    # rather than the caller's working directory — see `save()` in test_pipeline_device.cpp.
-    target_compile_definitions(cy_test_render_pipeline PRIVATE ${device_define}
-                               CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    if(APPLE AND CY_RENDERER_METAL)
+        if(CY_RENDERER_VULKAN)
+            cy_pipeline_device_suite(pipeline_metal cy::rhi-metal CY_TEST_PIPELINE_METAL=1)
+        else()
+            cy_pipeline_device_suite(pipeline cy::rhi-metal CY_TEST_PIPELINE_METAL=1)
+        endif()
+    endif()
 
     # THE FORWARD PATH WITH A TEXTURE ON IT. M11.c task 3.7's last mile.
     #
