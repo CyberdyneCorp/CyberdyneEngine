@@ -3,6 +3,18 @@
 """The ledger's build matrix: one tree per distinct build CONFIGURATION, shared by every criterion
 that needs it.
 
+TWO MORE SHARE IT SINCE M11.c's FIFTH CLOSE, which took 7 h 28 m because every per-label tree was
+built from empty: `m8b:feature-options-off` built its four option sets under `${CY_BUILD_DIR}/off-*`
+and `m8c:steam-audio-configures` under `${CY_BUILD_DIR}/steam-audio` — five trees that were cold on
+every run with a new `CY_BUILD_DIR` and that a reaper could remove between two closes. They are
+rows here now.
+
+`m1:four-profiles` IS NOT, YET, and not because it cannot share: its dev and debug profiles are the
+very configurations `dev-default` and `debug-default` already are. It is declared, byte for byte,
+by eighteen ledgers (m1 through m11e), and the flattened ledger evaluates it ONCE only because those
+eighteen bodies are identical — `selftest.py` holds that. Moving one declaration makes the ladder run
+it twice, which is slower, not faster. It moves when all eighteen move in one change.
+
 FIVE CRITERIA WERE THE MOST EXPENSIVE THING ON THE LADDER. `m8c:feature-options-off`,
 `m8c:ml-option-off`, `m9:networking-defaults-on`, `m9:networking-option-off` and
 `m9:multiplayer-profiles-agree` cost 5916.7 s — 98.6 minutes — in one evaluation measured on this
@@ -73,10 +85,26 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: same tree at the same time.
 DEFAULT_ROOT = "build/ledger-matrix"
 
-#: What `just build-engine` gets as `CY_JOBS` when the matrix builds several configurations at once,
-#: so that two concurrent builds do not each ask for every core on the machine. One configuration on
-#: its own is left alone: Ninja's own default is right for it.
-CPU_COUNT = os.cpu_count() or 8
+#: The ONE definition of how many compile jobs this machine runs at once, which `just _jobs` and the
+#: job pool (cmake/jobpool.cmake) read too.
+JOBS_SCRIPT = REPO_ROOT / "tools" / "workflow" / "jobs.sh"
+
+
+def machine_jobs() -> int:
+    """`jobs.sh machine`: every core but the two the owner keeps free — the whole machine's budget.
+
+    When several configurations build at once each gets an equal share of it as `CY_JOBS`, so that
+    they do not each ask for the whole machine. The job pool would hold them to it anyway, but a
+    build given more jobs than it can run only parks the rest asleep in the pool. One configuration
+    on its own gets the per-build default `just _jobs` chooses.
+    """
+    try:
+        answer = subprocess.run(  # noqa: S603, S607 — this repository's own script
+            ["bash", str(JOBS_SCRIPT), "machine"], capture_output=True, text=True,
+            check=True).stdout.strip()
+        return max(1, int(answer))
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return max(1, (os.cpu_count() or 3) - 2)
 
 
 @dataclass(frozen=True)
@@ -150,6 +178,46 @@ CONFIGURATIONS: tuple[Configuration, ...] = (
         needed_by=("m8c:feature-options-off",),
     ),
     Configuration(
+        id="off-animation",
+        profile="dev",
+        options=("CY_ANIMATION=OFF",),
+        why="M8.b's animation removed at build time — the first of the four option sets "
+            "`m8b:feature-options-off` builds.",
+        needed_by=("m8b:feature-options-off",),
+    ),
+    Configuration(
+        id="off-ai",
+        profile="dev",
+        options=("CY_AI=OFF",),
+        why="M8.b's ai-system removed on its own, with navigation left in.",
+        needed_by=("m8b:feature-options-off",),
+    ),
+    Configuration(
+        id="off-ui",
+        profile="dev",
+        options=("CY_UI=OFF",),
+        why="M8.b's ui-system removed — the option whose default once gated nothing at all.",
+        needed_by=("m8b:feature-options-off",),
+    ),
+    Configuration(
+        id="off-navigation",
+        profile="dev",
+        options=("CY_NAVIGATION=OFF", "CY_AI=OFF"),
+        why="navigation removed, together with the CY_AI that cmake/features.cmake requires with "
+            "it: the fourth of `m8b:feature-options-off`'s option sets.",
+        needed_by=("m8b:feature-options-off",),
+    ),
+    Configuration(
+        id="on-steam-audio",
+        profile="dev",
+        options=("CY_AUDIO_STEAM_AUDIO=ON",),
+        why="the one option set here that turns something ON: Steam Audio, declared, defaulted off "
+            "and — `m8c:steam-audio-configures` is a declared gap until M11.e — not yet able to "
+            "configure. A configure that stops leaves this row's tree half-written, and the next "
+            "evaluation configures it again from what is there, exactly as a developer's would.",
+        needed_by=("m8c:steam-audio-configures",),
+    ),
+    Configuration(
         id="off-ml",
         profile="dev",
         options=("CY_ML=OFF",),
@@ -214,11 +282,30 @@ def ensure(identifiers: list[str], jobs: int | None = None) -> list[Outcome]:
     wanted = list(dict.fromkeys(configuration(identifier) for identifier in identifiers))
     if not wanted:
         raise MatrixError("name at least one configuration to build")
+    _mark_kept(root())
     if len(wanted) == 1:
         return [_build(wanted[0], jobs)]
-    share = jobs or max(2, CPU_COUNT // len(wanted))
+    share = jobs or max(1, machine_jobs() // len(wanted))
     with ThreadPoolExecutor(max_workers=len(wanted)) as pool:
         return list(pool.map(lambda entry: _build(entry, share), wanted))
+
+
+#: The file `just build-reap` looks for before it removes a tree; its first line is the reason.
+KEEP_MARKER = ".cy-keep"
+
+
+def _mark_kept(directory: Path) -> None:
+    """Tell `just build-reap` that the matrix is not abandoned merely because it is idle.
+
+    Between two ledger runs every tree here looks like one nobody is using — no process inside it,
+    nothing written for hours — which is what a reaper removes. The recipe keeps `ledger-matrix` by
+    name as well; the marker is what keeps a matrix moved elsewhere with `CY_LEDGER_MATRIX`.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    marker = directory / KEEP_MARKER
+    if not marker.exists():
+        marker.write_text("the ledger's shared build matrix (tools/roadmap/matrix.py); delete this "
+                          "file to let build-reap reclaim it\n", encoding="utf-8")
 
 
 def _build(entry: Configuration, jobs: int | None) -> Outcome:

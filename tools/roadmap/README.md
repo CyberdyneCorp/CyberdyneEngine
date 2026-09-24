@@ -24,7 +24,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `requirements.py` | Every requirement of a capability row against the test, gate or recorded exemption that answers it. `just quality-requirements <row>…`. |
 | `requirements-coverage.toml` | Hand-written. The map `requirements.py` reads; every entry is resolved against the tree, so a renamed suite turns the row red. |
 | `schedule.py` | What each criterion HOLDS while it runs — a build tree, Cargo, the device, a port — and the scheduler that therefore runs independent ones at the same time. A criterion whose needs it cannot read runs alone. |
-| `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Six option sets between the five criteria that were half this ladder's clock. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
+| `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Eleven option sets between seven criteria. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
 | `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
@@ -532,6 +532,24 @@ off-vulkan       dev    -D CY_RENDERER_VULKAN=OFF …  needed by m8c:feature-opt
 off-ml           dev    -D CY_ML=OFF                 needed by m8c:ml-option-off
 off-networking   dev    -D CY_NETWORKING=OFF         needed by m9:networking-option-off
 ```
+
+**Two more criteria joined it at M11.c's fifth close**, which took 7 h 28 m because every per-label
+tree had been reaped and was built from empty: `m8b:feature-options-off` (rows `off-animation`,
+`off-ai`, `off-ui`, `off-navigation`, built at once where they used to be built one after another)
+and `m8c:steam-audio-configures` (row `on-steam-audio`). Each still checks what it checked: the same
+`just build-engine` with the same options. Their run commands changed, so their proof digests moved.
+Each declares its rows in `needs`, and `tools/ci/test_recipes.py` fails when a criterion builds a row
+it does not declare or a row does not name a criterion that builds it.
+
+**`m1:four-profiles` has not joined it, though it could share**: its dev and debug profiles are the
+same configurations as `dev-default` and `debug-default`. It is declared with a byte-identical body
+by eighteen ledgers, and the flattened ledger evaluates it once only because the bodies are identical
+(`selftest.py`, "`four-profiles` is declared by several ledgers and evaluated once"). Changing one
+declaration makes the ladder run it twice. It moves when all eighteen are rewritten in one change.
+
+**The matrix is kept by `just build-reap`**, by name and by the `.cy-keep` marker `matrix.py` writes
+at its root; `just roadmap-milestone` marks its own `CY_BUILD_DIR` the same way. It was a reap of
+`build/m11c-final` between two closes that made the fifth one cold.
 
 ### What sharing may not mean here
 

@@ -78,22 +78,14 @@ quality-lint *args:
         exit 1
     fi
 
-    jobs="${CY_JOBS:-}"
-    if [ -z "${jobs}" ]; then
-        if command -v nproc >/dev/null 2>&1; then
-            jobs="$(nproc)"
-        elif command -v getconf >/dev/null 2>&1; then
-            jobs="$(getconf _NPROCESSORS_ONLN)"
-        elif command -v sysctl >/dev/null 2>&1; then
-            jobs="$(sysctl -n hw.logicalcpu)"
-        else
-            jobs=1
-        fi
-    fi
+    # CY_JOBS, or every core but two — `_jobs` in just/build.just says why — and each clang-tidy
+    # inside the machine-wide job pool the compiles use, so a lint beside a build shares its cores.
+    jobs="$(just _jobs)"
+    read -r -a slot <<< "$(just _job-slots)"
 
     echo "==> clang-tidy ${#files[@]} file(s) against ${database}"
     printf '%s\n' "${files[@]}" \
-        | xargs -P "${jobs}" -n 1 "${linter}" -p "${build_dir}" --quiet
+        | xargs -P "${jobs}" -n 1 ${slot[@]+"${slot[@]}"} "${linter}" -p "${build_dir}" --quiet
     echo "clang-tidy: no findings"
 
 # The two halves of the layer rule are checked in different places, so this recipe runs both.

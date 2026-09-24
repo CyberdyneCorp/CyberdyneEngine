@@ -65,3 +65,62 @@ match is exactly what an installation root exists to catch.
 `just deploy-device` **refuses**, naming what is required (a transport; `RemoteFileProvider` is the
 seam) and the rung that owns it (M11.e). A recipe that pretended to deploy to a device by copying a
 directory would be the ninth check in this repository that cannot fail.
+
+# How many jobs, and the machine-wide pool
+
+M11.c's fifth close. The owner's rule: **at least two of the machine's cores stay free while
+compiling, machine-wide** — however many builds run at once, the compile jobs between them stay at or
+below cores − 2 (22 on the 24-core workstation the ledger closes on).
+
+## Where a job count is chosen
+
+| Piece | What it decides |
+|---|---|
+| `jobs.sh` | the one copy of the arithmetic. `jobs.sh build` = `CY_JOBS`, else `max(1, cores − reserved)`; `jobs.sh machine` = `max(1, cores − reserved)`, which `CY_JOBS` does not raise; `reserved` = `CY_RESERVED_CORES`, else 2, else 0 when `CI` is set |
+| `just _jobs` | `jobs.sh build`. Every recipe that starts a compiler passes it: `cmake --build --parallel`, `cargo --jobs`, clang-tidy's `xargs -P`, and `RUST_TEST_THREADS` for `cargo test` |
+| `job_slot.py` | the machine-wide cap: a pool of `jobs.sh machine` flock(2) slots under `/tmp/cyberdyne-job-slots-<uid>` that every compile and link waits in |
+| `cmake/jobpool.cmake` | bakes `jobs.sh machine` into two wrapper scripts in the build tree and hands them to `cmake/launchers.cmake`: compiles through ccache's `prefix_command` (a cache hit takes no slot), links with `--jobserver` |
+| `just _cargo-pool`, `just _job-slots` | the same pool for rustc (Cargo's `RUSTC_WRAPPER`) and for clang-tidy |
+
+ctest is not given a number: it runs one test at a time unless `CY_JOBS` is set, because the suites
+carry wall-clock budgets.
+
+## What happens when two builds overlap
+
+Each build still starts its own `-j` worth of processes, but at most `jobs.sh machine` of them —
+across every build of this user on this machine — run a compiler or a linker at any moment. The rest
+wait **asleep** in `flock(2)`, which costs no CPU and does not count toward the load average, and
+only one waiter at a time (the holder of the pool's `gate`) looks for a free slot, so a slot build A
+frees goes to whoever has waited longest rather than straight back to A. The kernel drops a slot
+when its holder exits however it exits, so a crash or a `kill -9` leaks nothing. Two builds started
+together share the budget and each finishes later than it would alone.
+
+A link can use more than one core: GCC's `-flto=auto` (the Shipping configuration's IPO) runs `make
+-j<cores>` under every link unless it finds a GNU make jobserver — measured on this workstation,
+`make -j24` for one link. The link wrapper hands it a jobserver holding the link's own slot plus up
+to seven slots free at that moment, so a Shipping link can never exceed the slots it holds.
+
+Compiles and links run at `nice 10`.
+
+**Not in the pool:** Swift (bindings/swift drives `swiftc` through a Python script, and CMake has no
+Swift launcher) and anything a developer runs by hand outside the recipes and CMake. `CY_JOB_POOL=OFF`
+at configure time, or `CY_JOB_POOL=OFF` in the environment for `_job-slots`, turns the pool off.
+
+## Measured
+
+* **Two builds at `-j8` each over a pool of 4** (a 32-file C project configured with
+  `CY_RESERVED_CORES=20`, sampled every 0.1 s): never more than **4** compilers running; the same
+  two builds with `CY_JOB_POOL=OFF` ran **16** at once.
+* **The whole machine while the engine built in `build/m11c-speed`** beside three other agents'
+  builds: every running `cc1`/`cc1plus` held a slot (at most 10 compilers, 10 slots held, in 30
+  samples): the trees reconfigured since the pool landed share it.
+* **Load average over that build** (1-minute, every 10 s, 167 samples): mean 14.8, maximum 24.3,
+  above 22 in 3 samples. The load average counts everything runnable — the other agents' tests and
+  the deliberate 24-spinner load generator one of them ran for `m11a:world-budget-on-a-device` —
+  so it bounds the pool from above rather than measuring it; the slot count is the measurement.
+
+`tools/ci/test_recipes.py` holds each piece: the per-build default on 1 to 24 cores, `CY_JOBS` and
+`CI`; every compile site in `just/*.just` passing `just _jobs`; two overlapping builds never
+exceeding the pool and both making progress; a link's jobserver never holding a busy slot; a probe
+project that configures AND builds through the launchers (and installs none when `CI` is set); and
+`build-reap --apply` keeping a marked tree and the matrix.

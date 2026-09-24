@@ -272,7 +272,8 @@ env-bootstrap *args:
     #
     # CY_PROFILE=dev                 the profile a recipe uses when none is named
     # CY_BUILD_DIR=build/dev         a build tree other than the preset's build/<profile>/
-    # CY_JOBS=8                      build and test parallelism
+    # CY_JOBS=8                      one build's parallelism (default: every core but two)
+    # CY_RESERVED_CORES=2            cores no build takes, machine-wide (tools/workflow/jobs.sh)
     # CY_TARGET_PLATFORM=linux       the platform builds target; must be the host until M9
     # The quality gates run at the LLVM major the justfile pins. These name a binary in an
     # unusual place; they do not exempt it from that major, and env-doctor reports one that is.
@@ -309,7 +310,8 @@ env-overrides:
     printf '  %-18s %s\n' \
         CY_PROFILE          'the profile a recipe uses when none is named' \
         CY_BUILD_DIR        'a build tree other than the preset. build/<profile>/' \
-        CY_JOBS             'build and test parallelism' \
+        CY_JOBS             'one build'"'"'s parallelism (default: every core but two)' \
+        CY_RESERVED_CORES   'cores no build takes, machine-wide (default 2)' \
         CY_TARGET_PLATFORM  'the platform builds target; must be the host until M9' \
         CY_TEST_JUNIT       'a file for machine-readable test results' \
         CY_CLANG_FORMAT     'the clang-format binary the quality gates use' \

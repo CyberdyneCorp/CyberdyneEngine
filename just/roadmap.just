@@ -32,6 +32,15 @@ roadmap-milestone *args:
             | xargs -n1 basename | sed 's/\.toml$//' | tr '\n' ' ')" >&2
         exit 2
     fi
+    # MARK THE TREE THIS LEDGER BUILDS IN, so that `just build-reap` keeps it between two runs: a
+    # reaped ledger tree turned M11.c's fifth close into a 7 h 28 m build from empty. Only a
+    # redirected tree is marked — with CY_BUILD_DIR unset the recipes use the developer's own
+    # build/<profile>. Deleting the marker is how the tree is let go; build-reap says so.
+    if [ -n "${CY_BUILD_DIR:-}" ] && [[ " {{args}} " != *" --list "* ]]; then
+        mkdir -p "${CY_BUILD_DIR}"
+        printf '%s\n' "the tree of \`just roadmap-milestone {{args}}\`, $(date -u +%FT%TZ); delete this file to let build-reap reclaim it" \
+            > "${CY_BUILD_DIR}/.cy-keep"
+    fi
     python3 tools/roadmap/roadmap.py milestone {{args}}
 
 # List the permanent merge gates and any recorded override. --commands prints what CI must run.

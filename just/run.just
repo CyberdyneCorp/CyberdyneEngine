@@ -110,7 +110,7 @@ run-ios-rts-device device:
         -D "CY_IOS_DEVELOPMENT_TEAM=${CY_IOS_DEVELOPMENT_TEAM}" \
         -D "CY_IOS_BUNDLE_IDENTIFIER=${CY_IOS_BUNDLE_IDENTIFIER}" \
         -D CY_IOS_RTS_STRESS=ON
-    cmake --build --preset ios-device --target cy_sample_ship_ios
+    cmake --build --preset ios-device --target cy_sample_ship_ios --parallel "$(just _jobs)"
     python3 samples/11-ship/ios/run_device.py \
         --device "{{device}}" \
         --bundle-id "${CY_IOS_BUNDLE_IDENTIFIER}" \
@@ -642,7 +642,7 @@ capture-beauty-shot *args:
     # The editor's half. `cargo build` rather than `just build-editor`, because this needs one
     # binary out of one crate and not the whole application.
     echo "==> author      the material graphs, on the editor's own canvas"
-    ( cd editor && cargo build --quiet -p cy-editor-interface --bin author_material )
+    ( cd editor && cargo build --quiet --jobs "$(just _jobs)" -p cy-editor-interface --bin author_material )
     ./editor/target/debug/author_material content/beauty/materials
 
     if [ "${regenerate}" -eq 1 ]; then

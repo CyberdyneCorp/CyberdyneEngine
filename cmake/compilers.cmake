@@ -92,3 +92,7 @@ function(cy_define_compile_options)
             "-fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=")
     endif()
 endfunction()
+
+# How a compiler and a linker are invoked (the job pool, the compiler cache) is decided here, before the
+# first target exists: a launcher set after a target is declared does not reach that target.
+include(launchers)

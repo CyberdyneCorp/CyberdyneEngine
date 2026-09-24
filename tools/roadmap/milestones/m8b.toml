@@ -661,6 +661,24 @@ id = "feature-options-off"
 describe = "the whole tree configures and builds with each of this milestone's new feature options switched off — CY_ANIMATION alone, CY_AI alone, CY_UI alone, and CY_NAVIGATION together with the CY_AI that depends on it. A capability that cannot be removed at build time is not behind an option, whatever cmake/features.cmake says; and samples/08-vertical-slice declares nothing at all in the configurations where its subjects are absent, rather than turning a removable feature into a configure error naming the artefact"
 source = "tasks 5.x, 6.x, 9.x, delivery-roadmap, testing-and-quality"
 kind = "command"
-run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-animation}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_ANIMATION=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ai}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_AI=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ui}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_UI=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-navigation}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_NAVIGATION=OFF -D CY_AI=OFF"
+run = '''
+# THE FOUR CONFIGURATIONS COME FROM tools/roadmap/matrix.py — rows off-animation, off-ai, off-ui and
+# off-navigation — which builds them AT THE SAME TIME, each in its own stable tree under
+# build/ledger-matrix/. Nothing is cached and nothing is skipped: the matrix runs `just build-engine`
+# for each row it is asked for, every time, and Ninja decides what is out of date. Until M11.c's
+# fifth close these were four trees under `${CY_BUILD_DIR}/off-*`, cold on every run with a new
+# CY_BUILD_DIR, and a red in the first stopped the other three from being built at all.
+python3 tools/roadmap/matrix.py build off-animation off-ai off-ui off-navigation
+'''
 timeout_s = 14400
 ci_job = "milestone-m8b"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the matrix rows it builds.
+needs = ["build:ledger-matrix/off-animation", "build:ledger-matrix/off-ai",
+         "build:ledger-matrix/off-ui", "build:ledger-matrix/off-navigation"]
+# `if(CY_ANIMATION)` in src/CMakeLists.txt IS what makes CY_ANIMATION gate anything; deleting it
+# leaves the `add_subdirectory` and its `endif()` dangling, and the CY_ANIMATION=OFF configure this
+# criterion performs stops there.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/CMakeLists.txt"
+token = "if(CY_ANIMATION)"

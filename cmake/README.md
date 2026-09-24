@@ -7,6 +7,9 @@ dependency order, not a preference: each file uses what the ones above it define
 |---|---|---|
 | `profiles.cmake` | The four configurations, their flags, and the profile table across CMake, Cargo and Slang | task 0.1 — done |
 | `compilers.cmake` | Minimum compiler versions, the strict warning set, `cy_compile_options` | task 1.2.5 — done |
+| `launchers.cmake` | What every compile and link runs through: the two modules below, put together, before the first target exists (included by `compilers.cmake`) | M11.c fifth close |
+| `jobpool.cmake` | `CY_JOB_POOL`: every compile and link through `tools/workflow/job_slot.py`, the machine-wide cap of cores − 2 | M11.c fifth close |
+| `ccache.cmake` | `CY_CCACHE`, `CY_CCACHE_DIR`, `CY_CCACHE_MAX_SIZE`: ccache as the compiler launcher when it is installed | M11.c fifth close |
 | `features.cmake` | The `CY_*` option set, `CY_SANITIZE`, dependency validation, the generated headers | tasks 1.4.1–1.4.3 — done |
 | `sanitizers.cmake` | `CY_SANITIZE` turned into compile and link flags | task 4.2.3 — **empty stub** |
 | `dependencies.cmake` | `FetchContent` driven by `deps/manifest.toml`, and the `cy::dep::*` shims | task 1.6.2 — done |
@@ -113,3 +116,43 @@ suites. `modules/` is not a list — `modules.cmake` discovers manifests. The to
 visible to `ctest --preset <profile>`.
 
 **Governed by**: `build-system-and-platforms`.
+
+## How a compiler is invoked: the job pool and ccache
+
+`launchers.cmake` (included at the end of `compilers.cmake`, before any target exists) sets
+`CMAKE_{C,CXX}_COMPILER_LAUNCHER` and `CMAKE_{C,CXX}_LINKER_LAUNCHER` as ordinary variables:
+
+* **The job pool** (`jobpool.cmake`, `CY_JOB_POOL`, default ON except where `CI` is set): every
+  compile and link waits for one of `tools/workflow/jobs.sh machine` slots shared by every build on
+  the machine, so the machine-wide total of compile jobs stays at cores − 2 however many builds
+  overlap. The options are baked into `<build>/cy-launchers/job-slot` and `job-slot-link`, one path
+  each, because ccache looks every word of a prefix up as a program. `tools/workflow/README.md`
+  has the design.
+* **ccache** (`ccache.cmake`, `CY_CCACHE`, default ON except where `CI` is set, and only when
+  `ccache` is found): a module rather than `CMakePresets.json`, because a preset can only name a
+  launcher unconditionally and would break every configure on a machine without it. The pool is
+  handed to ccache as `prefix_command`, so a cache hit takes no slot. The store is the project's
+  own, `~/.cache/cyberdyne-ccache` (`CY_CCACHE_DIR`), limited by `CY_CCACHE_MAX_SIZE` (default
+  60G) passed on ccache's command line — the user's global ccache configuration is never edited.
+  `base_dir` is not set, so `-fmacro-prefix-map` keeps working; the sanitizer trees work unchanged
+  (checked: `-fsanitize=address,undefined` with the prefix map is a direct hit on the second
+  compile and `__FILE__` still reads `src/…`). Swift and Rust do not go through it.
+
+A caller's own launcher (`-D CMAKE_CXX_COMPILER_LAUNCHER=…` or the environment variable) wins.
+Turning either on or off changes every compile's command line, so Ninja recompiles the tree once;
+with ccache in front that recompile is answered from the cache.
+
+**Measured on the 24-core workstation, M11.c fifth close, `CY_JOBS=5`, `build/m11c-speed` (dev):**
+
+| | |
+|---|---|
+| full build, cold cache | 3232 steps in 1721 s (28.7 min), while three other agents built and tested beside it |
+| the 1376 objects that include `cy/core/base/types.h`, rebuilt **without** ccache (`CCACHE_DISABLE=1`) | 535 s |
+| the same 1376 objects, rebuilt **with** ccache | 110 s (the store counted 1371 direct hits over that window) |
+| store after that full tree plus parts of two other agents' trees | 0.8 GiB (3.5 GB of object files in the tree; ccache compresses) |
+
+The 60G default is therefore room for about seventy dev trees at one per path, which covers the
+~40 trees a ledger, its matrix and a few agents keep. **Not cached**: Slang's 387 translation units
+that use a precompiled header ("could not use precompiled header"); caching those needs
+`sloppiness=pch_defines,time_macros`, which was not turned on because it also caches `__DATE__` and
+`__TIME__`.

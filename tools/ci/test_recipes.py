@@ -24,8 +24,11 @@ import argparse
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
 
 
 def recipe(root: pathlib.Path, arguments: list[str], build_dir: str | None) -> str:
@@ -467,6 +470,332 @@ def a_test_never_writes_into_the_callers_directory(root: pathlib.Path) -> list[s
             )
     return failures
 
+
+# --- Two cores stay free, machine-wide -------------------------------------------------------------
+#
+# The owner's rule since M11.c's fifth close: however many builds run at once, the compile jobs
+# between them stay at or below cores - 2. Three pieces hold it, and each has a case below: the
+# per-build default (`just _jobs`, tools/workflow/jobs.sh), the machine-wide pool every compile and
+# link goes through (tools/workflow/job_slot.py, installed by cmake/launchers.cmake), and the recipes
+# actually asking for those numbers rather than for the tool's own default of every core.
+
+
+def _fake_nproc(directory: pathlib.Path, cores: int) -> dict[str, str]:
+    """An environment whose `nproc` answers `cores`, with no CI, CY_JOBS or reservation set."""
+    shim = directory / f"nproc-{cores}"
+    shim.mkdir(exist_ok=True)
+    script = shim / "nproc"
+    script.write_text(f"#!/bin/sh\necho {cores}\n", encoding="utf-8")
+    script.chmod(0o755)
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in ("CI", "GITHUB_ACTIONS", "CY_JOBS", "CY_RESERVED_CORES")}
+    environment["PATH"] = f"{shim}{os.pathsep}{environment.get('PATH', '')}"
+    return environment
+
+
+def a_build_leaves_two_cores_free_by_default(root: pathlib.Path) -> list[str]:
+    """`just _jobs` is max(1, cores - 2) unless CY_JOBS says otherwise; a CI runner keeps every core.
+
+    Until M11.c's fifth close no recipe chose a count at all: `build-engine` passed `-j` only when
+    CY_JOBS was set, so Ninja ran cores + 2 jobs, and `quality-lint`'s `xargs -P` was `nproc`. The
+    24-core workstation the ledger closes on had nothing left for its desktop or for the tests with
+    wall-clock budgets running beside a build.
+    """
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="cy-jobs-") as scratch:
+        for cores, expected in ((24, 22), (8, 6), (4, 2), (3, 1), (2, 1), (1, 1)):
+            environment = _fake_nproc(pathlib.Path(scratch), cores)
+            for arguments, what in ((["just", "_jobs"], "just _jobs"),
+                                    (["bash", "tools/workflow/jobs.sh", "machine"], "jobs.sh machine")):
+                answer = subprocess.run(arguments, cwd=root, env=environment, capture_output=True,
+                                        text=True, check=False).stdout.strip()
+                if answer != str(expected):
+                    failures.append(f"{what} on {cores} cores answered {answer!r}, expected {expected}")
+        environment = _fake_nproc(pathlib.Path(scratch), 24)
+        overrides = (({"CY_JOBS": "5"}, "5", "CY_JOBS=5 must win"),
+                     ({"CI": "true"}, "24", "a CI runner keeps every core"),
+                     ({"CY_RESERVED_CORES": "4"}, "20", "CY_RESERVED_CORES=4 reserves four"))
+        for extra, expected, why in overrides:
+            answer = subprocess.run(["just", "_jobs"], cwd=root, env={**environment, **extra},
+                                    capture_output=True, text=True, check=False).stdout.strip()
+            if answer != expected:
+                failures.append(f"just _jobs with {extra} on 24 cores answered {answer!r}: {why}")
+        machine = subprocess.run(["bash", "tools/workflow/jobs.sh", "machine"], cwd=root,
+                                 env={**environment, "CY_JOBS": "40"}, capture_output=True,
+                                 text=True, check=False).stdout.strip()
+        if machine != "22":
+            failures.append(f"jobs.sh machine with CY_JOBS=40 answered {machine!r}: CY_JOBS is one "
+                            "build's share and must not raise the machine's cap")
+    return failures
+
+
+# Where a recipe hands a job count to a tool, and the argument that must carry `just _jobs`.
+_JOB_SITES = (
+    (re.compile(r"\bcmake (?:\"\$\{build\[@\]\}\"|--build\b)"), "--parallel \"$(just _jobs)\""),
+    (re.compile(r"\bcargo (?:build|test|clippy|run)\b"), "--jobs \"$(just _jobs)\""),
+    (re.compile(r"\bxargs\b.*-P\b"), "-P \"${jobs}\""),
+)
+
+
+def no_recipe_asks_for_every_core(root: pathlib.Path) -> list[str]:
+    """Every compile a recipe starts is given `just _jobs`, and no recipe counts cores itself.
+
+    A tool left to its own default takes every core — Ninja cores + 2, Cargo and `xargs -P $(nproc)`
+    the core count — so a site that drops the argument goes back to exactly what the owner ruled out.
+    The core count is read in ONE place, tools/workflow/jobs.sh; a second copy of the arithmetic in a
+    recipe is how the two would drift. ctest is the exception by design: it runs one test at a time
+    unless CY_JOBS says otherwise, because the suites carry wall-clock budgets.
+    """
+    failures = []
+    for just_file in sorted((root / "just").glob("*.just")):
+        text = just_file.read_text(encoding="utf-8")
+        joined = re.sub(r"\\\n\s*", " ", text)
+        for number, line in enumerate(joined.splitlines(), 1):
+            code = line.split(" #", 1)[0]
+            if code.lstrip().startswith(("#", "echo")):
+                continue
+            for counter in ("nproc", "_NPROCESSORS_ONLN", "hw.logicalcpu", "cpu_count"):
+                if re.search(rf"\b{re.escape(counter)}\b", code):
+                    failures.append(f"{just_file.name}: counts cores itself ({counter}): "
+                                    f"{code.strip()[:100]} — use `just _jobs`")
+            for site, argument in _JOB_SITES:
+                if site.search(code) and argument not in code:
+                    failures.append(f"{just_file.name}: `{code.strip()[:90]}` does not pass "
+                                    f"{argument}, so the tool takes every core")
+            if re.search(r"ctest_args\+=\(--parallel", code) and "CY_JOBS" not in code:
+                failures.append(f"{just_file.name}: ctest is given a parallel level other than "
+                                "CY_JOBS; the suites' wall-clock budgets assume one test at a time")
+    return failures
+
+
+def _pool_job(root: pathlib.Path, pool: str, slots: int, log: pathlib.Path, label: str,
+              seconds: float) -> subprocess.Popen:
+    """One compile of a fake build: holds its slot for `seconds` and logs when it ran."""
+    command = (f'echo "start {label} $(date +%s.%N)" >> "{log}"; sleep {seconds}; '
+               f'echo "end {label} $(date +%s.%N)" >> "{log}"')
+    return subprocess.Popen(
+        [sys.executable, str(root / "tools/workflow/job_slot.py"), "--slots", str(slots),
+         "--nice", "0", "--", "sh", "-c", command],
+        env={**os.environ, "CY_JOB_SLOT_DIR": pool})
+
+
+def overlapping_builds_share_one_pool(root: pathlib.Path) -> list[str]:
+    """Two builds of eight jobs each, over a pool of three slots: never more than three at once.
+
+    This is what makes the rule machine-wide. A per-build `-j` of cores - 2 is kept by each build
+    and broken by any two of them together — the ledger runs up to eight criteria at once, the
+    matrix several trees, and four agents four builds. Both builds must also make progress while
+    the other runs: a pool one build could monopolise would only move the overload into a queue.
+    """
+    failures = []
+    slots, per_build, seconds = 3, 8, 0.4
+    with tempfile.TemporaryDirectory(prefix="cy-pool-") as scratch:
+        log = pathlib.Path(scratch) / "log"
+        pool = str(pathlib.Path(scratch) / "pool")
+        jobs = []
+        for index in range(per_build):
+            for build in ("a", "b"):
+                jobs.append(_pool_job(root, pool, slots, log, f"{build}{index}", seconds))
+        codes = [job.wait(timeout=120) for job in jobs]
+        if any(codes):
+            failures.append(f"a pooled job failed: exit codes {codes}")
+        events = sorted((float(stamp), kind, label) for kind, label, stamp in
+                        (line.split() for line in log.read_text(encoding="utf-8").splitlines()))
+        running, peak, order = 0, 0, []
+        for _stamp, kind, label in events:
+            running += 1 if kind == "start" else -1
+            peak = max(peak, running)
+            if kind == "end":
+                order.append(label[0])
+        if peak > slots:
+            failures.append(f"{peak} jobs ran at once over a pool of {slots} slots")
+        if peak < 2:
+            failures.append(f"at most {peak} job ran at once over {slots} slots; the pool serialises")
+        first_half = order[: len(order) // 2]
+        if "a" not in first_half or "b" not in first_half:
+            failures.append(f"one build finished half of all jobs alone ({''.join(order)}): the "
+                            "pool let it monopolise the slots while the other waited")
+    return failures
+
+
+def a_link_gets_a_jobserver_bounded_by_its_slots(root: pathlib.Path) -> list[str]:
+    """A link's jobserver holds only the slots the link holds, so `-flto=auto` cannot take 24 cores.
+
+    GCC's `-flto=auto`, the Shipping configuration's IPO, runs `make -j<cores>` under every link
+    unless it finds a jobserver — measured here, `make -j24` for one link. The pool hands the link
+    one: its own slot plus up to `--max-extra` slots free at that moment, and none that are busy.
+    """
+    failures = []
+    script = str(root / "tools/workflow/job_slot.py")
+    probe = ["sh", "-c", 'echo "$MAKEFLAGS"']
+    with tempfile.TemporaryDirectory(prefix="cy-jobserver-") as scratch:
+        environment = {**os.environ, "CY_JOB_SLOT_DIR": str(pathlib.Path(scratch) / "pool")}
+        free = subprocess.run([sys.executable, script, "--slots", "4", "--jobserver", "--max-extra",
+                               "2", "--", *probe], env=environment, capture_output=True, text=True,
+                              check=False).stdout
+        if "-j3 " not in f"{free} " or "--jobserver-auth=" not in free:
+            failures.append(f"a link on an idle pool of 4 with --max-extra 2 got MAKEFLAGS {free!r}, "
+                            "expected -j3 and a jobserver")
+        holders = [_pool_job(root, environment["CY_JOB_SLOT_DIR"], 4, pathlib.Path(scratch) / "log",
+                             f"h{index}", 3) for index in range(3)]
+        time.sleep(1.0)
+        busy = subprocess.run([sys.executable, script, "--slots", "4", "--jobserver", "--", *probe],
+                              env=environment, capture_output=True, text=True, check=False).stdout
+        for holder in holders:
+            holder.wait(timeout=30)
+        if "-j1 " not in f"{busy} ":
+            failures.append(f"a link with 3 of 4 slots busy got MAKEFLAGS {busy!r}, expected -j1: "
+                            "its jobserver may only hold the one slot left")
+    return failures
+
+
+def the_pool_reaches_every_compile_and_link(root: pathlib.Path) -> list[str]:
+    """cmake/launchers.cmake puts the pool before every compile and link — and nowhere on CI.
+
+    Configures AND BUILDS a one-file project that includes the engine's own modules, and reads the
+    launchers CMake recorded. With ccache present the pool must be ccache's `prefix_command` (so a
+    cache hit takes no slot); without it, the compile launcher itself.
+
+    THE BUILD IS THE POINT. The first version of the pool handed ccache `prefix_command=python3 -I
+    -S job_slot.py --slots 22 --`; ccache looks every word of a prefix up as a program, so every
+    compile failed with "ccache: error: -I: No such file or directory" — and a check that only read
+    the configured launcher strings passed it.
+    """
+    cmake = shutil.which("cmake")
+    if cmake is None:
+        return ["cmake is not on PATH; the launcher configuration cannot be checked"]
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="cy-launchers-") as scratch:
+        project = pathlib.Path(scratch) / "project"
+        project.mkdir()
+        (project / "main.c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
+        (project / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.28)\nproject(probe C CXX)\n"
+            f'list(APPEND CMAKE_MODULE_PATH "{root}/cmake")\n'
+            "include(launchers)\n"
+            "add_executable(probe main.c)\n"
+            'file(WRITE "${CMAKE_BINARY_DIR}/launchers.txt"\n'
+            '  "compile=${CMAKE_C_COMPILER_LAUNCHER}\\nlink=${CMAKE_C_LINKER_LAUNCHER}\\n")\n',
+            encoding="utf-8")
+        base = {key: value for key, value in os.environ.items()
+                if key not in ("CI", "GITHUB_ACTIONS", "CMAKE_C_COMPILER_LAUNCHER",
+                               "CMAKE_CXX_COMPILER_LAUNCHER", "CMAKE_C_LINKER_LAUNCHER",
+                               "CMAKE_CXX_LINKER_LAUNCHER")}
+        for label, extra in (("a workstation", {}), ("a CI runner", {"CI": "true"})):
+            tree = pathlib.Path(scratch) / label.replace(" ", "-")
+            environment = {**base, **extra, "CY_JOB_SLOT_DIR": str(pathlib.Path(scratch) / "pool")}
+            configured = subprocess.run([cmake, "-S", str(project), "-B", str(tree), "-G",
+                                         "Unix Makefiles",
+                                         f"-DCY_CCACHE_DIR={pathlib.Path(scratch) / 'ccache'}"],
+                                        env=environment, capture_output=True, text=True,
+                                        check=False)
+            if configured.returncode != 0:
+                failures.append(f"{label}: the probe project did not configure: "
+                                f"{configured.stderr.strip()[-300:]}")
+                continue
+            built = subprocess.run([cmake, "--build", str(tree)], env=environment,
+                                   capture_output=True, text=True, check=False)
+            if built.returncode != 0:
+                failures.append(f"{label}: the probe project did not BUILD through its launchers: "
+                                f"{(built.stdout + built.stderr).strip()[-300:]}")
+                continue
+            recorded = dict(line.split("=", 1) for line in
+                            (tree / "launchers.txt").read_text(encoding="utf-8").splitlines())
+            compile_launcher, link_launcher = recorded["compile"], recorded["link"]
+            if extra:
+                if "job-slot" in compile_launcher + link_launcher or "ccache" in compile_launcher:
+                    failures.append(f"{label}: launchers were installed on CI: {recorded}")
+                continue
+            if "job-slot" not in compile_launcher:
+                failures.append(f"{label}: compiles do not go through the pool: {compile_launcher!r}")
+            if shutil.which("ccache") and "prefix_command=" not in compile_launcher:
+                failures.append(f"{label}: with ccache present the pool is not its prefix_command, "
+                                f"so every cache hit would wait for a slot: {compile_launcher!r}")
+            linker = pathlib.Path(link_launcher) if link_launcher else None
+            if linker is None or not linker.is_file() or "--jobserver" not in linker.read_text():
+                failures.append(f"{label}: links do not go through the pool with a jobserver: "
+                                f"{link_launcher!r}")
+    return failures
+
+
+def build_reap_keeps_the_trees_the_ledger_reuses(root: pathlib.Path) -> list[str]:
+    """`build-reap --apply` removes an idle tree and keeps a marked one, a nested mark and the matrix.
+
+    Between M11.c's fourth and fifth closes the reaper removed `build/m11c-final`, the ledger's warm
+    tree, because between two runs it looked exactly like an abandoned one; the fifth close then
+    built every tree from empty and took 7 h 28 m. The case APPLIES the recipe, in a scratch
+    directory, because a dry run's listing is not evidence of what `--apply` deletes.
+    """
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="cy-reap-") as scratch:
+        trees = pathlib.Path(scratch)
+        layout = {"idle": None, "ledger": ".cy-keep", "nested": "dev/.cy-keep",
+                  "ledger-matrix": None}
+        for name, marker in layout.items():
+            (trees / name / "dev").mkdir(parents=True)
+            if marker:
+                (trees / name / marker).write_text("kept by the test\n", encoding="utf-8")
+        old = time.time() - 6 * 3600
+        for path in sorted(trees.rglob("*"), reverse=True):
+            os.utime(path, (old, old))
+        reaped = subprocess.run(["just", "build-reap", "--in", str(trees), "--apply"], cwd=root,
+                                capture_output=True, text=True, check=False)
+        if reaped.returncode != 0:
+            return [f"build-reap --in failed: {reaped.stderr.strip()[-300:]}"]
+        if (trees / "idle").exists():
+            failures.append("an idle, unmarked tree six hours old was not reaped — the test "
+                            "cannot tell a kept tree from a reaper that removes nothing")
+        for name in ("ledger", "nested", "ledger-matrix"):
+            if not (trees / name).exists():
+                failures.append(f"build-reap --apply removed {name!r}, which a ledger reuses:\n"
+                                f"{reaped.stdout}")
+    return failures
+
+
+def matrix_criteria_declare_the_rows_they_build(root: pathlib.Path) -> list[str]:
+    """A criterion that builds matrix rows declares them, and the matrix names it as their user.
+
+    The scheduler cannot read a tree out of `matrix.py build <row>`, so a criterion that builds rows
+    must declare `needs = ["build:ledger-matrix/<row>"]` for each — or two criteria configure one
+    tree at once. And the matrix's `needed_by` is how a reader knows who else a row serves.
+    """
+    # Read from `root` every time rather than from whatever an earlier import left in sys.modules.
+    sys.path.insert(0, str(root / "tools" / "roadmap"))
+    for module in ("criteria", "matrix"):
+        sys.modules.pop(module, None)
+    try:
+        import criteria as ledger  # noqa: PLC0415 — tools/roadmap is not a package
+        import matrix  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+    failures = []
+    users: dict[str, set[str]] = {}
+    for path in sorted((root / "tools" / "roadmap" / "milestones").glob("*.toml")):
+        for criterion in ledger.load(path.stem).criteria:
+            rows = set()
+            for found in re.finditer(r"matrix\.py (?:build|path) ([^\n|;&)]+)", criterion.run or ""):
+                rows.update(word.strip('"') for word in found.group(1).split())
+            # `matrix.py path "$p-default"` names its rows through a loop variable; the same
+            # criterion's `matrix.py build` names them literally, and that is what is checked.
+            rows = {row for row in rows if not row.startswith(("-", "$"))}
+            if not rows:
+                continue
+            name = f"{path.stem}:{criterion.id}"
+            declared = set(getattr(criterion, "needs", ()) or ())
+            for row in sorted(rows):
+                users.setdefault(row, set()).add(name)
+                if row not in matrix.BY_ID:
+                    failures.append(f"{name} builds matrix row {row!r}, which the matrix does not declare")
+                elif f"build:ledger-matrix/{row}" not in declared:
+                    failures.append(f"{name} builds {row!r} without declaring build:ledger-matrix/{row}")
+    for row, names in sorted(users.items()):
+        if row in matrix.BY_ID:
+            missing = names - set(matrix.BY_ID[row].needed_by)
+            if missing:
+                failures.append(f"matrix row {row!r} does not name {sorted(missing)} in needed_by")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -502,6 +831,21 @@ def main() -> int:
         ),
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
+        ),
+        "a build leaves two cores free by default": a_build_leaves_two_cores_free_by_default,
+        "no recipe asks for every core": no_recipe_asks_for_every_core,
+        "overlapping builds share one machine-wide pool": overlapping_builds_share_one_pool,
+        "a link's jobserver is bounded by the slots it holds": (
+            a_link_gets_a_jobserver_bounded_by_its_slots
+        ),
+        "the pool reaches every compile and link, and nothing on CI": (
+            the_pool_reaches_every_compile_and_link
+        ),
+        "build-reap keeps the trees the ledger reuses": (
+            build_reap_keeps_the_trees_the_ledger_reuses
+        ),
+        "a criterion that builds matrix rows declares them": (
+            matrix_criteria_declare_the_rows_they_build
         ),
     }
 

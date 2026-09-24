@@ -42,6 +42,14 @@ Import, rather than one large file, gives every category a single owner.
 
 **Overrides** available to every recipe, reported through `_report-override` when active:
 `CY_PROFILE` (the default profile), `CY_BUILD_DIR` (a build tree other than the preset's
-`build/<profile>/`), `CY_JOBS` (build parallelism).
+`build/<profile>/`), `CY_JOBS` (one build's parallelism; default every core but two).
+
+**Two cores stay free, machine-wide.** `just _jobs` is `CY_JOBS`, else `max(1, cores - 2)` (every
+core on a CI runner), and every recipe that starts a compiler passes it — `cmake --build
+--parallel`, `cargo --jobs`, `xargs -P` for clang-tidy. That bounds ONE build; what bounds all of
+them together is the job pool every compile and link goes through (`cmake/jobpool.cmake`,
+`tools/workflow/job_slot.py`; `_cargo-pool` and `_job-slots` put rustc and clang-tidy in it too).
+ctest stays one test at a time unless `CY_JOBS` is set. `tools/workflow/README.md` has the design;
+`tools/ci/test_recipes.py` holds the rule.
 
 **Governed by**: `developer-workflow-and-just`.

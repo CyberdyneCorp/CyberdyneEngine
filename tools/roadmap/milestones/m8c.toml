@@ -448,9 +448,15 @@ id = "steam-audio-configures"
 describe = "`-D CY_AUDIO_STEAM_AUDIO=ON` CONFIGURES AND BUILDS. It did not at M8.b's closing gate — upstream's CMake calls find_package for PFFFT, IPP and FFTS and deps/manifest.toml provides none of them — and that is an option declared, defaulted off, and never once built. This criterion is the forcing function that keeps saying so until it is true"
 source = "tasks 4b.1, 4b.2, audio, ROADMAP M8.c"
 kind = "command"
-run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/steam-audio}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_AUDIO_STEAM_AUDIO=ON"
+run = '''
+# The `on-steam-audio` row of tools/roadmap/matrix.py: one stable tree under build/ledger-matrix/ in
+# place of `${CY_BUILD_DIR}/steam-audio`, which was cold on every run with a new CY_BUILD_DIR. The
+# matrix runs `just build-engine` with the option ON every time; nothing is cached.
+python3 tools/roadmap/matrix.py build on-steam-audio
+'''
 timeout_s = 14400
 ci_job = "milestone-m8c"
+needs = ["build:ledger-matrix/on-steam-audio"]
 # DECLARED, RUN ON EVERY EVALUATION, AND STILL FAILING — and the closing gate had to build the
 # mechanism that makes those three things compatible. This criterion was written to fail on purpose;
 # `milestone-m8c` becomes a permanent merge gate the day it goes green and ci.yml runs

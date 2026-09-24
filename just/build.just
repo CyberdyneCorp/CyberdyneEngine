@@ -141,7 +141,7 @@ build-engine *args:
     else
         echo "==> build       profile=${profile}"
     fi
-    cmake "${build[@]}" ${CY_JOBS:+--parallel "${CY_JOBS}"}
+    cmake "${build[@]}" --parallel "$(just _jobs)"
 
 # Build everything this milestone has: the engine, its tools, and the editor. Shaders are their own
 # recipe — `build-shaders` compiles the set for every target and compares what they declare, which is
@@ -170,7 +170,7 @@ build-ios target="simulator":
     echo "==> configure   ${preset}"
     cmake "${configure[@]}"
     echo "==> build       cy_sample_ship_ios  configuration=Development"
-    cmake --build --preset "${preset}"
+    cmake --build --preset "${preset}" --parallel "$(just _jobs)"
 
 # Build the engine's command-line tools and code generators. CY_BUILD_TOOLS is on by default.
 build-tools *args:
@@ -222,9 +222,12 @@ build-editor *args:
     # mapping is checked as text and never as behaviour.
     export CY_EDITOR_PROFILE="${profile}"
 
+    # Every rustc through the machine-wide job pool, as every CMake compile is — `_cargo-pool`.
+    eval "$(just _cargo-pool)"
+
     echo "==> cargo build profile=${profile}  cargo-profile=${cargo_profile}  target=${CARGO_TARGET_DIR}"
     cargo build --manifest-path editor/Cargo.toml --profile "${cargo_profile}" \
-        ${CY_JOBS:+--jobs "${CY_JOBS}"} ${cargo_args[@]+"${cargo_args[@]}"}
+        --jobs "$(just _jobs)" ${cargo_args[@]+"${cargo_args[@]}"}
 
 # WHY THESE LIVE HERE RATHER THAN IN just/quality.just AND just/test.just. They belong there, and
 # whoever owns those files should call this recipe from them — `quality-format-check`,
@@ -268,13 +271,17 @@ build-editor-check *args:
     rustfmt --edition 2024 --check "${sources[@]}"
     echo "rustfmt: ${#sources[@]} file(s) match editor/rustfmt.toml"
 
+    eval "$(just _cargo-pool)"
     echo "==> clippy      profile=${profile}"
     cargo clippy --manifest-path editor/Cargo.toml --profile "${cargo_profile}" \
-        --all-targets ${CY_JOBS:+--jobs "${CY_JOBS}"} ${rest}
+        --all-targets --jobs "$(just _jobs)" ${rest}
 
     echo "==> cargo test  profile=${profile}"
+    # --jobs bounds the compile; the test harness picks its own thread count, all of them, unless
+    # RUST_TEST_THREADS says otherwise. A caller's own RUST_TEST_THREADS still wins.
+    export RUST_TEST_THREADS="${RUST_TEST_THREADS:-$(just _jobs)}"
     cargo test --manifest-path editor/Cargo.toml --profile "${cargo_profile}" \
-        ${CY_JOBS:+--jobs "${CY_JOBS}"} ${rest}
+        --jobs "$(just _jobs)" ${rest}
 
 # Format the editor's hand-written Rust in place.
 build-editor-format:
@@ -458,6 +465,56 @@ build-clean *args:
 
 # --- Shared implementation ------------------------------------------------------------------------
 
+# How many jobs a recipe runs at once: CY_JOBS when it is set, and otherwise EVERY CORE BUT TWO.
+#
+# WHY NOT ALL OF THEM. Ninja's own default is cores + 2, Cargo's and clang-tidy's `xargs -P` were
+# the core count, and the milestone ledger runs several of those at once. On the 24-core
+# workstation the ledger closes on, that left nothing for the desktop, the agents driving the run,
+# or the timing-sensitive tests running beside a build — `m11a:world-budget-on-a-device` measures a
+# 10.8 ms worst frame on a quiet host and 58-286 ms on a loaded one. Two cores are the machine's.
+#
+# THIS IS ONE BUILD'S SHARE. Two builds at once would still take cores - 2 EACH; what keeps the
+# machine-wide total at cores - 2 is the job pool every compile and link goes through
+# (cmake/jobpool.cmake, tools/workflow/job_slot.py), and `_job-slots` below for what CMake does not
+# compile. A CONTINUOUS-INTEGRATION RUNNER (`CI` set) keeps every core: nobody sits at it.
+#
+# ctest is deliberately NOT given this number. It runs one test at a time unless CY_JOBS says
+# otherwise, and that is kept: the suites carry wall-clock budgets that a parallel run would break.
+# The arithmetic is tools/workflow/jobs.sh, the one copy of it; tools/ci/test_recipes.py fails if a
+# recipe goes back to asking for every core.
+[private]
+_jobs:
+    @bash "{{root}}/tools/workflow/jobs.sh" build
+
+# The prefix that puts a command that is not a CMake compile — a rustc, a clang-tidy — into the same
+# machine-wide pool of `jobs.sh machine` slots the CMake launchers use. Empty on a CI runner (`CI`
+# set), with CY_JOB_POOL=OFF, on Windows, and without python3; a caller then runs the command bare.
+[private]
+_job-slots:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${CI:-}" ] || [ "${CY_JOB_POOL:-ON}" = "OFF" ] || ! command -v python3 >/dev/null 2>&1 \
+        || [ "$(uname -s)" = "Windows_NT" ] || [[ "$(uname -s)" == MINGW* ]]; then
+        exit 0
+    fi
+    echo "python3 -I -S {{root}}/tools/workflow/job_slot.py --slots $(bash "{{root}}/tools/workflow/jobs.sh" machine) --"
+
+# The environment that puts every rustc Cargo starts into the same pool, printed as `export` lines
+# for `eval`. Cargo's RUSTC_WRAPPER names one program and passes it no options, so job_slot.py reads
+# them from the environment; a link or a codegen-heavy crate gets up to three more slots that are free
+# at that moment as jobserver tokens, and no more. Nothing is printed when `_job-slots` is empty or
+# the caller already chose a RUSTC_WRAPPER (sccache, say): theirs wins.
+[private]
+_cargo-pool:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${RUSTC_WRAPPER:-}" ] || [ -z "$(just _job-slots)" ]; then
+        exit 0
+    fi
+    echo "export RUSTC_WRAPPER='{{root}}/tools/workflow/job_slot.py'"
+    echo "export CY_JOB_SLOTS='$(bash "{{root}}/tools/workflow/jobs.sh" machine)'"
+    echo "export CY_JOB_SLOT_JOBSERVER=1 CY_JOB_SLOT_MAX_EXTRA=3"
+
 # The platform a build targets, or a diagnostic saying why this host cannot produce it.
 #
 # `developer-workflow-and-just` requires that a target which cannot be built on the current host is
@@ -487,7 +544,7 @@ _resolve-target requested:
     exec python3 tools/workflow/targets.py resolve '{{requested}}'
 
 # Reclaim the build directories nothing is using.
-# Usage: just build-reap [--older-than <minutes>] [--keep <name>] [--apply]
+# Usage: just build-reap [--older-than <minutes>] [--keep <name>] [--in <directory>] [--apply]
 #
 # WHY THIS EXISTS. Hard rule 11 gives every agent its own build directory and NOTHING collects them.
 # Twice now the tree has had to be cleared by hand — 218 GB, then 892 GB across 106 directories — and
@@ -496,11 +553,24 @@ _resolve-target requested:
 # rebuildable from a committed source tree, so the only question a reaper has to answer correctly is
 # WHICH ONES ARE IN USE.
 #
-# It answers that three ways, and every one of them has to say yes before a directory is removed:
+# It answers that five ways, and every one of them has to say yes before a directory is removed:
 #   * no process has its working directory inside it (/proc/*/cwd),
 #   * it has not been written to inside --older-than minutes (default 120), which is what protects a
-#     tree a build is writing to from OUTSIDE this machine's process table, and
-#   * it is not named by --keep.
+#     tree a build is writing to from OUTSIDE this machine's process table,
+#   * it is not named by --keep,
+#   * it is not `ledger-matrix`, the ledger's shared build matrix (tools/roadmap/matrix.py), and
+#   * it holds no `.cy-keep` marker, at its top or one level down. `just roadmap-milestone` writes one
+#     into the tree it evaluates in, and matrix.py into the matrix; the marker's first line is the
+#     reason, and deleting the file is how a tree is let go.
+#
+# WHY THE LAST TWO. Between M11.c's fourth and fifth closes this recipe, applied, removed
+# `build/m11c-final` — the ledger's warm tree, idle for more than two hours between two runs, which
+# is exactly what a tree between two closes looks like. The fifth close then built every per-label
+# tree from empty and took 7 h 28 m. Age and a process table cannot tell "abandoned" from "between
+# two ledger runs"; only the ledger can, so it says so in the tree. tools/ci/test_recipes.py applies
+# this recipe to a scratch directory and fails if a marked tree or the matrix is removed.
+#
+# `--in <directory>` reaps somewhere other than build/ — for that test, and nothing else needs it.
 #
 # DRY RUN BY DEFAULT. It prints what it would remove and stops; `--apply` is what deletes. That is the
 # opposite of most cleanup tools and deliberate: the cost of keeping a stale tree is disk, and the cost
@@ -519,17 +589,19 @@ build-reap *args:
     minutes=120
     apply=0
     keep=()
+    trees=build
     while (($#)); do
         case "$1" in
             --older-than) minutes="$2"; shift 2 ;;
             --keep)       keep+=("$2");  shift 2 ;;
+            --in)         trees="$2";    shift 2 ;;
             --apply)      apply=1;       shift ;;
             *) echo "build-reap: unknown argument '$1'" >&2; exit 2 ;;
         esac
     done
 
-    if [[ ! -d build ]]; then
-        echo "build-reap: no build/ directory; nothing to reap"
+    if [[ ! -d "${trees}" ]]; then
+        echo "build-reap: no ${trees}/ directory; nothing to reap"
         exit 0
     fi
 
@@ -544,12 +616,17 @@ build-reap *args:
     reaped=0
     kept=0
     freed=0
-    for path in build/*/; do
+    for path in "${trees}"/*/; do
         name="$(basename "$path")"
         skip=""
         for k in ${keep[@]+"${keep[@]}"}; do
             [[ "$name" == "$k" ]] && skip="named by --keep"
         done
+        [[ "$name" == "ledger-matrix" ]] && skip="the ledger's shared build matrix"
+        marker="$(find "$path" -mindepth 1 -maxdepth 2 -name .cy-keep -type f -print -quit 2>/dev/null)"
+        if [[ -z "$skip" ]] && [[ -n "$marker" ]]; then
+            skip="marked by ${marker#"$path"}: $(head -n 1 "$marker" 2>/dev/null)"
+        fi
         for a in ${active[@]+"${active[@]}"}; do
             [[ "$name" == "$a" ]] && skip="a process is inside it"
         done
