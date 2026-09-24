@@ -150,6 +150,18 @@ Game rendering, so authored lights determine its illumination.
 Disabling the last authored light removes its illumination in both views; its Editor handle remains
 selectable so it can be enabled again. Rotating a directional or spot light changes where it shines.
 Point lights emit in every direction, so moving one changes the image but rotating one does not.
+An enabled directional light with `casts_shadow` draws a shadow from MeshRenderers whose
+`casts_shadow` is enabled onto MeshRenderers whose `receives_shadow` is enabled. The shadow follows
+light rotation and mesh transforms in both views. The Editor adds a modest fill so unlit sides stay
+visible while the shadow remains readable; Game uses the authored lights. The hosted Metal capture
+uses an sRGB target, matching the frame's tone mapper.
+
+For the imported tree example, the Plane is centered at `(0.5, -1.17, 0)` and scaled to
+`(8, 1, 8)`, below the tree's lowest root. A directional light points downward across it, and a
+point light near the viewing side reveals the dark bark texture. The live captures show the
+[tree shadow](../docs/design/images/editor-tree-plane-shadow-metal.png), the
+[light disabled](../docs/design/images/editor-tree-plane-light-off-metal.png), and the
+[light rotated](../docs/design/images/editor-tree-plane-light-rotated-metal.png).
 
 Live Metal captures: [Editor view with selected light](../docs/design/images/editor-scene-light-editor-metal.png)
 and [Game view during Play](../docs/design/images/editor-scene-light-game-play-metal.png).

@@ -18,6 +18,7 @@ See proposal.md. `scene.create-primitive` already writes `.cyprim` and adds a me
 4. Play changes simulation state in the hosted runtime and selects Game view in the shell. Stop restores the document snapshot and previous Editor camera. Report physics, script, and audio service readiness separately. Script and audio wiring belongs in the runtime, never in the Rust shell.
 5. Keep the Editor fallback light only in a scene with no authored light components. A disabled light stays selectable but contributes no illumination. Use exposure and fill that preserve visible changes in authored light direction. Point light rotation does not alter its omnidirectional emission.
 6. Render a directional shadow depth map from authored caster geometry and sample it on authored receivers in the hosted frame. Carry light orientation, `casts_shadow`, and mesh shadow flags through the same frame data that drives lighting; update the map after edits. This extends the existing engine frame rather than adding a scene-specific projected decal.
+7. Keep the Metal light-buffer fields tightly packed where `GpuLight` stores three floats next to a scalar. Use an sRGB output for the hosted capture because the full-screen tone mapper expects the output target to apply the transfer function. This makes authored light intensity and direction visible at the intended exposure.
 
 ## Risks / Trade-offs
 

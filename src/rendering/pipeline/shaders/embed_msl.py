@@ -3,14 +3,25 @@
 """Embed checked-in MSL source modules for the frame pipeline."""
 
 import pathlib
+import re
 import sys
 
 
 def frame_argument_buffers(source: str, name: str) -> str:
     """Keep Slang's compacted MSL slots aligned with the RHI's fixed set slots."""
+    # The CPU's GpuLight stores each float3 tightly beside a scalar. Metal's
+    # float3 occupies a 16-byte slot, so the generated storage struct must use
+    # packed_float3 or every field after the first vector is read at the wrong
+    # offset (including the light kind and intensity).
+    if "struct Light_0" in source:
+        for field in ("positionRelativeToCamera_0", "direction_0", "color_0"):
+            original = f"float3 {field};"
+            if original not in source:
+                raise ValueError(f"{name}: missing Light.{field}")
+            source = source.replace(original, f"packed_float3 {field};")
     if name not in {
         "kFrameDepthVertexMsl", "kFrameDepthFragmentMsl",
-        "kFrameForwardVertexMsl", "kFrameForwardFragmentMsl",
+        "kFrameForwardVertexMsl", "kFrameForwardFragmentMsl", "kFrameShadowVertexMsl",
     }:
         return source
     # Slang emits uint3 for the grid dimensions. Metal pads that field to 16
@@ -28,13 +39,13 @@ def frame_argument_buffers(source: str, name: str) -> str:
         # Metal argument-buffer texture arrays must be direct members with the
         # resource IDs assigned by the RHI descriptor-set layout.
         wrapped = "_Array_default_Texture2D128_0 textures_0;"
-        sampled = "(&kernelContext_4->cyFrameGlobals_0->textures_0)->data_0["
-        if wrapped not in source or sampled not in source:
+        sampled = r"\(&((?:kernelContext_\d+))->cyFrameGlobals_0->textures_0\)->data_0\["
+        if wrapped not in source or re.search(sampled, source) is None:
             raise ValueError(f"{name}: expected Slang's wrapped texture array")
         source = source.replace(wrapped, "array<texture2d<float, access::sample>, 128> textures_0 [[id(1)]];")
         source = source.replace("CyGlobalsData_0 constant* globals_0;", "CyGlobalsData_0 constant* globals_0 [[id(0)]];")
         source = source.replace("sampler sampler_0;", "sampler sampler_0 [[id(129)]];")
-        source = source.replace(sampled, "kernelContext_4->cyFrameGlobals_0->textures_0[")
+        source = re.sub(sampled, r"\1->cyFrameGlobals_0->textures_0[", source)
         source = source.replace(
             "CyFrameGlobalSet_default_0 constant* cyFrameGlobals_1 [[buffer(0)]]",
             "CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]]",

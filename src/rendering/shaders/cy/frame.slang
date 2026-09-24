@@ -165,6 +165,13 @@ public struct CyFrameData
     /// the frame it got before it existed — the picture does not change under a caller that did
     /// not ask for it, which is what keeps every committed capture in the tree honest.
     public uint4 materialTextures;
+    /// Optional directional shadow map, appended to preserve existing frame-block offsets.
+    public float4 shadowToClipRow0;
+    public float4 shadowToClipRow1;
+    public float4 shadowToClipRow2;
+    public float4 shadowToClipRow3;
+    /// x: frame texture slot; y: light index; z: map extent; w: enabled.
+    public uint4 shadowControl;
 };
 
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
@@ -258,6 +265,15 @@ public float4 transformToClip(float3 relative)
     let point = float4(relative, 1.0);
     return float4(dot(cyFrame.relativeToClipRow0, point), dot(cyFrame.relativeToClipRow1, point),
                   dot(cyFrame.relativeToClipRow2, point), dot(cyFrame.relativeToClipRow3, point));
+}
+
+public float4 transformToShadowClip(float3 relative)
+{
+    let point = float4(relative, 1.0);
+    return float4(dot(cyFrame.shadowToClipRow0, point),
+                  dot(cyFrame.shadowToClipRow1, point),
+                  dot(cyFrame.shadowToClipRow2, point),
+                  dot(cyFrame.shadowToClipRow3, point));
 }
 
 public float3 transformToRelative(CyInstanceTransform instance, float3 modelPosition)
@@ -361,6 +377,27 @@ Surface surfaceOf(uint material, float3 tint, float2 uv)
 }
 
 // --- The depth prepass ------------------------------------------------------------------------
+
+public struct CyShadowVertex
+{
+    public float4 position : SV_Position;
+};
+
+[shader("vertex")]
+public CyShadowVertex cyShadowVertex(float3 modelPosition : POSITION)
+{
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    CyShadowVertex output;
+    output.position = transformToShadowClip(transformToRelative(instance, modelPosition));
+    return output;
+}
+
+[shader("fragment")]
+public float cyShadowFragment(CyShadowVertex input) : SV_Target
+{
+    return input.position.z;
+}
 //
 // POSITION ONLY. `render::kDepthPassStreams` is `stream_bit(Position)` and this shader is why that
 // constant exists: binding the normal and UV streams for a pass that writes depth is exactly the
@@ -454,8 +491,40 @@ public CyForwardVertex cyForwardVertex(float3 modelPosition : POSITION,
 /// configured to nothing — and the loop then walks every light. That is a DECLARED fallback rather
 /// than a silent one: it is slower and it is correct, and a frame that quietly shaded nothing
 /// because its grid was empty is the failure this branch exists to make impossible.
+float directionalShadowVisibility(float3 relativePosition, float3 normal)
+{
+    if (cyFrame.shadowControl.w == 0 || cyFrame.shadowControl.x == kCyNoMaterialTexture)
+    {
+        return 1.0;
+    }
+    let clip = transformToShadowClip(relativePosition + normal * 0.005);
+    if (clip.w <= 0.0)
+    {
+        return 1.0;
+    }
+    let ndc = clip.xyz / clip.w;
+    let uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+    {
+        return 1.0;
+    }
+    let radius = 1.0 / float(max(cyFrame.shadowControl.z, 1u));
+    let reference = ndc.z + 0.0005;
+    float visible = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            let sampleUv = uv + float2(float(x), float(y)) * radius;
+            let stored = cyMaterialSampleTextureLevel(cyFrame.shadowControl.x, sampleUv, 0.0).r;
+            visible += reference >= stored ? 1.0 : 0.0;
+        }
+    }
+    return visible / 9.0;
+}
+
 float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal, float3 viewDir,
-                        uint2 pixel)
+                        uint2 pixel, uint instanceFlags)
 {
     float3 lit = float3(0.0);
     let lightCount = cyFrame.counts.x;
@@ -474,7 +543,9 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
             continue;
         }
         let sunSample = evaluateLight(cyLights[global], relativePosition);
-        lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample);
+        let visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
+                             ? directionalShadowVisibility(relativePosition, normal) : 1.0;
+        lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample) * visibility;
     }
 
     if (cyFrame.counts.w == 0 || cyFrame.clusterGrid.dimensions.z == 0)
@@ -523,7 +594,8 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     // position. There is nowhere in this file to put a world-space camera, which is the point.
     let viewDir = normalize(-input.relativePosition);
 
-    var color = accumulateLights(surface, input.relativePosition, normal, viewDir, pixel);
+    var color = accumulateLights(surface, input.relativePosition, normal, viewDir, pixel,
+                                 draw.flags);
     color += surface.emission;
     color += surface.albedo * cyFrame.ambientAndOcclusion.rgb * surface.occlusion;
     return float4(color, surface.opacity);

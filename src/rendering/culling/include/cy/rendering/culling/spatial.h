@@ -83,6 +83,7 @@ enum SpatialFlagBits : u32 {
     /// skinned bit because both are read out of `GpuDrawInstance::flags` by the same shader for the
     /// same reason: one word rather than a whole instance record for one bit.
     kSpatialTwoSided = 1U << 9U,
+    kSpatialReceivesShadow = 1U << 10U,
 };
 
 /// Which index an entry belongs to. A volume is a light, a probe, a decal, a GI volume or a fog
@@ -114,7 +115,7 @@ struct SpatialEntry {
     /// Where the instance's record lives in the GPU scene, carried through culling untouched.
     u32 gpu_slot = 0;
     render::LayerMask layer_mask = render::kDefaultLayer;
-    u32 flags = kSpatialActive | kSpatialVisible | kSpatialCastsShadow;
+    u32 flags = kSpatialActive | kSpatialVisible | kSpatialCastsShadow | kSpatialReceivesShadow;
     SpatialDomain domain = SpatialDomain::Renderable;
     /// Meaningful only for `SpatialDomain::Volume`. `None` on a renderable.
     VolumeKind volume_kind = VolumeKind::None;

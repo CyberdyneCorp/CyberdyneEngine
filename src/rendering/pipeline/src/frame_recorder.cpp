@@ -158,13 +158,19 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     // The number here is the pipeline's own, so the two cannot disagree again.
     const bool depth_only = pipeline == FramePipelineKind::Depth;
     const u64 offsets[3] = {0, 0, 0};
-    const usize stream_count = depth_only ? kDepthPassStreamCount : kForwardPassStreamCount;
+    const usize stream_count = pipeline == FramePipelineKind::Shadow
+                                   ? 1U
+                                   : (depth_only ? kDepthPassStreamCount : kForwardPassStreamCount);
     commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(geometry.streams, stream_count),
                                  Span<const u64>(offsets, stream_count));
 
     rhi::BufferHandle bound_indices;
     for (u32 offset = 0; offset < range.count; ++offset) {
         const u32 index = range.first + offset;
+        if (pipeline == FramePipelineKind::Shadow &&
+            (range.instances[index].flags & render::kInstanceCastsShadow) == 0U) {
+            continue;
+        }
         DrawGeometry draw;
         if (!geometry.geometry(range.items[index], range.instances[index], geometry.user, draw)) {
             ++recorder.mutable_report().skipped_draws;
@@ -253,6 +259,24 @@ void record_depth_prepass(const PassContext& context, void* user) noexcept {
                recorder.mutable_report().prepass_draws);
     record_extensions(recorder, context, FramePassKind::DepthPrepass, description.width,
                       description.height, true);
+    context.commands->end_rendering();
+    ++recorder.mutable_report().passes;
+}
+
+void record_shadow(const PassContext& context, void* user) noexcept {
+    FrameRecorder& recorder = *recorder_of(user);
+    rhi::RenderAttachment color =
+        color_attachment(*context.executor, recorder.shadow_color(), true);
+    color.clear.color[0] = 0.0F;
+    rhi::RenderingInfo info;
+    info.render_area = rhi::Rect2D{0, 0, recorder.shadow_extent(), recorder.shadow_extent()};
+    info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
+    info.depth_attachment = depth_attachment(*context.executor, recorder.shadow_depth(), true);
+    context.commands->begin_rendering(info);
+    set_full_viewport(*context.commands, recorder.shadow_extent(), recorder.shadow_extent());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    u32 draws = 0;
+    draw_layer(recorder, context, FramePipelineKind::Shadow, render::SortLayer::Opaque, draws);
     context.commands->end_rendering();
     ++recorder.mutable_report().passes;
 }
@@ -444,6 +468,9 @@ FrameSinks FrameRecorder::sinks() noexcept {
         sinks.passes[static_cast<usize>(kind)] = FramePassCallback{function, this};
     };
     attach(FramePassKind::Prepare, &record_prepare);
+    if (shadow_color_ != kInvalidResource && shadow_depth_ != kInvalidResource) {
+        attach(FramePassKind::Shadow, &record_shadow);
+    }
     attach(FramePassKind::DepthPrepass, &record_depth_prepass);
     attach(FramePassKind::Opaque, &record_opaque);
     attach(FramePassKind::Transparent, &record_transparent);

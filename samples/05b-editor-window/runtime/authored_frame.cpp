@@ -29,7 +29,8 @@ Vec3 point(const Mat4& matrix, Vec3 model) noexcept;
 
 constexpr u32 kCapacity = 4096;
 constexpr u32 kMaterialCapacity = 128;
-constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
+constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
+constexpr u32 kShadowExtent = 2048;
 
 u32 read_u32(const u8* bytes) noexcept {
     return static_cast<u32>(bytes[0]) | (static_cast<u32>(bytes[1]) << 8U) |
@@ -89,6 +90,12 @@ bool light_enabled(const ser::World& world, const ser::WorldNode& node) noexcept
 
 bool has_light_source(const ser::World& world, const ser::WorldNode& node) noexcept {
     return field_value(world, node, "LightSource", "kind") != nullptr;
+}
+
+bool mesh_shadow_flag(const ser::World& world, const ser::WorldNode& node,
+                      std::string_view name) noexcept {
+    const ser::WorldValue* value = field_value(world, node, "MeshRenderer", name);
+    return value == nullptr || (value->kind == ser::WorldValueKind::Bool && value->integer != 0);
 }
 
 bool append_light(const ser::World& world, const ser::WorldNode& node, const Mat4& matrix,
@@ -210,6 +217,8 @@ struct AuthoredFrame::Instance {
     u64 identity = 0;
     u32 mesh = 0;
     Aabb bounds = Aabb::empty();
+    bool casts_shadow = true;
+    bool receives_shadow = true;
     std::vector<u32> materials;
 };
 
@@ -234,6 +243,15 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
 
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
+    if (!shadow_view_.is_null()) {
+        device_->destroy_texture_view(shadow_view_);
+    }
+    if (!shadow_color_.is_null()) {
+        device_->destroy_texture(shadow_color_);
+    }
+    if (!shadow_depth_.is_null()) {
+        device_->destroy_texture(shadow_depth_);
+    }
     texture_table_.shutdown();
     texture_server_.shutdown();
     release_geometry();
@@ -338,6 +356,35 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
         return make_unexpected(texture.error());
     }
     output_ = *texture;
+
+    rhi::TextureDescription shadow;
+    shadow.name = "editor directional shadow color";
+    shadow.format = rhi::Format::R32Sfloat;
+    shadow.extent = rhi::Extent3D{kShadowExtent, kShadowExtent, 1};
+    shadow.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Sampled;
+    Expected<rhi::TextureHandle, Error> shadow_color = device_->create_texture(shadow);
+    if (!shadow_color) {
+        return make_unexpected(shadow_color.error());
+    }
+    shadow_color_ = *shadow_color;
+    shadow.name = "editor directional shadow depth";
+    shadow.format = rhi::Format::D32Sfloat;
+    shadow.usage = rhi::TextureUsage::DepthStencilAttachment;
+    Expected<rhi::TextureHandle, Error> shadow_depth = device_->create_texture(shadow);
+    if (!shadow_depth) {
+        return make_unexpected(shadow_depth.error());
+    }
+    shadow_depth_ = *shadow_depth;
+    rhi::TextureViewDescription shadow_view;
+    shadow_view.name = "editor directional shadow sampled";
+    shadow_view.texture = shadow_color_;
+    Expected<rhi::TextureViewHandle, Error> created_view =
+        device_->create_texture_view(shadow_view);
+    if (!created_view) {
+        return make_unexpected(created_view.error());
+    }
+    shadow_view_ = *created_view;
+    shadow_slot_ = kMaterialTextureSlots - 1U;
 
     initialized_ = true;
     return ok();
@@ -754,6 +801,8 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
     instance.identity = node.identity;
     instance.mesh = static_cast<u32>(found - meshes_.begin());
     instance.bounds = bounds;
+    instance.casts_shadow = mesh_shadow_flag(world, node, "casts_shadow");
+    instance.receives_shadow = mesh_shadow_flag(world, node, "receives_shadow");
     const std::string primary = field_reference(world, node, "MeshRenderer", "material");
     const usize sections = std::max<usize>((*found)->data.sections.size(), 1);
     for (usize section = 0; section < sections; ++section) {
@@ -775,6 +824,12 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
     entry.stable_id = node.identity;
     entry.gpu_slot = static_cast<u32>(instances_.size());
     entry.radius = radius_of(bounds);
+    if (!instance.casts_shadow) {
+        entry.flags &= ~kSpatialCastsShadow;
+    }
+    if (!instance.receives_shadow) {
+        entry.flags &= ~kSpatialReceivesShadow;
+    }
     if (Expected<u32, Error> inserted = index_.insert(entry); !inserted) {
         return make_unexpected(inserted.error());
     }
@@ -852,8 +907,19 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (count > kMaterialTextureSlots) {
         return fail(ErrorCode::OutOfRange, "authored frame: too many resident material textures");
     }
+    if (count == kMaterialTextureSlots) {
+        return fail(ErrorCode::OutOfRange, "authored frame: no room for the shadow texture");
+    }
+    for (usize index = 0; index < count; ++index) {
+        if (resident[index].slot == shadow_slot_) {
+            return fail(ErrorCode::OutOfRange,
+                        "authored frame: shadow slot conflicts with a material");
+        }
+    }
+    resident[count].slot = shadow_slot_;
+    resident[count].view = shadow_view_;
     if (Status status =
-            bindings_.set_material_textures(Span<const MaterialTextureSlot>(resident, count));
+            bindings_.set_material_textures(Span<const MaterialTextureSlot>(resident, count + 1));
         !status) {
         return status;
     }
@@ -883,7 +949,9 @@ Status AuthoredFrame::publish(const first_light::Camera& camera,
         record.bounds_center[2] = centre.z;
         record.bounds_radius = radius_of(visible.bounds);
         record.set_stable_id(visible.identity);
-        record.flags = render::kInstanceActive;
+        record.flags = render::kInstanceActive |
+                       (visible.casts_shadow ? render::kInstanceCastsShadow : 0U) |
+                       (visible.receives_shadow ? render::kInstanceReceivesShadow : 0U);
         record.layer_mask = 0xFFFF'FFFFU;
         const u32 slot = static_cast<u32>(instances.size());
         if (Status status = instances.push_back(record); !status) {
@@ -1012,12 +1080,36 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     output.height = height_;
     output.extra_usage = rhi::TextureUsage::TransferSource;
     view.output = graph_.import_texture(output, output_, rhi::ImageUse::Undefined);
+    u32 shadow_light = static_cast<u32>(lights_.size());
+    for (u32 index = 0; index < lights_.size(); ++index) {
+        if (lights_[index].kind == render::LightKind::Directional && lights_[index].casts_shadow) {
+            shadow_light = index;
+            break;
+        }
+    }
+    if (shadow_light < lights_.size()) {
+        TextureRequest shadow;
+        shadow.name = "editor directional shadow color";
+        shadow.format = rhi::Format::R32Sfloat;
+        shadow.width = kShadowExtent;
+        shadow.height = kShadowExtent;
+        view.shadow_color = graph_.import_texture(shadow, shadow_color_, rhi::ImageUse::Undefined);
+        shadow.name = "editor directional shadow depth";
+        shadow.format = rhi::Format::D32Sfloat;
+        view.shadow_depth = graph_.import_texture(shadow, shadow_depth_, rhi::ImageUse::Undefined);
+    }
+    recorder_.set_shadow_targets(view.shadow_color, view.shadow_depth, kShadowExtent);
     if (Status status = recorder_.bind(assembly_); !status) {
         return status;
     }
     FrameSinks sinks = recorder_.sinks();
     sinks.surfaces = &AuthoredFrame::surfaces;
     sinks.surfaces_user = this;
+    FrameResourceRead shadow_read{view.shadow_color, rhi::Access::FragmentSampledRead};
+    if (shadow_light < lights_.size()) {
+        sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =
+            Span<const FrameResourceRead>(&shadow_read, 1);
+    }
     AssemblyReport report;
     if (Status status = assembly_.assemble(index_, view, sinks, graph_, report); !status) {
         return status;
@@ -1030,11 +1122,43 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     // silently adding a light the scene does not contain.
     if (editor_lighting) {
         for (u32 channel = 0; channel < 3; ++channel) {
-            data.view.ambient_and_occlusion[channel] += 500.0F;
+            data.view.ambient_and_occlusion[channel] += 12000.0F;
         }
     }
     if (!texture_handles_.empty()) {
         data.view.material_textures[0] = base_color_texture_offset_;
+    }
+    if (shadow_light < lights_.size() && !instances_.empty()) {
+        Aabb bounds = Aabb::empty();
+        for (const Instance& instance : instances_) {
+            bounds.min = Vec3{std::min(bounds.min.x, instance.bounds.min.x),
+                              std::min(bounds.min.y, instance.bounds.min.y),
+                              std::min(bounds.min.z, instance.bounds.min.z)};
+            bounds.max = Vec3{std::max(bounds.max.x, instance.bounds.max.x),
+                              std::max(bounds.max.y, instance.bounds.max.y),
+                              std::max(bounds.max.z, instance.bounds.max.z)};
+        }
+        const Vec3 center = (bounds.min + bounds.max) * 0.5F;
+        const Vec3 size = bounds.max - bounds.min;
+        const f32 radius = std::max({size.x, size.y, size.z, 1.0F}) * 0.85F;
+        const Mat4 light_transform = lights_[shadow_light].transform.to_matrix();
+        const Vec3 direction = normalize(point(light_transform, Vec3{0.0F, 0.0F, -1.0F}) -
+                                         lights_[shadow_light].transform.translation);
+        const Vec3 up =
+            std::fabs(direction.y) > 0.95F ? Vec3{0.0F, 0.0F, 1.0F} : Vec3{0.0F, 1.0F, 0.0F};
+        const Mat4 shadow_view = look_at(center - direction * (radius * 2.0F), center, up);
+        const Mat4 shadow_projection =
+            orthographic_reversed_z(-radius, radius, -radius, radius, 0.1F, radius * 4.0F);
+        const Mat4 shadow_to_clip = shadow_projection * shadow_view * Mat4::from_translation(eye);
+        for (u32 row = 0; row < 4; ++row) {
+            for (u32 column = 0; column < 4; ++column) {
+                data.view.shadow_to_clip[row * 4U + column] = shadow_to_clip.at(row, column);
+            }
+        }
+        data.view.shadow_control[0] = shadow_slot_;
+        data.view.shadow_control[1] = shadow_light;
+        data.view.shadow_control[2] = kShadowExtent;
+        data.view.shadow_control[3] = 1;
     }
     if (Status status = bindings_.upload(slot, data); !status) {
         return status;

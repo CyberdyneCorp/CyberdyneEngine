@@ -233,10 +233,17 @@ struct alignas(16) FrameViewData {
     /// then owns making the slots resident — see `FrameBindings::set_material_textures`.
     u32 material_textures[4] = {kNoMaterialTexture, kNoMaterialTexture, kNoMaterialTexture,
                                 kNoMaterialTexture};
+    /// Camera-relative to the selected directional light's clip space. Optional; shadow_control
+    /// keeps existing frames unshadowed until the caller supplies a shadow map.
+    f32 shadow_to_clip[16] = {};
+    /// x: sampled texture slot, y: light index, z: map extent, w: enabled.
+    u32 shadow_control[4] = {kNoMaterialTexture, 0, 0, 0};
 };
 
-static_assert(sizeof(FrameViewData) == 336, "CyFrameData's std140 block is 336 bytes");
+static_assert(sizeof(FrameViewData) == 416, "CyFrameData's std140 block is 416 bytes");
 static_assert(offsetof(FrameViewData, material_textures) == 320);
+static_assert(offsetof(FrameViewData, shadow_to_clip) == 336);
+static_assert(offsetof(FrameViewData, shadow_control) == 400);
 static_assert(offsetof(FrameViewData, previous_relative_to_clip) == 64);
 static_assert(offsetof(FrameViewData, relative_to_view) == 128);
 static_assert(offsetof(FrameViewData, ambient_and_occlusion) == 192);
@@ -294,6 +301,7 @@ enum class FramePipelineKind : u8 {
     Transparent,
     Resolve,
     Temporal,
+    Shadow,
     Count,
 };
 
@@ -354,6 +362,7 @@ private:
     [[nodiscard]] Status create_pipelines(rhi::Device& device, const PipelineSetup& setup) noexcept;
     [[nodiscard]] Status create_geometry_pipeline(rhi::Device& device, const PipelineSetup& setup,
                                                   FramePipelineKind kind) noexcept;
+    [[nodiscard]] Status create_shadow_pipeline(rhi::Device& device) noexcept;
     [[nodiscard]] Status create_resolve_pipeline(rhi::Device& device,
                                                  const PipelineSetup& setup) noexcept;
     [[nodiscard]] Status create_temporal_pipeline(rhi::Device& device,
@@ -363,6 +372,8 @@ private:
     PipelineSetup setup_;
     rhi::ShaderModuleHandle depth_vertex_;
     rhi::ShaderModuleHandle depth_fragment_;
+    rhi::ShaderModuleHandle shadow_vertex_;
+    rhi::ShaderModuleHandle shadow_fragment_;
     rhi::ShaderModuleHandle forward_vertex_;
     rhi::ShaderModuleHandle forward_fragment_;
     rhi::ShaderModuleHandle resolve_vertex_;

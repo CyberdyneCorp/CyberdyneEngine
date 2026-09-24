@@ -122,6 +122,47 @@ node 1 0 "test" "Camera"
     field 4 1.1
     field 5 true
 )";
+constexpr std::string_view kShadowScene = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 9 bool "casts_shadow" ""
+  field 10 bool "receives_shadow" ""
+type 3 runtime "LightSource"
+  field 5 int "kind" ""
+  field 6 float "intensity" ""
+  field 7 bool "enabled" ""
+  field 8 bool "casts_shadow" ""
+node 0 - "test" "Block"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 2
+    field 4 "content/beauty/meshes/block.cyprim"
+    field 9 true
+node 1 - "test" "Plane"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 -0.04 0
+    field 3 8 1 8
+  component 2
+    field 4 "samples/05b-editor-window/runtime/tests/assets/plane.cyprim"
+    field 10 true
+node 2 - "test" "Sun"
+  component 1
+    field 1 0 0.9238795 0.3826834 0
+    field 2 0 0 0
+    field 3 1 1 1
+  component 3
+    field 5 0
+    field 6 100000
+    field 7 true
+    field 8 true
+)";
 
 Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Gpu);
@@ -139,6 +180,24 @@ first_light::Camera camera() {
     return view;
 }
 
+u64 red_sum(Span<const u32> pixels) noexcept {
+    u64 sum = 0;
+    for (u32 pixel : pixels) {
+        sum += pixel & 0xFFU;
+    }
+    return sum;
+}
+
+usize darkened_pixels(Span<const u32> shadowed, Span<const u32> lit) noexcept {
+    usize count = 0;
+    for (usize pixel = 0; pixel < shadowed.size(); ++pixel) {
+        const u32 shadow_red = shadowed[pixel] & 0xFFU;
+        const u32 lit_red = lit[pixel] & 0xFFU;
+        count += static_cast<usize>(shadow_red + 30U < lit_red);
+    }
+    return count;
+}
+
 }  // namespace
 
 CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed bounds") {
@@ -153,7 +212,11 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
 
     {
         AuthoredFrame frame(allocator(), **device);
-        CY_REQUIRE(frame.initialize(192, 128, CY_TEST_PROJECT));
+        const auto initialized = frame.initialize(192, 128, CY_TEST_PROJECT);
+        if (!initialized) {
+            std::fprintf(stderr, "AuthoredFrame initialize: %s\n", initialized.error().message);
+        }
+        CY_REQUIRE(initialized);
         ser::World empty(allocator());
         ser::World sphere(allocator());
         ser::World transformed(allocator());
@@ -192,6 +255,8 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_REQUIRE_EQ(instances.size(), 1U);
         CY_REQUIRE_EQ(draws.size(), 1U);
         CY_CHECK_EQ(instances[0].stable_id(), sphere.nodes()[0].identity);
+        CY_CHECK((instances[0].flags & render::kInstanceCastsShadow) != 0U);
+        CY_CHECK((instances[0].flags & render::kInstanceReceivesShadow) != 0U);
         CY_CHECK(instances[0].bounds_radius > 0.6F);
         const first_light::Camera framed = frame.framing(view);
         CY_CHECK(framed.position[2] < 3.0);
@@ -243,6 +308,7 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
             lighting_changed += static_cast<usize>(unlit[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK(lighting_changed > 50);
+        CY_CHECK(red_sum(frame.pixels()) > red_sum(unlit.span()) + 1000U);
 
         std::string directional_text(kLit);
         const usize kind_at = directional_text.find("field 5 1\n");
@@ -275,6 +341,7 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_REQUIRE(lit_directional.append(frame.pixels()));
         CY_REQUIRE(frame.render(disabled, view, true));
         CY_REQUIRE_EQ(frame.light_markers().size(), 1U);
+        CY_CHECK(red_sum(lit_directional.span()) > red_sum(frame.pixels()) + 1000U);
         usize switched_pixels = 0;
         for (usize pixel = 0; pixel < lit_directional.size(); ++pixel) {
             switched_pixels += static_cast<usize>(lit_directional[pixel] != frame.pixels()[pixel]);
@@ -286,6 +353,62 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
             rotated_pixels += static_cast<usize>(lit_directional[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK(rotated_pixels > 50);
+
+        std::string shadow_off_text(kShadowScene);
+        const usize shadow_flag = shadow_off_text.rfind("field 8 true\n");
+        CY_REQUIRE(shadow_flag != std::string::npos);
+        shadow_off_text.replace(shadow_flag, sizeof("field 8 true\n") - 1, "field 8 false\n");
+        ser::World shadow_on(allocator());
+        ser::World shadow_off(allocator());
+        CY_REQUIRE(ser::read_world(kShadowScene, "worlds/test.cyworld", shadow_on).has_value());
+        CY_REQUIRE(ser::read_world(shadow_off_text, "worlds/test.cyworld", shadow_off).has_value());
+        CY_REQUIRE(ser::resolve_against(shadow_on, schema).has_value());
+        CY_REQUIRE(ser::resolve_against(shadow_off, schema).has_value());
+        CY_REQUIRE(frame.render(shadow_on, view, true));
+        Array<u32> shadowed(allocator());
+        CY_REQUIRE(shadowed.append(frame.pixels()));
+        CY_REQUIRE(frame.render(shadow_off, view, true));
+        Array<u32> shadow_disabled(allocator());
+        CY_REQUIRE(shadow_disabled.append(frame.pixels()));
+        CY_CHECK(darkened_pixels(shadowed.span(), shadow_disabled.span()) > 100);
+
+        std::string caster_off_text(kShadowScene);
+        const usize caster_flag = caster_off_text.find("field 9 true\n");
+        CY_REQUIRE(caster_flag != std::string::npos);
+        caster_off_text.replace(caster_flag, sizeof("field 9 true\n") - 1, "field 9 false\n");
+        ser::World caster_off(allocator());
+        CY_REQUIRE(ser::read_world(caster_off_text, "worlds/test.cyworld", caster_off).has_value());
+        CY_REQUIRE(ser::resolve_against(caster_off, schema).has_value());
+        CY_REQUIRE(frame.render(caster_off, view, true));
+        CY_CHECK(darkened_pixels(frame.pixels(), shadow_disabled.span()) < 20);
+
+        std::string receiver_off_text(kShadowScene);
+        const usize receiver_flag = receiver_off_text.find("field 10 true\n");
+        CY_REQUIRE(receiver_flag != std::string::npos);
+        receiver_off_text.replace(receiver_flag, sizeof("field 10 true\n") - 1, "field 10 false\n");
+        ser::World receiver_off(allocator());
+        CY_REQUIRE(
+            ser::read_world(receiver_off_text, "worlds/test.cyworld", receiver_off).has_value());
+        CY_REQUIRE(ser::resolve_against(receiver_off, schema).has_value());
+        CY_REQUIRE(frame.render(receiver_off, view, true));
+        CY_CHECK(darkened_pixels(frame.pixels(), shadow_disabled.span()) < 20);
+        std::string shadow_rotated_text(kShadowScene);
+        const usize shadow_rotation =
+            shadow_rotated_text.rfind("field 1 0 0.9238795 0.3826834 0\n");
+        CY_REQUIRE(shadow_rotation != std::string::npos);
+        shadow_rotated_text.replace(shadow_rotation,
+                                    sizeof("field 1 0 0.9238795 0.3826834 0\n") - 1,
+                                    "field 1 -0.2705981 0.6532815 0.2705981 0.6532815\n");
+        ser::World shadow_rotated(allocator());
+        CY_REQUIRE(ser::read_world(shadow_rotated_text, "worlds/test.cyworld", shadow_rotated)
+                       .has_value());
+        CY_REQUIRE(ser::resolve_against(shadow_rotated, schema).has_value());
+        CY_REQUIRE(frame.render(shadow_rotated, view, true));
+        usize moved_shadow_pixels = 0;
+        for (usize pixel = 0; pixel < shadowed.size(); ++pixel) {
+            moved_shadow_pixels += static_cast<usize>(shadowed[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK(moved_shadow_pixels > 100);
     }
     rhi::destroy_device(allocator(), *device);
 }

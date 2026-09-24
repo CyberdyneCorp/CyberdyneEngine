@@ -101,6 +101,7 @@ struct FrameFeatures {
 /// callback to and what a statistics report attributes a timing to.
 enum class FramePassKind : u8 {
     Prepare = 0,
+    Shadow,
     DepthPrepass,
     DepthResolve,
     /// Virtual geometry's visibility pass: the visible clusters the traversal selected, drawn by a
@@ -229,6 +230,9 @@ struct FrameDescription {
     /// The swapchain image, imported by the caller. `kInvalidResource` makes the frame create its
     /// own target, which is what a headless test and an offscreen capture want.
     ResourceId output = kInvalidResource;
+    /// Optional directional shadow targets supplied by the view owner.
+    ResourceId shadow_color = kInvalidResource;
+    ResourceId shadow_depth = kInvalidResource;
     /// Device-backed temporal histories imported by the assembly. When absent, structural tests
     /// receive graph-owned stand-ins so the pass remains inspectable without a device.
     ResourceId temporal_previous = kInvalidResource;

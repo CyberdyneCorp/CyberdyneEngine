@@ -120,6 +120,10 @@ private:
     rhi::BufferHandle indices_;
     rhi::BufferHandle readback_;
     rhi::TextureHandle output_;
+    rhi::TextureHandle shadow_color_;
+    rhi::TextureHandle shadow_depth_;
+    rhi::TextureViewHandle shadow_view_;
+    rhi::BindlessIndex shadow_slot_ = rhi::kInvalidBindlessIndex;
     u32 material_offsets_[4]{};
     u32 base_color_texture_offset_ = rendering::pipeline::kNoMaterialTexture;
 };

@@ -1,0 +1,6 @@
+cyprim 1
+shape plane
+name Shadow Receiver
+origin centre
+extent 1 1
+subdivisions 1 1
