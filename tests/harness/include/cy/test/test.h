@@ -145,6 +145,8 @@ private:
     int host_session_;
     /// The fourth clock's reading when the guard started. See `blocked_on_host_ns`.
     unsigned long long started_blocked_ns_;
+    /// The tree census's reading when the guard started. See `tree_blocked_ns`.
+    unsigned long long started_tree_blocked_ns_;
     unsigned long long started_cpu_ns_;
     unsigned long long started_wall_ns_;
 };
@@ -197,6 +199,27 @@ unsigned long long blocked_on_host_ns() noexcept;
 /// True where `blocked_on_host_ns()` measures something.
 bool budget_measures_host_blocking() noexcept;
 
+/// Nanoseconds every OTHER task of the case's process tree — the other threads of this process,
+/// the child processes any of them forked, and those children's threads and children in turn —
+/// has been observed in an uninterruptible sleep, SUMMED OVER TASKS (sixteen threads blocked for a
+/// whole window count sixteen windows), cumulative over the calling thread's sampling session.
+/// Zero when this thread is not the one being sampled, and wherever
+/// `budget_measures_tree_blocking()` is false.
+///
+/// M11.c's sixth close. `host_stall_allowance` took the calling thread's own wait out of the
+/// host's I/O pressure and called the rest the host's — so a case whose own vfork child held it
+/// while sixteen of its own threads read the disk was excused 212 ms on a quiet host, because its
+/// helpers were "the host". The owner's rule is that the allowance excuses only waiting caused by
+/// something OUTSIDE the case's own process tree, and this is the census that takes the tree out.
+/// It is sampled more coarsely than `blocked_on_host_ns()` — every five milliseconds — because it
+/// reads one stat line per task; `host_blocking.cpp` says what that misses.
+unsigned long long tree_blocked_ns() noexcept;
+
+/// True where `tree_blocked_ns()` can walk the tree: Linux with `/proc/<pid>/task/<tid>/children`
+/// (CONFIG_PROC_CHILDREN). Without it the tree cannot be told from the host, and the allowance is
+/// zero rather than an allowance that counts the case's children as other processes.
+bool budget_measures_tree_blocking() noexcept;
+
 /// The scheduler state letter of a `/proc/<pid>/task/<tid>/stat` line — `R`, `S`, `D` and the
 /// rest — or `'\0'` when the text is not one. Exposed because the state is found after the LAST
 /// `)`, a thread may name itself anything including `) D (`, and that is worth a test of its own.
@@ -230,24 +253,27 @@ HostPressure host_pressure_now() noexcept;
 bool budget_measures_host_pressure() noexcept;
 
 /// How much of a case's uninterruptible waiting the stall ceiling may EXCUSE as the host's, over a
-/// window of `window_ns` in which the case's thread was sampled `blocked_ns` uninterruptible and
-/// the host's pressure moved from `before` to `after`.
+/// window of `window_ns` in which the case's thread was sampled `blocked_ns` uninterruptible, the
+/// OTHER tasks of its process tree were sampled `tree_blocked_ns` uninterruptible between them,
+/// and the host's pressure moved from `before` to `after`.
 ///
-/// M11.c'S FIFTH CLOSE, AND THE OWNER'S RULE: the allowance may excuse only waiting the HOST
-/// causes. It is the smaller of two bounds:
+/// M11.c'S FIFTH AND SIXTH CLOSES, AND THE OWNER'S RULE: the allowance may excuse only waiting
+/// caused by something OUTSIDE the case's own process tree. It is the smaller of two bounds:
 ///
 ///  * `blocked_ns`, because a case cannot be excused for longer than it actually waited; and
-///  * the host's I/O stall time over the window that OTHER tasks account for: the rise in PSI's
-///    `some` total, less the most the case's own wait can have put there. PSI averages per
-///    processor, weighted by that processor's non-idle time, so one stalled thread on one
-///    processor moves the total by at most `blocked_ns × window / Σ non-idle`. That is subtracted
-///    whole, rounding the weight against the case.
+///  * the host's I/O stall time over the window that OTHER PROCESSES account for: the rise in
+///    PSI's `some` total, less the most the case's whole tree can have put there. PSI averages per
+///    processor, weighted by that processor's non-idle time, so each stalled task moves the total
+///    by at most its wait × window / Σ non-idle; the tree's waits are summed and that share is
+///    subtracted whole, rounding the weight against the case.
 ///
-/// So a case that blocks ITSELF — its own vfork child, its own fsync — on an otherwise quiet host
-/// is excused nothing and fails as stalled, and a case whose disk wait sat behind other processes'
-/// I/O is excused at most what those processes were stalled. Either reading unavailable, or a
-/// counter that went backwards, excuses nothing: the allowance is ZERO, never unlimited.
+/// So a case that blocks ITSELF — its own vfork child, its own fsync, its own threads reading the
+/// disk — on an otherwise quiet host is excused nothing and fails as stalled, and a case whose
+/// disk wait sat behind other processes' I/O is excused at most what those processes were
+/// stalled. Either reading unavailable, or a counter that went backwards, excuses nothing: the
+/// allowance is ZERO, never unlimited.
 unsigned long long host_stall_allowance(unsigned long long window_ns, unsigned long long blocked_ns,
+                                        unsigned long long tree_blocked_ns,
                                         const HostPressure& before,
                                         const HostPressure& after) noexcept;
 

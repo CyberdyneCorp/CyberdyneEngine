@@ -42,8 +42,10 @@
 //    interval before the case ends is not credited at all. The error is a few intervals against a
 //    ceiling of hundreds — and the missing interval errs towards FAILING, never towards excusing.
 //  * `D` is every uninterruptible sleep, not only I/O: a kernel mutex, the `mmap_lock`, a `vfork`.
-//  * One thread at a time. Work a case hands to another thread is not sampled, exactly as it is not
-//    counted by the CPU clock; a case that waits for that work blocks on a futex and reads `S`.
+//  * One thread at a time, as the CLOCK. Work a case hands to another thread is not sampled as its
+//    own waiting, exactly as it is not counted by the CPU clock; a case that waits for that work
+//    blocks on a futex and reads `S`. The other threads ARE counted by the census below, as the
+//    case's tree and not the host's.
 //  * Linux only. Elsewhere `begin` returns None and the ceiling behaves exactly as before.
 //
 // ================================================================================================
@@ -93,6 +95,56 @@
 //    waiting before the baseline is not excusable at all, which errs towards failing.
 //  * No /proc/pressure/io, or no /proc/stat: the allowance is ZERO. The ceiling then charges every
 //    uninterruptible wait to the case, as it did before the fourth clock existed.
+//
+// ================================================================================================
+// M11.c'S SIXTH CLOSE: THE CASE IS ITS WHOLE PROCESS TREE
+// ================================================================================================
+//
+// The fifth close's allowance subtracted the CALLING THREAD's share of the pressure and called the
+// rest the host's. The gate refuted that with one more probe: a case whose own vfork child held it
+// for 300 ms while sixteen of its own std::threads read the disk with O_DIRECT passed as
+// `contended` on a quiet host, 212.557 ms excused — its helpers were "the host", and so would its
+// child processes have been. The owner's rule, said exactly: the allowance excuses only waiting
+// caused by something OUTSIDE the case's own process tree.
+//
+// So beside its samples of the case's thread the sampler now takes a CENSUS of the tree: every
+// other thread of this process (/proc/self/task/*), every child process of any of those threads
+// (/proc/self/task/<tid>/children — per thread, because a child's parent is the thread that forked
+// it) and those children's threads and children in turn, counting how many are in `D` at that
+// instant. Integrated over the window, that is the tree's own uninterruptible time summed over its
+// tasks, and the bound that took the case's thread out of the pressure takes the whole tree out:
+// `(blocked + tree_blocked) × window / Σ nonidle`, because each task in `D` puts its wait on one
+// processor whose weight in PSI's average is at most the window's share of the host's non-idle
+// time. What is left of the pressure after that is what OTHER PROCESSES account for, and only that
+// is excused.
+//
+// WHY SUBTRACT RATHER THAN REFUSE. The owner would also accept the blunter rule — no allowance at
+// all while anything else in the tree is blocked — and it was not chosen, because most of this
+// engine's suites run a job system whose workers page-fault on their own code exactly when a build
+// has evicted it, which is the moment the allowance exists for. One worker's one-millisecond fault
+// would deny the case an excuse for a 600 ms wait behind that build. Subtracting the millisecond
+// excuses the wait and still refuses the gate's probe, whose sixteen helpers were blocked for about
+// sixteen windows between them: on a host with every processor busy that is the whole of the
+// pressure they could have made, and on a quiet host the tree IS the host's non-idle time.
+//
+// ITS LIMITS.
+//  * The census runs every 5 ms, or every sample when the interval is longer, not every sample: it
+//    reads a stat line per task, and a process with twenty-four workers sampled every millisecond
+//    would spend a tenth of a core on it. A tree member's wait shorter than the census interval can
+//    be missed, and a miss errs towards EXCUSING, by at most one census interval per member per
+//    miss. The gate's probe is sixteen tasks blocked for nearly the whole window, which no census
+//    misses.
+//  * It is still a bound on MAGNITUDE. A tree that blocks itself while other processes are also
+//    stalled is excused up to those processes' stall time in PSI's units, even though it did not
+//    wait for them: nothing in /proc says which queue a wait sat in. A quiet host excuses nothing.
+//  * Kernel threads working on the case's behalf — jbd2 committing its fsync, a kworker flushing
+//    its pages — are not in the tree and count as other processes'.
+//  * A `children` file lists a thread's living children; a child re-parented by its parent thread's
+//    exit leaves the tree. The walk stops at eight levels and 4,096 tasks, beyond which the rest of
+//    the tree is not counted — an excusing error, and not a shape any test in this tree has.
+//  * A kernel without `children` files (CONFIG_PROC_CHILDREN off) cannot show the tree, and an
+//    instrument that cannot tell the case's children from other processes excuses NOTHING: the
+//    allowance is zero there, as it is without /proc/pressure/io.
 
 #include "host_blocking.h"
 
@@ -113,6 +165,7 @@
 #    include <ctime>
 #    include <mutex>
 
+#    include <dirent.h>
 #    include <fcntl.h>
 #    include <pthread.h>
 #    include <sys/syscall.h>
@@ -141,14 +194,15 @@ char thread_state_from_stat(const char* text, std::size_t size) noexcept {
 
 namespace {
 
-/// The most a single thread blocked for `blocked_ns` of a `window_ns` window can have added to
-/// PSI's `some` total, given that the host's processors were non-idle for `nonidle_ns` in total
-/// over the same window, read to within `resolution_ns`.
+/// The most the case's tree, blocked for `blocked_ns` summed over its tasks in a `window_ns`
+/// window, can have added to PSI's `some` total, given that the host's processors were non-idle
+/// for `nonidle_ns` in total over the same window, read to within `resolution_ns`.
 ///
 /// PSI weights each processor's stall time by that processor's non-idle time and divides by the
-/// sum. The case's processor is non-idle for at most the window, so its weight is at most
-/// `window / Σ nonidle`. Every rounding goes against the case: the non-idle sum is taken at the
-/// bottom of its resolution, never below the window itself (which would claim the case's own
+/// sum. Each blocked task stalls one processor at a time, and a processor is non-idle for at most
+/// the window, so each task's weight is at most `window / Σ nonidle` and the tree's share is
+/// linear in its summed wait. Every rounding goes against the case: the non-idle sum is taken at
+/// the bottom of its resolution, never below the window itself (which would claim the case's own
 /// processor was idle while it was stalled on it), and the product is rounded up.
 unsigned long long own_share_ceiling(unsigned long long window_ns, unsigned long long blocked_ns,
                                      unsigned long long nonidle_ns,
@@ -163,6 +217,7 @@ unsigned long long own_share_ceiling(unsigned long long window_ns, unsigned long
 }  // namespace
 
 unsigned long long host_stall_allowance(unsigned long long window_ns, unsigned long long blocked_ns,
+                                        unsigned long long tree_blocked_ns,
                                         const HostPressure& before,
                                         const HostPressure& after) noexcept {
     // No reading, no allowance: an instrument that cannot say the host was busy excuses nothing.
@@ -174,9 +229,11 @@ unsigned long long host_stall_allowance(unsigned long long window_ns, unsigned l
         return 0;
     }
     const unsigned long long pressure = after.io_some_ns - before.io_some_ns;
-    const unsigned long long own =
-        own_share_ceiling(window_ns, blocked_ns, after.nonidle_cpu_ns - before.nonidle_cpu_ns,
-                          std::max(before.nonidle_resolution_ns, after.nonidle_resolution_ns));
+    // The case's thread and the rest of its tree are one sum: a share the tree made is not the
+    // host's whichever of its tasks made it.
+    const unsigned long long own = own_share_ceiling(
+        window_ns, blocked_ns + tree_blocked_ns, after.nonidle_cpu_ns - before.nonidle_cpu_ns,
+        std::max(before.nonidle_resolution_ns, after.nonidle_resolution_ns));
     const unsigned long long others = pressure > own ? pressure - own : 0;
     return std::min(blocked_ns, others);
 }
@@ -197,23 +254,29 @@ pid_t current_tid() noexcept {
     return tid;
 }
 
-/// The first `size - 1` bytes of a /proc file, NUL-terminated. False when it cannot be read, which
-/// is also what a kernel booted with `psi=0` answers for /proc/pressure/io (EOPNOTSUPP).
-bool read_head(const char* path, char* buffer, std::size_t size) noexcept {
+/// The first `size - 1` bytes of a /proc file, NUL-terminated: how many were read, or -1 when the
+/// file cannot be opened or read — which is also what a kernel booted with `psi=0` answers for
+/// /proc/pressure/io (EOPNOTSUPP). Zero is an EMPTY file, which a `children` file often is.
+::ssize_t read_text(const char* path, char* buffer, std::size_t size) noexcept {
     const int descriptor = ::open(path, O_RDONLY | O_CLOEXEC);
     if (descriptor < 0) {
-        return false;
+        return -1;
     }
     // No caller holds the sampler's mutex here: `sample` releases it before `take_baseline`, which
     // the analyzer loses track of across the condition-variable wait that re-takes it.
     // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection)
     const ::ssize_t got = ::read(descriptor, buffer, size - 1);
     ::close(descriptor);
-    if (got <= 0) {
-        return false;
+    if (got < 0) {
+        return -1;
     }
     buffer[static_cast<std::size_t>(got)] = '\0';
-    return true;
+    return got;
+}
+
+/// `read_text` for a file that is only useful with something in it.
+bool read_head(const char* path, char* buffer, std::size_t size) noexcept {
+    return read_text(path, buffer, size) > 0;
 }
 
 /// "some avg10=... avg60=... avg300=... total=<us>": the `some` line's total, in microseconds.
@@ -302,12 +365,100 @@ std::uint64_t credit(bool previous, bool current, std::uint64_t elapsed) noexcep
     return (previous || current) ? elapsed / 2 : 0;
 }
 
-/// Where the pressure window starts: the host's pressure, and the fourth clock's reading, at the
-/// moment the session had run long enough to be worth measuring.
+/// The same rule for a COUNT of blocked tasks: the interval times the mean of the two counts.
+std::uint64_t credit_count(unsigned previous, unsigned current, std::uint64_t elapsed) noexcept {
+    return (static_cast<std::uint64_t>(previous) + current) * elapsed / 2;
+}
+
+// --- The census: the rest of the case's process tree ---------------------------------------------
+
+/// How often the tree is counted. Five milliseconds is the sampler's longest interval, so a long
+/// case's census is every sample and a unit case's every fifth; see the file header for the cost.
+constexpr unsigned long long kCensusIntervalNs = 5'000'000ULL;
+/// The deepest the walk descends and the most tasks it visits, beyond which the rest of the tree
+/// is not counted.
+constexpr unsigned kCensusDepthCap = 8;
+constexpr unsigned kCensusTaskCap = 4096;
+
+/// One count of the tree.
+struct Census {
+    /// Tasks in an uninterruptible sleep at the instant of the count, the case's thread excluded.
+    unsigned blocked = 0;
+    unsigned visited = 0;
+};
+
+void census_process(const char* task_dir, pid_t excluded, unsigned depth, Census& census) noexcept;
+
+/// Walks the children listed in one thread's `children` file: space-separated pids.
+void census_children(const char* path, unsigned depth, Census& census) noexcept {
+    // A thread that exited between the listing and this read has nothing to count. A kernel with
+    // no `children` files at all is refused earlier, by `budget_measures_tree_blocking`.
+    char listing[4096];
+    if (read_text(path, listing, sizeof(listing)) <= 0 || depth + 1 >= kCensusDepthCap) {
+        return;
+    }
+    const char* cursor = listing;
+    for (;;) {
+        char* after = nullptr;
+        const long child = std::strtol(cursor, &after, 10);
+        if (after == cursor || child <= 0) {
+            return;
+        }
+        char task_dir[64];
+        std::snprintf(task_dir, sizeof(task_dir), "/proc/%ld/task", child);
+        // A child process's threads are all counted: none of them is the case's thread.
+        census_process(task_dir, 0, depth + 1, census);
+        cursor = after;
+    }
+}
+
+/// Counts one process's threads — every entry of `<task_dir>` — and walks each one's children.
+void census_process(const char* task_dir, pid_t excluded, unsigned depth, Census& census) noexcept {
+    DIR* directory = ::opendir(task_dir);
+    if (directory == nullptr) {
+        return;  // the process exited: nothing left to count
+    }
+    while (const dirent* entry = ::readdir(directory)) {
+        if (census.visited >= kCensusTaskCap) {
+            break;
+        }
+        // Every entry but `.` and `..` is a thread id: a number, which is also what bounds the
+        // paths below.
+        char* end = nullptr;
+        const long tid = std::strtol(entry->d_name, &end, 10);
+        if (end == entry->d_name || *end != '\0') {
+            continue;
+        }
+        ++census.visited;
+        char path[128];
+        char text[512];
+        std::snprintf(path, sizeof(path), "%s/%ld/stat", task_dir, tid);
+        const ::ssize_t got = read_text(path, text, sizeof(text));
+        const bool blocked =
+            got > 0 && thread_state_from_stat(text, static_cast<std::size_t>(got)) == 'D';
+        if (blocked && static_cast<pid_t>(tid) != excluded) {
+            ++census.blocked;
+        }
+        std::snprintf(path, sizeof(path), "%s/%ld/children", task_dir, tid);
+        census_children(path, depth, census);
+    }
+    ::closedir(directory);
+}
+
+/// The tree of this process right now, the thread `excluded` left out.
+Census count_tree(pid_t excluded) noexcept {
+    Census census;
+    census_process("/proc/self/task", excluded, 0, census);
+    return census;
+}
+
+/// Where the pressure window starts: the host's pressure, and the fourth clock's and the census's
+/// readings, at the moment the session had run long enough to be worth measuring.
 struct Baseline {
     bool taken = false;
     std::uint64_t at_ns = 0;
     unsigned long long blocked_ns = 0;
+    unsigned long long tree_blocked_ns = 0;
     HostPressure pressure;
 };
 
@@ -318,6 +469,34 @@ struct SessionPlan {
     unsigned long long interval_ns = 0;
     std::uint64_t started_ns = 0;
     unsigned long long baseline_delay_ns = 0;
+};
+
+/// The census's running state across one session's samples.
+struct CensusClock {
+    unsigned previous = 0;
+    std::uint64_t previous_ns = 0;
+    unsigned since = 0;
+    unsigned stride = 1;
+
+    CensusClock(pid_t tid, unsigned long long interval_ns) noexcept
+        : previous(count_tree(tid).blocked),
+          previous_ns(monotonic_ns()),
+          stride(static_cast<unsigned>(
+              std::max(1ULL, kCensusIntervalNs / std::max(interval_ns, 1ULL)))) {}
+
+    /// Counts the tree every `stride` samples, and returns what the interval since the last count
+    /// credits to the tree.
+    std::uint64_t sample(pid_t tid, std::uint64_t now_ns) noexcept {
+        if (++since < stride) {
+            return 0;
+        }
+        since = 0;
+        const Census census = count_tree(tid);
+        const std::uint64_t credited = credit_count(previous, census.blocked, now_ns - previous_ns);
+        previous = census.blocked;
+        previous_ns = now_ns;
+        return credited;
+    }
 };
 
 /// The sampler. One per process, started by the first case and parked on a condition variable
@@ -385,9 +564,20 @@ public:
         return target_ == tid ? observed_ns_ : 0ULL;
     }
 
+    unsigned long long tree_observed_ns(pid_t tid) noexcept {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        return target_ == tid ? tree_observed_ns_ : 0ULL;
+    }
+
     unsigned long long allowance(pid_t tid) noexcept {
+        // A tree the census cannot see is a tree that cannot be told from the host. Asked before
+        // the lock: the first call reads /proc.
+        if (!budget_measures_tree_blocking()) {
+            return 0;
+        }
         Baseline baseline;
         unsigned long long blocked_now = 0;
+        unsigned long long tree_blocked_now = 0;
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             if (target_ != tid || depth_ != 1 || !baseline_.taken) {
@@ -395,11 +585,13 @@ public:
             }
             baseline = baseline_;
             blocked_now = observed_ns_;
+            tree_blocked_now = tree_observed_ns_;
         }
         const HostPressure now = host_pressure_now();
         const std::uint64_t now_ns = monotonic_ns();
         return host_stall_allowance(now_ns - baseline.at_ns, blocked_now - baseline.blocked_ns,
-                                    baseline.pressure, now);
+                                    tree_blocked_now - baseline.tree_blocked_ns, baseline.pressure,
+                                    now);
     }
 
 private:
@@ -454,7 +646,7 @@ private:
         const std::uint64_t at_ns = monotonic_ns();
         const std::lock_guard<std::mutex> lock(mutex_);
         if (generation_ == plan.generation) {
-            baseline_ = Baseline{true, at_ns, observed_ns_, pressure};
+            baseline_ = Baseline{true, at_ns, observed_ns_, tree_observed_ns_, pressure};
         }
     }
 
@@ -471,6 +663,7 @@ private:
         lock.unlock();
         bool previous = stat.blocked_by_host();
         std::uint64_t previous_ns = monotonic_ns();
+        CensusClock census(plan.tid, plan.interval_ns);
         bool baseline_taken = false;
         lock.lock();
         while (!over()) {
@@ -484,9 +677,11 @@ private:
             const std::uint64_t credited = credit(previous, current, now_ns - previous_ns);
             previous = current;
             previous_ns = now_ns;
+            const std::uint64_t tree_credited = census.sample(plan.tid, now_ns);
             lock.lock();
             if (generation_ == plan.generation) {
                 observed_ns_ += credited;
+                tree_observed_ns_ += tree_credited;
             }
             if (!baseline_taken && now_ns - plan.started_ns >= plan.baseline_delay_ns) {
                 baseline_taken = true;
@@ -511,6 +706,8 @@ private:
     /// Cumulative across every session, and only ever grown for the thread that owns the current
     /// one: a guard reads it at both ends of its own session and takes the difference.
     unsigned long long observed_ns_ = 0;
+    /// The census's clock, kept the same way: the tree's uninterruptible time summed over tasks.
+    unsigned long long tree_observed_ns_ = 0;
 };
 
 }  // namespace
@@ -539,6 +736,26 @@ unsigned long long blocked_on_host_ns() noexcept {
         return 0;
     }
     return Sampler::instance().observed_ns(current_tid());
+}
+
+unsigned long long tree_blocked_ns() noexcept {
+    if (!budget_measures_tree_blocking()) {
+        return 0;
+    }
+    return Sampler::instance().tree_observed_ns(current_tid());
+}
+
+bool budget_measures_tree_blocking() noexcept {
+    // The sampler's own thread: `children` is per thread, and the file exists for every thread of
+    // the process or for none. Empty is the ordinary content; only absence says no.
+    static const bool available = []() noexcept {
+        if (!budget_measures_host_blocking()) {
+            return false;
+        }
+        char listing[64];
+        return read_text("/proc/thread-self/children", listing, sizeof(listing)) >= 0;
+    }();
+    return available;
 }
 
 bool budget_measures_host_blocking() noexcept {
@@ -612,6 +829,14 @@ unsigned long long blocked_on_host_ns() noexcept {
 }
 
 bool budget_measures_host_blocking() noexcept {
+    return false;
+}
+
+unsigned long long tree_blocked_ns() noexcept {
+    return 0;
+}
+
+bool budget_measures_tree_blocking() noexcept {
     return false;
 }
 

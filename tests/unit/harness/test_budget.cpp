@@ -248,22 +248,22 @@ CY_TEST_CASE("harness: a case that blocks ITSELF on a quiet host is excused noth
     // THE GATE'S PROBE, IN NUMBERS MEASURED ON THIS PROJECT'S HOST (300 ms windows): the parent of
     // a vfork is uninterruptible for the whole window, and the host's I/O pressure does not move.
     // `757b3d9` excused all 300 ms of it; the rule excuses none.
-    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 300 * kMs, pressure(0, 0), pressure(0, 7200)),
+    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 300 * kMs, 0, pressure(0, 0), pressure(0, 7200)),
                 0ULL);
 
     // The case's OWN uncached reads and its own fsync do move the pressure — by at most its wait
     // weighted by its processor's share of the machine's non-idle time. With 24 busy processors:
     // 205 ms of reads moved it 7.9 ms, 288 ms of fsync 11.8 ms. Both are within the case's own
     // bound, so neither is excused.
-    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 205 * kMs, pressure(0, 0), pressure(8, 7210)),
+    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 205 * kMs, 0, pressure(0, 0), pressure(8, 7210)),
                 0ULL);
-    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 288 * kMs, pressure(0, 0), pressure(12, 7180)),
+    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 288 * kMs, 0, pressure(0, 0), pressure(12, 7180)),
                 0ULL);
 
     // On a QUIET host the case's processor is most of the non-idle time, and its own wait can be
     // most of the pressure: 290 ms of own reads with the machine otherwise idle moved it 290 ms.
     // Its bound is the whole of it, because no host is non-idle for less than the window.
-    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 290 * kMs, pressure(0, 0), pressure(290, 150)),
+    CY_CHECK_EQ(host_stall_allowance(300 * kMs, 290 * kMs, 0, pressure(0, 0), pressure(290, 150)),
                 0ULL);
 }
 
@@ -276,7 +276,7 @@ CY_TEST_CASE("harness: the allowance is at most the pressure OTHER tasks put on 
     // waited 600 ms: the case's own share is at most 600 × 655 / (15720 − 70) = 25.1 ms, so 474.9
     // ms of it is the rest of the host's, and that is what is excused.
     const unsigned long long excused =
-        host_stall_allowance(655 * kMs, 600 * kMs, pressure(1000, 0), pressure(1500, 15720));
+        host_stall_allowance(655 * kMs, 600 * kMs, 0, pressure(1000, 0), pressure(1500, 15720));
     CY_CHECK_GT(excused, 474 * kMs);
     CY_CHECK_LT(excused, 475 * kMs);
     // The fourth close's numbers: 655.4 ms held against a 234.9 ms ceiling. With that much of the
@@ -287,21 +287,21 @@ CY_TEST_CASE("harness: the allowance is at most the pressure OTHER tasks put on 
     // the window — is excused 274.9 ms, which leaves 380 ms of its own, and it is a stall. Only
     // pressure the host shows is excused, however long the case itself waited.
     const unsigned long long moderate =
-        host_stall_allowance(655 * kMs, 600 * kMs, pressure(1000, 0), pressure(1300, 15720));
+        host_stall_allowance(655 * kMs, 600 * kMs, 0, pressure(1000, 0), pressure(1300, 15720));
     CY_CHECK(stall_verdict(655 * kMs, moderate, 234'900'000ULL) == StallVerdict::Stalled);
 
     // Never more than the case waited: a case that took one 10 ms fault on a host under heavy
     // pressure is excused 10 ms, and a case that slept is excused nothing at all.
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 10 * kMs, pressure(0, 0), pressure(600, 15720)),
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 10 * kMs, 0, pressure(0, 0), pressure(600, 15720)),
                 10 * kMs);
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 0, pressure(0, 0), pressure(600, 15720)), 0ULL);
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 0, 0, pressure(0, 0), pressure(600, 15720)), 0ULL);
 
     // And the pressure is in PSI's own units — averaged over the processors, weighted by how busy
     // each was. The case and one other task each stalled for the whole 600 ms window on a host
     // whose 24 processors are all busy show as about a twenty-fourth of it each, 50 ms together;
     // the other task's twenty-fourth is all that is excused.
     const unsigned long long diluted =
-        host_stall_allowance(600 * kMs, 600 * kMs, pressure(0, 0), pressure(50, 14400));
+        host_stall_allowance(600 * kMs, 600 * kMs, 0, pressure(0, 0), pressure(50, 14400));
     CY_CHECK_GT(diluted, 24 * kMs);
     CY_CHECK_LT(diluted, 25 * kMs);
 }
@@ -312,15 +312,15 @@ CY_TEST_CASE("harness: without a pressure reading the allowance is ZERO, not unl
 
     const HostPressure missing{};
     CY_CHECK_FALSE(missing.available);
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, missing, pressure(600, 15720)), 0ULL);
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, pressure(0, 0), missing), 0ULL);
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, missing, missing), 0ULL);
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, 0, missing, pressure(600, 15720)), 0ULL);
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, 0, pressure(0, 0), missing), 0ULL);
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, 0, missing, missing), 0ULL);
     // Readings out of order are not a measurement either.
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, pressure(600, 15720), pressure(0, 0)),
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, 0, pressure(600, 15720), pressure(0, 0)),
                 0ULL);
-    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, pressure(0, 15720), pressure(600, 0)),
+    CY_CHECK_EQ(host_stall_allowance(655 * kMs, 600 * kMs, 0, pressure(0, 15720), pressure(600, 0)),
                 0ULL);
-    CY_CHECK_EQ(host_stall_allowance(0, 600 * kMs, pressure(0, 0), pressure(600, 15720)), 0ULL);
+    CY_CHECK_EQ(host_stall_allowance(0, 600 * kMs, 0, pressure(0, 0), pressure(600, 15720)), 0ULL);
 }
 
 CY_TEST_CASE("harness: this host's pressure is read, or said not to be") {
@@ -337,5 +337,78 @@ CY_TEST_CASE("harness: this host's pressure is read, or said not to be") {
 #else
     CY_CHECK_FALSE(cy::test::budget_measures_host_pressure());
     CY_CHECK_FALSE(cy::test::host_pressure_now().available);
+#endif
+}
+
+// --- M11.c's sixth close: the case's own threads and children are the case, not the host --------
+
+CY_TEST_CASE(
+    "harness: the case's OWN threads and children are not the host, so they excuse nothing") {
+    using cy::test::host_stall_allowance;
+    using cy::test::stall_verdict;
+    using cy::test::StallVerdict;
+
+    // THE GATE'S SECOND PROBE, IN NUMBERS MEASURED ON THIS PROJECT'S HOST: a case held 300 ms by
+    // its own vfork child while sixteen of its own threads read the disk with O_DIRECT, beside a
+    // build keeping all 24 processors busy, against the gate's 100 ms ceiling. The sixteen
+    // helpers were blocked about 285 ms each — 4,560 ms between them — and put 213 ms into the
+    // host's pressure. With only the calling thread's share taken out, `4a1ad21` excused 200 ms
+    // of it and reported the case `contended`. With the tree's share taken out, what is left is
+    // the tick resolution's margin against the case — under 10 ms — and it is a stall.
+    constexpr unsigned long long kProbeCeiling = 100 * kMs;
+    const unsigned long long refuted =
+        host_stall_allowance(300 * kMs, 300 * kMs, 0, pressure(0, 0), pressure(213, 7200));
+    CY_CHECK_GT(refuted, 190 * kMs);
+    CY_CHECK(stall_verdict(300 * kMs, refuted, kProbeCeiling) == StallVerdict::Contended);
+    const unsigned long long tree =
+        host_stall_allowance(300 * kMs, 300 * kMs, 4560 * kMs, pressure(0, 0), pressure(213, 7200));
+    CY_CHECK_LT(tree, 10 * kMs);
+    CY_CHECK(stall_verdict(300 * kMs, tree, kProbeCeiling) == StallVerdict::Stalled);
+
+    // The same probe on a QUIET host: the tree's seventeen tasks are the whole of the non-idle
+    // time, the pressure they made is the whole of the window, and `4a1ad21` excused 282 ms of
+    // it. The tree's share leaves the resolution's margin again, and a stall.
+    const unsigned long long quiet_refuted =
+        host_stall_allowance(300 * kMs, 300 * kMs, 0, pressure(0, 0), pressure(300, 5100));
+    CY_CHECK_GT(quiet_refuted, 280 * kMs);
+    CY_CHECK(stall_verdict(300 * kMs, quiet_refuted, kProbeCeiling) == StallVerdict::Contended);
+    const unsigned long long quiet_tree =
+        host_stall_allowance(300 * kMs, 300 * kMs, 4560 * kMs, pressure(0, 0), pressure(300, 5100));
+    CY_CHECK_LT(quiet_tree, 12 * kMs);
+    CY_CHECK(stall_verdict(300 * kMs, quiet_tree, kProbeCeiling) == StallVerdict::Stalled);
+
+    // A child PROCESS is the tree too: a case whose child wrote and fsynced for the window, alone
+    // on the host, is the pressure it is looking at.
+    CY_CHECK_EQ(
+        host_stall_allowance(300 * kMs, 280 * kMs, 290 * kMs, pressure(0, 0), pressure(295, 600)),
+        0ULL);
+    CY_CHECK_GT(host_stall_allowance(300 * kMs, 280 * kMs, 0, pressure(0, 0), pressure(295, 600)),
+                100 * kMs);
+
+    // AND THE RULE'S OTHER HALF, which is why the tree is subtracted rather than made to forbid the
+    // allowance outright: one worker thread's one-millisecond page fault beside the fourth close's
+    // build is taken out — 0.04 ms of the pressure — and the case's 600 ms behind that build is
+    // still excused. A tree that forbade the allowance would have failed this case as stalled.
+    const unsigned long long worker = host_stall_allowance(
+        655 * kMs, 600 * kMs, 1 * kMs, pressure(1000, 0), pressure(1500, 15720));
+    CY_CHECK_GT(worker, 474 * kMs);
+    CY_CHECK_LT(worker, 475 * kMs);
+    CY_CHECK(stall_verdict(655 * kMs, worker, 234'900'000ULL) == StallVerdict::Contended);
+}
+
+CY_TEST_CASE("harness: the instrument says whether it can see the case's process tree") {
+#if defined(__linux__)
+    // This project's kernels have CONFIG_PROC_CHILDREN. Where a kernel does not, the census cannot
+    // tell the case's children from other processes and the allowance is zero; that is asserted in
+    // the integration suite, which can measure a window.
+    CY_CHECK_EQ(cy::test::budget_measures_tree_blocking(),
+                cy::test::budget_measures_host_blocking());
+    // Cumulative and monotonic across the case, like the other clocks.
+    const unsigned long long first = cy::test::tree_blocked_ns();
+    const unsigned long long second = cy::test::tree_blocked_ns();
+    CY_CHECK_GE(second, first);
+#else
+    CY_CHECK_FALSE(cy::test::budget_measures_tree_blocking());
+    CY_CHECK_EQ(cy::test::tree_blocked_ns(), 0ULL);
 #endif
 }
