@@ -139,21 +139,24 @@ impl DocumentService {
         let Some(path) = self.path_of(document) else {
             return Ok(LoadReport::default());
         };
+        let mut report = LoadReport::default();
         if let Ok(text) = std::fs::read_to_string(&path) {
-            return worldfile::load(&text, document, Actor::system("world loader"));
+            report = worldfile::load(&text, document, Actor::system("world loader"))?;
+            if report.types > 0 {
+                return Ok(report);
+            }
         }
-        // No world yet: the file is created by the first save. The schema still arrives, so an
-        // empty world is authorable — the gizmo binds, the inspector describes, and a created
-        // entity has a Transform to move.
+        // No world yet — the file is created by the first save — or a world that declares no types,
+        // which is what a project template writes (`cyworld 1` and nothing else). Either way the
+        // schema still arrives, so an empty world is authorable: the gizmo binds, the inspector
+        // describes, and a created entity has a Transform to move. A world with no types has no
+        // declarations to collide with, so this cannot declare a type twice.
         let root = self
             .project_root
             .as_deref()
             .unwrap_or(std::path::Path::new("."));
-        let types = worldfile::declare_project_types(root, document.schema_mut())?;
-        Ok(LoadReport {
-            types,
-            ..LoadReport::default()
-        })
+        report.types = worldfile::declare_project_types(root, document.schema_mut())?;
+        Ok(report)
     }
 
     /// Write a document's world back to the project, which is what `file.save` does.

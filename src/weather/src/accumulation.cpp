@@ -106,7 +106,7 @@ AccumulationPoint step_accumulation(const AccumulationModel& model,
     return out;
 }
 
-Accumulation::Accumulation(Allocator& allocator) noexcept : allocator_(&allocator) {}
+Accumulation::Accumulation(Allocator& /*allocator*/) noexcept {}
 
 Status Accumulation::step_point(environment::FieldWriter& wetness, environment::FieldWriter& snow,
                                 WeatherFields& fields, const EnvironmentSampler& sampler,

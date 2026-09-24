@@ -335,7 +335,6 @@ private:
     /// Re-sort the transients into the total order the budget drops from, and drop the tail.
     [[nodiscard]] Status enforce_budget() noexcept;
 
-    Allocator* allocator_;
     const WeatherCells* cells_ = nullptr;
     const StormRegistry* storms_ = nullptr;
     TerrainProfile terrain_;

@@ -326,6 +326,20 @@ _editor-toolchain:
 _cargo-profile profile:
     @just _profile-column {{profile}} 5
 
+# The path of one of the editor workspace's binaries, for a workflow profile. Cargo's own `dev`
+# profile writes to `debug/`; every other profile writes to a directory of its own name.
+[private]
+_editor-binary profile name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo_profile="$(just _cargo-profile {{profile}})"
+    target_dir="$(just _editor-target-dir)"
+    if [ "${cargo_profile}" = "dev" ]; then
+        echo "${target_dir}/debug/{{name}}"
+    else
+        echo "${target_dir}/${cargo_profile}/{{name}}"
+    fi
+
 # Where the editor's build output goes.
 #
 # `build/editor/` by default, never editor/target/: a build tree belongs under build/ with the

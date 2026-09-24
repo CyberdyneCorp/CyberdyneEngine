@@ -263,3 +263,30 @@ content-patch *args:
         fi
     done
     exec "${build_dir}/tools/build/cy_build" "${command}" ${passthrough[@]+"${passthrough[@]}"}
+
+# A PROJECT TO AUTHOR IN. The templates are the editor's (`cy_editor_services::Template`), so this
+# recipe builds the editor and asks it rather than keeping a second copy of what a project is. The
+# directory is relative to where `just` was invoked, and the recipe refuses one that already holds a
+# project rather than overwriting its manifest.
+
+# Create a project to author in, from an editor template. Usage: just content-new-project <directory> [--template empty|swift-gameplay] [--profile <p>]
+content-new-project *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    caller="{{invocation_directory()}}"
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    argv=(${rest})
+    if [ "${#argv[@]}" -eq 0 ] || [[ "${argv[0]}" == --* ]]; then
+        echo "usage: just content-new-project <directory> [--template empty|swift-gameplay]" >&2
+        exit 2
+    fi
+    directory="${argv[0]}"
+    case "${directory}" in
+        /*) ;;
+        *) directory="${caller}/${directory}" ;;
+    esac
+
+    just build-editor --profile "${profile}"
+    "$(just _editor-binary "${profile}" cyberdyne-editor)" --new-project "${directory}" "${argv[@]:1}"
+    echo "==> next        just run-editor-live --project ${directory}"

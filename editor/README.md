@@ -104,7 +104,15 @@ just build-editor-format           format the hand-written Rust in place
 just run-editor --project <directory> --open <asset>
 just run-editor --project <directory> --open <asset> --script <path>
 just run-editor-runtime [<socket>] the hosted-runtime stub `--host` connects to
+just content-new-project <directory>           a project from the `empty` template
+just run-engine --project <directory>          the engine host, until interrupted
+just run-editor-live --project <directory>     the engine and an editor attached to it
 ```
+
+`cyberdyne-editor --new-project <directory> [--template empty|swift-gameplay]` is what
+`content-new-project` runs. Every template writes the engine's `types.cytypes`, so an entity created
+in the new world has a `Transform`. A world file that declares no types, which is what a template
+writes, is opened with that manifest, the same as a world that does not exist yet.
 
 Command-line scripts wait for an attached runtime to confirm each `play.enter`, `play.pause`, and
 `play.leave` request before continuing. Their summaries include the runtime's authoritative state
@@ -236,7 +244,7 @@ the model is checked from both sides of the boundary it describes.
 |---|---|---|
 | `NoRuntime` | None | Complete. Project browsing and document editing work with no engine at all |
 | `Embedded` | In the editor process | Implemented and exercised against `cy-editor-testhost`. **No engine build exports the entry point it needs** — see `crates/cy-editor-sdk/src/host.rs` |
-| `Hosted` | A separate process or a remote device | **The default.** Complete against `cy-runtime-stub`; the engine's own hosted runtime arrives with `live-editing` at task 5.2 |
+| `Hosted` | A separate process or a remote device | **The default.** The engine host is `cy_editor_window_runtime` (`just run-engine`, `just run-editor-live`); `cy-runtime-stub` holds no world and serves the scripted artefacts |
 
 `crates/cy-editor-app/tests/survives_a_runtime_crash.rs` starts a runtime as a separate process,
 edits a document, kills the process with a signal, and asserts that the editor is still running with
