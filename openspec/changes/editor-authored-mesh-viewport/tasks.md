@@ -13,7 +13,7 @@
 - [x] 2.3 Convert visible world nodes to spatial entries and full instance transforms, including parent transforms, and verify nonuniform scale and rotation in the capture.
 - [x] 2.4 Replace the host's first-light frame with `FrameAssembly` and `FrameRecorder` output while retaining viewport publication; verify the editor opens an empty world and displays an imported mesh.
 - [x] 2.5 Use transformed mesh bounds for picking and framing, remove the fixed node cap, and verify gizmo and pick identities on a non-box mesh.
-- [ ] 2.6 Cook embedded and external FBX base-colour images as texture sub-assets, link their stable identities from cooked materials, and cover both sources with import regressions.
+- [x] 2.6 Cook embedded and external FBX base-colour images as texture sub-assets, link their stable identities from cooked materials, and cover both sources with import regressions.
 - [x] 2.7 Upload referenced cooked textures in the authored frame, bind material texture slots, and verify texture detail on imported geometry.
 - [x] 2.8 Enable bounded material texture sampling on Metal, regenerate shader artefacts, and verify a textured frame differs from its constant-colour control.
 

@@ -1132,9 +1132,11 @@ int main(int argc, char** argv) {
     int exit_code = 0;
     {
         first_light::Renderer renderer(allocator, *device.value());
-        if (Status prepared = renderer.prepare(scene, renderer_options); !prepared) {
-            report("renderer", prepared.error());
-            return 1;
+        if (!view_world.loaded()) {
+            if (Status prepared = renderer.prepare(scene, renderer_options); !prepared) {
+                report("renderer", prepared.error());
+                return 1;
+            }
         }
         AuthoredFrame authored_frame(allocator, *device.value());
         if (view_world.loaded()) {

@@ -47,7 +47,9 @@ use cy_editor_interface::shell::{Shell, panel_title};
 use cy_editor_interface::thumbnails::Thumbnails;
 use cy_editor_reflection::Catalogue;
 use cy_editor_services::notifications::Notification;
-use cy_editor_services::{CloseDecision, CloseOutcome, Editor, WorkspaceStore};
+use cy_editor_services::{
+    CloseDecision, CloseOutcome, Editor, ExternalImportCompletion, WorkspaceStore,
+};
 use cy_editor_viewmodels::{
     AssetBrowserViewModel, DiffViewModel, DocumentTabsViewModel, HierarchyViewModel,
     HistoryViewModel, MergeViewModel, SettingsViewModel, SourceControlViewModel,
@@ -413,35 +415,39 @@ impl EditorWindow {
 
     fn finish_imports(&mut self) {
         for completion in self.editor.take_completed_imports() {
-            match completion.result {
-                Ok(outcome) => {
-                    if let Err(problem) = self.editor.asset_catalogue.refresh() {
-                        self.editor
-                            .notifications
-                            .post(Notification::error(problem.what.clone(), problem));
-                    }
-                    self.editor.notifications.post(Notification::info(format!(
-                        "Imported {} as request #{} ({} sub-assets, cache {})",
-                        outcome.source,
-                        completion.request,
-                        outcome.sub_assets.len(),
-                        outcome.cache
-                    )));
-                    let placeable =
-                        outcome.first("mesh/").is_some() || outcome.first("prefab").is_some();
-                    if placeable
-                        && self.editor.workspace.active().is_some()
-                        && let Some(source) = completion.source
-                    {
-                        let arguments = Arguments::new().with("path", Value::Text(source));
-                        self.invoke("asset.place", &arguments);
-                    }
+            self.finish_import(completion);
+        }
+    }
+
+    fn finish_import(&mut self, completion: ExternalImportCompletion) {
+        match completion.result {
+            Ok(outcome) => {
+                if let Err(problem) = self.editor.asset_catalogue.refresh() {
+                    self.editor
+                        .notifications
+                        .post(Notification::error(problem.what.clone(), problem));
                 }
-                Err(problem) => self
-                    .editor
-                    .notifications
-                    .post(Notification::error(problem.what.clone(), problem)),
+                self.editor.notifications.post(Notification::info(format!(
+                    "Imported {} as request #{} ({} sub-assets, cache {})",
+                    outcome.source,
+                    completion.request,
+                    outcome.sub_assets.len(),
+                    outcome.cache
+                )));
+                let placeable =
+                    outcome.first("mesh/").is_some() || outcome.first("prefab").is_some();
+                if placeable
+                    && self.editor.workspace.active().is_some()
+                    && let Some(source) = completion.source
+                {
+                    let arguments = Arguments::new().with("path", Value::Text(source));
+                    self.invoke("asset.import", &arguments);
+                }
             }
+            Err(problem) => self
+                .editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem)),
         }
     }
 
@@ -1037,11 +1043,52 @@ pub fn run(window: EditorWindow) -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_commands::{
+        AssetImportOutcome, AssetImportRequest, ImportedSceneNode, ImportedSubAsset,
+    };
     use cy_editor_core::Actor;
     use cy_editor_core::codec::Writer;
     use cy_editor_interface::Domain;
     use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
-    use cy_editor_services::RuntimeSession;
+    use cy_editor_services::assets::ImportRunner;
+    use cy_editor_services::primitives::{material_slots_of, mesh_of};
+    use cy_editor_services::{AssetImportService, ProjectService, RuntimeSession, Template};
+
+    struct SceneRunner;
+
+    impl ImportRunner for SceneRunner {
+        fn describe(&self) -> String {
+            "scene fixture".into()
+        }
+
+        fn extensions(&self) -> Vec<String> {
+            vec![".fbx".into()]
+        }
+
+        fn run(
+            &self,
+            _root: &std::path::Path,
+            request: &AssetImportRequest,
+        ) -> cy_editor_core::problem::Result<AssetImportOutcome> {
+            Ok(AssetImportOutcome {
+                source: request.source.clone(),
+                sub_assets: vec![ImportedSubAsset {
+                    name: "mesh/Tree".into(),
+                    id: "11111111111111111111111111111111".into(),
+                    kind: "mesh".into(),
+                    source: request.source.clone(),
+                    ..ImportedSubAsset::default()
+                }],
+                scene: vec![ImportedSceneNode {
+                    name: "Tree".into(),
+                    mesh: Some("11111111111111111111111111111111".into()),
+                    materials: vec!["22222222222222222222222222222222".into()],
+                    ..ImportedSceneNode::default()
+                }],
+                ..AssetImportOutcome::default()
+            })
+        }
+    }
 
     fn scratch(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("cy-editor-shell-{name}-{}", std::process::id()))
@@ -1073,6 +1120,50 @@ mod tests {
         };
         assert_eq!(paths.len(), 3);
         assert_eq!(destination, "Models");
+    }
+
+    #[test]
+    fn completed_external_fbx_uses_its_imported_mesh_and_material_slots() {
+        let project = scratch("fbx-completion");
+        let _ = std::fs::remove_dir_all(&project);
+        Template::named("empty").unwrap().create(&project).unwrap();
+        std::fs::create_dir_all(project.join("Imported")).unwrap();
+        std::fs::write(project.join("Imported/tree.fbx"), "source").unwrap();
+        let mut registry = Registry::new();
+        cy_editor_services::builtin::register(&mut registry).unwrap();
+        let editor = Editor::new(Actor::human("designer"))
+            .with_project(ProjectService::new(&project))
+            .with_importer(AssetImportService::new(&project).with_runner(Arc::new(SceneRunner)));
+        let mut window = EditorWindow::new(editor, registry, Scope::unrestricted()).unwrap();
+        let world = window.editor.open_document("worlds/main.cyworld").unwrap();
+        window.finish_import(ExternalImportCompletion {
+            request: 1,
+            source: Some("Imported/tree.fbx".into()),
+            result: Ok(AssetImportOutcome {
+                source: "Imported/tree.fbx".into(),
+                sub_assets: vec![ImportedSubAsset {
+                    name: "prefab".into(),
+                    kind: "prefab".into(),
+                    ..ImportedSubAsset::default()
+                }],
+                ..AssetImportOutcome::default()
+            }),
+        });
+        let document = window.editor.documents.get(world).unwrap();
+        let tree = document
+            .content()
+            .nodes()
+            .next()
+            .expect("the FBX was placed");
+        assert_eq!(
+            mesh_of(document, tree).as_deref(),
+            Some("11111111111111111111111111111111")
+        );
+        assert_eq!(
+            material_slots_of(document, tree),
+            vec!["22222222222222222222222222222222"]
+        );
+        std::fs::remove_dir_all(project).unwrap();
     }
 
     #[test]

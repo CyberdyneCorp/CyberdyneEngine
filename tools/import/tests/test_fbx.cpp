@@ -13,6 +13,7 @@
 #include <cy/core/math/scalar.h>
 #include <cy/import/fbx.h>
 #include <cy/import/model.h>
+#include <cy/import/texture.h>
 #include <cy/test/test.h>
 
 #include <string>
@@ -152,15 +153,67 @@ std::string quad_document(std::string_view node_name, int up_axis, double unit_s
     return text;
 }
 
-ImportResult import_document(const std::string& text, const ImportOptions* options) {
+ImportResult import_document(const std::string& text, const ImportOptions* options,
+                             ImportResolver* resolver = nullptr) {
     FbxImporter importer;
     ImportRequest request;
     request.source = cy::assets::VirtualPath::normalise("models/quad.fbx").value();
     request.bytes = cy::Span<const u8>(reinterpret_cast<const u8*>(text.data()), text.size());
     request.options = options;
+    request.resolver = resolver;
     ImportResult result;
     CY_REQUIRE(importer.import(request, result).has_value());
     return result;
+}
+
+/// A small image resolver exercises the external-file path without touching the filesystem.
+class ImageResolver final : public ImportResolver {
+public:
+    explicit ImageResolver(std::string bytes) : bytes_(std::move(bytes)) {}
+
+    [[nodiscard]] cy::Expected<cy::Span<const u8>, cy::Error> read(
+        std::string_view path) noexcept override {
+        requested = std::string(path);
+        return cy::Span<const u8>(reinterpret_cast<const u8*>(bytes_.data()), bytes_.size());
+    }
+
+    [[nodiscard]] cy::Status observe(std::string_view,
+                                     const cy::assets::ContentHash&) noexcept override {
+        return cy::ok();
+    }
+
+    std::string requested;
+
+private:
+    std::string bytes_;
+};
+
+/// Add one connected diffuse image to the readable quad fixture.
+std::string textured_quad_document(bool embedded) {
+    std::string source = quad_document("Panel", 1, 100.0, false);
+    const std::string objects_end = "}\nConnections:  {\n";
+    const usize at = source.find(objects_end);
+    CY_REQUIRE(at != std::string::npos);
+    std::string image =
+        "\tVideo: 4000, \"Video::Colour\", \"Clip\" {\n"
+        "\t\tRelativeFilename: \"colour.tga\"\n";
+    if (embedded) {
+        // A 2x2 uncompressed TGA, with four distinct pixels, encoded as FBX base64 content.
+        image += "\t\tContent: , \"AAACAAAAAAAAAAAAAgACABggAAD/AP8A/wAA////\"\n";
+    }
+    image +=
+        "\t}\n"
+        "\tTexture: 5000, \"Texture::Colour\", \"\" {\n"
+        "\t\tType: \"TextureVideoClip\"\n"
+        "\t\tRelativeFilename: \"colour.tga\"\n"
+        "\t}\n";
+    source.insert(at, image);
+    const usize connections_end = source.rfind("}\n");
+    CY_REQUIRE(connections_end != std::string::npos);
+    source.insert(connections_end,
+                  "\tC: \"OP\",5000,3000, \"DiffuseColor\"\n"
+                  "\tC: \"OO\",4000,5000\n");
+    return source;
 }
 
 const SubAsset* find(const ImportResult& result, std::string_view name) {
@@ -383,6 +436,43 @@ CY_TEST_CASE("fbx: image UVs use the renderer's top-origin coordinates") {
         }
     }
     CY_CHECK(found);
+}
+
+CY_TEST_CASE("fbx: embedded base-colour image becomes a linked texture sub-asset") {
+    const ImportResult result = import_document(textured_quad_document(true), nullptr);
+    CY_CHECK_FALSE(result.has_errors());
+    const SubAsset* texture = find(result, "texture/Colour");
+    const SubAsset* material = find(result, "material/Oak");
+    CY_REQUIRE(texture != nullptr);
+    CY_REQUIRE(material != nullptr);
+    CY_CHECK(texture->kind == cy::assets::AssetKind::Texture);
+    CY_CHECK(texture->payload.size() > 32);
+    StandardMaterial cooked;
+    CY_REQUIRE(read_cooked_material(material->payload.span(), cooked));
+    CY_CHECK(cooked.base_color_texture_name == "texture/Colour");
+}
+
+CY_TEST_CASE("fbx: external base-colour image is read through the resolver") {
+    std::string pixels(18, '\0');
+    pixels[2] = 2;  // Uncompressed true-colour TGA.
+    pixels[12] = 2;
+    pixels[14] = 2;
+    pixels[16] = 24;
+    pixels[17] = 0x20;
+    pixels.append("\0\0\xff\0\xff\0\xff\0\0\xff\xff\xff", 12);
+    ImageResolver resolver(std::move(pixels));
+    const ImportResult result = import_document(textured_quad_document(false), nullptr, &resolver);
+    CY_CHECK_FALSE(result.has_errors());
+    CY_CHECK(resolver.requested == "colour.tga");
+    const SubAsset* texture = find(result, "texture/Colour");
+    const SubAsset* material = find(result, "material/Oak");
+    CY_REQUIRE(texture != nullptr);
+    CY_REQUIRE(material != nullptr);
+    CY_CHECK(texture->kind == cy::assets::AssetKind::Texture);
+    CY_CHECK(texture->payload.size() > 32);
+    StandardMaterial cooked;
+    CY_REQUIRE(read_cooked_material(material->payload.span(), cooked));
+    CY_CHECK(cooked.base_color_texture_name == "texture/Colour");
 }
 
 CY_TEST_CASE("fbx: the collision naming convention produces a collider and hides the node") {

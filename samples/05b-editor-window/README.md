@@ -49,6 +49,10 @@ containing only that object; Blender uses separate studio lighting and a slightl
 The bark pattern and mesh silhouette agree. FBX image UVs are converted to the renderer's top-origin
 coordinates, and Metal transfers BC7 textures using compressed-block row strides.
 
+The [live editor capture](../../docs/design/images/editor-live-textured-fbx-metal.png) shows the
+same imported tree selected in an authored world, with its mesh and material identities visible in
+the Inspector and the engine's Metal viewport showing the cooked texture.
+
 The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
 `render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
 in the engine's forward frame.
