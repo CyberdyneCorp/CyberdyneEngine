@@ -136,8 +136,11 @@ position and rotation. The same commands are available to scripts and MCP client
 `scene.create-camera`. Created actors use normal scene transactions, can be edited in the Inspector,
 and survive Save and reopen.
 
-The viewport has Editor and Game controls. Editor uses its navigation camera and shows transform
-and light handles. Game uses the first enabled scene Camera and hides editor handles; if no scene
+The viewport has Editor and Game controls. Editor uses its navigation camera and shows transform,
+light, and Camera handles. Click a light or Camera icon to select its actor and edit its Transform
+and component fields in the Inspector. Directional and spot lights and Cameras show their forward
+direction; point lights show their position because they emit in every direction. Game uses the
+first enabled scene Camera and hides editor handles; if no scene
 Camera exists, the view explains that one is needed. Switching views alone does not start the
 simulation. Play selects Game and advances hosted physics; Pause holds it; Stop restores the
 authored world and Editor view. The current sample hosted runtime reports Swift gameplay and audio
@@ -147,6 +150,11 @@ Game rendering, so authored lights determine its illumination.
 
 Live Metal captures: [Editor view with selected light](../docs/design/images/editor-scene-light-editor-metal.png)
 and [Game view during Play](../docs/design/images/editor-scene-light-game-play-metal.png).
+The [selected Camera](../docs/design/images/editor-scene-camera-gizmo-metal.png) and
+[selected directional light](../docs/design/images/editor-scene-directional-gizmo-metal.png)
+captures show their direction handles and Inspector properties. The
+[Game capture](../docs/design/images/editor-scene-game-no-gizmos-metal.png) shows the same scene
+without editor marks.
 
 Every recipe takes `--profile <name>`. The four profiles mean the same thing in Cargo that they mean
 in CMake — M0's spike wrote that column and reserved it unused for five milestones, and

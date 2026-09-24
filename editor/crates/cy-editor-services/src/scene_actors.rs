@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Camera and light creation through the same command path as the scene UI and MCP.
 
 use cy_editor_commands::{

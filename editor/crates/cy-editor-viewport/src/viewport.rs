@@ -156,6 +156,7 @@ impl Viewport {
         let frame = self.stream.latest()?;
         Some(
             PickRequest::for_frame(self.id, frame.frame, intent)
+                .with_display_extent(self.state.viewport.width, self.state.viewport.height)
                 .with_filter(PickFilter::from_visibility(&self.state.filter)),
         )
     }

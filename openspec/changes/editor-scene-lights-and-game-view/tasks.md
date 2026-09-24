@@ -11,6 +11,7 @@
 - [x] 2.1 Extract authored light values and composed transforms into hosted frame lighting; verify live intensity and movement changes in renderer tests.
 - [x] 2.2 Use an enabled primary scene camera for Game rendering and show an explicit missing-camera result; verify camera save/load and framing regressions.
 - [x] 2.3 Draw selectable light handles in Editor and suppress light and transform gizmos in Game; verify captured images contain the expected marks only in Editor.
+- [x] 2.4 Draw selectable Camera handles and transformed direction indicators for Cameras, directional lights, and spot lights; verify picking, rotation, and Game suppression.
 
 ## 3. View and Play lifecycle
 

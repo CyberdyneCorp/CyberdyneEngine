@@ -125,6 +125,8 @@ constexpr u32 kCanvasHeight = 72;
     cy::Array<u8> out;
     little_endian(out, 3, 8);      // the viewport
     little_endian(out, frame, 8);  // the frame that was on screen
+    little_endian(out, 960, 4);    // displayed viewport width
+    little_endian(out, 540, 4);    // displayed viewport height
     CY_REQUIRE(out.push_back(0));  // PickIntent::Click
     float_value(out, x);
     float_value(out, y);
@@ -142,12 +144,23 @@ CY_TEST_CASE("a click the editor sent decodes to the pixel it named") {
     CY_REQUIRE(decode_pick_request(cy::Span<const u8>{bytes.data(), bytes.size()}, request));
     CY_CHECK_EQ(request.viewport, 3ULL);
     CY_CHECK_EQ(request.frame, 42ULL);
+    CY_CHECK_EQ(request.display_width, 960U);
+    CY_CHECK_EQ(request.display_height, 540U);
     CY_CHECK(request.kind == PickKind::Click);
     CY_CHECK_NEAR(request.x, 640.5F, 1e-6F);
     CY_CHECK_NEAR(request.y, 360.25F, 1e-6F);
     CY_CHECK_EQ(request.max_candidates, 16U);
     CY_REQUIRE_EQ(request.excluded.size(), 1U);
     CY_CHECK_EQ(request.excluded[0], 0xDEADULL);
+}
+
+CY_TEST_CASE("a displayed click maps to its rendered frame before picking") {
+    const cy::Array<u8> bytes = a_click(42, 480.0F, 270.0F);
+    PickRequest request(cy::system_allocator(cy::MemoryDomain::Gpu));
+    CY_REQUIRE(decode_pick_request(cy::Span<const u8>{bytes.data(), bytes.size()}, request));
+    scale_pick_to_rendered_frame(request, 1280, 720);
+    CY_CHECK_NEAR(request.x, 640.0F, 1e-6F);
+    CY_CHECK_NEAR(request.y, 360.0F, 1e-6F);
 }
 
 CY_TEST_CASE("a truncated pick is refused at every length rather than half read") {
@@ -163,6 +176,8 @@ CY_TEST_CASE("a truncated pick is refused at every length rather than half read"
 CY_TEST_CASE("a pick intent from a newer editor is refused by name") {
     cy::Array<u8> bytes;
     little_endian(bytes, 1, 8);
+    little_endian(bytes, 960, 4);
+    little_endian(bytes, 540, 4);
     little_endian(bytes, 1, 8);
     CY_REQUIRE(bytes.push_back(9));  // an intent kind that does not exist
     PickRequest request(cy::system_allocator(cy::MemoryDomain::Gpu));

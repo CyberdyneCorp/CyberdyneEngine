@@ -195,6 +195,10 @@ pub struct PickRequest {
     /// **The frame that was on screen when it was clicked.** The runtime resolves against this
     /// frame's view state, not against whatever the editor's camera has since become.
     pub frame: FrameId,
+    /// Displayed viewport extent; zero means coordinates already name rendered pixels.
+    pub display_width: u32,
+    /// Height of the displayed viewport in panel pixels.
+    pub display_height: u32,
     /// What the pointer did.
     pub intent: PickIntent,
     /// What the editor will accept.
@@ -209,6 +213,8 @@ impl PickRequest {
         Self {
             viewport,
             frame,
+            display_width: 0,
+            display_height: 0,
             intent,
             filter: PickFilter::default(),
         }
@@ -218,6 +224,14 @@ impl PickRequest {
     #[must_use]
     pub fn with_filter(mut self, filter: PickFilter) -> Self {
         self.filter = filter;
+        self
+    }
+
+    /// Convert panel coordinates against the exact extent used to display the frame.
+    #[must_use]
+    pub fn with_display_extent(mut self, width: u32, height: u32) -> Self {
+        self.display_width = width;
+        self.display_height = height;
         self
     }
 
@@ -231,6 +245,8 @@ impl PickRequest {
         let mut writer = Writer::new();
         writer.u64(self.viewport.as_u64());
         writer.u64(self.frame.as_u64());
+        writer.u32(self.display_width);
+        writer.u32(self.display_height);
         write_intent(&mut writer, &self.intent);
         writer.u32(self.filter.layers);
         writer.u8(u8::from(self.filter.include_transparent));
@@ -247,6 +263,8 @@ impl PickRequest {
         let mut reader = Reader::new(bytes);
         let viewport = ViewportId::from_raw(reader.u64()?);
         let frame = FrameId::from_raw(reader.u64()?);
+        let display_width = reader.u32()?;
+        let display_height = reader.u32()?;
         let intent = read_intent(&mut reader)?;
         let layers = reader.u32()?;
         let include_transparent = reader.u8()? != 0;
@@ -259,6 +277,8 @@ impl PickRequest {
         Ok(Self {
             viewport,
             frame,
+            display_width,
+            display_height,
             intent,
             filter: PickFilter {
                 layers,
@@ -665,8 +685,10 @@ mod tests {
             ViewportId::from_raw(1),
             FrameId::from_raw(42),
             PickIntent::Click { x: 100.0, y: 50.0 },
-        );
+        )
+        .with_display_extent(960, 540);
         assert_eq!(request.frame, FrameId::from_raw(42));
+        assert_eq!(request.display_width, 960);
         let decoded = PickRequest::decode(&request.encode()).expect("our own encoding");
         assert_eq!(decoded, request);
     }

@@ -252,4 +252,38 @@ void draw_light_marker(const Canvas& canvas, f32 x, f32 y, render::LightKind kin
     }
 }
 
+void draw_direction_marker(const Canvas& canvas, f32 x, f32 y, f32 tip_x, f32 tip_y,
+                           bool camera) noexcept {
+    if (canvas.pixels == nullptr) {
+        return;
+    }
+    const u32 colour = camera ? 0x007C'DCFFU : 0x00FF'D16BU;
+    const f32 dx = tip_x - x;
+    const f32 dy = tip_y - y;
+    const f32 length = std::sqrt((dx * dx) + (dy * dy));
+    if (length < 5.0F) {
+        // A forward axis viewed end-on still has a visible direction cue.
+        disc(canvas, x, y, 2.0F, colour);
+        return;
+    }
+    const f32 ux = dx / length;
+    const f32 uy = dy / length;
+    line(canvas, x, y, tip_x, tip_y, 1.5F, colour);
+    line(canvas, tip_x, tip_y, tip_x - (ux * 8.0F) - (uy * 4.0F), tip_y - (uy * 8.0F) + (ux * 4.0F),
+         1.5F, colour);
+    line(canvas, tip_x, tip_y, tip_x - (ux * 8.0F) + (uy * 4.0F), tip_y - (uy * 8.0F) - (ux * 4.0F),
+         1.5F, colour);
+}
+
+void draw_camera_marker(const Canvas& canvas, f32 x, f32 y) noexcept {
+    if (canvas.pixels == nullptr) {
+        return;
+    }
+    constexpr u32 colour = 0x007C'DCFFU;
+    square(canvas, x, y, 6.0F, colour);
+    ring(canvas, x, y, 2.5F, 1.0F, kScreen);
+    line(canvas, x + 6.0F, y - 3.0F, x + 11.0F, y - 6.0F, 1.2F, colour);
+    line(canvas, x + 6.0F, y + 3.0F, x + 11.0F, y + 6.0F, 1.2F, colour);
+}
+
 }  // namespace cy::sample::editor_window

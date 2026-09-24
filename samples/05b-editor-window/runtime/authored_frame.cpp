@@ -664,6 +664,7 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
     instances_.clear();
     pivots_.clear();
     light_markers_.clear();
+    camera_markers_.clear();
     transforms_.clear();
     lights_.clear();
     const Span<const ser::WorldNode> nodes = world.nodes().span();
@@ -687,8 +688,14 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
             }
             if (lights_.size() != light_count) {
                 const render::LightDescription& light = lights_[light_count];
-                light_markers_.push_back(
-                    LightMarker{node.identity, light.kind, light.transform.translation});
+                const Vec3 origin = light.transform.translation;
+                const Vec3 forward = normalize(point(matrices[row], Vec3{0, 0, -1}) - origin);
+                light_markers_.push_back(LightMarker{node.identity, light.kind, origin, forward});
+            }
+            if (field_value(world, node, "Camera", "projection.fov_y") != nullptr) {
+                const Vec3 origin = point(matrices[row], Vec3{});
+                const Vec3 forward = normalize(point(matrices[row], Vec3{0, 0, -1}) - origin);
+                camera_markers_.push_back(CameraMarker{node.identity, origin, forward});
             }
             if (Status status = append_instance(world, node, matrices[row], eye); !status) {
                 return status;

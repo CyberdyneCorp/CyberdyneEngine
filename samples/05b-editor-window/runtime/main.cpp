@@ -92,6 +92,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
+#include <vector>
 
 #include <csignal>
 
@@ -243,6 +245,17 @@ constexpr f32 kFramingPhase = 0.12F;
 }
 
 /// Everything the loop needs, gathered so the frame function is readable.
+struct PickFrame {
+    u64 identity = 0;
+    render::View view;
+    first_light::Camera camera{};
+    bool editor_view = false;
+    std::vector<render::GpuInstance> instances;
+    std::vector<render::DrawItem> draws;
+    std::vector<LightMarker> lights;
+    std::vector<CameraMarker> cameras;
+};
+
 struct Host {
     Options options;
     AuthoredFrame* authored_frame = nullptr;
@@ -337,6 +350,7 @@ struct Host {
     /// The frame's records, kept across frames so a pick does not allocate on the message path.
     Array<render::GpuInstance> instances{system_allocator(MemoryDomain::Gpu)};
     Array<render::DrawItem> draws{system_allocator(MemoryDomain::Gpu)};
+    std::deque<PickFrame> pick_frames;
     /// What the editor sent, by kind. Printed at the end rather than logged per message: an
     /// artefact that reports "0 gizmos answered" needs to be able to say whether the editor asked
     /// and the runtime refused, or whether nothing arrived at all — which is two very different
@@ -464,6 +478,47 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     }
 }
 
+[[nodiscard]] bool marker_pixel(const render::View& view, const first_light::Camera& camera,
+                                u32 width, u32 height, Vec3 position, Vec2& pixel) noexcept {
+    const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
+                   static_cast<f32>(camera.position[2])};
+    return project_to_pixel(view, position - eye, pixel) && pixel.x >= 0.0F && pixel.y >= 0.0F &&
+           pixel.x < static_cast<f32>(width) && pixel.y < static_cast<f32>(height);
+}
+
+[[nodiscard]] bool marker_pixel(const Host& host, Vec3 position, Vec2& pixel) noexcept {
+    return marker_pixel(host.view, host.camera, host.options.width, host.options.height, position,
+                        pixel);
+}
+
+[[nodiscard]] u64 picked_actor_marker(const PickFrame& frame, const PickRequest& pick, u32 width,
+                                      u32 height) noexcept {
+    if (!frame.editor_view || pick.kind != PickKind::Click) {
+        return ~u64{0};
+    }
+    const auto hit = [&](u64 identity, Vec3 position) {
+        for (u64 excluded : pick.excluded) {
+            if (excluded == identity) {
+                return false;
+            }
+        }
+        Vec2 pixel;
+        return marker_pixel(frame.view, frame.camera, width, height, position, pixel) &&
+               length(Vec2{pixel.x - pick.x, pixel.y - pick.y}) <= 13.0F;
+    };
+    for (const LightMarker& light : frame.lights) {
+        if (hit(light.identity, light.position)) {
+            return light.identity;
+        }
+    }
+    for (const CameraMarker& camera : frame.cameras) {
+        if (hit(camera.identity, camera.position)) {
+            return camera.identity;
+        }
+    }
+    return ~u64{0};
+}
+
 /// Answer one pick against the frame the editor was looking at. M8.a task 1.4.
 ///
 /// **M7 refused this by name**, and its reason was exact: *"this runtime renders through M3's
@@ -484,43 +539,33 @@ void answer_pick(Host& host, const runtime::EditorRequest& request) noexcept {
     // camera the user never saw. A pick that names no frame — a probe, or a test — is answered
     // against the current one, which is the only frame there is to answer against.
     Array<render::PickCandidate> candidates(allocator);
-    if (pick.frame == 0 || pick.frame == host.published_frame) {
+    const PickFrame* frame = nullptr;
+    for (const PickFrame& candidate : host.pick_frames) {
+        if (candidate.identity == (pick.frame == 0 ? host.published_frame : pick.frame)) {
+            frame = &candidate;
+            break;
+        }
+    }
+    if (frame != nullptr) {
+        scale_pick_to_rendered_frame(pick, host.options.width, host.options.height);
         if (Status resolved =
-                resolve_pick(pick, host.view, host.instances.span(), host.draws.span(), candidates);
+                resolve_pick(pick, frame->view, frame->instances, frame->draws, candidates);
             !resolved) {
             (void)host.bridge->send_rejected(request.request, resolved.error().message,
                                              "the pick names an intent or a size this runtime "
                                              "cannot resolve");
             return;
         }
-        if (host.game_camera == ~u64{0} && host.authored_frame != nullptr &&
-            pick.kind == PickKind::Click) {
-            for (const LightMarker& light : host.authored_frame->light_markers()) {
-                bool excluded = false;
-                for (u64 identity : pick.excluded) {
-                    excluded |= identity == light.identity;
-                }
-                if (excluded) {
-                    continue;
-                }
-                const Vec3 relative =
-                    light.position - Vec3{static_cast<f32>(host.camera.position[0]),
-                                          static_cast<f32>(host.camera.position[1]),
-                                          static_cast<f32>(host.camera.position[2])};
-                Vec2 pixel;
-                if (!project_to_pixel(host.view, relative, pixel) ||
-                    length(Vec2{pixel.x - pick.x, pixel.y - pick.y}) > 13.0F) {
-                    continue;
-                }
-                candidates.clear();
-                render::PickCandidate marker;
-                marker.stable_id = light.identity;
-                if (Status added = candidates.push_back(marker); !added) {
-                    (void)host.bridge->send_rejected(request.request, "pick the light",
-                                                     "the runtime ran out of memory");
-                    return;
-                }
-                break;
+        const u64 marker_id =
+            picked_actor_marker(*frame, pick, host.options.width, host.options.height);
+        if (marker_id != ~u64{0}) {
+            candidates.clear();
+            render::PickCandidate marker;
+            marker.stable_id = marker_id;
+            if (Status added = candidates.push_back(marker); !added) {
+                (void)host.bridge->send_rejected(request.request, "pick the scene actor",
+                                                 "the runtime ran out of memory");
+                return;
             }
         }
     }
@@ -921,6 +966,14 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     physics::reference::destroy_server(server, allocator);
 }
 
+void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position, Vec3 forward,
+                          Vec2 origin, bool camera) noexcept {
+    Vec2 tip;
+    if (marker_pixel(host, position + (forward * 0.85F), tip)) {
+        draw_direction_marker(canvas, origin.x, origin.y, tip.x, tip.y, camera);
+    }
+}
+
 /// Render one frame, composite the gizmo into it, and publish it.
 [[nodiscard]] bool publish_frame(Host& host, f32 phase) noexcept {
     host.camera = host.editor_camera ? host.asked_camera : host.scene->camera_at(phase);
@@ -997,12 +1050,20 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     const Canvas canvas{staging.pixels, staging.width, staging.height};
     if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
         for (const LightMarker& light : host.authored_frame->light_markers()) {
-            const Vec3 relative = light.position - Vec3{static_cast<f32>(host.camera.position[0]),
-                                                        static_cast<f32>(host.camera.position[1]),
-                                                        static_cast<f32>(host.camera.position[2])};
             Vec2 marker;
-            if (project_to_pixel(host.view, relative, marker)) {
+            if (marker_pixel(host, light.position, marker)) {
                 draw_light_marker(canvas, marker.x, marker.y, light.kind);
+                if (light.kind != render::LightKind::Point) {
+                    draw_actor_direction(host, canvas, light.position, light.forward, marker,
+                                         false);
+                }
+            }
+        }
+        for (const CameraMarker& camera : host.authored_frame->camera_markers()) {
+            Vec2 marker;
+            if (marker_pixel(host, camera.position, marker)) {
+                draw_camera_marker(canvas, marker.x, marker.y);
+                draw_actor_direction(host, canvas, camera.position, camera.forward, marker, true);
             }
         }
     }
@@ -1049,6 +1110,23 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     }
     host.layout.frame_id = *published;
     host.published_frame = *published;
+    PickFrame pick_frame;
+    pick_frame.identity = *published;
+    pick_frame.view = host.view;
+    pick_frame.camera = host.camera;
+    pick_frame.editor_view = host.game_camera == ~u64{0} && host.authored_frame != nullptr;
+    pick_frame.instances.assign(host.instances.span().begin(), host.instances.span().end());
+    pick_frame.draws.assign(host.draws.span().begin(), host.draws.span().end());
+    if (host.authored_frame != nullptr) {
+        const auto lights = host.authored_frame->light_markers();
+        const auto cameras = host.authored_frame->camera_markers();
+        pick_frame.lights.assign(lights.begin(), lights.end());
+        pick_frame.cameras.assign(cameras.begin(), cameras.end());
+    }
+    host.pick_frames.push_back(std::move(pick_frame));
+    if (host.pick_frames.size() > 64) {
+        host.pick_frames.pop_front();
+    }
     host.frames_published += 1;
     // TASK 1.3'S NUMBER, taken here because this is where the change actually reached a viewer.
     if (host.change_pending) {

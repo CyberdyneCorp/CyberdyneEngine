@@ -220,6 +220,10 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_CHECK(game_camera.position[0] > 2.9);
         CY_CHECK(game_camera.fov_y_radians > 1.0F);
         CY_CHECK(!frame.scene_camera(empty, 0, game_camera));
+        CY_REQUIRE(frame.render(authored_camera, view));
+        CY_REQUIRE_EQ(frame.camera_markers().size(), 1U);
+        CY_CHECK_EQ(frame.camera_markers()[0].identity, authored_camera.nodes()[1].identity);
+        CY_CHECK(frame.camera_markers()[0].forward.z < -0.5F);
 
         CY_REQUIRE(frame.render(sphere, view, true));
         Array<u32> preview(allocator());

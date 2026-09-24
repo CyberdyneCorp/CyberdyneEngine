@@ -502,8 +502,15 @@ fn a_generated_primitive_and_an_imported_mesh_are_the_same_entity() {
         text.replace("assets/primitives/Box.cyprim", "<asset>")
             .replace("assets/models/crate.gltf", "<asset>")
     };
-    let components = |text: &str| text.split_once("\n  component").map(|(_, rest)| rest.to_string());
-    assert_eq!(components(&strip(blocks[0])), components(&strip(blocks[1])), "{written}");
+    let components = |text: &str| {
+        text.split_once("\n  component")
+            .map(|(_, rest)| rest.to_string())
+    };
+    assert_eq!(
+        components(&strip(blocks[0])),
+        components(&strip(blocks[1])),
+        "{written}"
+    );
 }
 
 #[test]

@@ -19,3 +19,10 @@ The Editor view SHALL show selectable light handles at authored light positions,
 #### Scenario: Placing a point light
 - **WHEN** an author creates and selects a point light
 - **THEN** its handle and transform gizmo appear in Editor view and its illumination appears in the rendered scene
+
+### Requirement: Camera and light direction handles
+The Editor view SHALL show a selectable handle at each authored Camera and light, and a direction indicator for Cameras, directional lights, and spot lights based on their composed world transform. A selected actor SHALL expose its transform and component properties in the Inspector. Game view SHALL omit these handles and indicators.
+
+#### Scenario: Aim a Camera or directional light
+- **WHEN** an author rotates a Camera or directional light in the scene
+- **THEN** its Editor direction indicator updates to the transformed forward axis and selecting its handle exposes its editable properties

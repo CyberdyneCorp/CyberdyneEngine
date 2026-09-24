@@ -85,6 +85,8 @@ bool decode_pick_request(Span<const u8> bytes, PickRequest& out) noexcept {
     Reader reader(bytes);
     out.viewport = reader.u64_value();
     out.frame = reader.u64_value();
+    out.display_width = reader.u32_value();
+    out.display_height = reader.u32_value();
     const u8 kind = reader.u8_value();
     switch (static_cast<PickKind>(kind)) {
         case PickKind::Click:
@@ -133,6 +135,24 @@ bool decode_pick_request(Span<const u8> bytes, PickRequest& out) noexcept {
         }
     }
     return reader.ok();
+}
+
+void scale_pick_to_rendered_frame(PickRequest& pick, u32 width, u32 height) noexcept {
+    if (pick.display_width == 0 || pick.display_height == 0) {
+        return;
+    }
+    const f32 x = static_cast<f32>(width) / static_cast<f32>(pick.display_width);
+    const f32 y = static_cast<f32>(height) / static_cast<f32>(pick.display_height);
+    pick.x *= x;
+    pick.y *= y;
+    pick.min_x *= x;
+    pick.max_x *= x;
+    pick.min_y *= y;
+    pick.max_y *= y;
+    for (Vec2& point : pick.points) {
+        point.x *= x;
+        point.y *= y;
+    }
 }
 
 Status resolve_pick(const PickRequest& request, const render::View& view,

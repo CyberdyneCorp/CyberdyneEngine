@@ -17,8 +17,13 @@ use cy_editor_core::observe::Revision;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
+use cy_editor_protocol::RequestId;
 use cy_editor_protocol::message::Message;
 use cy_editor_sdk::HostingMode;
+use cy_editor_viewport::picking::{
+    DocumentFilter, Granularity, PickIntent, PickRequest, PickResolution, PickResponse,
+    SelectionMode,
+};
 use cy_editor_viewport::play::{PlayMode, PlayState};
 
 use crate::asset_catalogue::AssetCatalogueService;
@@ -28,6 +33,7 @@ use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
+use crate::picking;
 use crate::primitives::{material_slots_of, mesh_of};
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
@@ -58,6 +64,14 @@ pub struct ReloadReport {
     pub dropped: Vec<String>,
     /// Actionable failure, when the runtime refused the reload.
     pub diagnostic: Option<String>,
+}
+
+struct PendingPick {
+    document: DocumentId,
+    frame: cy_editor_protocol::FrameId,
+    intent: PickIntent,
+    mode: SelectionMode,
+    cycle: u32,
 }
 
 /// The editor's authoritative state.
@@ -125,6 +139,7 @@ pub struct Editor {
     /// of its arguments is a path.
     permitted: (String, Vec<String>),
     pending_reloads: std::collections::BTreeMap<u64, (String, u32)>,
+    pending_picks: std::collections::BTreeMap<u64, PendingPick>,
     reload_revision: Revision,
 }
 
@@ -173,6 +188,7 @@ impl Editor {
             actor,
             permitted: unrestricted(),
             pending_reloads: std::collections::BTreeMap::new(),
+            pending_picks: std::collections::BTreeMap::new(),
             reload_revision: Revision::INITIAL,
         }
     }
@@ -354,6 +370,84 @@ impl Editor {
         outcome
     }
 
+    /// Send a viewport pick to the runtime and retain the click intent until its answer arrives.
+    pub fn request_pick(&mut self, pick: PickRequest, mode: SelectionMode) -> Result<RequestId> {
+        let document = self.workspace.active().ok_or_else(|| {
+            Problem::new("pick a scene actor", "no world is open")
+                .with_remedy("open a world before selecting an actor")
+        })?;
+        let request = self.runtime.pick(pick.frame, pick.encode())?;
+        let cycle = match pick.intent {
+            PickIntent::Click { x, y } => self.viewports.focused_mut().click(x, y),
+            _ => 0,
+        };
+        if self.pending_picks.len() >= 128 {
+            self.pending_picks.pop_first();
+        }
+        self.pending_picks.insert(
+            request.as_u64(),
+            PendingPick {
+                document,
+                frame: pick.frame,
+                intent: pick.intent,
+                mode,
+                cycle,
+            },
+        );
+        Ok(request)
+    }
+
+    fn accept_pick_message(&mut self, message: &Message) {
+        let Message::Picked {
+            request,
+            candidates,
+        } = message
+        else {
+            return;
+        };
+        let Some(pending) = self.pending_picks.remove(&request.as_u64()) else {
+            return;
+        };
+        if self.workspace.active() != Some(pending.document) {
+            return;
+        }
+        let Ok(response) = PickResponse::decode(candidates) else {
+            self.notifications.post(Notification::warning(
+                "The runtime returned an unreadable pick answer",
+            ));
+            return;
+        };
+        if response.frame != pending.frame {
+            return;
+        }
+        let Some(document) = self.documents.get(pending.document) else {
+            return;
+        };
+        let identities = picking::identity_map(document);
+        let filter = DocumentFilter::default();
+        let resolution = PickResolution {
+            identities: &identities,
+            document,
+            filter: &filter,
+            granularity: Granularity::Instance,
+        };
+        let mut selection = self.selection.get().clone();
+        match picking::resolve(
+            candidates,
+            &resolution,
+            &pending.intent,
+            pending.cycle,
+            &mut selection,
+            pending.mode,
+        ) {
+            Ok(_) => self.selection.set(selection),
+            Err(problem) => self.notifications.post(Notification::error(
+                "The runtime pick could not be applied",
+                problem,
+            )),
+        }
+    }
+
     /// One frame of the editor's own housekeeping.
     ///
     /// Everything here is bounded and non-blocking: drain what the runtime sent, forget settled
@@ -371,6 +465,7 @@ impl Editor {
         }
         if !self.runtime.is_connected() {
             self.set_local_play_state(PlayState::Editing);
+            self.pending_picks.clear();
         }
         // THE GIZMO ARRIVES HERE. `RuntimeMirror` takes a published layout, refuses one that
         // belongs to a frame the viewport is not showing, and hands what survives to the viewport
@@ -378,6 +473,7 @@ impl Editor {
         // engine's (`editor-viewport-and-gizmos`). Every other message is drained rather than
         // queued, which is what keeps the channel bounded in a build with no viewport.
         for message in &messages {
+            self.accept_pick_message(message);
             if let Message::Playing { state, detail, .. } = message {
                 let confirmed = match state.as_str() {
                     "playing" => Some(PlayState::Playing),
@@ -1071,6 +1167,8 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_protocol::FrameId;
+    use cy_editor_viewport::picking::PickCandidate;
 
     #[test]
     fn an_editor_with_no_runtime_still_opens_and_edits_documents() {
@@ -1142,6 +1240,48 @@ mod tests {
         editor.set_local_play_state(PlayState::Editing);
         assert_eq!(editor.viewports.focused().attachment.game_camera(), None);
         assert_eq!(editor.viewports.focused().play, PlayState::Editing);
+    }
+
+    #[test]
+    fn a_runtime_pick_selects_the_camera_from_the_document_identity() {
+        let mut editor = Editor::default();
+        let document_id = editor.open_document("worlds/pick.cyworld").unwrap();
+        let node = editor
+            .documents
+            .get_mut(document_id)
+            .unwrap()
+            .with_transaction("Create Camera", Actor::human("designer"), |document| {
+                document.create_node(None)
+            })
+            .unwrap();
+        let frame = FrameId::from_raw(42);
+        editor.pending_picks.insert(
+            7,
+            PendingPick {
+                document: document_id,
+                frame,
+                intent: PickIntent::Click { x: 50.0, y: 30.0 },
+                mode: SelectionMode::Replace,
+                cycle: 0,
+            },
+        );
+        editor.accept_pick_message(&Message::Picked {
+            request: RequestId::from_raw(7),
+            candidates: PickResponse {
+                frame,
+                candidates: vec![PickCandidate {
+                    identity: engine_identity(node),
+                    distance: 1.0,
+                    transparent: false,
+                }],
+            }
+            .encode(),
+        });
+        assert_eq!(
+            editor.selection.get().nodes().collect::<Vec<_>>(),
+            vec![node]
+        );
+        assert!(editor.pending_picks.is_empty());
     }
 
     #[test]

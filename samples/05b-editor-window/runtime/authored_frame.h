@@ -24,6 +24,13 @@ struct LightMarker {
     u64 identity = 0;
     render::LightKind kind = render::LightKind::Point;
     Vec3 position;
+    Vec3 forward;
+};
+
+struct CameraMarker {
+    u64 identity = 0;
+    Vec3 position;
+    Vec3 forward;
 };
 
 class AuthoredFrame {
@@ -46,6 +53,9 @@ public:
     [[nodiscard]] bool pivot_for(u64 identity, Vec3& pivot) const noexcept;
     [[nodiscard]] Span<const LightMarker> light_markers() const noexcept {
         return {light_markers_.data(), light_markers_.size()};
+    }
+    [[nodiscard]] Span<const CameraMarker> camera_markers() const noexcept {
+        return {camera_markers_.data(), camera_markers_.size()};
     }
     [[nodiscard]] first_light::Camera framing(const first_light::Camera& fallback) const noexcept;
     [[nodiscard]] bool scene_camera(const scene::serialization::World& world, u64 identity,
@@ -101,6 +111,7 @@ private:
     std::vector<Instance> instances_;
     std::vector<std::pair<u64, Vec3>> pivots_;
     std::vector<LightMarker> light_markers_;
+    std::vector<CameraMarker> camera_markers_;
     std::vector<std::pair<std::string, u32>> material_slots_;
     std::vector<std::pair<AssetId, render::TextureHandle>> texture_handles_;
     rhi::BufferHandle positions_;

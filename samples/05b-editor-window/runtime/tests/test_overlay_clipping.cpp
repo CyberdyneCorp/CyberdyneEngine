@@ -55,6 +55,8 @@ CY_TEST_CASE("drawing outside the frame is clipped rather than corrupting memory
     draw_gizmo(canvas, layout, cy::render::GizmoHandle::Count);
     draw_selection_marker(canvas, -20.0F, 200.0F, 30.0F);
     draw_light_marker(canvas, 12.0F, 12.0F, cy::render::LightKind::Point);
+    draw_camera_marker(canvas, 2.0F, 2.0F);
+    draw_direction_marker(canvas, 12.0F, 12.0F, 40.0F, 40.0F, true);
 
     // Reaching here without a sanitiser report is the assertion; the pixel is a witness that the
     // canvas was not simply ignored.

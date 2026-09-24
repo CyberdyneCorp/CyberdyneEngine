@@ -235,7 +235,6 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
         documents,
         selection,
         viewports,
-        notifications,
         ..
     } = &mut *panels.editor;
     let (focused, gizmos) = viewports.interacting();
@@ -276,7 +275,7 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
         outcomes.push(panels.inputs.interaction.handle(&mut context, event));
     }
     for outcome in outcomes {
-        report(outcome, notifications);
+        report(outcome, panels.editor);
     }
 }
 
@@ -300,21 +299,21 @@ fn published_gizmo(editor: &cy_editor_services::Editor) -> Option<cy_editor_view
 /// itself in the viewport's own corner rather than as a notification — `editor-ui-ux` requires that
 /// notifications not interrupt, and a toast per drag would be a wall of them. Only a refusal and an
 /// unanswerable pick are worth saying out loud.
-fn report(outcome: Outcome, notifications: &mut cy_editor_services::NotificationService) {
+fn report(outcome: Outcome, editor: &mut cy_editor_services::Editor) {
     match outcome {
         Outcome::Refused(problem) => {
-            notifications.post(Notification::error(problem.what.clone(), *problem));
+            editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), *problem));
         }
-        Outcome::Pick(_request, _mode) => {
-            // The request is built and carries the frame it was aimed at; what resolves it is the
-            // engine, because picking is engine-side so that what is picked is what was rendered.
-            // Until a runtime answers, saying so once is the honest outcome — inventing a hit from
-            // the editor's own camera is the forbidden pattern this whole path avoids.
-            notifications.post(Notification::info(
-                "Picking is resolved by the runtime; none is attached to answer this click.",
-            ));
+        Outcome::Pick(request, mode) => {
+            if let Err(problem) = editor.request_pick(*request, mode) {
+                editor
+                    .notifications
+                    .post(Notification::error(problem.what.clone(), problem));
+            }
         }
-        Outcome::NothingToPick => notifications.post(Notification::info(
+        Outcome::NothingToPick => editor.notifications.post(Notification::info(
             "No frame has arrived yet, so there is nothing on screen to have clicked.",
         )),
         Outcome::Nothing
