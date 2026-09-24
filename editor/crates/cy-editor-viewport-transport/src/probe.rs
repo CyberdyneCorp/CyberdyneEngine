@@ -10,6 +10,7 @@
 //!   cy-viewport-transport-probe [--socket PATH] [--seconds S] [--rate HZ]
 //!                               [--wait newest|poll|bounded] [--wait-micros N]
 //!                               [--verify] [--no-patch] [--expect-frames N]
+//!                               [--connect-delay-ms N]
 //!
 //! It exits non-zero when it was asked to verify something and the answer was no, so that a test
 //! can be a process invocation rather than a paragraph a human reads.
@@ -25,6 +26,15 @@ use crate::wire::default_socket_path;
 /// to within 68 rows, which is enough to say "this image contains two frames" and cheap enough to
 /// do on every frame.
 const PROBE_ROWS: usize = 16;
+
+/// The line the probe prints, once, when it has drawn its first runtime frame.
+///
+/// A test that means to kill the runtime *while the editor is drawing it* waits for this line
+/// rather than for a length of time. The fixed two-second sleep it replaces was a guess at how long
+/// opening a device and attaching takes, and on a loaded host the guess was wrong: the fifth M11.c
+/// close SIGKILLed the runtime before the probe had connected, and the probe, correctly, exited
+/// with "Connection refused".
+pub const FIRST_FRAME_SHOWN: &str = "[probe] first frame shown";
 
 /// What one run measured.
 #[derive(Default)]
@@ -81,6 +91,14 @@ pub fn main() {
     };
     for note in &gpu.notes {
         println!("[probe] {note}");
+    }
+
+    // Stands in for a host too loaded to open a device promptly: the time between the probe
+    // starting and it attaching is exactly the gap a caller must not guess at. Tests use it to put
+    // that gap beyond any fixed sleep, deterministically.
+    let connect_delay = number("--connect-delay-ms", 0.0);
+    if connect_delay > 0.0 {
+        std::thread::sleep(Duration::from_secs_f64(connect_delay / 1e3));
     }
 
     let socket = value("--socket").unwrap_or_else(default_socket_path);
@@ -248,6 +266,12 @@ fn run(gpu: &Arc<Gpu>, session: &mut ViewportSession, settings: &Settings) -> Me
             measurements
                 .latencies
                 .push(monotonic_nanos().saturating_sub(frame.submitted_nanos) as f64 / 1e6);
+            if measurements.shown.is_empty() {
+                println!(
+                    "{FIRST_FRAME_SHOWN} at {:.2} s",
+                    started.elapsed().as_secs_f64()
+                );
+            }
             measurements.shown.push(frame.frame_id);
         }
         let _ = gpu.device.poll(wgpu::PollType::Poll);

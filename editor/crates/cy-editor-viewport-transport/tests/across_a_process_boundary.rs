@@ -17,9 +17,12 @@
 // compiles to an empty test binary rather than a failure.
 #![cfg(target_os = "linux")]
 
-use std::io::Read as _;
+use std::io::{BufRead as _, BufReader, Read as _};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+use cy_editor_viewport_transport::probe::FIRST_FRAME_SHOWN;
 
 const PUBLISHER: &str = env!("CARGO_BIN_EXE_cy-viewport-publisher");
 const PROBE: &str = env!("CARGO_BIN_EXE_cy-viewport-transport-probe");
@@ -174,7 +177,34 @@ fn the_editor_survives_the_runtime_being_killed() {
     // hardest version — no unwinding, no cleanup, no chance to say goodbye — and it is survivable
     // only because the publisher announces AFTER `vkQueueSubmit`, so every value the editor can be
     // waiting on is already on a queue and will still be signalled.
-    let socket = "/tmp/cy-viewport-test-kill.sock";
+    survive_a_sigkill("/tmp/cy-viewport-test-kill.sock", &[]);
+}
+
+#[test]
+fn the_editor_survives_the_runtime_being_killed_when_it_was_slow_to_attach() {
+    // A REGRESSION TEST for the flake that kept M11.c's fifth close red. The test above used to
+    // sleep a fixed two seconds and then SIGKILL the runtime, on the assumption that the probe
+    // would have opened its device and attached by then. Under the ledger's build load it had not:
+    // the probe reached `connect` after the runtime was dead, was refused, and exited 3, and the
+    // test reported an editor that had not survived a kill it never saw. Nothing in the editor was
+    // wrong; the test killed the runtime before the thing it was testing existed.
+    //
+    // Three seconds of `--connect-delay-ms` is the loaded host, made deterministic: it puts the
+    // attach after where the fixed sleep fired, every run. With the kill tied to the probe's first
+    // drawn frame instead, the delay changes nothing.
+    survive_a_sigkill(
+        "/tmp/cy-viewport-test-kill-slow.sock",
+        &["--connect-delay-ms", "3000"],
+    );
+}
+
+/// The backstop for a probe that neither draws nor exits. The kill waits for an event, not a time;
+/// this only turns a hang into a failure with the probe's output in it.
+const FIRST_FRAME_PATIENCE: Duration = Duration::from_mins(2);
+
+/// Start a runtime and a headless editor, SIGKILL the runtime once the editor is drawing its
+/// frames, and require the editor to carry on, say why, and exit cleanly.
+fn survive_a_sigkill(socket: &str, probe_extra: &[&str]) {
     let Some(mut child) = publisher(
         socket,
         &["--buffers", "4", "--seconds", "30", "--heavy", "8"],
@@ -182,24 +212,70 @@ fn the_editor_survives_the_runtime_being_killed() {
         return;
     };
 
-    let probe = Command::new(PROBE)
+    let mut probe = Command::new(PROBE)
         .args(["--socket", socket])
         .args(["--seconds", "6", "--rate", "60"])
+        .args(probe_extra)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("the probe runs");
 
-    std::thread::sleep(Duration::from_secs(2));
+    // Both pipes are drained on threads of their own, so that a probe writing to either can never
+    // block on a pipe this test is not reading.
+    let stdout = probe.stdout.take().expect("the probe's stdout is piped");
+    let (lines, arriving) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if lines.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let mut stderr = probe.stderr.take().expect("the probe's stderr is piped");
+    let complaints = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text);
+        text
+    });
+
+    // Kill the runtime only once the editor is showing its frames: that, and not "about two seconds
+    // in", is the moment the property is about.
+    let mut report = String::new();
+    let deadline = Instant::now() + FIRST_FRAME_PATIENCE;
+    let drawing = loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match arriving.recv_timeout(left) {
+            Ok(line) => {
+                let shown = line.starts_with(FIRST_FRAME_SHOWN);
+                report.push_str(&line);
+                report.push('\n');
+                if shown {
+                    break true;
+                }
+            }
+            Err(_) => break false,
+        }
+    };
     child.kill().expect("SIGKILL");
     let _ = child.wait();
+    if !drawing {
+        let _ = probe.kill();
+    }
 
-    let output = probe.wait_with_output().expect("the probe finished");
-    let report = String::from_utf8_lossy(&output.stdout);
+    report.extend(arriving.iter().map(|line| line + "\n"));
+    let status = probe.wait().expect("the probe finished");
+    let _ = reader.join();
+    let complaints = complaints.join().unwrap_or_default();
     assert!(
-        output.status.success(),
-        "the editor did not survive its runtime being killed:\n{report}{}",
-        String::from_utf8_lossy(&output.stderr)
+        drawing,
+        "the probe never drew a runtime frame, so there was nothing to kill it under:\n\
+         {report}{complaints}"
+    );
+    assert!(
+        status.success(),
+        "the editor did not survive its runtime being killed:\n{report}{complaints}"
     );
     assert!(
         report.contains("SURVIVED the runtime going away"),
