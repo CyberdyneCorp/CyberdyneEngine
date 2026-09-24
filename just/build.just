@@ -516,8 +516,11 @@ _job-slots:
 # The environment that puts every rustc Cargo starts into the same pool, printed as `export` lines
 # for `eval`. Cargo's RUSTC_WRAPPER names one program and passes it no options, so job_slot.py reads
 # them from the environment; a link or a codegen-heavy crate gets up to three more slots that are free
-# at that moment as jobserver tokens, and no more. Nothing is printed when `_job-slots` is empty or
-# the caller already chose a RUSTC_WRAPPER (sccache, say): theirs wins.
+# at that moment as jobserver tokens, and no more. rustc KEEPS a jobserver where a C++ link gets none
+# (cmake/jobpool.cmake): it is a cooperative client that proceeds on its implicit token and compiles
+# on one thread when the pipe is empty, whereas GCC's LTO deadlocks on an empty pipe. Nothing is
+# printed when `_job-slots` is empty or the caller already chose a RUSTC_WRAPPER (sccache, say):
+# theirs wins.
 [private]
 _cargo-pool:
     #!/usr/bin/env bash

@@ -25,6 +25,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -618,34 +619,257 @@ def overlapping_builds_share_one_pool(root: pathlib.Path) -> list[str]:
     return failures
 
 
-def a_link_gets_a_jobserver_bounded_by_its_slots(root: pathlib.Path) -> list[str]:
-    """A link's jobserver holds only the slots the link holds, so `-flto=auto` cannot take 24 cores.
+def a_link_gets_no_jobserver_and_a_fixed_lto_parallelism(root: pathlib.Path) -> list[str]:
+    """A link is handed no jobserver; its LTO parallelism is fixed at the slots it holds.
 
-    GCC's `-flto=auto`, the Shipping configuration's IPO, runs `make -j<cores>` under every link
-    unless it finds a jobserver — measured here, `make -j24` for one link. The pool hands the link
-    one: its own slot plus up to `--max-extra` slots free at that moment, and none that are busy.
+    Until M11.c's seventh close the pool handed every link a GNU make jobserver holding the slots
+    free at that moment. GCC 13.3's `lto1 -fwpa` takes one token per partition it streams and
+    returns them only after the last fork, so a link whose partitions outnumbered its tokens waited
+    on the pipe for ever, and a saturated pool hands a link no tokens as a matter of course. Now a
+    link gets no jobserver at all — one inherited from a make above it is stripped too, because GCC
+    takes a jobserver over a fixed `-flto=N` when it finds one — and the launcher reads N from the
+    link's own last `-flto=N`, holds that many slots, and pins `-flto=<held>` on a link that named
+    none or more than the pool has. A link without LTO holds one slot. rustc keeps `--jobserver`:
+    it is a cooperative client that never waits on the pipe.
     """
     failures = []
     script = str(root / "tools/workflow/job_slot.py")
-    probe = ["sh", "-c", 'echo "$MAKEFLAGS"']
-    with tempfile.TemporaryDirectory(prefix="cy-jobserver-") as scratch:
-        environment = {**os.environ, "CY_JOB_SLOT_DIR": str(pathlib.Path(scratch) / "pool")}
-        free = subprocess.run([sys.executable, script, "--slots", "4", "--jobserver", "--max-extra",
-                               "2", "--", *probe], env=environment, capture_output=True, text=True,
-                              check=False).stdout
-        if "-j3 " not in f"{free} " or "--jobserver-auth=" not in free:
-            failures.append(f"a link on an idle pool of 4 with --max-extra 2 got MAKEFLAGS {free!r}, "
-                            "expected -j3 and a jobserver")
-        holders = [_pool_job(root, environment["CY_JOB_SLOT_DIR"], 4, pathlib.Path(scratch) / "log",
-                             f"h{index}", 3) for index in range(3)]
-        time.sleep(1.0)
-        busy = subprocess.run([sys.executable, script, "--slots", "4", "--jobserver", "--", *probe],
-                              env=environment, capture_output=True, text=True, check=False).stdout
+    echo = ["sh", "-c", 'echo "[$MAKEFLAGS]"; echo "$*"', "_"]
+    stale = "-j5 --jobserver-auth=3,4"
+    cases = (
+        # (pool slots, the link's own words, expected MAKEFLAGS, expected words appended)
+        (4, ["c++", "-flto=auto", "-o", "x"], "[]", " -flto=4"),
+        (4, ["c++", "-flto", "-o", "x"], "[]", " -flto=4"),
+        (2, ["c++", "-flto=auto", "-flto=4", "-o", "x"], "[]", " -flto=2"),
+        (4, ["c++", "-flto=auto", "-flto=4", "-o", "x"], "[]", ""),
+        (4, ["c++", "-flto=8", "-o", "x"], "[]", " -flto=4"),
+        (4, ["c++", "-o", "x"], "[]", ""),
+    )
+    with tempfile.TemporaryDirectory(prefix="cy-link-") as scratch:
+        pool = str(pathlib.Path(scratch) / "pool")
+        environment = {**os.environ, "CY_JOB_SLOT_DIR": pool, "MAKEFLAGS": stale}
+        for slots, words, makeflags, appended in cases:
+            result = subprocess.run([sys.executable, script, "--slots", str(slots), "--link", "--",
+                                     *echo, *words], env=environment, capture_output=True,
+                                    text=True, check=False)
+            lines = result.stdout.splitlines()
+            if len(lines) != 2 or result.returncode:
+                failures.append(f"a link {words} on {slots} slots failed: {result.stderr.strip()}")
+                continue
+            if lines[0] != makeflags:
+                failures.append(f"a link {words} ran with MAKEFLAGS {lines[0]}, expected "
+                                f"{makeflags}: a link must find no jobserver")
+            if lines[1] != " ".join(words) + appended:
+                failures.append(f"a link {words} on {slots} slots ran as {lines[1]!r}, expected "
+                                f"{' '.join(words) + appended!r}")
+        failures.extend(_a_link_without_lto_holds_one_slot(root, pool))
+        rustc = subprocess.run([sys.executable, script, "--slots", "4", "--jobserver", "--", *echo],
+                               env=environment, capture_output=True, text=True, check=False).stdout
+        if "--jobserver-auth=" not in rustc or stale.split()[1] in rustc:
+            failures.append(f"rustc's jobserver form got MAKEFLAGS {rustc!r}: expected the pool's "
+                            "jobserver in place of the inherited one")
+    return failures
+
+
+def _a_link_without_lto_holds_one_slot(root: pathlib.Path, pool: str) -> list[str]:
+    """Three quick compiles finish beside a non-LTO link on a pool of 4: it left three slots."""
+    script = str(root / "tools/workflow/job_slot.py")
+    environment = {**os.environ, "CY_JOB_SLOT_DIR": pool}
+    link = subprocess.Popen([sys.executable, script, "--slots", "4", "--link", "--nice", "0", "--",
+                             "sh", "-c", "sleep 2", "_", "c++", "-o", "x"], env=environment)
+    time.sleep(0.5)
+    log = pathlib.Path(pool).parent / "one-slot.log"
+    started = time.monotonic()
+    compiles = [_pool_job(root, pool, 4, log, f"c{index}", 0.1) for index in range(3)]
+    codes = [job.wait(timeout=30) for job in compiles]
+    elapsed = time.monotonic() - started
+    link.wait(timeout=30)
+    if any(codes):
+        return [f"a compile beside a non-LTO link failed: exit codes {codes}"]
+    if elapsed > 1.2:
+        return [f"three 0.1 s compiles beside a non-LTO link on a pool of 4 took {elapsed:.1f} s: "
+                "the link held more than its one slot"]
+    return []
+
+
+def _probe_link_launcher(root: pathlib.Path, scratch: pathlib.Path, cores: int) -> pathlib.Path:
+    """The `job-slot-link` cmake/launchers.cmake writes for a tree on a `cores`-core machine.
+
+    A one-file project that includes the engine's own launcher modules, configured with an `nproc`
+    that answers `cores`, so the pool it bakes in has `cores - 2` slots. The launcher is what the
+    ledger's links actually run through, whatever options this revision bakes into it.
+    """
+    project = scratch / "project"
+    project.mkdir(exist_ok=True)
+    (project / "main.c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
+    (project / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.28)\nproject(probe C)\n"
+        f'list(APPEND CMAKE_MODULE_PATH "{root}/cmake")\ninclude(launchers)\n'
+        "add_executable(probe main.c)\n", encoding="utf-8")
+    tree = scratch / f"tree-{cores}"
+    configured = subprocess.run(["cmake", "-S", str(project), "-B", str(tree), "-G",
+                                 "Unix Makefiles", f"-DCY_CCACHE_DIR={scratch / 'ccache'}"],
+                                env=_fake_nproc(scratch, cores), capture_output=True, text=True,
+                                check=False)
+    if configured.returncode:
+        raise RuntimeError("the probe project did not configure: "
+                           f"{configured.stderr.strip()[-300:]}")
+    launcher = tree / "cy-launchers" / "job-slot-link"
+    if not launcher.is_file():
+        raise RuntimeError(f"the probe project wrote no link launcher at {launcher}")
+    return launcher
+
+
+def _gcc_lto_objects(directory: pathlib.Path, count: int) -> list[str]:
+    """`count` objects of a small C program compiled for LTO, or [] when `cc` is not GCC.
+
+    Every function is distinct and not inlinable, so that WPA keeps one partition per function
+    under `-flto-partition=max` rather than folding identical bodies into one: the hang needs more
+    partitions than the link has tokens.
+    """
+    version = subprocess.run(["cc", "-v"], capture_output=True, text=True, check=False).stderr
+    if "gcc version" not in version:
+        return []
+    sources = []
+    for index in range(1, count):
+        source = directory / f"f{index}.c"
+        source.write_text(f"__attribute__((noinline)) int f{index}(int x) {{ volatile int y = x; "
+                          f"for (int i = 0; i < 1000; ++i) y = y * (3 + {index}) + i; "
+                          "return y; }\n",
+                          encoding="utf-8")
+        sources.append(source)
+    declarations = " ".join(f"int f{index}(int);" for index in range(1, count))
+    total = " + ".join(f"f{index}({index})" for index in range(1, count))
+    main = directory / "main.c"
+    main.write_text(f"#include <stdio.h>\n{declarations}\nint main(void) {{ printf(\"%d\\n\", "
+                    f"{total}); return 0; }}\n", encoding="utf-8")
+    sources.append(main)
+    objects = []
+    for source in sources:
+        target = source.with_suffix(".o")
+        subprocess.run(["cc", "-O2", "-flto=auto", "-fno-fat-lto-objects", "-c", str(source), "-o",
+                        str(target)], check=True, capture_output=True)
+        objects.append(str(target))
+    return objects
+
+
+def an_lto_link_in_a_saturated_pool_completes(root: pathlib.Path) -> list[str]:
+    """A real GCC LTO link started while every slot is busy links once they free; it never hangs.
+
+    The shape that stalled M11.c's seventh close: the matrix building three rows at once had every
+    slot taken when the release row's links came up. With the jobserver the pool then handed a
+    link, GCC 13.3 waited on an empty pipe for ever (reproduced alone: `job_slot.py --slots 1
+    --jobserver` around the link hung until killed at 300 s; without the jobserver it linked in
+    1 s). Nine objects and `-flto-partition=max` make the link stream several partitions, which is
+    what makes the hang deterministic; the link is bounded by a timeout and killed as a group.
+    """
+    if shutil.which("cmake") is None:
+        return ["cmake is not on PATH; the link launcher cannot be configured"]
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="cy-lto-link-") as scratch_name:
+        scratch = pathlib.Path(scratch_name)
+        objects = _gcc_lto_objects(scratch, 9)
+        if not objects:
+            return ["`cc` is not GCC; an LTO link's behaviour inside the pool cannot be checked"]
+        try:
+            launcher = _probe_link_launcher(root, scratch, cores=5)
+        except RuntimeError as error:
+            return [str(error)]
+        pool = str(scratch / "pool")
+        holders = [_pool_job(root, pool, 3, scratch / "log", f"h{index}", 4) for index in range(3)]
+        time.sleep(0.5)
+        program = scratch / "prog"
+        link = subprocess.Popen([str(launcher), "cc", "-O2", "-flto=auto", "-flto-partition=max",
+                                 "-o", str(program), *objects],
+                                env={**os.environ, "CY_JOB_SLOT_DIR": pool},
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+                                start_new_session=True)
+        try:
+            _, errors = link.communicate(timeout=90)
+        except subprocess.TimeoutExpired:
+            os.killpg(link.pid, signal.SIGKILL)
+            link.wait()
+            failures.append("an LTO link started inside a saturated pool of 3 had not finished "
+                            "after 90 s: the link waited for a jobserver token that never came")
+        else:
+            if link.returncode or not program.is_file():
+                failures.append(f"the LTO link failed ({link.returncode}): {errors.strip()[-300:]}")
         for holder in holders:
             holder.wait(timeout=30)
-        if "-j1 " not in f"{busy} ":
-            failures.append(f"a link with 3 of 4 slots busy got MAKEFLAGS {busy!r}, expected -j1: "
-                            "its jobserver may only hold the one slot left")
+    return failures
+
+
+_FAKE_LTO_LINK = """#!/bin/sh
+# A GCC link's LTRANS stage without GCC: N jobs at once for the last -flto=N on the line, and one
+# per core of the workstation (24) for `-flto` or `-flto=auto`, exactly as GCC does with no
+# jobserver to read. Each job logs when it ran, like the pool's fake compiles.
+log=$1; shift
+jobs=24
+for word in "$@"; do
+    case "$word" in
+        -flto=[0-9]*) jobs=${word#-flto=} ;;
+        -flto|-flto=*) jobs=24 ;;
+    esac
+done
+i=0
+while [ "$i" -lt "$jobs" ]; do
+    (echo "start link$$-$i $(date +%s.%N)" >> "$log"; sleep 0.5;
+     echo "end link$$-$i $(date +%s.%N)" >> "$log") &
+    i=$((i + 1))
+done
+wait
+"""
+
+
+def _peak_running(log: pathlib.Path) -> int:
+    events = sorted((float(stamp), kind) for kind, _label, stamp in
+                    (line.split() for line in log.read_text(encoding="utf-8").splitlines()))
+    running = peak = 0
+    for _stamp, kind in events:
+        running += 1 if kind == "start" else -1
+        peak = max(peak, running)
+    return peak
+
+
+def lto_links_and_compiles_together_never_exceed_the_pool(root: pathlib.Path) -> list[str]:
+    """Two LTO links overlapping eight compiles on a pool of 6 never run more than 6 jobs at once.
+
+    The machine-wide cap is only a cap if a link's LTRANS jobs count against it. The launcher must
+    hold as many slots as the link will run jobs before the link starts — not one slot plus a
+    jobserver the link ignores or hangs on — and pin the link to that many when it asked for
+    `auto`. The compiles start first so that the pool is full when the links arrive, which is the
+    matrix's shape; the fake link runs GCC's parallelism for the flags it is given.
+    """
+    if shutil.which("cmake") is None:
+        return ["cmake is not on PATH; the link launcher cannot be configured"]
+    failures = []
+    slots = 6
+    with tempfile.TemporaryDirectory(prefix="cy-lto-pool-") as scratch_name:
+        scratch = pathlib.Path(scratch_name)
+        try:
+            launcher = _probe_link_launcher(root, scratch, cores=slots + 2)
+        except RuntimeError as error:
+            return [str(error)]
+        fake = scratch / "fake-lto-link.sh"
+        fake.write_text(_FAKE_LTO_LINK, encoding="utf-8")
+        pool, log = str(scratch / "pool"), scratch / "log"
+        compiles = [_pool_job(root, pool, slots, log, f"c{index}", 0.6) for index in range(8)]
+        time.sleep(0.2)
+        environment = {**os.environ, "CY_JOB_SLOT_DIR": pool}
+        links = [subprocess.Popen([str(launcher), "sh", str(fake), str(log), "-flto=auto", "-o",
+                                   f"link{index}"], env=environment) for index in range(2)]
+        codes = [job.wait(timeout=120) for job in (*compiles, *links)]
+        if any(codes):
+            failures.append(f"a job failed: exit codes {codes}")
+        peak = _peak_running(log)
+        if peak > slots:
+            failures.append(f"{peak} jobs ran at once over a pool of {slots} slots while two LTO "
+                            "links overlapped eight compiles")
+        link_jobs = sum(1 for line in log.read_text(encoding="utf-8").splitlines()
+                        if line.startswith("start link"))
+        if link_jobs != 8:
+            failures.append(f"the two links ran {link_jobs} LTRANS jobs between them, expected 4 "
+                            "each: an `-flto=auto` link must be pinned to the slots it holds")
     return failures
 
 
@@ -712,9 +936,10 @@ def the_pool_reaches_every_compile_and_link(root: pathlib.Path) -> list[str]:
                 failures.append(f"{label}: with ccache present the pool is not its prefix_command, "
                                 f"so every cache hit would wait for a slot: {compile_launcher!r}")
             linker = pathlib.Path(link_launcher) if link_launcher else None
-            if linker is None or not linker.is_file() or "--jobserver" not in linker.read_text():
-                failures.append(f"{label}: links do not go through the pool with a jobserver: "
-                                f"{link_launcher!r}")
+            wrapper = linker.read_text(encoding="utf-8") if linker and linker.is_file() else ""
+            if "--link" not in wrapper or "--jobserver" in wrapper:
+                failures.append(f"{label}: links do not go through the pool as links, without a "
+                                f"jobserver: {link_launcher!r} = {wrapper!r}")
     return failures
 
 
@@ -902,8 +1127,12 @@ def main() -> int:
         "a build leaves two cores free by default": a_build_leaves_two_cores_free_by_default,
         "no recipe asks for every core": no_recipe_asks_for_every_core,
         "overlapping builds share one machine-wide pool": overlapping_builds_share_one_pool,
-        "a link's jobserver is bounded by the slots it holds": (
-            a_link_gets_a_jobserver_bounded_by_its_slots
+        "a link gets no jobserver and a fixed LTO parallelism": (
+            a_link_gets_no_jobserver_and_a_fixed_lto_parallelism
+        ),
+        "an LTO link inside a saturated pool completes": an_lto_link_in_a_saturated_pool_completes,
+        "LTO links and compiles together never exceed the pool": (
+            lto_links_and_compiles_together_never_exceed_the_pool
         ),
         "the pool reaches every compile and link, and nothing on CI": (
             the_pool_reaches_every_compile_and_link

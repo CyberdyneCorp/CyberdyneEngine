@@ -29,11 +29,26 @@ SHARE the budget and each finishes later than it would alone; that is the trade 
 Slot counts may differ between builds (a tree configured with `CY_RESERVED_CORES=4` bakes in fewer):
 every build uses slots from 0 upwards, so the machine total never exceeds the LARGEST count in use.
 
-A LINK MAY USE MORE THAN ONE CORE. GCC's `-flto=auto`, which CMake's IPO uses for the Shipping
-configuration, forks one LTRANS process per core of the machine unless it finds a GNU make
-jobserver. With `--jobserver`, this script hands the link one: the slot it holds plus every slot
-free at that moment, up to `--max-extra`, as tokens in a pipe named by `MAKEFLAGS`. The link can
-never exceed the slots it actually holds, and it does not wait for more than one.
+A LINK MAY USE MORE THAN ONE CORE, AND IT IS NEVER HANDED A JOBSERVER. GCC's link-time optimisation
+(`-flto`, the Shipping configuration's IPO) runs its LTRANS stage as `make -j<N>` under the link and
+streams WPA partitions from forked children. `-flto=auto` takes N from the machine's core count, and
+ANY `-flto` — `auto` or a fixed N — takes a GNU make jobserver over that when it finds one in
+`MAKEFLAGS`. GCC 13.3's `lto1 -fwpa` then acquires one token per partition it streams and gives
+them back only after the last one is forked, so a link whose partitions outnumber the tokens
+available waits in `read(2)` on the jobserver pipe for ever, its finished children left as zombies.
+M11.c's seventh close found four such links holding every slot of the pool while every other build
+on the machine slept. So with `--link` this script strips the jobserver out of `MAKEFLAGS`, reads
+the link's fixed parallelism from its own last `-flto=N`, WAITS FOR THAT MANY SLOTS before the link
+starts (at most the pool's size), and pins `-flto=<slots held>` on the command line when the link
+asked for `auto`, `jobserver`, a bare `-flto`, or more than the pool has. A link without LTO takes
+one slot. `--lto-jobs` is the count for a link that named none; cmake/profiles.cmake puts the same
+number on the Shipping link line as `CY_LTO_JOBS`, so in this tree the pin never has to fire.
+
+`--jobserver` remains for rustc under Cargo (`just _cargo-pool`): rustc is a COOPERATIVE jobserver
+client — it always proceeds on its implicit token, a helper thread waits for more, and with none
+it compiles on one thread (measured: 16 codegen units under an empty pipe finish in 1.4 s) — and
+without one it would create its own 32-token jobserver and run codegen on every core. The link and
+the jobserver forms exclude each other.
 
 The command runs at `nice --nice` (10 by default) so that what the reserved cores are kept for — a
 desktop, a terminal, a test with a timing budget — wins any contention it meets anyway.
@@ -47,11 +62,17 @@ import signal
 import sys
 import time
 
-USAGE = "usage: job_slot.py --slots N [--nice K] [--jobserver [--max-extra M]] -- <command...>"
+USAGE = ("usage: job_slot.py --slots N [--nice K] [--link [--lto-jobs M]] "
+         "[--jobserver [--max-extra M]] -- <command...>")
 POOL_ROOT = "/tmp"
 #: How long the gate holder sleeps between looks at the pool. Short enough that a freed slot is not
 #: idle for long next to a compile that takes seconds; long enough that one waiter costs nothing.
 POLL_S = 0.005
+#: The parallelism of an LTO link that named none (`-flto`, `-flto=auto`, `-flto=jobserver`). The
+#: same number as cmake/profiles.cmake's CY_LTO_JOBS default; that file says why four.
+DEFAULT_LTO_JOBS = 4
+#: The MAKEFLAGS words that make a GNU make jobserver visible to a child.
+JOBSERVER_WORDS = ("--jobserver-auth=", "--jobserver-fds=", "-j")
 
 
 def pool_directory() -> str:
@@ -91,19 +112,25 @@ class Pool:
                 taken += 1
         return taken
 
-    def take_one(self) -> None:
-        """Wait, asleep, for the gate; then for a free slot. Only the gate holder ever polls."""
-        if self.take_free(1):
-            # A free slot with nobody queued for it. Taken without the gate only when the gate is
+    def take(self, count: int) -> None:
+        """Wait, asleep, for the gate, then until `count` slots are held; the gate holder polls.
+
+        A link that needs several slots collects them one at a time as they free up, while it holds
+        the gate: nobody else can take a slot meanwhile, every holder finishes without waiting on
+        the pool, so the count is always reached, and no two links can each hold half of what the
+        other needs.
+        """
+        if self.take_free(count) == count and self._queue_is_empty():
+            # Free slots with nobody queued for them. Taken without the gate only when the gate is
             # free too, so that a job never overtakes one already waiting.
-            if self._queue_is_empty():
-                return
-            self.release(self.held.pop())
+            return
+        self.release_all()
         gate = _open(os.path.join(self.directory, "gate"))
         fcntl.flock(gate, fcntl.LOCK_EX)
         try:
-            while not self.take_free(1):
-                time.sleep(POLL_S)
+            while len(self.held) < count:
+                if not self.take_free(count - len(self.held)):
+                    time.sleep(POLL_S)
         finally:
             os.close(gate)
 
@@ -114,9 +141,10 @@ class Pool:
         finally:
             os.close(gate)
 
-    @staticmethod
-    def release(descriptor: int) -> None:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
+    def release_all(self) -> None:
+        for descriptor in self.held:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        self.held.clear()
 
 
 def _jobserver(tokens: int) -> dict[str, str]:
@@ -128,8 +156,7 @@ def _jobserver(tokens: int) -> dict[str, str]:
     # An inherited jobserver (a build started from make) is replaced, not appended to: the pool is
     # what bounds this command now, and two `--jobserver-auth` words are read differently by make
     # and by GCC.
-    inherited = [word for word in os.environ.get("MAKEFLAGS", "").split()
-                 if not word.startswith(("--jobserver-auth=", "--jobserver-fds=", "-j"))]
+    inherited = _makeflags_without_jobserver()
     auth = [f"-j{tokens + 1}", f"--jobserver-auth={read_end},{write_end}"]
     environment = {"MAKEFLAGS": " ".join([*inherited, *auth])}
     # rustc reads Cargo's jobserver from CARGO_MAKEFLAGS before MAKEFLAGS: under Cargo that is the
@@ -137,6 +164,42 @@ def _jobserver(tokens: int) -> dict[str, str]:
     if "CARGO_MAKEFLAGS" in os.environ:
         environment["CARGO_MAKEFLAGS"] = " ".join(auth)
     return environment
+
+
+def _makeflags_without_jobserver() -> list[str]:
+    return [word for word in os.environ.get("MAKEFLAGS", "").split()
+            if not word.startswith(JOBSERVER_WORDS)]
+
+
+def _lto_jobs(command: list[str], default: int) -> int | None:
+    """The parallelism GCC's link-time optimisation takes from `command`, or None without LTO.
+
+    The last word wins, as it does for GCC: `-flto=N` names its count, `-flto`, `-flto=auto` and
+    `-flto=jobserver` leave it to the machine or a jobserver and get `default`, `-fno-lto` turns it
+    off. Clang's `-flto=thin` and `-flto=full` parallelise inside the linker, which this launcher
+    does not bound; they take one slot.
+    """
+    jobs = None
+    for word in command[1:]:
+        if word == "-fno-lto":
+            jobs = None
+        elif word == "-flto" or word.startswith("-flto="):
+            value = word.partition("=")[2]
+            if value.isdigit():
+                jobs = max(1, int(value))
+            elif value in ("thin", "full"):
+                jobs = None
+            else:
+                jobs = default
+    return jobs
+
+
+def _pinned(command: list[str], jobs: int) -> list[str]:
+    """`command` with its link-time optimisation fixed at `jobs`, unless it already is."""
+    lto_words = [word for word in command if word == "-flto" or word.startswith("-flto=")]
+    if lto_words and lto_words[-1] == f"-flto={jobs}":
+        return command
+    return [*command, f"-flto={jobs}"]
 
 
 def _run(command: list[str], environment: dict[str, str]) -> int:
@@ -173,7 +236,8 @@ def _environment_int(name: str, default: int) -> int:
 
 
 def _parse(argv: list[str]) -> tuple[dict[str, int], list[str]]:
-    """`--slots N [--nice K] [--jobserver] [--max-extra M] -- <command...>`, or a bare command.
+    """`--slots N [--nice K] [--link] [--lto-jobs M] [--jobserver] [--max-extra M] -- <command...>`,
+    or a bare command.
 
     A bare command — the first word does not start with `-` — takes every option from the
     environment instead: `CY_JOB_SLOTS`, `CY_JOB_SLOT_JOBSERVER`, `CY_JOB_SLOT_MAX_EXTRA`. That is
@@ -182,6 +246,8 @@ def _parse(argv: list[str]) -> tuple[dict[str, int], list[str]]:
     options = {
         "slots": _environment_int("CY_JOB_SLOTS", 0),
         "nice": 10,
+        "link": 0,
+        "lto-jobs": DEFAULT_LTO_JOBS,
         "jobserver": _environment_int("CY_JOB_SLOT_JOBSERVER", 0),
         "max-extra": _environment_int("CY_JOB_SLOT_MAX_EXTRA", 7),
     }
@@ -190,8 +256,8 @@ def _parse(argv: list[str]) -> tuple[dict[str, int], list[str]]:
     index = 0
     while index < len(argv) and argv[index] != "--":
         name = argv[index].lstrip("-")
-        if name == "jobserver":
-            options["jobserver"] = 1
+        if name in ("jobserver", "link"):
+            options[name] = 1
             index += 1
             continue
         if name not in options or index + 1 >= len(argv):
@@ -209,6 +275,19 @@ def _leave_quietly(number: int, _frame: object) -> None:
     os._exit(128 + number)
 
 
+def _link(pool: Pool, command: list[str], environment: dict[str, str],
+          default_jobs: int) -> list[str]:
+    """Hold what the link will use, and leave it no jobserver to wait on. Returns the command."""
+    jobs = _lto_jobs(command, default_jobs)
+    pool.take(min(jobs, len(pool.slots)) if jobs else 1)
+    inherited = _makeflags_without_jobserver()
+    if inherited:
+        environment["MAKEFLAGS"] = " ".join(inherited)
+    else:
+        environment.pop("MAKEFLAGS", None)
+    return _pinned(command, len(pool.held)) if jobs else command
+
+
 def main(argv: list[str]) -> int:
     options, command = _parse(argv)
     for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
@@ -218,10 +297,13 @@ def main(argv: list[str]) -> int:
         return _run(command, environment)
 
     pool = Pool(pool_directory(), options["slots"])
-    pool.take_one()
-    if options["jobserver"]:
-        extra = pool.take_free(max(0, options["max-extra"]))
-        environment.update(_jobserver(extra))
+    if options["link"]:
+        command = _link(pool, command, environment, options["lto-jobs"])
+    else:
+        pool.take(1)
+        if options["jobserver"]:
+            extra = pool.take_free(max(0, options["max-extra"]))
+            environment.update(_jobserver(extra))
     if options["nice"]:
         os.nice(options["nice"])
     return _run(command, environment)

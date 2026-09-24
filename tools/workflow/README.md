@@ -79,8 +79,9 @@ below cores − 2 (22 on the 24-core workstation the ledger closes on).
 | `jobs.sh` | the one copy of the arithmetic. `jobs.sh build` = `CY_JOBS`, else `max(1, cores − reserved)`; `jobs.sh machine` = `max(1, cores − reserved)`, which `CY_JOBS` does not raise; `reserved` = `CY_RESERVED_CORES`, else 2, else 0 when `CI` is set |
 | `just _jobs` | `jobs.sh build`. Every recipe that starts a compiler passes it: `cmake --build --parallel`, `cargo --jobs`, clang-tidy's `xargs -P`, and `RUST_TEST_THREADS` for `cargo test` |
 | `job_slot.py` | the machine-wide cap: a pool of `jobs.sh machine` flock(2) slots under `/tmp/cyberdyne-job-slots-<uid>` that every compile and link waits in |
-| `cmake/jobpool.cmake` | bakes `jobs.sh machine` into two wrapper scripts in the build tree and hands them to `cmake/launchers.cmake`: compiles through ccache's `prefix_command` (a cache hit takes no slot), links with `--jobserver` |
-| `just _cargo-pool`, `just _job-slots` | the same pool for rustc (Cargo's `RUSTC_WRAPPER`) and for clang-tidy |
+| `cmake/jobpool.cmake` | bakes `jobs.sh machine` into two wrapper scripts in the build tree and hands them to `cmake/launchers.cmake`: compiles through ccache's `prefix_command` (a cache hit takes no slot), links with `--link` |
+| `cmake/profiles.cmake` | `CY_LTO_JOBS` (default 4): the fixed `-flto=N` a Shipping link runs its link-time optimisation at, in place of CMake's `-flto=auto` |
+| `just _cargo-pool`, `just _job-slots` | the same pool for rustc (Cargo's `RUSTC_WRAPPER`, with `--jobserver`) and for clang-tidy |
 
 ctest is not given a number: it runs one test at a time unless `CY_JOBS` is set, because the suites
 carry wall-clock budgets.
@@ -95,10 +96,54 @@ frees goes to whoever has waited longest rather than straight back to A. The ker
 when its holder exits however it exits, so a crash or a `kill -9` leaks nothing. Two builds started
 together share the budget and each finishes later than it would alone.
 
-A link can use more than one core: GCC's `-flto=auto` (the Shipping configuration's IPO) runs `make
--j<cores>` under every link unless it finds a GNU make jobserver — measured on this workstation,
-`make -j24` for one link. The link wrapper hands it a jobserver holding the link's own slot plus up
-to seven slots free at that moment, so a Shipping link can never exceed the slots it holds.
+## A link can use more than one core, and is never handed a jobserver
+
+GCC's link-time optimisation (the Shipping configuration's IPO) runs its LTRANS stage as `make -jN`
+under the link and streams WPA partitions from forked children. CMake's own flag is `-flto=auto`:
+N is the machine's core count — measured here, `make -j24` for one link — or a GNU make jobserver
+when the link finds one in `MAKEFLAGS`, and **GCC 13.3 takes a jobserver over a fixed `-flto=N` too
+when one is there**.
+
+Until M11.c's seventh close the link wrapper handed each link a jobserver holding its own slot plus
+whatever was free at that moment. That is the defect the seventh close found: GCC 13.3's
+`lto1 -fwpa` acquires one token per partition it streams and returns them only after the last one
+is forked, so a link whose partitions outnumber its tokens waits in `read(2)` on the pipe for ever,
+its finished children left as zombies. A saturated pool — three matrix rows building at once — hands
+a link no spare slot as a matter of course, so `-j1` and an empty pipe; four release links stalled
+holding 22 of 22 slots and every other build on the machine slept. Reproduced alone:
+`job_slot.py --slots 1 --jobserver` around the link hung until killed at 300 s, and the same link
+without the jobserver ran in 1 s. Nine small objects and `-flto-partition=max` reproduce it in the
+selftest in under a second.
+
+**Now a link gets no jobserver, and its parallelism is fixed.** `job-slot-link` runs
+`job_slot.py --link`, which:
+
+* strips every jobserver word out of `MAKEFLAGS` (one inherited from a make above, for the
+  Makefiles generator), so the link never finds one;
+* reads the link's parallelism from its own last `-flto=N` — `cmake/profiles.cmake` puts
+  `-flto=${CY_LTO_JOBS}` on every Shipping link line, four by default — and **waits for that many
+  slots before the link starts**, at most the pool's size; a link without LTO holds one;
+* pins `-flto=<slots held>` on the command line when the link asked for `auto`, `jobserver`, a
+  bare `-flto`, or more than the pool has, so the link can never run more jobs than it holds.
+
+The link collects its slots one at a time while it holds the pool's gate: nobody else can take one
+meanwhile, every holder finishes without waiting on the pool, and so the count is always reached
+and two links cannot each hold half of what the other needs. On the 22-slot workstation five
+Shipping links run side by side with two slots left for compiles.
+
+Why four: on the release row's largest link (`cy_test_unit_memory`, 8 LTRANS partitions) serial
+took 3.68 s, `-flto=2` 1.99 s, `-flto=4` 1.17 s, `-flto=8` 0.80 s and `-flto=auto` on an idle
+machine 0.79 s. Four buys most of the speed-up for four slots; eight would hold the pool for two
+links at a time to gain 0.37 s per link, and the WPA stage is serial whatever the number. Only the
+link options change — the objects are still compiled with CMake's `-flto=auto -fno-fat-lto-objects`,
+so ccache's hashes of every Shipping compile are unchanged. `-D CY_LTO_JOBS=<N>` overrides it.
+
+**rustc keeps `--jobserver`** (`just _cargo-pool`): rustc is a cooperative client that always
+proceeds on its implicit token, has a helper thread wait for more, and with none compiles on one
+thread — measured, 16 codegen units under an empty pipe finish in 1.4 s — and without any jobserver
+it would make its own 32-token one and run codegen on every core. clang-tidy takes one slot and no
+jobserver. Clang's `-flto=thin` parallelises inside the linker; no profile in this tree links with
+it, and the launcher does not bound it.
 
 Compiles and links run at `nice 10`.
 
@@ -121,6 +166,8 @@ at configure time, or `CY_JOB_POOL=OFF` in the environment for `_job-slots`, tur
 
 `tools/ci/test_recipes.py` holds each piece: the per-build default on 1 to 24 cores, `CY_JOBS` and
 `CI`; every compile site in `just/*.just` passing `just _jobs`; two overlapping builds never
-exceeding the pool and both making progress; a link's jobserver never holding a busy slot; a probe
-project that configures AND builds through the launchers (and installs none when `CI` is set); and
-`build-reap --apply` keeping a marked tree and the matrix.
+exceeding the pool and both making progress; a link finding no jobserver and being pinned to the
+slots it holds; a real GCC LTO link started inside a saturated pool completing (it hung at
+`c7ff54b`); two LTO links overlapping eight compiles never running more than the pool's jobs at
+once; a probe project that configures AND builds through the launchers (and installs none when `CI`
+is set); and `build-reap --apply` keeping a marked tree and the matrix.

@@ -11,9 +11,11 @@
 # A launcher the caller chose (`-D CMAKE_CXX_COMPILER_LAUNCHER=...`, or the environment variable of
 # that name) wins over both: the caller asked for something specific.
 #
-# Links go through the pool with `--jobserver`: GCC's `-flto=auto` (the Shipping configuration's
-# IPO) otherwise forks one LTRANS job per core of the machine for every link — measured here, `make
-# -j24` under one link — and with the pool's jobserver it uses only the slots the link holds.
+# Links go through the pool with `--link`: a link is handed NO jobserver (GCC 13.3's `-flto` takes
+# one from MAKEFLAGS when it finds one and deadlocks when its tokens run out — M11.c's seventh
+# close), and the launcher instead holds as many slots as the link's own `-flto=N` names before the
+# link starts. cmake/profiles.cmake fixes that N for the Shipping configuration (`CY_LTO_JOBS`),
+# in place of the `-flto=auto` that would otherwise run one LTRANS job per core of the machine.
 
 include(jobpool)
 include(ccache)

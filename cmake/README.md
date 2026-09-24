@@ -5,7 +5,7 @@ dependency order, not a preference: each file uses what the ones above it define
 
 | File | Defines | State |
 |---|---|---|
-| `profiles.cmake` | The four configurations, their flags, and the profile table across CMake, Cargo and Slang | task 0.1 — done |
+| `profiles.cmake` | The four configurations, their flags, the profile table across CMake, Cargo and Slang, and `CY_LTO_JOBS`, the fixed parallelism of a Shipping link | task 0.1 — done; M11.c seventh close |
 | `compilers.cmake` | Minimum compiler versions, the strict warning set, `cy_compile_options` | task 1.2.5 — done |
 | `launchers.cmake` | What every compile and link runs through: the two modules below, put together, before the first target exists (included by `compilers.cmake`) | M11.c fifth close |
 | `jobpool.cmake` | `CY_JOB_POOL`: every compile and link through `tools/workflow/job_slot.py`, the machine-wide cap of cores − 2 | M11.c fifth close |
@@ -126,8 +126,12 @@ visible to `ctest --preset <profile>`.
   compile and link waits for one of `tools/workflow/jobs.sh machine` slots shared by every build on
   the machine, so the machine-wide total of compile jobs stays at cores − 2 however many builds
   overlap. The options are baked into `<build>/cy-launchers/job-slot` and `job-slot-link`, one path
-  each, because ccache looks every word of a prefix up as a program. `tools/workflow/README.md`
-  has the design.
+  each, because ccache looks every word of a prefix up as a program. A link is never handed a
+  jobserver — GCC 13.3 deadlocks on one whose tokens run out (M11.c's seventh close) — and instead
+  holds as many slots as its own `-flto=N` names before it starts; `profiles.cmake` fixes that N
+  for the Shipping configuration as `CY_LTO_JOBS` (default 4, on the link line only, so the
+  compiles' ccache hashes are unchanged). `tools/workflow/README.md` has the design and the
+  measurements.
 * **ccache** (`ccache.cmake`, `CY_CCACHE`, default ON except where `CI` is set, and only when
   `ccache` is found): a module rather than `CMakePresets.json`, because a preset can only name a
   launcher unconditionally and would break every configure on a machine without it. The pool is

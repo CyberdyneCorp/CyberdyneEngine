@@ -69,11 +69,22 @@ function(cy_job_pool_command out_var)
     # -I: No such file or directory" — which is what the first version of this module did. The
     # options are therefore baked into two small scripts in the build tree, one for compiles and one
     # for links; -I -S keeps the interpreter's start short (no site-packages, no PYTHON* variables).
+    #
+    # A LINK IS `--link`: it gets NO jobserver (GCC 13.3's `lto1 -fwpa` deadlocks on one whose tokens
+    # run out — cmake/profiles.cmake's cy_fix_lto_parallelism says how), and the launcher instead
+    # waits for as many slots as the link's own `-flto=N` names before it starts, one for a link
+    # without LTO. `--lto-jobs` is the count for a link that names none, the same CY_LTO_JOBS
+    # profiles.cmake puts on the Shipping link line, so that a tree which configures the pool alone
+    # bounds an `-flto=auto` link the same way.
     set(directory "${CMAKE_BINARY_DIR}/cy-launchers")
     set(script "${CY_JOB_POOL_TOOLS}/job_slot.py")
     set(run "exec '${CY_JOB_POOL_PYTHON}' -I -S '${script}' --slots ${slots}")
+    set(link "${run} --link")
+    if(DEFINED CY_LTO_JOBS AND CY_LTO_JOBS MATCHES "^[1-9][0-9]*$")
+        string(APPEND link " --lto-jobs ${CY_LTO_JOBS}")
+    endif()
     file(WRITE "${directory}/job-slot" "#!/bin/sh\n${run} -- \"$@\"\n")
-    file(WRITE "${directory}/job-slot-link" "#!/bin/sh\n${run} --jobserver -- \"$@\"\n")
+    file(WRITE "${directory}/job-slot-link" "#!/bin/sh\n${link} -- \"$@\"\n")
     file(CHMOD "${directory}/job-slot" "${directory}/job-slot-link"
          PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
                      WORLD_READ WORLD_EXECUTE)

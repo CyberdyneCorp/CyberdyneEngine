@@ -157,10 +157,48 @@ function(cy_apply_build_configurations)
     check_ipo_supported(RESULT ipo_supported OUTPUT ipo_reason)
     if(ipo_supported)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_SHIPPING TRUE PARENT_SCOPE)
+        cy_fix_lto_parallelism()
     else()
         message(STATUS "Shipping link-time optimisation unavailable: ${ipo_reason}")
     endif()
 endfunction()
+
+# A SHIPPING LINK RUNS ITS LINK-TIME OPTIMISATION AT A FIXED PARALLELISM, `-flto=${CY_LTO_JOBS}`,
+# in place of the `-flto=auto` CMake's IPO support chooses for GCC. `auto` means one LTRANS job per
+# core of the machine, or a GNU make jobserver when the link finds one — and GCC 13.3's `lto1 -fwpa`
+# deadlocks on a jobserver whose tokens run out before its partitions do, which is what M11.c's
+# seventh close hit inside the machine-wide job pool. The pool's link launcher (cmake/jobpool.cmake,
+# tools/workflow/job_slot.py --link) hands a link no jobserver, reads this number from the link
+# line, and waits for that many of the pool's slots before the link starts, so the machine-wide cap
+# holds through every link and no link ever waits on a token.
+#
+# WHY FOUR. On the largest link in the release matrix row (`cy_test_unit_memory`, 8 LTRANS
+# partitions, measured 2026-09-24 on the 24-core workstation): serial 3.68 s, `-flto=2` 1.99 s,
+# `-flto=4` 1.17 s, `-flto=8` 0.80 s, `-flto=auto` on an idle machine 0.79 s. Four buys 3.1 of the
+# 4.6 times available while holding four of the pool's 22 slots, so five Shipping links run side by
+# side with two slots left for compiles; eight would hold the pool for two links at a time and gain
+# 0.37 s per link. The WPA stage is serial whatever the number, and most of the row's 376 links
+# have fewer partitions than this. Override with `-D CY_LTO_JOBS=<N>`.
+#
+# Only the LINK options change: the objects are still compiled with CMake's own `-flto=auto
+# -fno-fat-lto-objects`, so ccache's hashes of every Shipping compile are what they were. The last
+# `-flto=` word on a GCC command line wins, and the link line carries this one after the compile
+# flags. Clang's IPO (`-flto=thin`) parallelises inside the linker and is left as CMake sets it.
+#
+# A macro, so that PARENT_SCOPE below is cy_apply_build_configurations()'s parent — the directory
+# every target is declared under — and not that function's own scope.
+macro(cy_fix_lto_parallelism)
+    set(CY_LTO_JOBS 4 CACHE STRING
+        "Parallel LTRANS jobs of one Shipping link (GCC -flto=N); the job pool holds this many slots")
+    if(NOT CY_LTO_JOBS MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR "CY_LTO_JOBS must be a positive integer, not '${CY_LTO_JOBS}'")
+    endif()
+    foreach(lang C CXX)
+        if(CMAKE_${lang}_COMPILER_ID STREQUAL "GNU")
+            set(CMAKE_${lang}_LINK_OPTIONS_IPO "-flto=${CY_LTO_JOBS}" PARENT_SCOPE)
+        endif()
+    endforeach()
+endmacro()
 
 function(cy_set_configuration_flags config compile_flags link_flags)
     string(TOUPPER "${config}" upper)
