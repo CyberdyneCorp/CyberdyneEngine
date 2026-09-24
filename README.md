@@ -541,54 +541,53 @@ just env-doctor
 just build-all --profile dev
 ```
 
-The editor currently opens declared projects; it does not yet expose the backend project templates
-through a New Project window. A project directory must contain `project.json`. To start from the
-shipped editable project while that workflow is being completed, copy it somewhere writable:
+### Create an empty project and author it
+
+Create a project from the editor's `empty` template, then start the engine and the editor on it:
 
 ```bash
-mkdir -p "$HOME/CyberdyneProjects"
-cp -R samples/05b-editor-window/project "$HOME/CyberdyneProjects/MyGame"
+just content-new-project ~/CyberdyneProjects/MyGame
+just run-editor-live --project ~/CyberdyneProjects/MyGame
 ```
 
-The editor can run without an engine connection, which is useful for document and content-browser
-work but does not display an engine-rendered viewport:
+`content-new-project` writes `project.json`, the engine's component types (`types.cytypes`) and an
+empty world, `worlds/main.cyworld`. It refuses a directory that already holds a project.
+`--template swift-gameplay` also declares a Swift gameplay module. Relative paths are relative to
+the directory you run `just` from.
+
+`run-editor-live` builds the engine and the editor, and starts the engine on the project's first
+world. It then opens the editor window attached to the engine. Closing the editor stops the engine,
+and the engine's output goes to `build/<profile>/engine-live.log`. Pass `--world <path>` to open
+another world. Any other arguments go to the editor.
+
+In the editor, `Ctrl+Shift+N` creates an entity, and the command palette (`Ctrl+P`) lists every
+command, including `scene.create-primitive`. `Ctrl+S` saves the world. On macOS these shortcuts use
+the Control key, not Command. The viewport is the engine's
+image, and selection, gizmo drags, undo and Play all go through the engine.
+
+To run the two processes separately, for example to restart the editor without restarting the
+engine, use two terminals:
 
 ```bash
-just run-editor --profile dev \
-  --project "$HOME/CyberdyneProjects/MyGame" \
-  --open worlds/city.cyworld
+just run-engine --project ~/CyberdyneProjects/MyGame
 ```
 
-For the live Metal viewport, run the engine and editor in two terminals. The project and world must
-match on both sides because their stable document and entity identities cross the live protocol.
+`run-engine` prints the `just run-editor` command that attaches to it. It runs until interrupted.
+Arguments it does not use go to the engine host, for example `--width 960 --height 540`. Metal
+validation is off unless `--validation` is passed.
 
-Terminal 1 — engine runtime:
+The editor also runs without an engine, which is enough for document and content-browser work but
+shows no rendered viewport:
 
 ```bash
-build/dev/samples/05b-editor-window/runtime/cy_editor_window_runtime \
-  --socket /tmp/cy-metal-viewport.sock \
-  --host /tmp/cy-metal-control.sock \
-  --project "$HOME/CyberdyneProjects/MyGame" \
-  --world worlds/city.cyworld \
-  --width 960 --height 540 --buffers 4 --rate 60 \
-  --no-validation
+just run-editor --project ~/CyberdyneProjects/MyGame --open worlds/main.cyworld
 ```
 
-Terminal 2 — editor:
-
-```bash
-CY_VIEWPORT_SOCKET=/tmp/cy-metal-viewport.sock \
-just run-editor --profile dev \
-  --project "$HOME/CyberdyneProjects/MyGame" \
-  --host /tmp/cy-metal-control.sock \
-  --open worlds/city.cyworld
-```
-
-The viewport should show the engine-rendered scene and remain interactive for resize, selection,
-and transform-gizmo input. Remove `--no-validation` when diagnosing Metal API use. The lower-level
-[viewport transport README](editor/crates/cy-editor-viewport-transport/README.md) documents the
-headless pixel and control probes. `just run-editor-window --hold` is the automated X11/XTEST
-artefact and is not the interactive macOS launcher.
+The editor's engine host is the M7 artefact runtime, `samples/05b-editor-window/runtime`. It draws
+every node as a unit box, up to 64 nodes, and does not yet draw a `MeshRenderer`'s mesh. The
+lower-level [viewport transport README](editor/crates/cy-editor-viewport-transport/README.md)
+documents the headless pixel and control probes. `just run-editor-window --hold` is the automated
+X11/XTEST artefact and is not the interactive launcher.
 
 Windows x86_64 remains a supported CI target. The build and test matrix covers Linux x86_64 and
 ARM64, macOS ARM64, and Windows x86_64; macOS x86_64 and Windows ARM64 are not CI targets.

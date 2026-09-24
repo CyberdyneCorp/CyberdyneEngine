@@ -692,6 +692,19 @@ impl SettingsService {
     }
 }
 
+/// The engine's component types, as every new project must carry them.
+///
+/// Without `types.cytypes` a project's documents open with an empty schema: `scene.create-entity`
+/// and `scene.create-primitive` then write entities with no `Transform`, and the gizmo has nothing to
+/// move. The file is the one `samples/05b-editor-window/project` commits, which
+/// `src/scene/serialization/tests/test_authoring_schema.cpp` regenerates from the engine's registry
+/// and compares byte for byte — so a template cannot ship a schema the engine no longer writes.
+const ENGINE_TYPE_MANIFEST: &str =
+    include_str!("../../../../samples/05b-editor-window/project/types.cytypes");
+
+/// Where a template's text says the new project's name goes.
+const NAME_PLACEHOLDER: &str = "{{name}}";
+
 /// A project template: what a new project starts as.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Template {
@@ -699,7 +712,8 @@ pub struct Template {
     pub name: String,
     /// What a person reads to choose between templates.
     pub summary: String,
-    /// The files it writes, relative to the new project's root, in path order.
+    /// The files it writes, relative to the new project's root, in path order. `{{name}}` in a
+    /// file's text becomes the project's name.
     pub files: Vec<(String, String)>,
 }
 
@@ -711,9 +725,10 @@ impl Template {
                 name: "empty".into(),
                 summary: "a declared project with one world and nothing in it".into(),
                 files: vec![
+                    ("project.json".into(), Self::manifest("[]")),
                     (
-                        "project.json".into(),
-                        "{\n  \"name\": \"untitled\",\n  \"modules\": []\n}\n".into(),
+                        crate::worldfile::TYPE_MANIFEST.into(),
+                        ENGINE_TYPE_MANIFEST.into(),
                     ),
                     ("worlds/main.cyworld".into(), "cyworld 1\n".into()),
                 ],
@@ -722,15 +737,47 @@ impl Template {
                 name: "swift-gameplay".into(),
                 summary: "an empty project with a Swift gameplay module declared and built".into(),
                 files: vec![
-                    (
-                        "project.json".into(),
-                        "{\n  \"name\": \"untitled\",\n  \"modules\": [\"gameplay\"]\n}\n".into(),
-                    ),
                     ("gameplay/Gameplay.swift".into(), "// gameplay\n".into()),
+                    ("project.json".into(), Self::manifest("[\"gameplay\"]")),
+                    (
+                        crate::worldfile::TYPE_MANIFEST.into(),
+                        ENGINE_TYPE_MANIFEST.into(),
+                    ),
                     ("worlds/main.cyworld".into(), "cyworld 1\n".into()),
                 ],
             },
         ]
+    }
+
+    /// The built-in template called `name`.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Template> {
+        Self::builtin()
+            .into_iter()
+            .find(|template| template.name == name)
+    }
+
+    /// The same manifest shape `samples/05b-editor-window/project/project.json` has, so a new
+    /// project and the shipped one are read the same way.
+    fn manifest(modules: &str) -> String {
+        format!(
+            "{{\n  \"name\": \"{NAME_PLACEHOLDER}\",\n  \"engine\": \"CyberEngine\",\n  \
+             \"worlds\": \"worlds\",\n  \"modules\": {modules}\n}}\n"
+        )
+    }
+
+    /// The project's name: the directory's, escaped for the JSON string it is written into.
+    fn project_name(root: &Path) -> String {
+        let name = root
+            .file_name()
+            .map_or_else(|| "untitled".into(), |name| name.to_string_lossy());
+        name.chars()
+            .filter(|character| !character.is_control())
+            .flat_map(|character| match character {
+                '"' | '\\' => vec!['\\', character],
+                _ => vec![character],
+            })
+            .collect()
     }
 
     /// Create a project from this template at `root`.
@@ -746,13 +793,15 @@ impl Template {
             )
             .with_remedy("choose an empty directory, or open the project that is there"));
         }
+        let name = Self::project_name(root);
         let mut written = Vec::new();
         for (relative, contents) in &self.files {
             let path = root.join(relative);
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| Self::failed(&path, &error))?;
             }
-            std::fs::write(&path, contents).map_err(|error| Self::failed(&path, &error))?;
+            std::fs::write(&path, contents.replace(NAME_PLACEHOLDER, &name))
+                .map_err(|error| Self::failed(&path, &error))?;
             written.push(path);
         }
         Ok(written)

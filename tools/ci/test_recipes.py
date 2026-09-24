@@ -796,6 +796,73 @@ def matrix_criteria_declare_the_rows_they_build(root: pathlib.Path) -> list[str]
     return failures
 
 
+def an_authoring_session_names_one_engine_for_one_project(root: pathlib.Path) -> list[str]:
+    """`run-engine` and `run-editor-live` must agree on the project, the world and the sockets.
+
+    The editor and the engine find each other by socket path and by the world's project-relative
+    name, whose stable identities cross the live protocol. Before these recipes a person typed both
+    halves by hand from the README, and a typo in either produced an editor with no viewport and no
+    error. `_engine-session` is the one place both recipes resolve them, so it is what this holds:
+    a relative project is the caller's, the default world is the first by name, the sockets are a
+    function of the project and differ between projects, and what is not consumed is passed on.
+    """
+    failures = []
+    environment = dict(os.environ)
+    environment.pop("CY_BUILD_DIR", None)
+
+    def session(caller: pathlib.Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["just", "_engine-session", *arguments],
+            cwd=root,
+            env={**environment, "CY_CALLER_DIR": str(caller)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    with tempfile.TemporaryDirectory(prefix="cy-session-") as scratch:
+        caller = pathlib.Path(scratch).resolve()
+        for name in ("One", "Two"):
+            (caller / name / "worlds").mkdir(parents=True)
+            (caller / name / "project.json").write_text("{}\n", encoding="utf-8")
+            for world in ("b.cyworld", "a.cyworld"):
+                (caller / name / "worlds" / world).write_text("cyworld 1\n", encoding="utf-8")
+
+        one = session(caller, "--project", "One", "--width", "960")
+        fields = one.stdout.rstrip("\n").split("\t")
+        if one.returncode != 0 or len(fields) != 5:
+            return [f"a valid session was refused or malformed: {one.stdout!r} {one.stderr!r}"]
+        project, world, viewport, control, rest = fields
+        if project != str(caller / "One"):
+            failures.append(f"a relative project resolved to {project!r}, not the caller's")
+        if world != "worlds/a.cyworld":
+            failures.append(f"the default world is {world!r}, not the first by name")
+        if viewport == control or not viewport.endswith(".sock") or not control.endswith(".sock"):
+            failures.append(f"the sockets are not two distinct paths: {viewport!r}, {control!r}")
+        if rest != "--width 960":
+            failures.append(f"unconsumed arguments came back as {rest!r}")
+
+        again = session(caller, "--project", str(caller / "One"), "--world", "worlds/b.cyworld")
+        if again.stdout.split("\t")[2:4] != [viewport, control]:
+            failures.append("the same project named two ways derived different sockets")
+        if again.stdout.split("\t")[1] != "worlds/b.cyworld":
+            failures.append("--world was not honoured")
+
+        two = session(caller, "--project", "Two")
+        if two.stdout.split("\t")[2] == viewport:
+            failures.append("two projects share one socket, so their engines would collide")
+
+        for arguments, reason in (
+            ((), "no --project"),
+            (("--project",), "--project with no value"),
+            (("--project", "."), "a directory with no project.json"),
+            (("--project", "One", "--world", "worlds/missing.cyworld"), "a missing world"),
+        ):
+            if session(caller, *arguments).returncode == 0:
+                failures.append(f"{reason} was accepted")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -846,6 +913,9 @@ def main() -> int:
         ),
         "a criterion that builds matrix rows declares them": (
             matrix_criteria_declare_the_rows_they_build
+        ),
+        "an authoring session names one engine for one project": (
+            an_authoring_session_names_one_engine_for_one_project
         ),
     }
 

@@ -191,9 +191,177 @@ run-editor-runtime *args:
 
     socket="${rest:-/tmp/cyberdyne-runtime.sock}"
     echo "==> run         cy-runtime-stub  socket=${socket}"
-    echo "    This is a STUB. It speaks the live bridge's message set and holds no world; the"
-    echo "    engine's own hosted runtime arrives with live-editing at task 5.2." >&2
+    echo "    This is a STUB. It speaks the live bridge's message set and holds no world. To" >&2
+    echo "    author against the engine, use: just run-engine --project <dir>" >&2
     "${binary}" "${socket}"
+
+# AUTHORING A PROJECT AGAINST THE ENGINE: `run-engine` and `run-editor-live`.
+#
+# The engine process the editor attaches to is `cy_editor_window_runtime`: it loads the project's
+# world, renders it on the platform's native device (Metal on macOS, Vulkan on Linux), publishes the
+# frames over the viewport transport and applies the editor's transactions over the control socket.
+# Until these recipes it was started by hand with eight flags copied from the README, and its
+# `--seconds` default of 180 shut it down three minutes into a session.
+#
+# Both recipes resolve the session the same way, in `_engine-session`: the project is required and
+# relative to where `just` was invoked; the world defaults to the first `worlds/*.cyworld`; and the
+# two socket paths are derived from the project's absolute path, so two projects can be open at
+# once and the editor and engine always name the same pair. A project to author in comes from
+# `just content-new-project <dir>`.
+
+# Run the engine for an editor to attach to, until interrupted. Usage: just run-engine --project <dir> [--world <path>] [--profile <p>] [--validation] [engine args...]
+run-engine *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export CY_CALLER_DIR="${CY_CALLER_DIR:-{{invocation_directory()}}}"
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    session="$(just _engine-session ${rest})"
+    IFS=$'\t' read -r project world viewport control forwarded <<< "${session}"
+
+    just build-engine --profile "${profile}"
+    binary="$(just _engine-binary "${profile}")"
+
+    # Metal and Vulkan validation cost frame time an interactive session feels, so it is off unless
+    # asked for. The engine reads the FIRST occurrence of a flag, so forwarded arguments go first and
+    # can override any default below except the session's own project, world and sockets.
+    defaults=(--seconds 0)
+    case " ${forwarded} " in
+        *" --validation "*) ;;
+        *) defaults+=(--no-validation) ;;
+    esac
+
+    echo "==> run         engine  profile=${profile}  world=${world}"
+    echo "    project   ${project}"
+    echo "    attach    CY_VIEWPORT_SOCKET=${viewport} just run-editor --project ${project} --host ${control} --open ${world}"
+    exec "${binary}" ${forwarded} "${defaults[@]}" \
+        --project "${project}" --world "${world}" --socket "${viewport}" --host "${control}"
+
+# Run the engine and an editor attached to it on one project; closing the editor stops the engine. Usage: just run-editor-live --project <dir> [--world <path>] [--profile <p>] [editor args...]
+run-editor-live *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export CY_CALLER_DIR="${CY_CALLER_DIR:-{{invocation_directory()}}}"
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    session="$(just _engine-session ${rest})"
+    IFS=$'\t' read -r project world viewport control forwarded <<< "${session}"
+
+    just build-engine --profile "${profile}"
+    just build-editor --profile "${profile}"
+    binary="$(just _engine-binary "${profile}")"
+
+    # The engine's output goes to a log rather than interleaving with the editor's, and is shown
+    # when the engine fails to start — which is the only time a person needs it.
+    log="${CY_BUILD_DIR:-build/${profile}}/engine-live.log"
+    # Removed first so that the wait below sees THIS engine's sockets, never a crashed one's.
+    rm -f "${viewport}" "${control}"
+    echo "==> run         engine  profile=${profile}  world=${world}  log=${log}"
+    echo "    project   ${project}"
+    "${binary}" --seconds 0 --no-validation --project "${project}" --world "${world}" \
+        --socket "${viewport}" --host "${control}" > "${log}" 2>&1 &
+    engine=$!
+    stop_engine() {
+        kill "${engine}" 2>/dev/null || true
+        wait "${engine}" 2>/dev/null || true
+    }
+    trap stop_engine EXIT
+
+    # A deadline, not a sleep: the engine is ready when both sockets exist, and a device that takes
+    # longer than this to open is a failure worth reporting rather than waiting out.
+    deadline=$((SECONDS + 60))
+    until [ -S "${viewport}" ] && [ -S "${control}" ]; do
+        if ! kill -0 "${engine}" 2>/dev/null; then
+            echo "run-editor-live: the engine exited before it was ready. Its log:" >&2
+            tail -n 20 "${log}" >&2
+            exit 1
+        fi
+        if [ "${SECONDS}" -ge "${deadline}" ]; then
+            echo "run-editor-live: the engine did not open its sockets within 60 s; see ${log}" >&2
+            exit 1
+        fi
+        sleep 0.2
+    done
+
+    CY_VIEWPORT_SOCKET="${viewport}" just run-editor --profile "${profile}" \
+        --project "${project}" --host "${control}" --open "${world}" ${forwarded}
+
+# Resolve an authoring session from recipe arguments. Prints, tab separated: the project's absolute
+# path, the world relative to it, the viewport socket, the control socket, and every argument it did
+# not consume. Relative projects resolve against CY_CALLER_DIR, which the public recipes set to the
+# directory `just` was invoked from.
+[private]
+_engine-session *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    project=""
+    world=""
+    expect=""
+    rest=()
+    for argument in {{args}}; do
+        case "${expect}" in
+            project) project="${argument}"; expect=""; continue ;;
+            world) world="${argument}"; expect=""; continue ;;
+        esac
+        case "${argument}" in
+            --project) expect=project ;;
+            --project=*) project="${argument#*=}" ;;
+            --world) expect=world ;;
+            --world=*) world="${argument#*=}" ;;
+            *) rest+=("${argument}") ;;
+        esac
+    done
+    if [ -n "${expect}" ]; then
+        echo "--${expect} takes a value and none followed it" >&2
+        exit 2
+    fi
+    if [ -z "${project}" ]; then
+        echo "--project <directory> is required. Create one with: just content-new-project <directory>" >&2
+        exit 2
+    fi
+    case "${project}" in
+        /*) ;;
+        *) project="${CY_CALLER_DIR:-{{invocation_directory()}}}/${project}" ;;
+    esac
+    if [ ! -f "${project}/project.json" ]; then
+        echo "${project} is not a project: it has no project.json." >&2
+        echo "  Create one with: just content-new-project ${project}" >&2
+        exit 2
+    fi
+    project="$(cd "${project}" && pwd -P)"
+    if [ -z "${world}" ]; then
+        world="$(cd "${project}" && compgen -G 'worlds/*.cyworld' | LC_ALL=C sort | head -n 1 || true)"
+    fi
+    if [ -z "${world}" ]; then
+        echo "${project} has no worlds/*.cyworld; name one with --world <path>" >&2
+        exit 2
+    fi
+    if [ ! -f "${project}/${world}" ]; then
+        echo "${project} has no world ${world}" >&2
+        exit 2
+    fi
+    # /tmp rather than $TMPDIR: a Unix socket path is limited to about a hundred bytes, and macOS's
+    # per-user temporary directory spends half of that before the file name.
+    key="$(printf '%s' "${project}" | cksum | cut -d ' ' -f 1)"
+    printf '%s\t%s\t%s\t%s\t%s\n' "${project}" "${world}" \
+        "/tmp/cy-${key}-viewport.sock" "/tmp/cy-${key}-control.sock" "${rest[*]:-}"
+
+# The engine host `run-engine` and `run-editor-live` start, or a failure naming why it is absent.
+[private]
+_engine-binary profile:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    binary="${CY_BUILD_DIR:-build/{{profile}}}/samples/05b-editor-window/runtime/cy_editor_window_runtime"
+    if [ ! -x "${binary}" ]; then
+        echo "no engine host at ${binary}." >&2
+        echo "  It is built only with a native shared-texture renderer: Metal on macOS, or Vulkan on" >&2
+        echo "  Linux (-D CY_RENDERER_VULKAN=ON). \`just env-doctor\` names what is missing." >&2
+        exit 2
+    fi
+    echo "${binary}"
 
 # M5's ARTEFACT, AND WHY IT IS NOT `just run-sample editor-session`.
 #

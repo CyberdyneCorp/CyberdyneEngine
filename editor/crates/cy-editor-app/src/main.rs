@@ -22,6 +22,7 @@
 //! cyberdyne-editor --open worlds/city.cyworld --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --host /run/cyberdyne.sock --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --mcp --agent-scope author
+//! cyberdyne-editor --new-project ~/CyberdyneProjects/MyGame [--template empty]
 //! ```
 //!
 //! `--mcp` is the agent interface, over the Model Context Protocol on standard input and output.
@@ -36,7 +37,7 @@ use cy_editor_app::{Application, run_script};
 use cy_editor_commands::{AssetHost, ImportFormat};
 use cy_editor_core::Actor;
 use cy_editor_core::problem::{Problem, Result};
-use cy_editor_services::{Notification, ProjectService, WorkspaceStore};
+use cy_editor_services::{Notification, ProjectService, Template, WorkspaceStore};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -61,6 +62,8 @@ fn main() -> ExitCode {
 )]
 struct Options {
     project: Option<String>,
+    new_project: Option<String>,
+    template: String,
     open: Vec<String>,
     script: Option<String>,
     host: Option<String>,
@@ -79,6 +82,8 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             project: None,
+            new_project: None,
+            template: "empty".to_string(),
             open: Vec::new(),
             script: None,
             host: None,
@@ -109,6 +114,10 @@ fn run(arguments: &[String]) -> Result<()> {
             cy_editor_sdk::abi::MINOR
         );
         return Ok(());
+    }
+
+    if let Some(root) = &options.new_project {
+        return new_project(root, &options.template);
     }
 
     let mut application = Application::new(Actor::human(whoami()))?;
@@ -196,6 +205,35 @@ fn run(arguments: &[String]) -> Result<()> {
 
     application.pump();
     report(&mut application);
+    Ok(())
+}
+
+/// Create a project from a built-in template, and say what was written.
+///
+/// It stops there rather than opening the project: creating one is a step a recipe or a person takes
+/// once, and `--project` is how every later session names it.
+fn new_project(root: &str, template: &str) -> Result<()> {
+    let Some(template) = Template::named(template) else {
+        let names: Vec<String> = Template::builtin()
+            .into_iter()
+            .map(|template| template.name)
+            .collect();
+        return Err(Problem::new(
+            format!("read --template {template:?}"),
+            "there is no such template",
+        )
+        .with_remedy(format!("the templates are: {}", names.join(", "))));
+    };
+    let root = std::path::Path::new(root);
+    for path in template.create(root)? {
+        println!("created {}", path.display());
+    }
+    println!(
+        "new {} project at {}; open it with --project {}",
+        template.name,
+        root.display(),
+        root.display()
+    );
     Ok(())
 }
 
@@ -299,6 +337,10 @@ fn parse(arguments: &[String]) -> Result<Options> {
             "--list-commands" => options.list_commands = true,
             "--list-importers" => options.list_importers = true,
             "--project" => options.project = Some(value(arguments, &mut index, "--project")?),
+            "--new-project" => {
+                options.new_project = Some(value(arguments, &mut index, "--new-project")?);
+            }
+            "--template" => options.template = value(arguments, &mut index, "--template")?,
             "--open" => options.open.push(value(arguments, &mut index, "--open")?),
             "--script" => options.script = Some(value(arguments, &mut index, "--script")?),
             "--host" => options.host = Some(value(arguments, &mut index, "--host")?),
@@ -503,6 +545,8 @@ cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
 
     --open <asset>        open a document (repeatable)
     --project <directory> open this CyberEngine project instead of the working directory
+    --new-project <dir>   create a project from a template, then exit
+    --template <name>     the template --new-project uses: empty (default) or swift-gameplay
     --headless            run without a window; the default is to open one
     --smoke               open the real window, draw three frames, then close successfully
     --mcp                 host MCP alongside the window; combine with --headless for stdio-only
@@ -560,6 +604,23 @@ mod tests {
         std::fs::write(root.join(ProjectService::MANIFEST), "{}\n").unwrap();
         let project = selected_project(&options).unwrap().unwrap();
         assert_eq!(project.root(), root);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn new_project_writes_the_template_and_refuses_an_unknown_one() {
+        let root =
+            std::env::temp_dir().join(format!("cy-editor-new-project-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let options = parse(&["--new-project".into(), root.display().to_string()]).unwrap();
+        assert_eq!(options.template, "empty");
+        new_project(options.new_project.as_deref().unwrap(), &options.template).unwrap();
+        assert!(ProjectService::declares(&root));
+        assert!(root.join("worlds/main.cyworld").is_file());
+
+        let refused = new_project(&root.display().to_string(), "nope").unwrap_err();
+        assert!(refused.to_string().contains("empty"), "{refused}");
         let _ = std::fs::remove_dir_all(root);
     }
 
