@@ -838,7 +838,7 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (!begun) {
         return make_unexpected(begun.error());
     }
-    Status result = capture(*begun, camera);
+    Status result = capture(*begun, camera, editor_lighting);
     if (Status ended = device_->end_frame(); !ended && result) {
         return ended;
     }
@@ -958,7 +958,8 @@ first_light::Camera AuthoredFrame::framing(const first_light::Camera& fallback) 
     return camera;
 }
 
-Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera) noexcept {
+Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
+                              bool editor_lighting) noexcept {
     graph_.reset();
     const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
                    static_cast<f32>(camera.position[2])};
@@ -1002,10 +1003,12 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera) noexc
     globals.exposure_stops = -11.4F;
     FrameUpload data = upload_for(assembly_, report, projection * relative_view, relative_view,
                                   transforms_.span(), globals, material_offsets_);
-    // A neutral studio fill keeps imported materials readable while the scene has no authored
-    // environment or lights. The physical sky still contributes above this floor.
-    for (u32 channel = 0; channel < 3; ++channel) {
-        data.view.ambient_and_occlusion[channel] += 5000.0F;
+    // The studio fill belongs to Editor preview only. Game renders the authored lighting without
+    // silently adding a light the scene does not contain.
+    if (editor_lighting) {
+        for (u32 channel = 0; channel < 3; ++channel) {
+            data.view.ambient_and_occlusion[channel] += 5000.0F;
+        }
     }
     if (!texture_handles_.empty()) {
         data.view.material_textures[0] = base_color_texture_offset_;

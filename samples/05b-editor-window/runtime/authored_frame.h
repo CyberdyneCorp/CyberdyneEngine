@@ -67,7 +67,8 @@ private:
     [[nodiscard]] Status append_instance(const scene::serialization::World& world,
                                          const scene::serialization::WorldNode& node,
                                          const Mat4& matrix, Vec3 eye) noexcept;
-    [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera) noexcept;
+    [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera,
+                                 bool editor_lighting) noexcept;
     void release_geometry() noexcept;
 
     static Span<const rendering::DrawSurface> surfaces(const rendering::VisibleInstance& instance,

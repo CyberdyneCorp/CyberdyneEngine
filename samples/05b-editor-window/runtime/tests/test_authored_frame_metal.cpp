@@ -221,9 +221,17 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_CHECK(game_camera.fov_y_radians > 1.0F);
         CY_CHECK(!frame.scene_camera(empty, 0, game_camera));
 
+        CY_REQUIRE(frame.render(sphere, view, true));
+        Array<u32> preview(allocator());
+        CY_REQUIRE(preview.append(frame.pixels()));
         CY_REQUIRE(frame.render(sphere, view, false));
         Array<u32> unlit(allocator());
         CY_REQUIRE(unlit.append(frame.pixels()));
+        usize preview_pixels = 0;
+        for (usize pixel = 0; pixel < preview.size(); ++pixel) {
+            preview_pixels += static_cast<usize>(preview[pixel] != unlit[pixel]);
+        }
+        CY_CHECK(preview_pixels > 50);
         CY_REQUIRE(frame.render(lit, view, false));
         usize lighting_changed = 0;
         for (usize pixel = 0; pixel < unlit.size(); ++pixel) {

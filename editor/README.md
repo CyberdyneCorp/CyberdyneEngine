@@ -142,7 +142,8 @@ Camera exists, the view explains that one is needed. Switching views alone does 
 simulation. Play selects Game and advances hosted physics; Pause holds it; Stop restores the
 authored world and Editor view. The current sample hosted runtime reports Swift gameplay and audio
 as unavailable, so Play does not yet run project scripts or sound. The runtime status is shown in
-the editor instead of implying those services are active.
+the editor instead of implying those services are active. The Editor's studio fill is omitted from
+Game rendering, so authored lights determine its illumination.
 
 Live Metal captures: [Editor view with selected light](../docs/design/images/editor-scene-light-editor-metal.png)
 and [Game view during Play](../docs/design/images/editor-scene-light-game-play-metal.png).
