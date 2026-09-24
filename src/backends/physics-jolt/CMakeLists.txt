@@ -29,6 +29,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/jolt_jobs.cpp
+        src/jolt_constraints.cpp
         src/jolt_server.cpp
         src/jolt_shapes.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"

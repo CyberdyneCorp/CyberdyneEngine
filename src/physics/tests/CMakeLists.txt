@@ -91,6 +91,30 @@ function(cy_physics_bridge_declare_tests)
         SOURCES "${tests_dir}/test_simulation.cpp"
         DEPENDENCIES ${backends}
         DEFINITIONS ${backend_definitions})
+
+    if(CY_ANIMATION)
+        set(ragdoll_backends cy::physics-ragdoll cy::physics-reference)
+        if(CY_PHYSICS)
+            list(APPEND ragdoll_backends cy::physics-jolt)
+        endif()
+        cy_add_test(
+            NAME physics_ragdoll
+            KIND integration
+            SOURCES "${tests_dir}/test_ragdoll.cpp"
+            DEPENDENCIES ${ragdoll_backends}
+            DEFINITIONS ${backend_definitions})
+    endif()
+
+    set(buoyancy_backends cy::physics-buoyancy cy::physics-reference)
+    if(CY_PHYSICS)
+        list(APPEND buoyancy_backends cy::physics-jolt)
+    endif()
+    cy_add_test(
+        NAME physics_buoyancy
+        KIND integration
+        SOURCES "${tests_dir}/test_buoyancy.cpp"
+        DEPENDENCIES ${buoyancy_backends}
+        DEFINITIONS ${backend_definitions})
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_physics_bridge_declare_tests)

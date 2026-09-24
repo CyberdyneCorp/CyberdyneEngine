@@ -234,6 +234,7 @@ struct Capabilities {
     bool height_fields = false;
     bool soft_bodies = false;
     bool vehicles = false;
+    /// Engine-owned water/physics driver can apply force and torque on this backend.
     bool buoyancy = false;
     /// Continuous collision detection for fast bodies.
     bool continuous_collision = false;
@@ -257,6 +258,8 @@ struct StepStatistics {
     u32 contact_count = 0;
     u32 constraint_count = 0;
     u32 island_count = 0;
+    /// Backend-measured phase costs. Jolt accumulates CPU time across named jobs, so these may
+    /// sum to more than wall-clock total_ns when jobs overlap on workers.
     Nanoseconds broad_phase_ns = 0;
     Nanoseconds narrow_phase_ns = 0;
     Nanoseconds solve_ns = 0;

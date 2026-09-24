@@ -25,12 +25,14 @@ CY_HANDLE_TAG(PhysicsBody);
 CY_HANDLE_TAG(PhysicsShape);
 CY_HANDLE_TAG(PhysicsMaterial);
 CY_HANDLE_TAG(PhysicsConstraint);
+CY_HANDLE_TAG(PhysicsVehicle);
 
 using WorldHandle = Handle<PhysicsWorldTag>;
 using BodyHandle = Handle<PhysicsBodyTag>;
 using ShapeHandle = Handle<PhysicsShapeTag>;
 using MaterialHandle = Handle<PhysicsMaterialTag>;
 using ConstraintHandle = Handle<PhysicsConstraintTag>;
+using VehicleHandle = Handle<PhysicsVehicleTag>;
 
 /// What a body carries back to its owner, opaque to every backend.
 ///

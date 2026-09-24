@@ -1,5 +1,65 @@
 # Design: M11.e — Ship
 
+## Navigation and physics implementation following the evidence sweep
+
+The 6.1a map identifies seven requirements that currently answer through M11.e exemptions. Task
+6.1b treats the baseline `openspec/specs/navigation/spec.md` and `openspec/specs/physics/spec.md`
+as the behavior contract. Navigation worlds select a mesh and deterministic query queue by world
+identity; planar and volume representations reuse the query concepts of area costs, masks,
+budgets, partial paths and scheduled delivery. Debug data is emitted through engine-owned sinks,
+with bounded counters and no renderer dependency. Physics constraints and optional simulation map
+through `PhysicsServer` to Jolt, and capability flags reflect the operations actually supported.
+The reference backend continues to report unsupported solver features explicitly. A mapping moves
+from exemption to test only when the named case fails under a targeted behavior mutation.
+
+### Optional simulation mapping for PR #8
+
+The engine-owned physics interface gains descriptions and readback for cloth and vehicles, without
+exposing Jolt types. A cloth description owns no caller memory after creation: vertices contain
+rest positions and inverse masses (zero pins a vertex), while triangle indices define its surface
+and spring topology. A soft body uses the ordinary generational `BodyHandle`, world ownership,
+destruction, and collision filtering; a vertex-readback call lets a renderer consume the deformed
+surface. Jolt constructs shared settings and edge/bend constraints, then stores the body in the
+same slot table as rigid bodies. The reference backend reports `soft_bodies = false` and returns a
+named `Unsupported` diagnostic. Neither backend may claim support before its creation, stepping,
+readback, destruction, and conformance cases pass.
+
+Vehicles are authored from a dynamic chassis body plus wheel placement and suspension/drivetrain
+parameters. The Jolt vehicle constraint is registered as both a constraint and a step listener;
+destroying the vehicle or chassis removes both registrations before freeing the chassis. Input
+throttle, brake and steering is supplied before the fixed step, and wheel state is read after it.
+The reference backend remains capability-gated. Ragdoll profiles are generated from a finalized
+skeleton at the layer-4 physics/animation join: bone shapes and mass, parent constraints and limits
+are editable asset data, not Jolt objects. Activation seeds body poses and velocities from the
+current and previous animation poses; per-body weights vary continuously, with powered bodies
+following targets through motors while still receiving contacts and impulses. Partial ragdolls
+retain animation control outside the selected mask and blend at its boundary. The tests must prove
+pose transfer, partial/full blending, powered impulse recovery and lifetime cleanup.
+The powered path uses an engine-owned swing-twist orientation motor: the target is the child body
+rotation relative to its parent in body space, with a torque cap and spring tuning. Updating the
+target wakes sleeping dynamic bodies so animation changes reach the solver. This joint drive alone
+does not satisfy ragdoll coverage; profile generation, activation and blending remain separate
+requirements.
+The layer-4 ragdoll module now supplies those pieces over `PhysicsServer`. Its generated profile
+keeps an editable shape, mass, swing/twist limits and motor strength for each skeleton joint.
+Profiles retain only value-owned sphere, capsule or box shapes; array-backed shape descriptions
+would borrow transient caller buffers and are rejected before solver allocation.
+Activation creates bodies at the current actor/model pose, derives linear and angular velocity from
+the previous pose, and connects parent-child bodies with swing-twist constraints. Full mode drives
+all bodies dynamically; powered mode retains an animation-driven root and motor-driven children;
+partial mode uses a per-bone weight mask and kinematic zero-weight bones. A per-body timed blend
+interpolates animation and solver pose continuously. Hits apply impulses and temporarily expose
+the physical pose before recovering to the mode's base blend weight. The owner tears down joints,
+bodies and shapes in that order; reference-backend activation refuses before allocating them.
+
+The physics buoyancy requirement is not complete merely because `WaterSystem` computes lift and
+drag: a layer-4 physics/water adapter must read a dynamic body's transform and velocities, rotate
+its authored hull sample offsets into world space, query the authoritative water surface, and apply
+the resulting force and torque through `PhysicsServer` before the fixed step. Both Jolt and the
+reference backend can integrate those forces without a backend-specific water dependency. A solver
+case must observe actual pitch from multi-point swell; the existing water-only case remains the
+arithmetic and displacement-band contract, not the physics integration claim.
+
 ## 1. The spike, and why it has not run
 
 **M8.c's design opened by saying there was no spike and explaining why; this one opens by saying

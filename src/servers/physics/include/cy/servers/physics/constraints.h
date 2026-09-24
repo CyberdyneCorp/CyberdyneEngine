@@ -52,6 +52,15 @@ struct MotorSettings {
     f32 spring_damping = 1.0f;
 };
 
+/// Position drive for a swing-twist joint. The target is body B's rotation relative to body A,
+/// in body space (not Euler angles). A zero torque cap disables both swing and twist motors.
+struct OrientationMotorSettings {
+    Quat target_orientation;
+    f32 max_torque = 0.0f;
+    f32 spring_frequency = 0.0f;
+    f32 spring_damping = 1.0f;
+};
+
 /// A range on one axis. `min > max` is free, which is how an unlimited axis is spelled without a
 /// second boolean.
 struct AxisLimit {

@@ -111,6 +111,10 @@ add_subdirectory(environment)
 # into water, and the order of these two lines is the first place that direction is visible.
 add_subdirectory(water)
 
+# The water/physics adapter is declared after water so its dependency is concrete, while keeping
+# water itself independent of a physics solver or a backend.
+add_subdirectory(physics/buoyancy)
+
 # terrain/ is CyberTerrain and M10 section 2: tiled hierarchical storage, the representation
 # interface and its queries, material layers and the runtime virtual-texture producer, deformation
 # and its deltas through the world's persistence overlay, meshing, collision, the navigation

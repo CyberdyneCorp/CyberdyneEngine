@@ -20,6 +20,8 @@
 #include <cy/core/math/shapes.h>
 #include <cy/core/math/transform.h>
 #include <cy/servers/physics/handles.h>
+#include <cy/servers/physics/queries.h>
+#include <cy/servers/physics/shapes.h>
 
 namespace cy::physics {
 
@@ -59,6 +61,9 @@ enum class DebugColor : u8 {
     Constraint,
     Velocity,
     Bounds,
+    ConstraintLimit,
+    QueryShape,
+    QueryResult,
 };
 
 /// What physics can draw. Implemented by the caller; every method has a default that discards, so a
@@ -83,5 +88,16 @@ public:
     /// A contact: a point, its normal, and how deep the overlap is.
     virtual void contact(Vec3 position, Vec3 normal, f32 penetration) noexcept;
 };
+
+/// Stateless query visualisation. The caller owns the input and result, so parallel const queries
+/// never write a shared "last query" buffer in the server. Null `hit` draws only the query shape.
+void debug_draw_query(const RayCastInput& input, const RayCastHit* hit,
+                      DebugDrawSink& sink) noexcept;
+void debug_draw_query(const ShapeCastInput& input, const ShapeDescription& shape,
+                      const ShapeCastHit* hit, DebugDrawSink& sink) noexcept;
+void debug_draw_query(const OverlapInput& input, const ShapeDescription& shape,
+                      DebugDrawSink& sink) noexcept;
+void debug_draw_query(const ClosestPointInput& input, const ClosestPoint* hit,
+                      DebugDrawSink& sink) noexcept;
 
 }  // namespace cy::physics

@@ -34,6 +34,8 @@ PhysicsBridge::PhysicsBridge(Allocator& allocator, scene::SceneTree& tree,
       stepper_(server, physics_world, allocator),
       index_(allocator),
       tracked_(allocator),
+      tracked_joints_(allocator),
+      pending_joints_(allocator),
       shapes_(allocator),
       doomed_(allocator),
       colliders_(allocator),
@@ -241,6 +243,107 @@ Status PhysicsBridge::sweep_removed() noexcept {
     return ok();
 }
 
+void PhysicsBridge::sweep_joints() noexcept {
+    for (usize index = tracked_joints_.size(); index > 0; --index) {
+        const TrackedJoint& tracked = tracked_joints_[index - 1];
+        const bool authored =
+            world_->is_alive(tracked.entity) && world_->has(tracked.entity, components_.joint);
+        const Joint* component =
+            authored ? world_->get<Joint>(tracked.entity, components_.joint) : nullptr;
+        const bool same_bodies = component != nullptr &&
+                                 component->description.body_a == tracked.body_a &&
+                                 component->description.body_b == tracked.body_b;
+        if (same_bodies && server_->body_alive(tracked.body_a) &&
+            (tracked.body_b.is_null() || server_->body_alive(tracked.body_b))) {
+            continue;
+        }
+        (void)server_->destroy_constraint(tracked.handle);
+        if (authored) {
+            if (auto* writable = world_->get_mut<Joint>(tracked.entity, components_.joint);
+                writable != nullptr) {
+                writable->handle = ConstraintHandle();
+            }
+        }
+        tracked_joints_.erase(index - 1);
+        ++statistics_.joints_destroyed;
+    }
+}
+
+Status PhysicsBridge::collect_pending_joints() noexcept {
+    pending_joints_.clear();
+    ecs::QueryDesc desc(world_->allocator());
+    if (Status declared = desc.with(components_.joint); !declared) {
+        return declared;
+    }
+    ecs::Query query(*world_, std::move(desc));
+    Status collected = ok();
+    Status walked = query.for_each_chunk([&](ecs::QueryChunk& chunk) noexcept {
+        for (const ecs::Entity entity : chunk.entities()) {
+            if (!collected) {
+                break;
+            }
+            bool tracked = false;
+            for (const TrackedJoint& joint : tracked_joints_) {
+                if (joint.entity == entity) {
+                    tracked = true;
+                    break;
+                }
+            }
+            if (!tracked) {
+                collected = pending_joints_.push_back(entity);
+            }
+        }
+    });
+    if (!walked) {
+        return walked;
+    }
+    if (!collected) {
+        return collected;
+    }
+    return ok();
+}
+
+Status PhysicsBridge::create_pending_joints() noexcept {
+    for (const ecs::Entity entity : pending_joints_) {
+        const auto* component = world_->get<Joint>(entity, components_.joint);
+        if (component == nullptr) {
+            continue;
+        }
+        const ConstraintDescription& description = component->description;
+        if (!server_->capabilities().constraints || !server_->body_alive(description.body_a) ||
+            (!description.body_b.is_null() && !server_->body_alive(description.body_b))) {
+            ++statistics_.joints_deferred;
+            continue;
+        }
+        const auto made = server_->create_constraint(physics_world_, description);
+        if (!made) {
+            ++statistics_.joints_refused;
+            last_error_ = make_unexpected(made.error());
+            continue;
+        }
+        TrackedJoint tracked{entity, *made, description.body_a, description.body_b};
+        if (Status kept = tracked_joints_.push_back(tracked); !kept) {
+            (void)server_->destroy_constraint(*made);
+            return kept;
+        }
+        if (auto* writable = world_->get_mut<Joint>(entity, components_.joint);
+            writable != nullptr) {
+            writable->handle = *made;
+        }
+        ++statistics_.joints_created;
+    }
+    return ok();
+}
+
+Status PhysicsBridge::sync_joints() noexcept {
+    sweep_joints();
+    statistics_.joints_deferred = 0;
+    if (Status collected = collect_pending_joints(); !collected) {
+        return collected;
+    }
+    return create_pending_joints();
+}
+
 // --- The three entry points ----------------------------------------------------------------------
 
 Status PhysicsBridge::sync() noexcept {
@@ -294,23 +397,22 @@ Status PhysicsBridge::sync() noexcept {
         }
     }
 
-    // The two components no backend maps yet, counted so the gap is a number rather than a silence.
-    statistics_.joints_deferred = 0;
+    if (Status joints = sync_joints(); !joints) {
+        return joints;
+    }
+
+    // Character controller ownership remains a gameplay decision rather than a chunk component.
     statistics_.characters_deferred = 0;
-    const ComponentTypeId deferred[2] = {components_.joint, components_.character_body};
-    for (u32 which = 0; which < 2; ++which) {
-        ecs::QueryDesc desc(world_->allocator());
-        if (Status declared = desc.with(deferred[which]); !declared) {
-            return declared;
-        }
-        ecs::Query query(*world_, std::move(desc));
-        u64 seen = 0;
-        Status walked = query.for_each_chunk(
-            [&](ecs::QueryChunk& chunk) noexcept { seen += chunk.entities().size(); });
-        if (!walked) {
-            return walked;
-        }
-        (which == 0 ? statistics_.joints_deferred : statistics_.characters_deferred) = seen;
+    ecs::QueryDesc desc(world_->allocator());
+    if (Status declared = desc.with(components_.character_body); !declared) {
+        return declared;
+    }
+    ecs::Query query(*world_, std::move(desc));
+    Status walked = query.for_each_chunk([&](ecs::QueryChunk& chunk) noexcept {
+        statistics_.characters_deferred += chunk.entities().size();
+    });
+    if (!walked) {
+        return walked;
     }
     return ok();
 }
@@ -371,24 +473,24 @@ Expected<ecs::SystemId, Error> PhysicsBridge::install(
     //   NodeState             `mark_transform_changed` sets the dirty bits, on the node AND its
     //                         ancestors — which is why a system running beside this one that also
     //                         marked a transform must be ordered against it
-    //   RigidBody, StaticBody, KinematicBody, Collider, Trigger
+    //   RigidBody, StaticBody, KinematicBody, Collider, Trigger, Joint
     //                         the handle the server returned goes back into the component
     // READS:
     //   WorldTransform        the placement a body is created at, and the parent's frame `publish`
     //                         undoes to get back to a local placement
-    //   PhysicsMaterial, Joint, CharacterBody
+    //   PhysicsMaterial, CharacterBody
     //                         read, and counted, and not written
-    const ComponentTypeId writes[7] = {scene_.local_transform,     scene_.state,
+    const ComponentTypeId writes[8] = {scene_.local_transform,     scene_.state,
                                        components_.rigid_body,     components_.static_body,
                                        components_.kinematic_body, components_.collider,
-                                       components_.trigger};
+                                       components_.trigger,        components_.joint};
     for (const ComponentTypeId component : writes) {
         if (Status declared = desc.access.write(component); !declared) {
             return make_unexpected(declared.error());
         }
     }
-    const ComponentTypeId reads[4] = {scene_.world_transform, components_.material,
-                                      components_.joint, components_.character_body};
+    const ComponentTypeId reads[3] = {scene_.world_transform, components_.material,
+                                      components_.character_body};
     for (const ComponentTypeId component : reads) {
         if (Status declared = desc.access.read(component); !declared) {
             return make_unexpected(declared.error());
@@ -450,6 +552,13 @@ void PhysicsBridge::teardown() noexcept {
     }
     torn_down_ = true;
     clock_ = nullptr;
+
+    for (const TrackedJoint& tracked : tracked_joints_) {
+        (void)server_->destroy_constraint(tracked.handle);
+        ++statistics_.joints_destroyed;
+    }
+    tracked_joints_.clear();
+    pending_joints_.clear();
 
     // BODIES BEFORE SHAPES. A shape destroyed while a body still references it is a use-after-free
     // in the backend, and the reference backend and Jolt would report it differently — or not at

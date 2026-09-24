@@ -21,6 +21,7 @@
 
 #include "jolt_common.h"
 
+#include <cy/core/base/types.h>
 #include <atomic>
 
 // clang-format off
@@ -37,6 +38,11 @@ namespace cy::physics::jolt {
 
 class EngineJobSystem final : public JPH::JobSystemWithBarrier {
 public:
+    struct PhaseTimings {
+        Nanoseconds broad_phase_ns = 0;
+        Nanoseconds narrow_phase_ns = 0;
+        Nanoseconds solve_ns = 0;
+    };
     /// `jobs` may be null — see the header comment. `max_jobs` bounds the free list; Jolt's own
     /// default for a physics system is 2048 and a step never approaches it.
     EngineJobSystem(cy::jobs::JobSystem* jobs, JPH::uint max_jobs, JPH::uint max_barriers) noexcept;
@@ -47,6 +53,9 @@ public:
     [[nodiscard]] bool bridged() const noexcept;
 
     [[nodiscard]] int GetMaxConcurrency() const override;
+
+    void begin_timing_step() noexcept;
+    [[nodiscard]] PhaseTimings end_timing_step() noexcept;
 
     JPH::JobHandle CreateJob(const char* name, JPH::ColorArg color, const JobFunction& function,
                              JPH::uint32 dependencies) override;
@@ -73,6 +82,10 @@ private:
     /// forty, as a heap corruption inside Jolt with no physics call on the stack, which is the
     /// least diagnosable shape this failure could take.
     std::atomic<JPH::uint32> in_flight_{0};
+    std::atomic<Nanoseconds> broad_phase_ns_{0};
+    std::atomic<Nanoseconds> narrow_phase_ns_{0};
+    std::atomic<Nanoseconds> solve_ns_{0};
+    std::atomic<bool> timing_step_{false};
 };
 
 }  // namespace cy::physics::jolt

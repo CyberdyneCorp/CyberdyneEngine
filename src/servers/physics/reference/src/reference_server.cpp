@@ -418,7 +418,7 @@ public:
         caps.height_fields = false;
         caps.soft_bodies = false;
         caps.vehicles = false;
-        caps.buoyancy = false;
+        caps.buoyancy = true;
         caps.continuous_collision = false;
         caps.uses_engine_jobs = false;
         // It genuinely is: the integration is a fixed sequence of float operations over a slot
@@ -581,6 +581,20 @@ public:
 
     [[nodiscard]] Expected<BodyHandle, Error> create_body(
         WorldHandle world, const BodyDescription& description) noexcept override;
+
+    [[nodiscard]] Expected<BodyHandle, Error> create_soft_body(
+        WorldHandle world, const SoftBodyDescription& description) noexcept override {
+        (void)world;
+        (void)description;
+        return fail(ErrorCode::Unsupported, "reference: soft bodies are not supported");
+    }
+
+    [[nodiscard]] Expected<u32, Error> soft_body_vertices(BodyHandle body,
+                                                          Span<Vec3> out) const noexcept override {
+        (void)body;
+        (void)out;
+        return fail(ErrorCode::Unsupported, "reference: soft bodies are not supported");
+    }
 
     [[nodiscard]] Status create_bodies(WorldHandle world, Span<const BodyDescription> descriptions,
                                        Span<BodyHandle> out) noexcept override {
@@ -845,6 +859,27 @@ public:
                                               const MotorSettings&) noexcept override {
         return fail(ErrorCode::Unsupported,
                     "the reference physics backend implements no constraints");
+    }
+
+    [[nodiscard]] Status set_constraint_orientation_motor(
+        ConstraintHandle, const OrientationMotorSettings&) noexcept override {
+        return fail(ErrorCode::Unsupported,
+                    "the reference physics backend implements no constraints");
+    }
+
+    [[nodiscard]] Expected<VehicleHandle, Error> create_vehicle(
+        WorldHandle, const VehicleDescription&) noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+    [[nodiscard]] Status destroy_vehicle(VehicleHandle) noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+    [[nodiscard]] Status set_vehicle_input(VehicleHandle, const VehicleInput&) noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
+    }
+    [[nodiscard]] Expected<u32, Error> vehicle_wheels(
+        VehicleHandle, Span<VehicleWheelState>) const noexcept override {
+        return fail(ErrorCode::Unsupported, "reference: vehicles are not supported");
     }
 
     // --- Queries -------------------------------------------------------------------------------

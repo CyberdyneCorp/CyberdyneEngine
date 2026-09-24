@@ -51,10 +51,13 @@ function(cy_navigation_declare_tests)
         KIND unit
         SOURCES
             "${cy_navigation_tests_dir}/test_components.cpp"
+            "${cy_navigation_tests_dir}/test_debug.cpp"
             "${cy_navigation_tests_dir}/test_hierarchy.cpp"
             "${cy_navigation_tests_dir}/test_streaming.cpp"
             "${cy_navigation_tests_dir}/test_navmesh.cpp"
+            "${cy_navigation_tests_dir}/test_navigation2d.cpp"
             "${cy_navigation_tests_dir}/test_query.cpp"
+            "${cy_navigation_tests_dir}/test_volume.cpp"
         DEPENDENCIES cy::navigation cy::ecs cy::core-reflect)
 
     cy_add_test(

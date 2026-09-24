@@ -43,6 +43,7 @@
 #include <cy/core/math/shapes.h>
 #include <cy/ecs/world.h>
 #include <cy/navigation/crowd.h>
+#include <cy/navigation/volume.h>
 
 namespace cy::navigation {
 
@@ -97,6 +98,7 @@ struct NavAgent {
     u32 last_repath_tick = 0;
     f32 arrival_distance = 0.5F;
     u32 world = 0;
+    NavigationRepresentation representation = NavigationRepresentation::Surface;
     NavPathStatus status = NavPathStatus::Idle;
     /// True for one tick after arrival or failure. `navigation`: "events for path completion and
     /// failure" — as a flag a system reads and clears, because an event queue per agent is the
@@ -184,5 +186,57 @@ struct NavAgentReport {
 [[nodiscard]] Status update_agents(World& world, const NavComponents& components,
                                    const NavMesh& mesh, PathQueue& queue, u32 tick,
                                    u32 repath_interval, NavAgentReport& report) noexcept;
+
+/// Update only agents assigned to one navigation world. The overload above is the default world
+/// (id zero) for existing single-world callers.
+[[nodiscard]] Status update_agents(World& world, const NavComponents& components,
+                                   const NavMesh& mesh, PathQueue& queue, u32 navigation_world,
+                                   u32 tick, u32 repath_interval, NavAgentReport& report) noexcept;
+
+/// Binds independently owned meshes and deterministic query queues to the world ids authored on
+/// NavAgent, NavMeshSurface, NavObstacle and NavLinkComponent. A binding does not own either
+/// object; its caller keeps both alive until it is removed. The registry checks that the queue
+/// searches the mesh it is paired with, so one world's agents cannot silently receive another
+/// world's paths.
+class NavWorlds {
+public:
+    explicit NavWorlds(Allocator& allocator) noexcept
+        : bindings_(allocator), volume_bindings_(allocator) {}
+
+    [[nodiscard]] Status bind(u32 id, NavMesh& mesh, PathQueue& queue) noexcept;
+    [[nodiscard]] Status unbind(u32 id) noexcept;
+    [[nodiscard]] NavMesh* mesh(u32 id) const noexcept;
+    [[nodiscard]] PathQueue* queue(u32 id) const noexcept;
+    [[nodiscard]] Expected<ObstacleId, Error> add_obstacle(
+        u32 id, const NavObstacleShape& shape) const noexcept;
+    [[nodiscard]] Status remove_obstacle(u32 id, ObstacleId obstacle) const noexcept;
+    [[nodiscard]] Expected<LinkId, Error> add_link(u32 id, const NavLink& link,
+                                                   Vec3 snap) const noexcept;
+    [[nodiscard]] Status remove_link(u32 id, LinkId link) const noexcept;
+    [[nodiscard]] Status bind_volume(u32 id, NavVolume& volume, SpatialPathQueue& queue) noexcept;
+    [[nodiscard]] Status unbind_volume(u32 id) noexcept;
+    [[nodiscard]] NavVolume* volume(u32 id) const noexcept;
+    [[nodiscard]] SpatialPathQueue* volume_queue(u32 id) const noexcept;
+    [[nodiscard]] usize size() const noexcept { return bindings_.size() + volume_bindings_.size(); }
+    void set_metrics(NavMetrics* metrics) noexcept { metrics_ = metrics; }
+
+    [[nodiscard]] Status update(World& world, const NavComponents& components, u32 tick,
+                                u32 repath_interval, NavAgentReport& report) noexcept;
+
+private:
+    struct Binding {
+        u32 id = 0;
+        NavMesh* mesh = nullptr;
+        PathQueue* queue = nullptr;
+    };
+    Array<Binding> bindings_;
+    struct VolumeBinding {
+        u32 id = 0;
+        NavVolume* volume = nullptr;
+        SpatialPathQueue* queue = nullptr;
+    };
+    Array<VolumeBinding> volume_bindings_;
+    NavMetrics* metrics_ = nullptr;
+};
 
 }  // namespace cy::navigation

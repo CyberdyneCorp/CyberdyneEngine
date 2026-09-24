@@ -24,7 +24,7 @@ the library, and it is why `-D CY_PHYSICS=OFF` still simulates.
 | `body.h` | Bodies and colliders, and the degree-of-freedom locks the 2D strategy is made of |
 | `events.h` | Contact and trigger events, and the buffer a step fills |
 | `queries.h` | Ray, shape cast, overlap and closest point, their one filter, and the mid-step guard |
-| `constraints.h` | Ten joint kinds, limits, motors and break thresholds |
+| `constraints.h` | Ten joint kinds, limits, motors (including runtime swing-twist orientation drive) and break thresholds |
 | `server.h` | The interface itself |
 | `character.h` | The capsule controller, written over the interface's queries |
 | `stepper.h` | One step per simulation tick, and the interpolation pair |
@@ -34,7 +34,7 @@ the library, and it is why `-D CY_PHYSICS=OFF` still simulates.
 | `debug.h` | Debug visualisation, as a sink the caller implements |
 | `reference/` | The backend with no library behind it |
 
-## Three decisions worth knowing
+## Decisions worth knowing
 
 **The character controller is engine code, not a backend call.** Every solver has one, and every one
 of them has different stair behaviour and a different answer at exactly the maximum slope. `physics`
@@ -51,15 +51,24 @@ the transform publication are a layer-4 bridge, and `components.h` says where it
 An interface that exists in some configurations has a test suite that runs in some configurations —
 which is M3's `CY_RENDERER_VULKAN` mistake with a longer tail.
 
+**Buoyancy is an engine-owned force adapter.** `src/physics/buoyancy/` queries the authoritative
+water system with body-local hull samples, then applies lift, drag and torque through this interface
+before the fixed step. Both backends report the capability because both integrate the forces.
+
+**Optional simulation is capability-gated.** The layer-4 `src/physics/ragdoll/` module generates
+editable profiles from a finalized skeleton and drives full, powered and partial simulation through
+this interface; runtime swing-twist orientation motors follow animation and hit impulses blend back.
+Jolt supports cloth through `create_soft_body` and world-space `soft_body_vertices` readback, and
+wheeled vehicles through a chassis body, suspension settings, differentials, driver input and
+wheel-state readback. Destroying a chassis or world removes its vehicle constraint and step
+listener. The reference backend reports cloth and vehicles unsupported and rejects ragdoll
+activation through its unsupported constraints capability.
+
 ## What is not here yet
 
-* **The ECS bridge.** `src/physics/` at layer 4, mirroring `src/rendering/scene/`: it would register
-  the components in a world, create bodies from them, drive `PhysicsStepper` in the `Physics` stage
-  and write `cy::scene::LocalTransform` back through the sink. Everything it needs exists.
-* **Constraints in a backend.** The vocabulary is complete and validated; neither backend maps it
-  yet, and both report `Capabilities::constraints == false` and fail creation with a diagnostic
-  naming why — which is `physics`' "Unsupported feature" scenario rather than a silent gap.
-* **Soft bodies, vehicles, ragdolls and buoyancy.** Declared in the capability model, unimplemented,
-  and reported as unsupported. `physics` scopes ragdolls to `animation-and-skinning`, which is M6.
+* **Constraint support in the reference backend.** Jolt maps all ten joint kinds, including
+  motors, limits and break events. The reference backend reports constraints unsupported, so its
+  capability-gated refusal remains explicit. The layer-4 ECS bridge lives in `src/physics/` and
+  creates `Joint` components when the selected backend supports them.
 * **Cross-platform determinism.** Not claimed and not tested; `determinism.h` says so at length and
   `validate_session()` rejects a configuration that assumes otherwise.

@@ -229,6 +229,60 @@ CY_TEST_CASE("the same world stepped twice produces the same resting place") {
     CY_CHECK_EQ(first.z, second.z);
 }
 
+CY_TEST_CASE("the bridge creates and tears down authored joints on a capable backend") {
+    JoltFixture fixture;
+    CY_REQUIRE(fixture.started);
+    const cy::ecs::Entity base = fixture.node("JointBase", cy::Vec3{0.0f, 0.0f, 0.0f});
+    const cy::ecs::Entity driven = fixture.node("JointDriven", cy::Vec3{2.0f, 0.0f, 0.0f});
+    const cy::ecs::Entity owner = fixture.node("JointOwner", cy::Vec3{});
+    CY_REQUIRE(base.valid());
+    CY_REQUIRE(driven.valid());
+    CY_REQUIRE(owner.valid());
+    Collider collider;
+    collider.shape.type = ShapeType::Sphere;
+    collider.shape.radius = 0.2f;
+    CY_REQUIRE(fixture.world.add(base, fixture.components.collider, &collider).has_value());
+    CY_REQUIRE(fixture.world.add(driven, fixture.components.collider, &collider).has_value());
+    StaticBody immovable;
+    RigidBody dynamic;
+    CY_REQUIRE(fixture.world.add(base, fixture.components.static_body, &immovable).has_value());
+    CY_REQUIRE(fixture.world.add(driven, fixture.components.rigid_body, &dynamic).has_value());
+    CY_REQUIRE(fixture.bridge->sync().has_value());
+
+    Joint joint;
+    joint.description.type = ConstraintType::Distance;
+    joint.description.body_a = fixture.bridge->body_of(base);
+    joint.description.body_b = fixture.bridge->body_of(driven);
+    joint.description.min_distance = 2.0f;
+    joint.description.max_distance = 2.0f;
+    CY_REQUIRE(fixture.world.add(owner, fixture.components.joint, &joint).has_value());
+    CY_REQUIRE(fixture.bridge->sync().has_value());
+    const auto* created = fixture.world.get<Joint>(owner, fixture.components.joint);
+    CY_REQUIRE(created != nullptr);
+    CY_CHECK_FALSE(created->handle.is_null());
+    CY_CHECK_EQ(fixture.bridge->statistics().joints_created, 1U);
+    CY_CHECK_EQ(fixture.bridge->statistics().joints_deferred, 0U);
+    CY_REQUIRE(fixture.run(1).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.physics_world)->constraint_count, 1U);
+
+    CY_REQUIRE(fixture.world.remove(owner, fixture.components.joint).has_value());
+    CY_REQUIRE(fixture.bridge->sync().has_value());
+    CY_CHECK_EQ(fixture.bridge->statistics().joints_destroyed, 1U);
+    CY_REQUIRE(fixture.run(1).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.physics_world)->constraint_count, 0U);
+
+    CY_REQUIRE(fixture.world.add(owner, fixture.components.joint, &joint).has_value());
+    CY_REQUIRE(fixture.bridge->sync().has_value());
+    CY_CHECK_EQ(fixture.bridge->statistics().joints_created, 2U);
+    CY_REQUIRE(fixture.world.remove(driven, fixture.components.rigid_body).has_value());
+    CY_REQUIRE(fixture.bridge->sync().has_value());
+    created = fixture.world.get<Joint>(owner, fixture.components.joint);
+    CY_REQUIRE(created != nullptr);
+    CY_CHECK(created->handle.is_null());
+    CY_CHECK_EQ(fixture.bridge->statistics().joints_destroyed, 2U);
+    CY_CHECK_EQ(fixture.bridge->statistics().joints_deferred, 1U);
+}
+
 #else
 
 CY_TEST_CASE("physics: this build has no solver that resolves contacts") {

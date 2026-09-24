@@ -31,13 +31,16 @@
 
 #include <cy/backends/physics/jolt/server.h>
 
+#include "jolt_constraints.h"
 #include "jolt_jobs.h"
 #include "jolt_shapes.h"
 
 // clang-format off
 #include <Jolt/Core/Factory.h>
+#include <Jolt/Core/RTTI.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollidePointResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
@@ -45,9 +48,13 @@
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/SoftBody/SoftBodyCreationSettings.h>
+#include <Jolt/Physics/SoftBody/SoftBodyMotionProperties.h>
+#include <Jolt/Physics/Vehicle/WheeledVehicleController.h>
 #include <Jolt/RegisterTypes.h>
 // clang-format on
 
@@ -57,6 +64,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/hash_map.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -185,6 +193,11 @@ struct PendingContact {
     f32 impulse = 0.0f;
 };
 
+struct IslandContact {
+    u64 a = 0;
+    u64 b = 0;
+};
+
 /// The engine-side record of one body. Jolt owns the simulation state; this owns the identity.
 struct JoltBody {
     u32 generation = 0;
@@ -199,14 +212,39 @@ struct JoltBody {
     MassProperties mass;
     u8 locked_axes = 0;
     bool sensor = false;
+    bool soft = false;
     bool report_stay = true;
     bool teleported = false;
     bool pending_teleport = false;
+    u32 island_index = 0;
     f32 contact_impulse_threshold = 0.0f;
     /// Held so that `destroy_body` releases the cache's references. A body keeps its shapes alive.
     Array<ShapeHandle> shapes;
 
     explicit JoltBody(Allocator& allocator) noexcept : shapes(allocator) {}
+};
+
+struct JoltConstraint {
+    u32 generation = 1;
+    bool live = false;
+    u32 world = 0;
+    BodyHandle body_a;
+    BodyHandle body_b;
+    ConstraintType type = ConstraintType::Fixed;
+    JPH::Ref<JPH::TwoBodyConstraint> joint;
+    f32 break_force = 0.0F;
+    f32 break_torque = 0.0F;
+    UserData user_data = 0;
+    bool suppress_collision = false;
+    ConstraintDescription description;
+};
+
+struct JoltVehicle {
+    u32 generation = 1;
+    bool live = false;
+    u32 world = 0;
+    BodyHandle chassis;
+    JPH::Ref<JPH::VehicleConstraint> joint;
 };
 
 }  // namespace
@@ -228,9 +266,14 @@ struct JoltWorld final : public JPH::ContactListener {
           temp(allocator, temp_arena_bytes(world_description)),
           job_system(jobs, kMaxJoltJobs, kMaxJoltBarriers),
           bodies(allocator),
+          constraints(allocator),
+          vehicles(allocator),
           events(allocator),
           broken(allocator),
           ignored(allocator),
+          joint_ignored(allocator),
+          island_contacts(allocator),
+          island_parents(allocator),
           pending(allocator),
           previous(allocator) {}
 
@@ -286,9 +329,14 @@ struct JoltWorld final : public JPH::ContactListener {
     /// two runs must agree on — `JPH::PhysicsSystem`'s own body order is not exposed and would not
     /// be the same thing.
     Array<u32> bodies;
+    Array<u32> constraints;
+    Array<u32> vehicles;
     EventBuffer events;
     Array<ConstraintBroken> broken;
     HashMap<u64, u8> ignored;
+    HashMap<u64, u32> joint_ignored;
+    Array<IslandContact> island_contacts;
+    Array<u32> island_parents;
 
     std::mutex pending_mutex;
     Array<PendingContact> pending;
@@ -312,10 +360,14 @@ public:
           jobs_(jobs),
           worlds_(allocator),
           bodies_(allocator),
+          constraints_(allocator),
+          vehicles_(allocator),
           shapes_(allocator),
           materials_(allocator),
           shape_cache_(allocator),
           free_bodies_(allocator),
+          free_constraints_(allocator),
+          free_vehicles_(allocator),
           free_shapes_(allocator),
           free_materials_(allocator) {}
 
@@ -341,10 +393,14 @@ public:
         }
         worlds_.clear();
         bodies_.clear();
+        constraints_.clear();
+        vehicles_.clear();
         shapes_.clear();
         materials_.clear();
         shape_cache_.clear();
         free_bodies_.clear();
+        free_constraints_.clear();
+        free_vehicles_.clear();
         free_shapes_.clear();
         free_materials_.clear();
         initialized_ = false;
@@ -356,13 +412,13 @@ public:
     [[nodiscard]] Capabilities capabilities() const noexcept override {
         Capabilities caps;
         caps.contact_resolution = true;
-        caps.constraints = false;  // task 4.2.2 delivers bodies, shapes, events and queries
+        caps.constraints = true;
         caps.triangle_meshes = true;
         caps.convex_hulls = true;
         caps.height_fields = true;
-        caps.soft_bodies = false;
-        caps.vehicles = false;
-        caps.buoyancy = false;
+        caps.soft_bodies = true;
+        caps.vehicles = true;
+        caps.buoyancy = true;
         caps.continuous_collision = true;
         // TRUE ONLY WHEN IT IS TRUE. A running engine job system was given and Jolt's work reaches
         // it; otherwise the work runs on the calling thread and this says so, which is the whole
@@ -407,6 +463,23 @@ public:
         apply_tuning(*world, description.tuning);
         if (Status reserved = world->events.reserve(description.contact_constraint_capacity);
             !reserved) {
+            world->~JoltWorld();
+            allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
+            return make_unexpected(reserved.error());
+        }
+        if (Status reserved = world->broken.reserve(description.body_capacity); !reserved) {
+            world->~JoltWorld();
+            allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
+            return make_unexpected(reserved.error());
+        }
+        if (Status reserved =
+                world->island_contacts.reserve(description.contact_constraint_capacity);
+            !reserved) {
+            world->~JoltWorld();
+            allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
+            return make_unexpected(reserved.error());
+        }
+        if (Status reserved = world->island_parents.reserve(description.body_capacity); !reserved) {
             world->~JoltWorld();
             allocator_->deallocate(storage, sizeof(JoltWorld), alignof(JoltWorld));
             return make_unexpected(reserved.error());
@@ -529,6 +602,11 @@ public:
     [[nodiscard]] Expected<BodyHandle, Error> create_body(
         WorldHandle world, const BodyDescription& description) noexcept override;
 
+    [[nodiscard]] Expected<BodyHandle, Error> create_soft_body(
+        WorldHandle world, const SoftBodyDescription& description) noexcept override;
+    [[nodiscard]] Expected<u32, Error> soft_body_vertices(BodyHandle body,
+                                                          Span<Vec3> out) const noexcept override;
+
     [[nodiscard]] Status create_bodies(WorldHandle world, Span<const BodyDescription> descriptions,
                                        Span<BodyHandle> out) noexcept override {
         if (out.size() < descriptions.size()) {
@@ -645,6 +723,9 @@ public:
         if (found == nullptr) {
             return fail(ErrorCode::NotFound, "jolt: no such body");
         }
+        if (found->soft) {
+            return fail(ErrorCode::Unsupported, "jolt: cloth motion type cannot be changed");
+        }
         JPH::BodyInterface& interface = worlds_[found->world]->system.GetBodyInterface();
         interface.SetMotionType(found->id, to_jolt_motion(motion),
                                 motion == MotionType::Static ? JPH::EActivation::DontActivate
@@ -749,33 +830,25 @@ public:
         });
     }
 
-    // --- Constraints. Not in this milestone, and it says so -------------------------------------
+    // --- Constraints ---------------------------------------------------------------------------
 
     [[nodiscard]] Expected<ConstraintHandle, Error> create_constraint(
-        WorldHandle, const ConstraintDescription& description) noexcept override {
-        // `physics` — "Unsupported feature": the capability query reports it and creation fails
-        // with a clear diagnostic. Jolt HAS every constraint kind `physics` lists; what is missing
-        // is the mapping, which M4's task list does not include. Saying "not implemented, here is
-        // why" is the honest form — this is not a limit of the backend.
-        return fail(ErrorCode::NotImplemented,
-                    constraint_type_name(description.type) != nullptr
-                        ? "jolt: constraints are not mapped yet (M4 delivers bodies, shapes, "
-                          "events and queries); Capabilities::constraints reports false"
-                        : "jolt: constraints are not mapped yet");
-    }
+        WorldHandle world, const ConstraintDescription& description) noexcept override;
+    [[nodiscard]] Status destroy_constraint(ConstraintHandle constraint) noexcept override;
+    [[nodiscard]] Status set_constraint_enabled(ConstraintHandle constraint,
+                                                bool enabled) noexcept override;
+    [[nodiscard]] Status set_constraint_motor(ConstraintHandle constraint,
+                                              const MotorSettings& motor) noexcept override;
+    [[nodiscard]] Status set_constraint_orientation_motor(
+        ConstraintHandle constraint, const OrientationMotorSettings& motor) noexcept override;
 
-    [[nodiscard]] Status destroy_constraint(ConstraintHandle) noexcept override {
-        return fail(ErrorCode::NotImplemented, "jolt: constraints are not mapped yet");
-    }
-
-    [[nodiscard]] Status set_constraint_enabled(ConstraintHandle, bool) noexcept override {
-        return fail(ErrorCode::NotImplemented, "jolt: constraints are not mapped yet");
-    }
-
-    [[nodiscard]] Status set_constraint_motor(ConstraintHandle,
-                                              const MotorSettings&) noexcept override {
-        return fail(ErrorCode::NotImplemented, "jolt: constraints are not mapped yet");
-    }
+    [[nodiscard]] Expected<VehicleHandle, Error> create_vehicle(
+        WorldHandle world, const VehicleDescription& description) noexcept override;
+    [[nodiscard]] Status destroy_vehicle(VehicleHandle vehicle) noexcept override;
+    [[nodiscard]] Status set_vehicle_input(VehicleHandle vehicle,
+                                           const VehicleInput& input) noexcept override;
+    [[nodiscard]] Expected<u32, Error> vehicle_wheels(
+        VehicleHandle vehicle, Span<VehicleWheelState> out) const noexcept override;
 
     // --- Queries ---------------------------------------------------------------------------------
 
@@ -963,6 +1036,27 @@ private:
         const JoltBody& body = bodies_[handle.index()];
         return (body.live && body.generation == handle.generation()) ? &body : nullptr;
     }
+    [[nodiscard]] JoltConstraint* resolve(ConstraintHandle handle) noexcept {
+        return const_cast<JoltConstraint*>(static_cast<const JoltServer*>(this)->resolve(handle));
+    }
+    [[nodiscard]] const JoltConstraint* resolve(ConstraintHandle handle) const noexcept {
+        if (handle.is_null() || handle.index() >= constraints_.size()) {
+            return nullptr;
+        }
+        const JoltConstraint& constraint = constraints_[handle.index()];
+        return constraint.live && constraint.generation == handle.generation() ? &constraint
+                                                                               : nullptr;
+    }
+    [[nodiscard]] JoltVehicle* resolve(VehicleHandle handle) noexcept {
+        return const_cast<JoltVehicle*>(static_cast<const JoltServer*>(this)->resolve(handle));
+    }
+    [[nodiscard]] const JoltVehicle* resolve(VehicleHandle handle) const noexcept {
+        if (handle.is_null() || handle.index() >= vehicles_.size()) {
+            return nullptr;
+        }
+        const JoltVehicle& vehicle = vehicles_[handle.index()];
+        return vehicle.live && vehicle.generation == handle.generation() ? &vehicle : nullptr;
+    }
     [[nodiscard]] ShapeSlot* resolve(ShapeHandle handle) noexcept {
         return const_cast<ShapeSlot*>(static_cast<const JoltServer*>(this)->resolve(handle));
     }
@@ -994,14 +1088,23 @@ private:
         return reject_query_during_step(stepping_);
     }
 
+    [[nodiscard]] Expected<ConstraintHandle, Error> register_constraint(
+        WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
+        const JPH::Ref<JPH::TwoBodyConstraint>& joint) noexcept;
+    [[nodiscard]] u32 count_islands(JoltWorld& world) noexcept;
+
     Allocator* allocator_;
     cy::jobs::JobSystem* jobs_;
     Array<JoltWorld*> worlds_;
     Array<JoltBody> bodies_;
+    Array<JoltConstraint> constraints_;
+    Array<JoltVehicle> vehicles_;
     Array<ShapeSlot> shapes_;
     Array<MaterialSlot> materials_;
     HashMap<u64, u32> shape_cache_;
     Array<u32> free_bodies_;
+    Array<u32> free_constraints_;
+    Array<u32> free_vehicles_;
     Array<u32> free_shapes_;
     Array<u32> free_materials_;
     ShapeStatistics shape_statistics_;
@@ -1031,7 +1134,8 @@ JPH::ValidateResult JoltWorld::OnContactValidate(const JPH::Body& body_a, const 
     }
     const BodyHandle handle_a = BodyHandle::from_bits(body_a.GetUserData());
     const BodyHandle handle_b = BodyHandle::from_bits(body_b.GetUserData());
-    if (ignored.contains(contact_pair_key(handle_a, handle_b))) {
+    const u64 pair_key = contact_pair_key(handle_a, handle_b);
+    if (ignored.contains(pair_key) || joint_ignored.contains(pair_key)) {
         return JPH::ValidateResult::RejectAllContactsForThisBodyPair;
     }
     return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
@@ -1065,8 +1169,10 @@ void JoltWorld::record(const JPH::Body& body_a, const JPH::Body& body_b,
     // quantity an impact sound scales with and the one the threshold is written against.
     const JPH::MotionProperties* motion_a = body_a.GetMotionPropertiesUnchecked();
     const JPH::MotionProperties* motion_b = body_b.GetMotionPropertiesUnchecked();
-    const f32 inverse_a = motion_a != nullptr ? motion_a->GetInverseMass() : 0.0f;
-    const f32 inverse_b = motion_b != nullptr ? motion_b->GetInverseMass() : 0.0f;
+    // Kinematic bodies have motion properties (for velocity), but infinite mass. Jolt asserts if
+    // GetInverseMass() is asked of one; only dynamic bodies contribute to reduced mass.
+    const f32 inverse_a = body_a.IsDynamic() ? motion_a->GetInverseMass() : 0.0f;
+    const f32 inverse_b = body_b.IsDynamic() ? motion_b->GetInverseMass() : 0.0f;
     const f32 inverse_total = inverse_a + inverse_b;
     if (inverse_total > 0.0f) {
         // Read through the motion properties, NOT through `Body::GetLinearVelocity()`: that
@@ -1084,11 +1190,13 @@ void JoltWorld::record(const JPH::Body& body_a, const JPH::Body& body_b,
     const f32 threshold = a->contact_impulse_threshold > b->contact_impulse_threshold
                               ? a->contact_impulse_threshold
                               : b->contact_impulse_threshold;
-    if (threshold > 0.0f && contact.impulse < threshold) {
-        return;  // `physics` — "Contact filtering": below the threshold, no event
-    }
-
     const std::lock_guard<std::mutex> guard(pending_mutex);
+    if (!contact.trigger && phase != ContactPhase::Exit) {
+        (void)island_contacts.push_back(IslandContact{contact.a, contact.b});
+    }
+    if (threshold > 0.0f && contact.impulse < threshold) {
+        return;  // Below the reporting threshold, but still a solver contact and island edge.
+    }
     (void)pending.push_back(contact);
 }
 
@@ -1140,6 +1248,18 @@ void JoltServer::destroy_world_slot(u32 index) noexcept {
         return;
     }
     JoltWorld* world = worlds_[index];
+    while (!world->vehicles.empty()) {
+        const u32 slot = world->vehicles[world->vehicles.size() - 1];
+        const JoltVehicle& vehicle = vehicles_[slot];
+        (void)destroy_vehicle(VehicleHandle::from_slot(slot, vehicle.generation));
+    }
+    for (const u32 slot : world->constraints) {
+        JoltConstraint& constraint = constraints_[slot];
+        constraint.joint = nullptr;
+        constraint.live = false;
+        ++constraint.generation;
+        (void)free_constraints_.push_back(slot);
+    }
     // Bodies go with the world, exactly as in the reference backend: a body that outlived its world
     // would hold a `JPH::BodyID` into a destroyed `PhysicsSystem`.
     for (const u32 slot : world->bodies) {
@@ -1402,6 +1522,7 @@ Expected<BodyHandle, Error> JoltServer::create_body(WorldHandle world,
     record.user_data = description.user_data;
     record.locked_axes = description.locked_axes;
     record.sensor = description.collider_count > 0 && description.colliders[0].is_trigger;
+    record.soft = false;
     record.report_stay = description.collider_count == 0 || description.colliders[0].report_stay;
     record.contact_impulse_threshold =
         description.collider_count > 0 ? description.colliders[0].contact_impulse_threshold : 0.0f;
@@ -1450,6 +1571,132 @@ Expected<BodyHandle, Error> JoltServer::create_body(WorldHandle world,
     return handle;
 }
 
+Expected<BodyHandle, Error> JoltServer::create_soft_body(
+    WorldHandle world, const SoftBodyDescription& description) noexcept {
+    JoltWorld* found = resolve(world);
+    if (found == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such world");
+    }
+    if (Status valid = validate(description); !valid) {
+        return make_unexpected(valid.error());
+    }
+    JPH::Ref<JPH::SoftBodySharedSettings> shared = new JPH::SoftBodySharedSettings();
+    shared->mVertices.reserve(description.vertex_count);
+    bool pinned = false;
+    f32 total_mass = 0.0f;
+    for (u32 index = 0; index < description.vertex_count; ++index) {
+        const SoftBodyVertex& vertex = description.vertices[index];
+        shared->mVertices.emplace_back(
+            JPH::Float3(vertex.position.x, vertex.position.y, vertex.position.z), JPH::Float3{},
+            vertex.inverse_mass);
+        pinned |= vertex.inverse_mass == 0.0f;
+        if (vertex.inverse_mass > 0.0f) {
+            total_mass += 1.0f / vertex.inverse_mass;
+        }
+    }
+    if (!math::is_finite(total_mass)) {
+        return fail(ErrorCode::InvalidArgument, "jolt: cloth mass exceeds the supported range");
+    }
+    for (u32 index = 0; index < description.index_count; index += 3) {
+        shared->AddFace(JPH::SoftBodySharedSettings::Face(description.indices[index],
+                                                          description.indices[index + 1],
+                                                          description.indices[index + 2]));
+    }
+    const JPH::SoftBodySharedSettings::VertexAttributes springs;
+    shared->CreateConstraints(&springs, 1);
+    shared->Optimize();
+
+    u32 index = 0;
+    if (!free_bodies_.empty()) {
+        index = free_bodies_[free_bodies_.size() - 1];
+        free_bodies_.pop_back();
+    } else {
+        const Expected<JoltBody*, Error> fresh = bodies_.emplace_back(*allocator_);
+        if (!fresh) {
+            return make_unexpected(fresh.error());
+        }
+        (*fresh)->generation = 1;
+        index = static_cast<u32>(bodies_.size() - 1);
+    }
+    JoltBody& record = bodies_[index];
+    record.live = true;
+    record.world = world.index();
+    record.name = {};
+    record.motion = MotionType::Dynamic;
+    record.filter = description.filter;
+    record.material = {};
+    record.user_data = description.user_data;
+    record.mass = {};
+    record.mass.mass = total_mass;
+    record.locked_axes = 0;
+    record.sensor = false;
+    record.soft = true;
+    record.report_stay = true;
+    record.contact_impulse_threshold = 0.0f;
+    record.teleported = false;
+    record.pending_teleport = false;
+    record.shapes.clear();
+
+    const BodyHandle handle = BodyHandle::from_slot(index, record.generation);
+    JPH::SoftBodyCreationSettings settings(
+        shared,
+        JPH::RVec3(description.transform.translation.x, description.transform.translation.y,
+                   description.transform.translation.z),
+        to_jolt(description.transform.rotation), object_layer(description.filter.layer, true));
+    settings.mUserData = handle.bits();
+    settings.mNumIterations = description.solver_iterations;
+    settings.mLinearDamping = description.damping;
+    settings.mFriction = description.friction;
+    settings.mVertexRadius = description.vertex_radius;
+    settings.mAllowSleeping = description.allow_sleeping;
+    settings.mUpdatePosition = !pinned;
+    settings.mMakeRotationIdentity = false;
+    JPH::BodyInterface& interface = found->system.GetBodyInterface();
+    const JPH::BodyID id = interface.CreateAndAddSoftBody(settings, JPH::EActivation::Activate);
+    if (id.IsInvalid()) {
+        record.live = false;
+        (void)free_bodies_.push_back(index);
+        return fail(ErrorCode::OutOfRange, "jolt: unable to create cloth body");
+    }
+    record.id = id;
+    if (Status pushed = found->bodies.push_back(index); !pushed) {
+        interface.RemoveBody(id);
+        interface.DestroyBody(id);
+        record.live = false;
+        (void)free_bodies_.push_back(index);
+        return make_unexpected(pushed.error());
+    }
+    return handle;
+}
+
+Expected<u32, Error> JoltServer::soft_body_vertices(BodyHandle body,
+                                                    Span<Vec3> out) const noexcept {
+    const JoltBody* found = resolve(body);
+    if (found == nullptr || !found->soft) {
+        return fail(ErrorCode::NotFound, "jolt: no such cloth body");
+    }
+    if (Status ready = reject_if_stepping(); !ready) {
+        return make_unexpected(ready.error());
+    }
+    const JoltWorld* world = worlds_[found->world];
+    const JPH::BodyLockRead lock(world->system.GetBodyLockInterface(), found->id);
+    if (!lock.Succeeded()) {
+        return fail(ErrorCode::NotFound, "jolt: cloth body is no longer live");
+    }
+    const JPH::Body& source = lock.GetBody();
+    const auto* motion =
+        JPH::StaticCast<JPH::SoftBodyMotionProperties>(source.GetMotionProperties());
+    const auto& vertices = motion->GetVertices();
+    if (out.size() < vertices.size()) {
+        return fail(ErrorCode::BufferTooSmall, "jolt: cloth vertex output is too small");
+    }
+    const JPH::RMat44 transform = source.GetCenterOfMassTransform();
+    for (u32 index = 0; index < vertices.size(); ++index) {
+        out[index] = from_jolt(transform * vertices[index].mPosition);
+    }
+    return static_cast<u32>(vertices.size());
+}
+
 Status JoltServer::destroy_body(BodyHandle body) noexcept {
     JoltBody* found = resolve(body);
     if (found == nullptr) {
@@ -1457,6 +1704,24 @@ Status JoltServer::destroy_body(BodyHandle body) noexcept {
     }
     JoltWorld* world = worlds_[found->world];
     if (world != nullptr) {
+        for (usize index = 0; index < world->vehicles.size();) {
+            const u32 slot = world->vehicles[index];
+            const JoltVehicle& vehicle = vehicles_[slot];
+            if (vehicle.chassis == body) {
+                (void)destroy_vehicle(VehicleHandle::from_slot(slot, vehicle.generation));
+            } else {
+                ++index;
+            }
+        }
+        for (usize index = 0; index < world->constraints.size();) {
+            const u32 slot = world->constraints[index];
+            const JoltConstraint& constraint = constraints_[slot];
+            if (constraint.body_a == body || constraint.body_b == body) {
+                (void)destroy_constraint(ConstraintHandle::from_slot(slot, constraint.generation));
+            } else {
+                ++index;
+            }
+        }
         JPH::BodyInterface& interface = world->system.GetBodyInterface();
         interface.RemoveBody(found->id);
         interface.DestroyBody(found->id);
@@ -1474,6 +1739,386 @@ Status JoltServer::destroy_body(BodyHandle body) noexcept {
     found->live = false;
     ++found->generation;
     return free_bodies_.push_back(body.index());
+}
+
+namespace {
+
+[[nodiscard]] Transform constraint_world_frame(const JPH::Body& body,
+                                               const Transform& local) noexcept {
+    const Quat rotation = from_jolt(body.GetRotation());
+    Transform frame;
+    frame.translation = from_jolt(body.GetPosition()) + rotation * local.translation;
+    frame.rotation = rotation * local.rotation;
+    return frame;
+}
+
+Expected<JPH::Ref<JPH::TwoBodyConstraint>, Error> build_jolt_constraint(
+    JoltWorld& world, const ConstraintDescription& description, JPH::BodyID id_a, JPH::BodyID id_b,
+    bool to_world) noexcept {
+    const JPH::BodyID ids[2] = {id_a, id_b};
+    JPH::BodyLockMultiWrite lock(world.system.GetBodyLockInterface(), ids, to_world ? 1 : 2);
+    JPH::Body* body_a = lock.GetBody(0);
+    JPH::Body* body_b = to_world ? nullptr : lock.GetBody(1);
+    if (body_a == nullptr || (!to_world && body_b == nullptr)) {
+        return fail(ErrorCode::NotFound, "jolt: constraint body is no longer live");
+    }
+    const Transform body_frame = constraint_world_frame(*body_a, description.frame_a);
+    const Transform other_frame =
+        to_world ? description.frame_b : constraint_world_frame(*body_b, description.frame_b);
+    return to_world ? make_constraint(description, JPH::Body::sFixedToWorld, *body_a, other_frame,
+                                      body_frame)
+                    : make_constraint(description, *body_a, *body_b, body_frame, other_frame);
+}
+
+}  // namespace
+
+Expected<ConstraintHandle, Error> JoltServer::create_constraint(
+    WorldHandle world, const ConstraintDescription& description) noexcept {
+    JoltWorld* found = resolve(world);
+    if (found == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such world");
+    }
+    if (Status checked = validate(description); !checked) {
+        return make_unexpected(checked.error());
+    }
+    const JoltBody* a = resolve(description.body_a);
+    const JoltBody* b = description.body_b.is_null() ? nullptr : resolve(description.body_b);
+    if (a == nullptr || a->world != world.index() ||
+        (!description.body_b.is_null() && (b == nullptr || b->world != world.index()))) {
+        return fail(ErrorCode::NotFound, "jolt: constraint bodies must belong to this world");
+    }
+    const auto created = build_jolt_constraint(*found, description, a->id,
+                                               b == nullptr ? JPH::BodyID{} : b->id, b == nullptr);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    return register_constraint(world, *found, description, *created);
+}
+
+Expected<ConstraintHandle, Error> JoltServer::register_constraint(
+    WorldHandle world, JoltWorld& storage, const ConstraintDescription& description,
+    const JPH::Ref<JPH::TwoBodyConstraint>& joint) noexcept {
+    u32 slot = 0;
+    if (!free_constraints_.empty()) {
+        slot = free_constraints_[free_constraints_.size() - 1];
+        free_constraints_.pop_back();
+    } else {
+        if (Status pushed = constraints_.push_back(JoltConstraint{}); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+        slot = static_cast<u32>(constraints_.size() - 1);
+    }
+    JoltConstraint& record = constraints_[slot];
+    record.live = true;
+    record.world = world.index();
+    record.body_a = description.body_a;
+    record.body_b = description.body_b;
+    record.type = description.type;
+    record.joint = joint;
+    record.break_force = description.break_force;
+    record.break_torque = description.break_torque;
+    record.user_data = description.user_data;
+    record.suppress_collision = !description.collide_connected && !description.body_b.is_null();
+    record.description = description;
+    if (Status pushed = storage.constraints.push_back(slot); !pushed) {
+        record.joint = nullptr;
+        record.live = false;
+        (void)free_constraints_.push_back(slot);
+        return make_unexpected(pushed.error());
+    }
+    if (record.suppress_collision) {
+        const u64 key = contact_pair_key(record.body_a, record.body_b);
+        const u32* previous = storage.joint_ignored.find(key);
+        const u32 prior = previous == nullptr ? 0 : *previous;
+        if (auto inserted = storage.joint_ignored.insert(key, prior + 1); !inserted) {
+            storage.constraints.pop_back();
+            record.joint = nullptr;
+            record.live = false;
+            (void)free_constraints_.push_back(slot);
+            return make_unexpected(inserted.error());
+        }
+    }
+    storage.system.AddConstraint(joint.GetPtr());
+    return ConstraintHandle::from_slot(slot, record.generation);
+}
+
+Status JoltServer::destroy_constraint(ConstraintHandle constraint) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    JoltWorld* world = worlds_[record->world];
+    if (world != nullptr) {
+        world->system.RemoveConstraint(record->joint.GetPtr());
+        if (record->suppress_collision) {
+            const u64 key = contact_pair_key(record->body_a, record->body_b);
+            if (u32* count = world->joint_ignored.find(key); count != nullptr) {
+                if (*count == 1) {
+                    (void)world->joint_ignored.remove(key);
+                } else {
+                    --*count;
+                }
+            }
+        }
+        for (usize index = 0; index < world->constraints.size(); ++index) {
+            if (world->constraints[index] == constraint.index()) {
+                world->constraints.erase(index);
+                break;
+            }
+        }
+    }
+    record->joint = nullptr;
+    record->live = false;
+    ++record->generation;
+    return free_constraints_.push_back(constraint.index());
+}
+
+Status JoltServer::set_constraint_enabled(ConstraintHandle constraint, bool enabled) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    record->joint->SetEnabled(enabled);
+    return ok();
+}
+
+Status JoltServer::set_constraint_motor(ConstraintHandle constraint,
+                                        const MotorSettings& motor) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    return update_constraint_motor(record->type, *record->joint, motor);
+}
+
+Status JoltServer::set_constraint_orientation_motor(
+    ConstraintHandle constraint, const OrientationMotorSettings& motor) noexcept {
+    JoltConstraint* record = resolve(constraint);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such constraint");
+    }
+    if (Status updated = update_constraint_orientation_motor(record->type, *record->joint, motor);
+        !updated) {
+        return updated;
+    }
+    // A pose target can change while a ragdoll is asleep; the solver must see that change.
+    for (const BodyHandle handle : {record->body_a, record->body_b}) {
+        JoltBody* body = resolve(handle);
+        if (body != nullptr && body->motion == MotionType::Dynamic) {
+            worlds_[body->world]->system.GetBodyInterface().ActivateBody(body->id);
+        }
+    }
+    return ok();
+}
+
+Expected<VehicleHandle, Error> JoltServer::create_vehicle(
+    WorldHandle world, const VehicleDescription& description) noexcept {
+    JoltWorld* storage = resolve(world);
+    const JoltBody* chassis = resolve(description.chassis);
+    if (storage == nullptr || chassis == nullptr || chassis->world != world.index()) {
+        return fail(ErrorCode::NotFound, "jolt: vehicle chassis is not in this world");
+    }
+    if (Status valid = validate(description); !valid) {
+        return make_unexpected(valid.error());
+    }
+    if (chassis->motion != MotionType::Dynamic || chassis->soft) {
+        return fail(ErrorCode::InvalidArgument,
+                    "jolt: vehicle chassis must be a dynamic rigid body");
+    }
+    for (const u32 slot : storage->vehicles) {
+        if (vehicles_[slot].chassis == description.chassis) {
+            return fail(ErrorCode::InvalidArgument, "jolt: chassis already has a vehicle");
+        }
+    }
+
+    JPH::VehicleConstraintSettings settings;
+    settings.mWheels.reserve(description.wheel_count);
+    for (u32 index = 0; index < description.wheel_count; ++index) {
+        const VehicleWheelDescription& source = description.wheels[index];
+        auto* wheel = new JPH::WheelSettingsWV();
+        wheel->mPosition = to_jolt(source.position);
+        wheel->mRadius = source.radius;
+        wheel->mWidth = source.width;
+        wheel->mSuspensionMinLength = source.suspension_min;
+        wheel->mSuspensionMaxLength = source.suspension_max;
+        wheel->mSuspensionSpring.mFrequency = source.suspension_frequency;
+        wheel->mSuspensionSpring.mDamping = source.suspension_damping;
+        wheel->mMaxSteerAngle = source.max_steer_angle;
+        wheel->mMaxBrakeTorque = source.max_brake_torque;
+        settings.mWheels.push_back(wheel);
+    }
+    JPH::Ref<JPH::WheeledVehicleControllerSettings> controller =
+        new JPH::WheeledVehicleControllerSettings();
+    controller->mEngine.mMaxTorque = description.max_engine_torque;
+    controller->mDifferentials.reserve(description.differential_count);
+    for (u32 index = 0; index < description.differential_count; ++index) {
+        const VehicleDifferentialDescription& source = description.differentials[index];
+        JPH::VehicleDifferentialSettings differential;
+        differential.mLeftWheel = static_cast<int>(source.left_wheel);
+        differential.mRightWheel = static_cast<int>(source.right_wheel);
+        differential.mEngineTorqueRatio = source.torque_fraction;
+        differential.mDifferentialRatio = source.ratio;
+        controller->mDifferentials.push_back(differential);
+    }
+    settings.mController = controller;
+    JPH::Ref<JPH::VehicleConstraint> joint;
+    {
+        const JPH::BodyLockWrite lock(storage->system.GetBodyLockInterface(), chassis->id);
+        if (!lock.Succeeded()) {
+            return fail(ErrorCode::NotFound, "jolt: vehicle chassis vanished");
+        }
+        joint = new JPH::VehicleConstraint(lock.GetBody(), settings);
+    }
+    joint->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterCastSphere(
+        object_layer(chassis->filter.layer, true), 0.5f * description.wheels[0].width));
+
+    u32 slot = 0;
+    if (!free_vehicles_.empty()) {
+        slot = free_vehicles_[free_vehicles_.size() - 1];
+        free_vehicles_.pop_back();
+    } else {
+        if (Status added = vehicles_.push_back(JoltVehicle{}); !added) {
+            return make_unexpected(added.error());
+        }
+        slot = static_cast<u32>(vehicles_.size() - 1);
+    }
+    JoltVehicle& record = vehicles_[slot];
+    record.world = world.index();
+    record.chassis = description.chassis;
+    record.joint = joint;
+    record.live = true;
+    if (Status added = storage->vehicles.push_back(slot); !added) {
+        record.joint = nullptr;
+        record.live = false;
+        (void)free_vehicles_.push_back(slot);
+        return make_unexpected(added.error());
+    }
+    storage->system.AddConstraint(joint.GetPtr());
+    storage->system.AddStepListener(joint.GetPtr());
+    return VehicleHandle::from_slot(slot, record.generation);
+}
+
+Status JoltServer::destroy_vehicle(VehicleHandle vehicle) noexcept {
+    JoltVehicle* record = resolve(vehicle);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such vehicle");
+    }
+    JoltWorld* world = worlds_[record->world];
+    world->system.RemoveStepListener(record->joint.GetPtr());
+    world->system.RemoveConstraint(record->joint.GetPtr());
+    for (usize index = 0; index < world->vehicles.size(); ++index) {
+        if (world->vehicles[index] == vehicle.index()) {
+            world->vehicles.erase(index);
+            break;
+        }
+    }
+    record->joint = nullptr;
+    record->live = false;
+    ++record->generation;
+    return free_vehicles_.push_back(vehicle.index());
+}
+
+Status JoltServer::set_vehicle_input(VehicleHandle vehicle, const VehicleInput& input) noexcept {
+    JoltVehicle* record = resolve(vehicle);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such vehicle");
+    }
+    if (Status valid = validate(input); !valid) {
+        return valid;
+    }
+    auto* controller =
+        JPH::StaticCast<JPH::WheeledVehicleController>(record->joint->GetController());
+    controller->SetDriverInput(input.throttle, input.steering, input.brake, input.hand_brake);
+    JoltWorld* world = worlds_[record->world];
+    const JoltBody* chassis = resolve(record->chassis);
+    world->system.GetBodyInterface().ActivateBody(chassis->id);
+    return ok();
+}
+
+Expected<u32, Error> JoltServer::vehicle_wheels(VehicleHandle vehicle,
+                                                Span<VehicleWheelState> out) const noexcept {
+    const JoltVehicle* record = resolve(vehicle);
+    if (record == nullptr) {
+        return fail(ErrorCode::NotFound, "jolt: no such vehicle");
+    }
+    if (Status ready = reject_if_stepping(); !ready) {
+        return make_unexpected(ready.error());
+    }
+    const auto& wheels = record->joint->GetWheels();
+    if (out.size() < wheels.size()) {
+        return fail(ErrorCode::BufferTooSmall, "jolt: wheel output is too small");
+    }
+    for (u32 index = 0; index < wheels.size(); ++index) {
+        const JPH::Wheel* wheel = wheels[index];
+        VehicleWheelState& state = out[index];
+        state.grounded = wheel->HasContact();
+        state.suspension_length = wheel->GetSuspensionLength();
+        state.steer_angle = wheel->GetSteerAngle();
+        state.angular_velocity = wheel->GetAngularVelocity();
+        state.contact_position = state.grounded ? from_jolt(wheel->GetContactPosition()) : Vec3{};
+        state.contact_normal = state.grounded ? from_jolt(wheel->GetContactNormal()) : Vec3{};
+    }
+    return static_cast<u32>(wheels.size());
+}
+
+namespace {
+
+u32 island_root(Array<u32>& parents, u32 index) noexcept {
+    while (parents[index] != index) {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    return index;
+}
+
+void join_islands(Array<u32>& parents, u32 a, u32 b) noexcept {
+    const u32 root_a = island_root(parents, a);
+    const u32 root_b = island_root(parents, b);
+    if (root_a != root_b) {
+        parents[root_b] = root_a;
+    }
+}
+
+}  // namespace
+
+u32 JoltServer::count_islands(JoltWorld& world) noexcept {
+    constexpr u32 kInactive = static_cast<u32>(-1);
+    if (Status sized = world.island_parents.resize(world.bodies.size()); !sized) {
+        return 0;
+    }
+    const JPH::BodyInterface& interface = world.system.GetBodyInterfaceNoLock();
+    for (u32 index = 0; index < world.bodies.size(); ++index) {
+        JoltBody& record = bodies_[world.bodies[index]];
+        record.island_index = index;
+        world.island_parents[index] = interface.IsActive(record.id) ? index : kInactive;
+    }
+    const auto join = [&](BodyHandle handle_a, BodyHandle handle_b) noexcept {
+        const JoltBody* a = resolve(handle_a);
+        const JoltBody* b = resolve(handle_b);
+        if (a == nullptr || b == nullptr || a->world != b->world ||
+            world.island_parents[a->island_index] == kInactive ||
+            world.island_parents[b->island_index] == kInactive) {
+            return;
+        }
+        join_islands(world.island_parents, a->island_index, b->island_index);
+    };
+    for (const IslandContact& contact : world.island_contacts) {
+        join(BodyHandle::from_bits(contact.a), BodyHandle::from_bits(contact.b));
+    }
+    for (const u32 slot : world.constraints) {
+        const JoltConstraint& constraint = constraints_[slot];
+        if (!constraint.body_b.is_null() && constraint.joint->GetEnabled()) {
+            join(constraint.body_a, constraint.body_b);
+        }
+    }
+    u32 count = 0;
+    for (u32 index = 0; index < world.island_parents.size(); ++index) {
+        if (world.island_parents[index] != kInactive &&
+            island_root(world.island_parents, index) == index) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 // ================================================================================================
@@ -1502,17 +2147,21 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
     {
         const std::lock_guard<std::mutex> guard(found->pending_mutex);
         found->pending.clear();
+        found->island_contacts.clear();
     }
     found->events.clear();
+    found->broken.clear();
 
     // Diagnostics only, never hashed — the same rule the reference backend states at length.
     const auto started = std::chrono::steady_clock::now();
+    found->job_system.begin_timing_step();
     stepping_ = true;
     const JPH::EPhysicsUpdateError error =
         found->system.Update(input.delta_seconds, static_cast<int>(input.collision_steps),
                              &found->temp, &found->job_system);
     stepping_ = false;
     const auto finished = std::chrono::steady_clock::now();
+    const EngineJobSystem::PhaseTimings phases = found->job_system.end_timing_step();
 
     if (error != JPH::EPhysicsUpdateError::None) {
         // Jolt reports a capacity overflow rather than corrupting the simulation. Surfaced as an
@@ -1521,6 +2170,23 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
                     "jolt: the step overflowed a buffer — raise body_pair_capacity or "
                     "contact_constraint_capacity on the world",
                     static_cast<i64>(error));
+    }
+
+    for (const u32 slot : found->constraints) {
+        JoltConstraint& constraint = constraints_[slot];
+        if (!constraint.joint->GetEnabled() ||
+            (constraint.break_force <= 0.0F && constraint.break_torque <= 0.0F)) {
+            continue;
+        }
+        const ConstraintLoad load =
+            constraint_load(constraint.type, *constraint.joint, input.delta_seconds);
+        if ((constraint.break_force > 0.0F && load.force > constraint.break_force) ||
+            (constraint.break_torque > 0.0F && load.torque > constraint.break_torque)) {
+            constraint.joint->SetEnabled(false);
+            (void)found->broken.push_back(
+                ConstraintBroken{ConstraintHandle::from_slot(slot, constraint.generation),
+                                 constraint.user_data, load.force, load.torque});
+        }
     }
 
     // --- The deterministic order ---------------------------------------------------------------
@@ -1583,17 +2249,16 @@ Status JoltServer::step(WorldHandle world, const StepInput& input) noexcept {
     found->statistics.active_body_count =
         found->system.GetNumActiveBodies(JPH::EBodyType::RigidBody);
     found->statistics.contact_count = found->events.size();
-    found->statistics.constraint_count = 0;
-    found->statistics.island_count = 0;
+    found->statistics.constraint_count =
+        static_cast<u32>(found->constraints.size() + found->vehicles.size());
+    found->statistics.island_count = count_islands(*found);
     found->statistics.tick = input.tick;
-    // ONE TIMER, NOT THREE, AND SAYING SO. `physics`' "Diagnosing a slow step" wants the cost split
-    // across broad phase, narrow phase and solve; Jolt does not publish that split without its own
-    // profiler, which cmake/dependencies.cmake deliberately leaves off (it is a second timeline
-    // beside the engine's trace). The total is real and the three parts are zero rather than
-    // fabricated — a made-up split is worse than an absent one.
-    found->statistics.broad_phase_ns = 0;
-    found->statistics.narrow_phase_ns = 0;
-    found->statistics.solve_ns = 0;
+    // Named Jolt jobs are measured at execution on the worker that ran them. These phase values
+    // are cumulative CPU time, so parallel jobs can make their sum exceed wall-clock total_ns.
+    // Solve includes gravity, integration, island work and callbacks besides constraint solving.
+    found->statistics.broad_phase_ns = phases.broad_phase_ns;
+    found->statistics.narrow_phase_ns = phases.narrow_phase_ns;
+    found->statistics.solve_ns = phases.solve_ns;
     found->statistics.total_ns =
         std::chrono::duration_cast<std::chrono::nanoseconds>(finished - started).count();
     return ok();
@@ -1972,12 +2637,188 @@ Status JoltServer::hash_state(WorldHandle world, determinism::StateHashTree& tre
         tree.mix_f32(angular.z);
         tree.mix_u64(static_cast<u64>(body.motion));
         tree.mix_u64(interface.IsActive(body.id) ? 0U : 1U);
+        if (body.soft) {
+            const JPH::BodyLockRead lock(found->system.GetBodyLockInterface(), body.id);
+            if (!lock.Succeeded()) {
+                return fail(ErrorCode::NotFound, "jolt: cloth body vanished during state hash");
+            }
+            const auto* motion = JPH::StaticCast<JPH::SoftBodyMotionProperties>(
+                lock.GetBody().GetMotionProperties());
+            const auto& vertices = motion->GetVertices();
+            tree.mix_u64(vertices.size());
+            for (const auto& vertex : vertices) {
+                tree.mix_f32(vertex.mPosition.GetX());
+                tree.mix_f32(vertex.mPosition.GetY());
+                tree.mix_f32(vertex.mPosition.GetZ());
+                tree.mix_f32(vertex.mVelocity.GetX());
+                tree.mix_f32(vertex.mVelocity.GetY());
+                tree.mix_f32(vertex.mVelocity.GetZ());
+            }
+        }
         if (Status closed = tree.end(); !closed) {
             return closed;
         }
     }
+    if (Status opened = tree.begin(determinism::HashLevel::Subsystem, 1, "vehicles"); !opened) {
+        return opened;
+    }
+    for (const u32 slot : found->vehicles) {
+        const JoltVehicle& vehicle = vehicles_[slot];
+        if (Status opened = tree.begin(determinism::HashLevel::Entity, slot, "vehicle"); !opened) {
+            return opened;
+        }
+        const auto* controller =
+            JPH::StaticCast<JPH::WheeledVehicleController>(vehicle.joint->GetController());
+        tree.mix_u64(vehicle.chassis.bits());
+        tree.mix_f32(controller->GetForwardInput());
+        tree.mix_f32(controller->GetRightInput());
+        tree.mix_f32(controller->GetBrakeInput());
+        tree.mix_f32(controller->GetHandBrakeInput());
+        tree.mix_f32(controller->GetEngine().GetCurrentRPM());
+        tree.mix_u64(static_cast<u64>(controller->GetTransmission().GetCurrentGear()));
+        const auto& wheels = vehicle.joint->GetWheels();
+        tree.mix_u64(wheels.size());
+        for (const JPH::Wheel* wheel : wheels) {
+            tree.mix_u64(wheel->HasContact() ? 1U : 0U);
+            tree.mix_f32(wheel->GetSuspensionLength());
+            tree.mix_f32(wheel->GetSteerAngle());
+            tree.mix_f32(wheel->GetAngularVelocity());
+        }
+        if (Status closed = tree.end(); !closed) {
+            return closed;
+        }
+    }
+    if (Status closed = tree.end(); !closed) {
+        return closed;
+    }
     return tree.end();
 }
+
+namespace {
+
+void draw_jolt_triangles(const JPH::Body& body, DebugDrawSink& sink, DebugColor color) noexcept {
+    constexpr int kBatchTriangles = 64;
+    JPH::Shape::GetTrianglesContext context{};
+    const JPH::Shape* shape = body.GetShape();
+    shape->GetTrianglesStart(context, body.GetWorldSpaceBounds(), body.GetCenterOfMassPosition(),
+                             body.GetRotation(), JPH::Vec3::sReplicate(1.0f));
+    JPH::Float3 vertices[kBatchTriangles * 3];
+    for (;;) {
+        const int count = shape->GetTrianglesNext(context, kBatchTriangles, vertices);
+        if (count == 0) {
+            break;
+        }
+        for (int triangle = 0; triangle < count; ++triangle) {
+            const usize offset = static_cast<usize>(triangle) * 3U;
+            const JPH::Float3* points = &vertices[offset];
+            const Vec3 a{points[0].x, points[0].y, points[0].z};
+            const Vec3 b{points[1].x, points[1].y, points[1].z};
+            const Vec3 c{points[2].x, points[2].y, points[2].z};
+            sink.line(a, b, color);
+            sink.line(b, c, color);
+            sink.line(c, a, color);
+        }
+    }
+}
+
+void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& sink,
+                    DebugColor color) noexcept {
+    const Transform transform{from_jolt(body.GetRotation()), from_jolt(body.GetPosition()),
+                              Vec3{1.0f, 1.0f, 1.0f}};
+    if (has_flag(flags, DebugDrawFlags::Colliders)) {
+        const JPH::Shape* shape = body.GetShape();
+        if (shape->GetSubType() == JPH::EShapeSubType::Sphere) {
+            const auto* sphere = JPH::StaticCast<JPH::SphereShape>(shape);
+            sink.sphere(transform.translation, sphere->GetRadius(), color);
+        } else if (shape->GetSubType() == JPH::EShapeSubType::Capsule) {
+            const auto* capsule = JPH::StaticCast<JPH::CapsuleShape>(shape);
+            sink.capsule(transform, capsule->GetRadius(), capsule->GetHalfHeightOfCylinder(),
+                         color);
+        } else if (shape->GetSubType() == JPH::EShapeSubType::Box) {
+            const JPH::AABox local = shape->GetLocalBounds();
+            sink.box(Aabb::from_min_max(from_jolt(local.mMin), from_jolt(local.mMax)), transform,
+                     color);
+        } else {
+            draw_jolt_triangles(body, sink, color);
+        }
+    }
+    if (has_flag(flags, DebugDrawFlags::BroadPhaseBounds)) {
+        const JPH::AABox bounds = body.GetWorldSpaceBounds();
+        sink.box(Aabb::from_min_max(from_jolt(bounds.mMin), from_jolt(bounds.mMax)),
+                 Transform::identity(), DebugColor::Bounds);
+    }
+    if (has_flag(flags, DebugDrawFlags::CentersOfMass)) {
+        sink.sphere(from_jolt(body.GetCenterOfMassPosition()), 0.02f, color);
+    }
+    if (has_flag(flags, DebugDrawFlags::SleepState)) {
+        sink.sphere(transform.translation, 0.08f, color);
+    }
+    if (has_flag(flags, DebugDrawFlags::Velocities)) {
+        sink.line(transform.translation,
+                  transform.translation + from_jolt(body.GetLinearVelocity()),
+                  DebugColor::Velocity);
+        sink.line(transform.translation,
+                  transform.translation + from_jolt(body.GetAngularVelocity()) * 0.25f,
+                  DebugColor::Velocity);
+    }
+}
+
+void draw_angular_range(Vec3 origin, Vec3 axis, Vec3 reference, f32 min_angle, f32 max_angle,
+                        DebugDrawSink& sink) noexcept {
+    const Vec3 radius = reference * 0.25f;
+    sink.line(origin, origin + Quat::from_axis_angle(axis, min_angle) * radius,
+              DebugColor::ConstraintLimit);
+    sink.line(origin, origin + Quat::from_axis_angle(axis, max_angle) * radius,
+              DebugColor::ConstraintLimit);
+}
+
+void draw_constraint_limits(const ConstraintDescription& description, const Transform& anchor,
+                            DebugDrawSink& sink) noexcept {
+    const Vec3 origin = anchor.translation;
+    const Vec3 axis = anchor.right();
+    if (description.type == ConstraintType::Slider && description.limit.limited()) {
+        sink.line(origin + axis * description.limit.min, origin + axis * description.limit.max,
+                  DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::Hinge && description.limit.limited()) {
+        draw_angular_range(origin, axis, anchor.up(), description.limit.min, description.limit.max,
+                           sink);
+    } else if (description.type == ConstraintType::Distance) {
+        sink.sphere(origin, description.min_distance, DebugColor::ConstraintLimit);
+        sink.sphere(origin, description.max_distance, DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::Cone ||
+               description.type == ConstraintType::SwingTwist) {
+        const f32 normal = description.type == ConstraintType::Cone
+                               ? std::max(description.swing_limit_y, description.swing_limit_z)
+                               : description.swing_limit_y;
+        const f32 plane =
+            description.type == ConstraintType::Cone ? normal : description.swing_limit_z;
+        draw_angular_range(origin, anchor.up(), axis, -normal, normal, sink);
+        draw_angular_range(origin, -anchor.forward(), axis, -plane, plane, sink);
+        if (description.type == ConstraintType::SwingTwist && description.twist_limit.limited()) {
+            draw_angular_range(origin, axis, anchor.up(), description.twist_limit.min,
+                               description.twist_limit.max, sink);
+        }
+    } else if (description.type == ConstraintType::SixDof) {
+        const Vec3 axes[] = {anchor.right(), anchor.up(), -anchor.forward()};
+        for (u32 index = 0; index < 3; ++index) {
+            const AxisLimit& limit = description.dof_limits[index];
+            if (limit.limited()) {
+                sink.line(origin + axes[index] * limit.min, origin + axes[index] * limit.max,
+                          DebugColor::ConstraintLimit);
+            }
+        }
+        const Vec3 references[] = {axes[1], axes[2], axes[0]};
+        for (u32 index = 0; index < 3; ++index) {
+            const AxisLimit& limit = description.dof_limits[index + 3];
+            if (limit.limited()) {
+                draw_angular_range(origin, axes[index], references[index], limit.min, limit.max,
+                                   sink);
+            }
+        }
+    }
+}
+
+}  // namespace
 
 Status JoltServer::debug_draw(WorldHandle world, DebugDrawFlags flags,
                               DebugDrawSink& sink) const noexcept {
@@ -1985,35 +2826,36 @@ Status JoltServer::debug_draw(WorldHandle world, DebugDrawFlags flags,
     if (found == nullptr) {
         return fail(ErrorCode::NotFound, "jolt: no such world");
     }
-    // Jolt's own debug renderer is deliberately not built (cmake/dependencies.cmake: it is a second
-    // draw path beside `cy::physics::DebugDrawSink`). What is drawn here is what the engine's own
-    // vocabulary can express from the simulated state: bounds, centres of mass and velocities, plus
-    // this step's contacts — which is `physics`' "Colliders do not match visuals" for the parts a
-    // sink can render without knowing a Jolt shape.
-    const JPH::BodyInterface& interface = found->system.GetBodyInterfaceNoLock();
+    // The sink consumes solver state, never the caller's cached visual transform.
     for (const u32 slot : found->bodies) {
         const JoltBody& body = bodies_[slot];
-        const DebugColor color = body_color(body.motion, body.sensor, !interface.IsActive(body.id));
-        const Vec3 position = from_jolt(interface.GetPosition(body.id));
-        if (has_flag(flags, DebugDrawFlags::Colliders) ||
-            has_flag(flags, DebugDrawFlags::BroadPhaseBounds)) {
-            const JPH::RefConst<JPH::Shape> shape = interface.GetShape(body.id);
-            if (shape != nullptr) {
-                const JPH::AABox local = shape->GetLocalBounds();
-                const Aabb bounds =
-                    Aabb::from_min_max(from_jolt(local.mMin), from_jolt(local.mMax));
-                sink.box(bounds,
-                         Transform{from_jolt(interface.GetRotation(body.id)), position,
-                                   Vec3{1.0f, 1.0f, 1.0f}},
-                         color);
+        JPH::BodyLockRead lock(found->system.GetBodyLockInterface(), body.id);
+        if (lock.Succeeded()) {
+            const JPH::Body& jolt_body = lock.GetBody();
+            draw_jolt_body(jolt_body, flags, sink,
+                           body_color(body.motion, body.sensor, !jolt_body.IsActive()));
+        }
+    }
+    if (has_flag(flags, DebugDrawFlags::Constraints)) {
+        for (const u32 slot : found->constraints) {
+            const JoltConstraint& record = constraints_[slot];
+            const auto state_a = body_state(record.body_a);
+            if (!state_a) {
+                continue;
             }
-        }
-        if (has_flag(flags, DebugDrawFlags::CentersOfMass)) {
-            sink.sphere(from_jolt(interface.GetCenterOfMassPosition(body.id)), 0.02f, color);
-        }
-        if (has_flag(flags, DebugDrawFlags::Velocities)) {
-            sink.line(position, position + from_jolt(interface.GetLinearVelocity(body.id)),
-                      DebugColor::Velocity);
+            const Transform a = state_a->transform * record.description.frame_a;
+            Transform b = record.description.frame_b;
+            if (!record.body_b.is_null()) {
+                const auto state_b = body_state(record.body_b);
+                if (!state_b) {
+                    continue;
+                }
+                b = state_b->transform * record.description.frame_b;
+            }
+            sink.sphere(a.translation, 0.04f, DebugColor::Constraint);
+            sink.sphere(b.translation, 0.04f, DebugColor::Constraint);
+            sink.line(a.translation, b.translation, DebugColor::Constraint);
+            draw_constraint_limits(record.description, a, sink);
         }
     }
     if (has_flag(flags, DebugDrawFlags::Contacts)) {

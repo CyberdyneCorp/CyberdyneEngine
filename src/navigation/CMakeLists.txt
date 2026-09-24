@@ -34,10 +34,13 @@ set(cy_navigation_sources
     src/build.cpp
     src/components.cpp
     src/crowd.cpp
+    src/debug.cpp
     src/flow_field.cpp
     src/hierarchy.cpp
     src/navmesh.cpp
-    src/query.cpp)
+    src/navigation2d.cpp
+    src/query.cpp
+    src/volume.cpp)
 
 # THE ONE TRANSLATION UNIT THAT NAMES AN `rc` SYMBOL, and it is compiled only when the option is on.
 # `build_tile()` reaches it through `cy::navigation::detail::build_tile_recast`, declared

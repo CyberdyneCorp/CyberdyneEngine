@@ -12,6 +12,7 @@
 
 #include <cy/core/memory/system_allocator.h>
 #include <cy/navigation/build.h>
+#include <cy/navigation/debug.h>
 #include <cy/navigation/query.h>
 #include <cy/test/test.h>
 
@@ -308,4 +309,20 @@ CY_TEST_CASE("a degenerate request is refused with a diagnostic rather than allo
         allocator(), tiny_cell, source.geometry(), TileCoord{0, 0, 0}, tile_bounds(), report);
     CY_REQUIRE_FALSE(too_many.has_value());
     CY_CHECK_EQ(too_many.error().code, ErrorCode::OutOfRange);
+}
+
+CY_TEST_CASE("tile rebuild diagnostics measure voxelisation time") {
+    SourceMesh source(allocator());
+    add_ground(source, kCells, kCells, 0, 0);
+    NavBuildReport report;
+    NavMetrics metrics;
+    const auto tile =
+        build_tile(allocator(), params(NavBuildBackend::Engine, 0.3F), source.geometry(),
+                   TileCoord{0, 0, 0}, tile_bounds(), report, &metrics);
+    CY_REQUIRE(tile.has_value());
+    CY_CHECK_GT(report.duration_ns, 0U);
+    const NavStatistics stats = metrics.snapshot();
+    CY_CHECK_EQ(stats.tile_rebuilds, 1U);
+    CY_CHECK_EQ(stats.tile_rebuild_time_ns, report.duration_ns);
+    CY_CHECK_GT(stats.mean_rebuild_ms(), 0.0);
 }

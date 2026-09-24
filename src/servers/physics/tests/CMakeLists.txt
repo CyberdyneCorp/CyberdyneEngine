@@ -44,6 +44,7 @@ function(cy_physics_declare_tests)
         NAME physics_server
         KIND unit
         SOURCES
+            "${tests_dir}/test_debug.cpp"
             "${tests_dir}/test_events.cpp"
             "${tests_dir}/test_physics2d.cpp"
             "${tests_dir}/test_queries.cpp"

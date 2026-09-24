@@ -34,6 +34,240 @@
 
 schema = 1
 
+# --- navigation -----------------------------------------------------------------------------------
+#
+# Swept for M11.e task 6.1a. The four exemptions below are implementation gaps, not missing test
+# names: each note states the absent seam and the case that must replace the exemption.
+
+[[coverage]]
+row = "navigation"
+requirement = "Navigation mesh"
+evidence = "test:integration.navigation_build"
+case = "the agent radius erodes the walkable surface away from a hole, on either back end"
+note = "The case runs the engine and Recast builders over the same geometry and requires a 0.5 m agent radius to remove the otherwise walkable route. Companion cases in this suite pin slope and layer/tag/volume filtering, while unit.navigation pins tile adjacency and neighbour preservation on rebuild."
+
+[[coverage]]
+row = "navigation"
+requirement = "Runtime mesh updates"
+evidence = "test:unit.navigation"
+case = "an obstacle marks a footprint without a rebuild"
+note = "The mesh version and tile generation stay unchanged while the affected polygons become unwalkable, so the case distinguishes obstacle carving from a voxelisation rebuild. Tile replacement and stale-reference cases in the same suite cover the other update path."
+
+[[coverage]]
+row = "navigation"
+requirement = "Navigation volumes"
+evidence = "test:unit.navigation"
+case = "a flying path climbs over a blocked canyon cell"
+note = "A sparse six-connected NavVolume climbs over a blocked 3D canyon cell. Companion cases apply area costs and masks, force budget and unreachable-target partial paths, and issue surface and volume point-path queries through the same NavigationSpace and deterministic SpatialPathQueue. NavAgent declares its representation; a mixed-world case verifies walker and flyer use separate queues."
+
+[[coverage]]
+row = "navigation"
+requirement = "Navigation streaming"
+evidence = "test:unit.navigation"
+case = "a path into unloaded content is abstract now and refined when it arrives"
+note = "The case unloads the destination region, requires an abstract path whose local segment is deferred, then republishes the tile and requires refinement. Its companion cases cover path invalidation on unload, hierarchy residency and navigation tiling independent of world-cell size."
+
+[[coverage]]
+row = "navigation"
+requirement = "Pathfinding"
+evidence = "test:unit.navigation"
+case = "an area mask excludes a type entirely and a cost multiplier only prefers against it"
+note = "One three-tile route holds endpoints constant while a water mask makes the answer partial and a water multiplier keeps the route valid but raises its cost. Adjacent cases pin closest partial results, node-budget reporting and deterministic asynchronous delivery."
+
+[[coverage]]
+row = "navigation"
+requirement = "Hierarchical pathfinding"
+evidence = "test:unit.navigation"
+case = "a cross-map plan runs over the region graph rather than the polygon graph"
+note = "The query exposes and asserts abstract regions and connections for a long path rather than merely accepting any path. Companion cases refine one segment at a time, preserve an unloaded region's identity and recompute only the rebuilt region's connections."
+
+[[coverage]]
+row = "navigation"
+requirement = "Path smoothing"
+evidence = "test:unit.navigation"
+case = "A* crosses a tile boundary and the funnel pulls the path straight"
+note = "The corridor crosses multiple polygons and a tile boundary but the produced point path is exactly its two endpoints, so deleting the funnel reduction leaves extra corners. The rounding case separately keeps endpoints while applying simplification and a corner radius."
+
+[[coverage]]
+row = "navigation"
+requirement = "Flow fields"
+evidence = "test:integration.navigation_fields"
+case = "a cache shares one field and releases it when the last user leaves"
+note = "Two acquisitions for one destination return one cached field, reference counts change independently, and the final release removes it. Other cases in the suite pin per-cell guidance, byte-for-byte deterministic generation and bounded incremental regeneration."
+
+[[coverage]]
+row = "navigation"
+requirement = "Off-mesh links"
+evidence = "test:unit.navigation"
+case = "a link an agent lacks the capability for is not expanded"
+note = "The only connection between otherwise disconnected regions is an off-mesh link; a capable agent receives the tagged endpoints and an incapable one cannot expand it. Re-snap and invalid-endpoint cases cover link lifetime across tile rebuilds."
+
+[[coverage]]
+row = "navigation"
+requirement = "Local avoidance"
+evidence = "test:integration.navigation_crowd"
+case = "two agents approaching head-on steer around each other and do not interpenetrate"
+note = "The agents request mutually colliding velocities, then the solver must change both velocities and preserve separation. Companion cases isolate priority yielding, reduced-tier work and the advisory path/field-following boundary."
+
+[[coverage]]
+row = "navigation"
+requirement = "Crowd simulation"
+evidence = "test:integration.navigation_crowd"
+case = "eight thousand agents hold their declared budget"
+note = "Eight thousand agents run for thirty ticks; the case bounds neighbour work against all-pairs growth and, in optimised builds, measures per-agent cost. Priority, deterministic replay and tiered-fidelity cases in the same suite cover the behavioural clauses."
+
+[[coverage]]
+row = "navigation"
+requirement = "Navigation components"
+evidence = "test:unit.navigation"
+case = "a following agent repaths when the mesh version it was built against moves on"
+note = "The component system observes a newer mesh version, invalidates the held corridor and issues a replacement query. The same suite pins fixed component registration, arrival events, failed off-mesh targets, repath rate limits and explicit flow-field following."
+
+[[coverage]]
+row = "navigation"
+requirement = "Multiple navigation worlds"
+evidence = "test:unit.navigation"
+case = "overlapping navigation worlds route agents and obstacles only to their own mesh"
+note = "NavWorlds binds independent mesh/queue pairs by world ID and rejects a queue paired with the wrong mesh. At identical coordinates an obstacle blocks the walking world while an agent in the other world still receives a path query; the agents' world IDs select the correct binding."
+
+[[coverage]]
+row = "navigation"
+requirement = "2D navigation"
+evidence = "test:unit.navigation"
+case = "tilemap path detours around a blocked cell"
+note = "The Vec2 API consumes tilemap-authored polygons per chunk, preserves references in unchanged chunks and routes around a removed cell. A companion case generates the same planar graph from convex 2D collision footprints and checks that the blocked cell cannot be queried."
+
+[[coverage]]
+row = "navigation"
+requirement = "Navigation debugging"
+evidence = "test:unit.navigation"
+case = "navigation debug exposes a disconnected gap behind a partial path"
+note = "The test requests a path across missing content, checks that it is partial, then verifies the debug command stream shows both polygon islands but no cross-tile adjacency. Companion tests cover all nine independently selectable overlay families, query counts and timing, path lengths and repath rates; integration.navigation_build measures tile voxelisation time. PathResult already reports cost, expanded/visited nodes and budget exhaustion."
+
+[[coverage]]
+row = "navigation"
+requirement = "Environment-driven navigation"
+evidence = "test:unit.water"
+case = "downstream is cheaper than upstream, through the flow field"
+note = "The case holds the river and endpoints constant, reverses travel direction and requires downstream cost below upstream while cross-flow remains symmetric and dry ground stays neutral. integration.terrain_geometry separately proves collision-derived surfaces, declared material costs and dirty regions."
+
+# --- physics --------------------------------------------------------------------------------------
+#
+# Swept for M11.e task 6.1a. Additional simulation and full debugging remain honest exemptions;
+# the other entries point at the case that makes the requirement observable rather than at a suite.
+
+[[coverage]]
+row = "physics"
+requirement = "Engine-owned physics interface"
+evidence = "test:integration.physics_jolt"
+case = "a dynamic body falls onto static geometry and stops on it"
+note = "The Jolt target links only the engine-owned PhysicsServer surface, while Jolt headers and linkage remain private to the backend; this case creates, steps and queries Jolt entirely through that interface. The reference suites exercise the same vocabulary without backend changes."
+
+[[coverage]]
+row = "physics"
+requirement = "Jolt as the 3D backend"
+evidence = "test:integration.physics_jolt"
+case = "one thousand identical box colliders create one Jolt shape"
+note = "The case creates one thousand engine shape handles and checks the backend's native-shape creation count is one, directly pinning the Jolt shape cache. Job-bridge, filter, body-id and tuning behaviour are exercised by neighbouring Jolt and conformance cases."
+
+[[coverage]]
+row = "physics"
+requirement = "2D physics"
+evidence = "test:integration.physics_jolt"
+case = "a 2D body cannot leave the plane, and Jolt is the one enforcing it"
+note = "A body receives out-of-plane motion through the real 3D backend and remains locked to its plane. unit.physics_server separately requires Vec2 query inputs/results, angle conversion and extrusion of a circle to a cylinder rather than leaking 3D implementation types."
+
+[[coverage]]
+row = "physics"
+requirement = "Physics components"
+evidence = "test:integration.physics_bridge"
+case = "all eight components are declared, and each names its fields"
+note = "The state schema enumerates exactly the eight component families in the requirement and checks their authored versus runtime fields. Bridge and server cases then create static, kinematic and dynamic bodies, compounds, every declared shape family and the triangle-mesh rejection."
+
+[[coverage]]
+row = "physics"
+requirement = "Fixed-step integration"
+evidence = "test:integration.physics_behaviour"
+case = "a frame with several ticks steps physics once per tick and never in between"
+note = "The case feeds multiple fixed ticks plus a variable render phase and counts server steps, so moving a step outside the Physics stage changes the count. Companion cases pin transform publication, interpolation alpha and teleport suppression."
+
+[[coverage]]
+row = "physics"
+requirement = "Collision events"
+evidence = "test:integration.physics_jolt"
+case = "collision events arrive with the pair, the phase and a contact point"
+note = "A real resolved contact produces enter/stay/exit data with the ordered pair and contact point. unit.physics_server separately pins trigger channels, normals, user data, contact filtering, bounded buffering and stable pair normalisation."
+
+[[coverage]]
+row = "physics"
+requirement = "Collision filtering"
+evidence = "test:unit.physics_server"
+case = "a filter pair collides only when BOTH masks accept the other's layer"
+note = "The case flips each mask independently and requires mutual acceptance, preventing an asymmetric one-way implementation. Companion cases require the project collision matrix and both masks, and the event suite proves ignored pairs produce no contact until restored."
+
+[[coverage]]
+row = "physics"
+requirement = "Queries"
+evidence = "test:integration.physics_jolt"
+case = "a raycast excludes its own body and reports the surface it hit"
+note = "The ray starts from a body that must be ignored and validates the ground hit through the public interface. Shape-cast, overlap, closest-point, filtering, all-hit ordering, concurrent reads and mid-step rejection are pinned by adjacent Jolt and server cases."
+
+[[coverage]]
+row = "physics"
+requirement = "Character controller"
+evidence = "test:integration.physics_behaviour"
+case = "a character on a moving platform is carried by it"
+note = "The platform is kinematic and the controller must inherit its displacement rather than merely avoid it. The suite also isolates stair lifting, tall-wall refusal, steep-slope classification and slide, ceiling collision, floating motion, self exclusion and teleport reset."
+
+[[coverage]]
+row = "physics"
+requirement = "Constraints"
+evidence = "test:integration.physics_jolt"
+case = "a Jolt hinge motor respects its torque cap and angular limit"
+note = "The case compares weak and strong torque caps and verifies the hinge angle limit. Companion Jolt cases exercise fixed, point, slider, distance, cone, swing-twist, six-degree, gear and rack solver behavior, including per-axis limits, motors and springs, force/torque break events and handle lifetime. integration.physics_simulation verifies ECS Joint creation and teardown; the reference backend explicitly reports constraints unsupported. Reversing the Jolt gear ratio made its coupling case fail and the mapping was restored."
+
+[[coverage]]
+row = "physics"
+requirement = "Soft bodies and additional simulation"
+evidence = "test:integration.physics_ragdoll"
+case = "powered ragdoll motor tracks animation after an impulse and hit weight recovers"
+note = "The named case exercises powered pose following, physical hit displacement and recovery; disabling authored motor torque makes it fail. Companion ragdoll cases generate/refine a profile, seed animated world pose and velocity, exercise continuous full-body blend, keep full mode simulation-driven despite later animation targets, preserve partial-body locomotion, and verify teardown, rollback and reference-backend refusal. Removing blend output or velocity transfer makes the full-ragdoll case fail. Jolt integration.physics_jolt separately verifies cloth contact/readback and vehicle drivetrain, wheel-state and lifecycle behavior; the reference backend refuses both optional features."
+
+[[coverage]]
+row = "physics"
+requirement = "Determinism"
+evidence = "test:integration.physics_behaviour"
+case = "two runs of the same scene on the same binary produce identical state hashes"
+note = "Two independently constructed runs compare every per-tick state hash rather than only their final transforms. Companion cases report the first divergent tick/body and reject cross-platform or lockstep sessions that classify physics as authoritative."
+
+[[coverage]]
+row = "physics"
+requirement = "Physics debugging"
+evidence = "test:integration.physics_jolt"
+case = "a dense contact scene exposes narrow-phase cost in step diagnostics"
+note = "The dense-contact case demonstrates a narrow-phase bottleneck with broad, narrow and solve job costs. Companion Jolt cases assert solver-space collider geometry (including convex and mesh triangles), contacts, sleep, velocities, centres of mass, broad-phase bounds, joint anchors and limits, active/contact/constraint/island counters, and solver phase timings. unit.physics_server covers stateless query input/result overlays. Mutating the narrow-phase cost or solver-space shape centre fails the focused tests."
+
+[[coverage]]
+row = "physics"
+requirement = "Heightfield and terrain collision"
+evidence = "test:unit.physics_server"
+case = "bulk creation is all or nothing"
+note = "The case makes one invalid member abort an entire body batch and verifies no partial terrain region remains. The shape suite separately proves heightfield holes affect bounds, while terrain_geometry limits deformation invalidation to the affected collision tile and keeps navigation derived from the same representation."
+
+[[coverage]]
+row = "physics"
+requirement = "Buoyancy and water interaction"
+evidence = "test:integration.physics_buoyancy"
+case = "a floating physics body pitches under multi-point authoritative swell"
+note = "The layer-4 driver transforms body-local hull samples, queries authoritative water, and applies force and torque through PhysicsServer. The named Jolt case observes actual angular velocity from multi-point spectral swell; removing torque application makes it fail. The reference-backend case observes lift after stepping and checks origin-rebased sampling and dynamic-only validation. Companion unit.water cases pin submerged-volume force, drag, current advection, character water states and render-band agreement."
+
+[[coverage]]
+row = "physics"
+requirement = "Physics world teardown"
+evidence = "test:integration.physics_teardown"
+case = "sixty-four play sessions under load, each torn down with work in flight"
+note = "Each round creates a world and bridge with bodies, steps under four competing worker threads and destroys it immediately; completion also requires the job system to remain live. Companion cases prove shape release, stale bridge-handle diagnostics and the same play/stop ordering over Jolt's in-flight job bridge."
+
 # --- rhi-and-render-graph -------------------------------------------------------------------------
 #
 # Read at M11.d.5 after the native Metal and D3D12 implementations made this a three-backend row.

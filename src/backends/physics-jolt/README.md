@@ -36,14 +36,37 @@ Each is marked in `src/jolt_server.cpp` where it bites, and none of them is pape
    buffer is sorted by pair and phase at the end of the step, so the event order is a function of the
    simulation rather than of the scheduler.
 
-Two smaller ones, recorded in the code beside the line that drops them: `Tuning`'s
-`sleep_angular_velocity` has no Jolt analogue (Jolt folds rotation into one linear threshold), and
-the step-time breakdown across broad phase, narrow phase and solve is not published without Jolt's
-own profiler, which is deliberately not built — so the total is real and the three parts are zero
-rather than fabricated.
+`Tuning`'s `sleep_angular_velocity` has no Jolt analogue (Jolt folds rotation into one linear
+threshold). The backend now times named Jolt jobs by broad-phase, narrow-phase, and solve/other
+work. These phase counters are cumulative CPU nanoseconds; concurrent jobs can make their sum
+exceed the wall-clock `total_ns`. They are diagnostic costs, not a partition of wall time.
+
+`debug_draw` reads the simulated body transforms and emits collider primitives (including
+world-space triangles for convex, mesh and compound shapes), world-space
+broad-phase bounds, contacts, sleep state, linear/angular velocities, centres of mass, joint
+anchors, and hinge, slider, distance, cone, swing-twist and six-degree limits. Query overlays use
+the stateless `debug_draw_query` helpers in the physics interface: callers pass their input and
+optional result, leaving parallel queries read-only.
+The island count is derived from active bodies joined by solver contacts or enabled constraints;
+static and sleeping bodies are excluded.
 
 ## What is not implemented
 
-Constraints, soft bodies and vehicles. Jolt has all three; the mapping is not in M4's task list.
-`Capabilities` reports them false and creation fails with `NotImplemented` naming why — which is the
-honest form, because this is a gap in the engine's mapping and not a limit of the backend.
+Constraints are available through `PhysicsServer` on this backend. Fixed, point, hinge,
+slider, distance, cone, swing-twist, six-degree, rack-and-pinion, and gear joints map to Jolt.
+Joint handles are invalidated when either body or the world is destroyed. Joined bodies do not
+collide unless `collide_connected` is set; breaking a force- or torque-limited joint disables it
+and emits a `ConstraintBroken` event for that step. Hinge and slider motors can be updated at
+runtime; six-degree motors are configured per axis at creation. A zero-frequency position drive
+uses a stiff 30 Hz spring in Jolt, not an exact rigid target.
+
+Cloth soft bodies are available from an engine-owned triangle mesh with per-vertex inverse mass;
+zero inverse mass pins a corner. Jolt generates stretch and bend constraints and returns world-space
+deformed vertices after each step. Cloth uses a normal body handle and contributes its vertex
+positions and velocities to the deterministic state hash. The reference backend reports cloth
+unsupported. Wheeled vehicles use an authored dynamic chassis and per-wheel suspension geometry;
+one or more differential pairs distribute engine torque. Throttle, steering, braking and hand brake
+are set before the fixed step, and wheel contact, travel and rotation are read after it. The
+vehicle constraint is also a Jolt step listener and is removed before its chassis or world is
+destroyed. Vehicle and cloth capabilities are true only on this backend. Ragdoll animation
+integration remains unimplemented.

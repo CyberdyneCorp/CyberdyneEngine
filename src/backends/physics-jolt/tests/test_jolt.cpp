@@ -18,6 +18,7 @@
 #include <cy/test/test.h>
 
 #include <atomic>
+#include <cmath>
 #include <string_view>
 
 using namespace cy;
@@ -106,6 +107,43 @@ struct Fixture {
     WorldHandle world;
 };
 
+struct DebugCapture final : DebugDrawSink {
+    u32 lines = 0;
+    u32 boxes = 0;
+    u32 spheres = 0;
+    u32 capsules = 0;
+    u32 contacts = 0;
+    u32 bounds = 0;
+    u32 limits = 0;
+    u32 limit_spheres = 0;
+    u32 asleep_markers = 0;
+    Vec3 last_sphere_center{};
+
+    void line(Vec3, Vec3, DebugColor color) noexcept override {
+        ++lines;
+        if (color == DebugColor::ConstraintLimit) {
+            ++limits;
+        }
+    }
+    void box(const Aabb&, const Transform&, DebugColor color) noexcept override {
+        ++boxes;
+        if (color == DebugColor::Bounds) {
+            ++bounds;
+        }
+    }
+    void sphere(Vec3 center, f32, DebugColor color) noexcept override {
+        ++spheres;
+        last_sphere_center = center;
+        if (color == DebugColor::ConstraintLimit) {
+            ++limit_spheres;
+        } else if (color == DebugColor::DynamicAsleep) {
+            ++asleep_markers;
+        }
+    }
+    void capsule(const Transform&, f32, f32, DebugColor) noexcept override { ++capsules; }
+    void contact(Vec3, Vec3, f32) noexcept override { ++contacts; }
+};
+
 }  // namespace
 
 CY_TEST_CASE("the Jolt backend reports itself and what it can do") {
@@ -121,10 +159,847 @@ CY_TEST_CASE("the Jolt backend reports itself and what it can do") {
     CY_CHECK(capabilities.triangle_meshes);
     CY_CHECK(capabilities.convex_hulls);
     CY_CHECK(capabilities.continuous_collision);
+    CY_CHECK(capabilities.constraints);
+    CY_CHECK(capabilities.soft_bodies);
     CY_CHECK_EQ(capabilities.determinism, DeterminismPolicy::SamePlatformDeterministic);
     // With no engine job system given, the work runs on the calling thread and the flag says so
     // rather than claiming a bridge that is not there.
     CY_CHECK_FALSE(capabilities.uses_engine_jobs);
+}
+
+CY_TEST_CASE("Jolt cloth keeps pinned corners and advances free vertices") {
+    Fixture fixture;
+    const SoftBodyVertex vertices[] = {{{-1.0f, 0.0f, -1.0f}, 0.0f},
+                                       {{1.0f, 0.0f, -1.0f}, 0.0f},
+                                       {{1.0f, 0.0f, 1.0f}, 0.0f},
+                                       {{-1.0f, 0.0f, 1.0f}, 0.0f},
+                                       {{0.0f, 0.0f, 0.0f}, 1.0f}};
+    const u32 triangles[] = {0, 4, 1, 1, 4, 2, 2, 4, 3, 3, 4, 0};
+    SoftBodyDescription description;
+    description.transform = Transform::from_translation(Vec3{0.0f, 4.0f, 0.0f});
+    description.vertices = vertices;
+    description.vertex_count = 5;
+    description.indices = triangles;
+    description.index_count = 12;
+    const auto cloth = fixture.server->create_soft_body(fixture.world, description);
+    CY_REQUIRE(cloth.has_value());
+    const Status motion_change = fixture.server->set_body_motion_type(*cloth, MotionType::Static);
+    CY_REQUIRE_FALSE(motion_change.has_value());
+    CY_CHECK_EQ(motion_change.error().code, ErrorCode::Unsupported);
+    const BodyHandle falling =
+        fixture.body(fixture.sphere(0.2f), MotionType::Dynamic, Vec3{0.0f, 5.0f, 0.0f});
+    Vec3 short_buffer[4];
+    const auto short_read = fixture.server->soft_body_vertices(*cloth, Span<Vec3>(short_buffer, 4));
+    CY_REQUIRE_FALSE(short_read.has_value());
+    CY_CHECK_EQ(short_read.error().code, ErrorCode::BufferTooSmall);
+    Vec3 initial[5];
+    CY_REQUIRE(fixture.server->soft_body_vertices(*cloth, Span<Vec3>(initial, 5)).has_value());
+    for (u64 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    Vec3 deformed[5];
+    const auto count = fixture.server->soft_body_vertices(*cloth, Span<Vec3>(deformed, 5));
+    CY_REQUIRE(count.has_value());
+    CY_CHECK_EQ(*count, 5U);
+    CY_CHECK_NEAR(deformed[0].y, initial[0].y, 0.01f);
+    CY_CHECK_NEAR(deformed[1].y, initial[1].y, 0.01f);
+    CY_CHECK_LT(deformed[4].y, initial[4].y - 0.005f);
+    CY_CHECK_GT(fixture.position_of(falling).y, 3.0f);
+    CY_CHECK(fixture.server->body_alive(*cloth));
+    CY_REQUIRE(fixture.server->destroy_body(*cloth).has_value());
+    CY_CHECK_FALSE(fixture.server->body_alive(*cloth));
+    CY_CHECK_FALSE(fixture.server->soft_body_vertices(*cloth, Span<Vec3>(deformed, 5)).has_value());
+}
+
+CY_TEST_CASE("Jolt vehicle suspension supports its chassis and drivetrain drives and steers") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{50.0f, 0.5f, 50.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    ColliderDescription collider;
+    collider.shape = fixture.box(Vec3{0.9f, 0.2f, 2.0f});
+    BodyDescription chassis_description;
+    chassis_description.motion = MotionType::Dynamic;
+    chassis_description.transform = Transform::from_translation(Vec3{0.0f, 2.0f, 0.0f});
+    chassis_description.mass = 1500.0f;
+    chassis_description.colliders = &collider;
+    chassis_description.collider_count = 1;
+    const auto chassis = fixture.server->create_body(fixture.world, chassis_description);
+    CY_REQUIRE(chassis.has_value());
+
+    VehicleWheelDescription wheels[4];
+    wheels[0].position = Vec3{0.9f, -0.18f, 1.4f};
+    wheels[1].position = Vec3{-0.9f, -0.18f, 1.4f};
+    wheels[2].position = Vec3{0.9f, -0.18f, -1.4f};
+    wheels[3].position = Vec3{-0.9f, -0.18f, -1.4f};
+    wheels[0].max_steer_angle = 0.52f;
+    wheels[1].max_steer_angle = 0.52f;
+    VehicleDifferentialDescription rear;
+    rear.left_wheel = 2;
+    rear.right_wheel = 3;
+    VehicleDescription description;
+    description.chassis = *chassis;
+    description.wheels = wheels;
+    description.wheel_count = 4;
+    description.differentials = &rear;
+    description.differential_count = 1;
+    const auto vehicle = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(vehicle.has_value());
+    BodyDescription control_description = chassis_description;
+    control_description.transform.translation.x = 5.0f;
+    const auto control_chassis = fixture.server->create_body(fixture.world, control_description);
+    CY_REQUIRE(control_chassis.has_value());
+    description.chassis = *control_chassis;
+    description.max_engine_torque = 0.0f;
+    const auto control_vehicle = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(control_vehicle.has_value());
+    description.chassis = *chassis;
+    description.max_engine_torque = 500.0f;
+
+    for (u64 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    VehicleWheelState state[4];
+    const auto count = fixture.server->vehicle_wheels(*vehicle, Span<VehicleWheelState>(state, 4));
+    CY_REQUIRE(count.has_value());
+    CY_CHECK_EQ(*count, 4U);
+    for (const VehicleWheelState& wheel : state) {
+        CY_CHECK(wheel.grounded);
+        CY_CHECK_GE(wheel.suspension_length, 0.3f);
+        CY_CHECK_LE(wheel.suspension_length, 0.5f);
+    }
+    CY_CHECK_GE(fixture.server->statistics(fixture.world)->constraint_count, 1U);
+    const f32 parked_z = fixture.position_of(*chassis).z;
+    const f32 control_parked_z = fixture.position_of(*control_chassis).z;
+    determinism::StateHashTree before_input(allocator());
+    CY_REQUIRE(fixture.server->hash_state(fixture.world, before_input).has_value());
+    CY_REQUIRE(fixture.server->set_vehicle_input(*vehicle, VehicleInput{1.0f}).has_value());
+    determinism::StateHashTree after_input(allocator());
+    CY_REQUIRE(fixture.server->hash_state(fixture.world, after_input).has_value());
+    CY_CHECK_NE(before_input.root_hash(), after_input.root_hash());
+    CY_REQUIRE(fixture.server->set_vehicle_input(*control_vehicle, VehicleInput{1.0f}).has_value());
+    for (u64 tick = 90; tick < 210; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const f32 driven_distance = fixture.position_of(*chassis).z - parked_z;
+    const f32 inertial_distance = fixture.position_of(*control_chassis).z - control_parked_z;
+    CY_CHECK_GT(driven_distance, inertial_distance + 0.5f);
+    VehicleInput turning;
+    turning.throttle = 1.0f;
+    turning.steering = 1.0f;
+    CY_REQUIRE(fixture.server->set_vehicle_input(*vehicle, turning).has_value());
+    for (u64 tick = 210; tick < 270; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(fixture.server->body_state(*chassis)->angular_velocity.y, -0.05f);
+    VehicleInput braking;
+    braking.brake = 1.0f;
+    CY_REQUIRE(fixture.server->set_vehicle_input(*vehicle, braking).has_value());
+    for (u64 tick = 270; tick < 570; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(length(fixture.server->body_state(*chassis)->linear_velocity), 0.5f);
+    CY_REQUIRE(fixture.server->destroy_vehicle(*vehicle).has_value());
+    CY_CHECK(fixture.server->body_alive(*chassis));
+    CY_CHECK_FALSE(
+        fixture.server->vehicle_wheels(*vehicle, Span<VehicleWheelState>(state, 4)).has_value());
+    const auto again = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(again.has_value());
+    CY_REQUIRE(fixture.server->destroy_body(*chassis).has_value());
+    CY_CHECK_FALSE(
+        fixture.server->vehicle_wheels(*again, Span<VehicleWheelState>(state, 4)).has_value());
+    CY_REQUIRE(fixture.server->destroy_body(*control_chassis).has_value());
+    CY_CHECK_FALSE(
+        fixture.server->vehicle_wheels(*control_vehicle, Span<VehicleWheelState>(state, 4))
+            .has_value());
+    const auto new_chassis = fixture.server->create_body(fixture.world, chassis_description);
+    CY_REQUIRE(new_chassis.has_value());
+    description.chassis = *new_chassis;
+    const auto world_vehicle = fixture.server->create_vehicle(fixture.world, description);
+    CY_REQUIRE(world_vehicle.has_value());
+    CY_REQUIRE(fixture.server->destroy_world(fixture.world).has_value());
+    CY_CHECK_FALSE(fixture.server->vehicle_wheels(*world_vehicle, Span<VehicleWheelState>(state, 4))
+                       .has_value());
+}
+
+CY_TEST_CASE("Jolt creates every declared joint type and invalidates handles with their bodies") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.25f, 0.25f, 0.25f});
+    const BodyHandle a = fixture.body(shape, MotionType::Dynamic, Vec3{-1.0f, 2.0f, 0.0f});
+    const BodyHandle b = fixture.body(shape, MotionType::Dynamic, Vec3{1.0f, 2.0f, 0.0f});
+    const ConstraintType types[] = {ConstraintType::Fixed,         ConstraintType::Point,
+                                    ConstraintType::Hinge,         ConstraintType::Slider,
+                                    ConstraintType::Distance,      ConstraintType::Cone,
+                                    ConstraintType::SwingTwist,    ConstraintType::SixDof,
+                                    ConstraintType::RackAndPinion, ConstraintType::Gear};
+    ConstraintHandle handles[10];
+    for (usize index = 0; index < 10; ++index) {
+        ConstraintDescription description;
+        description.type = types[index];
+        description.body_a = a;
+        description.body_b = b;
+        description.frame_a.translation = Vec3{1.0f, 0.0f, 0.0f};
+        description.frame_b.translation = Vec3{-1.0f, 0.0f, 0.0f};
+        description.min_distance = 2.0f;
+        description.max_distance = 2.0f;
+        description.swing_limit_y = 0.5f;
+        description.swing_limit_z = 0.5f;
+        const auto made = fixture.server->create_constraint(fixture.world, description);
+        CY_REQUIRE(made.has_value());
+        handles[index] = *made;
+        CY_CHECK(fixture.server->set_constraint_enabled(*made, false).has_value());
+    }
+    CY_REQUIRE(fixture.step(1).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->constraint_count, 10U);
+    CY_REQUIRE(fixture.server->destroy_body(a).has_value());
+    for (const ConstraintHandle handle : handles) {
+        CY_CHECK_FALSE(fixture.server->destroy_constraint(handle).has_value());
+    }
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->constraint_count, 10U);
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->constraint_count, 0U);
+}
+
+CY_TEST_CASE("a breakable Jolt joint reports one measured event and stops constraining") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.25f);
+    const BodyHandle ball = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Point;
+    description.body_a = ball;
+    description.frame_b.translation = Vec3{0.0f, 2.0f, 0.0f};
+    description.break_force = 0.01f;
+    description.user_data = 77;
+    const auto made = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(made.has_value());
+    CY_REQUIRE(fixture.server->add_impulse(ball, Vec3{10.0f, 0.0f, 0.0f}).has_value());
+    CY_REQUIRE(fixture.step(1).has_value());
+    const auto broken = fixture.server->broken_constraints(fixture.world);
+    CY_REQUIRE(broken.has_value());
+    CY_REQUIRE_EQ(broken->size(), 1U);
+    CY_CHECK_EQ((*broken)[0].constraint, *made);
+    CY_CHECK_EQ((*broken)[0].user_data, 77U);
+    CY_CHECK_GT((*broken)[0].force, description.break_force);
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_EQ(fixture.server->broken_constraints(fixture.world)->size(), 0U);
+}
+
+CY_TEST_CASE("a Jolt hinge breaks on measured torque without repeating its event") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{});
+    ConstraintDescription description;
+    description.type = ConstraintType::Hinge;
+    description.body_a = base;
+    description.body_b = driven;
+    description.limit = AxisLimit{-0.1f, 0.1f};
+    description.break_torque = 0.01f;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    CY_REQUIRE(fixture.server->add_angular_impulse(driven, Vec3{10.0f, 0.0f, 0.0f}).has_value());
+    bool saw_break = false;
+    for (u64 tick = 0; tick < 30 && !saw_break; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+        const auto broken = fixture.server->broken_constraints(fixture.world);
+        CY_REQUIRE(broken.has_value());
+        if (!broken->empty()) {
+            CY_CHECK_EQ(broken->size(), 1U);
+            CY_CHECK_EQ((*broken)[0].constraint, *joint);
+            CY_CHECK_GT((*broken)[0].torque, description.break_torque);
+            saw_break = true;
+        }
+    }
+    CY_CHECK(saw_break);
+    CY_REQUIRE(fixture.step(31).has_value());
+    CY_CHECK_EQ(fixture.server->broken_constraints(fixture.world)->size(), 0U);
+}
+
+CY_TEST_CASE("a six-degree Jolt motor drives its configured linear axis") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::SixDof;
+    description.body_a = base;
+    description.body_b = driven;
+    description.dof_motors[1].target_velocity = 2.0f;
+    description.dof_motors[1].max_force = 1000.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    for (u64 tick = 0; tick < 30; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_GT(fixture.position_of(driven).y, 0.4f);
+}
+
+CY_TEST_CASE("a Jolt joint suppresses collision only while joined") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.5f);
+    const BodyHandle a = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    const BodyHandle b = fixture.body(shape, MotionType::Dynamic, Vec3{0.5f, 2.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Fixed;
+    description.body_a = a;
+    description.body_b = b;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    CY_REQUIRE(fixture.step(1).has_value());
+    CY_CHECK_EQ(fixture.server->events(fixture.world)->size(), 0U);
+    CY_REQUIRE(fixture.server->destroy_constraint(*joint).has_value());
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_GT(fixture.server->events(fixture.world)->size(), 0U);
+}
+
+CY_TEST_CASE(
+    "a dynamic body contacting a kinematic body reports contact without treating it as mass") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.5f);
+    const BodyHandle moving = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Kinematic, Vec3{0.7f, 0.0f, 0.0f});
+    CY_REQUIRE(
+        fixture.server->set_body_velocity(driven, Vec3{-1.0f, 0.0f, 0.0f}, Vec3{}).has_value());
+    CY_REQUIRE(fixture.step(1).has_value());
+    const auto events = fixture.server->events(fixture.world);
+    CY_REQUIRE(events.has_value());
+    CY_CHECK_GT(events->size(), 0U);
+    CY_CHECK(fixture.server->body_alive(moving));
+}
+
+CY_TEST_CASE("a Jolt hinge motor can be enabled at runtime and drives within its force cap") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Hinge;
+    description.body_a = base;
+    description.body_b = driven;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    MotorSettings motor;
+    motor.target_velocity = 3.0f;
+    motor.max_force = 100.0f;
+    CY_REQUIRE(fixture.server->set_constraint_motor(*joint, motor).has_value());
+    for (u64 tick = 0; tick < 30; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_GT(fixture.server->body_state(driven)->angular_velocity.x, 0.5f);
+}
+
+CY_TEST_CASE("a Jolt swing-twist orientation motor follows a changing target and can be disabled") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{});
+    ConstraintDescription description;
+    description.type = ConstraintType::SwingTwist;
+    description.body_a = base;
+    description.body_b = driven;
+    description.swing_limit_y = 1.2f;
+    description.swing_limit_z = 1.2f;
+    description.twist_limit = AxisLimit{-1.2f, 1.2f};
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+
+    OrientationMotorSettings motor;
+    motor.target_orientation = Quat::from_axis_angle(kAxisX, 0.6f);
+    motor.max_torque = 80.0f;
+    motor.spring_frequency = 8.0f;
+    CY_REQUIRE(fixture.server->set_constraint_orientation_motor(*joint, motor).has_value());
+    for (u64 tick = 0; tick < 45; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const auto driven_state = fixture.server->body_state(driven);
+    CY_REQUIRE(driven_state.has_value());
+    CY_CHECK_LT(angle_between(driven_state->transform.rotation, motor.target_orientation), 0.2f);
+
+    motor.target_orientation = Quat::identity();
+    CY_REQUIRE(fixture.server->set_constraint_orientation_motor(*joint, motor).has_value());
+    for (u64 tick = 45; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(
+        angle_between(fixture.server->body_state(driven)->transform.rotation, Quat::identity()),
+        0.2f);
+
+    motor.max_torque = 0.0f;
+    CY_REQUIRE(fixture.server->set_constraint_orientation_motor(*joint, motor).has_value());
+    motor.max_torque = -1.0f;
+    CY_CHECK_EQ(fixture.server->set_constraint_orientation_motor(*joint, motor).error().code,
+                ErrorCode::InvalidArgument);
+    CY_CHECK_EQ(fixture.server->set_constraint_motor(*joint, MotorSettings{}).error().code,
+                ErrorCode::Unsupported);
+}
+
+CY_TEST_CASE("a Jolt hinge motor respects its torque cap and angular limit") {
+    auto spin_after_one_step = [](f32 max_torque) noexcept {
+        Fixture fixture;
+        const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+        const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+        const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+        ConstraintDescription description;
+        description.type = ConstraintType::Hinge;
+        description.body_a = base;
+        description.body_b = driven;
+        description.motor.target_velocity = 10.0f;
+        description.motor.max_force = max_torque;
+        CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+        CY_REQUIRE(fixture.step(1).has_value());
+        return fixture.server->body_state(driven)->angular_velocity.x;
+    };
+    const f32 limited = spin_after_one_step(0.1f);
+    const f32 strong = spin_after_one_step(100.0f);
+    CY_CHECK_GT(strong, limited * 5.0f);
+    CY_CHECK_LT(limited, 0.1f);
+
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Hinge;
+    description.body_a = base;
+    description.body_b = driven;
+    description.limit = AxisLimit{-0.2f, 0.2f};
+    description.motor.target_velocity = 10.0f;
+    description.motor.max_force = 100.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    for (u64 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    Vec3 axis;
+    f32 angle = 0.0f;
+    fixture.server->body_state(driven)->transform.rotation.to_axis_angle(axis, angle);
+    CY_CHECK_LT(std::fabs(angle), 0.35f);
+}
+
+CY_TEST_CASE("Jolt fixed, slider and distance joints constrain different degrees of freedom") {
+    {
+        Fixture fixture;
+        const ShapeHandle shape = fixture.sphere(0.2f);
+        const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+        const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{1.0f, 0.0f, 0.0f});
+        ConstraintDescription description;
+        description.type = ConstraintType::Fixed;
+        description.body_a = base;
+        description.body_b = driven;
+        description.frame_a.translation = Vec3{1.0f, 0.0f, 0.0f};
+        CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+        for (u64 tick = 0; tick < 30; ++tick) {
+            CY_REQUIRE(fixture.step(tick).has_value());
+        }
+        CY_CHECK_NEAR(fixture.position_of(driven).x, 1.0f, 0.05f);
+        CY_CHECK_NEAR(fixture.position_of(driven).y, 0.0f, 0.05f);
+    }
+    {
+        Fixture fixture;
+        const ShapeHandle shape = fixture.sphere(0.2f);
+        const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+        const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+        ConstraintDescription description;
+        description.type = ConstraintType::Slider;
+        description.body_a = base;
+        description.body_b = driven;
+        description.limit = AxisLimit{-0.5f, 0.5f};
+        CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+        CY_REQUIRE(fixture.server->add_impulse(driven, Vec3{100.0f, 0.0f, 0.0f}).has_value());
+        for (u64 tick = 0; tick < 30; ++tick) {
+            CY_REQUIRE(fixture.step(tick).has_value());
+        }
+        CY_CHECK_GT(fixture.position_of(driven).x, 0.2f);
+        CY_CHECK_LT(fixture.position_of(driven).x, 0.6f);
+        CY_CHECK_NEAR(fixture.position_of(driven).y, 0.0f, 0.05f);
+    }
+    {
+        Fixture fixture;
+        const ShapeHandle shape = fixture.sphere(0.2f);
+        const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+        const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{2.0f, 0.0f, 0.0f});
+        ConstraintDescription description;
+        description.type = ConstraintType::Distance;
+        description.body_a = base;
+        description.body_b = driven;
+        description.min_distance = 2.0f;
+        description.max_distance = 2.0f;
+        CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+        for (u64 tick = 0; tick < 60; ++tick) {
+            CY_REQUIRE(fixture.step(tick).has_value());
+        }
+        CY_CHECK_NEAR(length(fixture.position_of(driven)), 2.0f, 0.05f);
+    }
+}
+
+CY_TEST_CASE("a Jolt point joint swings around its fixed anchor") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{1.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Point;
+    description.body_a = base;
+    description.body_b = driven;
+    description.frame_b.translation = Vec3{-1.0f, 0.0f, 0.0f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    for (u64 tick = 0; tick < 60; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(fixture.position_of(driven).y, -0.2f);
+    CY_CHECK_NEAR(length(fixture.position_of(driven)), 1.0f, 0.1f);
+}
+
+CY_TEST_CASE("a Jolt six-degree position spring pulls toward its per-axis target") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::SixDof;
+    description.body_a = base;
+    description.body_b = driven;
+    description.dof_motors[1].position_driven = true;
+    description.dof_motors[1].target_position = 1.0f;
+    description.dof_motors[1].max_force = 1000.0f;
+    description.dof_motors[1].spring_frequency = 2.0f;
+    description.dof_motors[1].spring_damping = 1.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    for (u64 tick = 0; tick < 60; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_GT(fixture.position_of(driven).y, 0.3f);
+}
+
+CY_TEST_CASE("a Jolt six-degree joint enforces linear and angular axis limits") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{});
+    ConstraintDescription description;
+    description.type = ConstraintType::SixDof;
+    description.body_a = base;
+    description.body_b = driven;
+    description.dof_limits[0] = AxisLimit{-0.5f, 0.5f};
+    description.dof_limits[3] = AxisLimit{-0.2f, 0.2f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    CY_REQUIRE(fixture.server->add_impulse(driven, Vec3{100.0f, 0.0f, 0.0f}).has_value());
+    CY_REQUIRE(fixture.server->add_angular_impulse(driven, Vec3{5.0f, 0.0f, 0.0f}).has_value());
+    for (u64 tick = 0; tick < 30; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const auto state = fixture.server->body_state(driven);
+    CY_REQUIRE(state.has_value());
+    CY_CHECK_LT(std::fabs(state->transform.translation.x), 0.6f);
+    CY_CHECK_LT(std::fabs(state->transform.rotation.to_euler_yxz().x), 0.35f);
+}
+
+CY_TEST_CASE("Jolt cone and swing-twist joints enforce their swing limits") {
+    for (const ConstraintType type : {ConstraintType::Cone, ConstraintType::SwingTwist}) {
+        Fixture fixture;
+        const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+        const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{});
+        const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{});
+        ConstraintDescription description;
+        description.type = type;
+        description.body_a = base;
+        description.body_b = driven;
+        description.swing_limit_y = 0.2f;
+        description.swing_limit_z = 0.2f;
+        description.twist_limit = AxisLimit{-0.2f, 0.2f};
+        CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+        CY_REQUIRE(fixture.server->add_angular_impulse(driven, Vec3{0.0f, 5.0f, 0.0f}).has_value());
+        for (u64 tick = 0; tick < 30; ++tick) {
+            CY_REQUIRE(fixture.step(tick).has_value());
+        }
+        const Vec3 twist_axis = fixture.server->body_state(driven)->transform.right();
+        CY_CHECK_GT(twist_axis.x, std::cos(0.4f));
+    }
+}
+
+CY_TEST_CASE("a Jolt swing-twist joint enforces its twist limit") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.box(Vec3{0.2f, 0.2f, 0.2f});
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{});
+    ConstraintDescription description;
+    description.type = ConstraintType::SwingTwist;
+    description.body_a = base;
+    description.body_b = driven;
+    description.swing_limit_y = 0.5f;
+    description.swing_limit_z = 0.5f;
+    description.twist_limit = AxisLimit{-0.2f, 0.2f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    CY_REQUIRE(fixture.server->add_angular_impulse(driven, Vec3{5.0f, 0.0f, 0.0f}).has_value());
+    for (u64 tick = 0; tick < 30; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    CY_CHECK_LT(std::fabs(fixture.server->body_state(driven)->transform.rotation.to_euler_yxz().x),
+                0.35f);
+}
+
+CY_TEST_CASE("Jolt gears couple opposite angular speeds at the configured ratio") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle first = fixture.body(shape, MotionType::Dynamic, Vec3{-1.0f, 1.0f, 0.0f});
+    const BodyHandle second = fixture.body(shape, MotionType::Dynamic, Vec3{1.0f, 1.0f, 0.0f});
+    for (const BodyHandle body : {first, second}) {
+        ConstraintDescription hinge;
+        hinge.type = ConstraintType::Hinge;
+        hinge.body_a = body;
+        hinge.frame_b.translation = fixture.position_of(body);
+        CY_REQUIRE(fixture.server->create_constraint(fixture.world, hinge).has_value());
+    }
+    ConstraintDescription gears;
+    gears.type = ConstraintType::Gear;
+    gears.body_a = first;
+    gears.body_b = second;
+    gears.ratio = 2.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, gears).has_value());
+    CY_REQUIRE(
+        fixture.server->set_body_velocity(first, Vec3{}, Vec3{4.0f, 0.0f, 0.0f}).has_value());
+    for (u64 tick = 0; tick < 5; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const f32 first_speed = fixture.server->body_state(first)->angular_velocity.x;
+    const f32 second_speed = fixture.server->body_state(second)->angular_velocity.x;
+    CY_CHECK_GT(first_speed, 0.1f);
+    CY_CHECK_LT(second_speed, -0.1f);
+    CY_CHECK_NEAR(first_speed + (2.0f * second_speed), 0.0f, 0.2f);
+}
+
+CY_TEST_CASE("Jolt rack and pinion transfers gear rotation into rack travel") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle pinion = fixture.body(shape, MotionType::Dynamic, Vec3{-1.0f, 1.0f, 0.0f});
+    const BodyHandle rack = fixture.body(shape, MotionType::Dynamic, Vec3{1.0f, 1.0f, 0.0f});
+    ConstraintDescription hinge;
+    hinge.type = ConstraintType::Hinge;
+    hinge.body_a = pinion;
+    hinge.frame_b.translation = fixture.position_of(pinion);
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, hinge).has_value());
+    ConstraintDescription slider;
+    slider.type = ConstraintType::Slider;
+    slider.body_a = rack;
+    slider.frame_b.translation = fixture.position_of(rack);
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, slider).has_value());
+    ConstraintDescription coupling;
+    coupling.type = ConstraintType::RackAndPinion;
+    coupling.body_a = pinion;
+    coupling.body_b = rack;
+    coupling.ratio = 2.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, coupling).has_value());
+    CY_REQUIRE(
+        fixture.server->set_body_velocity(pinion, Vec3{}, Vec3{4.0f, 0.0f, 0.0f}).has_value());
+    for (u64 tick = 0; tick < 5; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+    }
+    const f32 spin = fixture.server->body_state(pinion)->angular_velocity.x;
+    const f32 travel = fixture.server->body_state(rack)->linear_velocity.x;
+    CY_CHECK_GT(std::fabs(travel), 0.1f);
+    CY_CHECK_NEAR(std::fabs(spin), 2.0f * std::fabs(travel), 0.2f);
+}
+
+CY_TEST_CASE(
+    "Jolt debug flags emit distinct solver-space shape, sleep, velocity and bounds views") {
+    Fixture fixture;
+    const BodyHandle ball =
+        fixture.body(fixture.sphere(0.5f), MotionType::Dynamic, Vec3{2.0f, 3.0f, 4.0f});
+    DebugCapture capture;
+    CY_REQUIRE(
+        fixture.server->debug_draw(fixture.world, DebugDrawFlags::Colliders, capture).has_value());
+    CY_CHECK_EQ(capture.spheres, 1U);
+    CY_CHECK_EQ(capture.boxes, 0U);
+    CY_CHECK_NEAR(capture.last_sphere_center.x, fixture.position_of(ball).x, 0.001f);
+
+    DebugCapture bounds_capture;
+    CY_REQUIRE(
+        fixture.server->debug_draw(fixture.world, DebugDrawFlags::BroadPhaseBounds, bounds_capture)
+            .has_value());
+    CY_CHECK_EQ(bounds_capture.bounds, 1U);
+    CY_CHECK_EQ(bounds_capture.spheres, 0U);
+
+    DebugCapture state_capture;
+    CY_REQUIRE(fixture.server
+                   ->debug_draw(fixture.world,
+                                DebugDrawFlags::SleepState | DebugDrawFlags::CentersOfMass |
+                                    DebugDrawFlags::Velocities,
+                                state_capture)
+                   .has_value());
+    CY_CHECK_EQ(state_capture.spheres, 2U);
+    CY_CHECK_EQ(state_capture.lines, 2U);
+}
+
+CY_TEST_CASE("Jolt collider debug emits hull and mesh triangles at solver transforms") {
+    Fixture fixture;
+    const Vec3 hull_points[] = {
+        {-0.5f, 0.0f, -0.5f}, {0.5f, 0.0f, -0.5f}, {0.0f, 0.0f, 0.5f}, {0.0f, 1.0f, 0.0f}};
+    ShapeDescription hull;
+    hull.type = ShapeType::ConvexHull;
+    hull.points = hull_points;
+    hull.point_count = 4;
+    const auto hull_shape = fixture.server->create_shape(hull);
+    CY_REQUIRE(hull_shape.has_value());
+    (void)fixture.body(*hull_shape, MotionType::Dynamic, Vec3{2.0f, 3.0f, 0.0f});
+
+    const Vec3 vertices[] = {{-1.0f, 0.0f, -1.0f}, {1.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 1.0f}};
+    const u32 indices[] = {0, 1, 2};
+    ShapeDescription mesh;
+    mesh.type = ShapeType::TriangleMesh;
+    mesh.vertices = vertices;
+    mesh.vertex_count = 3;
+    mesh.indices = indices;
+    mesh.index_count = 3;
+    const auto mesh_shape = fixture.server->create_shape(mesh);
+    CY_REQUIRE(mesh_shape.has_value());
+    (void)fixture.body(*mesh_shape, MotionType::Static, Vec3{0.0f, -1.0f, 0.0f});
+
+    DebugCapture capture;
+    CY_REQUIRE(
+        fixture.server->debug_draw(fixture.world, DebugDrawFlags::Colliders, capture).has_value());
+    CY_CHECK_GT(capture.lines, 3U);
+    CY_CHECK_EQ(capture.boxes, 0U);
+}
+
+CY_TEST_CASE("Jolt contact and sleep debug flags emit solver events and sleep state") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{5.0f, 0.5f, 5.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    (void)fixture.body(fixture.sphere(0.5f), MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    bool saw_contact = false;
+    for (u64 tick = 0; tick < 180; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+        DebugCapture capture;
+        CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::Contacts, capture)
+                       .has_value());
+        saw_contact |= capture.contacts > 0;
+    }
+    CY_CHECK(saw_contact);
+    DebugCapture sleeping;
+    CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::SleepState, sleeping)
+                   .has_value());
+    CY_CHECK_GT(sleeping.asleep_markers, 0U);
+}
+
+CY_TEST_CASE("Jolt constraint debug draws anchors and limit rays") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.type = ConstraintType::Hinge;
+    description.body_a = base;
+    description.body_b = driven;
+    description.limit.min = -0.5f;
+    description.limit.max = 0.5f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    DebugCapture capture;
+    CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::Constraints, capture)
+                   .has_value());
+    CY_CHECK_EQ(capture.spheres, 2U);
+    CY_CHECK_EQ(capture.limits, 2U);
+}
+
+CY_TEST_CASE("Jolt constraint debug covers distance, cone, twist and six-axis limits") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.2f);
+    const BodyHandle base = fixture.body(shape, MotionType::Static, Vec3{0.0f, 0.0f, 0.0f});
+    const BodyHandle driven = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 0.0f, 0.0f});
+    ConstraintDescription description;
+    description.body_a = base;
+    description.body_b = driven;
+    description.type = ConstraintType::Distance;
+    description.min_distance = 0.25f;
+    description.max_distance = 1.0f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    description.type = ConstraintType::Cone;
+    description.swing_limit_y = 0.3f;
+    description.swing_limit_z = 0.4f;
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    description.type = ConstraintType::SwingTwist;
+    description.twist_limit = AxisLimit{-0.2f, 0.2f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    description.type = ConstraintType::SixDof;
+    description.dof_limits[0] = AxisLimit{-1.0f, 1.0f};
+    description.dof_limits[5] = AxisLimit{-0.5f, 0.5f};
+    CY_REQUIRE(fixture.server->create_constraint(fixture.world, description).has_value());
+    DebugCapture capture;
+    CY_REQUIRE(fixture.server->debug_draw(fixture.world, DebugDrawFlags::Constraints, capture)
+                   .has_value());
+    CY_CHECK_EQ(capture.limit_spheres, 2U);
+    CY_CHECK_EQ(capture.limits, 13U);
+}
+
+CY_TEST_CASE("Jolt step statistics measure broad, narrow and solve job costs") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{10.0f, 0.5f, 10.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    const ShapeHandle shape = fixture.sphere(0.5f);
+    for (u32 index = 0; index < 12; ++index) {
+        (void)fixture.body(shape, MotionType::Dynamic,
+                           Vec3{static_cast<f32>(index) * 0.8f, 0.6f, 0.0f});
+    }
+    CY_REQUIRE(fixture.step(1).has_value());
+    const auto stats = fixture.server->statistics(fixture.world);
+    CY_REQUIRE(stats.has_value());
+    CY_CHECK_GT(stats->broad_phase_ns, 0);
+    CY_CHECK_GT(stats->narrow_phase_ns, 0);
+    CY_CHECK_GT(stats->solve_ns, 0);
+    CY_CHECK_GT(stats->total_ns, 0);
+}
+
+CY_TEST_CASE("a dense contact scene exposes narrow-phase cost in step diagnostics") {
+    Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{20.0f, 0.5f, 20.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    const ShapeHandle sphere = fixture.sphere(0.5f);
+    for (u32 x = 0; x < 12; ++x) {
+        for (u32 z = 0; z < 12; ++z) {
+            (void)fixture.body(sphere, MotionType::Dynamic,
+                               Vec3{static_cast<f32>(x) * 0.8f, 0.5f, static_cast<f32>(z) * 0.8f});
+        }
+    }
+    Nanoseconds broad = 0;
+    Nanoseconds narrow = 0;
+    Nanoseconds solve = 0;
+    for (u64 tick = 0; tick < 12; ++tick) {
+        CY_REQUIRE(fixture.step(tick).has_value());
+        const auto stats = fixture.server->statistics(fixture.world);
+        CY_REQUIRE(stats.has_value());
+        broad += stats->broad_phase_ns;
+        narrow += stats->narrow_phase_ns;
+        solve += stats->solve_ns;
+    }
+    CY_CHECK_GT(narrow, broad);
+    CY_CHECK_GT(solve, 0);
+}
+
+CY_TEST_CASE("Jolt island count joins active bodies by constraints and contacts") {
+    Fixture fixture;
+    const ShapeHandle shape = fixture.sphere(0.25f);
+    const BodyHandle a = fixture.body(shape, MotionType::Dynamic, Vec3{-3.0f, 2.0f, 0.0f});
+    const BodyHandle b = fixture.body(shape, MotionType::Dynamic, Vec3{3.0f, 2.0f, 0.0f});
+    CY_REQUIRE(fixture.step(1).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 2U);
+
+    ConstraintDescription description;
+    description.type = ConstraintType::Distance;
+    description.body_a = a;
+    description.body_b = b;
+    description.min_distance = 6.0f;
+    description.max_distance = 6.0f;
+    const auto joint = fixture.server->create_constraint(fixture.world, description);
+    CY_REQUIRE(joint.has_value());
+    CY_REQUIRE(fixture.step(2).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 1U);
+
+    CY_REQUIRE(fixture.server->destroy_constraint(*joint).has_value());
+    CY_REQUIRE(fixture.step(3).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 2U);
+
+    const BodyHandle c = fixture.body(shape, MotionType::Dynamic, Vec3{0.0f, 2.0f, 0.0f});
+    const BodyHandle d = fixture.body(shape, MotionType::Dynamic, Vec3{0.3f, 2.0f, 0.0f});
+    CY_REQUIRE(fixture.step(4).has_value());
+    CY_CHECK_EQ(fixture.server->statistics(fixture.world)->island_count, 3U);
+    (void)c;
+    (void)d;
 }
 
 CY_TEST_CASE("a dynamic body falls onto static geometry and stops on it") {
@@ -379,6 +1254,19 @@ CY_TEST_CASE("two runs of the same scene on Jolt produce identical state hashes"
                                                Vec3{0.2f, static_cast<f32>(index), 0.1f})
                            .has_value());
         }
+        const SoftBodyVertex cloth_vertices[] = {{{-1.0f, 0.0f, -1.0f}, 0.0f},
+                                                 {{1.0f, 0.0f, -1.0f}, 0.0f},
+                                                 {{1.0f, 0.0f, 1.0f}, 0.0f},
+                                                 {{-1.0f, 0.0f, 1.0f}, 0.0f},
+                                                 {{0.0f, 0.0f, 0.0f}, 1.0f}};
+        const u32 cloth_triangles[] = {0, 4, 1, 1, 4, 2, 2, 4, 3, 3, 4, 0};
+        SoftBodyDescription cloth;
+        cloth.transform = Transform::from_translation(Vec3{0.0f, 5.0f, 0.0f});
+        cloth.vertices = cloth_vertices;
+        cloth.vertex_count = 5;
+        cloth.indices = cloth_triangles;
+        cloth.index_count = 12;
+        CY_REQUIRE(fixture.server->create_soft_body(fixture.world, cloth).has_value());
         for (u32 tick = 0; tick < 90; ++tick) {
             CY_REQUIRE(fixture.step(tick).has_value());
             CY_REQUIRE(probe.record(*fixture.server, fixture.world, tick).has_value());

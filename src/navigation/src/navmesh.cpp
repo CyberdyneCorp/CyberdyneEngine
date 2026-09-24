@@ -676,6 +676,10 @@ u32 NavMesh::obstacle_count() const noexcept {
     return count;
 }
 
+const NavObstacleShape* NavMesh::obstacle(ObstacleId id) const noexcept {
+    return id < obstacles_.size() && obstacles_[id].live ? &obstacles_[id].shape : nullptr;
+}
+
 AreaType NavMesh::effective_area(PolyRef ref) const noexcept {
     const NavPoly* found = poly(ref);
     if (found == nullptr) {

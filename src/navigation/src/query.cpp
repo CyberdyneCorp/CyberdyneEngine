@@ -1,9 +1,11 @@
 // Path queries. See cy/navigation/query.h for the argument.
 
 #include <cy/core/memory/hash_map.h>
+#include <cy/navigation/debug.h>
 #include <cy/navigation/query.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace cy::navigation {
@@ -669,8 +671,33 @@ u32 PathQueue::update(u32 tick) noexcept {
         if (entry.state != QueryState::Pending || entry.deliver_tick > tick) {
             continue;
         }
+        const auto started = std::chrono::steady_clock::now();
         entry.result =
             find_path(*mesh_, entry.start, entry.end, entry.extents, entry.filter, entry.corridor);
+        if (metrics_ != nullptr) {
+            f32 path_length = 0.0F;
+            if (entry.result.found && !entry.corridor.empty()) {
+                Vec3 end = entry.end;
+                if (entry.result.partial) {
+                    if (const NavPoly* last =
+                            mesh_->poly(entry.corridor.polys()[entry.corridor.size() - 1]);
+                        last != nullptr) {
+                        end = last->centre;
+                    }
+                }
+                Array<PathPoint> points(mesh_->allocator());
+                if (straighten(*mesh_, entry.corridor, entry.start, end, points)) {
+                    for (usize point = 1; point < points.size(); ++point) {
+                        path_length +=
+                            distance3(points[point - 1].position, points[point].position);
+                    }
+                }
+            }
+            const auto elapsed = std::chrono::steady_clock::now() - started;
+            const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed);
+            metrics_->record_query(static_cast<u64>(nanoseconds.count()), entry.result,
+                                   path_length);
+        }
         entry.state = QueryState::Ready;
         if (!completed_.push_back(static_cast<QueryId>(index))) {
             return count;

@@ -29,6 +29,25 @@ void circle(DebugDrawSink& sink, Vec3 center, Vec3 axis_u, Vec3 axis_v, f32 radi
     }
 }
 
+void draw_query_shape(const ShapeDescription& shape, const Transform& transform,
+                      DebugDrawSink& sink) noexcept {
+    if (shape.type == ShapeType::Sphere) {
+        sink.sphere(transform.translation, shape.radius, DebugColor::QueryShape);
+    } else if (shape.type == ShapeType::Capsule) {
+        sink.capsule(transform, shape.radius, shape.half_height, DebugColor::QueryShape);
+    } else {
+        const Aabb bounds = local_bounds(shape);
+        if (!bounds.is_empty()) {
+            sink.box(bounds, transform, DebugColor::QueryShape);
+        }
+    }
+}
+
+void draw_query_hit(Vec3 position, Vec3 normal, DebugDrawSink& sink) noexcept {
+    sink.sphere(position, 0.035f, DebugColor::QueryResult);
+    sink.line(position, position + normal * 0.2f, DebugColor::QueryResult);
+}
+
 }  // namespace
 
 void DebugDrawSink::box(const Aabb& box, const Transform& transform, DebugColor color) noexcept {
@@ -70,6 +89,41 @@ void DebugDrawSink::contact(Vec3 position, Vec3 normal, f32 penetration) noexcep
     line(position, position + normal * 0.1f, DebugColor::Normal);
     if (penetration > 0.0f) {
         line(position, position - normal * penetration, DebugColor::Contact);
+    }
+}
+
+void debug_draw_query(const RayCastInput& input, const RayCastHit* hit,
+                      DebugDrawSink& sink) noexcept {
+    sink.line(input.origin, input.origin + input.direction * input.max_distance,
+              DebugColor::QueryShape);
+    if (hit != nullptr) {
+        draw_query_hit(hit->position, hit->normal, sink);
+    }
+}
+
+void debug_draw_query(const ShapeCastInput& input, const ShapeDescription& shape,
+                      const ShapeCastHit* hit, DebugDrawSink& sink) noexcept {
+    draw_query_shape(shape, input.start, sink);
+    Transform end = input.start;
+    end.translation += input.direction * input.max_distance;
+    draw_query_shape(shape, end, sink);
+    sink.line(input.start.translation, end.translation, DebugColor::QueryShape);
+    if (hit != nullptr) {
+        draw_query_hit(hit->position, hit->normal, sink);
+    }
+}
+
+void debug_draw_query(const OverlapInput& input, const ShapeDescription& shape,
+                      DebugDrawSink& sink) noexcept {
+    draw_query_shape(shape, input.transform, sink);
+}
+
+void debug_draw_query(const ClosestPointInput& input, const ClosestPoint* hit,
+                      DebugDrawSink& sink) noexcept {
+    sink.sphere(input.point, 0.035f, DebugColor::QueryShape);
+    if (hit != nullptr) {
+        sink.line(input.point, hit->position, DebugColor::QueryResult);
+        draw_query_hit(hit->position, hit->normal, sink);
     }
 }
 

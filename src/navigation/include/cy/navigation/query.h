@@ -34,6 +34,8 @@
 
 namespace cy::navigation {
 
+class NavMetrics;
+
 /// What one agent may traverse and what it prefers. `navigation`'s "area cost multipliers per agent
 /// ... an area mask excluding types entirely ... a maximum search node budget".
 struct PathFilter {
@@ -152,6 +154,8 @@ public:
     PathQueue& operator=(const PathQueue&) = delete;
 
     [[nodiscard]] u32 latency() const noexcept { return latency_; }
+    [[nodiscard]] const NavMesh& mesh() const noexcept { return *mesh_; }
+    void set_metrics(NavMetrics* metrics) noexcept { metrics_ = metrics; }
 
     /// Enqueue. `owner` is the caller's own identifier, returned with the result so a batch of
     /// completions can be applied without a second table.
@@ -193,6 +197,7 @@ private:
     Array<Entry> entries_;
     Array<QueryId> completed_;
     u32 latency_ = 1;
+    NavMetrics* metrics_ = nullptr;
 };
 
 }  // namespace cy::navigation

@@ -35,10 +35,44 @@ still runs.
 | Tiles, polygons, adjacency, obstacles, off-mesh links | `navmesh.h` |
 | Generation from source geometry, and the Recast boundary | `build.h` |
 | A\*, the funnel, simplification, corner rounding, the async queue | `query.h` |
+| Chunk-local tilemap polygons and planar path queries | `navigation2d.h` |
+| Sparse-voxel 3D paths and surface/volume query dispatch | `volume.h` |
+| Renderer-neutral debug overlays and aggregate diagnostics | `debug.h` |
 | Regions, the abstract graph, deferred refinement | `hierarchy.h` |
 | Flow fields and the cache that shares them | `flow_field.h` |
 | Local avoidance, the crowd, path and field following | `crowd.h` |
 | `NavMeshSurface`, `NavAgent`, `NavObstacle`, `NavLink`, `NavArea` | `components.h` |
+
+`NavWorlds` binds each navigation world ID to a mesh and its deterministic query queue. An agent
+is updated only by the binding matching `NavAgent::world`; obstacles and links are authored with the
+same world ID and must be published to that world's mesh. The default `update_agents` overload
+continues to update only world zero. Bindings are non-owning, so remove a binding before destroying
+its mesh or queue.
+
+A world may bind both a surface mesh and a sparse `NavVolume` under one ID. `NavAgent::representation`
+selects the corresponding queue; volume cells are six-connected, can carry area/cost data, and
+may be added or removed independently. `NavigationSpace` gives both representations the same
+`PathFilter`/`PathResult` and `Vec3` point-path query. `SpatialPathQueue` schedules either source
+for deterministic delivery on `submit_tick + latency`; it preserves submission order within that
+tick. A blocked volume destination returns a partial path ending on reachable space rather than
+silently snapping through the blockage. The volume uses a sparse hash map of occupied cells, so
+only navigable air/water/space consumes cell storage.
+
+`NavMesh2D` accepts the navigation polygons authored for each tilemap cell and publishes one mesh
+tile per chunk. Rebuilding a changed chunk leaves other chunks' polygon references valid; empty
+chunks remove only their own tile. Its path query takes and returns `Vec2` coordinates. Polygons
+must fit within a cell, be convex and consistently wound, and use the same units as `cell_size`.
+For 2D collision geometry, `rebuild_chunk_from_collision` voxelises convex world-space collision
+footprints into the same chunk grid and conservatively excludes every overlapping cell. Its
+resolution is `cell_size`, so narrow passages need a correspondingly small cell size.
+
+`draw_navigation_mesh`, `draw_navigation_path`, and `draw_navigation_agents` emit into a
+renderer-neutral `NavDebugSink`. Flags select polygon areas, tile boundaries, adjacency, links,
+obstacle footprints, corridors, paths, avoidance velocities and neighbour sets independently.
+`NavMetrics` can be attached to `PathQueue`, `SpatialPathQueue`, and `NavWorlds` to collect query
+counts, elapsed time, path length and repath rate. Passing it to `build_tile` additionally records
+voxelisation time per tile. These timing measurements are diagnostic wall time and must never feed
+deterministic path or simulation decisions.
 
 ## Four properties the whole module is shaped by
 

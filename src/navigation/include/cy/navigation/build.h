@@ -61,6 +61,8 @@
 
 namespace cy::navigation {
 
+class NavMetrics;
+
 /// Which implementation extracts the walkable polygons. See the header.
 enum class NavBuildBackend : u8 {
     /// Recast when this build has it, the engine's own rasteriser when it does not.
@@ -124,6 +126,8 @@ struct NavBuildReport {
     u32 spans = 0;               ///< walkable voxel columns after erosion
     u32 polys = 0;
     u32 vertices = 0;
+    /// Wall time spent on this tile generation attempt, in nanoseconds. Diagnostic only.
+    u64 duration_ns = 0;
     /// Which back end actually ran. Never `Automatic`, so a cook records what produced a tile
     /// rather than what it asked for.
     NavBuildBackend backend = NavBuildBackend::Engine;
@@ -142,6 +146,7 @@ struct NavBuildReport {
                                                       const NavBuildParams& params,
                                                       const NavSourceGeometry& geometry,
                                                       TileCoord coord, const Aabb& bounds,
-                                                      NavBuildReport& report) noexcept;
+                                                      NavBuildReport& report,
+                                                      NavMetrics* metrics = nullptr) noexcept;
 
 }  // namespace cy::navigation

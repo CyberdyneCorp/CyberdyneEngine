@@ -2,6 +2,7 @@
 
 #include <cy/core/memory/system_allocator.h>
 #include <cy/navigation/components.h>
+#include <cy/navigation/debug.h>
 #include <cy/test/test.h>
 
 #include "nav_fixture.h"
@@ -83,6 +84,101 @@ CY_TEST_CASE("a pass over agents issues one query each and rate-limits the next"
     // Every agent is Computing, so a second pass issues nothing at all.
     CY_REQUIRE(update_agents(world, *ids, mesh, queue, 11, 30, report).has_value());
     CY_CHECK_EQ(report.repaths_issued, 0U);
+}
+
+CY_TEST_CASE("overlapping navigation worlds route agents and obstacles only to their own mesh") {
+    ecs::World world(allocator(), config());
+    start(world);
+    const Expected<NavComponents, Error> ids = NavComponents::register_all(world);
+    CY_REQUIRE(ids.has_value());
+
+    NavMesh walking = testing::single_tile_mesh(allocator(), 16.0F, 8);
+    NavMesh flying = testing::single_tile_mesh(allocator(), 16.0F, 8);
+    PathQueue walk_queue(allocator(), walking, 1);
+    PathQueue fly_queue(allocator(), flying, 1);
+    NavWorlds worlds(allocator());
+    CY_REQUIRE(worlds.bind(1, walking, walk_queue).has_value());
+    CY_REQUIRE(worlds.bind(2, flying, fly_queue).has_value());
+    CY_CHECK_EQ(worlds.size(), usize{2});
+    CY_CHECK_FALSE(worlds.bind(3, walking, fly_queue).has_value());
+    CY_CHECK_FALSE(worlds.bind(1, walking, walk_queue).has_value());
+
+    const Entity walker =
+        spawn_agent(world, *ids, Vec3{1.0F, 0.0F, 1.0F}, Vec3{14.0F, 0.0F, 14.0F});
+    const Entity flyer = spawn_agent(world, *ids, Vec3{1.0F, 0.0F, 1.0F}, Vec3{14.0F, 0.0F, 14.0F});
+    NavAgent walk_agent = *world.get<NavAgent>(walker, ids->agent);
+    NavAgent fly_agent = *world.get<NavAgent>(flyer, ids->agent);
+    walk_agent.world = 1;
+    fly_agent.world = 2;
+    CY_REQUIRE(world.set(walker, ids->agent, walk_agent).has_value());
+    CY_REQUIRE(world.set(flyer, ids->agent, fly_agent).has_value());
+
+    NavObstacleShape obstacle;
+    obstacle.centre = Vec3{8.0F, 0.0F, 8.0F};
+    obstacle.radius = 24.0F;
+    obstacle.height = 2.0F;
+    const auto obstacle_id = worlds.add_obstacle(1, obstacle);
+    CY_REQUIRE(obstacle_id.has_value());
+    CY_CHECK_FALSE(worlds.add_obstacle(3, obstacle).has_value());
+    CY_CHECK_EQ(worlds.mesh(1)->obstacle_count(), 1U);
+    CY_CHECK_EQ(worlds.mesh(2)->obstacle_count(), 0U);
+
+    NavAgentReport report;
+    CY_REQUIRE(worlds.update(world, *ids, 10, 1, report).has_value());
+    CY_CHECK_EQ(report.agents, 2U);
+    CY_CHECK_EQ(walk_queue.pending(), 0U);
+    CY_CHECK_EQ(fly_queue.pending(), 1U);
+    CY_CHECK_EQ(world.get<NavAgent>(walker, ids->agent)->status, NavPathStatus::Failed);
+    CY_CHECK_EQ(world.get<NavAgent>(flyer, ids->agent)->status, NavPathStatus::Computing);
+
+    CY_REQUIRE(worlds.remove_obstacle(1, *obstacle_id).has_value());
+    CY_CHECK_EQ(worlds.mesh(1)->obstacle_count(), 0U);
+
+    CY_REQUIRE(worlds.unbind(1).has_value());
+    CY_CHECK_EQ(worlds.size(), usize{1});
+    CY_CHECK(worlds.mesh(1) == nullptr);
+    CY_CHECK(worlds.mesh(2) == &flying);
+}
+
+CY_TEST_CASE("walking and flying agents in one world select separate path representations") {
+    ecs::World world(allocator(), config());
+    start(world);
+    const Expected<NavComponents, Error> ids = NavComponents::register_all(world);
+    CY_REQUIRE(ids.has_value());
+
+    NavMesh mesh = testing::single_tile_mesh(allocator());
+    PathQueue surface_queue(allocator(), mesh, 1);
+    NavVolume volume(allocator(), 1.0F);
+    for (i32 x = 0; x < 5; ++x) {
+        CY_REQUIRE(volume.set_cell({x, 1, 0}).has_value());
+    }
+    SpatialPathQueue volume_queue(allocator(), NavigationSpace(volume), 1);
+    NavWorlds worlds(allocator());
+    NavMetrics metrics;
+    worlds.set_metrics(&metrics);
+    CY_REQUIRE(worlds.bind(7, mesh, surface_queue).has_value());
+    CY_REQUIRE(worlds.bind_volume(7, volume, volume_queue).has_value());
+
+    const Entity walker = spawn_agent(world, *ids, Vec3{0.5F, 0.0F, 0.5F}, Vec3{7.5F, 0.0F, 7.5F});
+    const Entity flyer =
+        spawn_agent(world, *ids, volume.center({0, 1, 0}), volume.center({4, 1, 0}));
+    NavAgent walking = *world.get<NavAgent>(walker, ids->agent);
+    walking.world = 7;
+    CY_REQUIRE(world.set(walker, ids->agent, walking).has_value());
+    NavAgent flying = *world.get<NavAgent>(flyer, ids->agent);
+    flying.world = 7;
+    flying.representation = NavigationRepresentation::Volume;
+    CY_REQUIRE(world.set(flyer, ids->agent, flying).has_value());
+
+    NavAgentReport report;
+    CY_REQUIRE(worlds.update(world, *ids, 10, 2, report).has_value());
+    CY_CHECK_EQ(report.agents, 2U);
+    CY_CHECK_EQ(report.repaths_issued, 2U);
+    CY_CHECK_EQ(surface_queue.pending(), 1U);
+    CY_CHECK_EQ(volume_queue.pending(), 1U);
+    CY_CHECK_EQ(worlds.size(), usize{2});
+    CY_CHECK_EQ(metrics.snapshot().agent_passes, 1U);
+    CY_CHECK_EQ(metrics.snapshot().repaths, 2U);
 }
 
 CY_TEST_CASE("an agent already at its target arrives and raises its event") {

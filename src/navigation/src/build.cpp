@@ -3,8 +3,10 @@
 
 #include <cy/core/base/assert.h>
 #include <cy/navigation/build.h>
+#include <cy/navigation/debug.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <numbers>
 
@@ -569,8 +571,23 @@ bool recast_available() noexcept {
 
 Expected<NavTileData, Error> build_tile(Allocator& allocator, const NavBuildParams& params,
                                         const NavSourceGeometry& geometry, TileCoord coord,
-                                        const Aabb& bounds, NavBuildReport& report) noexcept {
+                                        const Aabb& bounds, NavBuildReport& report,
+                                        NavMetrics* metrics) noexcept {
     report = NavBuildReport{};
+    struct Timer {
+        NavBuildReport& report;
+        NavMetrics* metrics = nullptr;
+        std::chrono::steady_clock::time_point started;
+
+        ~Timer() {
+            const auto elapsed = std::chrono::steady_clock::now() - started;
+            report.duration_ns = static_cast<u64>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+            if (metrics != nullptr) {
+                metrics->record_tile_rebuild(report.duration_ns);
+            }
+        }
+    } timer{report, metrics, std::chrono::steady_clock::now()};
     u32 width = 0;
     u32 depth = 0;
     if (Status checked = validate(params, bounds, width, depth); !checked) {
