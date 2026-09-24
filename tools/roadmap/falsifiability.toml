@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 256 proven, 422 not yet shown able to fail.
+# 258 proven, 420 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -462,10 +462,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-budget (ex
 [[proof]]
 ledger = "m11a"
 criterion = "world-budget-on-a-device"
-digest = "394ac08e6a878ace"
+digest = "7a578c001e5e4be0"
 verdict = "proven against a built tree"
 mutation = "rename-token '--budget-ms' in samples/10-world/main.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-world (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 2: error: Recipe `run-sample` failed with exit code 2), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -1765,6 +1765,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8b"
+criterion = "feature-options-off"
+digest = "c0d5405ab1328930"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'if(CY_ANIMATION)' in src/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: off-navigation   FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m8b"
 criterion = "layering"
 digest = "4a0b109ec0277529"
 verdict = "proven"
@@ -1914,6 +1922,14 @@ digest = "1167d17707af1880"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/vfx-budget-degraded.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8c"
+criterion = "steam-audio-configures"
+digest = "43bcddd750d48cb5"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/m11c-final (exit 1): ==> on-steam-audio   build/ledger-matrix/on-steam-audio  (dev, -D CY_AUDIO_STEAM_AUDIO=ON) … on-steam-audio   FAILED (exit 1)"
 
 [[proof]]
 ledger = "m8c"
@@ -2137,7 +2153,7 @@ criterion = "test"
 digest = "d5d5e3c6e896c520"
 verdict = "no mutation"
 mutation = "-"
-detail = "it PASSES against the build tree build/m11c-world, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
+detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m0"
@@ -3655,9 +3671,9 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 ledger = "m5"
 criterion = "editor"
 digest = "1b4959c1f0214126"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just build'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5"
@@ -3887,9 +3903,9 @@ detail = "it needs a built tree ('cargo'); the sandbox is source only"
 ledger = "m5b"
 criterion = "viewport-transport"
 digest = "d4f89da9026a36ee"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: the transport imports a dma-buf with an explicit DRM format modifier and waits on an exported timeline semaphore; there is no software path and a machine with no device cannot judge it — CI job 'milestone-m5b'"
+detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m5b"
@@ -4693,14 +4709,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
-criterion = "feature-options-off"
-digest = "4a4f4a83f1188101"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8b"
 criterion = "format"
 digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
@@ -5125,14 +5133,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m8c"
-criterion = "steam-audio-configures"
-digest = "ece015151e6454cc"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8c"
 criterion = "vfx-compiler"
 digest = "b17f6db706a0e5fa"
 verdict = "not provable here"
@@ -5177,7 +5177,7 @@ criterion = "determinism-core"
 digest = "b2c75eead635f87f"
 verdict = "no mutation"
 mutation = "-"
-detail = "it PASSES against the build tree build/m11c-world, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
+detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m9"
