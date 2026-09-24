@@ -171,9 +171,25 @@ id = "four-profiles"
 describe = "all four profiles build clean and just test-all is green in each, on every desktop platform"
 source = "tasks"
 kind = "command"
-run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+run = '''
+python3 tools/roadmap/matrix.py build debug-default dev-default profile-default release-default || exit 1
+for p in debug dev profile release; do
+    d="$(python3 tools/roadmap/matrix.py path "$p-default")"
+    CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+done
+'''
 timeout_s = 28800
 ci_job = "profiles"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "samples/07-fidelity/frame.cpp"
+token  = "const volatile f32 fov_y = kShotFovY;"
+note   = "deleting the run-time read of the shot's field of view (the line that made render.virtual_geometry_shaded agree across profiles in M11.c) leaves `shot_world_to_clip` naming an undeclared variable, so every profile's build fails and the matrix build exits red before the loop starts. Every mutation verb subtracts, so none can reproduce the release-only fold on its own: a subtraction that still compiles in this file changes every profile alike. The mutation therefore shows the criterion's exit code carries a per-profile build failure; the release-only class itself is held by unit.fidelity_shot_projection, which this criterion runs in all four profiles."
 
 # --- Section 1: the two backends, moved here from M11.d sections 2 and 3 --------------------------
 #

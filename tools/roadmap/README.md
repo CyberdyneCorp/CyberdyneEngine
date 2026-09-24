@@ -24,7 +24,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `requirements.py` | Every requirement of a capability row against the test, gate or recorded exemption that answers it. `just quality-requirements <row>…`. |
 | `requirements-coverage.toml` | Hand-written. The map `requirements.py` reads; every entry is resolved against the tree, so a renamed suite turns the row red. |
 | `schedule.py` | What each criterion HOLDS while it runs — a build tree, Cargo, the device, a port — and the scheduler that therefore runs independent ones at the same time. A criterion whose needs it cannot read runs alone. |
-| `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Eleven option sets between seven criteria. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
+| `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Thirteen configurations between eight criteria, `m1:four-profiles` among them. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
 | `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
@@ -525,8 +525,12 @@ The compiling was never the cost. These three were:
 ```
 $ python3 tools/roadmap/matrix.py list
 dev-default      dev    no -D at all                 needed by m9:networking-defaults-on,
-                                                               m9:multiplayer-profiles-agree
-debug-default    debug  no -D at all                 needed by m9:multiplayer-profiles-agree
+                                                               m9:multiplayer-profiles-agree,
+                                                               m1:four-profiles …
+debug-default    debug  no -D at all                 needed by m9:multiplayer-profiles-agree,
+                                                               m1:four-profiles …
+profile-default  profile no -D at all                needed by m1:four-profiles …
+release-default  release no -D at all                needed by m1:four-profiles …
 off-vfx          dev    -D CY_VFX=OFF                needed by m8c:feature-options-off
 off-vulkan       dev    -D CY_RENDERER_VULKAN=OFF …  needed by m8c:feature-options-off
 off-ml           dev    -D CY_ML=OFF                 needed by m8c:ml-option-off
@@ -541,11 +545,16 @@ and `m8c:steam-audio-configures` (row `on-steam-audio`). Each still checks what 
 Each declares its rows in `needs`, and `tools/ci/test_recipes.py` fails when a criterion builds a row
 it does not declare or a row does not name a criterion that builds it.
 
-**`m1:four-profiles` has not joined it, though it could share**: its dev and debug profiles are the
-same configurations as `dev-default` and `debug-default`. It is declared with a byte-identical body
-by eighteen ledgers, and the flattened ledger evaluates it once only because the bodies are identical
-(`selftest.py`, "`four-profiles` is declared by several ledgers and evaluated once"). Changing one
-declaration makes the ladder run it twice. It moves when all eighteen are rewritten in one change.
+**`m1:four-profiles` joined after M11.c's sixth close**, where it cost 1,187.9 s for one profile
+and stopped there, because its four trees lived under `${CY_BUILD_DIR}/<profile>` and had been
+reaped. Its dev and debug profiles ARE `dev-default` and `debug-default`; `profile-default` and
+`release-default` are the two rows it added. The matrix builds the four at once, then the criterion
+builds the editor and runs `just test-all` in each tree exactly as it did, stopping at the first
+red. It is declared with a byte-identical body by nineteen ledgers, and the flattened ledger
+evaluates it once only because the bodies are identical (`selftest.py`, "`four-profiles` is declared
+by several ledgers and evaluated once"), so all nineteen were rewritten in one change; `selftest.py`
+now also holds that the body names the four rows and no tree of its own, and `matrix.py` names every
+ledger's copy in `needed_by` because `tools/ci/test_recipes.py` checks that ledger by ledger.
 
 **The matrix is kept by `just build-reap`**, by name and by the `.cy-keep` marker `matrix.py` writes
 at its root; `just roadmap-milestone` marks its own `CY_BUILD_DIR` the same way. It was a reap of

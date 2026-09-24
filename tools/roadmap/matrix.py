@@ -9,11 +9,14 @@ and `m8c:steam-audio-configures` under `${CY_BUILD_DIR}/steam-audio` — five tr
 every run with a new `CY_BUILD_DIR` and that a reaper could remove between two closes. They are
 rows here now.
 
-`m1:four-profiles` IS NOT, YET, and not because it cannot share: its dev and debug profiles are the
-very configurations `dev-default` and `debug-default` already are. It is declared, byte for byte,
-by eighteen ledgers (m1 through m11e), and the flattened ledger evaluates it ONCE only because those
-eighteen bodies are identical — `selftest.py` holds that. Moving one declaration makes the ladder run
-it twice, which is slower, not faster. It moves when all eighteen move in one change.
+`m1:four-profiles` JOINED AFTER M11.c's SIXTH CLOSE, where it cost 1,187.9 s for ONE profile and
+stopped there: its four trees lived under `${CY_BUILD_DIR}/<profile>`, so every close with a new
+`CY_BUILD_DIR`, and every close after a reap, built all four from empty. Its dev and debug profiles
+are the very configurations `dev-default` and `debug-default` already are; `profile-default` and
+`release-default` are the two rows it added. It is declared, byte for byte, by nineteen ledgers (m1
+through m11e), and the flattened ledger evaluates it ONCE only because those nineteen bodies are
+identical — `selftest.py` holds that — which is why all nineteen moved in one change: moving one
+declaration would have made the ladder run it twice, which is slower, not faster.
 
 FIVE CRITERIA WERE THE MOST EXPENSIVE THING ON THE LADDER. `m8c:feature-options-off`,
 `m8c:ml-option-off`, `m9:networking-defaults-on`, `m9:networking-option-off` and
@@ -71,6 +74,7 @@ import argparse
 import os
 import subprocess
 import sys
+import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -133,6 +137,14 @@ class Configuration:
         return " ".join(f"-D {option}" for option in self.options) or "no -D at all"
 
 
+#: Every ledger that declares `four-profiles`, in ladder order. The flattened ledger collapses the
+#: nineteen declarations into one evaluation, reported as `m1:four-profiles`, but each ledger's own
+#: copy names the four `<profile>-default` rows, so each is a user of them — and
+#: tools/ci/test_recipes.py holds `needed_by` to that, ledger by ledger.
+FOUR_PROFILES_LEDGERS = ("m1", "m2", "m3", "m4", "m5", "m5b", "m6", "m7", "m8a", "m8b", "m8c", "m9",
+                         "m10", "m11a", "m11b", "m11c", "m11d", "m11d5", "m11e")
+FOUR_PROFILES = tuple(f"{ledger}:four-profiles" for ledger in FOUR_PROFILES_LEDGERS)
+
 #: THE MATRIX. One row per distinct configuration; a row is shared by every criterion in `needed_by`.
 #:
 #: Adding a criterion that needs an option set already here costs nothing — it names the row and the
@@ -145,21 +157,42 @@ CONFIGURATIONS: tuple[Configuration, ...] = (
         options=(),
         fresh_cache=True,
         why="the tree as a configure with no `-D` at all leaves it: the defaults CMake computes, "
-            "which is what `networking-defaults-on` reads out of the cache, and the Development "
-            "half of the two builds `multiplayer-profiles-agree` compares. THE CACHE IS DELETED "
-            "FIRST and the object files are not: an option's default can only be observed where "
-            "nothing is remembered, and no object file remembers anything about it. Deleting the "
-            "tree — which is what this criterion did until the matrix — answers the same question "
-            "and pays a full compile of the engine for it every evaluation.",
-        needed_by=("m9:networking-defaults-on", "m9:multiplayer-profiles-agree"),
+            "which is what `networking-defaults-on` reads out of the cache, the Development "
+            "half of the two builds `multiplayer-profiles-agree` compares, and the dev profile "
+            "`four-profiles` builds the editor in and runs `just test-all` in. THE CACHE IS "
+            "DELETED FIRST and the object files are not: an option's default can only be observed "
+            "where nothing is remembered, and no object file remembers anything about it. Deleting "
+            "the tree — which is what this criterion did until the matrix — answers the same "
+            "question and pays a full compile of the engine for it every evaluation.",
+        needed_by=("m9:networking-defaults-on", "m9:multiplayer-profiles-agree", *FOUR_PROFILES),
     ),
     Configuration(
         id="debug-default",
         profile="debug",
         options=(),
         why="the same tree at -O0 with CY_UNOPTIMISED, which is the other half of the pair "
-            "`multiplayer-profiles-agree` requires to produce identical bytes.",
-        needed_by=("m9:multiplayer-profiles-agree",),
+            "`multiplayer-profiles-agree` requires to produce identical bytes, and the debug "
+            "profile `four-profiles` tests in.",
+        needed_by=("m9:multiplayer-profiles-agree", *FOUR_PROFILES),
+    ),
+    Configuration(
+        id="profile-default",
+        profile="profile",
+        options=(),
+        why="the Profile configuration with no `-D`: -O2 -g with NDEBUG, so CY_ASSERT is compiled "
+            "out and the symbols stay (cmake/profiles.cmake). `four-profiles` is the one criterion "
+            "that builds and tests it, and until it joined the matrix this tree was built from "
+            "empty on every close that changed CY_BUILD_DIR.",
+        needed_by=FOUR_PROFILES,
+    ),
+    Configuration(
+        id="release-default",
+        profile="release",
+        options=(),
+        why="the Shipping configuration with no `-D`: -O3 with NDEBUG and link-time optimisation, "
+            "the one configuration that pays for LTO. M0's gate found a failure only because it "
+            "looked outside dev, which is what `four-profiles` exists to keep doing.",
+        needed_by=FOUR_PROFILES,
     ),
     Configuration(
         id="off-vfx",
@@ -367,11 +400,15 @@ def command_path(arguments: argparse.Namespace) -> int:
 
 def command_list(arguments: argparse.Namespace) -> int:
     print(f"the ledger's build matrix — {len(CONFIGURATIONS)} configurations under {root()}")
+    indent = " " * 19
     for entry in CONFIGURATIONS:
         print()
         print(f"  {entry.id:<16} {entry.profile:<6} {entry.described}")
         print(f"  {'':<16} {entry.why}")
-        print(f"  {'':<16} needed by: {', '.join(entry.needed_by)}")
+        # Wrapped, because the `<profile>-default` rows are needed by every ledger on the ladder.
+        print(textwrap.fill(f"needed by: {', '.join(entry.needed_by)}", width=100,
+                            initial_indent=indent, subsequent_indent=indent + " " * 11,
+                            break_on_hyphens=False))
     return 0
 
 
