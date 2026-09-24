@@ -2229,6 +2229,9 @@ def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = Fals
         if proof.verdict in PROOF_VERDICTS:
             inventory.proofs[key] = proof
             inventory.unproven.pop(key, None)
+            for label in _carry_to_identical_declarations(inventory, proof):
+                print(f"  {label}: recorded as {proof.ledger}:{proof.criterion} — the same check, "
+                      "byte for byte")
             continue
         # A BUILD-BACKED PROOF SURVIVES A SOURCE-ONLY RE-RECORD for the same reason `reconcile` does
         # not flag it: this run had no build and did not judge it. It is re-earned, or contradicted,
@@ -2272,6 +2275,42 @@ def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = Fals
         _forget_deleted(inventory)
     write_inventory(inventory)
     return []
+
+
+def _carry_to_identical_declarations(inventory: Inventory, proof: Proof) -> list[str]:
+    """Record `proof` for every other ledger's declaration of the same criterion, when it is the
+    same check byte for byte. Returns the labels it wrote.
+
+    ONE CHECK, ONE PROOF. `four-profiles` is declared by nineteen ledgers with one body, and the
+    flattened ledger evaluates it once because `criteria.fingerprint` says the nineteen are one
+    check. The digest says the same, more strictly — kind, command, artefact, expected tiers and the
+    declared mutation — and a proof is a proof of what the digest names, not of the ledger that
+    names it: the mutation that turned `m1:four-profiles` red turned the very command `m2` declares
+    red, because it is the same command. Proving it nineteen times would be nineteen runs of a
+    forty-minute criterion to learn one fact, and until M11.c's sixth close the eighteen copies sat
+    on the unproven list instead, `not provable here`, while the one with a declared mutation was
+    proven — which was the list saying something false about eighteen checks it had watched go red.
+
+    THE RATCHET IS NOT LOOSENED. A proof carries only to a declaration with the SAME id and the SAME
+    digest, so the moment one ledger's copy is edited its digest moves, `reconcile` flags it, and it
+    owes a proof of its own. Nothing here writes an unproven entry, and nothing is carried from an
+    unproven one.
+    """
+    carried: list[str] = []
+    for identifier in criteria_module.available():
+        if identifier == proof.ledger:
+            continue
+        for criterion in criteria_module.load(identifier).criteria:
+            if criterion.id != proof.criterion or digest(criterion) != proof.digest:
+                continue
+            key = (identifier, criterion.id)
+            inventory.proofs[key] = Proof(
+                identifier, criterion.id, proof.digest, proof.verdict, proof.mutation,
+                f"as {proof.ledger}:{proof.criterion}, the same check byte for byte: "
+                f"{proof.detail}", proof.seconds)
+            inventory.unproven.pop(key, None)
+            carried.append(f"{identifier}:{criterion.id}")
+    return carried
 
 
 def _forget_deleted(inventory: Inventory) -> None:

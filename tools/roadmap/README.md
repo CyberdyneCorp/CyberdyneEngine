@@ -321,6 +321,15 @@ When an existing `red in the tree` criterion changes, a declared gap that still 
 sandbox and repository can refresh that proof's digest. This preserves only the observed claim that
 the criterion goes red; it does not claim the missing work can already be completed.
 
+**One check, one proof.** A proof `--record` writes for one ledger's declaration is written for
+every other ledger's declaration of the same criterion id with the **same digest** — the same
+command, artefact, expected tiers and declared mutation, byte for byte — and recorded `as
+m1:four-profiles, the same check byte for byte`. `four-profiles` is declared by nineteen ledgers
+with one body and evaluated once (`criteria.fingerprint`); the mutation that turned one copy red
+turned the command every copy runs red, so the other eighteen are proven by it rather than sitting
+on the unproven list as `not provable here`. It carries no further than that: edit one copy and its
+digest moves, `just roadmap-test` flags it, and it owes a proof of its own.
+
 ## A gap a milestone ships knowingly
 
 A criterion may carry two more fields, and they go together:

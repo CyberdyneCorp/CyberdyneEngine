@@ -1946,6 +1946,39 @@ def test_falsifiability_of_a_declared_gap(root: Path) -> None:
     refused = falsify_module._record([none], ("m0",))
     check("but a declared gap nothing has judged is still REFUSED a place on the ladder",
           len(refused) == 1 and "has not been shown able to fail" in refused[0], refused)
+
+    # ONE CHECK, ONE PROOF — M11.c's sixth close. `four-profiles` is declared by nineteen ledgers
+    # with one body and evaluated once; a proof taken for one ledger's copy is written for every
+    # other copy with the SAME digest, and for nothing else. Three ledgers declare `twice`: m0's is
+    # proven, m1's is the same check byte for byte and sits on the unproven list, m2's has an edited
+    # body. The proof carries to m1 and leaves m2 exactly where it was.
+    same = gap("twice", mutate="rename-token", target="docs/gap-fixture.txt", token="refuse")
+    edited = gap("twice", run="! grep -q refused docs/gap-fixture.txt",
+                 mutate="rename-token", target="docs/gap-fixture.txt", token="refuse")
+    proven = falsify_module.Proof("m0", "twice", falsify_module.digest(same), falsify_module.PROVEN,
+                                  "rename-token 'refuse' in docs/gap-fixture.txt (declared)",
+                                  "RED unmutated and GREEN under the mutation")
+    waiting = falsify_module.Proof("m1", "twice", falsify_module.digest(same),
+                                   falsify_module.UNPROVABLE, "-", "it needs a built tree")
+    inventory = falsify_module.Inventory(proofs={}, unproven={("m1", "twice"): waiting})
+    ledgers = {"m0": SimpleNamespace(criteria=[same]), "m1": SimpleNamespace(criteria=[same]),
+               "m2": SimpleNamespace(criteria=[edited])}
+    criteria_in = falsify_module.criteria_module
+    with patch.object(falsify_module, "read_inventory", return_value=inventory), \
+            patch.object(criteria_in, "available", return_value=tuple(ledgers)), \
+            patch.object(criteria_in, "load", side_effect=ledgers.__getitem__), \
+            patch.object(falsify_module, "write_inventory"), \
+            contextlib.redirect_stdout(io.StringIO()):
+        refused = falsify_module._record([proven], ("m0",))
+    carried = inventory.proofs.get(("m1", "twice"))
+    check("a proof carries to another ledger's declaration of the SAME check, byte for byte",
+          not refused and carried is not None and carried.verdict == falsify_module.PROVEN
+          and carried.digest == proven.digest and "as m0:twice" in carried.detail
+          and ("m1", "twice") not in inventory.unproven,
+          f"refused={refused} carried={carried} unproven={list(inventory.unproven)}")
+    check("and not to a declaration whose check has been edited, which owes a proof of its own",
+          ("m2", "twice") not in inventory.proofs and ("m2", "twice") not in inventory.unproven,
+          str(sorted(inventory.proofs)))
     target.unlink(missing_ok=True)
 
 
