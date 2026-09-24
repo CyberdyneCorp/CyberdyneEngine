@@ -3080,3 +3080,95 @@ and `ROADMAP.md` are unchanged. Gate items 9.1 and 9.2 stay unticked. What would
 accept them as they are and write that down, or fix them. For the stall detector, fixing means
 limiting the allowance to waits the case did not cause. For the world budget, it means a margin
 that holds under load, or a criterion that states the quiet host it assumes.
+
+### THE CLOSE, SIXTH ATTEMPT — ONE COMPLETE LEDGER RUN AT `4a1ad21`, AND M11.c DOES NOT CLOSE
+
+**Before the run, the close was already barred.** The gate that followed the fix phase REFUTED item
+(A): the stall allowance at `4a1ad21` is min(D, the rise in PSI io "some" minus the calling
+thread's own share). That share is the only thing subtracted, so the case's other threads and its
+own child processes count as "the host". The gate's probe showed a case blocking only itself still
+passing as `contended`. Under the owner's rule (A), a criterion that goes green through that
+allowance is not honestly green. So this run was taken to measure, not to close over.
+
+**Run**: `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, alone on the host,
+00:38:22 to 05:05:37 (**4 h 27 m**, 16,035 s). HEAD was `4a1ad21` before and after, and the tree
+was clean before and after. **`M11C is not closed: 2 of 442 evaluated criteria failed.`**
+
+| bucket | count |
+|---|---|
+| declared | **447** |
+| evaluated on this host | **442** (420 ok, 22 failed) |
+| FAIL (not a declared gap) | **2**: `m1:four-profiles`, `m11c:roadmap-tiers` |
+| declared gaps, still open (do not block) | **20** |
+| declared gaps that now pass (these block) | **0** |
+| NOT EVALUATED, legitimately | **5**, the same five as the fourth and fifth closes |
+
+**What the run cost, and what it did to the host (item C):**
+
+- **ccache did almost nothing this run: 643 hits in 23,470 cacheable calls (2.7%).** The rest were
+  22,827 misses and 8,881 uncacheable calls. From `ccache --dir ~/.cache/cyberdyne-ccache -s`
+  before and after, the store grew from 3.0 to 8.1 GiB. The run was not warm: this was the first
+  ledger since `c7ff54b` added the launcher, a new launcher changes every compile command, and so
+  Ninja rebuilt every object in every tree, `build/m11c-final/*` included, with a store that held
+  almost none of them. The 4 h 27 m is therefore a from-empty cost, beside 7 h 28 m at the fifth
+  close. The two runs are not comparable, because `m1:four-profiles` stopped at debug here and ran
+  all four profiles there. A warm run's hit rate has not been measured. The next ledger on this
+  host is the first that can show it.
+- **The machine-wide cap held.** A sampler read every 5 s (2,889 samples) and counted
+  non-zombie `cc1`/`cc1plus`/`clang -cc1` and `clang-tidy` processes. The peak was **22**, and the
+  count never went above 22. The 1-minute load average, sampled every minute (264 samples), was
+  12.9 on average and **31.0 at its peak**. Load average also counts I/O waits, test processes and
+  linkers, so it is not a count of compile jobs.
+
+**The two reds:**
+
+- `m11c:roadmap-tiers`: this rung's own red, and meant to be red: "3 capability tier(s) below this
+  milestone's exit". It clears only when the closing change writes `denoising`,
+  `ray-tracing-infrastructure` and `rendering-culling-and-lod` at Complete. That change is not
+  written. See below.
+- **`m1:four-profiles`** (inherited, declared by every rung M1 to M11.c): the **debug** profile's
+  `just test-all` failed on `integration.harness`, so dev, profile and release never ran. The
+  ledger drops the test's output ("... 1147 line(s)"), and the tree's CTest log had already been
+  overwritten when it was read. **Reproduced afterwards, by the same test in the same tree.** On
+  an otherwise idle host, `ctest -L ^integration$ -j5` over `build/m11c-final/debug` ran three
+  times: two passes and **one red**. It failed in `integration.harness`, in the item-A case
+  `a case waiting on its OWN major page faults is blocked, and a stall`
+  (`tests/integration/test_budget_contention.cpp:433`). The case measured 3,437 ms of wall clock,
+  3,441 ms uninterruptible, 3,437 ms of host I/O pressure and **3,293 ms excused**. The verdict came
+  back `Contended` where the check expects `Stalled`. That is the gate's refutation reproduced by
+  the fix's own regression test. When other processes really do load the disk, which is what a
+  parallel test run does, the allowance excuses the case's OWN fault wait, because it bounds how
+  much time is excused and not which wait it was. Alone, the suite passed 3/3 under `ctest`, 4/4
+  beside 24 bounded spinners, and 4/4 beside 6 bounded `dd oflag=direct conv=fsync` writers plus
+  12 spinners. So the red needs parallel I/O from other tests, and the ledger's `test-all` provides
+  it.
+
+**Greens that are not counted as honest:**
+
+- **`m9:determinism-core`** (ok, 70.8 s) and every suite whose pass could have come through the
+  stall allowance, `m0:test` among them. Item (A) is refuted twice: by the gate's probe, and by
+  `integration.harness` going red above. So these greens cannot tell a loaded host from a case
+  that stalls on its own I/O.
+
+**Greens that stand:**
+
+- **`m11a:world-budget-on-a-device`**: ok in 17.6 s. It was measured under `--quiet-host`, with
+  load at about 1.2, and the gate HELD item (B). The criterion now states the quiet host it assumes
+  and fails with `host too busy:` otherwise, which is what the owner decided.
+- **`m5:editor`**: ok in 22.1 s, with `the_editor_survives_the_runtime_being_killed` now killing
+  the runtime on the probe's first frame (`6cc3837`) and not on a timer.
+
+**Also found:** `m1:four-profiles` still runs its own four trees under `build/m11c-final/<profile>`
+and is not on the shared matrix. The ledger-speed fix left it there and says why: 18 ledgers
+declare it with identical bodies. Its cost this run was 1,187.9 s for one profile.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`gates.toml`, `ci.yml` and `status.yaml` are unchanged. `milestone-m11c` stays at
+`state = "joins-on-close"`, `ci.yml`'s milestone job still runs `m11b`, and `capability-matrix.md`
+and `ROADMAP.md` are unchanged. Gate items 9.1 and 9.2 stay unticked. This rung's only red is
+`m11c:roadmap-tiers`, and it is the closing change's own forcing function. Every other obstacle is
+inherited and comes from one place: item (A)'s stall allowance. It turns `m1:four-profiles` red
+through its own regression test, and it makes `m9:determinism-core`'s green untrustworthy. What
+would close M11.c: an allowance that can tell the case's own waits from other processes' waits,
+not just bound how much it excuses, and then one gate run with no undeclared red.
