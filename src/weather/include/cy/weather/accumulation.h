@@ -147,7 +147,6 @@ private:
                                     f32 cell_metres, f32 seconds,
                                     AccumulationReport& report) noexcept;
 
-    Allocator* allocator_;
     AccumulationModel model_;
     const SkyOcclusion* occlusion_ = nullptr;
 };

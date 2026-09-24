@@ -238,7 +238,7 @@ Vec3 wind_volume_velocity(const WindVolume& volume, const world::WorldVec3d& at,
 }
 
 WindComposer::WindComposer(Allocator& allocator) noexcept
-    : allocator_(&allocator), volumes_(allocator), transients_(allocator) {}
+    : volumes_(allocator), transients_(allocator) {}
 
 Status WindComposer::add_volume(const WindVolume& volume) noexcept {
     if (!volume.is_valid()) {
