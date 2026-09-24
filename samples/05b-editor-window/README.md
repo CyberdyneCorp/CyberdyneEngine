@@ -53,6 +53,9 @@ The [live editor capture](../../docs/design/images/editor-live-textured-fbx-meta
 same imported tree selected in an authored world, with its mesh and material identities visible in
 the Inspector and the engine's Metal viewport showing the cooked texture.
 
+The [MCP import capture](../../docs/design/images/editor-mcp-import-reopened-metal.png) shows the
+tree after MCP placement and Move, Rotate, and Scale, followed by saving and reopening the world.
+
 The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
 `render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
 in the engine's forward frame.
