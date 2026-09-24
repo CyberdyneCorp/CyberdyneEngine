@@ -1504,6 +1504,7 @@ public:
         descriptor.lodMinClamp = desc.min_lod;
         descriptor.lodMaxClamp = desc.max_lod;
         descriptor.lodAverage = NO;
+        descriptor.supportArgumentBuffers = YES;
         descriptor.maxAnisotropy = static_cast<NSUInteger>(desc.max_anisotropy < 1.0F
                                                                 ? 1.0F
                                                                 : desc.max_anisotropy);

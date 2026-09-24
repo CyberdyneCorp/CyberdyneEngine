@@ -6,7 +6,7 @@
 
 namespace cy::rendering::pipeline {
 
-/// cy_depth_vertex.metal, 6160 bytes.
+/// cy_depth_vertex.metal, 6167 bytes.
 inline constexpr char kFrameDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -33,7 +33,7 @@ float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, flo
 #line 10 "src/rendering/shaders/cy/cluster.slang"
 struct ClusterGrid_0
 {
-    uint3 dimensions_0;
+    packed_uint3 dimensions_0;
     uint maxLightsPerCluster_0;
     float nearPlane_0;
     float farPlane_0;
@@ -255,7 +255,7 @@ struct CyDepthVertex_0
 
 )cy_msl";
 
-/// cy_depth_fragment.metal, 3580 bytes.
+/// cy_depth_fragment.metal, 3587 bytes.
 inline constexpr char kFrameDepthFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -315,7 +315,7 @@ struct pixelInput_0
 #line 10 "src/rendering/shaders/cy/cluster.slang"
 struct ClusterGrid_0
 {
-    uint3 dimensions_0;
+    packed_uint3 dimensions_0;
     uint maxLightsPerCluster_0;
     float nearPlane_0;
     float farPlane_0;
@@ -416,7 +416,7 @@ struct CyFrameViewSet_default_0
 
 )cy_msl";
 
-/// cy_forward_vertex.metal, 5994 bytes.
+/// cy_forward_vertex.metal, 6001 bytes.
 inline constexpr char kFrameForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -443,7 +443,7 @@ float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, flo
 #line 10 "src/rendering/shaders/cy/cluster.slang"
 struct ClusterGrid_0
 {
-    uint3 dimensions_0;
+    packed_uint3 dimensions_0;
     uint maxLightsPerCluster_0;
     float nearPlane_0;
     float farPlane_0;
@@ -671,7 +671,7 @@ struct CyForwardVertex_0
 
 )cy_msl";
 
-/// cy_forward_fragment.metal, 16653 bytes.
+/// cy_forward_fragment.metal, 16697 bytes.
 inline constexpr char kFrameForwardFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -709,7 +709,7 @@ Surface_0 defaultSurface_0()
 #line 10 "src/rendering/shaders/cy/cluster.slang"
 struct ClusterGrid_0
 {
-    uint3 dimensions_0;
+    packed_uint3 dimensions_0;
     uint maxLightsPerCluster_0;
     float nearPlane_0;
     float farPlane_0;
@@ -814,9 +814,9 @@ struct _Array_default_Texture2D128_0
 #line 14
 struct CyFrameGlobalSet_default_0
 {
-    CyGlobalsData_0 constant* globals_0;
-    _Array_default_Texture2D128_0 textures_0;
-    sampler sampler_0;
+    CyGlobalsData_0 constant* globals_0 [[id(0)]];
+    array<texture2d<float, access::sample>, 128> textures_0 [[id(1)]];
+    sampler sampler_0 [[id(129)]];
 };
 
 
@@ -868,7 +868,7 @@ uint materialTextureSlot_0(uint material_4, uint wordOffset_3, KernelContext_0 t
 #line 234
 float4 cyMaterialSampleTexture_0(uint bindlessIndex_0, float2 uv_0, KernelContext_0 thread* kernelContext_4)
 {
-    return (((&kernelContext_4->cyFrameGlobals_0->textures_0)->data_0[bindlessIndex_0]).sample((kernelContext_4->cyFrameGlobals_0->sampler_0), (uv_0)));
+    return ((kernelContext_4->cyFrameGlobals_0->textures_0[bindlessIndex_0]).sample((kernelContext_4->cyFrameGlobals_0->sampler_0), (uv_0)));
 }
 
 
@@ -1309,7 +1309,7 @@ struct pixelInput_0
 
 
 #line 514
-[[fragment]] pixelOutput_0 cyForwardFragment(pixelInput_0 _S48 [[stage_in]], float4 position_0 [[position]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyFrameGlobalSet_default_0 constant* cyFrameGlobals_1 [[buffer(0)]])
+[[fragment]] pixelOutput_0 cyForwardFragment(pixelInput_0 _S48 [[stage_in]], float4 position_0 [[position]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]])
 {
 
 #line 514
@@ -1319,7 +1319,7 @@ struct pixelInput_0
     (&kernelContext_8)->cyFrameView_0 = cyFrameView_1;
 
 #line 514
-    (&kernelContext_8)->cyFrameGlobals_0 = cyFrameGlobals_1;
+    (&kernelContext_8)->cyFrameGlobals_0 = &cyFrameGlobals_1;
 
     uint2 _S49 = uint2(position_0.xy);
     CyDrawInstance_0 _S50 = cyFrameView_1->drawInstances_0[_S48.drawIndex_0];

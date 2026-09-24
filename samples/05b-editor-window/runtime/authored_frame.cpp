@@ -890,6 +890,11 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera) noexc
     FrameUpload data =
         upload_for(assembly_, report, projection * relative_view, relative_view, transforms_.span(),
                    globals, material_offsets_);
+    // A neutral studio fill keeps imported materials readable while the scene has no authored
+    // environment or lights. The physical sky still contributes above this floor.
+    for (u32 channel = 0; channel < 3; ++channel) {
+        data.view.ambient_and_occlusion[channel] += 20000.0F;
+    }
     if (!texture_handles_.empty()) {
         data.view.material_textures[0] = base_color_texture_offset_;
     }

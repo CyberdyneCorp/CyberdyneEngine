@@ -13,6 +13,9 @@ def frame_argument_buffers(source: str, name: str) -> str:
         "kFrameForwardVertexMsl", "kFrameForwardFragmentMsl",
     }:
         return source
+    # Slang emits uint3 for the grid dimensions. Metal pads that field to 16
+    # bytes, while FrameViewData stores three adjacent u32 values (12 bytes).
+    source = source.replace("uint3 dimensions_0;", "packed_uint3 dimensions_0;")
     view = "cyFrameView_0 [[buffer(0)]]" if name == "kFrameDepthFragmentMsl" else "cyFrameView_1 [[buffer(0)]]"
     if view not in source:
         raise ValueError(f"{name}: expected the frame view at Slang's compacted slot zero")
@@ -22,6 +25,22 @@ def frame_argument_buffers(source: str, name: str) -> str:
         if globals_set not in source:
             raise ValueError(f"{name}: expected the material table at Slang's compacted slot one")
         source = source.replace(globals_set, globals_set.replace("buffer(1)", "buffer(0)"))
+        # Metal argument-buffer texture arrays must be direct members with the
+        # resource IDs assigned by the RHI descriptor-set layout.
+        wrapped = "_Array_default_Texture2D128_0 textures_0;"
+        sampled = "(&kernelContext_4->cyFrameGlobals_0->textures_0)->data_0["
+        if wrapped not in source or sampled not in source:
+            raise ValueError(f"{name}: expected Slang's wrapped texture array")
+        source = source.replace(wrapped, "array<texture2d<float, access::sample>, 128> textures_0 [[id(1)]];")
+        source = source.replace("CyGlobalsData_0 constant* globals_0;", "CyGlobalsData_0 constant* globals_0 [[id(0)]];")
+        source = source.replace("sampler sampler_0;", "sampler sampler_0 [[id(129)]];")
+        source = source.replace(sampled, "kernelContext_4->cyFrameGlobals_0->textures_0[")
+        source = source.replace(
+            "CyFrameGlobalSet_default_0 constant* cyFrameGlobals_1 [[buffer(0)]]",
+            "CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]]",
+        )
+        source = source.replace("cyFrameGlobals_0 = cyFrameGlobals_1;",
+                                "cyFrameGlobals_0 = &cyFrameGlobals_1;")
     if name.endswith("VertexMsl"):
         push = "cyDraw_1 [[buffer(2)]]"
         if push not in source:

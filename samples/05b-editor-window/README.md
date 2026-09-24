@@ -35,12 +35,19 @@ transactions and shows the cooked geometry with its full node transform on the n
 The authored viewport uses `FrameAssembly` and `FrameRecorder` on Metal or Vulkan. It reads `.cyprim`
 sources and imported cooked mesh identities, uses mesh section material assignments, and derives
 picking and camera framing from the transformed mesh bounds. An empty world starts with no fixture
-boxes. Missing cooked assets are reported by identity. On Metal, imported material constants render;
-the bounded sampled texture table remains pending, so a textured FBX can appear with its material
-base colour until that table is connected.
+boxes. Missing cooked assets are reported by identity. Embedded and external FBX base-colour images
+are cooked as texture sub-assets and resolved through the material's stable asset identity. Metal
+binds the cooked texture in the frame's sampled texture table. The editor preview adds neutral fill
+light so the material remains legible in a scene without authored lighting.
 
-The Metal pixel regression is `smoke.editor_authored_frame_metal`; it renders an empty world and then
-a mesh in the same session to catch temporal history hiding newly placed geometry.
+![An imported FBX tree rendered with its cooked base-colour texture on Metal](../../docs/design/images/editor-imported-fbx-textured-metal.png)
+
+The image above is a device capture of the imported tree from issue #13 after texture cooking and
+sampling, using a scene containing only that object.
+
+The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
+`render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
+in the engine's forward frame.
 
 ## Why this artefact exists
 
