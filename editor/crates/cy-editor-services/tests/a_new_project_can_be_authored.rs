@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! A project made from the `empty` template is one a person can author in.
 //!
 //! --- THE DEFECT THIS PINS -------------------------------------------------------------------------
