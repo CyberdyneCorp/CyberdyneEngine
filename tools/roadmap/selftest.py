@@ -56,6 +56,7 @@ import criteria as criteria_module  # noqa: E402
 import debts as debts_module  # noqa: E402
 import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
+import matrix as matrix_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import record as record_module  # noqa: E402
 import row_evidence as row_evidence_module  # noqa: E402
@@ -643,6 +644,41 @@ def _check_four_profiles(plan: criteria_module.Plan) -> None:
                   for criterion in criteria_module.load(identifier).criteria
                   if criterion.id == "four-profiles"),
               f"{entries[0].criterion.timeout_s} s")
+        _check_four_profiles_on_the_matrix(entries[0].criterion)
+
+
+def _check_four_profiles_on_the_matrix(criterion: criteria_module.Criterion) -> None:
+    """`four-profiles` builds its four trees as the matrix's `<profile>-default` rows, not its own.
+
+    REGRESSION. Until M11.c's sixth close the criterion built `${CY_BUILD_DIR}/<profile>` for each
+    profile, so every close with a new CY_BUILD_DIR, and every close after a reap, built all four
+    from empty — 1,187.9 s for ONE profile at that close. The rows survive from one close to the
+    next, and the dev and debug ones are the trees `m9:networking-defaults-on` and
+    `m9:multiplayer-profiles-agree` already build. A body that spells its own tree again would
+    pass every other check here and cost the next close the same hours.
+    """
+    rows = tuple(f"{profile}-default" for profile in ("debug", "dev", "profile", "release"))
+    check("`four-profiles` builds its four profiles as matrix rows, at once",
+          f"python3 tools/roadmap/matrix.py build {' '.join(rows)}" in criterion.run,
+          criterion.run.splitlines()[0] if criterion.run else "no run")
+    check("`four-profiles` does not spell a tree of its own beside the matrix",
+          "${CY_BUILD_DIR" not in criterion.run, criterion.run)
+    check("`four-profiles` declares the four rows it holds",
+          all(f"build:ledger-matrix/{row}" in criterion.needs for row in rows),
+          f"needs = {criterion.needs}")
+    for row in rows:
+        entry = matrix_module.BY_ID.get(row)
+        check(f"the matrix declares {row} for the profile of that name",
+              entry is not None and entry.profile == row.removesuffix("-default")
+              and not entry.options,
+              f"{entry.profile} {entry.described}" if entry else "no such row")
+    check("the matrix names every ledger's copy of `four-profiles` as a user of the rows",
+          all(f"{identifier}:four-profiles" in matrix_module.BY_ID[row].needed_by
+              for row in rows if row in matrix_module.BY_ID
+              for identifier in criteria_module.available()
+              if any(candidate.id == "four-profiles"
+                     for candidate in criteria_module.load(identifier).criteria)),
+          str(matrix_module.FOUR_PROFILES_LEDGERS))
 
 
 def _check_collapse_rules() -> None:

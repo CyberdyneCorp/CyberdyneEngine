@@ -168,14 +168,21 @@ CY_TEST_CASE("harness: a case preempted by a busy machine accumulates contention
 // The fifth close refuted the first use of it — every uninterruptible wait was excused, the case's
 // own included — and the owner's rule replaced it: the guard excuses `host_stall_allowance`, at
 // most the case's uninterruptible time AND at most the I/O pressure the rest of the host shows. The
-// cases below are the empirical half of that rule, in every direction:
+// sixth close refuted THAT with a case whose own threads made the pressure — sixteen of them
+// reading the disk while its vfork child held it — and the rule is now said exactly: only pressure
+// from OUTSIDE the case's own process tree is excused, and `tree_blocked_ns()` is the census that
+// takes the tree's own waiting out of it. The cases below are the empirical half of that rule, in
+// every direction:
 //
 //  1. a case blocked by its OWN vfork child, its own uncached reads or its own page faults IS
 //     blocked — the clock sees it — but on a host nobody else is loading it is excused nothing and
 //     is a stall. The gate's own probe, run through the real guard, says the same;
-//  2. a case that sleeps, holds a mutex or spins accumulates no blocking and is a stall, and a held
+//  2. a case held by its own vfork child while its OWN THREADS press the disk is a stall, on a
+//     quiet host or a busy one: the census sees the helpers, and their pressure is the case's;
+//  3. a case that sleeps, holds a mutex or spins accumulates no blocking and is a stall, and a held
 //     mutex stays a stall even while other processes are pressing the disk hard;
-//  3. a case whose disk wait sat behind OTHER processes writing and fsyncing is excused.
+//  4. a case whose disk wait sat behind OTHER processes writing and fsyncing is excused, and the
+//     same writers as the case's OWN child processes excuse it nothing.
 //
 // THE DISK WAIT IS MADE WITH O_DIRECT, which is the one way a test can wait for the device without
 // needing root to drop the page cache: every read goes to the device and the thread waits for it in
@@ -270,6 +277,8 @@ struct Window {
     unsigned long long cpu_ns = 0;
     unsigned long long contended_ns = 0;
     unsigned long long blocked_ns = 0;
+    /// The uninterruptible time of the case's OTHER threads and its children, summed over them.
+    unsigned long long tree_blocked_ns = 0;
     /// The rise in the host's I/O pressure over the window, and what of `blocked_ns` it excuses.
     unsigned long long pressure_ns = 0;
     unsigned long long allowance_ns = 0;
@@ -282,6 +291,7 @@ Window measure_window(Body&& body) {
     const cy::test::HostPressure pressure_before = cy::test::host_pressure_now();
     const unsigned long long contended_before = cy::test::contended_ns();
     const unsigned long long blocked_before = cy::test::blocked_on_host_ns();
+    const unsigned long long tree_before = cy::test::tree_blocked_ns();
     const std::uint64_t cpu_before = thread_cpu_ns();
     const auto started = std::chrono::steady_clock::now();
     window.reads = body(started + kWindow);
@@ -290,13 +300,14 @@ Window measure_window(Body&& body) {
     window.cpu_ns = thread_cpu_ns() - cpu_before;
     window.contended_ns = cy::test::contended_ns() - contended_before;
     window.blocked_ns = cy::test::blocked_on_host_ns() - blocked_before;
+    window.tree_blocked_ns = cy::test::tree_blocked_ns() - tree_before;
     const cy::test::HostPressure pressure_after = cy::test::host_pressure_now();
     if (pressure_before.available && pressure_after.available &&
         pressure_after.io_some_ns >= pressure_before.io_some_ns) {
         window.pressure_ns = pressure_after.io_some_ns - pressure_before.io_some_ns;
     }
-    window.allowance_ns = cy::test::host_stall_allowance(window.wall_ns, window.blocked_ns,
-                                                         pressure_before, pressure_after);
+    window.allowance_ns = cy::test::host_stall_allowance(
+        window.wall_ns, window.blocked_ns, window.tree_blocked_ns, pressure_before, pressure_after);
     return window;
 }
 
@@ -306,6 +317,31 @@ unsigned long long read_until(DirectFile& file, std::chrono::steady_clock::time_
     while (std::chrono::steady_clock::now() < deadline && file.read_one(state)) {
         ++reads;
     }
+    return reads;
+}
+
+/// `read_until` for a thread that shares the file with others: its own descriptor, its own
+/// aligned buffer and its own scatter sequence, so sixteen of them are sixteen readers.
+unsigned long long read_shared_until(const std::string& path,
+                                     std::chrono::steady_clock::time_point deadline,
+                                     unsigned seed) {
+    auto* block = static_cast<unsigned char*>(std::aligned_alloc(kBlock, kBlock));
+    const int reader = ::open(path.c_str(), O_RDONLY | O_DIRECT | O_CLOEXEC);
+    unsigned long long reads = 0;
+    std::uint64_t state = 0x9E3779B97F4A7C15ULL + seed;
+    while (block != nullptr && reader >= 0 && std::chrono::steady_clock::now() < deadline) {
+        state = (state * 6364136223846793005ULL) + 1442695040888963407ULL;
+        const auto offset = static_cast<::off_t>((state >> 33U) % (kFileBytes / kBlock));
+        if (::pread(reader, block, kBlock, offset * static_cast<::off_t>(kBlock)) !=
+            static_cast<::ssize_t>(kBlock)) {
+            break;
+        }
+        ++reads;
+    }
+    if (reader >= 0) {
+        ::close(reader);
+    }
+    std::free(block);
     return reads;
 }
 
@@ -412,6 +448,8 @@ void report(const char* what, const Window& window) {
                     << (static_cast<double>(window.cpu_ns) / 1e6) << " ms CPU, "
                     << (static_cast<double>(window.contended_ns) / 1e6) << " ms runqueue, "
                     << (static_cast<double>(window.blocked_ns) / 1e6) << " ms uninterruptible, "
+                    << (static_cast<double>(window.tree_blocked_ns) / 1e6)
+                    << " ms uninterruptible in its other threads and children, "
                     << (static_cast<double>(window.pressure_ns) / 1e6) << " ms host I/O pressure, "
                     << (static_cast<double>(window.allowance_ns) / 1e6) << " ms excused, "
                     << window.reads << " reads or touches");
@@ -518,6 +556,70 @@ CY_TEST_CASE("harness: a case waiting on its OWN major page faults is blocked, a
 #endif
 }
 
+CY_TEST_CASE(
+    "harness: a case held by its OWN vfork child while its OWN threads read the disk is a stall") {
+    if (!cy::test::budget_measures_host_blocking()) {
+        CY_TEST_MESSAGE(
+            "this platform does not report host blocking; the stall ceiling is unchanged");
+        return;
+    }
+#if defined(__linux__)
+    // THE SIXTH CLOSE'S PROBE, IN THE GUARD'S ARITHMETIC. The case's thread waits uninterruptibly
+    // on its vfork child for the whole window, and sixteen of its own threads keep the device busy
+    // with uncached reads for the same window, so the host's I/O pressure IS high — and every bit
+    // of it is the case's own. The census counts the helpers, and the allowance is what is left of
+    // the pressure after their share and the case's are taken out, which on a quiet host is
+    // nothing and on a busy one is only what other processes made.
+    cy::test::TempDir directory{"budget-own-helpers"};
+    CY_REQUIRE(directory.valid());
+    DirectFile file{directory};
+    if (!file.valid()) {
+        CY_TEST_MESSAGE("this filesystem refuses O_DIRECT; the helpers cannot press the disk here");
+        return;
+    }
+    if (!cy::test::budget_measures_tree_blocking()) {
+        // No census, no allowance: this is the rule without its instrument, and the case is still
+        // a stall — through zero rather than through the subtraction.
+        CY_TEST_MESSAGE(
+            "this kernel has no /proc/<pid>/task/<tid>/children; the allowance must "
+            "be zero");
+    }
+
+    constexpr unsigned kHelpers = 16;
+    std::atomic<unsigned long long> helper_reads{0};
+    const Window window = measure_window([&](std::chrono::steady_clock::time_point deadline) {
+        // Every helper reads the one file the case wrote, through a descriptor and buffer of its
+        // own: O_DIRECT sends each read to the device whether or not another thread just read
+        // the same block.
+        std::vector<std::thread> helpers;
+        helpers.reserve(kHelpers);
+        for (unsigned index = 0; index < kHelpers; ++index) {
+            helpers.emplace_back(
+                [&, index]() { helper_reads += read_shared_until(file.path(), deadline, index); });
+        }
+        const unsigned long long held = vfork_until(deadline);
+        for (std::thread& helper : helpers) {
+            helper.join();
+        }
+        return held;
+    });
+    report("own vfork child beside the case's own sixteen disk readers", window);
+    CY_TEST_MESSAGE(helper_reads.load() << " reads by the helpers");
+    CY_REQUIRE(window.reads == 1U);
+    CY_REQUIRE(helper_reads.load() > 0U);  // the premise: the helpers really pressed the disk
+    CY_REQUIRE(window.wall_ns >= 250'000'000ULL);
+    CY_CHECK_GT(window.blocked_ns, window.wall_ns / 2U);
+    if (cy::test::budget_measures_tree_blocking()) {
+        // Sixteen readers blocked for most of the window are several windows between them; the
+        // census cannot have missed them.
+        CY_CHECK_GT(window.tree_blocked_ns, 4U * window.wall_ns);
+    } else {
+        CY_CHECK_EQ(window.allowance_ns, 0ULL);
+    }
+    expect_blocked_but_not_excused(window);
+#endif
+}
+
 CY_TEST_CASE("harness: a case that sleeps while the disk is busy is still a stall") {
     if (!cy::test::budget_measures_host_blocking()) {
         CY_TEST_MESSAGE(
@@ -601,7 +703,7 @@ struct ProbeRun {
     std::string output;
 };
 
-ProbeRun run_probe(const char* test_case) {
+ProbeRun run_probe(const char* test_case, const char* scale) {
     ProbeRun run;
     int pipe_ends[2];
     if (::pipe(pipe_ends) != 0) {
@@ -615,7 +717,7 @@ ProbeRun run_probe(const char* test_case) {
             variables.emplace_back(*entry);
         }
     }
-    variables.emplace_back("CY_TEST_BUDGET_SCALE=0.25");
+    variables.emplace_back(std::string("CY_TEST_BUDGET_SCALE=") + scale);
     std::vector<char*> envp;
     envp.reserve(variables.size() + 1);
     for (std::string& variable : variables) {
@@ -649,8 +751,8 @@ ProbeRun run_probe(const char* test_case) {
 }
 
 /// The probe failed the case, and said why with `verdict` — and never called it contended.
-void expect_probe_failed(const char* test_case, const char* verdict) {
-    const ProbeRun run = run_probe(test_case);
+void expect_probe_failed(const char* test_case, const char* verdict, const char* scale = "0.25") {
+    const ProbeRun run = run_probe(test_case, scale);
     CY_TEST_MESSAGE(test_case << ":\n" << run.output);
     CY_REQUIRE(run.started);
     CY_CHECK(WIFEXITED(run.status));
@@ -672,6 +774,29 @@ CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child f
 #endif
 }
 
+CY_TEST_CASE(
+    "harness: the gate's probe — a case held by its own vfork child while its own threads read "
+    "the disk fails as stalled") {
+#if defined(__linux__)
+    // M11.c's sixth close: `4a1ad21` reported this case as "contended: ... 212.557 ms ... was the
+    // host's I/O pressure" and passed it, because the helpers' pressure was subtracted as the
+    // calling thread's alone. It must fail, whatever the rest of the host does.
+    //
+    // THE CEILING IS 100 ms HERE, a third of the window, which is the gate's own arithmetic: at
+    // scale 1 the unit budget is 1 ms, the case's thread spends about half of that creating the
+    // foreman and waiting on it, and the case is excused only if the host accounts for two thirds
+    // of its wait. `4a1ad21` excused 282 ms of the 300 on a quiet host (sixteen readers and the
+    // case are the whole of the non-idle time, so the pressure is the whole window and the
+    // calling thread's share of it 18 ms) and about 200 on a host with every processor busy. The
+    // census leaves at most a third excusable in either state.
+    expect_probe_failed(
+        "probe: a case whose own vfork child holds it while its own threads read the disk",
+        "stalled:", "1");
+#else
+    CY_TEST_MESSAGE("the probe's vfork case is Linux's; nothing to run here");
+#endif
+}
+
 CY_TEST_CASE("harness: the gate's probe — a held mutex fails as stalled, a spin as over budget") {
 #if defined(__linux__)
     expect_probe_failed("probe: a case waiting on a mutex another thread holds", "stalled:");
@@ -681,7 +806,7 @@ CY_TEST_CASE("harness: the gate's probe — a held mutex fails as stalled, a spi
 #endif
 }
 
-// --- DIRECTION 3: OTHER PROCESSES PRESSING THE DISK ----------------------------------------------
+// --- DIRECTION 4: OTHER PROCESSES PRESSING THE DISK ----------------------------------------------
 //
 // The allowance exists for this: a case whose own small wait for the device sat behind somebody
 // else's I/O. The somebody else is made here as SEPARATE PROCESSES, one pinned to each processor
@@ -691,6 +816,13 @@ CY_TEST_CASE("harness: the gate's probe — a held mutex fails as stalled, a spi
 // with every processor already compiling: 200 to 270 ms of the 300 ms window. Each writer is
 // bounded three ways — killed by PID when the case ends, an `alarm` it set itself, and the case's
 // own wall-clock ceiling — and writes one 8 MiB file in place, so nothing grows.
+//
+// SEPARATE MEANS OUTSIDE THE CASE'S PROCESS TREE, which M11.c's sixth close made exact: a writer
+// this process forked is the case's own child, the census counts it, and its pressure is the
+// case's. So the writers are ORPHANED — forked by a child that exits at once, which re-parents
+// them to init (or the nearest subreaper) — and are then what a build in another terminal is. The
+// same writers left as the case's own children are the sixth close's other direction, and the
+// second case below asserts that they excuse nothing.
 
 namespace {
 
@@ -722,11 +854,20 @@ constexpr auto kWriterWarmup = std::chrono::milliseconds(500);
     }
 }
 
+/// Whose processes the writers are.
+enum class Parentage {
+    /// Forked by this process: the case's own children, inside its tree.
+    Children,
+    /// Forked by a short-lived child of this process and re-parented away from it when that child
+    /// exits: outside the case's tree, as a build in another terminal is.
+    Orphaned,
+};
+
 /// The writer processes, alive for this object's lifetime.
 class ExternalWriters {
 public:
-    explicit ExternalWriters(const cy::test::TempDir& directory)
-        : chunk_(kWriteChunk, static_cast<unsigned char>(0x5A)) {
+    ExternalWriters(const cy::test::TempDir& directory, Parentage parentage)
+        : parentage_(parentage), chunk_(kWriteChunk, static_cast<unsigned char>(0x5A)) {
         cpu_set_t allowed;
         CPU_ZERO(&allowed);
         if (::sched_getaffinity(0, sizeof(allowed), &allowed) != 0) {
@@ -741,43 +882,129 @@ public:
         for (const int cpu : cpus) {
             paths_.push_back(directory.file(("writer-" + std::to_string(cpu) + ".bin").c_str()));
         }
-        for (std::size_t index = 0; index < cpus.size(); ++index) {
-            const pid_t child = ::fork();
-            if (child == 0) {
-                write_and_fsync_forever(paths_[index].c_str(), chunk_.data(), cpus[index]);
+        if (parentage == Parentage::Children) {
+            for (std::size_t index = 0; index < cpus.size(); ++index) {
+                const pid_t child = ::fork();
+                if (child == 0) {
+                    write_and_fsync_forever(paths_[index].c_str(), chunk_.data(), cpus[index]);
+                }
+                if (child > 0) {
+                    writers_.push_back(child);
+                }
             }
-            if (child > 0) {
-                children_.push_back(child);
-            }
+            return;
         }
+        spawn_orphaned(cpus);
     }
     ~ExternalWriters() {
-        for (const pid_t child : children_) {
-            (void)::kill(child, SIGKILL);
+        for (const pid_t writer : writers_) {
+            (void)::kill(writer, SIGKILL);
         }
-        for (const pid_t child : children_) {
-            int status = 0;
-            (void)::waitpid(child, &status, 0);
+        for (const pid_t writer : writers_) {
+            if (parentage_ == Parentage::Children) {
+                int status = 0;
+                (void)::waitpid(writer, &status, 0);
+            } else {
+                // Not this process's to reap: init does. Gone once the kernel no longer knows it.
+                while (::kill(writer, 0) == 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
         }
     }
     ExternalWriters(const ExternalWriters&) = delete;
     ExternalWriters& operator=(const ExternalWriters&) = delete;
 
-    [[nodiscard]] std::size_t count() const noexcept { return children_.size(); }
+    [[nodiscard]] std::size_t count() const noexcept { return writers_.size(); }
 
     /// True while every writer is still running: none failed to open its file, none has exited.
     [[nodiscard]] bool all_running() const noexcept {
-        return std::ranges::all_of(children_, [](pid_t child) {
+        return std::ranges::all_of(writers_, [this](pid_t writer) {
+            if (parentage_ == Parentage::Orphaned) {
+                return ::kill(writer, 0) == 0;
+            }
             int status = 0;
-            return ::waitpid(child, &status, WNOHANG) == 0;
+            return ::waitpid(writer, &status, WNOHANG) == 0;
         });
     }
 
 private:
+    /// A child forks one writer per processor, writes their pids down a pipe and exits, so that
+    /// every writer is re-parented away from this process before this returns.
+    void spawn_orphaned(const std::vector<int>& cpus) {
+        int pipe_ends[2];
+        if (::pipe(pipe_ends) != 0) {
+            return;
+        }
+        const pid_t intermediary = ::fork();
+        if (intermediary == 0) {
+            ::close(pipe_ends[0]);
+            for (std::size_t index = 0; index < cpus.size(); ++index) {
+                const pid_t writer = ::fork();
+                if (writer == 0) {
+                    write_and_fsync_forever(paths_[index].c_str(), chunk_.data(), cpus[index]);
+                }
+                if (writer > 0) {
+                    (void)::write(pipe_ends[1], &writer, sizeof(writer));
+                }
+            }
+            ::_exit(0);
+        }
+        ::close(pipe_ends[1]);
+        if (intermediary > 0) {
+            pid_t writer = 0;
+            while (::read(pipe_ends[0], &writer, sizeof(writer)) == sizeof(writer)) {
+                writers_.push_back(writer);
+            }
+            int status = 0;
+            (void)::waitpid(intermediary, &status, 0);
+        }
+        ::close(pipe_ends[0]);
+    }
+
+    Parentage parentage_;
     std::vector<unsigned char> chunk_;
     std::vector<std::string> paths_;
-    std::vector<pid_t> children_;
+    std::vector<pid_t> writers_;
 };
+
+/// Runs the disk-wait and held-mutex windows beside writers of the given parentage, reporting
+/// both. Nothing is measured when the writers could not be made.
+struct BesideWriters {
+    Window disk;
+    Window mutex;
+    bool measured = false;
+};
+
+BesideWriters measure_beside_writers(const cy::test::TempDir& directory, DirectFile& file,
+                                     Parentage parentage, const char* who) {
+    BesideWriters beside;
+    const ExternalWriters writers{directory, parentage};
+    CY_REQUIRE(writers.count() > 0U);
+    std::this_thread::sleep_for(kWriterWarmup);
+    CY_REQUIRE(writers.all_running());
+
+    beside.disk = measure_window(
+        [&](std::chrono::steady_clock::time_point deadline) { return read_until(file, deadline); });
+    report((std::string("disk wait behind ") + who + " writes").c_str(), beside.disk);
+    beside.mutex = measure_window([](std::chrono::steady_clock::time_point deadline) {
+        return wait_on_held_mutex(deadline);
+    });
+    report((std::string("held mutex beside ") + who + " writes").c_str(), beside.mutex);
+    CY_REQUIRE(writers.all_running());  // the premise held for both windows
+    CY_REQUIRE(beside.disk.reads > 0U);
+    CY_REQUIRE(beside.disk.wall_ns >= 250'000'000ULL);
+    CY_REQUIRE(beside.mutex.wall_ns >= 250'000'000ULL);
+    beside.measured = true;
+    return beside;
+}
+
+/// A held mutex is an interruptible wait: however hard the host is pressed, nothing is excused.
+void expect_mutex_still_a_stall(const Window& mutex) {
+    CY_CHECK_LT(mutex.blocked_ns, mutex.wall_ns / 10U);
+    CY_CHECK_LE(mutex.allowance_ns, mutex.blocked_ns);
+    CY_CHECK(verdict_at(mutex, 3U, 4U) == cy::test::StallVerdict::Stalled);
+}
 #endif
 
 }  // namespace
@@ -798,28 +1025,14 @@ CY_TEST_CASE(
         return;
     }
 
-    const ExternalWriters writers{directory};
-    CY_REQUIRE(writers.count() > 0U);
-    std::this_thread::sleep_for(kWriterWarmup);
-    CY_REQUIRE(writers.all_running());
+    const BesideWriters beside =
+        measure_beside_writers(directory, file, Parentage::Orphaned, "other processes'");
+    if (!beside.measured) {
+        return;
+    }
+    expect_mutex_still_a_stall(beside.mutex);
 
-    const Window disk = measure_window(
-        [&](std::chrono::steady_clock::time_point deadline) { return read_until(file, deadline); });
-    report("disk wait behind other processes' writes", disk);
-    const Window mutex = measure_window([](std::chrono::steady_clock::time_point deadline) {
-        return wait_on_held_mutex(deadline);
-    });
-    report("held mutex beside other processes' writes", mutex);
-    CY_REQUIRE(writers.all_running());  // the premise held for both windows
-    CY_REQUIRE(disk.reads > 0U);
-    CY_REQUIRE(disk.wall_ns >= 250'000'000ULL);
-    CY_REQUIRE(mutex.wall_ns >= 250'000'000ULL);
-
-    // A held mutex is an interruptible wait: however hard the host is pressed, nothing is excused.
-    CY_CHECK_LT(mutex.blocked_ns, mutex.wall_ns / 10U);
-    CY_CHECK_LE(mutex.allowance_ns, mutex.blocked_ns);
-    CY_CHECK(verdict_at(mutex, 3U, 4U) == cy::test::StallVerdict::Stalled);
-
+    const Window& disk = beside.disk;
     if (!cy::test::budget_measures_host_pressure()) {
         // THE RULE WITHOUT ITS INSTRUMENT: no pressure reading, no allowance — never an unlimited
         // one. The disk wait is then the case's, as it was before the fourth clock existed.
@@ -828,13 +1041,57 @@ CY_TEST_CASE(
         CY_CHECK(verdict_at(disk, 3U, 4U) == cy::test::StallVerdict::Stalled);
         return;
     }
-    // The case waited on the device for most of the window, the rest of the host was stalled on
-    // I/O for more than a quarter of it, and the allowance — the smaller of the two — carries the
-    // verdict from "the case" to "the host".
+    // The writers are outside the tree, so the census saw at most the odd fault of this process's
+    // own threads; the case waited on the device for most of the window, the rest of the host was
+    // stalled on I/O for more than a quarter of it, and the allowance — the smaller of the two —
+    // carries the verdict from "the case" to "the host".
+    CY_CHECK_LT(disk.tree_blocked_ns, disk.wall_ns / 10U);
     CY_CHECK_GT(disk.blocked_ns, disk.wall_ns / 4U);
     CY_CHECK_LE(disk.allowance_ns, disk.blocked_ns);
     CY_CHECK_LE(disk.allowance_ns, disk.pressure_ns);
     CY_CHECK_GT(disk.allowance_ns, disk.wall_ns / 4U);
     CY_CHECK(verdict_at(disk, 3U, 4U) == cy::test::StallVerdict::Contended);
+#endif
+}
+
+CY_TEST_CASE("harness: a case delayed by its OWN child processes' disk pressure is not excused") {
+    if (!cy::test::budget_measures_host_blocking()) {
+        CY_TEST_MESSAGE(
+            "this platform does not report host blocking; the stall ceiling is unchanged");
+        return;
+    }
+#if defined(__linux__)
+    // THE SIXTH CLOSE'S OTHER DIRECTION. The same writers, the same pressure — but forked by this
+    // process, so they are the case's own children. `4a1ad21` excused this window exactly as the
+    // one above; the census counts every child, and takes the whole of their pressure out.
+    cy::test::TempDir directory{"budget-own-children-pressure"};
+    CY_REQUIRE(directory.valid());
+    DirectFile file{directory};
+    if (!file.valid()) {
+        CY_TEST_MESSAGE("this filesystem refuses O_DIRECT; an uncached wait cannot be made here");
+        return;
+    }
+    if (!cy::test::budget_measures_tree_blocking()) {
+        CY_TEST_MESSAGE(
+            "this kernel has no /proc/<pid>/task/<tid>/children; the allowance must "
+            "be zero");
+    }
+
+    const BesideWriters beside =
+        measure_beside_writers(directory, file, Parentage::Children, "its own children's");
+    if (!beside.measured) {
+        return;
+    }
+    expect_mutex_still_a_stall(beside.mutex);
+
+    const Window& disk = beside.disk;
+    CY_CHECK_GT(disk.blocked_ns, disk.wall_ns / 4U);
+    if (cy::test::budget_measures_tree_blocking()) {
+        // A writer per processor, each stalled for most of the window: many windows between them.
+        CY_CHECK_GT(disk.tree_blocked_ns, 4U * disk.wall_ns);
+    } else {
+        CY_CHECK_EQ(disk.allowance_ns, 0ULL);
+    }
+    expect_blocked_but_not_excused(disk);
 #endif
 }

@@ -151,9 +151,19 @@ id = "four-profiles"
 describe = "all four profiles build clean and just test-all is green in each, including the editor's Rust crates and the game"
 source = "tasks 13.1"
 kind = "command"
-run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+run = '''
+python3 tools/roadmap/matrix.py build debug-default dev-default profile-default release-default || exit 1
+for p in debug dev profile release; do
+    d="$(python3 tools/roadmap/matrix.py path "$p-default")"
+    CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+done
+'''
 timeout_s = 28800
 ci_job = "profiles"
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
 
 # --- Section 1: the two rows that have been at Seed since M5 ---------------------------------------
 #
