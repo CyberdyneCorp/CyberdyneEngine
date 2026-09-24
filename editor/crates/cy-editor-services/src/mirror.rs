@@ -41,6 +41,7 @@
 
 use cy_editor_core::observe::Revision;
 use cy_editor_documents::Document;
+use cy_editor_documents::schema::DocumentSchema;
 use cy_editor_documents::transaction::Transaction;
 use cy_editor_protocol::{ApplyWhen, Message};
 use cy_editor_viewport::layout::GizmoLayout;
@@ -62,6 +63,8 @@ pub struct RuntimeMirror {
     cursor: usize,
     /// Which document those two numbers are about. A different one starts again.
     document: Option<Revision>,
+    /// Type and field declarations last sent to this runtime connection.
+    schema: Option<DocumentSchema>,
     /// How many transactions have been sent, for a report and for a test.
     sent: u64,
     /// And how many of those were scheduled for a tick boundary because the world was playing.
@@ -86,9 +89,6 @@ pub struct RuntimeMirror {
     /// keeping. Not a notification: "no runtime is attached" is an ordinary state and a toast per
     /// frame would be a wall of them.
     quiet_reason: Option<String>,
-    /// A restarted runtime loaded the saved world and therefore needs the editor's dirty history
-    /// replayed before incremental forwarding resumes.
-    replay_on_next_sync: bool,
 }
 
 impl RuntimeMirror {
@@ -133,9 +133,9 @@ impl RuntimeMirror {
         self.layout = None;
         self.pending = None;
         self.document = None;
+        self.schema = None;
         self.forwarded = 0;
         self.cursor = 0;
-        self.replay_on_next_sync = true;
         self.quiet_reason = None;
     }
 
@@ -270,17 +270,15 @@ impl RuntimeMirror {
                       on the same identity"
         )]
         let revision = Revision::from_u64(document.id().as_u128() as u64);
-        if self.document != Some(revision) {
-            self.document = Some(revision);
-            if self.replay_on_next_sync {
-                self.forwarded = 0;
-                self.cursor = 0;
-                self.replay_on_next_sync = false;
-            } else {
-                self.forwarded = entries.len();
+        if self.document != Some(revision) || self.schema.as_ref() != Some(document.schema()) {
+            let world = crate::worldfile::write_world(document).into_bytes();
+            if runtime.sync_world(world).is_ok() {
+                self.document = Some(revision);
+                self.schema = Some(document.schema().clone());
+                self.forwarded = cursor;
                 self.cursor = cursor;
-                return;
             }
+            return;
         }
 
         // Undo first: the cursor moved back, so the entries between the new cursor and the old one

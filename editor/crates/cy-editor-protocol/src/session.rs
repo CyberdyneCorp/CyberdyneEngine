@@ -224,6 +224,13 @@ impl Session {
         Ok(request)
     }
 
+    /// Send a complete authored world when the document's type declarations change.
+    pub fn sync_world(&self, world: Vec<u8>) -> Result<RequestId> {
+        let request = RequestId::from_raw(self.next_request.fetch_add(1, Ordering::AcqRel));
+        self.send(&Message::SyncWorld { request, world })?;
+        Ok(request)
+    }
+
     /// The next request identifier, for a caller composing a message of its own.
     ///
     /// Public because the identifier and the message have to be issued together, and a caller that

@@ -184,6 +184,9 @@ private:
                 return reader.u64_value(out.request) && reader.u64_value(out.frame) &&
                        reader.u8_value(when) && reader.byte_span(out.payload);
             }
+        case static_cast<u8>(EditorMessage::SyncWorld):
+            out.kind = EditorMessage::SyncWorld;
+            return reader.u64_value(out.request) && reader.byte_span(out.payload);
         case static_cast<u8>(EditorMessage::Pick):
             out.kind = EditorMessage::Pick;
             return reader.u64_value(out.request) && reader.u64_value(out.frame) &&
@@ -269,6 +272,8 @@ const char* editor_message_name(EditorMessage message) noexcept {
             return "service-cancel";
         case EditorMessage::ServiceEvent:
             return "service-event";
+        case EditorMessage::SyncWorld:
+            return "sync-world";
         case EditorMessage::Unknown:
             break;
     }

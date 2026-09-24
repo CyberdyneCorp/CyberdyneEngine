@@ -14,6 +14,8 @@
 #include <cy/servers/render/model.h>
 #include <cy/servers/render/sort.h>
 
+#include <string_view>
+
 #include "scene.h"
 
 namespace cy::sample::editor_window {
@@ -52,6 +54,9 @@ public:
     /// Apply one encoded editor transaction to the world.
     [[nodiscard]] Status apply(Span<const u8> bytes,
                                scene::serialization::TransactionReport& out) noexcept;
+
+    /// Replace the in-memory world after the editor adds declarations absent from the opened file.
+    [[nodiscard]] Status sync(std::string_view text) noexcept;
 
     /// Write the world's live nodes into `scene`'s object slots.
     ///

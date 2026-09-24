@@ -239,6 +239,23 @@ CY_TEST_CASE("a hello is decoded with the editor's ABI on it") {
     CY_CHECK(std::strcmp(editor_message_name(request.kind), "hello") == 0);
 }
 
+CY_TEST_CASE("an unsaved authored world crosses the bridge with its full schema") {
+    Session session;
+    cy::Array<u8> message;
+    CY_REQUIRE(message.push_back(20));
+    little_endian(message, 73, 8);
+    text(message, "cyworld 1\ntype 1 runtime \"Transform\"\n");
+    session.send({&message});
+
+    EditorRequest request;
+    CY_REQUIRE(session.next(request));
+    CY_CHECK(request.kind == EditorMessage::SyncWorld);
+    CY_CHECK_EQ(request.request, 73U);
+    CY_CHECK(std::string_view(reinterpret_cast<const char*>(request.payload.data()),
+                              request.payload.size()) ==
+             "cyworld 1\ntype 1 runtime \"Transform\"\n");
+}
+
 CY_TEST_CASE("a versioned service request and cancellation cross the live boundary") {
     Session session;
     const cy::Array<u8> submit = service_request(41, 3, "material.compile");

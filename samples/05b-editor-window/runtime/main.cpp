@@ -343,7 +343,7 @@ struct Host {
     /// SIZED BY THE LAST TAG, not by the last one this runtime answers: `Play` is 15 and
     /// `GizmoGeometry` is 13, so an array sized by the latter would be written past its end by the
     /// counter above the switch the first time an editor pressed play.
-    u64 received[static_cast<usize>(runtime::EditorMessage::ServiceCancel) + 1] = {};
+    u64 received[static_cast<usize>(runtime::EditorMessage::SyncWorld) + 1] = {};
     u64 unknown_messages = 0;
 };
 
@@ -556,6 +556,25 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
     (void)host.bridge->send_applied(request.request, request.frame, request.payload);
 }
 
+void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
+    const std::string_view text(reinterpret_cast<const char*>(request.payload.data()),
+                                request.payload.size());
+    if (Status synced = host.view_world->sync(text); !synced) {
+        (void)host.bridge->send_rejected(request.request, synced.error().message,
+                                         "reopen the same world in the editor and runtime");
+        return;
+    }
+    if (host.authored_frame != nullptr) {
+        if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
+            !prepared) {
+            (void)host.bridge->send_rejected(request.request, prepared.error().message,
+                                             "check the imported mesh and material assets");
+            return;
+        }
+    }
+    (void)host.bridge->send_applied(request.request, host.frames_published, {});
+}
+
 /// The mode the editor asked for, or `InEditor` when it named none.
 ///
 /// An editor built before M11.b sends a `Play` with no mode word, and the two ends are versioned
@@ -764,6 +783,9 @@ void serve_editor(Host& host) noexcept {
                 break;
             case runtime::EditorMessage::Apply:
                 apply_transaction(host, request);
+                break;
+            case runtime::EditorMessage::SyncWorld:
+                sync_world(host, request);
                 break;
             case runtime::EditorMessage::Pick:
                 answer_pick(host, request);

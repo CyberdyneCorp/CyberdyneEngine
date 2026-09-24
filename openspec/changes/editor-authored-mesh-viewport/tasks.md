@@ -16,8 +16,9 @@
 - [x] 2.6 Cook embedded and external FBX base-colour images as texture sub-assets, link their stable identities from cooked materials, and cover both sources with import regressions.
 - [x] 2.7 Upload referenced cooked textures in the authored frame, bind material texture slots, and verify texture detail on imported geometry.
 - [x] 2.8 Enable bounded material texture sampling on Metal, regenerate shader artefacts, and verify a textured frame differs from its constant-colour control.
+- [x] 2.9 Synchronize newly declared component fields to the live runtime without saving, and cover the empty-world snapshot and bridge wire with regressions.
 
 ## 3. Workflow and documentation
 
-- [ ] 3.1 Extend the editor smoke flow to import an external FBX into an empty scene, save it, and perform Move, Rotate, and Scale; verify the saved world and viewport captures.
+- [x] 3.1 Extend the editor smoke flow to import an external FBX into an empty scene, save it, and perform Move, Rotate, and Scale; verify the saved world and viewport captures.
 - [x] 3.2 Document the import and placement workflow and validate this OpenSpec change.

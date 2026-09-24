@@ -90,6 +90,7 @@ enum class EditorMessage : u8 {
     ServiceRequest = 17,
     ServiceCancel = 18,
     ServiceEvent = 19,
+    SyncWorld = 20,
     Unknown = 255,
 };
 

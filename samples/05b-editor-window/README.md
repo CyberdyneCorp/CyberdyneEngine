@@ -31,6 +31,9 @@ editor window. The external import stages the FBX and companion textures in the 
 mesh, and adds its mesh instance to the open world. Select the instance in the hierarchy or viewport,
 use the Move, Rotate, and Scale gizmo modes, then save the world. The runtime reads the same world
 transactions and shows the cooked geometry with its full node transform on the next frame.
+For a new empty world, the editor sends the current unsaved world when import first adds component
+declarations. The runtime can therefore resolve the new mesh and material fields immediately;
+subsequent transforms continue through the ordinary transaction stream.
 
 The authored viewport uses `FrameAssembly` and `FrameRecorder` on Metal or Vulkan. It reads `.cyprim`
 sources and imported cooked mesh identities, uses mesh section material assignments, and derives
@@ -55,6 +58,10 @@ the Inspector and the engine's Metal viewport showing the cooked texture.
 
 The [MCP import capture](../../docs/design/images/editor-mcp-import-reopened-metal.png) shows the
 tree after MCP placement and Move, Rotate, and Scale, followed by saving and reopening the world.
+The [live MCP capture before saving](../../docs/design/images/editor-mcp-live-fbx-before-save-metal.png)
+shows the textured tree and its edited transform while the on-disk world was still the empty
+`cyworld 1` file. That scripted session placed the FBX twice, once automatically after external
+import and once through an explicit MCP `asset.import` call.
 
 The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
 `render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
