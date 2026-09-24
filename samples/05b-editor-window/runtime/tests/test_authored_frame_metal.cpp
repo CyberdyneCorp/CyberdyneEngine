@@ -133,6 +133,8 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_REQUIRE_EQ(draws.size(), 1U);
         CY_CHECK_EQ(instances[0].stable_id(), sphere.nodes()[0].identity);
         CY_CHECK(instances[0].bounds_radius > 0.6F);
+        const first_light::Camera framed = frame.framing(view);
+        CY_CHECK(framed.position[2] < 3.0);
         Array<u32> before_transform(allocator());
         CY_REQUIRE(before_transform.append(frame.pixels()));
         CY_REQUIRE(frame.render(transformed, view));

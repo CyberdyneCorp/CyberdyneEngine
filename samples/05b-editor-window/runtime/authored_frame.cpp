@@ -836,7 +836,7 @@ first_light::Camera AuthoredFrame::framing(const first_light::Camera& fallback) 
     const Vec3 centre = (bounds.min + bounds.max) * 0.5F;
     const Vec3 size = bounds.max - bounds.min;
     const f32 extent = std::max({size.x, size.y, size.z, 1.0F});
-    const f32 distance = extent * 1.8F + 4.0F;
+    const f32 distance = extent * 1.1F + 1.0F;
     first_light::Camera camera = fallback;
     camera.position[0] = static_cast<f64>(centre.x + distance * 0.65F);
     camera.position[1] = static_cast<f64>(centre.y + distance * 0.55F);
