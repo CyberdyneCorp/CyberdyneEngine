@@ -713,11 +713,13 @@ struct Band {
     return ok();
 }
 
-/// Wait for the host to go quiet before the take. False, with the reason on stderr, when it was
-/// not.
+/// Wait for the host to go quiet before the run does any work. False, with the reason on stderr,
+/// when it was not.
 [[nodiscard]] bool host_quiet_before_take(u32 wait_seconds) noexcept {
-    std::printf("\n=== the host, before the take (waiting up to %u s for it to be quiet) ===\n",
-                wait_seconds);
+    std::printf(
+        "\n=== the host, before the world is built and filmed (waiting up to %u s "
+        "for it to be quiet) ===\n",
+        wait_seconds);
     std::fflush(stdout);
     const QuietVerdict verdict = wait_for_quiet(wait_seconds, QuietLimits{});
     if (!verdict.quiet) {
@@ -752,6 +754,16 @@ int main(int argc, char** argv) {
     Options options;
     if (!parse(argc, argv, options)) {
         return 2;
+    }
+
+    // THE HOST IS JUDGED BEFORE ANY WORK, NOT JUST BEFORE THE TAKE. The check spends at least a
+    // second watching an idle process; placed between the stage opening and the take, that idle
+    // second let the worker threads park and the caches go cold, and frame 0 cost 19-22 ms where a
+    // run without the check measured 10-11 ms worst on the same quiet host. Here the world build,
+    // the persistence round trip and the stage opening sit between the check and the take, exactly
+    // as they do without it. The check across the take still judges the take itself.
+    if (options.quiet_host && !host_quiet_before_take(options.quiet_wait_s)) {
+        return 1;
     }
 
     Allocator& allocator = system_allocator(MemoryDomain::World);
@@ -837,9 +849,6 @@ int main(int argc, char** argv) {
     const u32 still_frame =
         options.still_frame != 0 ? options.still_frame : static_cast<u32>((frames * 27) / 100);
 
-    if (options.quiet_host && !host_quiet_before_take(options.quiet_wait_s)) {
-        return 1;
-    }
     TakeWatch watch(host_cores(), QuietLimits{});
     watch.begin();
 

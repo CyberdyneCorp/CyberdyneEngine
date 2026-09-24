@@ -196,13 +196,16 @@ submit path.
 **SO THE CRITERION NOW MEASURES ON A QUIET HOST, AND SAYS SO.** The owner's decision: a frame
 budget on a loaded machine measures the machine, so `m11a:world-budget-on-a-device` passes
 `--quiet-host` and states in its own text the host it assumes. `host_load.h` is the check. Before the
-take it looks at the host a second at a time, for up to `--quiet-wait-s` (ten minutes by default),
+run does any work — before the world is built, and so before the take — it looks at the host a second at a time, for up to `--quiet-wait-s` (ten minutes by default),
 until one window shows every other process together using at most two cores and CPU pressure at or
 under 10%. Across the take it looks again a second at a time, with this program's own CPU time
 subtracted from the machine's so its own workers do not count against the host, and the take is
 judged by its BUSIEST second: one busy second is enough to make the worst frame, and an average over
 the whole take would hide it. A host that is not quiet at either point FAILS the run with a
-`host too busy:` line that carries the numbers. It is never a pass and never a skip. The budget, frame count, warm-up and worst-frame judgement are unchanged.
+`host too busy:` line that carries the numbers. It is never a pass and never a skip. The first check
+comes before the world build and not just before the take because it idles for at least a second:
+placed between the stage opening and the take, it let the workers park and the caches go cold, and
+frame 0 cost 19-22 ms against 10-11 ms worst without it on the same quiet host. The budget, frame count, warm-up and worst-frame judgement are unchanged.
 
 The bounded wait is there so that a ledger reaching this criterion as something else finishes still
 measures. A host that stays busy for ten minutes is reported as busy. There is no retake after a busy

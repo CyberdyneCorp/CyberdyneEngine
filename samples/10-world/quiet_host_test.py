@@ -8,7 +8,9 @@ that check is removed or stops looking.
 
   * LEG 1, BEFORE THE TAKE. Spinners are started first, then the sample. The check has to refuse
     to measure: exit 1, "host too busy:" and "The take was not measured" on stderr, and no take on
-    stdout. Removing the pre-take check makes the take run, and this leg goes red.
+    stdout. Removing the pre-take check makes the take run, and this leg goes red. The world must
+    not have been built either: the check precedes all work, so moving it back to just before the
+    take turns this leg red too.
   * LEG 2, ACROSS THE TAKE. The sample starts on whatever host there is. Once it prints that the
     take has started, the spinners start. The check across the take has to fail the run with
     "was not quiet while the take was measured". Removing that check makes the run exit 0, and this
@@ -42,6 +44,8 @@ import time
 SPINNERS = 4
 SPIN = "while True:\n    pass\n"
 NOT_EVALUATED = 3
+#: What the sample prints once its world is built (`main.cpp`, after `world.build`).
+WORLD_BUILT = "to generate, cook, claim and place"
 
 
 def sample_argv(sample: str, seconds: int, wait_s: int) -> list[str]:
@@ -79,6 +83,12 @@ def leg_before_the_take(sample: str) -> list[str]:
         problems.append("the pre-take check did not refuse the take")
     if "=== the take:" in run.stdout:
         problems.append("the take ran on a host the check was told was busy")
+    # THE CHECK COMES BEFORE ANY WORK. Placed just before the take, its idle second let the workers
+    # park and the caches go cold, and frame 0 cost about twice what it costs without the check on
+    # the same quiet host. A refusal after the world was built is that ordering come back.
+    if WORLD_BUILT in run.stdout:
+        problems.append("the world was built before the host was judged; the check must precede "
+                        "all work, so that nothing idles between the work and the take")
     if problems:
         sys.stdout.write(run.stdout[-3000:])
         sys.stderr.write(run.stderr[-3000:])
