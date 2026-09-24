@@ -10,6 +10,18 @@
 # that every reader has to re-resolve.
 get_filename_component(cy_tests_dir "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
 
+# The gate's probe for the stall ceiling (M11.c's fifth close): cases that are meant to trip the
+# budget guard, compiled with the unit tier's budget. No CTest entry runs it — every case in it
+# fails by design — so it is a plain executable that the harness suite below runs as a child and
+# whose verdicts it reads. See stall_probe.cpp.
+cy_add_module(
+    NAME    cy_test_stall_probe
+    LAYER   tools
+    TYPE    EXECUTABLE
+    SOURCES stall_probe.cpp
+    PRIVATE_DEFINITIONS CY_TEST_BUDGET_NS=${CY_TEST_BUDGET_unit}ULL
+    PRIVATE_DEPENDENCIES cy::test-harness)
+
 cy_add_test(
     NAME    harness
     KIND    integration
@@ -19,8 +31,12 @@ cy_add_test(
         test_wrapper_seam.cpp
     # The seam test reads the test tree it is checking. The path is compiled in rather than
     # discovered, because a test that guesses where the sources are passes vacuously when it guesses
-    # wrong.
-    DEFINITIONS CY_TESTS_SOURCE_DIR="${cy_tests_dir}")
+    # wrong. The probe's path is compiled in for the same reason.
+    DEFINITIONS
+        CY_TESTS_SOURCE_DIR="${cy_tests_dir}"
+        "CY_STALL_PROBE=\"$<TARGET_FILE:cy_test_stall_probe>\"")
+# The suite runs the probe by path, so it must exist first; nothing links it to order it.
+add_dependencies(cy_test_integration_harness cy_test_stall_probe)
 
 # The state hash's coverage over a scene world. Here rather than in a module because it is a claim
 # about three at once — the ECS's built-in components, the scene's, and the runtime's walk over both

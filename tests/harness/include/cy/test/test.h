@@ -138,9 +138,12 @@ private:
     /// the first microseconds of the process — see `second_opinion_scale` in budget.cpp.
     unsigned long long declared_ns_;
     unsigned long long started_contended_ns_;
-    /// Whether this guard's thread is being sampled for host blocking, and the fourth clock's
-    /// reading when it started. See `blocked_on_host_ns`.
-    bool sampling_host_;
+    /// How this guard's thread is sampled for host blocking — not at all, as the session's owner,
+    /// or nested in another guard's session — as the underlying value of the harness-private
+    /// `host_blocking::Session`. Only the owner is measured against the host's I/O pressure; see
+    /// `host_stall_allowance`.
+    int host_session_;
+    /// The fourth clock's reading when the guard started. See `blocked_on_host_ns`.
     unsigned long long started_blocked_ns_;
     unsigned long long started_cpu_ns_;
     unsigned long long started_wall_ns_;
@@ -179,10 +182,16 @@ bool budget_measures_contention() noexcept;
 /// M11.c's fourth close. Runqueue wait is what a CPU-saturated machine costs a case; this is what
 /// an I/O-saturated one costs it, and it is invisible to `contended_ns()` because a thread waiting
 /// for the disk is not runnable. `unit.determinism` measured it: 655 ms of wall clock, 0.21 ms of
-/// CPU, zero runqueue wait, beside a heavy build. The guard adds this clock to the runqueue clock
-/// before applying the stall ceiling. A futex, a sleep, a join and a pipe read are INTERRUPTIBLE
-/// sleeps and do not grow it, so a case that waits on itself still fails. How it is measured, and
-/// its limits, are in `host_blocking.cpp`.
+/// CPU, zero runqueue wait, beside a heavy build. A futex, a sleep, a join and a pipe read are
+/// INTERRUPTIBLE sleeps and do not grow it.
+///
+/// IT IS NOT SUBTRACTED AS IT STANDS. An uninterruptible wait is not evidence that the HOST made
+/// the case wait: a case's own `vfork` child, its own `fsync` and its own uncached reads are all
+/// uninterruptible too, and on an idle machine they are the case's time. M11.c's fifth close found
+/// exactly that. So this clock is only the upper bound of what the guard may excuse; the other
+/// bound is the host's I/O pressure over the case, and the guard excuses the smaller of the two.
+/// See `host_stall_allowance`. How the clock is measured, and its limits, are in
+/// `host_blocking.cpp`.
 unsigned long long blocked_on_host_ns() noexcept;
 
 /// True where `blocked_on_host_ns()` measures something.
@@ -193,17 +202,66 @@ bool budget_measures_host_blocking() noexcept;
 /// `)`, a thread may name itself anything including `) D (`, and that is worth a test of its own.
 char thread_state_from_stat(const char* text, std::size_t size) noexcept;
 
+/// One reading of the HOST's I/O pressure, and of how busy its processors were, taken together so
+/// that the difference of two readings says how much of a window the rest of the machine spent
+/// stalled on I/O. See `host_stall_allowance` for what is done with it.
+struct HostPressure {
+    /// False when either source could not be read: no /proc/pressure/io (a kernel without
+    /// CONFIG_PSI, or booted with psi=0), no /proc/stat, or not Linux. An unavailable reading
+    /// excuses NOTHING.
+    bool available = false;
+    /// `/proc/pressure/io`'s `some` total, in nanoseconds: the time at least one task was stalled
+    /// on I/O, averaged over the processors weighted by how long each was not idle.
+    unsigned long long io_some_ns = 0;
+    /// `/proc/stat`'s aggregate non-idle processor time, in nanoseconds, iowait included — the
+    /// weight PSI averages by, summed over every processor.
+    unsigned long long nonidle_cpu_ns = 0;
+    /// How far `nonidle_cpu_ns` can be from the truth in a DIFFERENCE of two readings: /proc/stat
+    /// prints in clock ticks, one truncation per field summed.
+    unsigned long long nonidle_resolution_ns = 0;
+};
+
+/// The host's I/O pressure now. Reads two /proc files, which costs tens of microseconds and makes
+/// the kernel fold its per-processor stall times, so the guard calls it only around cases long
+/// enough to matter; see `host_blocking.cpp`.
+HostPressure host_pressure_now() noexcept;
+
+/// True where `host_pressure_now()` is available.
+bool budget_measures_host_pressure() noexcept;
+
+/// How much of a case's uninterruptible waiting the stall ceiling may EXCUSE as the host's, over a
+/// window of `window_ns` in which the case's thread was sampled `blocked_ns` uninterruptible and
+/// the host's pressure moved from `before` to `after`.
+///
+/// M11.c'S FIFTH CLOSE, AND THE OWNER'S RULE: the allowance may excuse only waiting the HOST
+/// causes. It is the smaller of two bounds:
+///
+///  * `blocked_ns`, because a case cannot be excused for longer than it actually waited; and
+///  * the host's I/O stall time over the window that OTHER tasks account for: the rise in PSI's
+///    `some` total, less the most the case's own wait can have put there. PSI averages per
+///    processor, weighted by that processor's non-idle time, so one stalled thread on one
+///    processor moves the total by at most `blocked_ns × window / Σ non-idle`. That is subtracted
+///    whole, rounding the weight against the case.
+///
+/// So a case that blocks ITSELF — its own vfork child, its own fsync — on an otherwise quiet host
+/// is excused nothing and fails as stalled, and a case whose disk wait sat behind other processes'
+/// I/O is excused at most what those processes were stalled. Either reading unavailable, or a
+/// counter that went backwards, excuses nothing: the allowance is ZERO, never unlimited.
+unsigned long long host_stall_allowance(unsigned long long window_ns, unsigned long long blocked_ns,
+                                        const HostPressure& before,
+                                        const HostPressure& after) noexcept;
+
 /// What the wall-clock half of the budget concluded about one case.
 enum class StallVerdict {
     /// Inside the ceiling, or no ceiling at all.
     Fine,
     /// Over the ceiling, and the time over it was spent waiting for the host: for a core on a busy
-    /// machine, or for a disk or a page fault on an I/O-saturated one.
+    /// machine, or for a disk or a page fault that other processes' I/O held up.
     /// Reported and not failed: `testing-and-quality` asks for "a case that exceeds its budget only
     /// under load" to be reported as a case to reclassify rather than failing the build.
     Contended,
     /// Over the ceiling on the case's own account: a sleep, a lock, a join, a read from a pipe or
-    /// a socket.
+    /// a socket, or an uninterruptible wait the case caused itself on a quiet host.
     Stalled,
 };
 
@@ -212,7 +270,7 @@ enum class StallVerdict {
 /// runqueue wait grows under preemption and does not grow while blocking, and that host blocking
 /// grows while waiting for the disk and does not grow while sleeping — are asserted separately, and
 /// this is what they feed. `contended_ns` is the HOST's share of the window: runqueue wait plus
-/// host blocking.
+/// `host_stall_allowance`, never the raw host-blocking clock.
 StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long contended_ns,
                            unsigned long long ceiling_ns) noexcept;
 

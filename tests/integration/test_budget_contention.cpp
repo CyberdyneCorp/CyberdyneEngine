@@ -44,13 +44,22 @@
 #if defined(__linux__)
 #    include <fcntl.h>
 #    include <sched.h>
+#    include <spawn.h>
 #    include <sys/mman.h>
 #    include <sys/resource.h>
+#    include <sys/types.h>
+#    include <sys/wait.h>
 #    include <unistd.h>
 
+#    include <condition_variable>
+#    include <csignal>
 #    include <cstdint>
 #    include <cstdlib>
+#    include <cstring>
 #    include <ctime>
+#    include <mutex>
+
+extern char** environ;  // NOLINT(readability-redundant-declaration): POSIX names it, no header does
 #endif
 
 namespace {
@@ -148,33 +157,41 @@ CY_TEST_CASE("harness: a case preempted by a busy machine accumulates contention
 }
 
 // ================================================================================================
-// M11.c's FOURTH CLOSE: the host's DISK, which the runqueue clock cannot see
+// M11.c's FOURTH AND FIFTH CLOSES: the host's DISK, which the runqueue clock cannot see
 // ================================================================================================
 //
 // `unit.determinism`'s first case held the suite for 655.4 ms with 0.21 ms of CPU and zero runqueue
 // wait, beside a heavy build, and passed three runs in three alone: a thread waiting for the disk
 // is not runnable, so the third clock never moved. The fourth clock, `blocked_on_host_ns()`,
 // samples the case's own scheduler state and counts the time it spends in an uninterruptible wait.
-// These three cases are its empirical half, in both directions, measured through the verdict the
-// guard itself uses:
 //
-//  1. a case that waits for the disk accumulates host blocking, and a ceiling it would otherwise
-//     blow is excused;
-//  2. a case that SLEEPS while another thread keeps the same disk busy accumulates none, and is
-//     still a stall — the machine being busy with I/O excuses nothing the case did not wait for;
-//  3. a case that burns its own CPU accumulates none either.
+// The fifth close refuted the first use of it — every uninterruptible wait was excused, the case's
+// own included — and the owner's rule replaced it: the guard excuses `host_stall_allowance`, at
+// most the case's uninterruptible time AND at most the I/O pressure the rest of the host shows. The
+// cases below are the empirical half of that rule, in every direction:
+//
+//  1. a case blocked by its OWN vfork child, its own uncached reads or its own page faults IS
+//     blocked — the clock sees it — but on a host nobody else is loading it is excused nothing and
+//     is a stall. The gate's own probe, run through the real guard, says the same;
+//  2. a case that sleeps, holds a mutex or spins accumulates no blocking and is a stall, and a held
+//     mutex stays a stall even while other processes are pressing the disk hard;
+//  3. a case whose disk wait sat behind OTHER processes writing and fsyncing is excused.
 //
 // THE DISK WAIT IS MADE WITH O_DIRECT, which is the one way a test can wait for the device without
 // needing root to drop the page cache: every read goes to the device and the thread waits for it in
-// `io_schedule()`, uninterruptibly, exactly as a major page fault does. The window runs for a fixed
+// `io_schedule()`, uninterruptibly, exactly as a major page fault does. A window runs for a fixed
 // wall-clock time rather than a fixed number of reads, so a fast device and a slow one produce the
 // same length of evidence. A filesystem that refuses O_DIRECT (tmpfs) reports that rather than
 // asserting on a condition it could not create.
 //
-// THE CEILING IS THREE QUARTERS OF THE WINDOW, so the wall clock is always over it and the verdict
-// turns on the host's share alone: excused when the host accounts for more than a quarter of the
-// window, stalled otherwise. That is the same low bar the runqueue case above uses, for the same
-// reason — the claim is that the clock MOVES, not that a device divides time a particular way.
+// THE CEILINGS ARE FRACTIONS OF THE WINDOW, so the wall clock is always over them and the verdict
+// turns on the host's share alone. "Excused" is asserted at three quarters of the window — the
+// host must account for a quarter, the low bar the runqueue case above uses — and a self-blocked
+// case's "stall" at a SIXTEENTH of it. That is not a looser check but the rule itself: other
+// processes' I/O pressure IS excusable, a case's own uncached read is slowed by it like anyone
+// else's, and this machine runs builds beside its tests. For a case that blocked itself to be
+// excused here, the rest of the host would have to be stalled on I/O for fifteen sixteenths of the
+// window; measured beside three other agents' builds, it was at most about half.
 
 namespace {
 
@@ -182,7 +199,7 @@ namespace {
 constexpr std::size_t kBlock = 4096;
 constexpr std::size_t kFileBytes = std::size_t{4} << 20U;
 constexpr std::size_t kWriteChunk = std::size_t{1} << 20U;
-constexpr auto kWindow = std::chrono::milliseconds(150);
+constexpr auto kWindow = std::chrono::milliseconds(300);
 
 std::uint64_t thread_cpu_ns() {
     timespec now{};
@@ -253,12 +270,16 @@ struct Window {
     unsigned long long cpu_ns = 0;
     unsigned long long contended_ns = 0;
     unsigned long long blocked_ns = 0;
+    /// The rise in the host's I/O pressure over the window, and what of `blocked_ns` it excuses.
+    unsigned long long pressure_ns = 0;
+    unsigned long long allowance_ns = 0;
     unsigned long long reads = 0;
 };
 
 template <typename Body>
 Window measure_window(Body&& body) {
     Window window;
+    const cy::test::HostPressure pressure_before = cy::test::host_pressure_now();
     const unsigned long long contended_before = cy::test::contended_ns();
     const unsigned long long blocked_before = cy::test::blocked_on_host_ns();
     const std::uint64_t cpu_before = thread_cpu_ns();
@@ -269,6 +290,13 @@ Window measure_window(Body&& body) {
     window.cpu_ns = thread_cpu_ns() - cpu_before;
     window.contended_ns = cy::test::contended_ns() - contended_before;
     window.blocked_ns = cy::test::blocked_on_host_ns() - blocked_before;
+    const cy::test::HostPressure pressure_after = cy::test::host_pressure_now();
+    if (pressure_before.available && pressure_after.available &&
+        pressure_after.io_some_ns >= pressure_before.io_some_ns) {
+        window.pressure_ns = pressure_after.io_some_ns - pressure_before.io_some_ns;
+    }
+    window.allowance_ns = cy::test::host_stall_allowance(window.wall_ns, window.blocked_ns,
+                                                         pressure_before, pressure_after);
     return window;
 }
 
@@ -325,31 +353,119 @@ unsigned long long fault_until(const std::string& path,
     return touched;
 }
 
+/// Wait on a mutex another thread holds until `deadline`: a futex, an interruptible sleep.
+unsigned long long wait_on_held_mutex(std::chrono::steady_clock::time_point deadline) {
+    std::mutex held;
+    std::mutex handshake;
+    std::condition_variable locked;
+    bool is_locked = false;
+    std::thread holder([&]() {
+        const std::lock_guard<std::mutex> hold(held);
+        {
+            const std::lock_guard<std::mutex> tell(handshake);
+            is_locked = true;
+        }
+        locked.notify_one();
+        std::this_thread::sleep_until(deadline);
+    });
+    {
+        std::unique_lock<std::mutex> wait(handshake);
+        locked.wait(wait, [&]() { return is_locked; });
+    }
+    {
+        const std::lock_guard<std::mutex> take(held);
+    }
+    holder.join();
+    return 1;
+}
+
+/// Block in the parent of a `vfork` until `deadline`: an UNINTERRUPTIBLE wait the case causes
+/// itself, with nothing else on the host involved. The child calls only async-signal-safe
+/// functions.
+unsigned long long vfork_until(std::chrono::steady_clock::time_point deadline) {
+    const auto remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        deadline - std::chrono::steady_clock::now());
+    const long long total = std::max<long long>(remaining.count(), 0);
+    timespec held{static_cast<time_t>(total / 1'000'000'000LL),
+                  static_cast<long>(total % 1'000'000'000LL)};
+    // vfork IS the subject: its parent's uninterruptible wait is what is being measured, and
+    // posix_spawn, which the check suggests, would hide it.
+    // NOLINTNEXTLINE(bugprone-unsafe-functions,clang-analyzer-security.insecureAPI.vfork)
+    const pid_t child = ::vfork();
+    if (child == 0) {
+        // NOLINTNEXTLINE(clang-analyzer-unix.Vfork): nanosleep is async-signal-safe
+        while (::nanosleep(&held, &held) != 0) {
+        }
+        ::_exit(0);
+    }
+    if (child < 0) {
+        return 0;
+    }
+    int status = 0;
+    (void)::waitpid(child, &status, 0);
+    return 1;
+}
+
 void report(const char* what, const Window& window) {
     CY_TEST_MESSAGE(std::string(what)
                     << ": " << (static_cast<double>(window.wall_ns) / 1e6) << " ms wall, "
                     << (static_cast<double>(window.cpu_ns) / 1e6) << " ms CPU, "
                     << (static_cast<double>(window.contended_ns) / 1e6) << " ms runqueue, "
-                    << (static_cast<double>(window.blocked_ns) / 1e6) << " ms blocked on the host, "
+                    << (static_cast<double>(window.blocked_ns) / 1e6) << " ms uninterruptible, "
+                    << (static_cast<double>(window.pressure_ns) / 1e6) << " ms host I/O pressure, "
+                    << (static_cast<double>(window.allowance_ns) / 1e6) << " ms excused, "
                     << window.reads << " reads or touches");
 }
 
-cy::test::StallVerdict verdict_of(const Window& window) {
-    return cy::test::stall_verdict(window.wall_ns, window.contended_ns + window.blocked_ns,
-                                   (window.wall_ns / 4U) * 3U);
+/// The verdict the guard would reach on this window against a ceiling of `parts / whole` of it.
+cy::test::StallVerdict verdict_at(const Window& window, unsigned long long parts,
+                                  unsigned long long whole) {
+    return cy::test::stall_verdict(window.wall_ns, window.contended_ns + window.allowance_ns,
+                                   (window.wall_ns / whole) * parts);
+}
+
+/// Assert what every self-blocked window must show: the clock SAW the wait, the allowance is
+/// bounded by both the wait and the host's pressure, and the case is a stall.
+void expect_blocked_but_not_excused(const Window& window) {
+    CY_CHECK_GT(window.blocked_ns, window.wall_ns / 4U);
+    CY_CHECK_LE(window.allowance_ns, window.blocked_ns);
+    CY_CHECK_LE(window.allowance_ns, window.pressure_ns);
+    CY_CHECK(verdict_at(window, 1U, 16U) == cy::test::StallVerdict::Stalled);
 }
 #endif
 
 }  // namespace
 
-CY_TEST_CASE(
-    "harness: a case waiting for the host's disk accumulates host blocking, and is excused") {
+CY_TEST_CASE("harness: a case blocked by its OWN vfork child is blocked, and still a stall") {
     if (!cy::test::budget_measures_host_blocking()) {
         CY_TEST_MESSAGE(
             "this platform does not report host blocking; the stall ceiling is unchanged");
         return;
     }
 #if defined(__linux__)
+    // THE GATE'S PROBE, IN THE GUARD'S ARITHMETIC. The parent of a vfork waits uninterruptibly, so
+    // the fourth clock sees almost the whole window — which is exactly why subtracting that clock
+    // was wrong. The host's I/O pressure does not move for it, so nothing is excused.
+    const Window window = measure_window(
+        [](std::chrono::steady_clock::time_point deadline) { return vfork_until(deadline); });
+    report("own vfork child", window);
+    CY_REQUIRE(window.reads == 1U);
+    CY_REQUIRE(window.wall_ns >= 250'000'000ULL);
+    CY_CHECK_GT(window.blocked_ns, window.wall_ns / 2U);
+    expect_blocked_but_not_excused(window);
+#endif
+}
+
+CY_TEST_CASE(
+    "harness: a case waiting on its OWN uncached reads is blocked, and on a quiet host a stall") {
+    if (!cy::test::budget_measures_host_blocking()) {
+        CY_TEST_MESSAGE(
+            "this platform does not report host blocking; the stall ceiling is unchanged");
+        return;
+    }
+#if defined(__linux__)
+    // The case's own I/O raises the host's pressure too, by at most its own wait weighted by its
+    // processor's share of the machine; `host_stall_allowance` takes that out before excusing.
     cy::test::TempDir directory{"budget-disk-wait"};
     CY_REQUIRE(directory.valid());
     DirectFile file{directory};
@@ -361,30 +477,24 @@ CY_TEST_CASE(
 
     const Window window = measure_window(
         [&](std::chrono::steady_clock::time_point deadline) { return read_until(file, deadline); });
-    report("disk wait", window);
+    report("own disk wait", window);
     CY_REQUIRE(window.reads > 0U);
-    CY_REQUIRE(window.wall_ns >= 100'000'000ULL);
-
-    // THE ASSERTIONS. The clock moved by a real part of the window — the measured figure on this
-    // project's host is most of it — and the verdict the guard would reach is "the host", not "the
-    // case". Without the fourth clock the host's share is the runqueue wait alone, which on an idle
-    // machine is nothing, and this window is a stall.
-    CY_CHECK_GT(window.blocked_ns, window.wall_ns / 4U);
-    CY_CHECK(verdict_of(window) == cy::test::StallVerdict::Contended);
+    CY_REQUIRE(window.wall_ns >= 250'000'000ULL);
+    expect_blocked_but_not_excused(window);
 #endif
 }
 
-CY_TEST_CASE("harness: a case waiting on major page faults accumulates host blocking") {
+CY_TEST_CASE("harness: a case waiting on its OWN major page faults is blocked, and a stall") {
     if (!cy::test::budget_measures_host_blocking()) {
         CY_TEST_MESSAGE(
             "this platform does not report host blocking; the stall ceiling is unchanged");
         return;
     }
 #if defined(__linux__)
-    // THE FLAKE'S OWN MECHANISM. A case that does nothing but run its own code for the first time
-    // takes a major fault for every page a build has pushed out of the page cache, and waits for
-    // the device on each one. This makes that happen on purpose, through a mapping, and asserts
-    // that the fourth clock sees it the way it sees an explicit read.
+    // THE FOURTH CLOSE'S MECHANISM. A case that does nothing but run its own code for the first
+    // time takes a major fault for every page a build has pushed out of the page cache. This makes
+    // that happen on purpose, through a mapping, with nothing else loading the disk: the clock sees
+    // it, and it is the case's own.
     cy::test::TempDir directory{"budget-page-faults"};
     CY_REQUIRE(directory.valid());
     DirectFile file{directory};
@@ -398,15 +508,13 @@ CY_TEST_CASE("harness: a case waiting on major page faults accumulates host bloc
         return fault_until(file.path(), deadline);
     });
     const unsigned long long faults = major_faults() - faults_before;
-    report("major page faults", window);
+    report("own major page faults", window);
     CY_TEST_MESSAGE(faults << " major faults");
-    CY_REQUIRE(window.wall_ns >= 100'000'000ULL);
+    CY_REQUIRE(window.wall_ns >= 250'000'000ULL);
     // The premise: the pages really were not in memory. A kernel that ignored the eviction would
     // serve every touch from the cache, and there would be nothing for the clock to see.
     CY_REQUIRE(faults > 0U);
-
-    CY_CHECK_GT(window.blocked_ns, window.wall_ns / 4U);
-    CY_CHECK(verdict_of(window) == cy::test::StallVerdict::Contended);
+    expect_blocked_but_not_excused(window);
 #endif
 }
 
@@ -417,10 +525,9 @@ CY_TEST_CASE("harness: a case that sleeps while the disk is busy is still a stal
         return;
     }
 #if defined(__linux__)
-    // THE OTHER DIRECTION, AND THE ONE THAT KEEPS THE CEILING HONEST. Another thread of this very
-    // process keeps the same device busy with uncached reads for the whole window, so the host IS
-    // loaded with I/O — a system-wide pressure figure would move by most of the window here — while
-    // the case itself only sleeps. The case did not wait for the disk, so nothing is excused.
+    // Another thread of this very process keeps the same device busy with uncached reads for the
+    // whole window, so the host IS loaded with I/O while the case itself only sleeps. The case did
+    // not wait uninterruptibly, so the allowance — never more than that — is nothing.
     cy::test::TempDir directory{"budget-sleep-beside-disk"};
     CY_REQUIRE(directory.valid());
     DirectFile file{directory};
@@ -438,10 +545,11 @@ CY_TEST_CASE("harness: a case that sleeps while the disk is busy is still a stal
     });
     report("sleep beside a busy disk", window);
     CY_REQUIRE(window.reads > 0U);  // the premise: the disk really was busy during the window
-    CY_REQUIRE(window.wall_ns >= 100'000'000ULL);
+    CY_REQUIRE(window.wall_ns >= 250'000'000ULL);
 
     CY_CHECK_LT(window.blocked_ns, window.wall_ns / 10U);
-    CY_CHECK(verdict_of(window) == cy::test::StallVerdict::Stalled);
+    CY_CHECK_LE(window.allowance_ns, window.blocked_ns);
+    CY_CHECK(verdict_at(window, 3U, 4U) == cy::test::StallVerdict::Stalled);
 #endif
 }
 
@@ -463,12 +571,270 @@ CY_TEST_CASE("harness: a case that burns its own CPU is not blocked by the host"
         return 0ULL;
     });
     report("busy case", window);
-    CY_REQUIRE(window.wall_ns >= 100'000'000ULL);
+    CY_REQUIRE(window.wall_ns >= 250'000'000ULL);
 
     CY_CHECK_LT(window.blocked_ns, window.wall_ns / 10U);
-    // With the runqueue left out, the host's blocking alone excuses nothing here.
+    CY_CHECK_LE(window.allowance_ns, window.blocked_ns);
+    // With the runqueue left out, the host's share alone excuses nothing here.
     CY_CHECK(
-        cy::test::stall_verdict(window.wall_ns, window.blocked_ns, (window.wall_ns / 4U) * 3U) ==
+        cy::test::stall_verdict(window.wall_ns, window.allowance_ns, (window.wall_ns / 4U) * 3U) ==
         cy::test::StallVerdict::Stalled);
+#endif
+}
+
+// --- THE GATE'S PROBE, THROUGH THE REAL GUARD ------------------------------------------------
+//
+// Every case above re-enacts the guard's arithmetic on a window this file measured. These run
+// stall_probe.cpp — real `CY_TEST_CASE`s under the unit tier's budget — as a child process and read
+// the verdict the guard itself printed. CY_TEST_BUDGET_SCALE=0.25 makes the budget 0.25 ms and the
+// ceiling exactly 25 ms, so each 300 ms case is twelve times over it: for the vfork case to be
+// excused, other processes would have to show 275 ms of I/O pressure in the 280 ms after the
+// guard's 20 ms pressure baseline. `757b3d9` excused it with no pressure at all.
+
+namespace {
+
+#if defined(__linux__)
+/// What a probe run printed, and how it ended.
+struct ProbeRun {
+    bool started = false;
+    int status = 0;
+    std::string output;
+};
+
+ProbeRun run_probe(const char* test_case) {
+    ProbeRun run;
+    int pipe_ends[2];
+    if (::pipe(pipe_ends) != 0) {
+        return run;
+    }
+    // The child's environment is built here rather than by `setenv`, which would change the scale
+    // this process's own guard re-reads.
+    std::vector<std::string> variables;
+    for (char** entry = environ; *entry != nullptr; ++entry) {
+        if (std::strncmp(*entry, "CY_TEST_BUDGET_SCALE=", 21) != 0) {
+            variables.emplace_back(*entry);
+        }
+    }
+    variables.emplace_back("CY_TEST_BUDGET_SCALE=0.25");
+    std::vector<char*> envp;
+    envp.reserve(variables.size() + 1);
+    for (std::string& variable : variables) {
+        envp.push_back(variable.data());
+    }
+    envp.push_back(nullptr);
+    std::string program = CY_STALL_PROBE;
+    std::string filter = std::string("--test-case=") + test_case;
+    char* argv[] = {program.data(), filter.data(), nullptr};
+
+    posix_spawn_file_actions_t actions;
+    ::posix_spawn_file_actions_init(&actions);
+    ::posix_spawn_file_actions_adddup2(&actions, pipe_ends[1], STDOUT_FILENO);
+    ::posix_spawn_file_actions_adddup2(&actions, pipe_ends[1], STDERR_FILENO);
+    ::posix_spawn_file_actions_addclose(&actions, pipe_ends[0]);
+    pid_t child = 0;
+    const int spawned =
+        ::posix_spawn(&child, program.c_str(), &actions, nullptr, argv, envp.data());
+    ::posix_spawn_file_actions_destroy(&actions);
+    ::close(pipe_ends[1]);
+    if (spawned == 0) {
+        char buffer[4096];
+        ::ssize_t got = 0;
+        while ((got = ::read(pipe_ends[0], buffer, sizeof(buffer))) > 0) {
+            run.output.append(buffer, static_cast<std::size_t>(got));
+        }
+        run.started = ::waitpid(child, &run.status, 0) == child;
+    }
+    ::close(pipe_ends[0]);
+    return run;
+}
+
+/// The probe failed the case, and said why with `verdict` — and never called it contended.
+void expect_probe_failed(const char* test_case, const char* verdict) {
+    const ProbeRun run = run_probe(test_case);
+    CY_TEST_MESSAGE(test_case << ":\n" << run.output);
+    CY_REQUIRE(run.started);
+    CY_CHECK(WIFEXITED(run.status));
+    CY_CHECK_NE(WEXITSTATUS(run.status), 0);
+    CY_CHECK(run.output.find(verdict) != std::string::npos);
+    CY_CHECK(run.output.find("contended:") == std::string::npos);
+}
+#endif
+
+}  // namespace
+
+CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child fails as stalled") {
+#if defined(__linux__)
+    // M11.c's fifth close: `757b3d9` reported this case as "contended: ... 300.040 ms blocked on
+    // the host's disk or a page fault" and passed it. It must fail.
+    expect_probe_failed("probe: a case whose own vfork child holds it", "stalled:");
+#else
+    CY_TEST_MESSAGE("the probe's vfork case is Linux's; nothing to run here");
+#endif
+}
+
+CY_TEST_CASE("harness: the gate's probe — a held mutex fails as stalled, a spin as over budget") {
+#if defined(__linux__)
+    expect_probe_failed("probe: a case waiting on a mutex another thread holds", "stalled:");
+    expect_probe_failed("probe: a case that spins", "over budget:");
+#else
+    CY_TEST_MESSAGE("the probe is run as a POSIX child process; nothing to run here");
+#endif
+}
+
+// --- DIRECTION 3: OTHER PROCESSES PRESSING THE DISK ----------------------------------------------
+//
+// The allowance exists for this: a case whose own small wait for the device sat behind somebody
+// else's I/O. The somebody else is made here as SEPARATE PROCESSES, one pinned to each processor
+// this test may use, each writing a megabyte at a time and fsyncing every eight — PSI counts a
+// processor as stalled while any task queued on it is, and averages over processors, so pressure
+// the host shows has to be pressure on many processors at once. Measured on this project's host
+// with every processor already compiling: 200 to 270 ms of the 300 ms window. Each writer is
+// bounded three ways — killed by PID when the case ends, an `alarm` it set itself, and the case's
+// own wall-clock ceiling — and writes one 8 MiB file in place, so nothing grows.
+
+namespace {
+
+#if defined(__linux__)
+constexpr std::size_t kWriterChunks = 8;
+constexpr unsigned kWriterLifetimeSeconds = 20;
+constexpr auto kWriterWarmup = std::chrono::milliseconds(500);
+
+/// Only system calls after the fork: this process has threads, and one of them may hold a lock the
+/// child would inherit held.
+[[noreturn]] void write_and_fsync_forever(const char* path, const unsigned char* chunk, int cpu) {
+    ::alarm(kWriterLifetimeSeconds);
+    cpu_set_t only;
+    CPU_ZERO(&only);
+    CPU_SET(cpu, &only);
+    (void)::sched_setaffinity(0, sizeof(only), &only);
+    const int descriptor = ::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (descriptor < 0) {
+        ::_exit(1);
+    }
+    for (;;) {
+        for (std::size_t index = 0; index < kWriterChunks; ++index) {
+            if (::pwrite(descriptor, chunk, kWriteChunk,
+                         static_cast<::off_t>(index * kWriteChunk)) < 0) {
+                ::_exit(1);  // a full disk ends the writer, and the premise check sees it
+            }
+        }
+        (void)::fsync(descriptor);
+    }
+}
+
+/// The writer processes, alive for this object's lifetime.
+class ExternalWriters {
+public:
+    explicit ExternalWriters(const cy::test::TempDir& directory)
+        : chunk_(kWriteChunk, static_cast<unsigned char>(0x5A)) {
+        cpu_set_t allowed;
+        CPU_ZERO(&allowed);
+        if (::sched_getaffinity(0, sizeof(allowed), &allowed) != 0) {
+            return;
+        }
+        std::vector<int> cpus;
+        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+            if (CPU_ISSET(cpu, &allowed)) {
+                cpus.push_back(cpu);
+            }
+        }
+        for (const int cpu : cpus) {
+            paths_.push_back(directory.file(("writer-" + std::to_string(cpu) + ".bin").c_str()));
+        }
+        for (std::size_t index = 0; index < cpus.size(); ++index) {
+            const pid_t child = ::fork();
+            if (child == 0) {
+                write_and_fsync_forever(paths_[index].c_str(), chunk_.data(), cpus[index]);
+            }
+            if (child > 0) {
+                children_.push_back(child);
+            }
+        }
+    }
+    ~ExternalWriters() {
+        for (const pid_t child : children_) {
+            (void)::kill(child, SIGKILL);
+        }
+        for (const pid_t child : children_) {
+            int status = 0;
+            (void)::waitpid(child, &status, 0);
+        }
+    }
+    ExternalWriters(const ExternalWriters&) = delete;
+    ExternalWriters& operator=(const ExternalWriters&) = delete;
+
+    [[nodiscard]] std::size_t count() const noexcept { return children_.size(); }
+
+    /// True while every writer is still running: none failed to open its file, none has exited.
+    [[nodiscard]] bool all_running() const noexcept {
+        return std::ranges::all_of(children_, [](pid_t child) {
+            int status = 0;
+            return ::waitpid(child, &status, WNOHANG) == 0;
+        });
+    }
+
+private:
+    std::vector<unsigned char> chunk_;
+    std::vector<std::string> paths_;
+    std::vector<pid_t> children_;
+};
+#endif
+
+}  // namespace
+
+CY_TEST_CASE(
+    "harness: a case delayed by OTHER processes' disk pressure is excused, a held mutex is not") {
+    if (!cy::test::budget_measures_host_blocking()) {
+        CY_TEST_MESSAGE(
+            "this platform does not report host blocking; the stall ceiling is unchanged");
+        return;
+    }
+#if defined(__linux__)
+    cy::test::TempDir directory{"budget-external-pressure"};
+    CY_REQUIRE(directory.valid());
+    DirectFile file{directory};
+    if (!file.valid()) {
+        CY_TEST_MESSAGE("this filesystem refuses O_DIRECT; an uncached wait cannot be made here");
+        return;
+    }
+
+    const ExternalWriters writers{directory};
+    CY_REQUIRE(writers.count() > 0U);
+    std::this_thread::sleep_for(kWriterWarmup);
+    CY_REQUIRE(writers.all_running());
+
+    const Window disk = measure_window(
+        [&](std::chrono::steady_clock::time_point deadline) { return read_until(file, deadline); });
+    report("disk wait behind other processes' writes", disk);
+    const Window mutex = measure_window([](std::chrono::steady_clock::time_point deadline) {
+        return wait_on_held_mutex(deadline);
+    });
+    report("held mutex beside other processes' writes", mutex);
+    CY_REQUIRE(writers.all_running());  // the premise held for both windows
+    CY_REQUIRE(disk.reads > 0U);
+    CY_REQUIRE(disk.wall_ns >= 250'000'000ULL);
+    CY_REQUIRE(mutex.wall_ns >= 250'000'000ULL);
+
+    // A held mutex is an interruptible wait: however hard the host is pressed, nothing is excused.
+    CY_CHECK_LT(mutex.blocked_ns, mutex.wall_ns / 10U);
+    CY_CHECK_LE(mutex.allowance_ns, mutex.blocked_ns);
+    CY_CHECK(verdict_at(mutex, 3U, 4U) == cy::test::StallVerdict::Stalled);
+
+    if (!cy::test::budget_measures_host_pressure()) {
+        // THE RULE WITHOUT ITS INSTRUMENT: no pressure reading, no allowance — never an unlimited
+        // one. The disk wait is then the case's, as it was before the fourth clock existed.
+        CY_TEST_MESSAGE("this host has no /proc/pressure/io; the allowance must be zero");
+        CY_CHECK_EQ(disk.allowance_ns, 0ULL);
+        CY_CHECK(verdict_at(disk, 3U, 4U) == cy::test::StallVerdict::Stalled);
+        return;
+    }
+    // The case waited on the device for most of the window, the rest of the host was stalled on
+    // I/O for more than a quarter of it, and the allowance — the smaller of the two — carries the
+    // verdict from "the case" to "the host".
+    CY_CHECK_GT(disk.blocked_ns, disk.wall_ns / 4U);
+    CY_CHECK_LE(disk.allowance_ns, disk.blocked_ns);
+    CY_CHECK_LE(disk.allowance_ns, disk.pressure_ns);
+    CY_CHECK_GT(disk.allowance_ns, disk.wall_ns / 4U);
+    CY_CHECK(verdict_at(disk, 3U, 4U) == cy::test::StallVerdict::Contended);
 #endif
 }

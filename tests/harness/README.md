@@ -9,7 +9,7 @@ only directory permitted to name doctest.
 | `include/cy/test/fixtures.h` | The injectable fixtures: a deterministic clock, a seeded generator, a temporary directory. |
 | `src/main.cpp` | doctest's `main`, so no test file carries one. |
 | `src/budget.cpp` | The per-test budget check: the CPU clock, the wall-clock stall ceiling, and the contention clock that separates the two. |
-| `src/host_blocking.cpp` | The fourth clock: a sampler that sees the case's thread blocked by the host — on the disk or a page fault — and why it is the instrument used. |
+| `src/host_blocking.cpp` | The fourth clock: a sampler that sees the case's thread in an uninterruptible wait, and the allowance that excuses only the part of it the host's I/O pressure accounts for. |
 | `src/fixtures.cpp` | The filesystem half of the fixtures. |
 
 ## Why a wrapper
@@ -44,28 +44,54 @@ runqueue wait beside a heavy build, and passed three runs in three alone. A thre
 disk — a read, or a major page fault on code a build pushed out of the page cache — is not runnable,
 so it accumulates no runqueue wait. It is, however, in an **uninterruptible** sleep (`D`), which a
 sleep, a futex, a join and a pipe read are not (`S`). So a sampler thread reads the case thread's
-state from `/proc/self/task/<tid>/stat` every one to five milliseconds while the case runs, and the
-time it sees in `D` is subtracted too. `host_blocking.cpp` records why the other instruments were
-rejected — delay accounting is off by default since Linux 5.14 and needs root to enable, and
-`/proc/pressure/io` is neither per thread nor proportional to one thread's wait — and the limits of
-this one: it is a sample, `D` also covers kernel locks, and a case's own synchronous disk I/O is
-excused with the host's.
+state from `/proc/self/task/<tid>/stat` every one to five milliseconds while the case runs, and
+counts the time it sees in `D`. `host_blocking.cpp` records why the other instruments were rejected
+as that clock — delay accounting is off by default since Linux 5.14 and needs root to enable, and
+`/proc/pressure/io` is neither per thread nor proportional to one thread's wait.
+
+M11.c's fifth close found that clock cannot be subtracted as it stands. `D` says the kernel made the
+case wait, not what for: a case whose **own** `vfork` child held it 300 ms on an idle host read
+`D` for all of it, and was reported `contended:` and passed. So is a case's own `fsync` or its own
+uncached read. The owner's rule is that the ceiling may excuse only waiting the **host** causes, so
+the guard excuses `host_stall_allowance()`: the smaller of the case's `D` time and the host-wide I/O
+pressure (`/proc/pressure/io`'s `some` total) over the case that other tasks account for. The
+case's own wait raises that total too, by at most its wait weighted by its processor's share of the
+machine's non-idle time (read from `/proc/stat` over the same window), and that much is taken out
+first. The consequences, which `host_blocking.cpp` spells out:
+
+- a case that blocks itself on a quiet host is excused nothing, and fails as `stalled:`;
+- a case whose wait sat behind other processes' I/O is excused at most what they were stalled, in
+  PSI's units — averaged over the processors, so a machine that is CPU-bound but lightly I/O-bound
+  excuses little;
+- the bound is on how long the host was stalled, not on which wait: a case that blocks itself while
+  other processes happen to be stalled is excused up to their stall time;
+- the pressure files are read only by a case that has run an eighth of its ceiling (20 to 100 ms),
+  and at its end only if it is over the ceiling — PSI's weights are whole jiffies, and frequent
+  reads lose precision — so the waiting before that baseline is never excusable;
+- no `/proc/pressure/io` or no `/proc/stat`: the allowance is **zero**, never unlimited.
 
 | Clock | Reads | Fails a case when |
 |---|---|---|
 | CPU | `CLOCK_THREAD_CPUTIME_ID` | the case spends more than its kind's budget, scaled to this machine |
 | Wall | `steady_clock` | the case's own time over the window exceeds a hundred times that budget |
 | Contention | `/proc/thread-self/schedstat` | never — it is subtracted, and `budget_measures_contention()` says whether it exists |
-| Host blocking | `/proc/self/task/<tid>/stat`, sampled | never — it is subtracted, and `budget_measures_host_blocking()` says whether it exists |
+| Host blocking | `/proc/self/task/<tid>/stat`, sampled | never — it bounds the allowance, and `budget_measures_host_blocking()` says whether it exists |
+| Host I/O pressure | `/proc/pressure/io` and `/proc/stat`, around long cases | never — it bounds the allowance, and `budget_measures_host_pressure()` says whether it exists |
 
 The decision is `stall_verdict()`, a pure function of three numbers — wall clock, the host's share
-(runqueue wait plus host blocking) and the ceiling — so the arithmetic is tested without arranging
-for a machine to be busy. The measurements it rests on are asserted separately:
-`tests/unit/harness/test_budget.cpp` shows that a sleeping case accumulates neither contention nor
-host blocking, and `tests/integration/test_budget_contention.cpp` shows that a preempted case
-accumulates contention, that a case waiting on uncached reads or on major page faults accumulates
-host blocking and is excused, and that a case which sleeps while another thread keeps the same disk
-busy, or which burns its own CPU, accumulates none and is still a stall.
+(runqueue wait plus the allowance) and the ceiling — and the allowance is `host_stall_allowance()`,
+a pure function of the window, the `D` time and two pressure readings, so the arithmetic of both is
+tested without arranging for a machine to be busy. The measurements they rest on are asserted
+separately: `tests/unit/harness/test_budget.cpp` shows that a sleeping case accumulates neither
+contention nor host blocking, and that without a pressure reading nothing is excused.
+`tests/integration/test_budget_contention.cpp` shows that a preempted case accumulates contention;
+that a case blocked by its own `vfork` child, its own uncached reads or its own major page faults is
+seen as blocked but excused nothing; that a case which sleeps, holds a mutex or burns its CPU
+accumulates no blocking and is still a stall, the mutex even while other processes press the disk;
+and that a case whose disk wait sat behind other processes writing and fsyncing is excused. It also
+runs `tests/integration/stall_probe.cpp` — the gate's probe, real `CY_TEST_CASE`s — as a child
+process and reads the verdict the guard printed: the vfork case and the held mutex fail as
+`stalled:`, the spin as `over budget:`.
 
 ## What the harness does not have yet
 
