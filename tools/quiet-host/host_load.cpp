@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 #if defined(__linux__)
 #    include <dirent.h>
@@ -112,6 +113,8 @@ private:
 /// The fields of one process's `stat` line this file reads. The command name in field 2 may hold
 /// spaces and parentheses, so the scan starts after the LAST ')'.
 struct TaskTimes {
+    /// Field 4.
+    u64 ppid = 0;
     /// Field 6.
     u64 session = 0;
     /// Fields 14 and 15: the process's own user and system time, every thread included.
@@ -129,7 +132,7 @@ struct TaskTimes {
     // utime(14) stime(15) cutime(16) cstime(17).
     Fields fields(close + 1);
     fields.skip();  // state
-    fields.skip();  // ppid
+    out.ppid = fields.whole();
     fields.skip();  // pgrp
     out.session = fields.whole();
     constexpr int kFieldsBetweenSessionAndUtime = 7;
@@ -161,24 +164,41 @@ struct TaskTimes {
 }
 
 #if defined(__linux__)
-/// Every process of `session`, plus this process and the children it has reaped. A process's own
-/// time is counted while it lives and moves into its parent's `cutime`/`cstime` once reaped, so
-/// summing both over the living members counts each tick once — provided the reaper is a member,
-/// which the wrapper that started the session is. A process that has exited and been reaped by
-/// something outside the session (an orphan that init collected) is lost from the sum, and the
-/// host then looks busier than it was: the direction that fails, never the one that passes.
+/// One process of the host, as the census reads it.
+struct Task {
+    u64 pid = 0;
+    u64 ppid = 0;
+    u64 session = 0;
+    u64 ticks = 0;
+    bool ours = false;
+};
+
+/// Every process of `session` AND EVERY DESCENDANT OF ONE, plus this process and the children it
+/// has reaped. A process's own time is counted while it lives and moves into its parent's
+/// `cutime`/`cstime` once reaped, so summing both over the living members counts each tick once —
+/// provided the reaper is a member, which the wrapper that started the session is.
+///
+/// WHY DESCENDANTS, AND NOT THE SESSION ALONE. `just test-all` runs `smoke.quiet_host_own`, which
+/// is this wrapper again, around a command that burns four cores; the inner wrapper puts that
+/// command in a session of its own, exactly as the outer one did, and a census by session id alone
+/// then counted those four cores as OTHER processes and failed `m0:test` on a host nobody else was
+/// using. Membership is therefore the session's, or an ancestor's: a process whose parent chain
+/// reaches a member is ours whatever session it started. An orphan re-parented to init keeps its
+/// session id and so stays ours; one that ALSO started its own session is lost from the sum, as is
+/// a member that init has already reaped, and the host then looks busier than it was: the direction
+/// that fails, never the one that passes.
 [[nodiscard]] bool read_own_session(HostReading& out, i32 session) noexcept {
     TaskTimes self;
     if (!read_task("/proc/self/stat", self)) {
         return false;
     }
-    u64 ticks = self.own + self.reaped;
     DIR* proc = ::opendir("/proc");
     if (proc == nullptr) {
         return false;
     }
     const auto own_pid = static_cast<long>(::getpid());
     const auto wanted = static_cast<u64>(session);
+    std::vector<Task> tasks;
     while (const dirent* entry = ::readdir(proc)) {
         char* end = nullptr;
         const long pid = std::strtol(entry->d_name, &end, 10);
@@ -189,11 +209,35 @@ struct TaskTimes {
         std::snprintf(path, sizeof(path), "/proc/%ld/stat", pid);
         TaskTimes task;
         // A process that exited between the listing and this read is nothing to count.
-        if (read_task(path, task) && task.session == wanted) {
-            ticks += task.own + task.reaped;
+        if (read_task(path, task)) {
+            tasks.push_back(Task{static_cast<u64>(pid), task.ppid, task.session,
+                                 task.own + task.reaped, task.session == wanted});
         }
     }
     ::closedir(proc);
+    // Membership flows down the parent chain until nothing changes: a pass marks every child of a
+    // member, and the tree is no deeper than the number of passes it takes.
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (Task& task : tasks) {
+            if (task.ours) {
+                continue;
+            }
+            for (const Task& candidate : tasks) {
+                if (candidate.ours && candidate.pid == task.ppid) {
+                    task.ours = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+    u64 ticks = self.own + self.reaped;
+    for (const Task& task : tasks) {
+        if (task.ours) {
+            ticks += task.ticks;
+        }
+    }
     out.own_ticks = ticks;
     return true;
 }

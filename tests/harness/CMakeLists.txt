@@ -26,7 +26,7 @@ cy_add_module(
 # run through `cy_quiet_host` (tools/quiet-host/), which fails with "host too busy:" when the host
 # is not quiet before or during the run. `quiet_host_test.py` runs the wrapper around trivial
 # commands with four niced spinners it starts on purpose and kills by PID, and requires the wrapper
-# to fail with that reason; removing either check turns its leg red. The two legs that need a quiet
+# to fail with that reason; removing either check turns its leg red. The legs that need a quiet
 # host to begin with exit 3 (NOT EVALUATED, CTest's skip) on a busy one and say why, each a separate
 # entry so that skip never hides another leg's verdict:
 #
@@ -34,6 +34,9 @@ cy_add_module(
 #   * `smoke.quiet_host_across`  loads the host once the command has STARTED; the run must fail.
 #   * `smoke.quiet_host_own`     the command itself burns four cores; its own load is subtracted,
 #                                so a quiet host lets it run and its exit status is the wrapper's.
+#   * `smoke.quiet_host_nested`  the same, with each worker in a session of its own — the wrapper
+#                                inside a suite it wraps, which `just test-all` is; a census by
+#                                session id alone counted them against the host.
 #
 # Declared here rather than beside the wrapper because tools/ is configured before tests/ and the
 # taxonomy's timeouts live in tests/CMakeLists.txt. RUN_SERIAL because they load four cores on
@@ -42,7 +45,7 @@ cy_add_module(
 if(TARGET cy_quiet_host)
     find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
-        foreach(leg IN ITEMS before across own)
+        foreach(leg IN ITEMS before across own nested)
             add_test(NAME smoke.quiet_host_${leg}
                      COMMAND "${Python3_EXECUTABLE}"
                              "${CMAKE_SOURCE_DIR}/tools/quiet-host/quiet_host_test.py"
@@ -51,7 +54,7 @@ if(TARGET cy_quiet_host)
             set_tests_properties(smoke.quiet_host_${leg} PROPERTIES
                                  LABELS "smoke" TIMEOUT "${CY_TEST_TIMEOUT_smoke}" RUN_SERIAL TRUE)
         endforeach()
-        set_tests_properties(smoke.quiet_host_across smoke.quiet_host_own
+        set_tests_properties(smoke.quiet_host_across smoke.quiet_host_own smoke.quiet_host_nested
                              PROPERTIES SKIP_RETURN_CODE 3)
     else()
         message(STATUS "tests/harness: smoke.quiet_host_* need python3, so they are not declared.")

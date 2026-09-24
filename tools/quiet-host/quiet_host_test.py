@@ -21,6 +21,11 @@ passes nor skips. This test is what goes red if that check is removed or stops l
     that counted the command's own children against the host would fail this leg. It needs a
     quiet host, and exits 3 on a busy one — including a host that turned busy during the run and
     is busy still, which this leg cannot tell from its own children being counted.
+  * LEG 4, A NESTED SESSION. The same four-core command, but each worker calls `setsid` first,
+    which is what this wrapper itself does to a command it runs — so this is the shape of the
+    wrapper inside a suite it wraps (`just test-all` runs leg 3). A census by session id alone
+    counted those workers against the host and failed `m0:test` on an idle machine; the census
+    follows the parent chain too, and this leg is what goes red if it stops. Judged as leg 3 is.
 
 THE SPINNERS ARE NICED TO 19 AND THERE ARE FOUR OF THEM: two more than the two cores' worth the
 check allows everyone else, so the verdict is not borderline, and niced so that they yield to any
@@ -62,6 +67,9 @@ OWN_LOAD = (
     "sys.exit(7)\n"
 )
 OWN_LOAD_EXIT = 7
+#: Leg 4's command: leg 3's workers, each in a session of its own, as a nested wrapper's would be.
+NESTED_LOAD = OWN_LOAD.replace("def spin(until):\n", "def spin(until):\n    os.setsid()\n").replace(
+    "import multiprocessing, sys, time\n", "import multiprocessing, os, sys, time\n")
 
 
 def start_spinners() -> list[subprocess.Popen]:
@@ -146,9 +154,9 @@ def host_quiet_now(wrapper: str) -> bool:
     return probe.returncode == 0
 
 
-def leg_own_load(wrapper: str) -> tuple[list[str], str]:
+def leg_own_load(wrapper: str, load: str = OWN_LOAD) -> tuple[list[str], str]:
     """Problems found, or an empty list and a reason the leg could not be judged."""
-    run = subprocess.run([wrapper, "--wait-s", "20", "--", sys.executable, "-c", OWN_LOAD],
+    run = subprocess.run([wrapper, "--wait-s", "20", "--", sys.executable, "-c", load],
                          capture_output=True, text=True, timeout=120, check=False)
     if RUN_STARTED not in run.stdout:
         if "host too busy:" in run.stderr:
@@ -175,7 +183,7 @@ def leg_own_load(wrapper: str) -> tuple[list[str], str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--wrapper", required=True, help="the cy_quiet_host binary")
-    parser.add_argument("--leg", required=True, choices=("before", "across", "own"),
+    parser.add_argument("--leg", required=True, choices=("before", "across", "own", "nested"),
                         help="which check to load the host against")
     arguments = parser.parse_args()
 
@@ -185,7 +193,9 @@ def main() -> int:
         return 1 if before else 0
 
     legs = {"across": ("leg 2, across the run", leg_across_the_run),
-            "own": ("leg 3, the command's own load", leg_own_load)}
+            "own": ("leg 3, the command's own load", leg_own_load),
+            "nested": ("leg 4, the command's own load in a nested session",
+                       lambda wrapper: leg_own_load(wrapper, NESTED_LOAD))}
     label, leg = legs[arguments.leg]
     problems, unjudged = leg(arguments.wrapper)
     if unjudged:

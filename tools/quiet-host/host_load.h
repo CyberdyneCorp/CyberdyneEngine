@@ -64,10 +64,12 @@ struct HostReading {
 
 /// Whose CPU time is subtracted from the host's as our own.
 struct OwnScope {
-    /// A session id (the pid of a process that called `setsid`): every process in it, plus this
-    /// process and whatever it reaped, is ours. Zero means this process alone. A process of the
-    /// session that leaves it — a daemon that calls `setsid` itself — is no longer ours and counts
-    /// against the host, which errs towards failing, never towards a silent pass.
+    /// A session id (the pid of a process that called `setsid`): every process in it, every
+    /// descendant of one of them — a wrapped command that starts a session of its own, such as
+    /// this wrapper run inside a suite it wraps — plus this process and whatever it reaped, is
+    /// ours. Zero means this process alone. A process that leaves the session AND the tree — an
+    /// orphan that then calls `setsid` — is no longer ours and counts against the host, which errs
+    /// towards failing, never towards a silent pass.
     i32 session = 0;
 };
 

@@ -7,7 +7,7 @@ command only on a quiet host and fails, saying why, on a busy one.
 |---|---|
 | `host_load.h`, `host_load.cpp` | `cy::host-load`: what "quiet" means, read from `/proc`, with the measured program's own load subtracted. `samples/10-world --quiet-host` and the wrapper share it. |
 | `main.cpp` | `cy_quiet_host [--wait-s <n>] -- <command...>`: the wrapper. `just test-quiet-host` builds the tree and runs it. |
-| `quiet_host_test.py` | `smoke.quiet_host_before`, `smoke.quiet_host_across`, `smoke.quiet_host_own`: the wrapper under four niced spinners it starts on purpose, and around a command that spins on its own. |
+| `quiet_host_test.py` | `smoke.quiet_host_before`, `smoke.quiet_host_across`, `smoke.quiet_host_own`, `smoke.quiet_host_nested`: the wrapper under four niced spinners it starts on purpose, around a command that spins on its own, and around one whose spinners start sessions of their own. |
 
 ## Why a premise checked from outside, and not an allowance inside the harness
 
@@ -41,9 +41,15 @@ premise and run through this wrapper instead.
    shorter. Not quiet: `host too busy: <numbers>` on stderr and exit 1, whatever the command said.
 4. Otherwise the command's own exit status is the wrapper's. Usage errors exit 2.
 
-It errs one way. A process that leaves the session (a daemon that calls `setsid` itself) or an
-orphan reaped by init is no longer counted as ours, so the host looks busier, never quieter. Where
-`/proc` cannot be read the verdict is "cannot tell", and that fails too.
+A descendant that starts a session of its own is still ours: `just test-all` runs
+`smoke.quiet_host_own`, which is this wrapper again around a four-core command, and the census
+follows the parent chain rather than the session id alone, or the inner run's spinners would count
+against the outer run's host (they did, once: `m0:test`'s first proof failed on an idle machine).
+`smoke.quiet_host_nested` is that case, kept red-able.
+
+It errs one way. An orphan that also calls `setsid` (a daemon) or a member reaped by init is no
+longer counted as ours, so the host looks busier, never quieter. Where `/proc` cannot be read the
+verdict is "cannot tell", and that fails too.
 
 ## The criteria that carry the premise
 
