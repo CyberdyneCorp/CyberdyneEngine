@@ -14,7 +14,7 @@
 //! core. Those belong to the logo, not to the interface. The chrome around it stays charcoal and
 //! flat — a header that picks up the logo's gradients has misread it."*
 //!
-//! So this module draws the lockup **as an image, at its own size, once**, and the header around it
+//! So this module draws the compact mark **as an image, at its own size, once**, and the header around it
 //! is `Surface::Window` like every other row of chrome. There is no accent taken from the mark, no
 //! blue glow behind the header, and no gradient anywhere in this crate — `theme.rs` has no gradient
 //! to offer even if a panel asked. [`tests::the_header_takes_no_colour_from_the_mark`] is the check.
@@ -33,14 +33,12 @@
 
 use std::sync::Arc;
 
-/// The horizontal lockup: the mark, `CYBERENGINE`, and `BY CYBERDYNE` on one line.
-///
-/// What sits in the application header. `editor-visual-language`: "The horizontal lockup sits in the
-/// editor header. It identifies the product and occupies the header and no more."
+/// The derived horizontal lockup remains checked as an identity asset.
+#[cfg(test)]
 const HORIZONTAL: &[u8] = include_bytes!("../../../assets/identity/cyberengine-horizontal.png");
 
-/// The monochrome lockup, as a white mask to be tinted. Used where the colour lockup would not read
-/// — the light theme's header, and any surface that is not charcoal.
+/// The derived monochrome lockup remains checked as an identity asset.
+#[cfg(test)]
 const MONOCHROME: &[u8] = include_bytes!("../../../assets/identity/cyberengine-monochrome.png");
 
 /// The mark alone, at window-icon size.
@@ -68,7 +66,7 @@ pub struct Artwork {
 impl Artwork {
     /// Decode a PNG.
     ///
-    /// Panics on a malformed image, and that is correct: these are three files compiled into the
+    /// Panics on a malformed image, and that is correct: this is compiled into the
     /// binary, so a failure here is a build that shipped a corrupt asset rather than anything a
     /// user did, and continuing with a blank header would hide it.
     #[expect(
@@ -111,8 +109,7 @@ impl Artwork {
 
 /// The identity's artwork, decoded once.
 pub struct Identity {
-    horizontal: Artwork,
-    monochrome: Artwork,
+    mark: Artwork,
 }
 
 impl Default for Identity {
@@ -126,43 +123,16 @@ impl Identity {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            horizontal: Artwork::decode(HORIZONTAL),
-            monochrome: Artwork::decode(MONOCHROME),
+            mark: Artwork::decode(MARK_256),
         }
     }
 
-    /// Draw the horizontal lockup at a given height, in the theme's own treatment.
-    ///
-    /// Dark theme: the colour lockup, with its metallic gradient and emissive core intact, because
-    /// that is what the mark is. Light theme: the monochrome lockup tinted with the primary text
-    /// colour, because a mark rendered for a near-black backdrop is invisible on a near-white one
-    /// and scaling the colour one there would be a misuse of it rather than a compromise.
-    pub fn lockup(&mut self, ui: &mut egui::Ui, theme: cy_editor_visual::Theme, height: f32) {
-        let dark = theme.mode == cy_editor_visual::colour::Mode::Dark;
-        let (artwork, name, tint) = if dark {
-            (
-                &mut self.horizontal,
-                "identity-horizontal",
-                egui::Color32::WHITE,
-            )
-        } else {
-            (
-                &mut self.monochrome,
-                "identity-monochrome",
-                crate::theme::role(theme, cy_editor_visual::Semantic::PrimaryText),
-            )
-        };
-        let size = artwork.at_height(height);
-        let texture = artwork.texture(ui.ctx(), name);
-        let response = ui.add(
-            egui::Image::new(&texture)
-                .fit_to_exact_size(size)
-                .tint(tint),
-        );
-        // The lockup is the product's name, so it is what an assistive technology should read there
-        // — and eframe ships AccessKit, which was one of the two properties that decided the
-        // toolkit. An image with no accessible name would report nothing at all.
-        response.on_hover_text(format!("{PRODUCT} — by {PUBLISHER}"));
+    /// Draw the compact application mark in the menu bar.
+    pub fn mark(&mut self, ui: &mut egui::Ui, height: f32) {
+        let size = self.mark.at_height(height);
+        let texture = self.mark.texture(ui.ctx(), "identity-mark");
+        ui.add(egui::Image::new(&texture).fit_to_exact_size(size))
+            .on_hover_text(format!("{PRODUCT} — by {PUBLISHER}"));
     }
 }
 
@@ -194,6 +164,8 @@ mod tests {
         assert_eq!(icon.width, 256);
         assert_eq!(icon.height, 256);
         assert_eq!(icon.rgba.len(), 256 * 256 * 4);
+        let mark = Artwork::decode(MARK_256);
+        assert!((mark.natural.x - mark.natural.y).abs() < f32::EPSILON);
 
         for bytes in [HORIZONTAL, MONOCHROME] {
             let decoded = image::load_from_memory(bytes)

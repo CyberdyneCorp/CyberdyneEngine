@@ -171,6 +171,13 @@ pub fn overlay_fill(theme: Theme) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(panel.r(), panel.g(), panel.b(), 0xDC)
 }
 
+/// A lighter backdrop for the view navigator, leaving the scene visible behind its axes.
+#[must_use]
+pub fn orientation_fill(theme: Theme) -> egui::Color32 {
+    let panel = surface(theme, Surface::Panel);
+    egui::Color32::from_rgba_unmultiplied(panel.r(), panel.g(), panel.b(), 0x88)
+}
+
 /// The complete style for a theme at a density.
 ///
 /// Everything a panel in this crate needs, so that a panel body is layout and content and never a
@@ -363,6 +370,16 @@ mod tests {
     use super::*;
     use cy_editor_visual::colour::{MINIMUM_SURFACE_STEP, Vision};
     use cy_editor_visual::density::{Density, Scale};
+
+    #[test]
+    fn orientation_backdrop_is_more_transparent_than_other_viewport_overlays() {
+        for theme in Theme::ALL {
+            let orientation = orientation_fill(theme);
+            let other = overlay_fill(theme);
+            assert!(orientation.a() < other.a());
+            assert!(orientation.a() > 0);
+        }
+    }
 
     #[test]
     fn every_shipped_theme_produces_a_style_whose_surfaces_are_still_distinguishable() {

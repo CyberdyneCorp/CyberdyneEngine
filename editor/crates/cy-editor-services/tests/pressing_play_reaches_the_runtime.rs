@@ -533,3 +533,78 @@ fn a_new_schema_is_sent_again_after_the_runtime_reconnects_to_an_empty_file() {
     drop(server);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn a_drag_previews_each_changed_revision_and_finishes_without_a_duplicate_apply() {
+    let directory = scratch("drag-preview");
+    let (path, _asked, _modes, messages, server) = runtime_double(&directory);
+    let runtime = RuntimeSession::connect_hosted(&path).expect("a connected runtime");
+    let mut document = Document::new("worlds/city.cyworld");
+    let transform = document.schema_mut().declare_type("Transform", false);
+    let translation = document
+        .schema_mut()
+        .declare_field(transform, "translation", ValueKind::Vec3, "position")
+        .unwrap();
+    let viewport = Viewport::new(
+        ViewportId::from_raw(1),
+        "Perspective",
+        TransportKind::LocalSurface,
+    );
+    let mut mirror = RuntimeMirror::new();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    let node = document
+        .with_transaction("Place", Actor::human("designer"), |document| {
+            let node = document.create_node(None)?;
+            document.add_component(
+                node,
+                transform,
+                vec![(translation, Value::Vec3([0.0, 0.0, 0.0]))],
+            )?;
+            Ok(node)
+        })
+        .unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+
+    document.begin("Move", Actor::human("designer"));
+    document
+        .set_field(node, transform, translation, Value::Vec3([1.0, 0.0, 0.0]))
+        .unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    document
+        .set_field(node, transform, translation, Value::Vec3([2.0, 0.0, 0.0]))
+        .unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    document.commit().unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+
+    document.begin("Move then cancel", Actor::human("designer"));
+    document
+        .set_field(node, transform, translation, Value::Vec3([3.0, 0.0, 0.0]))
+        .unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    document.cancel().unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while messages.lock().unwrap().len() < 6 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        *messages.lock().unwrap(),
+        [
+            "OnArrival",
+            "SyncWorld",
+            "SyncWorld",
+            "SyncWorld",
+            "SyncWorld",
+            "SyncWorld"
+        ]
+    );
+    assert_eq!(mirror.forwarded_transactions(), 1);
+    drop(mirror);
+    drop(runtime);
+    drop(server);
+    std::fs::remove_dir_all(directory).unwrap();
+}

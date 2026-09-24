@@ -2,7 +2,7 @@
 //!
 //! --- THE HEADER, AND THE ONE RULE ABOUT THE MARK -----------------------------------------------------
 //!
-//! The horizontal lockup at the far left, then the menus, then the project and world, then the
+//! The compact mark at the far left, then the menus, then the project and world, then the
 //! runtime state and the settings. One row, and the mark identifies rather than dominates. The
 //! chrome around it is `Surface::Window` — flat charcoal — because *"a header that picks up the
 //! logo's gradients has misread it"*. See [`crate::identity`], where the rule is checked rather than
@@ -81,7 +81,7 @@ pub fn header(
 ) {
     let metrics = shell.metrics();
     egui::MenuBar::new().ui(ui, |ui| {
-        id.lockup(ui, shell.theme, metrics.row() * 1.35);
+        id.mark(ui, metrics.row() * 1.35);
         ui.add_space(metrics.gap());
 
         for category in menus(registry) {

@@ -123,7 +123,7 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_REQUIRE(frame.render(sphere, view));
         usize changed = 0;
         for (usize pixel = 0; pixel < blank.size(); ++pixel) {
-            changed += blank[pixel] != frame.pixels()[pixel];
+            changed += static_cast<usize>(blank[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK(changed > 100);
 
@@ -141,7 +141,7 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_REQUIRE(frame.render(transformed, view));
         usize moved_pixels = 0;
         for (usize pixel = 0; pixel < before_transform.size(); ++pixel) {
-            moved_pixels += before_transform[pixel] != frame.pixels()[pixel];
+            moved_pixels += static_cast<usize>(before_transform[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK(moved_pixels > 100);
         CY_REQUIRE(frame.publish(view, instances, draws));

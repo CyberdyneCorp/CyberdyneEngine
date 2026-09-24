@@ -24,3 +24,21 @@ The live editor viewport SHALL show the open world rendered by the engine, inclu
 #### Scenario: Pick the drawn mesh
 - **WHEN** a user picks a point on a placed non-box mesh
 - **THEN** the selected identity and transform gizmo SHALL refer to that drawn instance.
+
+### Requirement: Continuous transform preview
+The engine viewport SHALL render the current translation, rotation, or scale while a gizmo drag is in progress. Releasing the pointer SHALL commit one undoable transaction; cancelling SHALL restore the starting transform in both the document and engine viewport.
+
+#### Scenario: Drag a transform handle
+- **WHEN** a user holds the pointer and drags a Move, Rotate, or Scale handle
+- **THEN** the object and numeric transform fields SHALL update before pointer release.
+
+#### Scenario: Cancel a transform drag
+- **WHEN** a user cancels an in-progress transform drag
+- **THEN** the engine viewport SHALL return to the pre-drag placement without an undo entry.
+
+### Requirement: Compact viewport chrome
+The viewport's transform fields SHALL align by column across Position, Rotation, and Scale rows. The application menu header SHALL show the product mark without the horizontal wordmark. The orientation widget's background SHALL be translucent enough for the scene to remain visible behind it.
+
+#### Scenario: Inspect the editor with an object selected
+- **WHEN** a user selects an object and reads the viewport controls
+- **THEN** the three transform rows SHALL have shared numeric columns, the header SHALL show only the product mark, and the scene SHALL remain visible behind the orientation widget.

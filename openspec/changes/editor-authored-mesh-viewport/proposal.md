@@ -11,6 +11,7 @@ An empty project can be opened and FBX assets can be imported, but the live edit
 - Preserve full translation, rotation, and nonuniform scale when building render instances.
 - Use mesh bounds for selection and camera framing, and report missing or unsupported assets.
 - Keep the existing external FBX import, scene transactions, transform gizmos, viewport transport, and play session connected to the rendered world.
+- Show engine-rendered transform changes during a gizmo drag, and refine the viewport controls so numeric rows align, the header uses the product mark alone, and the orientation widget lets more of the scene show through.
 
 ## Capabilities
 
@@ -21,4 +22,4 @@ An empty project can be opened and FBX assets can be imported, but the live edit
 
 ## Impact
 
-The frame shader assets and Metal render tests, editor engine host, world to mesh resolution, viewport documentation, and live authoring smoke coverage change. The editor command and world file formats remain compatible.
+The frame shader assets and Metal render tests, editor engine host, world to mesh resolution, viewport chrome, runtime mirror, viewport documentation, and live authoring smoke coverage change. The editor command and world file formats remain compatible.

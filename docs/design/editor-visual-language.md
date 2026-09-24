@@ -102,8 +102,9 @@ rather than one scaled to serve all.
 follows it: the application is CyberEngine, and Cyberdyne is named where a publisher is named. The
 repository directory keeps its historical name — a filesystem artefact, not a product name.
 
-The horizontal lockup sits in the editor header. It identifies the product and occupies the header
-and no more.
+The editor header uses the square app mark alone so the menus begin close to the left edge. The
+window title supplies the product name; the horizontal lockup remains an identity asset for wider
+surfaces.
 
 **One thing that does not travel.** The mark is rendered with metallic gradients and a blue emissive
 core. Those belong to the logo, not to the interface. The chrome around it stays charcoal and flat,
@@ -169,7 +170,7 @@ convention shared with every other tool in the industry.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ◆ CyberEngine  Project File Edit Scene Play Source Transform Viewport View   │
+│ ◆  Project File Edit Scene Play Source Transform Viewport View               │
 │                DesertFrontier · worlds/basin.cyworld · Live runtime   ● live │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ Move  Rotate  Scale  Universal │ Undo  Redo  Save │ Play │ Snap 0.25 m       │

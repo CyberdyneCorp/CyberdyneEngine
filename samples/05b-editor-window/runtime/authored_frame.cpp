@@ -101,9 +101,9 @@ Vec3 point(const Mat4& matrix, Vec3 model) noexcept {
 Aabb transformed_bounds(const Aabb& model, const Mat4& matrix) noexcept {
     Aabb result = Aabb::empty();
     for (u32 corner = 0; corner < 8; ++corner) {
-        const Vec3 local{(corner & 1U) ? model.max.x : model.min.x,
-                         (corner & 2U) ? model.max.y : model.min.y,
-                         (corner & 4U) ? model.max.z : model.min.z};
+        const Vec3 local{(corner & 1U) != 0U ? model.max.x : model.min.x,
+                         (corner & 2U) != 0U ? model.max.y : model.min.y,
+                         (corner & 4U) != 0U ? model.max.z : model.min.z};
         const Vec3 world = point(matrix, local);
         result.min = Vec3{std::min(result.min.x, world.x), std::min(result.min.y, world.y),
                           std::min(result.min.z, world.z)};
@@ -120,7 +120,12 @@ f32 radius_of(const Aabb& bounds) noexcept {
 InstanceTransform relative_transform(const Mat4& matrix, Vec3 eye) noexcept {
     InstanceTransform transform{};
     for (u32 axis = 0; axis < 3; ++axis) {
-        f32* destination = axis == 0 ? transform.row0 : axis == 1 ? transform.row1 : transform.row2;
+        f32* destination = transform.row0;
+        if (axis == 1) {
+            destination = transform.row1;
+        } else if (axis == 2) {
+            destination = transform.row2;
+        }
         for (u32 column = 0; column < 4; ++column) {
             destination[column] = matrix.at(axis, column);
         }
@@ -334,8 +339,8 @@ Expected<u32, Error> AuthoredFrame::material_slot(const std::string& reference) 
     if (reference.empty()) {
         return 0U;
     }
-    const auto found = std::find_if(material_slots_.begin(), material_slots_.end(),
-                                    [&](const auto& entry) { return entry.first == reference; });
+    const auto found = std::ranges::find_if(
+        material_slots_, [&](const auto& entry) { return entry.first == reference; });
     if (found != material_slots_.end()) {
         return found->second;
     }
@@ -392,7 +397,7 @@ Expected<u32, Error> AuthoredFrame::material_slot(const std::string& reference) 
             return make_unexpected(status.error());
         }
     }
-    material_slots_.push_back({reference, slot});
+    material_slots_.emplace_back(reference, slot);
     return slot;
 }
 
@@ -451,7 +456,7 @@ Expected<rhi::BindlessIndex, Error> AuthoredFrame::texture_slot(AssetId identity
         texture_server_.destroy_texture(*handle);
         return make_unexpected(status.error());
     }
-    texture_handles_.push_back({identity, *handle});
+    texture_handles_.emplace_back(identity, *handle);
     return texture_table_.slot_of(*handle);
 }
 
@@ -505,9 +510,8 @@ Status AuthoredFrame::resolve_meshes(const ser::World& world) noexcept {
         if (reference.empty()) {
             continue;
         }
-        const auto found = std::find_if(meshes_.begin(), meshes_.end(), [&](const auto& mesh) {
-            return mesh->reference == reference;
-        });
+        const auto found = std::ranges::find_if(
+            meshes_, [&](const auto& mesh) { return mesh->reference == reference; });
         if (found != meshes_.end()) {
             continue;
         }
@@ -637,7 +641,7 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye) noexcep
             matrices[row] = matrices[node.parent] * matrices[row];
         }
         if (node.live) {
-            pivots_.push_back({node.identity, point(matrices[row], Vec3{})});
+            pivots_.emplace_back(node.identity, point(matrices[row], Vec3{}));
             if (Status status = append_instance(world, node, matrices[row], eye); !status) {
                 return status;
             }
@@ -652,8 +656,8 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
     if (reference.empty()) {
         return ok();
     }
-    const auto found = std::find_if(meshes_.begin(), meshes_.end(),
-                                    [&](const auto& mesh) { return mesh->reference == reference; });
+    const auto found = std::ranges::find_if(
+        meshes_, [&](const auto& mesh) { return mesh->reference == reference; });
     if (found == meshes_.end()) {
         return ok();
     }
@@ -772,7 +776,7 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (!begun) {
         return make_unexpected(begun.error());
     }
-    const Status result = capture(*begun, camera);
+    Status result = capture(*begun, camera);
     if (Status ended = device_->end_frame(); !ended && result) {
         return ended;
     }
@@ -841,11 +845,11 @@ first_light::Camera AuthoredFrame::framing(const first_light::Camera& fallback) 
     const Vec3 centre = (bounds.min + bounds.max) * 0.5F;
     const Vec3 size = bounds.max - bounds.min;
     const f32 extent = std::max({size.x, size.y, size.z, 1.0F});
-    const f32 distance = extent * 1.1F + 1.0F;
+    const f32 distance = (extent * 1.1F) + 1.0F;
     first_light::Camera camera = fallback;
-    camera.position[0] = static_cast<f64>(centre.x + distance * 0.65F);
-    camera.position[1] = static_cast<f64>(centre.y + distance * 0.55F);
-    camera.position[2] = static_cast<f64>(centre.z + distance * 0.65F);
+    camera.position[0] = static_cast<f64>(centre.x + (distance * 0.65F));
+    camera.position[1] = static_cast<f64>(centre.y + (distance * 0.55F));
+    camera.position[2] = static_cast<f64>(centre.z + (distance * 0.65F));
     camera.forward = normalize(centre - Vec3{static_cast<f32>(camera.position[0]),
                                              static_cast<f32>(camera.position[1]),
                                              static_cast<f32>(camera.position[2])});
@@ -859,8 +863,8 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera) noexc
     const Vec3 forward = camera.forward;
     const Mat4 view_matrix = look_at(eye, eye + forward, camera.up);
     const Mat4 relative_view = look_at(Vec3{}, forward, camera.up);
-    const Mat4 projection =
-        perspective_reversed_z(0.9F, static_cast<f32>(width_) / height_, 0.1F, 10000.0F);
+    const Mat4 projection = perspective_reversed_z(
+        0.9F, static_cast<f32>(width_) / static_cast<f32>(height_), 0.1F, 10000.0F);
     AssemblyView view;
     view.fov_y_radians = 0.9F;
     view.view = view_matrix;

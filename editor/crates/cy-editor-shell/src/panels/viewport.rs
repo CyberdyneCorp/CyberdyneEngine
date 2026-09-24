@@ -311,7 +311,11 @@ fn overlays(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, drawn:
                 ui.set_max_width(rect.width() * 0.4);
                 // Flat and charcoal: the overlay is a surface step over the viewport, not a card.
                 egui::Frame::NONE
-                    .fill(theme::overlay_fill(panels.shell.theme))
+                    .fill(if corner == Corner::TopRight {
+                        theme::orientation_fill(panels.shell.theme)
+                    } else {
+                        theme::overlay_fill(panels.shell.theme)
+                    })
                     .corner_radius(egui::CornerRadius::same(3))
                     .inner_margin(egui::Margin::symmetric(
                         theme::margin(metrics.padding()),
@@ -478,7 +482,7 @@ fn numeric_entry(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     for row in Row::ALL {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = metrics.padding() * 0.5;
-            ui.label(secondary(panels.shell, row.label()));
+            numeric_label(ui, secondary(panels.shell, row.label()), metrics.row());
             for (axis, field) in row_fields(&fields, row).into_iter().enumerate() {
                 let editing = panels
                     .inputs
@@ -495,7 +499,8 @@ fn numeric_entry(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 } else {
                     field.text(row)
                 };
-                let response = ui.add(
+                let response = ui.add_sized(
+                    [FIELD_WIDTH, metrics.row()],
                     egui::TextEdit::singleline(&mut text)
                         .desired_width(FIELD_WIDTH)
                         .font(egui::FontId::monospace(metrics.text(TextRole::Body)))
@@ -535,6 +540,44 @@ fn numeric_entry(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
 /// How wide a numeric field is, in points. Three of them and a label fit the overlay's width.
 const FIELD_WIDTH: f32 = 64.0;
+const LABEL_WIDTH: f32 = 72.0;
+
+fn numeric_label(ui: &mut egui::Ui, label: egui::RichText, row_height: f32) {
+    ui.add_sized([LABEL_WIDTH, row_height], egui::Label::new(label));
+}
+
+#[cfg(test)]
+mod numeric_layout_tests {
+    use super::*;
+
+    #[test]
+    fn transform_rows_start_their_numeric_fields_in_one_column() {
+        let context = egui::Context::default();
+        let mut starts = Vec::new();
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                for label in ["Position", "Rotation", "Scale"] {
+                    ui.horizontal(|ui| {
+                        numeric_label(ui, egui::RichText::new(label), 24.0);
+                        starts.push(
+                            ui.add_sized([FIELD_WIDTH, 24.0], egui::Label::new("0.000"))
+                                .rect
+                                .min
+                                .x,
+                        );
+                    });
+                }
+            });
+        });
+        output.textures_delta.clear();
+        assert_eq!(starts.len(), 3);
+        assert!(
+            starts
+                .iter()
+                .all(|start| (*start - starts[0]).abs() < f32::EPSILON)
+        );
+    }
+}
 
 /// One row's three fields.
 fn row_fields(

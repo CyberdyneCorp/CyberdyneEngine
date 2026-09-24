@@ -230,8 +230,8 @@ CY_TEST_CASE("Metal forward frame samples the material texture selected by its s
     usize changed = 0;
     usize differs_from_constant = 0;
     for (usize pixel = 0; pixel < red_frame.size(); ++pixel) {
-        changed += red_frame[pixel] != scene.pixels()[pixel];
-        differs_from_constant += red_frame[pixel] != constant_frame[pixel];
+        changed += static_cast<usize>(red_frame[pixel] != scene.pixels()[pixel]);
+        differs_from_constant += static_cast<usize>(red_frame[pixel] != constant_frame[pixel]);
     }
     CY_CHECK(changed > 1000);
     CY_CHECK(differs_from_constant > 1000);

@@ -22,3 +22,6 @@
 
 - [x] 3.1 Extend the editor smoke flow to import an external FBX into an empty scene, save it, and perform Move, Rotate, and Scale; verify the saved world and viewport captures.
 - [x] 3.2 Document the import and placement workflow and validate this OpenSpec change.
+- [x] 3.3 Preview pending gizmo transforms in the engine viewport and reconcile commit/cancel without duplicate history application; cover the runtime mirror with a regression.
+- [x] 3.4 Align numeric transform columns, use the mark alone in the header, and lighten the orientation widget overlay; cover layout and opacity behavior.
+- [x] 3.5 Inspect the live editor while dragging Move, Rotate, and Scale and capture the revised UI.

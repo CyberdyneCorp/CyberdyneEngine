@@ -567,8 +567,12 @@ image, and selection, gizmo drags, undo and Play all go through the engine.
 
 Drop an FBX from `~/Downloads` onto the editor window to stage and import it into the project. The
 import places its mesh in the open world; select it and use the Move, Rotate, and Scale gizmos before
-saving with `Ctrl+S`. The live viewport draws the cooked mesh with its full transform. Imported
-material factors are shown; sampled FBX textures in the Metal frame are still being connected.
+saving with `Ctrl+S`. The live viewport draws the cooked mesh with its texture and full transform.
+The mesh and transform fields update while a gizmo drag is held; releasing commits one undo step,
+and cancelling restores the starting transform. Reopen the world to continue editing its saved
+placement. [Selected editor view](docs/design/images/editor-ui-aligned-controls-metal.png) and
+[live scale preview](docs/design/images/editor-ui-live-scale-preview-metal.png) show the Metal
+viewport with the same imported FBX.
 
 To run the two processes separately, for example to restart the editor without restarting the
 engine, use two terminals:

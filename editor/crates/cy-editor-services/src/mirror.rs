@@ -30,6 +30,8 @@
 //! no hook there and inventing one would put a runtime session inside the document layer. The cost
 //! is that a change is forwarded on the next pump rather than inside the commit, which for a viewport
 //! at sixty frames a second is under a frame.
+//! While a gizmo transaction remains open, the mirror sends a world snapshot for each changed
+//! document revision. A final snapshot on commit or cancel reconciles the runtime with history.
 //!
 //! --- WHY THE GIZMO IS ASKED FOR EVERY FRAME ------------------------------------------------------
 //!
@@ -63,6 +65,8 @@ pub struct RuntimeMirror {
     cursor: usize,
     /// Which document those two numbers are about. A different one starts again.
     document: Option<Revision>,
+    /// Last document content revision previewed while an interaction was open.
+    preview_revision: Option<Revision>,
     /// Type and field declarations last sent to this runtime connection.
     schema: Option<DocumentSchema>,
     /// An unsaved schema change needs a snapshot if the runtime reconnects to an older file.
@@ -137,6 +141,7 @@ impl RuntimeMirror {
         self.layout = None;
         self.pending = None;
         self.document = None;
+        self.preview_revision = None;
         self.schema = None;
         self.forwarded = 0;
         self.cursor = 0;
@@ -275,8 +280,29 @@ impl RuntimeMirror {
                       on the same identity"
         )]
         let revision = Revision::from_u64(document.id().as_u128() as u64);
+        if document.is_transaction_open() {
+            if self.document != Some(revision) {
+                self.document = Some(revision);
+                self.preview_revision = None;
+            }
+            if self.preview_revision != Some(document.revision())
+                && self.send_snapshot(runtime, document, cursor)
+            {
+                self.preview_revision = Some(document.revision());
+            }
+            return;
+        }
+        if self.document == Some(revision) && self.preview_revision.is_some() {
+            // The final snapshot also restores the runtime when the interaction was cancelled.
+            // Its history cursor includes a committed drag, so it must not be applied twice.
+            if self.send_snapshot(runtime, document, cursor) {
+                self.preview_revision = None;
+            }
+            return;
+        }
         if self.document != Some(revision) {
             self.document = Some(revision);
+            self.preview_revision = None;
             let replay = std::mem::take(&mut self.replay_on_next_sync);
             if replay && !self.snapshot_on_reconnect {
                 self.schema = Some(document.schema().clone());
@@ -322,13 +348,22 @@ impl RuntimeMirror {
         self.cursor = cursor;
     }
 
-    fn send_snapshot(&mut self, runtime: &RuntimeSession, document: &Document, cursor: usize) {
+    fn send_snapshot(
+        &mut self,
+        runtime: &RuntimeSession,
+        document: &Document,
+        cursor: usize,
+    ) -> bool {
         let world = crate::worldfile::write_world(document).into_bytes();
         if runtime.sync_world(world).is_ok() {
             self.schema = Some(document.schema().clone());
+            self.replay_on_next_sync = false;
             self.snapshot_on_reconnect = document.is_dirty();
             self.forwarded = cursor;
             self.cursor = cursor;
+            true
+        } else {
+            false
         }
     }
 
