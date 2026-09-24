@@ -312,6 +312,7 @@ struct Host {
     /// a `cy-viewport-transport-probe` see.
     first_light::Camera asked_camera{};
     bool editor_camera = false;
+    u64 game_camera = ~u64{0};
     render::View view;
     first_light::Camera camera{};
     u64 frames_published = 0;
@@ -413,6 +414,7 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     host.asked_width = intent.viewport_width;
     host.asked_height = intent.viewport_height;
     adopt_camera(host, intent);
+    host.game_camera = intent.game_camera;
     // THE OBJECT THE EDITOR NAMED, by identity. Not the next unused one: the world this runtime
     // holds is the world the editor has open, so an identity either names a node in it or names
     // nothing, and naming nothing must take the gizmo off the screen rather than move it to an
@@ -490,6 +492,36 @@ void answer_pick(Host& host, const runtime::EditorRequest& request) noexcept {
                                              "the pick names an intent or a size this runtime "
                                              "cannot resolve");
             return;
+        }
+        if (host.game_camera == ~u64{0} && host.authored_frame != nullptr &&
+            pick.kind == PickKind::Click) {
+            for (const LightMarker& light : host.authored_frame->light_markers()) {
+                bool excluded = false;
+                for (u64 identity : pick.excluded) {
+                    excluded |= identity == light.identity;
+                }
+                if (excluded) {
+                    continue;
+                }
+                const Vec3 relative =
+                    light.position - Vec3{static_cast<f32>(host.camera.position[0]),
+                                          static_cast<f32>(host.camera.position[1]),
+                                          static_cast<f32>(host.camera.position[2])};
+                Vec2 pixel;
+                if (!project_to_pixel(host.view, relative, pixel) ||
+                    length(Vec2{pixel.x - pick.x, pixel.y - pick.y}) > 13.0F) {
+                    continue;
+                }
+                candidates.clear();
+                render::PickCandidate marker;
+                marker.stable_id = light.identity;
+                if (Status added = candidates.push_back(marker); !added) {
+                    (void)host.bridge->send_rejected(request.request, "pick the light",
+                                                     "the runtime ran out of memory");
+                    return;
+                }
+                break;
+            }
         }
     }
     Array<u8> reply(allocator);
@@ -670,7 +702,9 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             }
             host.play_sessions += 1;
             host.play_bodies = host.play->report().bodies;
-            (void)std::snprintf(detail, sizeof(detail), "%u entities, %u bodies, %u colliders",
+            (void)std::snprintf(detail, sizeof(detail),
+                                "%u entities, %u bodies, %u colliders; "
+                                "Swift gameplay and audio unavailable in this host",
                                 host.play->report().entities, host.play->report().bodies,
                                 host.play->report().colliders);
             break;
@@ -890,6 +924,10 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
 /// Render one frame, composite the gizmo into it, and publish it.
 [[nodiscard]] bool publish_frame(Host& host, f32 phase) noexcept {
     host.camera = host.editor_camera ? host.asked_camera : host.scene->camera_at(phase);
+    if (host.game_camera != ~u64{0} && host.authored_frame != nullptr) {
+        (void)host.authored_frame->scene_camera(host.view_world->world(), host.game_camera,
+                                                host.camera);
+    }
     host.view = view_of(host.camera, host.options.width, host.options.height);
 
     // THE WORLD BECOMES THE FRAME, here, once, every frame. Everything the editor committed since
@@ -918,7 +956,8 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
 
     Span<const u32> texels;
     if (host.authored_frame != nullptr) {
-        if (Status frame = host.authored_frame->render(host.view_world->world(), host.camera);
+        if (Status frame = host.authored_frame->render(host.view_world->world(), host.camera,
+                                                       host.game_camera == ~u64{0});
             !frame) {
             report("authored frame", frame.error());
             return false;
@@ -956,7 +995,19 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     // is the SAME layout, not a second computation: what a person aims at and what the editor
     // hit-tests came out of one call to `build_gizmo_layout`.
     const Canvas canvas{staging.pixels, staging.width, staging.height};
-    if (host.anchored != WorldView::kNoObject && !host.layout.empty()) {
+    if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
+        for (const LightMarker& light : host.authored_frame->light_markers()) {
+            const Vec3 relative = light.position - Vec3{static_cast<f32>(host.camera.position[0]),
+                                                        static_cast<f32>(host.camera.position[1]),
+                                                        static_cast<f32>(host.camera.position[2])};
+            Vec2 marker;
+            if (project_to_pixel(host.view, relative, marker)) {
+                draw_light_marker(canvas, marker.x, marker.y, light.kind);
+            }
+        }
+    }
+    if (host.game_camera == ~u64{0} && host.anchored != WorldView::kNoObject &&
+        !host.layout.empty()) {
         const u32 object = host.anchored;
         Vec3 pivot{};
         if (host.authored_frame == nullptr && object < host.scene->objects().size()) {

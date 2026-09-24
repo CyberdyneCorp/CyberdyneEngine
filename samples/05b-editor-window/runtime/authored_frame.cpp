@@ -25,6 +25,8 @@ using namespace rendering;
 using namespace rendering::assembly;
 using namespace rendering::pipeline;
 
+Vec3 point(const Mat4& matrix, Vec3 model) noexcept;
+
 constexpr u32 kCapacity = 4096;
 constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
@@ -45,8 +47,8 @@ Expected<render::TextureFormat, Error> cooked_texture_format(import::TextureForm
     return fail(ErrorCode::Unsupported, "authored frame: cooked texture format is not sampleable");
 }
 
-std::string field_reference(const ser::World& world, const ser::WorldNode& node,
-                            std::string_view type_name, std::string_view field_name) {
+const ser::WorldValue* field_value(const ser::World& world, const ser::WorldNode& node,
+                                   std::string_view type_name, std::string_view field_name) {
     for (const ser::WorldComponent& component : node.components()) {
         const ser::WorldTypeDecl* type = world.type(component.file_type);
         if (type == nullptr || world.text(type->name) != type_name) {
@@ -57,14 +59,59 @@ std::string field_reference(const ser::World& world, const ser::WorldNode& node,
                 continue;
             }
             const ser::WorldField* field = component.find(declaration.file_field);
-            if (field == nullptr || field->value.kind != ser::WorldValueKind::Text) {
-                return {};
-            }
-            const Span<const u8> bytes = world.blob(field->value);
-            return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+            return field == nullptr ? nullptr : &field->value;
         }
     }
-    return {};
+    return nullptr;
+}
+
+std::string field_reference(const ser::World& world, const ser::WorldNode& node,
+                            std::string_view type_name, std::string_view field_name) {
+    const ser::WorldValue* value = field_value(world, node, type_name, field_name);
+    if (value == nullptr || value->kind != ser::WorldValueKind::Text) {
+        return {};
+    }
+    const Span<const u8> bytes = world.blob(*value);
+    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+f32 light_float(const ser::World& world, const ser::WorldNode& node, std::string_view name,
+                f32 fallback) noexcept {
+    const ser::WorldValue* value = field_value(world, node, "LightSource", name);
+    return value != nullptr && value->kind == ser::WorldValueKind::Float ? value->lanes[0]
+                                                                         : fallback;
+}
+
+bool light_enabled(const ser::World& world, const ser::WorldNode& node) noexcept {
+    const ser::WorldValue* value = field_value(world, node, "LightSource", "enabled");
+    return value == nullptr || (value->kind == ser::WorldValueKind::Bool && value->integer != 0);
+}
+
+bool append_light(const ser::World& world, const ser::WorldNode& node, const Mat4& matrix,
+                  Array<render::LightDescription>& lights) noexcept {
+    const ser::WorldValue* kind = field_value(world, node, "LightSource", "kind");
+    if (kind == nullptr || kind->kind != ser::WorldValueKind::Int || !light_enabled(world, node)) {
+        return true;
+    }
+    if (kind->integer < 0 || kind->integer >= static_cast<i64>(render::LightKind::Count)) {
+        return true;
+    }
+    render::LightDescription light;
+    light.kind = static_cast<render::LightKind>(kind->integer);
+    light.transform.translation = point(matrix, Vec3{});
+    const Vec3 forward =
+        normalize(point(matrix, Vec3{0.0F, 0.0F, -1.0F}) - light.transform.translation);
+    const Vec3 up = normalize(point(matrix, Vec3{0.0F, 1.0F, 0.0F}) - light.transform.translation);
+    light.transform.rotation = Quat::look_rotation(forward, up);
+    light.color[0] = light_float(world, node, "color.r", 1.0F);
+    light.color[1] = light_float(world, node, "color.g", 1.0F);
+    light.color[2] = light_float(world, node, "color.b", 1.0F);
+    light.intensity = light_float(world, node, "intensity", 1000.0F);
+    light.range = light_float(world, node, "range", 10.0F);
+    light.inner_cone_radians = light_float(world, node, "inner_cone", 0.0F);
+    light.outer_cone_radians = light_float(world, node, "outer_cone", 0.7853981634F);
+    light.stable_id = node.identity;
+    return static_cast<bool>(lights.push_back(light));
 }
 
 std::string mesh_reference(const ser::World& world, const ser::WorldNode& node) {
@@ -284,17 +331,6 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     }
     output_ = *texture;
 
-    if (Status status = lights_.resize(1); !status) {
-        return status;
-    }
-    lights_[0].kind = render::LightKind::Directional;
-    lights_[0].intensity = 22000.0F;
-    lights_[0].transform.rotation =
-        Quat::look_rotation(normalize(Vec3{-0.28F, -0.82F, -0.50F}), Vec3{0, 1, 0});
-    lights_[0].color[0] = 1.0F;
-    lights_[0].color[1] = 0.96F;
-    lights_[0].color[2] = 0.88F;
-    lights_[0].stable_id = 1;
     initialized_ = true;
     return ok();
 }
@@ -622,11 +658,14 @@ Status AuthoredFrame::upload_geometry() noexcept {
     return ok();
 }
 
-Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye) noexcept {
+Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
+                                      bool editor_lighting) noexcept {
     index_.reset();
     instances_.clear();
     pivots_.clear();
+    light_markers_.clear();
     transforms_.clear();
+    lights_.clear();
     const Span<const ser::WorldNode> nodes = world.nodes().span();
     Array<Mat4> matrices(*allocator_);
     if (Status status = matrices.resize(nodes.size()); !status) {
@@ -642,9 +681,31 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye) noexcep
         }
         if (node.live) {
             pivots_.emplace_back(node.identity, point(matrices[row], Vec3{}));
+            const usize light_count = lights_.size();
+            if (!append_light(world, node, matrices[row], lights_)) {
+                return fail(ErrorCode::OutOfMemory, "authored frame: cannot append light");
+            }
+            if (lights_.size() != light_count) {
+                const render::LightDescription& light = lights_[light_count];
+                light_markers_.push_back(
+                    LightMarker{node.identity, light.kind, light.transform.translation});
+            }
             if (Status status = append_instance(world, node, matrices[row], eye); !status) {
                 return status;
             }
+        }
+    }
+    if (lights_.empty() && editor_lighting) {
+        render::LightDescription preview;
+        preview.kind = render::LightKind::Directional;
+        preview.intensity = 22000.0F;
+        preview.transform.rotation =
+            Quat::look_rotation(normalize(Vec3{-0.28F, -0.82F, -0.50F}), Vec3{0, 1, 0});
+        preview.color[1] = 0.96F;
+        preview.color[2] = 0.88F;
+        preview.stable_id = 1;
+        if (Status status = lights_.push_back(preview); !status) {
+            return status;
         }
     }
     return ok();
@@ -749,7 +810,8 @@ void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
 }
 
-Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera) noexcept {
+Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera,
+                             bool editor_lighting) noexcept {
     if (!initialized_) {
         return fail(ErrorCode::Unavailable, "authored frame: not initialized");
     }
@@ -758,7 +820,7 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     }
     const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
                    static_cast<f32>(camera.position[2])};
-    if (Status status = build_instances(world, eye); !status) {
+    if (Status status = build_instances(world, eye, editor_lighting); !status) {
         return status;
     }
     MaterialTextureSlot resident[kMaterialTextureSlots];
@@ -829,6 +891,46 @@ bool AuthoredFrame::pivot_for(u64 identity, Vec3& pivot) const noexcept {
     return false;
 }
 
+bool AuthoredFrame::scene_camera(const ser::World& world, u64 identity,
+                                 first_light::Camera& camera) const noexcept {
+    const Span<const ser::WorldNode> nodes = world.nodes().span();
+    Array<Mat4> matrices(*allocator_);
+    if (Status status = matrices.resize(nodes.size()); !status) {
+        return false;
+    }
+    for (usize row = 0; row < nodes.size(); ++row) {
+        const ser::WorldNode& node = nodes[row];
+        Transform local;
+        (void)ser::transform_of(world, node, local);
+        matrices[row] = local.to_matrix();
+        if (node.parent < row && nodes[node.parent].live) {
+            matrices[row] = matrices[node.parent] * matrices[row];
+        }
+        const ser::WorldValue* enabled = field_value(world, node, "Camera", "enabled");
+        const ser::WorldValue* fov = field_value(world, node, "Camera", "projection.fov_y");
+        if (!node.live || fov == nullptr || fov->kind != ser::WorldValueKind::Float ||
+            (enabled != nullptr && enabled->kind == ser::WorldValueKind::Bool &&
+             enabled->integer == 0) ||
+            (identity != 0 && identity != node.identity)) {
+            continue;
+        }
+        const Vec3 origin = point(matrices[row], Vec3{});
+        const Vec3 forward = normalize(point(matrices[row], Vec3{0.0F, 0.0F, -1.0F}) - origin);
+        const Vec3 up = normalize(point(matrices[row], Vec3{0.0F, 1.0F, 0.0F}) - origin);
+        camera.position[0] = static_cast<f64>(origin.x);
+        camera.position[1] = static_cast<f64>(origin.y);
+        camera.position[2] = static_cast<f64>(origin.z);
+        camera.forward = forward;
+        camera.up = up;
+        camera.fov_y_radians = fov->lanes[0];
+        const ser::WorldValue* near = field_value(world, node, "Camera", "projection.near");
+        camera.near_plane =
+            near != nullptr && near->kind == ser::WorldValueKind::Float ? near->lanes[0] : 0.1F;
+        return true;
+    }
+    return false;
+}
+
 first_light::Camera AuthoredFrame::framing(const first_light::Camera& fallback) const noexcept {
     if (instances_.empty()) {
         return fallback;
@@ -863,10 +965,12 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera) noexc
     const Vec3 forward = camera.forward;
     const Mat4 view_matrix = look_at(eye, eye + forward, camera.up);
     const Mat4 relative_view = look_at(Vec3{}, forward, camera.up);
+    const f32 fov = camera.fov_y_radians > 0.0F ? camera.fov_y_radians : 0.9F;
+    const f32 near_plane = camera.near_plane > 0.0F ? camera.near_plane : 0.1F;
     const Mat4 projection = perspective_reversed_z(
-        0.9F, static_cast<f32>(width_) / static_cast<f32>(height_), 0.1F, 10000.0F);
+        fov, static_cast<f32>(width_) / static_cast<f32>(height_), near_plane, 10000.0F);
     AssemblyView view;
-    view.fov_y_radians = 0.9F;
+    view.fov_y_radians = fov;
     view.view = view_matrix;
     view.projection = projection;
     view.cull.frustum = Frustum::from_view_projection(projection * view_matrix);

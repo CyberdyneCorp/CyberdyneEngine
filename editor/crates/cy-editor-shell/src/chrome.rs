@@ -139,6 +139,53 @@ fn menu(
 
     ui.menu_button(category, |ui| {
         for metadata in commands {
+            if metadata.id == "scene.create-primitive" {
+                if ui.button("Create Plane").clicked() {
+                    intents.push(Intent::Invoke(
+                        metadata.id.clone(),
+                        cy_editor_commands::Arguments::new()
+                            .with("shape", cy_editor_core::value::Value::Text("plane".into())),
+                    ));
+                    ui.close();
+                }
+                continue;
+            }
+            if metadata.id == "scene.create-light" {
+                for (label, kind) in [
+                    ("Create Directional Light", "directional"),
+                    ("Create Point Light", "point"),
+                    ("Create Spot Light", "spot"),
+                ] {
+                    if ui.button(label).clicked() {
+                        intents.push(Intent::Invoke(
+                            metadata.id.clone(),
+                            cy_editor_commands::Arguments::new()
+                                .with("kind", cy_editor_core::value::Value::Text(kind.into())),
+                        ));
+                        ui.close();
+                    }
+                }
+                continue;
+            }
+            if metadata.id == "scene.create-camera" {
+                let camera = &editor.viewports.focused().state.camera;
+                if ui.button("Create Camera at View").clicked() {
+                    intents.push(Intent::Invoke(
+                        metadata.id.clone(),
+                        cy_editor_commands::Arguments::new()
+                            .with(
+                                "at",
+                                cy_editor_core::value::Value::Vec3(camera.position.to_array()),
+                            )
+                            .with(
+                                "rotation",
+                                cy_editor_core::value::Value::Quat(camera.rotation.to_array()),
+                            ),
+                    ));
+                    ui.close();
+                }
+                continue;
+            }
             let availability = registry.availability(&metadata.id, editor);
             let binding = shell
                 .keymap
@@ -269,6 +316,32 @@ pub fn toolbar(
                     cy_editor_commands::Arguments::new(),
                 ));
             }
+        }
+        ui.separator();
+        let playing = editor.viewports.focused().play.is_play_mode();
+        let play_id = if playing { "play.leave" } else { "play.enter" };
+        if ui
+            .add_enabled(
+                registry.availability(play_id, editor).is_available(),
+                egui::Button::new(if playing { "■ Stop" } else { "▶ Play" }),
+            )
+            .clicked()
+        {
+            intents.push(Intent::Invoke(
+                play_id.into(),
+                cy_editor_commands::Arguments::new(),
+            ));
+        }
+        let paused = editor.viewports.focused().play == cy_editor_viewport::play::PlayState::Paused;
+        if playing
+            && ui
+                .button(if paused { "▶ Resume" } else { "Ⅱ Pause" })
+                .clicked()
+        {
+            intents.push(Intent::Invoke(
+                if paused { "play.enter" } else { "play.pause" }.into(),
+                cy_editor_commands::Arguments::new(),
+            ));
         }
         ui.separator();
         for id in ["edit.undo", "edit.redo", "file.save"] {

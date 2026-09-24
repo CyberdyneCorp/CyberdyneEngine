@@ -48,6 +48,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Creating a box, a sphere, a cylinder, a plane or a capsule — as a generated source asset and
     // an ordinary mesh instance. See `crate::primitives`.
     crate::primitives::register(registry)?;
+    crate::scene_actors::register(registry)?;
     // Importing a source asset from inside the editor, and landing it in the world. See
     // `crate::assets`.
     crate::assets::register(registry)?;
@@ -583,11 +584,12 @@ mod tests {
         // commands, seven provider-neutral source-control commands, two semantic-merge commands,
         // and six asset-browser operations, including asynchronous external import.
         // Terrain authoring adds create, add-layer, commit-stroke, enable, and reorder commands.
+        // Scene actors add camera and light creation.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

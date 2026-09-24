@@ -959,7 +959,11 @@ fn create_primitive() -> Command {
             let node = document.with_transaction(
                 format!("Create {}", primitive.shape.keyword()),
                 actor,
-                |document| create_mesh_instance(document, parent, &path, placement),
+                |document| {
+                    let node = create_mesh_instance(document, parent, &path, placement)?;
+                    document.set_name(node, &primitive.name)?;
+                    Ok(node)
+                },
             )?;
 
             let mut selection = Selection::new();

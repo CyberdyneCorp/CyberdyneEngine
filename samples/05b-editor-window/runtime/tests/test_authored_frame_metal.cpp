@@ -69,6 +69,58 @@ node 1 0 "test" "Child"
   component 2
     field 4 "content/beauty/meshes/block.cyprim"
 )";
+constexpr std::string_view kLit = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+type 3 runtime "LightSource"
+  field 5 int "kind" ""
+  field 6 float "intensity" ""
+  field 7 float "range" ""
+  field 8 bool "enabled" ""
+node 0 - "test" "Sphere"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 2
+    field 4 "content/beauty/meshes/block.cyprim"
+node 1 - "test" "Point Light"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 2 2
+    field 3 1 1 1
+  component 3
+    field 5 1
+    field 6 5000
+    field 7 10
+    field 8 true
+)";
+constexpr std::string_view kCamera = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "Camera"
+  field 4 float "projection.fov_y" ""
+  field 5 bool "enabled" ""
+node 0 - "test" "Parent"
+  component 1
+    field 1 0 0 0 1
+    field 2 2 0 0
+    field 3 1 1 1
+node 1 0 "test" "Camera"
+  component 1
+    field 1 0 0 0 1
+    field 2 1 0 0
+    field 3 1 1 1
+  component 2
+    field 4 1.1
+    field 5 true
+)";
 
 Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Gpu);
@@ -105,10 +157,14 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         ser::World sphere(allocator());
         ser::World transformed(allocator());
         ser::World parented(allocator());
+        ser::World lit(allocator());
+        ser::World authored_camera(allocator());
         CY_REQUIRE(ser::read_world(kEmpty, "worlds/test.cyworld", empty).has_value());
         CY_REQUIRE(ser::read_world(kSphere, "worlds/test.cyworld", sphere).has_value());
         CY_REQUIRE(ser::read_world(kTransformed, "worlds/test.cyworld", transformed).has_value());
         CY_REQUIRE(ser::read_world(kParented, "worlds/test.cyworld", parented).has_value());
+        CY_REQUIRE(ser::read_world(kLit, "worlds/test.cyworld", lit).has_value());
+        CY_REQUIRE(ser::read_world(kCamera, "worlds/test.cyworld", authored_camera).has_value());
         reflect::TypeRegistry registry;
         CY_REQUIRE(reflect::register_scene_types(registry));
         ser::AuthoringSchema schema(allocator());
@@ -116,6 +172,8 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         CY_REQUIRE(ser::resolve_against(sphere, schema).has_value());
         CY_REQUIRE(ser::resolve_against(transformed, schema).has_value());
         CY_REQUIRE(ser::resolve_against(parented, schema).has_value());
+        CY_REQUIRE(ser::resolve_against(lit, schema).has_value());
+        CY_REQUIRE(ser::resolve_against(authored_camera, schema).has_value());
         const first_light::Camera view = camera();
         CY_REQUIRE(frame.render(empty, view));
         Array<u32> blank(allocator());
@@ -156,6 +214,22 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         Vec3 parent_pivot;
         CY_CHECK(frame.pivot_for(parented.nodes()[0].identity, parent_pivot));
         CY_CHECK(parent_pivot.x > 1.9F);
+
+        first_light::Camera game_camera;
+        CY_CHECK(frame.scene_camera(authored_camera, 0, game_camera));
+        CY_CHECK(game_camera.position[0] > 2.9);
+        CY_CHECK(game_camera.fov_y_radians > 1.0F);
+        CY_CHECK(!frame.scene_camera(empty, 0, game_camera));
+
+        CY_REQUIRE(frame.render(sphere, view, false));
+        Array<u32> unlit(allocator());
+        CY_REQUIRE(unlit.append(frame.pixels()));
+        CY_REQUIRE(frame.render(lit, view, false));
+        usize lighting_changed = 0;
+        for (usize pixel = 0; pixel < unlit.size(); ++pixel) {
+            lighting_changed += static_cast<usize>(unlit[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK(lighting_changed > 50);
     }
     rhi::destroy_device(allocator(), *device);
 }

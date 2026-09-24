@@ -378,6 +378,21 @@ impl Editor {
         // engine's (`editor-viewport-and-gizmos`). Every other message is drained rather than
         // queued, which is what keeps the channel bounded in a build with no viewport.
         for message in &messages {
+            if let Message::Playing { state, detail, .. } = message {
+                let confirmed = match state.as_str() {
+                    "playing" => Some(PlayState::Playing),
+                    "paused" => Some(PlayState::Paused),
+                    "editing" => Some(PlayState::Editing),
+                    _ => None,
+                };
+                if let Some(confirmed) = confirmed {
+                    self.set_local_play_state(confirmed);
+                }
+                if detail.contains("unavailable") {
+                    self.notifications
+                        .post(Notification::warning(detail.clone()));
+                }
+            }
             if let Some(problem) = self.backend.accept(message) {
                 self.notifications.post(Notification::error(
                     "The material backend request failed",
@@ -1044,6 +1059,11 @@ impl Editor {
         // viewports showing different play states would describe two runtimes.
         for viewport in self.viewports.all_mut().iter_mut() {
             viewport.play = state;
+            match state {
+                PlayState::Playing => viewport.attach_to_game_camera(0),
+                PlayState::Editing => viewport.detach_camera(),
+                PlayState::Paused => {}
+            }
         }
     }
 }
@@ -1105,6 +1125,23 @@ mod tests {
             revision,
             "an idle editor costs nothing"
         );
+    }
+
+    #[test]
+    fn play_selects_the_game_camera_and_stop_restores_the_editor_view() {
+        let mut editor = Editor::default();
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), None);
+
+        editor.set_local_play_state(PlayState::Playing);
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), Some(0));
+        assert_eq!(editor.viewports.focused().play, PlayState::Playing);
+
+        editor.set_local_play_state(PlayState::Paused);
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), Some(0));
+
+        editor.set_local_play_state(PlayState::Editing);
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), None);
+        assert_eq!(editor.viewports.focused().play, PlayState::Editing);
     }
 
     #[test]

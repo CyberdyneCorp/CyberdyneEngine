@@ -106,6 +106,17 @@ fn a_primitive_created_in_an_empty_project_has_a_transform_and_is_saved_with_one
         .nodes()
         .next()
         .expect("creating a primitive selects it");
+    assert_eq!(
+        editor
+            .documents
+            .get(id)
+            .unwrap()
+            .content()
+            .node(node)
+            .unwrap()
+            .name,
+        "Box"
+    );
     let translation = editor
         .documents
         .get(id)

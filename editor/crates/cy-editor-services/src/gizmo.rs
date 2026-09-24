@@ -97,6 +97,9 @@ pub struct Request {
     pub fov_y_radians: f32,
     /// The near clip distance, in world units.
     pub near: f32,
+    /// The scene camera to render through, or `None` for the editor camera. Zero selects the first
+    /// enabled scene camera.
+    pub game_camera: Option<u64>,
 }
 
 impl Request {
@@ -126,6 +129,7 @@ impl Request {
                 cy_editor_viewport::state::Projection::Orthographic { .. } => 0.0,
             },
             near: viewport.state.near,
+            game_camera: viewport.attachment.game_camera(),
         })
     }
 
@@ -154,6 +158,7 @@ impl Request {
         }
         writer.f32(self.fov_y_radians);
         writer.f32(self.near);
+        writer.u64(self.game_camera.unwrap_or(u64::MAX));
         writer.finish()
     }
 
@@ -189,6 +194,10 @@ impl Request {
             fov_y_radians = reader.f32().unwrap_or(0.0);
             near = reader.f32().unwrap_or(0.0);
         }
+        let game_camera = match reader.u64() {
+            Ok(u64::MAX) | Err(_) => None,
+            Ok(identity) => Some(identity),
+        };
         Ok(Self {
             frame,
             mode,
@@ -201,6 +210,7 @@ impl Request {
             camera_rotation,
             fov_y_radians,
             near,
+            game_camera,
         })
     }
 }
@@ -411,6 +421,18 @@ mod tests {
         assert_eq!(round_tripped, request);
         assert_eq!(round_tripped.frame.as_u64(), 1016);
         assert_eq!(round_tripped.identities, vec![7, 9]);
+        assert_eq!(round_tripped.game_camera, None);
+    }
+
+    #[test]
+    fn game_camera_selection_survives_the_intent_wire() {
+        let mut viewport = showing(1016);
+        viewport.attach_to_game_camera(42);
+        let request = Request::of_viewport(&viewport, Vec::new()).unwrap();
+        assert_eq!(
+            Request::decode(&request.encode()).unwrap().game_camera,
+            Some(42)
+        );
     }
 
     #[test]

@@ -33,6 +33,7 @@
 
 #include <cy/core/base/types.h>
 #include <cy/servers/render/gizmo.h>
+#include <cy/servers/render/model.h>
 
 namespace cy::sample::editor_window {
 
@@ -58,5 +59,8 @@ void draw_gizmo(const Canvas& canvas, const render::GizmoLayout& layout,
 /// Not decoration: a gizmo with nothing under it is a gizmo a reader cannot tell is attached to
 /// anything, and the exit criterion is a SCREENSHOT. One ring, in the interface's selection colour.
 void draw_selection_marker(const Canvas& canvas, f32 x, f32 y, f32 radius) noexcept;
+
+/// Draw the engine-owned editor handle for an authored light. Game frames omit this call.
+void draw_light_marker(const Canvas& canvas, f32 x, f32 y, render::LightKind kind) noexcept;
 
 }  // namespace cy::sample::editor_window

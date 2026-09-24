@@ -170,12 +170,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             .set_filter(panels.inputs.hierarchy_filter.clone());
     }
     ui.horizontal(|ui| {
-        if ui.button("Create Empty Entity").clicked() {
-            panels.intents.push(Intent::Invoke(
-                "scene.create-entity".into(),
-                Arguments::new().with("template", Value::Text("empty".into())),
-            ));
-        }
+        show_create_menu(panels, ui);
         let selected = panels.editor.selection.get().nodes().collect::<Vec<_>>();
         if selected.len() == 1 && ui.button("Move to Root").clicked() {
             panels.intents.push(Intent::Invoke(
@@ -236,6 +231,47 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
     let interactions = draw_rows(panels, ui, total, metrics.row(), metrics.gap());
     apply_interactions(panels, ui, interactions);
+}
+
+fn show_create_menu(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    ui.menu_button("Create", |ui| {
+        for (label, command, key, value) in [
+            ("Empty Entity", "scene.create-entity", "template", "empty"),
+            ("Plane", "scene.create-primitive", "shape", "plane"),
+        ] {
+            if ui.button(label).clicked() {
+                panels.intents.push(Intent::Invoke(
+                    command.into(),
+                    Arguments::new().with(key, Value::Text(value.into())),
+                ));
+                ui.close();
+            }
+        }
+        ui.separator();
+        for (label, kind) in [
+            ("Directional Light", "directional"),
+            ("Point Light", "point"),
+            ("Spot Light", "spot"),
+        ] {
+            if ui.button(label).clicked() {
+                panels.intents.push(Intent::Invoke(
+                    "scene.create-light".into(),
+                    Arguments::new().with("kind", Value::Text(kind.into())),
+                ));
+                ui.close();
+            }
+        }
+        if ui.button("Camera").clicked() {
+            let camera = &panels.editor.viewports.focused().state.camera;
+            panels.intents.push(Intent::Invoke(
+                "scene.create-camera".into(),
+                Arguments::new()
+                    .with("at", Value::Vec3(camera.position.to_array()))
+                    .with("rotation", Value::Quat(camera.rotation.to_array())),
+            ));
+            ui.close();
+        }
+    });
 }
 
 fn draw_rows(

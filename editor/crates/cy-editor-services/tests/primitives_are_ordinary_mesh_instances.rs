@@ -493,8 +493,8 @@ fn a_generated_primitive_and_an_imported_mesh_are_the_same_entity() {
         Some("assets/models/crate.gltf")
     );
 
-    // Saving: the two nodes are written by the same writer, and the only difference in their lines
-    // is the path each references. Compare the two blocks with the paths removed.
+    // Saving: the two nodes have identical components once their asset paths are removed. The
+    // created primitive also carries its user-facing name in the node header.
     let written = cy_editor_services::write_world(document);
     let blocks: Vec<&str> = written.split("node ").skip(1).collect();
     assert_eq!(blocks.len(), 2, "{written}");
@@ -502,15 +502,8 @@ fn a_generated_primitive_and_an_imported_mesh_are_the_same_entity() {
         text.replace("assets/primitives/Box.cyprim", "<asset>")
             .replace("assets/models/crate.gltf", "<asset>")
     };
-    assert_eq!(
-        strip(blocks[0])
-            .split_once(' ')
-            .map(|(_, rest)| rest.to_string()),
-        strip(blocks[1])
-            .split_once(' ')
-            .map(|(_, rest)| rest.to_string()),
-        "{written}"
-    );
+    let components = |text: &str| text.split_once("\n  component").map(|(_, rest)| rest.to_string());
+    assert_eq!(components(&strip(blocks[0])), components(&strip(blocks[1])), "{written}");
 }
 
 #[test]

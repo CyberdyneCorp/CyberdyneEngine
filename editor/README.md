@@ -129,6 +129,24 @@ runtime connection remembers its local endpoint and retries once per second afte
 runtime returns, the existing editor process reconnects and replays the open document's unsaved
 transaction history before incremental live editing resumes.
 
+The Hierarchy Create menu and Scene menu can add a Plane, directional light, point light, spot
+light, or Camera to the open world. Camera creation from the desktop uses the current editor view
+position and rotation. The same commands are available to scripts and MCP clients as
+`scene.create-primitive shape=plane`, `scene.create-light kind=directional|point|spot`, and
+`scene.create-camera`. Created actors use normal scene transactions, can be edited in the Inspector,
+and survive Save and reopen.
+
+The viewport has Editor and Game controls. Editor uses its navigation camera and shows transform
+and light handles. Game uses the first enabled scene Camera and hides editor handles; if no scene
+Camera exists, the view explains that one is needed. Switching views alone does not start the
+simulation. Play selects Game and advances hosted physics; Pause holds it; Stop restores the
+authored world and Editor view. The current sample hosted runtime reports Swift gameplay and audio
+as unavailable, so Play does not yet run project scripts or sound. The runtime status is shown in
+the editor instead of implying those services are active.
+
+Live Metal captures: [Editor view with selected light](../docs/design/images/editor-scene-light-editor-metal.png)
+and [Game view during Play](../docs/design/images/editor-scene-light-game-play-metal.png).
+
 Every recipe takes `--profile <name>`. The four profiles mean the same thing in Cargo that they mean
 in CMake — M0's spike wrote that column and reserved it unused for five milestones, and
 `crates/cy-editor-app/tests/profiles.rs` reads `justfile`'s table and checks it rather than trusting

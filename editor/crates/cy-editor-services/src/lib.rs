@@ -43,6 +43,7 @@ pub mod picking;
 pub mod primitives;
 pub mod project;
 pub mod runtime;
+pub mod scene_actors;
 pub mod selection;
 pub mod semantic_merge;
 pub mod settings;

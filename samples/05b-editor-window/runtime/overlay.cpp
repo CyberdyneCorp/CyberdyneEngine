@@ -230,4 +230,26 @@ void draw_selection_marker(const Canvas& canvas, f32 x, f32 y, f32 radius) noexc
     ring(canvas, x, y, radius, 1.5F, kSelection);
 }
 
+void draw_light_marker(const Canvas& canvas, f32 x, f32 y, render::LightKind kind) noexcept {
+    if (canvas.pixels == nullptr) {
+        return;
+    }
+    constexpr u32 colour = 0x00FF'D16BU;
+    ring(canvas, x, y, 6.0F, 1.5F, colour);
+    if (kind == render::LightKind::Directional) {
+        for (i32 step = 0; step < 4; ++step) {
+            const f32 dx = step % 2 == 0 ? 1.0F : 0.0F;
+            const f32 dy = step % 2 == 0 ? 0.0F : 1.0F;
+            const f32 sign = step < 2 ? 1.0F : -1.0F;
+            line(canvas, x + (dx * sign * 9.0F), y + (dy * sign * 9.0F), x + (dx * sign * 13.0F),
+                 y + (dy * sign * 13.0F), 1.0F, colour);
+        }
+    } else if (kind == render::LightKind::Spot) {
+        line(canvas, x - 7.0F, y + 10.0F, x, y - 3.0F, 1.0F, colour);
+        line(canvas, x, y - 3.0F, x + 7.0F, y + 10.0F, 1.0F, colour);
+    } else {
+        disc(canvas, x, y, 2.0F, colour);
+    }
+}
+
 }  // namespace cy::sample::editor_window

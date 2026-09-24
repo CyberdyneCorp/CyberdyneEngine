@@ -449,6 +449,10 @@ Status decode_gizmo_intent(Span<const u8> bytes, GizmoIntent& out) noexcept {
         intent.fov_y_radians = lanes[7];
         intent.near_plane = lanes[8];
     }
+    u64 game_camera = 0;
+    if (reader.u64_value(game_camera)) {
+        intent.game_camera = game_camera;
+    }
     out = std::move(intent);
     return ok();
 }

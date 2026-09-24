@@ -20,6 +20,12 @@
 
 namespace cy::sample::editor_window {
 
+struct LightMarker {
+    u64 identity = 0;
+    render::LightKind kind = render::LightKind::Point;
+    Vec3 position;
+};
+
 class AuthoredFrame {
 public:
     AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept;
@@ -31,13 +37,19 @@ public:
     [[nodiscard]] Status initialize(u32 width, u32 height, const char* project) noexcept;
     [[nodiscard]] Status prepare_world(const scene::serialization::World& world) noexcept;
     [[nodiscard]] Status render(const scene::serialization::World& world,
-                                const first_light::Camera& camera) noexcept;
+                                const first_light::Camera& camera,
+                                bool editor_lighting = true) noexcept;
     [[nodiscard]] Span<const u32> pixels() const noexcept { return pixels_.span(); }
     [[nodiscard]] Status publish(const first_light::Camera& camera,
                                  Array<render::GpuInstance>& instances,
                                  Array<render::DrawItem>& draws) const noexcept;
     [[nodiscard]] bool pivot_for(u64 identity, Vec3& pivot) const noexcept;
+    [[nodiscard]] Span<const LightMarker> light_markers() const noexcept {
+        return {light_markers_.data(), light_markers_.size()};
+    }
     [[nodiscard]] first_light::Camera framing(const first_light::Camera& fallback) const noexcept;
+    [[nodiscard]] bool scene_camera(const scene::serialization::World& world, u64 identity,
+                                    first_light::Camera& camera) const noexcept;
 
 private:
     struct Mesh;
@@ -50,8 +62,8 @@ private:
     [[nodiscard]] Expected<rhi::BindlessIndex, Error> texture_slot(AssetId identity) noexcept;
     [[nodiscard]] Status upload_geometry() noexcept;
     [[nodiscard]] Status create_materials() noexcept;
-    [[nodiscard]] Status build_instances(const scene::serialization::World& world,
-                                         Vec3 eye) noexcept;
+    [[nodiscard]] Status build_instances(const scene::serialization::World& world, Vec3 eye,
+                                         bool editor_lighting = true) noexcept;
     [[nodiscard]] Status append_instance(const scene::serialization::World& world,
                                          const scene::serialization::WorldNode& node,
                                          const Mat4& matrix, Vec3 eye) noexcept;
@@ -87,6 +99,7 @@ private:
     std::vector<std::unique_ptr<Mesh>> meshes_;
     std::vector<Instance> instances_;
     std::vector<std::pair<u64, Vec3>> pivots_;
+    std::vector<LightMarker> light_markers_;
     std::vector<std::pair<std::string, u32>> material_slots_;
     std::vector<std::pair<AssetId, render::TextureHandle>> texture_handles_;
     rhi::BufferHandle positions_;

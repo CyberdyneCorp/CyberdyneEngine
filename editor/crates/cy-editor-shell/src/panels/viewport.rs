@@ -60,6 +60,13 @@ const ORIENTATION_SIZE: f32 = WIDGET_DEFAULT_SIZE;
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let theme = panels.shell.theme;
     let rect = ui.available_rect_before_wrap();
+    let game_view = panels
+        .editor
+        .viewports
+        .focused()
+        .attachment
+        .game_camera()
+        .is_some();
     ui.painter().rect_filled(
         rect,
         egui::CornerRadius::ZERO,
@@ -71,7 +78,16 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     // the last complete frame is deliberately retained, so `texture()` still answers `Some` and the
     // `else` branch below is never reached. The user got a frozen picture and no explanation, which
     // is the silent-fallback shape this project has now paid for twice.
-    let drawn = if let Some(texture) = panels.link.texture() {
+    let drawn = if game_view && !has_scene_camera(panels) {
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "Game view needs an enabled Camera in this scene",
+            egui::FontId::proportional(panels.shell.metrics().text(TextRole::Body)),
+            theme::role(theme, Semantic::SecondaryText),
+        );
+        false
+    } else if let Some(texture) = panels.link.texture() {
         ui.painter().image(
             texture,
             rect,
@@ -122,13 +138,74 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         false
     };
 
-    let response = ui.interact(
-        rect,
-        ui.id().with("cy-viewport-surface"),
-        egui::Sense::click_and_drag(),
-    );
-    drive(panels, ui, rect, &response);
-    overlays(panels, ui, rect, drawn);
+    if game_view {
+        let state = &mut panels.editor.viewports.focused_mut().state;
+        state.viewport = ViewportRect {
+            x: 0,
+            y: 0,
+            width: to_pixels(rect.width()),
+            height: to_pixels(rect.height()),
+        };
+        panels.link.publish_view_state(state.clone());
+    } else {
+        let response = ui.interact(
+            rect,
+            ui.id().with("cy-viewport-surface"),
+            egui::Sense::click_and_drag(),
+        );
+        drive(panels, ui, rect, &response);
+        overlays(panels, ui, rect, drawn);
+    }
+    view_switch(panels, ui, rect);
+}
+
+fn has_scene_camera(panels: &Panels<'_>) -> bool {
+    let Some(document) = panels
+        .editor
+        .workspace
+        .active()
+        .and_then(|id| panels.editor.documents.get(id))
+    else {
+        return false;
+    };
+    let Some(camera) = document.schema().type_named("Camera") else {
+        return false;
+    };
+    let enabled = camera.field_named("enabled").map(|field| field.id);
+    document.content().nodes().any(|node| {
+        document.content().has_component(node, camera.id)
+            && enabled.is_none_or(|field| {
+                document.content().field(node, camera.id, field)
+                    != Some(&cy_editor_core::value::Value::Bool(false))
+            })
+    })
+}
+
+fn view_switch(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect) {
+    let game = panels
+        .editor
+        .viewports
+        .focused()
+        .attachment
+        .game_camera()
+        .is_some();
+    egui::Area::new(egui::Id::new("viewport-view-switch"))
+        .fixed_pos(rect.left_top() + egui::vec2(12.0, 8.0))
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                if ui.selectable_label(!game, "Editor").clicked() {
+                    panels.editor.viewports.focused_mut().detach_camera();
+                }
+                if ui.selectable_label(game, "Game").clicked() {
+                    panels
+                        .editor
+                        .viewports
+                        .focused_mut()
+                        .attach_to_game_camera(0);
+                }
+            });
+        });
 }
 
 /// Feed the frame's pointer and keys to the viewport's own interaction model, and act on what it says.
@@ -287,7 +364,7 @@ fn overlays(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, drawn:
         }
         let (anchor, align) = match corner {
             Corner::TopLeft => (
-                rect.left_top() + egui::vec2(inset, inset),
+                rect.left_top() + egui::vec2(inset, inset + 28.0),
                 egui::Align2::LEFT_TOP,
             ),
             Corner::TopRight => (
