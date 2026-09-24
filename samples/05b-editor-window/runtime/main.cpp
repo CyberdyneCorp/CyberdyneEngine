@@ -78,8 +78,8 @@
 #include <cy/servers/render/viewport_transport.h>
 #include <cy_reflect_generated_scene.h>
 
-#include "layout_file.h"
 #include "authored_frame.h"
+#include "layout_file.h"
 #include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
@@ -542,8 +542,7 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
         (void)host.view_world->present_authored();
         if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
             !prepared) {
-            std::fprintf(stderr, "%s: authored scene: %s\n", kTag,
-                         prepared.error().message);
+            std::fprintf(stderr, "%s: authored scene: %s\n", kTag, prepared.error().message);
         }
     }
     if (report.applied > 0 && !host.change_pending) {
@@ -763,9 +762,10 @@ void serve_editor(Host& host) noexcept {
                 // viewport opens at the origin looking down −Z, and this runtime is the only side
                 // that knows where its world is. Sent on the handshake rather than on every frame,
                 // because a runtime that re-aimed the camera continuously would own it.
-                const first_light::Camera framed = host.authored_frame != nullptr
-                    ? host.authored_frame->framing(host.scene->camera_at(kFramingPhase))
-                    : host.scene->camera_at(kFramingPhase);
+                const first_light::Camera framed =
+                    host.authored_frame != nullptr
+                        ? host.authored_frame->framing(host.scene->camera_at(kFramingPhase))
+                        : host.scene->camera_at(kFramingPhase);
                 const f32 position[3] = {static_cast<f32>(framed.position[0]),
                                          static_cast<f32>(framed.position[1]),
                                          static_cast<f32>(framed.position[2])};
@@ -909,8 +909,11 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     }
 
     if (host.view_world->loaded()) {
-        if (host.authored_frame != nullptr) (void)host.view_world->present_authored();
-        else (void)host.view_world->present(*host.scene);
+        if (host.authored_frame != nullptr) {
+            (void)host.view_world->present_authored();
+        } else {
+            (void)host.view_world->present(*host.scene);
+        }
     }
 
     Span<const u32> texels;
@@ -935,8 +938,11 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
         return false;
     }
     if (host.authored_frame != nullptr) {
-        if (Status published = host.authored_frame->publish(host.camera, host.instances, host.draws);
-            !published) report("pick records", published.error());
+        if (Status published =
+                host.authored_frame->publish(host.camera, host.instances, host.draws);
+            !published) {
+            report("pick records", published.error());
+        }
     }
 
     viewport::FrameStaging staging = host.publisher->begin_frame();
@@ -1162,8 +1168,9 @@ int main(int argc, char** argv) {
         }
         AuthoredFrame authored_frame(allocator, *device.value());
         if (view_world.loaded()) {
-            if (Status prepared = authored_frame.initialize(options.width, options.height,
-                                                            options.project); !prepared) {
+            if (Status prepared =
+                    authored_frame.initialize(options.width, options.height, options.project);
+                !prepared) {
                 report("authored frame", prepared.error());
                 return 1;
             }

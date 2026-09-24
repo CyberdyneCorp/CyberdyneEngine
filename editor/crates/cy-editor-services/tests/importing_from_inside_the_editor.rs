@@ -842,19 +842,15 @@ fn a_material_assignment_preserves_the_mesh_and_survives_undo_and_reload() {
     assert_eq!(material_of(document(&editor), node), None);
 }
 
-#[test]
-fn an_external_fbx_can_be_placed_transformed_saved_and_reopened_from_an_empty_world() {
-    let sandbox = Sandbox::new("external-fbx-scene");
-    let external = sandbox.path().with_extension("fbx");
-    std::fs::write(&external, "external FBX source").expect("an external source file");
-    let registry = registry();
-    let runner = Recording::with_scene();
-    let mut editor = editor_with_a_world(&sandbox, runner.clone());
-    assert!(nodes(&editor).is_empty());
-
+fn stage_external_fbx(
+    editor: &mut Editor,
+    registry: &Registry,
+    external: &Path,
+    project: &Path,
+) -> String {
     invoke(
-        &mut editor,
-        &registry,
+        editor,
+        registry,
         "asset.import-external",
         &Arguments::new().with("source", Value::Text(external.display().to_string())),
     );
@@ -871,8 +867,30 @@ fn an_external_fbx_can_be_placed_transformed_saved_and_reopened_from_an_empty_wo
     };
     let staged = completion.source.expect("the external FBX was staged");
     assert!(completion.result.is_ok(), "the external FBX was imported");
-    assert!(sandbox.path().join(&staged).is_file());
+    assert!(project.join(&staged).is_file());
     assert!(staged.starts_with("Imported/"), "{staged}");
+    staged
+}
+
+fn assert_saved_mesh_identity(project: &Path) {
+    let saved = std::fs::read_to_string(project.join("worlds/city.cyworld"))
+        .expect("the world was saved to disk");
+    assert!(
+        saved.contains("5e014c7f8f1666b05d2b42948d633399"),
+        "the saved world retains the imported mesh identity"
+    );
+}
+
+#[test]
+fn an_external_fbx_can_be_placed_transformed_saved_and_reopened_from_an_empty_world() {
+    let sandbox = Sandbox::new("external-fbx-scene");
+    let external = sandbox.path().with_extension("fbx");
+    std::fs::write(&external, "external FBX source").expect("an external source file");
+    let registry = registry();
+    let runner = Recording::with_scene();
+    let mut editor = editor_with_a_world(&sandbox, runner.clone());
+    assert!(nodes(&editor).is_empty());
+    let staged = stage_external_fbx(&mut editor, &registry, &external, sandbox.path());
 
     invoke(
         &mut editor,
@@ -922,12 +940,7 @@ fn an_external_fbx_can_be_placed_transformed_saved_and_reopened_from_an_empty_wo
     assert_ne!(rotation, Some(Value::Quat([0.0, 0.0, 0.0, 1.0])));
     assert_eq!(scale, Some(Value::Vec3([1.5, 0.8, 2.0])));
     invoke(&mut editor, &registry, "file.save", &Arguments::new());
-    let saved = std::fs::read_to_string(sandbox.path().join("worlds/city.cyworld"))
-        .expect("the world was saved to disk");
-    assert!(
-        saved.contains("5e014c7f8f1666b05d2b42948d633399"),
-        "the saved world retains the imported mesh identity"
-    );
+    assert_saved_mesh_identity(sandbox.path());
     drop(editor);
 
     let mut reopened =

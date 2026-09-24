@@ -138,8 +138,8 @@ CY_TEST_CASE("Metal BC7 buffer copies use block rows rather than pixel rows") {
     texture_description.name = "BC7 copy layout";
     texture_description.format = cy::rhi::Format::Bc7Unorm;
     texture_description.extent = {8, 8, 1};
-    texture_description.usage = cy::rhi::TextureUsage::TransferDestination |
-                                cy::rhi::TextureUsage::TransferSource;
+    texture_description.usage =
+        cy::rhi::TextureUsage::TransferDestination | cy::rhi::TextureUsage::TransferSource;
     const auto texture = device.create_texture(texture_description);
     CY_REQUIRE(texture);
 
@@ -181,7 +181,8 @@ CY_TEST_CASE("Metal BC7 buffer copies use block rows rather than pixel rows") {
     const auto signal = device.submit(submit);
     CY_REQUIRE(signal);
     CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *signal, 5'000'000'000ULL));
-    CY_CHECK_EQ(std::memcmp(device.buffer_mapped_pointer(*readback), expected, sizeof(expected)), 0);
+    CY_CHECK_EQ(std::memcmp(device.buffer_mapped_pointer(*readback), expected, sizeof(expected)),
+                0);
 
     device.destroy_buffer(*readback);
     device.destroy_buffer(*upload);

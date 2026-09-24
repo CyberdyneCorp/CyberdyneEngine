@@ -706,12 +706,7 @@ impl Message {
                 mode: reader.text()?,
                 detail: reader.text()?,
             },
-            14 => Message::ViewSuggested {
-                position: [reader.f32()?, reader.f32()?, reader.f32()?],
-                rotation: [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?],
-                fov_y_radians: reader.f32()?,
-                near: reader.f32()?,
-            },
+            14 => Self::decode_view_suggested(&mut reader)?,
             17..=19 => Self::decode_service(tag, &mut reader)?,
             other => {
                 return Err(Problem::new(
@@ -722,6 +717,15 @@ impl Message {
             }
         };
         Ok(message)
+    }
+
+    fn decode_view_suggested(reader: &mut Reader<'_>) -> Result<Self> {
+        Ok(Message::ViewSuggested {
+            position: [reader.f32()?, reader.f32()?, reader.f32()?],
+            rotation: [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?],
+            fov_y_radians: reader.f32()?,
+            near: reader.f32()?,
+        })
     }
 
     fn decode_service(tag: u8, reader: &mut Reader<'_>) -> Result<Self> {

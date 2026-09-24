@@ -34,7 +34,7 @@ u32 read_u32(const u8* bytes) noexcept {
 }
 
 Expected<render::TextureFormat, Error> cooked_texture_format(import::TextureFormat format,
-                                                              bool encoded, bool srgb) noexcept {
+                                                             bool encoded, bool srgb) noexcept {
     if (format == import::TextureFormat::BC7 && encoded) {
         return srgb ? render::TextureFormat::Bc7Srgb : render::TextureFormat::Bc7Unorm;
     }
@@ -248,7 +248,8 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     }
     rhi::SamplerDescription texture_sampler;
     texture_sampler.name = "editor authored material textures";
-    if (Status status = texture_table_.initialize(*device_, *allocator_, texture_sampler); !status) {
+    if (Status status = texture_table_.initialize(*device_, *allocator_, texture_sampler);
+        !status) {
         return status;
     }
     if (Status status = upload_geometry(); !status) {
@@ -384,8 +385,8 @@ Expected<u32, Error> AuthoredFrame::material_slot(const std::string& reference) 
         if (!texture) {
             return make_unexpected(texture.error());
         }
-        if (Status status = table.set_texture(material_program_, slot, ids.base_color_texture,
-                                              *texture);
+        if (Status status =
+                table.set_texture(material_program_, slot, ids.base_color_texture, *texture);
             !status) {
             return make_unexpected(status.error());
         }
@@ -415,8 +416,8 @@ Expected<rhi::BindlessIndex, Error> AuthoredFrame::texture_slot(AssetId identity
     if (payload->size() < 20 || read_u32(payload->data()) != import::CookedTexture::kVersion) {
         return fail(ErrorCode::InvalidArgument, "authored frame: invalid cooked texture header");
     }
-    const auto format = static_cast<import::TextureFormat>(
-        static_cast<u16>((*payload)[4]) | (static_cast<u16>((*payload)[5]) << 8U));
+    const auto format = static_cast<import::TextureFormat>(static_cast<u16>((*payload)[4]) |
+                                                           (static_cast<u16>((*payload)[5]) << 8U));
     Expected<render::TextureFormat, Error> device_format =
         cooked_texture_format(format, (*payload)[6] != 0, (*payload)[7] != 0);
     if (!device_format) {
@@ -443,7 +444,8 @@ Expected<rhi::BindlessIndex, Error> AuthoredFrame::texture_slot(AssetId identity
         return fail(ErrorCode::InvalidArgument, "authored frame: cooked texture mip size mismatch");
     }
     const TextureUpload upload{*handle, pixels};
-    if (Status status = texture_table_.upload(texture_server_, Span<const TextureUpload>(&upload, 1));
+    if (Status status =
+            texture_table_.upload(texture_server_, Span<const TextureUpload>(&upload, 1));
         !status) {
         texture_server_.destroy_texture(*handle);
         return make_unexpected(status.error());
@@ -755,12 +757,14 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
         return status;
     }
     MaterialTextureSlot resident[kMaterialTextureSlots];
-    const usize count = texture_table_.slots(Span<MaterialTextureSlot>(resident, kMaterialTextureSlots));
+    const usize count =
+        texture_table_.slots(Span<MaterialTextureSlot>(resident, kMaterialTextureSlots));
     if (count > kMaterialTextureSlots) {
         return fail(ErrorCode::OutOfRange, "authored frame: too many resident material textures");
     }
-    if (Status status = bindings_.set_material_textures(
-            Span<const MaterialTextureSlot>(resident, count)); !status) {
+    if (Status status =
+            bindings_.set_material_textures(Span<const MaterialTextureSlot>(resident, count));
+        !status) {
         return status;
     }
     Expected<u32, Error> begun = device_->begin_frame();
@@ -887,9 +891,8 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera) noexc
     }
     GlobalsData globals;
     globals.exposure_stops = -11.4F;
-    FrameUpload data =
-        upload_for(assembly_, report, projection * relative_view, relative_view, transforms_.span(),
-                   globals, material_offsets_);
+    FrameUpload data = upload_for(assembly_, report, projection * relative_view, relative_view,
+                                  transforms_.span(), globals, material_offsets_);
     // A neutral studio fill keeps imported materials readable while the scene has no authored
     // environment or lights. The physical sky still contributes above this floor.
     for (u32 channel = 0; channel < 3; ++channel) {

@@ -155,7 +155,6 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         Vec3 parent_pivot;
         CY_CHECK(frame.pivot_for(parented.nodes()[0].identity, parent_pivot));
         CY_CHECK(parent_pivot.x > 1.9F);
-
     }
     rhi::destroy_device(allocator(), *device);
 }

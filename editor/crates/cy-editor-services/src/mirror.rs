@@ -65,6 +65,10 @@ pub struct RuntimeMirror {
     document: Option<Revision>,
     /// Type and field declarations last sent to this runtime connection.
     schema: Option<DocumentSchema>,
+    /// An unsaved schema change needs a snapshot if the runtime reconnects to an older file.
+    snapshot_on_reconnect: bool,
+    /// A restarted runtime replays ordinary unsaved edits from the journal.
+    replay_on_next_sync: bool,
     /// How many transactions have been sent, for a report and for a test.
     sent: u64,
     /// And how many of those were scheduled for a tick boundary because the world was playing.
@@ -136,6 +140,7 @@ impl RuntimeMirror {
         self.schema = None;
         self.forwarded = 0;
         self.cursor = 0;
+        self.replay_on_next_sync = true;
         self.quiet_reason = None;
     }
 
@@ -270,15 +275,30 @@ impl RuntimeMirror {
                       on the same identity"
         )]
         let revision = Revision::from_u64(document.id().as_u128() as u64);
-        if self.document != Some(revision) || self.schema.as_ref() != Some(document.schema()) {
-            let world = crate::worldfile::write_world(document).into_bytes();
-            if runtime.sync_world(world).is_ok() {
-                self.document = Some(revision);
+        if self.document != Some(revision) {
+            self.document = Some(revision);
+            let replay = std::mem::take(&mut self.replay_on_next_sync);
+            if replay && !self.snapshot_on_reconnect {
                 self.schema = Some(document.schema().clone());
-                self.forwarded = cursor;
+                self.forwarded = 0;
+                self.cursor = 0;
+            } else if replay || document.is_dirty() {
+                self.send_snapshot(runtime, document, cursor);
+                return;
+            } else {
+                self.schema = Some(document.schema().clone());
+                self.snapshot_on_reconnect = false;
+                self.forwarded = entries.len();
                 self.cursor = cursor;
+                return;
             }
+        }
+        if self.schema.as_ref() != Some(document.schema()) {
+            self.send_snapshot(runtime, document, cursor);
             return;
+        }
+        if !document.is_dirty() {
+            self.snapshot_on_reconnect = false;
         }
 
         // Undo first: the cursor moved back, so the entries between the new cursor and the old one
@@ -300,6 +320,16 @@ impl RuntimeMirror {
         }
         self.forwarded = cursor.min(entries.len());
         self.cursor = cursor;
+    }
+
+    fn send_snapshot(&mut self, runtime: &RuntimeSession, document: &Document, cursor: usize) {
+        let world = crate::worldfile::write_world(document).into_bytes();
+        if runtime.sync_world(world).is_ok() {
+            self.schema = Some(document.schema().clone());
+            self.snapshot_on_reconnect = document.is_dirty();
+            self.forwarded = cursor;
+            self.cursor = cursor;
+        }
     }
 
     fn send(&mut self, runtime: &RuntimeSession, transaction: &Transaction, when: ApplyWhen) {

@@ -206,7 +206,8 @@ CY_TEST_CASE("Metal forward frame samples the material texture selected by its s
     const u8 red_pixel[4] = {255, 0, 0, 255};
     const u8 blue_pixel[4] = {0, 0, 255, 255};
     const rendering::pipeline::TextureUpload uploads[2] = {
-        {*red, {red_pixel, 4}}, {*blue, {blue_pixel, 4}},
+        {*red, {red_pixel, 4}},
+        {*blue, {blue_pixel, 4}},
     };
     CY_REQUIRE(textures.upload(server, {uploads, 2}).has_value());
     rendering::pipeline::MaterialTextureSlot resident[2];

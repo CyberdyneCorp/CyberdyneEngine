@@ -180,9 +180,13 @@ u32 WorldView::present_authored() noexcept {
     placed_.clear();
     overflowed_ = 0;
     for (const ser::WorldNode& node : world_.nodes()) {
-        if (!node.live) continue;
+        if (!node.live) {
+            continue;
+        }
         const u32 index = static_cast<u32>(placed_.size());
-        if (Status pushed = placed_.push_back(Placed{node.identity, index}); !pushed) break;
+        if (Status pushed = placed_.push_back(Placed{node.identity, index}); !pushed) {
+            break;
+        }
     }
     return static_cast<u32>(placed_.size());
 }

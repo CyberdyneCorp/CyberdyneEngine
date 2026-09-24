@@ -425,9 +425,8 @@ Status ImportPipeline::publish(Prepared& prepared, const ImportResult& result) n
             }
         }
         Array<u8> cooked;
-        if (Status written = assets::write_cooked_asset(
-                produced[index].kind, prepared.settings.variant,
-                payload, cooked);
+        if (Status written = assets::write_cooked_asset(produced[index].kind,
+                                                        prepared.settings.variant, payload, cooked);
             !written) {
             return written;
         }

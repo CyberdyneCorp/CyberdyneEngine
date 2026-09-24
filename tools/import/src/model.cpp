@@ -300,8 +300,7 @@ void put_u64(Array<u8>& out, u64 value) noexcept {
 }
 
 [[nodiscard]] u64 get_u64(const u8* data) noexcept {
-    return static_cast<u64>(get_u32(data)) |
-           (static_cast<u64>(get_u32(data + 4)) << 32U);
+    return static_cast<u64>(get_u32(data)) | (static_cast<u64>(get_u32(data + 4)) << 32U);
 }
 
 [[nodiscard]] f32 get_f32(const u8* data) noexcept {
@@ -339,9 +338,10 @@ Status write_cooked_material(const StandardMaterial& material, Array<u8>& out) n
     put_u64(out, material.base_color_texture.high());
     put_u64(out, material.base_color_texture.low());
     put_u32(out, static_cast<u32>(material.base_color_texture_name.size()));
-    if (Status appended = out.append(Span<const u8>(
-            reinterpret_cast<const u8*>(material.base_color_texture_name.data()),
-            material.base_color_texture_name.size())); !appended) {
+    if (Status appended = out.append(
+            Span<const u8>(reinterpret_cast<const u8*>(material.base_color_texture_name.data()),
+                           material.base_color_texture_name.size()));
+        !appended) {
         return appended;
     }
     return ok();

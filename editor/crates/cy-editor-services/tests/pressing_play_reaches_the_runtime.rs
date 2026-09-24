@@ -130,6 +130,20 @@ fn runtime_double(
                         observed: Vec::new(),
                     }])
                 }
+                Message::SyncWorld { request, world } => {
+                    let snapshot = String::from_utf8(world).expect("the authored world is text");
+                    assert!(snapshot.contains("type 1 runtime \"Transform\""));
+                    assert!(snapshot.contains("node 0 -"));
+                    scheduling
+                        .lock()
+                        .expect("the record")
+                        .push("SyncWorld".into());
+                    Some(vec![Message::Applied {
+                        request,
+                        frame: cy_editor_protocol::FrameId::from_raw(1),
+                        observed: Vec::new(),
+                    }])
+                }
                 _ => Some(Vec::new()),
             }
         });
@@ -470,4 +484,52 @@ fn an_edit_made_while_the_world_is_playing_is_scheduled_for_a_tick_boundary() {
     drop(runtime);
     drop(server);
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn a_new_schema_is_sent_again_after_the_runtime_reconnects_to_an_empty_file() {
+    let directory = scratch("schema-reconnect");
+    let (path, _asked, _modes, messages, server) = runtime_double(&directory);
+    let runtime = RuntimeSession::connect_hosted(&path).expect("a connected runtime");
+    let mut document = Document::new("worlds/city.cyworld");
+    let viewport = Viewport::new(
+        ViewportId::from_raw(1),
+        "Perspective",
+        TransportKind::LocalSurface,
+    );
+    let mut mirror = RuntimeMirror::new();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+
+    let transform = document.schema_mut().declare_type("Transform", false);
+    let translation = document
+        .schema_mut()
+        .declare_field(transform, "translation", ValueKind::Vec3, "position")
+        .unwrap();
+    document
+        .with_transaction("Place a tree", Actor::human("designer"), |document| {
+            let tree = document.create_node(None)?;
+            document.add_component(
+                tree,
+                transform,
+                vec![(translation, Value::Vec3([1.0, 0.0, 0.0]))],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+    mirror.runtime_restarted();
+    mirror.sync(&runtime, Some(&document), &viewport, Vec::new());
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while messages.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        *messages.lock().unwrap(),
+        vec!["SyncWorld".to_string(), "SyncWorld".to_string()]
+    );
+    assert_eq!(mirror.forwarded_transactions(), 0);
+    drop(runtime);
+    drop(server);
+    std::fs::remove_dir_all(directory).unwrap();
 }

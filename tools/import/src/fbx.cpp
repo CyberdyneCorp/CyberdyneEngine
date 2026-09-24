@@ -369,8 +369,8 @@ struct MeshSkin {
     }
     if (attributes.uvs) {
         const ufbx_vec2 uv = ufbx_get_vertex_vec2(&source.vertex_uv, index);
-        if (Status pushed = out.uvs.push_back(
-                Vec2{static_cast<f32>(uv.x), 1.0F - static_cast<f32>(uv.y)});
+        if (Status pushed =
+                out.uvs.push_back(Vec2{static_cast<f32>(uv.x), 1.0F - static_cast<f32>(uv.y)});
             !pushed) {
             return pushed;
         }
@@ -483,7 +483,8 @@ struct MeshSkin {
 
 [[nodiscard]] Status import_base_color_texture(const ufbx_texture& texture, usize index,
                                                const ImportRequest& request, SubAssetNames& names,
-                                               ImportResult& out, std::string& stable_name) noexcept {
+                                               ImportResult& out,
+                                               std::string& stable_name) noexcept {
     if (texture.type != UFBX_TEXTURE_FILE) {
         return ok();
     }
@@ -500,7 +501,8 @@ struct MeshSkin {
     if (bytes.empty()) {
         return out.report(ImportSeverity::Warning, "missing-texture",
                           "the base-colour texture has neither embedded bytes nor a readable "
-                          "external file", relative);
+                          "external file",
+                          relative);
     }
 
     const usize dot = relative.find_last_of('.');
@@ -675,8 +677,8 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
         if (!stable.empty()) {
             continue;
         }
-        if (Status imported = import_base_color_texture(*texture, texture->typed_id, request,
-                                                        names, out, stable);
+        if (Status imported =
+                import_base_color_texture(*texture, texture->typed_id, request, names, out, stable);
             !imported) {
             ufbx_free_scene(scene);
             return imported;
@@ -773,8 +775,7 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
             material.base_color_texture_name = texture_names[texture->typed_id];
         }
         Array<u8> payload;
-        if (Status written = write_cooked_material(material, payload);
-            !written) {
+        if (Status written = write_cooked_material(material, payload); !written) {
             ufbx_free_scene(scene);
             return written;
         }

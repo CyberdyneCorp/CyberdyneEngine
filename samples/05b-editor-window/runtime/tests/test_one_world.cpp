@@ -18,10 +18,10 @@
 
 #include "world_view.h"
 
+#include <unistd.h>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <unistd.h>
 
 using cy::f32;
 using cy::u32;
@@ -175,7 +175,7 @@ private:
 
 CY_TEST_CASE("a live snapshot gives an initially empty world its imported mesh schema") {
     const std::filesystem::path project = std::filesystem::temp_directory_path() /
-        ("cy-editor-world-sync-" + std::to_string(::getpid()));
+                                          ("cy-editor-world-sync-" + std::to_string(::getpid()));
     std::filesystem::create_directories(project / "worlds");
     {
         std::ofstream blank(project / "worlds/main.cyworld");
