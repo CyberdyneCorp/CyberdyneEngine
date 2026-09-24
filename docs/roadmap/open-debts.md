@@ -92,7 +92,6 @@ so this document states the finding and moves nothing.
 | Rung | Criterion | Declared later by | Prover's verdict | What it said |
 |---|---|---|---|---|
 | M11.a | `determinism-suites` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3 suite(s) match ^(determinism.simulation\|integration.replay\|integration.network)$ |
-| M11.a | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
 | M11.a | `network-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 r… |
 | M11.a | `roadmap-tiers` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): audio: recorded 'working', below this milestone's exit of 'complete' |
 | M11.a | `save-benchmark` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
@@ -101,7 +100,6 @@ so this document states the finding and moves nothing.
 | M11.a | `steam-audio-simulates` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 31 skipped |
 | M11.a | `thirdparty-dependencies-at-working` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree |
 | M11.a | `world-streams` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49 tiles_resident: 49 evicted: 0 stitched_vertices: 0 |
-| M11.b | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
 | M11.b | `gameplay-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-a… |
 | M11.b | `ml-inference-or-a-deferral` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_ai — the suite integration.ai does not exist |
 | M11.b | `roadmap-tiers` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): visual-scripting: recorded 'working', below this milestone's exit of 'complete' |

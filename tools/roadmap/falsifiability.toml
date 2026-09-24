@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 258 proven, 420 not yet shown able to fail.
+# 279 proven, 399 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -52,12 +52,20 @@ mutation = "lower-tiers (derived)"
 detail = "red under mutation of 8 file(s)"
 
 [[proof]]
+ledger = "m0"
+criterion = "test"
+digest = "2f2cf9d4197fc377"
+verdict = "proven against a built tree"
+mutation = "delete-lines '++counters.tested;' in src/servers/render/culling/src/gpu_cull.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1: error: Recipe `test-quiet-host` failed with exit code 1), and green again once restored"
+
+[[proof]]
 ledger = "m1"
 criterion = "four-profiles"
-digest = "71436759ef2f8a62"
+digest = "f60fa704c44d138b"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-prove4 (exit 1: error: Recipe `build-engine` failed with exit code 1), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m1"
@@ -98,6 +106,14 @@ digest = "2bedd4be17d1740d"
 verdict = "proven against a built tree"
 mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/repair-2-0 (exit 1: the environment field sampler and its two consumers do NOT compile against the engine's standard library), and green again once restored"
+
+[[proof]]
+ledger = "m10"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m10"
@@ -262,10 +278,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure   profile=debug  configuration=Debug  platform=linux"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -510,10 +526,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure   profile=debug  configuration=Debug  platform=linux"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -829,6 +845,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-verify (ex
 
 [[proof]]
 ledger = "m11c"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
 criterion = "frame-passes-through-post"
 digest = "237973a1fcda4047"
 verdict = "proven against a built tree"
@@ -1141,6 +1165,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
 criterion = "full-gate-set"
 digest = "caf00155294b78f8"
 verdict = "proven"
@@ -1237,6 +1269,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d5"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m11d5"
 criterion = "layering"
 digest = "d915eb4fa3e15cc9"
 verdict = "proven"
@@ -1314,6 +1354,14 @@ digest = "6227ad7b834d5656"
 verdict = "proven"
 mutation = "delete-lines 'known_gap_closes = \"m13\"' in tools/roadmap/milestones/m11b.toml (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11e"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m11e"
@@ -1405,6 +1453,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m2"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m2"
 criterion = "layering"
 digest = "4a0b109ec0277529"
 verdict = "proven"
@@ -1442,6 +1498,14 @@ digest = "09310d399ab46ab2"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'm.at(2, 3) = far_plane * near_plane / span;' in src/core/math/src/projection.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m3"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m3"
@@ -1501,6 +1565,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-san/xr-dev
 
 [[proof]]
 ledger = "m4"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m4"
 criterion = "layering"
 digest = "4a0b109ec0277529"
 verdict = "proven"
@@ -1533,6 +1605,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m5"
 criterion = "layering"
 digest = "4a0b109ec0277529"
 verdict = "proven"
@@ -1562,6 +1642,14 @@ digest = "199a1db67f1b3b9e"
 verdict = "proven"
 mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m5b"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m5b"
@@ -1605,11 +1693,35 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5b"
+criterion = "window-artefact"
+digest = "d343a39a5b5b220c"
+verdict = "proven against a built tree"
+mutation = "rename-token '--socket' in samples/05b-editor-window/runtime/main.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 8: error: Recipe `test-quiet-host` failed with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m5b"
 criterion = "workflows"
 digest = "199a1db67f1b3b9e"
 verdict = "proven"
 mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m6"
+criterion = "culling"
+digest = "4aa9ee38a6930587"
+verdict = "proven against a built tree"
+mutation = "delete-lines '++counters.tested;' in src/servers/render/culling/src/gpu_cull.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 8: error: Recipe `test-quiet-host` failed with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m6"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m6"
@@ -1650,6 +1762,14 @@ digest = "199a1db67f1b3b9e"
 verdict = "proven"
 mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m7"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m7"
@@ -1701,6 +1821,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m7"
+criterion = "viewport"
+digest = "d343a39a5b5b220c"
+verdict = "proven against a built tree"
+mutation = "rename-token '--socket' in samples/05b-editor-window/runtime/main.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 8: error: Recipe `test-quiet-host` failed with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m7"
 criterion = "virtual-geometry-gpu"
 digest = "64e7d46d888c74d3"
 verdict = "proven against a built tree"
@@ -1722,6 +1850,14 @@ digest = "199a1db67f1b3b9e"
 verdict = "proven"
 mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8a"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m8a"
@@ -1770,6 +1906,14 @@ digest = "c0d5405ab1328930"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'if(CY_ANIMATION)' in src/CMakeLists.txt (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: off-navigation   FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m8b"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m8b"
@@ -1826,6 +1970,14 @@ digest = "2e978516cb96be71"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'if(CY_VFX)' in src/CMakeLists.txt (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (exit 1: off-vulkan       FAILED (exit 1)), and green again once restored"
+
+[[proof]]
+ledger = "m8c"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m8c"
@@ -1954,6 +2106,22 @@ digest = "5c80660c20bc60fe"
 verdict = "proven"
 mutation = "rename-token 'CY_BREADCRUMB' in src/ (derived)"
 detail = "red under mutation of 9 file(s)"
+
+[[proof]]
+ledger = "m9"
+criterion = "determinism-core"
+digest = "c2a62e5422dba388"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'node.hash = combine(node.hash, value);' in src/core/determinism/src/hash.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1: error: Recipe `test-quiet-host` failed with exit code 1), and green again once restored"
+
+[[proof]]
+ledger = "m9"
+criterion = "four-profiles"
+digest = "f60fa704c44d138b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
+detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
 
 [[proof]]
 ledger = "m9"
@@ -2146,14 +2314,6 @@ digest = "5990f183bc47c962"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m0"
-criterion = "test"
-digest = "d5d5e3c6e896c520"
-verdict = "no mutation"
-mutation = "-"
-detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m0"
@@ -2410,14 +2570,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m10"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
@@ -2773,14 +2925,6 @@ detail = "this host cannot evaluate it, so it cannot judge it either: the still 
 
 [[unproven]]
 ledger = "m11c"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
 verdict = "no mutation"
@@ -2802,14 +2946,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
@@ -2909,14 +3045,6 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d5"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d5"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -3010,14 +3138,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -3213,14 +3333,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m2"
 criterion = "headless-sim"
 digest = "ee261490c5d013ea"
 verdict = "not provable here"
@@ -3322,14 +3434,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m3"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
@@ -3506,14 +3610,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m4"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
@@ -3701,14 +3797,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m5"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m5"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -3845,14 +3933,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m5b"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m5b"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -3909,14 +3989,6 @@ detail = "it PASSES against the build tree build/m11c-final, and no mutation can
 
 [[unproven]]
 ledger = "m5b"
-criterion = "window-artefact"
-digest = "8fee5b809cdd0b4c"
-verdict = "no mutation"
-mutation = "-"
-detail = "it PASSES against the build tree build/m11c-ed, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
-
-[[unproven]]
-ledger = "m5b"
 criterion = "window-recipe"
 digest = "a38a919edc3930db"
 verdict = "no mutation"
@@ -3949,14 +4021,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
-criterion = "culling"
-digest = "ed8d46d4faddbbac"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m6"
 criterion = "derivation-keys"
 digest = "c9451018b6522a38"
 verdict = "not provable here"
@@ -3970,14 +4034,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m6"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
@@ -4197,14 +4253,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m7"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m7"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -4365,14 +4413,6 @@ detail = "this host cannot evaluate it, so it cannot judge it either: this host 
 
 [[unproven]]
 ledger = "m7"
-criterion = "viewport"
-digest = "8fee5b809cdd0b4c"
-verdict = "not provable here"
-mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: it drives a real window on a real X session; a hosted runner has no display and the entry is reported not evaluated rather than passed — CI job 'editor-window'"
-
-[[unproven]]
-ledger = "m7"
 criterion = "virtual-geometry"
 digest = "d85243ead55c67c4"
 verdict = "not provable here"
@@ -4450,14 +4490,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8a"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
@@ -4717,14 +4749,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m8b"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8b"
 criterion = "gameplay-core"
 digest = "f2933342c0a178d1"
 verdict = "not provable here"
@@ -4965,14 +4989,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m8c"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8c"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -5173,14 +5189,6 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
-criterion = "determinism-core"
-digest = "b2c75eead635f87f"
-verdict = "no mutation"
-mutation = "-"
-detail = "it PASSES against the build tree build/m11c-final, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
-
-[[unproven]]
-ledger = "m9"
 criterion = "determinism-lint"
 digest = "caac65aa14de7a54"
 verdict = "not provable here"
@@ -5226,14 +5234,6 @@ digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m9"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"
