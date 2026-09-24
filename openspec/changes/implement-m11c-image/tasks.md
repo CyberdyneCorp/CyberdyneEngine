@@ -3172,3 +3172,119 @@ inherited and comes from one place: item (A)'s stall allowance. It turns `m1:fou
 through its own regression test, and it makes `m9:determinism-core`'s green untrustworthy. What
 would close M11.c: an allowance that can tell the case's own waits from other processes' waits,
 not just bound how much it excuses, and then one gate run with no undeclared red.
+
+### THE CLOSE, SEVENTH ATTEMPT — THE TREE AT `7a810ca` CANNOT BUILD ITSELF, AND M11.c DOES NOT CLOSE
+
+**Before the run, the close was barred twice over.** The fix phase after the sixth close landed
+three commits on `main`: `23b0370` (item A: the stall allowance now subtracts the share of the
+case's WHOLE process tree — its other threads, its children and their descendants — and not the
+calling thread's alone), `460951e` (`four-profiles` moved onto the shared ledger matrix, one body
+in all 19 ledgers that declare it) and `7a810ca` (a falsifiability proof carries to byte-identical
+declarations in other ledgers). The gate then REFUTED both fixes on one fact:
+
+- **`tests/integration/test_budget_contention.cpp:952` does not compile in three of the four
+  profiles.** The line is `(void)::write(pipe_ends[1], &writer, sizeof(writer));`. GCC 13.3, the
+  tree's `/usr/bin/c++`, does not let a `(void)` cast discard a `warn_unused_result` value, and
+  every profile above `-O0` compiles this file with `-Werror`: `error: ignoring return value of
+  'ssize_t write(int, const void*, size_t)' declared with attribute 'warn_unused_result'
+  [-Werror=unused-result]`. Debug (`-O0`) is the only profile that builds it, and Debug is the only
+  profile in which item A's new regression cases were ever run: the fix agent's 20 × `ctest -j5`
+  loop over the Debug tree passed `integration.harness` 20 of 20, which says what the attribution
+  does at `-O0` on one host and nothing about dev, profile or release.
+- So `m1:four-profiles`'s definition holds — 19 byte-identical `run` bodies, the four matrix rows,
+  the mutation of `samples/07-fidelity/frame.cpp:151` proven red on the matrix build — but "still
+  builds and tests all four profiles" is refuted: three rows cannot compile the harness suite.
+
+A criterion that reaches green only through the Debug row is not honestly green, and none of the
+builds could reach it anyway. **This run was taken to measure what the tree does to its own
+ledger, not to close over it.**
+
+**Run**: `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, alone on the host, started
+11:15:07 (14:15:07Z) at `7a810ca`, tree clean. **It did not finish. It was stopped by hand at
+11:49:44 (34 m 37 s, 2,077 s) because it had stalled**, and HEAD and the tree were unchanged at
+the end. In those 34 minutes the ledger evaluated **27 of 447 criteria: 12 ok, 14 FAILED**, and
+the criterion times sum to 1,343 s; the last criterion had run for about eleven minutes with the
+machine idle when it was killed.
+
+**Every one of the 14 reds is the same compile error.** Each red's output carries
+`test_budget_contention.cpp:952 ... [-Werror=unused-result]` (19 occurrences in the log), because
+every one of them builds a tree above `-O0` first — `build-engine`, `test-all`, a sample run, a
+trace, the sanitizer trees, the `m1-bench` profile tree — and stops there. By id:
+
+`m0:build`, `m0:test`, `m0:sample-headless`, `m0:sample-window`, `m0:trace`, `m1:project-graph`,
+`m1:identity-rename`, `m1:reflection-goldens`, `m1:job-throughput`, `m1:tsan-jobs`,
+`m1:asan-jobs`, `m1:memory-budgets`, `m1:startup-order`, `m1:headless-host`.
+
+The 12 greens are the criteria that build nothing above `-O0` or nothing at all: `m0:doctor`,
+`m0:layering`, `m0:specs`, `m0:format`, `m0:roadmap-record`, `m0:roadmap-tiers`,
+`m0:generated-code`, `m0:lint` (306.9 s), `m0:m1-open`, `m1:workflows`, `m1:roadmap-tiers`,
+`m1:identity-manifest`. Nothing past `m1:headless-host` was evaluated, so `m9:determinism-core`,
+`m11a:world-budget-on-a-device` and `m11c:roadmap-tiers` have no verdict from this run.
+
+**Why it stalled — a second defect, found by this run and not by the gate.** After
+`m1:headless-host` the ledger's process tree was running the new `four-profiles` body,
+`matrix.py build debug-default dev-default profile-default release-default` (its header had not
+yet reached the log; the ledger's output is block-buffered). The dev, profile and release rows
+built at once inside the machine-wide pool of 22 job slots that `c7ff54b` put in front of every
+compile and link. Only the release row links with `-flto=auto`, and **four of its LTO links stopped
+dead**: each `lto1 -fwpa` process sat in `pipe_read` on the jobserver pipe at 0% CPU, with its
+stream-out children (`lto1-wpa-stream`, five, seven and six of them) already exited and left as
+zombies, and the fourth with no children at all. Between them the four links held **22 of 22
+slots** — the launcher hands a link "every slot free at that moment" as jobserver tokens, and
+these had taken 6, 8, 7 and 1 — so every compile of the other two rows slept in `flock` on the
+pool's gate, the 1-minute load fell from 25 to 0.3, and nothing could ever progress. The launcher
+itself is `tools/workflow/job_slot.py --jobserver`: it writes `MAKEFLAGS=-j<extra+1>
+--jobserver-auth=<r>,<w>` with `extra` tokens in the pipe, and `extra` is whatever was free.
+
+Reproduced afterwards, alone, with one of the four hung links (`cy_test_unit_math` in
+`build/ledger-matrix/release-default`, the exact command) in a private pool
+(`CY_JOB_SLOT_DIR`), each variant under `timeout 300`:
+
+| variant | result |
+|---|---|
+| `job_slot.py --slots 1 --jobserver` (no spare slot: `-j1`, empty pipe) | **hung; killed at 300 s** |
+| `job_slot.py --slots 22 --jobserver` (pool empty: 7 spare slots) | linked, 1 s |
+| `job_slot.py --slots 22` (no jobserver) | linked, 1 s |
+| plain `c++`, no launcher | linked, 1 s |
+
+So an LTO link that gets no spare slot hangs forever under GCC 13.3: it is told a jobserver exists
+and is given nothing to read from it. A saturated pool — which a matrix building three rows at
+once is — hands links no spare slots as a matter of course. The links that did get tokens stalled
+too, once their children had exited; this run did not reduce that second shape to a one-line
+repro, and the owner should treat both as the same defect until someone shows otherwise. **No
+ledger had ever exercised this path**: `c7ff54b` landed the launcher on 23 September, the sixth
+close's `four-profiles` stopped at Debug, and only the release profile links with LTO. It was the
+new matrix body that reached it.
+
+**What the run cost (item C), as far as it got:**
+
+- **ccache: 27 hits in 2,450 cacheable calls (1.1%)**, 2,423 misses, from
+  `ccache --dir ~/.cache/cyberdyne-ccache -s` before and after; the store grew from 9.2 to
+  9.6 GiB. The trees were warm — Ninja skipped what was up to date, which is why only 2,450 calls
+  reached ccache in 34 minutes against 23,470 in the sixth close's 4 h 27 m — and what did reach
+  it was mostly new: `23b0370` changed `tests/harness/include/cy/test/test.h`, which the
+  harness's fixtures include, so the test objects that were rebuilt had never been cached. A warm
+  ledger's hit rate is still unmeasured.
+- **The machine-wide cap held.** A sampler read every 5 s (403 samples) and counted non-zombie
+  `cc1`, `cc1plus`, `clang` and `clang-tidy` processes. The count peaked at **44 during
+  `m0:lint`** and never exceeded **22** outside it; the 44 are 22 lint jobs, each two processes
+  named `clang-tidy` (the pip wrapper is a Python script that runs the binary), so the pool's 22
+  held there too. The 1-minute load averaged 10.4 and peaked at 25.0, and sat at 0.3 for the
+  last ten minutes of the stall.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`gates.toml`, `ci.yml` and `status.yaml` are unchanged. `milestone-m11c` stays at
+`state = "joins-on-close"`, `ci.yml`'s milestone job still runs `m11b`, and `capability-matrix.md`
+and `ROADMAP.md` are unchanged. Gate items 9.1 and 9.2 stay unticked. This attempt found no
+verdict on this rung's own criteria at all: the tree at `7a810ca` cannot build its own regression
+suite above `-O0`, and its release profile cannot link inside its own job pool. Both defects are
+in tooling that the fixes for the sixth close introduced or first reached — the harness's new
+regression test, and the launcher's jobserver path that the matrix body was the first to run —
+and neither is a rendering problem. What would close M11.c, in order: a `write` at
+`test_budget_contention.cpp:952` whose result is read (the harness suite compiled in all four
+profiles, proven by the matrix build); an LTO link that is never handed an empty jobserver (either
+a spare slot the link waits for, or no jobserver at all and `-flto` bounded another way), proven
+by the release row linking inside a saturated pool; item A's regression cases run in dev, profile
+and release, not only Debug; then one complete ledger run with no undeclared red, which no run
+since `4a1ad21` has produced.
