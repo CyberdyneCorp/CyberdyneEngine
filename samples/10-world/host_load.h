@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Whether the host is quiet enough for a frame budget to measure the frame. samples/10-world.
 //
