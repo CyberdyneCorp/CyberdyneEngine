@@ -19,6 +19,7 @@ The editor already owns external FBX staging, importer invocation, world transac
 5. **Keep the current transport.** The rendered output is read back to the publisher's staging image; selection marker and gizmo geometry remain tied to the published view and stable identity.
 6. **Carry FBX base-colour textures through cooking.** Use ufbx's embedded texture bytes when available and the import resolver for an external texture. Produce a cooked texture sub-asset with a stable name, then resolve that name to its minted `AssetId` after sub-asset binding. Store the resolved texture identity in the cooked material, preserving the existing material reader's ability to load older untextured records. The editor loads the cooked texture and binds its material slot through the frame's texture table.
 7. **Sample on native backends.** The Vulkan frame already declares material texture slots. Replace the Metal frame's white sampling stub with a bounded argument-buffer texture table at set 0, and regenerate the committed shader artefacts. A rendered texture-vs-constant comparison on Metal must differ on mesh pixels.
+8. **Preserve texture layout from source to GPU.** Flip FBX image V coordinates into the renderer's top-origin convention during import. Compute Metal buffer-to-texture and texture-to-buffer row strides in compressed blocks for BC formats. Compare the same FBX in Blender and the authored Metal frame to verify continuous texture placement on the mesh.
 
 ## Risks / Trade-offs
 

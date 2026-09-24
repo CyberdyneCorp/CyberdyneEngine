@@ -40,10 +40,14 @@ are cooked as texture sub-assets and resolved through the material's stable asse
 binds the cooked texture in the frame's sampled texture table. The editor preview adds neutral fill
 light so the material remains legible in a scene without authored lighting.
 
-![An imported FBX tree rendered with its cooked base-colour texture on Metal](../../docs/design/images/editor-imported-fbx-textured-metal.png)
+| Blender reference | Engine Metal capture |
+| --- | --- |
+| ![The source FBX in Blender](../../docs/design/images/editor-fbx-blender-reference.png) | ![The imported FBX rendered by the engine with its cooked base-colour texture](../../docs/design/images/editor-imported-fbx-textured-metal.png) |
 
-The image above is a device capture of the imported tree from issue #13 after texture cooking and
-sampling, using a scene containing only that object.
+Both images use the same tree FBX from issue #13. The engine image is a device capture of a scene
+containing only that object; Blender uses separate studio lighting and a slightly closer camera.
+The bark pattern and mesh silhouette agree. FBX image UVs are converted to the renderer's top-origin
+coordinates, and Metal transfers BC7 textures using compressed-block row strides.
 
 The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
 `render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
@@ -316,8 +320,6 @@ and which the runtime had never heard of when it started.
 
 ## What the runtime is still a stand-in for
 
-* **Sampled textures on Metal are pending.** Imported material factors are applied, but the Metal
-  frame shader currently shades without its global sampled texture table.
 * **The frame reaches the shared image through host memory.** The engine renders on the RHI's device
   and the publisher owns its own, so the frame is read back and uploaded — 106 µs a frame at
   1280x720, measured. `src/backends/viewport/README.md` says what would remove it.

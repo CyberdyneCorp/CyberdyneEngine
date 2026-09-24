@@ -906,9 +906,12 @@ public:
             const u64 rows = region.buffer_image_height == 0
                                  ? region.texture_extent.height
                                  : region.buffer_image_height;
+            const FormatInfo format = format_info(dst->desc.format);
             const u64 bytes_per_row =
-                row_pixels * format_info(dst->desc.format).bytes_per_block;
-            const u64 bytes_per_image = bytes_per_row * rows;
+                ((row_pixels + format.block_width - 1U) / format.block_width) *
+                format.bytes_per_block;
+            const u64 bytes_per_image =
+                bytes_per_row * ((rows + format.block_height - 1U) / format.block_height);
             for (u16 layer = 0; layer < region.layer_count; ++layer) {
                 [blit_ copyFromBuffer:src->buffer
                         sourceOffset:region.buffer_offset + layer * bytes_per_image
@@ -942,9 +945,12 @@ public:
             const u64 rows = region.buffer_image_height == 0
                                  ? region.texture_extent.height
                                  : region.buffer_image_height;
+            const FormatInfo format = format_info(src->desc.format);
             const u64 bytes_per_row =
-                row_pixels * format_info(src->desc.format).bytes_per_block;
-            const u64 bytes_per_image = bytes_per_row * rows;
+                ((row_pixels + format.block_width - 1U) / format.block_width) *
+                format.bytes_per_block;
+            const u64 bytes_per_image =
+                bytes_per_row * ((rows + format.block_height - 1U) / format.block_height);
             for (u16 layer = 0; layer < region.layer_count; ++layer) {
                 [blit_ copyFromTexture:src->texture
                            sourceSlice:region.base_layer + layer

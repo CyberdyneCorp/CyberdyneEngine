@@ -369,7 +369,8 @@ struct MeshSkin {
     }
     if (attributes.uvs) {
         const ufbx_vec2 uv = ufbx_get_vertex_vec2(&source.vertex_uv, index);
-        if (Status pushed = out.uvs.push_back(Vec2{static_cast<f32>(uv.x), static_cast<f32>(uv.y)});
+        if (Status pushed = out.uvs.push_back(
+                Vec2{static_cast<f32>(uv.x), 1.0F - static_cast<f32>(uv.y)});
             !pushed) {
             return pushed;
         }

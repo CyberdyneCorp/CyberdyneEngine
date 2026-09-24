@@ -363,6 +363,28 @@ CY_TEST_CASE("fbx: the standard material carries the source's own parameters") {
     CY_CHECK(material.alpha_mode == 0);
 }
 
+CY_TEST_CASE("fbx: image UVs use the renderer's top-origin coordinates") {
+    std::string source = quad_document("Panel", 1, 100.0, false);
+    const std::string original = "a: 0,0,1,0,1,1,0,0,1,1,0,1";
+    const usize at = source.find(original);
+    CY_REQUIRE(at != std::string::npos);
+    source.replace(at, original.size(), "a: 0.2,0.3,0.8,0.3,0.8,0.9,0.2,0.3,0.8,0.9,0.2,0.9");
+    const ImportResult result = import_document(source, nullptr);
+    const SubAsset* produced = find(result, "mesh/quad");
+    CY_REQUIRE(produced != nullptr);
+    const MeshData mesh = mesh_of(*produced);
+    bool found = false;
+    for (usize vertex = 0; vertex < mesh.positions.size(); ++vertex) {
+        if (cy::math::nearly_equal(mesh.positions[vertex].x, 0.0F, 1e-4F) &&
+            cy::math::nearly_equal(mesh.positions[vertex].y, 0.0F, 1e-4F)) {
+            found = true;
+            CY_CHECK(cy::math::nearly_equal(mesh.uvs[vertex].x, 0.2F, 1e-4F));
+            CY_CHECK(cy::math::nearly_equal(mesh.uvs[vertex].y, 0.7F, 1e-4F));
+        }
+    }
+    CY_CHECK(found);
+}
+
 CY_TEST_CASE("fbx: the collision naming convention produces a collider and hides the node") {
     // "WHEN a node is named with the configured collision suffix THEN a collider SHALL be generated
     // from it and the node excluded from rendering."
