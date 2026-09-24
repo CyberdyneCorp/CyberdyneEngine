@@ -195,7 +195,9 @@ submit path.
 
 **SO THE CRITERION NOW MEASURES ON A QUIET HOST, AND SAYS SO.** The owner's decision: a frame
 budget on a loaded machine measures the machine, so `m11a:world-budget-on-a-device` passes
-`--quiet-host` and states in its own text the host it assumes. `host_load.h` is the check. Before the
+`--quiet-host` and states in its own text the host it assumes. `tools/quiet-host/host_load.h` is the
+check, shared since M11.c's seventh close with the ledger criteria that run timing-sensitive test
+suites (`just test-quiet-host`). Before the
 run does any work — before the world is built, and so before the take — it looks at the host a second at a time, for up to `--quiet-wait-s` (ten minutes by default),
 until one window shows every other process together using at most two cores and CPU pressure at or
 under 10%. Across the take it looks again a second at a time, with this program's own CPU time

@@ -469,11 +469,24 @@ ci_job = "asset-import"
 
 [[criterion]]
 id = "culling"
-describe = "GPU-driven culling's expected values, computed on the CPU so a dispatch can be checked against them rather than against a screenshot: visibility ranges with a parent slot stored plus one so a zeroed record means no parent, HLOD, and shadow caster culling against TWO frustums — the view's own and the camera's, because one frustum cannot answer both of the requirement's questions. `unit.render_gpu_culling`, which is M6's; `unit.render_culling` next door is M3's CPU-side suite and a different claim"
+describe = "GPU-driven culling's expected values, computed on the CPU so a dispatch can be checked against them rather than against a screenshot: visibility ranges with a parent slot stored plus one so a zeroed record means no parent, HLOD, and shadow caster culling against TWO frustums — the view's own and the camera's, because one frustum cannot answer both of the requirement's questions. `unit.render_gpu_culling`, which is M6's; `unit.render_culling` next door is M3's CPU-side suite and a different claim. `unit.render_gpu_culling` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
 source = "tasks 8.5"
 kind = "command"
-run = "just test-unit -R unit.render_gpu_culling && just test-integration -R render_gpu_culling_teardown"
+run = "just test-quiet-host -- just test-unit -R unit.render_gpu_culling && just test-integration -R render_gpu_culling_teardown"
+# DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
+# beside another criterion, whatever the scheduler could derive from its body.
+needs = ["exclusive"]
 ci_job = "render-culling"
+
+# The same line `m7:gpu-culling` deletes, for the same reason: `unit.render_gpu_culling` checks
+# `output.counters().tested == 2` after `cpu_reference_cull`, and `tested` is non-zero in every case
+# the suite builds. The suite goes red inside the quiet-host wrapper, and the wrapper passes its exit
+# status through on a quiet host.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/servers/render/culling/src/gpu_cull.cpp"
+token  = "++counters.tested;"
+note   = "test_gpu_cull.cpp compares `output.counters().tested == 2` after `cpu_reference_cull`, which this line fills; unit.render_gpu_culling goes red and `cy_quiet_host` reports the suite's exit status on a quiet host."
 
 # TASK 8.4. `rendering-geometry-and-resources` reaches Complete at M6, and its own suites are what
 # says so: per-instance skinning output buffers reusable across passes, bounds derived from bone

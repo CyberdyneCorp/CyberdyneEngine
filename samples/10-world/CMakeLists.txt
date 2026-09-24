@@ -49,19 +49,26 @@
 # either backend off still leaves the headless authoritative simulation available, while a request
 # for rendered frames fails when no native device answers.
 
+# `--quiet-host` is tools/quiet-host's check (M11.c's seventh close moved it there, so that the test
+# suites' ledger criteria could share it). tools/ is behind CY_BUILD_TOOLS, and this sample is not:
+# a build without the tools still gets the library, from the same directory.
+if(NOT TARGET cy::host-load)
+    add_subdirectory("${CMAKE_SOURCE_DIR}/tools/quiet-host" "${CMAKE_BINARY_DIR}/tools/quiet-host")
+endif()
+
 cy_add_module(
     NAME cy_sample_world
     LAYER tools
     TYPE EXECUTABLE
     SOURCES
         main.cpp
-        host_load.cpp
         world.cpp
         stage.cpp
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
         cy::environment
         cy::foliage
+        cy::host-load
         cy::pcg
         cy::pcg-adapters
         cy::rendering-assembly

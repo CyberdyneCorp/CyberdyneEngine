@@ -60,6 +60,7 @@ namespace {
 
 using namespace cy;
 using namespace cy::sample::world;
+using namespace cy::host_load;
 
 struct Options {
     std::string frames;
@@ -106,7 +107,8 @@ struct Options {
     /// on the host and missed at 58 to 286 ms beside 24 spinning processes, same binary, same
     /// world. `--quiet-host` waits up to `--quiet-wait-s` for the host to go quiet before the take
     /// and judges the host again across the take; either one failing fails the run with a
-    /// "host too busy:" reason and the numbers. host_load.h says what "quiet" means.
+    /// "host too busy:" reason and the numbers. tools/quiet-host/host_load.h says what "quiet"
+    /// means.
     bool quiet_host = false;
     /// Ten minutes: a ledger that reaches this criterion just as something else finishes still
     /// measures, and a host that stays busy for ten minutes is reported as busy.

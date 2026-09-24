@@ -10,6 +10,40 @@
 # recipe that tried to would be reimplementing incremental logic, which the workflow specification
 # forbids.
 
+# Run a command on a QUIET HOST, or fail saying the host was not. Usage: just test-quiet-host [--profile <p>] [--wait-s <n>] -- <command...>
+#
+# M11.c's seventh close. The harness's stall ceiling is a wall-clock assertion, and three successive
+# allowances that tried to excuse a loaded host's share of it from inside the case were each refuted
+# by a case that made the wait itself. So the premise is stated and checked from outside instead:
+# a criterion that runs a timing-sensitive suite runs it through this recipe, which builds the tree
+# FIRST (so the build's load is over before the host is judged), waits up to `--wait-s` for every
+# other process together to use at most two cores, runs the command in a session of its own, and
+# judges the host across the run with the command's whole process tree subtracted. A host that is
+# not quiet at either point FAILS with "host too busy:" and the numbers — never a pass, never a
+# skip. tools/quiet-host/ is the check; `m11a:world-budget-on-a-device` has used the same one since
+# M11.c.
+test-quiet-host *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    wrapper="${build_dir}/tools/quiet-host/cy_quiet_host"
+    if [ ! -x "${wrapper}" ]; then
+        echo "test-quiet-host: ${wrapper} was not built. The wrapper is Linux-only (it reads /proc);" >&2
+        echo "  on another host the premise cannot be checked, and the command is NOT run bare." >&2
+        exit 1
+    fi
+    # THE WRAPPED COMMAND INHERITS THIS RECIPE'S PROFILE. `_split` takes `--profile` out of the whole
+    # argument list, the part after `--` included, so a `just test-*` inside would otherwise fall
+    # back to the default profile — and, with CY_BUILD_DIR pointing at this profile's tree, would
+    # reconfigure that tree as the other profile and rebuild all of it. The justfile's default
+    # profile reads CY_PROFILE, so exporting it hands the same profile to every `just` inside.
+    export CY_PROFILE="${profile}"
+    exec "${wrapper}" ${rest}
+
 # Unit tests: sub-millisecond, no I/O. Under a minute including the build. Run on every save.
 test-unit *args:
     @just _ctest unit {{args}}

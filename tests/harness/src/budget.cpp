@@ -358,12 +358,12 @@ double budget_scale() {
 // M11.C'S FOURTH CLOSE FOUND THE HALF THIS DOES NOT SEE: a machine busy with I/O rather than CPU. A
 // thread waiting for the disk is not runnable, so it accumulates no runqueue wait, and a case whose
 // first touch of its own code took major page faults behind a build's writeback was charged 655 ms
-// it never spent. That is the fourth clock, `blocked_on_host_ns()`, in host_blocking.cpp. THE FIFTH
-// CLOSE FOUND ITS LIMIT: an uninterruptible wait may be one the case caused itself, so the guard
-// does not subtract that clock but `host_stall_allowance` — at most the case's uninterruptible
-// time, and at most the host's I/O pressure that other tasks account for. THE SIXTH CLOSE FOUND
-// that "other tasks" had included the case's own threads and children; `tree_blocked_ns()` is the
-// census that takes the whole tree out, in host_blocking.cpp.
+// it never spent. That is the fourth clock, `blocked_on_host_ns()`, in host_blocking.cpp — and
+// three closes of trying to excuse it from inside the case ended with the owner's decision that
+// NOTHING IS EXCUSED: an uninterruptible wait is reported in the stall message so that the stall is
+// explained, and the premise that the host was quiet is checked from outside the process, by
+// `tools/quiet-host/` around every ledger criterion that runs a timing-sensitive suite. On that
+// premise a case over its ceiling is the case's own, whatever it was waiting for.
 std::uint64_t contended_now_ns() {
 #if defined(__linux__)
     // One descriptor per thread, `pread` from offset zero: /proc regenerates the contents on each
@@ -413,9 +413,8 @@ std::atomic<std::uint64_t> contended_cases_{0};
 /// things: a case that WAITED — a sleep, a blocking read, a lock, a thread it joined — and a case
 /// that was simply not given a core while forty other processes wanted one. Only the first is a
 /// property of the test. Subtract the time the case spent runnable-and-not-running and what is left
-/// is the time it could have been working. The same holds for the part of its disk waiting that
-/// the host's I/O pressure accounts for, `host_stall_allowance`, which the guard adds to
-/// `contended_ns` before calling this.
+/// is the time it could have been working. Nothing else is subtracted: an uninterruptible wait is
+/// the case's own on the quiet host the criteria assume.
 StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long contended_ns,
                            unsigned long long ceiling_ns) noexcept {
     if (ceiling_ns == 0 || wall_ns <= ceiling_ns) {
@@ -466,7 +465,7 @@ unsigned long long scaled_budget(unsigned long long budget_ns) {
 }
 
 /// How often the fourth clock samples the case's thread. A two-hundredth of the ceiling keeps the
-/// sampling error, a few intervals, under two per cent of the thing it is compared against; the
+/// sampling error, a few intervals, under two per cent of the thing it is reported beside; the
 /// floor holds the sampler to a thousand wake-ups a second however small the ceiling, and the cap
 /// keeps an integration case (a ceiling of 100 s and more) from being sampled so coarsely that a
 /// 200 ms disk wait is seen as a handful of points.
@@ -474,17 +473,6 @@ unsigned long long host_sampling_interval(unsigned long long ceiling_ns) {
     constexpr unsigned long long kFloor = 1'000'000ULL;
     constexpr unsigned long long kCap = 5'000'000ULL;
     return std::clamp(ceiling_ns / 200ULL, kFloor, kCap);
-}
-
-/// How long a case runs before the sampler reads the host's pressure for its baseline. An eighth of
-/// the ceiling, so a case over the ceiling has at least seven eighths of its window measured, and
-/// the waiting before the baseline — never excusable — errs towards failing. Floored so the window
-/// spans several jiffies, which is PSI's weighting resolution, and so a millisecond case never
-/// reads the pressure files at all; capped so a long case's baseline is not taken late.
-unsigned long long host_baseline_delay(unsigned long long ceiling_ns) {
-    constexpr unsigned long long kFloor = 20'000'000ULL;
-    constexpr unsigned long long kCap = 100'000'000ULL;
-    return std::clamp(ceiling_ns / 8ULL, kFloor, kCap);
 }
 
 /// The wall-clock ceiling for a case whose budget is `budget_ns`. See kStallMultiplier.
@@ -512,16 +500,9 @@ BudgetGuard::BudgetGuard(const char* name, unsigned long long budget_ns, const c
       started_contended_ns_(contended_now_ns()),
       // Before either clock starts, so that starting the sampler — once per process, a thread
       // creation — is charged to no case.
-      host_session_(static_cast<int>(
-          (kHaveCpuClock && budget_ns_ != 0)
-              ? host_blocking::begin(host_sampling_interval(stall_ceiling(budget_ns_)),
-                                     host_baseline_delay(stall_ceiling(budget_ns_)))
-              : host_blocking::Session::None)),
-      started_blocked_ns_(host_session_ != static_cast<int>(host_blocking::Session::None)
-                              ? blocked_on_host_ns()
-                              : 0),
-      started_tree_blocked_ns_(
-          host_session_ != static_cast<int>(host_blocking::Session::None) ? tree_blocked_ns() : 0),
+      host_sampled_(kHaveCpuClock && budget_ns_ != 0 &&
+                    host_blocking::begin(host_sampling_interval(stall_ceiling(budget_ns_)))),
+      started_blocked_ns_(host_sampled_ ? blocked_on_host_ns() : 0),
       started_cpu_ns_(cpu_now_ns()),
       started_wall_ns_(steady_now_ns()) {}
 
@@ -532,18 +513,9 @@ BudgetGuard::~BudgetGuard() {
     const std::uint64_t wall_ns = steady_now_ns() - started_wall_ns_;
     const std::uint64_t cpu_ns = cpu_now_ns() - started_cpu_ns_;
     const std::uint64_t contended = contended_now_ns() - started_contended_ns_;
-    const auto session = static_cast<host_blocking::Session>(host_session_);
     std::uint64_t blocked = 0;
-    std::uint64_t tree_blocked = 0;
-    std::uint64_t excused = 0;
-    if (session != host_blocking::Session::None) {
+    if (host_sampled_) {
         blocked = blocked_on_host_ns() - started_blocked_ns_;
-        tree_blocked = tree_blocked_ns() - started_tree_blocked_ns_;
-        // The pressure files are read only for a case already over the smallest ceiling it can
-        // have; the re-check below can only raise the budget.
-        if (session == host_blocking::Session::Owner && wall_ns > stall_ceiling(budget_ns_)) {
-            excused = host_blocking::allowance();
-        }
         host_blocking::end();
     }
 
@@ -579,7 +551,7 @@ BudgetGuard::~BudgetGuard() {
         return;
     }
     const unsigned long long ceiling = stall_ceiling(budget_ns);
-    const StallVerdict verdict = stall_verdict(wall_ns, contended + excused, ceiling);
+    const StallVerdict verdict = stall_verdict(wall_ns, contended, ceiling);
     if (verdict == StallVerdict::Fine) {
         return;
     }
@@ -593,14 +565,12 @@ BudgetGuard::~BudgetGuard() {
         std::fprintf(stderr,
                      "cy::test: contended: '%s' held the suite for %.3f ms of wall clock against a "
                      "ceiling of %.3f ms, of which %.3f ms was spent waiting for a core on a busy "
-                     "machine, %.3f ms of %.3f ms in an uninterruptible wait was OTHER processes' "
-                     "I/O pressure (the case's own threads and children were uninterruptible for "
-                     "%.3f ms between them, which is not the host's), and %.3f ms was CPU. "
-                     "Reported rather than failed: the machine was loaded, not the case. Run it on "
-                     "an idle machine to see its own figure.\n",
+                     "machine, %.3f ms in an uninterruptible wait (%s, and not excused) and "
+                     "%.3f ms was CPU. Reported rather than failed: the machine was loaded, not "
+                     "the case. Run it on an idle machine to see its own figure.\n",
                      name_, static_cast<double>(wall_ns) / 1e6, static_cast<double>(ceiling) / 1e6,
-                     static_cast<double>(contended) / 1e6, static_cast<double>(excused) / 1e6,
-                     static_cast<double>(blocked) / 1e6, static_cast<double>(tree_blocked) / 1e6,
+                     static_cast<double>(contended) / 1e6, static_cast<double>(blocked) / 1e6,
+                     host_sampled_ ? "sampled" : "not measured here",
                      static_cast<double>(cpu_ns) / 1e6);
         return;
     }
@@ -608,20 +578,19 @@ BudgetGuard::~BudgetGuard() {
     std::snprintf(
         message, sizeof(message),
         "stalled: '%s' held the suite for %.3f ms of wall clock (%llu ns) while spending %.3f ms "
-        "of CPU, %.3f ms waiting for a core and %.3f ms in an uninterruptible wait (%s), of which "
-        "%.3f ms was OTHER processes' I/O pressure — its own threads and children were "
-        "uninterruptible for %.3f ms between them, which is the case's — against a ceiling of "
-        "%.3f ms — %llux its budget. A case within its budget that takes this long is waiting "
-        "rather than working: a sleep, a lock, a thread it joined, a read from a pipe or socket, "
-        "or its own disk, threads or child processes on a quiet host. `testing-and-quality` "
-        "places any of those in tests/integration/ or above. The host's share is already "
-        "subtracted, so this is the case's own time. Set CY_TEST_BUDGET_SCALE to relax both "
-        "limits for one run.",
+        "of CPU, %.3f ms waiting for a core and %.3f ms in an uninterruptible wait (%s) against a "
+        "ceiling of %.3f ms — %llux its budget. A case within its budget that takes this long is "
+        "waiting rather than working: a sleep, a lock, a thread it joined, a read from a pipe or "
+        "socket, or the disk — its own, or one that a build beside this run kept busy. "
+        "`testing-and-quality` places any of those in tests/integration/ or above. Only waiting "
+        "for a core is subtracted; an uninterruptible wait is NEVER excused, because nothing a "
+        "process can read says whether it or the host caused it (M11.c's fifth to seventh closes). "
+        "The suites this ceiling judges are run on a QUIET HOST by their ledger criteria "
+        "(`just test-quiet-host -- ...`), so on that premise this is the case's own time. Set "
+        "CY_TEST_BUDGET_SCALE to relax both limits for one run.",
         name_, static_cast<double>(wall_ns) / 1e6, static_cast<unsigned long long>(wall_ns),
         static_cast<double>(cpu_ns) / 1e6, static_cast<double>(contended) / 1e6,
-        static_cast<double>(blocked) / 1e6,
-        session == host_blocking::Session::None ? "not measured here" : "sampled",
-        static_cast<double>(excused) / 1e6, static_cast<double>(tree_blocked) / 1e6,
+        static_cast<double>(blocked) / 1e6, host_sampled_ ? "sampled" : "not measured here",
         static_cast<double>(ceiling) / 1e6, kStallMultiplier);
     DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
 }

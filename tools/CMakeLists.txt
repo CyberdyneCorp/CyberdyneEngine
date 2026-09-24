@@ -34,3 +34,9 @@ add_subdirectory(material)
 # compiled twice declares the same interface both times. It is built only where a Slang front end
 # is, and its own CMakeLists.txt returns early otherwise.
 add_subdirectory(shaders)
+
+# quiet-host/ is M11.c's seventh close: the quiet-host premise as a library (`cy::host-load`, which
+# samples/10-world links for `--quiet-host`) and as the wrapper `cy_quiet_host` that every ledger
+# criterion running a timing-sensitive suite goes through. Its own CMakeLists.txt says why a
+# premise checked from outside the process replaced the harness's allowances.
+add_subdirectory(quiet-host)

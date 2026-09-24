@@ -124,11 +124,27 @@ ci_job = "lint"
 
 [[criterion]]
 id = "test"
-describe = "just test-all is green: unit, integration and smoke"
-source = "tasks 5.1"
+describe = "just test-all is green: unit, integration and smoke — every suite the harness budgets, its own `unit.harness` and `integration.harness` included. MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
+source = "tasks 5.1; M11.c's seventh close"
 kind = "recipe"
-run = "just test-all"
+run = "just test-quiet-host -- just test-all"
+# DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
+# beside another criterion, whatever the scheduler could derive from its body.
+needs = ["exclusive"]
 ci_job = "build-and-test"
+
+# THE MUTATION IS A SUITE THE COMMAND RUNS, NOT THE WRAPPER AROUND IT. `unit.render_gpu_culling`
+# (test_gpu_cull.cpp) compares `output.counters().tested == 2` against what `cpu_reference_cull`
+# filled, and this is the line that fills it — the same mutation `m7:gpu-culling` declares, for the
+# same reason: `tested` is non-zero in every case the suite builds. With it gone `just test-all` is
+# red inside the wrapper, and the wrapper passes that exit status through on a quiet host: a red
+# suite on a quiet host is red. That the wrapper itself is live — that a BUSY host fails rather than
+# passes — is the claim `smoke.quiet_host_before/across/own` make, by loading the host on purpose.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/servers/render/culling/src/gpu_cull.cpp"
+token  = "++counters.tested;"
+note   = "unit.render_gpu_culling checks `output.counters().tested == 2` after `cpu_reference_cull`, which this line fills; the suite goes red, `just test-all` exits red inside `cy_quiet_host`, and the wrapper reports the suite's own exit status on a quiet host. The mutation shows the criterion's exit code carries a red suite; the host check's liveness is smoke.quiet_host_*'s claim."
 
 # --- The closing artefact -------------------------------------------------------------------------
 

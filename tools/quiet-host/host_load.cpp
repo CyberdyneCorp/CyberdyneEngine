@@ -6,7 +6,12 @@
 #include <cstring>
 #include <thread>
 
-namespace cy::sample::world {
+#if defined(__linux__)
+#    include <dirent.h>
+#    include <unistd.h>
+#endif
+
+namespace cy::host_load {
 
 namespace {
 
@@ -104,28 +109,105 @@ private:
     return fields.ok();
 }
 
-/// Fields 14 and 15 of `/proc/self/stat`. The command name in field 2 may hold spaces and
-/// parentheses, so the scan starts after the LAST ')'.
-[[nodiscard]] bool read_own(HostReading& out) noexcept {
-    char line[1024] = {};
-    if (!first_line("/proc/self/stat", line, sizeof(line))) {
-        return false;
-    }
+/// The fields of one process's `stat` line this file reads. The command name in field 2 may hold
+/// spaces and parentheses, so the scan starts after the LAST ')'.
+struct TaskTimes {
+    /// Field 6.
+    u64 session = 0;
+    /// Fields 14 and 15: the process's own user and system time, every thread included.
+    u64 own = 0;
+    /// Fields 16 and 17: the same for the children it has already waited for.
+    u64 reaped = 0;
+};
+
+[[nodiscard]] bool parse_task_times(const char* line, TaskTimes& out) noexcept {
     const char* close = std::strrchr(line, ')');
     if (close == nullptr) {
         return false;
     }
     // After ')': state(3) ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt, then
-    // utime(14) stime(15).
+    // utime(14) stime(15) cutime(16) cstime(17).
     Fields fields(close + 1);
-    constexpr int kFieldsBeforeUtime = 11;
-    for (int field = 0; field < kFieldsBeforeUtime; ++field) {
+    fields.skip();  // state
+    fields.skip();  // ppid
+    fields.skip();  // pgrp
+    out.session = fields.whole();
+    constexpr int kFieldsBetweenSessionAndUtime = 7;
+    for (int field = 0; field < kFieldsBetweenSessionAndUtime; ++field) {
         fields.skip();
     }
     const u64 user = fields.whole();
     const u64 system = fields.whole();
-    out.own_ticks = user + system;
+    const u64 reaped_user = fields.whole();
+    const u64 reaped_system = fields.whole();
+    out.own = user + system;
+    out.reaped = reaped_user + reaped_system;
     return fields.ok();
+}
+
+[[nodiscard]] bool read_task(const char* path, TaskTimes& out) noexcept {
+    char line[1024] = {};
+    return first_line(path, line, sizeof(line)) && parse_task_times(line, out);
+}
+
+/// This process alone: its own user and system time.
+[[nodiscard]] bool read_own_process(HostReading& out) noexcept {
+    TaskTimes self;
+    if (!read_task("/proc/self/stat", self)) {
+        return false;
+    }
+    out.own_ticks = self.own;
+    return true;
+}
+
+#if defined(__linux__)
+/// Every process of `session`, plus this process and the children it has reaped. A process's own
+/// time is counted while it lives and moves into its parent's `cutime`/`cstime` once reaped, so
+/// summing both over the living members counts each tick once — provided the reaper is a member,
+/// which the wrapper that started the session is. A process that has exited and been reaped by
+/// something outside the session (an orphan that init collected) is lost from the sum, and the
+/// host then looks busier than it was: the direction that fails, never the one that passes.
+[[nodiscard]] bool read_own_session(HostReading& out, i32 session) noexcept {
+    TaskTimes self;
+    if (!read_task("/proc/self/stat", self)) {
+        return false;
+    }
+    u64 ticks = self.own + self.reaped;
+    DIR* proc = ::opendir("/proc");
+    if (proc == nullptr) {
+        return false;
+    }
+    const auto own_pid = static_cast<long>(::getpid());
+    const auto wanted = static_cast<u64>(session);
+    while (const dirent* entry = ::readdir(proc)) {
+        char* end = nullptr;
+        const long pid = std::strtol(entry->d_name, &end, 10);
+        if (end == entry->d_name || *end != '\0' || pid <= 0 || pid == own_pid) {
+            continue;
+        }
+        char path[64];
+        std::snprintf(path, sizeof(path), "/proc/%ld/stat", pid);
+        TaskTimes task;
+        // A process that exited between the listing and this read is nothing to count.
+        if (read_task(path, task) && task.session == wanted) {
+            ticks += task.own + task.reaped;
+        }
+    }
+    ::closedir(proc);
+    out.own_ticks = ticks;
+    return true;
+}
+#endif
+
+[[nodiscard]] bool read_own(HostReading& out, const OwnScope& own) noexcept {
+#if defined(__linux__)
+    if (own.session > 0) {
+        return read_own_session(out, own.session);
+    }
+#else
+    (void)own;
+#endif
+    return read_own_process(out);
 }
 
 /// `some avg10=.. avg60=.. avg300=.. total=<microseconds>`.
@@ -167,10 +249,10 @@ u32 host_cores() noexcept {
     return cores == 0 ? 1U : static_cast<u32>(cores);
 }
 
-HostReading read_host() noexcept {
+HostReading read_host(const OwnScope& own) noexcept {
     HostReading reading;
     reading.at = std::chrono::steady_clock::now();
-    reading.readable = read_stat(reading) && read_own(reading);
+    reading.readable = read_stat(reading) && read_own(reading, own);
     read_pressure(reading);
     read_load(reading);
     return reading;
@@ -229,11 +311,12 @@ QuietVerdict wait_for_quiet(u32 wait_seconds, const QuietLimits& limits) noexcep
     }
 }
 
-TakeWatch::TakeWatch(u32 cores, const QuietLimits& limits) noexcept
-    : cores_(cores), limits_(limits) {}
+TakeWatch::TakeWatch(u32 cores, const QuietLimits& limits, const OwnScope& own) noexcept
+    : cores_(cores), limits_(limits), own_(own) {}
 
 void TakeWatch::begin() noexcept {
-    window_start_ = read_host();
+    window_start_ = read_host(own_);
+    started_ = window_start_.at;
     has_previous_ = false;
     judged_ = false;
     windows_ = 0;
@@ -243,7 +326,7 @@ void TakeWatch::sample() noexcept {
     if (std::chrono::steady_clock::now() - window_start_.at < std::chrono::seconds(1)) {
         return;
     }
-    const HostReading now = read_host();
+    const HostReading now = read_host(own_);
     judge(window_start_, now);
     previous_start_ = window_start_;
     has_previous_ = true;
@@ -251,7 +334,7 @@ void TakeWatch::sample() noexcept {
 }
 
 QuietVerdict TakeWatch::finish() noexcept {
-    const HostReading now = read_host();
+    const HostReading now = read_host(own_);
     const bool short_remainder =
         now.at - window_start_.at < std::chrono::milliseconds(500) && has_previous_;
     judge(short_remainder ? previous_start_ : window_start_, now);
@@ -259,8 +342,8 @@ QuietVerdict TakeWatch::finish() noexcept {
 }
 
 void TakeWatch::judge(const HostReading& from, const HostReading& to) noexcept {
-    // Pressure is not judged: this program is running flat out across the take, and its own
-    // threads waiting for a core are not the host being busy.
+    // Pressure is not judged: the measured program is running flat out across the take, and its
+    // own threads waiting for a core are not the host being busy.
     const QuietVerdict verdict = judge_window(from, to, cores_, limits_, false);
     ++windows_;
     // An unreadable window decides the take: "cannot tell" must not be outvoted by the others.
@@ -271,4 +354,4 @@ void TakeWatch::judge(const HostReading& from, const HostReading& to) noexcept {
     judged_ = true;
 }
 
-}  // namespace cy::sample::world
+}  // namespace cy::host_load

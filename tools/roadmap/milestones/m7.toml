@@ -657,13 +657,25 @@ ci_job = "shader-pipeline"
 # collapses into `m5b:window-artefact`: what changed is not the command but what it drives.
 [[criterion]]
 id = "viewport"
-describe = "the editor's viewport shows a frame the ENGINE rendered, presented with no copy through the CPU, and a pointer drag on the gizmo moves an object in it — the same command M5.5 declared, against a runtime that is no longer a fixture"
+describe = "the editor's viewport shows a frame the ENGINE rendered, presented with no copy through the CPU, and a pointer drag on the gizmo moves an object in it — the same command M5.5 declared, against a runtime that is no longer a fixture. `smoke.editor_window` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
 source = "tasks 5b.1–5b.4, ROADMAP M7"
 kind = "recipe"
-run = "just test-smoke -R editor_window"
+run = "just test-quiet-host -- just test-smoke -R editor_window"
+# DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
+# beside another criterion, whatever the scheduler could derive from its body.
+needs = ["exclusive"]
 requires = "display"
 reason = "it drives a real window on a real X session; a hosted runner has no display and the entry is reported not evaluated rather than passed"
 ci_job = "editor-window"
+
+# The same mutation `m5b:window-artefact` declares, because this is the same command: the runtime's
+# `--socket` option renamed, so it never binds the viewport transport's socket and window.py fails
+# waiting for it. Byte-identical with M5.5's declaration on purpose, so one proof carries to both.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "samples/05b-editor-window/runtime/main.cpp"
+token  = "--socket"
+note   = "the runtime's `--socket` option is what window.py names the viewport transport's socket by; renamed, the runtime never binds it, the driver fails waiting for it, and smoke.editor_window is red inside the quiet-host wrapper, which reports that exit status on a quiet host."
 
 # --- The artefact ------------------------------------------------------------------------------------
 

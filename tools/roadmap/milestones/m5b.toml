@@ -320,13 +320,28 @@ ci_job = "milestone-m5b"
 # cannot tell the driver from a hand on a keyboard. Nothing in it is a test hook.
 [[criterion]]
 id = "window-artefact"
-describe = "the editor's window opens on a project, composites another process's rendered image in its viewport, creates three entities from the keyboard, selects one with the pointer, undoes and redoes them, finds a command by typing in the palette, and saves — each observed rather than assumed: the journal's records, the outliner's rows, the viewport's saturation against a charcoal interface, and a second headless editor over the same journal being offered no recovery"
+describe = "the editor's window opens on a project, composites another process's rendered image in its viewport, creates three entities from the keyboard, selects one with the pointer, undoes and redoes them, finds a command by typing in the palette, and saves — each observed rather than assumed: the journal's records, the outliner's rows, the viewport's saturation against a charcoal interface, and a second headless editor over the same journal being offered no recovery. `smoke.editor_window` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
 source = "tasks 1.1, 1.2, 1.3, 1.4, 2.1, 4.1, 5.1, ROADMAP M5.5"
 kind = "recipe"
-run = "just test-smoke -R editor_window"
+run = "just test-quiet-host -- just test-smoke -R editor_window"
+# DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
+# beside another criterion, whatever the scheduler could derive from its body.
+needs = ["exclusive"]
 requires = "display"
 reason = "this artefact is about a window: it needs an X server with the XTEST extension, a device that can import a dma-buf, python-xlib and Pillow. A hosted runner has none of them, and a check that reported green because the window never opened is the exact failure M5.5 exists to correct"
 ci_job = "milestone-m5b"
+
+# THE MUTATION IS THE RUNTIME'S OWN OPTION FOR THE VIEWPORT SOCKET. `window.py` starts
+# `cy_editor_window_runtime --socket <path>` and waits for that socket before it opens the editor;
+# a runtime that no longer recognises the option never binds it, the driver reports "the engine's
+# runtime did not open" the socket, and the smoke test is red — the viewport would have nothing but
+# the editor's own neutral chrome to show. Renamed rather than deleted so the runtime still
+# compiles and the failure is the artefact's, not the build's.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "samples/05b-editor-window/runtime/main.cpp"
+token  = "--socket"
+note   = "the runtime's `--socket` option is what window.py names the viewport transport's socket by; renamed, the runtime never binds it, the driver fails waiting for it, and smoke.editor_window is red inside the quiet-host wrapper, which reports that exit status on a quiet host."
 
 [[criterion]]
 id = "window-recipe"

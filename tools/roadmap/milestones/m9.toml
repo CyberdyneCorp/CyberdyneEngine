@@ -173,11 +173,25 @@ ci_job = "roadmap-status"
 
 [[criterion]]
 id = "determinism-core"
-describe = "the determinism unit suite: profiles and their guarantees, the floating-point policy's twelve replacements and the thirteen `<cmath>` functions section 0's spike forbids, the generated state codecs, hierarchical hashing, **THE VALIDATOR** — two state hashes and a log in, one field on one entity out — and `BuildConfiguration::from_build()` reporting what the BUILD did rather than what the source hoped. One suite rather than five criteria over it, because `criteria.fingerprint` collapses declarations that run the same command and a ledger that lists one check five times is a ledger that reads as five checks"
-source = "tasks 2.1, 2.3, 2.4, ROADMAP M9"
+describe = "the determinism unit suite: profiles and their guarantees, the floating-point policy's twelve replacements and the thirteen `<cmath>` functions section 0's spike forbids, the generated state codecs, hierarchical hashing, **THE VALIDATOR** — two state hashes and a log in, one field on one entity out — and `BuildConfiguration::from_build()` reporting what the BUILD did rather than what the source hoped. One suite rather than five criteria over it, because `criteria.fingerprint` collapses declarations that run the same command and a ledger that lists one check five times is a ledger that reads as five checks. MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
+source = "tasks 2.1, 2.3, 2.4, ROADMAP M9; M11.c's seventh close"
 kind = "recipe"
-run = "just test-unit -R ^unit.determinism$"
+run = "just test-quiet-host -- just test-unit -R ^unit.determinism$"
+# DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
+# beside another criterion, whatever the scheduler could derive from its body.
+needs = ["exclusive"]
 ci_job = "milestone-m9"
+
+# THE MUTATION IS THE ONE LINE THAT FOLDS A VALUE INTO THE OPEN NODE'S HASH. Without it every
+# `mix_*` is dropped, two worlds that differ in a hashed field hash the same, and `test_hash.cpp`'s
+# and `test_validator.cpp`'s `CY_REQUIRE(divergence.diverged)` fail: the validator has nothing to
+# localise. `unit.determinism` goes red inside the quiet-host wrapper, which passes that exit status
+# through on a quiet host.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/core/determinism/src/hash.cpp"
+token  = "node.hash = combine(node.hash, value);"
+note   = "StateHashTree::fold's one line; without it no mixed value reaches a node's hash, two differing worlds hash the same, and the hierarchical-hash and validator cases' `CY_REQUIRE(divergence.diverged)` fail. The suite goes red and `cy_quiet_host` reports its exit status on a quiet host."
 
 [[criterion]]
 id = "determinism-scale"
