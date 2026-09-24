@@ -12,3 +12,14 @@ The hosted editor runtime SHALL extract enabled light components from the author
 #### Scenario: Empty world
 - **WHEN** a world has no enabled lights
 - **THEN** Game view receives no authored light
+
+#### Scenario: Toggle and aim an authored light
+- **WHEN** an author disables the last light or rotates an enabled directional or spot light
+- **THEN** the next Editor and Game frames reflect the new illumination; a disabled light remains selectable in Editor view
+
+### Requirement: Authored directional shadows
+An enabled directional light with `casts_shadow` SHALL cast shadows from authored mesh casters onto authored mesh receivers in the hosted Editor and Game images. Moving or rotating the light or meshes SHALL update the shadow. Disabling the light or its shadow flag SHALL remove the shadow. A point light's rotation SHALL not change its illumination because it emits in every direction.
+
+#### Scenario: Tree over a Plane
+- **WHEN** an imported tree stands over a Plane and a shadow-casting directional light shines on both
+- **THEN** the Plane shows the tree's silhouette, and rotating or disabling the light changes or removes it in the next rendered frames

@@ -16,6 +16,8 @@ See proposal.md. `scene.create-primitive` already writes `.cyprim` and adds a me
 2. Treat authored lights as world components, not editor preferences. Extract values and composed transforms every frame, including live edits. Preserve a separate editor-only lighting fallback while migrating empty projects so Game view can truthfully render no authored lights. Avoid copying editor light settings into the scene.
 3. Represent Editor and Game as separate view intents backed by the existing engine rendering path. Editor uses the navigation camera and editor gizmos; Game uses a primary enabled scene camera and suppresses all editor adornment. View selection does not mutate the scene. A missing camera produces an explicit placeholder. Prefer one active transport image at a time initially, since the hidden view should consume no GPU time; the model can later expose simultaneous docked views through two transport subscriptions.
 4. Play changes simulation state in the hosted runtime and selects Game view in the shell. Stop restores the document snapshot and previous Editor camera. Report physics, script, and audio service readiness separately. Script and audio wiring belongs in the runtime, never in the Rust shell.
+5. Keep the Editor fallback light only in a scene with no authored light components. A disabled light stays selectable but contributes no illumination. Use exposure and fill that preserve visible changes in authored light direction. Point light rotation does not alter its omnidirectional emission.
+6. Render a directional shadow depth map from authored caster geometry and sample it on authored receivers in the hosted frame. Carry light orientation, `casts_shadow`, and mesh shadow flags through the same frame data that drives lighting; update the map after edits. This extends the existing engine frame rather than adding a scene-specific projected decal.
 
 ## Risks / Trade-offs
 
@@ -23,6 +25,7 @@ See proposal.md. `scene.create-primitive` already writes `.cyprim` and adds a me
 - [A single active image is insufficient for simultaneous Editor and Game tabs] → keep separate view state now, then extend transport to two consumers only when simultaneous display is requested; inactive views cost nothing.
 - [Older worlds relied on the fixed editor sun] → keep an editor preview light only where needed and show zero authored lights in Game view.
 - [Swift or audio services are absent from this sample runtime] → surface a clear unsupported status and track runtime integration as an explicit task rather than silently claiming full Play support.
+- [The frame assembly schedules shadow pages but the current frame recorder has no depth-map pass or forward shadow sample] → add the pass, bindings, and shader sample with Metal pixel regressions before claiming the Plane receives a shadow.
 
 ## Migration Plan
 

@@ -147,6 +147,9 @@ authored world and Editor view. The current sample hosted runtime reports Swift 
 as unavailable, so Play does not yet run project scripts or sound. The runtime status is shown in
 the editor instead of implying those services are active. The Editor's studio fill is omitted from
 Game rendering, so authored lights determine its illumination.
+Disabling the last authored light removes its illumination in both views; its Editor handle remains
+selectable so it can be enabled again. Rotating a directional or spot light changes where it shines.
+Point lights emit in every direction, so moving one changes the image but rotating one does not.
 
 Live Metal captures: [Editor view with selected light](../docs/design/images/editor-scene-light-editor-metal.png)
 and [Game view during Play](../docs/design/images/editor-scene-light-game-play-metal.png).

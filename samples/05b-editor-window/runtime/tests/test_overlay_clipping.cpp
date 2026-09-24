@@ -60,6 +60,6 @@ CY_TEST_CASE("drawing outside the frame is clipped rather than corrupting memory
 
     // Reaching here without a sanitiser report is the assertion; the pixel is a witness that the
     // canvas was not simply ignored.
-    const cy::usize centre = ((12U * kAcross) + 12U) * 4U;
+    const cy::usize centre = ((cy::usize{12} * kAcross) + 12U) * 4U;
     CY_CHECK(pixels[centre] > 0);
 }

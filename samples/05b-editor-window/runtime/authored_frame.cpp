@@ -87,6 +87,10 @@ bool light_enabled(const ser::World& world, const ser::WorldNode& node) noexcept
     return value == nullptr || (value->kind == ser::WorldValueKind::Bool && value->integer != 0);
 }
 
+bool has_light_source(const ser::World& world, const ser::WorldNode& node) noexcept {
+    return field_value(world, node, "LightSource", "kind") != nullptr;
+}
+
 bool append_light(const ser::World& world, const ser::WorldNode& node, const Mat4& matrix,
                   Array<render::LightDescription>& lights) noexcept {
     const ser::WorldValue* kind = field_value(world, node, "LightSource", "kind");
@@ -110,6 +114,10 @@ bool append_light(const ser::World& world, const ser::WorldNode& node, const Mat
     light.range = light_float(world, node, "range", 10.0F);
     light.inner_cone_radians = light_float(world, node, "inner_cone", 0.0F);
     light.outer_cone_radians = light_float(world, node, "outer_cone", 0.7853981634F);
+    const ser::WorldValue* casts_shadow = field_value(world, node, "LightSource", "casts_shadow");
+    light.casts_shadow =
+        casts_shadow == nullptr ||
+        (casts_shadow->kind == ser::WorldValueKind::Bool && casts_shadow->integer != 0);
     light.stable_id = node.identity;
     return static_cast<bool>(lights.push_back(light));
 }
@@ -667,6 +675,7 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
     camera_markers_.clear();
     transforms_.clear();
     lights_.clear();
+    bool authored_light_present = false;
     const Span<const ser::WorldNode> nodes = world.nodes().span();
     Array<Mat4> matrices(*allocator_);
     if (Status status = matrices.resize(nodes.size()); !status) {
@@ -681,16 +690,23 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
             matrices[row] = matrices[node.parent] * matrices[row];
         }
         if (node.live) {
+            const bool light_source = has_light_source(world, node);
+            authored_light_present |= light_source;
             pivots_.emplace_back(node.identity, point(matrices[row], Vec3{}));
-            const usize light_count = lights_.size();
             if (!append_light(world, node, matrices[row], lights_)) {
                 return fail(ErrorCode::OutOfMemory, "authored frame: cannot append light");
             }
-            if (lights_.size() != light_count) {
-                const render::LightDescription& light = lights_[light_count];
-                const Vec3 origin = light.transform.translation;
-                const Vec3 forward = normalize(point(matrices[row], Vec3{0, 0, -1}) - origin);
-                light_markers_.push_back(LightMarker{node.identity, light.kind, origin, forward});
+            if (light_source) {
+                const ser::WorldValue* kind = field_value(world, node, "LightSource", "kind");
+                if (kind != nullptr && kind->kind == ser::WorldValueKind::Int &&
+                    kind->integer >= 0 &&
+                    kind->integer < static_cast<i64>(render::LightKind::Count)) {
+                    const Vec3 origin = point(matrices[row], Vec3{});
+                    const Vec3 forward = normalize(point(matrices[row], Vec3{0, 0, -1}) - origin);
+                    light_markers_.push_back(
+                        LightMarker{node.identity, static_cast<render::LightKind>(kind->integer),
+                                    origin, forward});
+                }
             }
             if (field_value(world, node, "Camera", "projection.fov_y") != nullptr) {
                 const Vec3 origin = point(matrices[row], Vec3{});
@@ -702,7 +718,7 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
             }
         }
     }
-    if (lights_.empty() && editor_lighting) {
+    if (lights_.empty() && editor_lighting && !authored_light_present) {
         render::LightDescription preview;
         preview.kind = render::LightKind::Directional;
         preview.intensity = 22000.0F;
@@ -1007,14 +1023,14 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
         return status;
     }
     GlobalsData globals;
-    globals.exposure_stops = -11.4F;
+    globals.exposure_stops = -16.0F;
     FrameUpload data = upload_for(assembly_, report, projection * relative_view, relative_view,
                                   transforms_.span(), globals, material_offsets_);
     // The studio fill belongs to Editor preview only. Game renders the authored lighting without
     // silently adding a light the scene does not contain.
     if (editor_lighting) {
         for (u32 channel = 0; channel < 3; ++channel) {
-            data.view.ambient_and_occlusion[channel] += 5000.0F;
+            data.view.ambient_and_occlusion[channel] += 500.0F;
         }
     }
     if (!texture_handles_.empty()) {

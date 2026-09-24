@@ -12,6 +12,9 @@
 - [x] 2.2 Use an enabled primary scene camera for Game rendering and show an explicit missing-camera result; verify camera save/load and framing regressions.
 - [x] 2.3 Draw selectable light handles in Editor and suppress light and transform gizmos in Game; verify captured images contain the expected marks only in Editor.
 - [x] 2.4 Draw selectable Camera handles and transformed direction indicators for Cameras, directional lights, and spot lights; verify picking, rotation, and Game suppression.
+- [x] 2.5 Keep disabled authored lights selectable without replacing them with preview light, carry `casts_shadow`, and tune Editor exposure so light toggles and directional rotation visibly change the frame; add a Metal regression.
+- [ ] 2.6 Render an authored directional shadow map through the engine frame and sample it on mesh receivers; verify light rotation, light disabling, and the shadow flag with Metal pixel regressions.
+- [ ] 2.7 Place a large Plane below the imported tree in the live demo, capture its shadow and the light toggle/rotation outcomes, and document the scene setup.
 
 ## 3. View and Play lifecycle
 

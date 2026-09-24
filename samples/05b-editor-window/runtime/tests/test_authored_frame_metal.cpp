@@ -9,6 +9,7 @@
 
 #include "authored_frame.h"
 
+#include <string>
 #include <string_view>
 
 using namespace cy;
@@ -242,6 +243,49 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
             lighting_changed += static_cast<usize>(unlit[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK(lighting_changed > 50);
+
+        std::string directional_text(kLit);
+        const usize kind_at = directional_text.find("field 5 1\n");
+        const usize intensity_at = directional_text.find("field 6 5000\n");
+        CY_REQUIRE(kind_at != std::string::npos);
+        CY_REQUIRE(intensity_at != std::string::npos);
+        directional_text.replace(intensity_at, sizeof("field 6 5000\n") - 1, "field 6 100000\n");
+        directional_text.replace(kind_at, sizeof("field 5 1\n") - 1, "field 5 0\n");
+        std::string disabled_text = directional_text;
+        const usize enabled_at = disabled_text.find("field 8 true\n");
+        CY_REQUIRE(enabled_at != std::string::npos);
+        disabled_text.replace(enabled_at, sizeof("field 8 true\n") - 1, "field 8 false\n");
+        std::string rotated_text = directional_text;
+        const usize light_rotation_at = rotated_text.rfind("field 1 0 0 0 1\n");
+        CY_REQUIRE(light_rotation_at != std::string::npos);
+        rotated_text.replace(light_rotation_at, sizeof("field 1 0 0 0 1\n") - 1,
+                             "field 1 0 1 0 0\n");
+        ser::World directional(allocator());
+        ser::World disabled(allocator());
+        ser::World rotated(allocator());
+        CY_REQUIRE(
+            ser::read_world(directional_text, "worlds/test.cyworld", directional).has_value());
+        CY_REQUIRE(ser::read_world(disabled_text, "worlds/test.cyworld", disabled).has_value());
+        CY_REQUIRE(ser::read_world(rotated_text, "worlds/test.cyworld", rotated).has_value());
+        CY_REQUIRE(ser::resolve_against(directional, schema).has_value());
+        CY_REQUIRE(ser::resolve_against(disabled, schema).has_value());
+        CY_REQUIRE(ser::resolve_against(rotated, schema).has_value());
+        CY_REQUIRE(frame.render(directional, view, true));
+        Array<u32> lit_directional(allocator());
+        CY_REQUIRE(lit_directional.append(frame.pixels()));
+        CY_REQUIRE(frame.render(disabled, view, true));
+        CY_REQUIRE_EQ(frame.light_markers().size(), 1U);
+        usize switched_pixels = 0;
+        for (usize pixel = 0; pixel < lit_directional.size(); ++pixel) {
+            switched_pixels += static_cast<usize>(lit_directional[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK(switched_pixels > 50);
+        CY_REQUIRE(frame.render(rotated, view, true));
+        usize rotated_pixels = 0;
+        for (usize pixel = 0; pixel < lit_directional.size(); ++pixel) {
+            rotated_pixels += static_cast<usize>(lit_directional[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK(rotated_pixels > 50);
     }
     rhi::destroy_device(allocator(), *device);
 }
