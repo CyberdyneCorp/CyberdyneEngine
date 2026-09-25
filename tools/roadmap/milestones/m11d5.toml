@@ -168,7 +168,7 @@ note   = "carried from m11b:plan-consistency — removing every requirement from
 
 [[criterion]]
 id = "four-profiles"
-describe = "all four profiles build clean and just test-all is green in each, on every desktop platform"
+describe = "all four profiles build clean and just test-all is green in each, on every desktop platform. MEASURED ON A QUIET HOST IN EVERY ROW, AND THAT PREMISE IS PART OF THE CLAIM: each profile's `just test-all` runs through `just test-quiet-host`, exactly as `m0:test`'s does, because it carries the same timing-sensitive suites; a host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers, never a pass and never a skip"
 source = "tasks"
 kind = "command"
 run = '''
@@ -176,14 +176,16 @@ python3 tools/roadmap/matrix.py build debug-default dev-default profile-default 
 for p in debug dev profile release; do
     d="$(python3 tools/roadmap/matrix.py path "$p-default")"
     CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
-    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all || exit 1
 done
 '''
 timeout_s = 28800
 ci_job = "profiles"
-# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, Cargo, and
+# the whole host — `exclusive`, because each row's `test-all` runs on a checked-quiet host.
 needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
-         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo",
+         "exclusive"]
 
 [criterion.falsifies]
 mutate = "delete-lines"
@@ -273,7 +275,7 @@ ci_job = "milestone-m11d5"
 
 [[criterion]]
 id = "renderer-options-off-is-clean"
-describe = "M8.c's rule applied to the two options this rung delivers: the engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12` OFF as well as ON. A Linux host is the RIGHT place to check it rather than a limitation — off is the configuration every machine that is not a Mac or a Windows box builds, and a backend that has quietly become mandatory shows up here first"
+describe = "M8.c's rule applied to the two options this rung delivers: the engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12` OFF as well as ON. A Linux host is the RIGHT place to check it rather than a limitation — off is the configuration every machine that is not a Mac or a Windows box builds, and a backend that has quietly become mandatory shows up here first. Its `just test-all` is MEASURED ON A QUIET HOST, through `just test-quiet-host` as `m0:test`'s is, and a host that is not quiet FAILS it with a `host too busy:` reason, never a pass and never a skip"
 source = "tasks 1, 2, build-system-and-platforms, m8c:feature-options-off"
 kind = "command"
 run = '''
@@ -283,10 +285,23 @@ declared=$(grep -c 'CY_RENDERER_METAL|\|CY_RENDERER_D3D12|' cmake/features.cmake
 echo "$declared of 2 renderer options declared in cmake/features.cmake"
 test "$declared" -ge 2 || { echo "an option this criterion names is not declared"; exit 1; }
 CY_BUILD_DIR="$d" just build-engine --profile dev -DCY_RENDERER_METAL=OFF -DCY_RENDERER_D3D12=OFF
-CY_BUILD_DIR="$d" just test-all --profile dev
+CY_BUILD_DIR="$d" just test-quiet-host --profile dev -- just test-all
 '''
 timeout_s = 7200
 ci_job = "milestone-m11d5"
+# `test-all` carries the timing-sensitive suites `m0:test` runs on a checked-quiet host, so this
+# tree's run of them does too, and nothing may run beside it.
+needs = ["exclusive"]
+
+# DECLARED, because nothing can be derived from a build-and-test body. `if(CY_RENDERER_D3D12)` in
+# src/backends/CMakeLists.txt IS what keeps the D3D12 module out of an OFF build; deleting it leaves
+# `add_subdirectory(rhi-d3d12)` unconditional and its `endif()` dangling, so the OFF configure this
+# criterion performs stops there — the backend that has quietly become mandatory, in one line.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/CMakeLists.txt"
+token  = "if(CY_RENDERER_D3D12)"
+note   = "the one line that gates rhi-d3d12 on its option; without it the renderers-off configure fails at the dangling `endif()`, `just build-engine` exits red and the body stops under `set -e`."
 
 [[criterion]]
 id = "rhi-row-at-complete-grade"

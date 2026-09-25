@@ -205,11 +205,25 @@ ci_job = "build-and-test"
 
 [[criterion]]
 id = "determinism"
-describe = "the clock, epochs, the commit boundary, seeded streams that are pure functions of (stream, point, entity, index), state classification, hierarchical hashing, and stable tie-breaking"
-source = "ROADMAP M2 (simulation-and-determinism)"
+describe = "the clock, epochs, the commit boundary, seeded streams that are pure functions of (stream, point, entity, index), state classification, hierarchical hashing, and stable tie-breaking. MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM: `-R determinism` selects `unit.determinism`, the suite M11.c's fourth close saw stall behind another criterion's writeback and the reason `m9:determinism-core` runs it through `just test-quiet-host`. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip"
+source = "ROADMAP M2 (simulation-and-determinism); M11.c's eighth close"
 kind = "recipe"
-run = "just test-unit -R determinism"
+run = "just test-quiet-host -- just test-unit -R determinism"
+# DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
+# beside another criterion. Until M11.c's eighth close this body ran `unit.determinism` bare while
+# `m9:determinism-core` ran the same suite through the wrapper; `quiet_host.findings` found it.
+needs = ["exclusive"]
 ci_job = "build-and-test"
+
+# DECLARED, because nothing can be derived from a recipe body that names no file. The mutation is
+# `m9:determinism-core`'s, since `-R determinism` runs the same `unit.determinism`: without the one
+# line that folds a value into the open node's hash, two differing worlds hash the same and the
+# hierarchical-hash and validator cases fail inside the quiet-host wrapper.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/core/determinism/src/hash.cpp"
+token  = "node.hash = combine(node.hash, value);"
+note   = "StateHashTree::fold's one line; without it no mixed value reaches a node's hash, and `unit.determinism`'s `CY_REQUIRE(divergence.diverged)` cases fail. The suite goes red and `cy_quiet_host` reports its exit status on a quiet host."
 
 [[criterion]]
 id = "runtime"
@@ -291,7 +305,7 @@ ci_job = "sanitizers"
 # `build/<profile>`, so the expansion is empty and the default is unchanged.
 [[criterion]]
 id = "four-profiles"
-describe = "all four profiles build clean and just test-all is green in each — deferral is refused in Profile and Shipping too, where CY_ASSERT is compiled out"
+describe = "all four profiles build clean and just test-all is green in each — deferral is refused in Profile and Shipping too, where CY_ASSERT is compiled out. MEASURED ON A QUIET HOST IN EVERY ROW, AND THAT PREMISE IS PART OF THE CLAIM: each profile's `just test-all` runs through `just test-quiet-host`, exactly as `m0:test`'s does, because it carries the same timing-sensitive suites; a host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers, never a pass and never a skip"
 source = "tasks 6.7"
 kind = "command"
 run = '''
@@ -299,14 +313,16 @@ python3 tools/roadmap/matrix.py build debug-default dev-default profile-default 
 for p in debug dev profile release; do
     d="$(python3 tools/roadmap/matrix.py path "$p-default")"
     CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
-    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all || exit 1
 done
 '''
 timeout_s = 14400
 ci_job = "profiles"
-# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, Cargo, and
+# the whole host — `exclusive`, because each row's `test-all` runs on a checked-quiet host.
 needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
-         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo",
+         "exclusive"]
 
 [criterion.falsifies]
 mutate = "delete-lines"

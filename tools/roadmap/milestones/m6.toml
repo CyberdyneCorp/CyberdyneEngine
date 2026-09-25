@@ -469,10 +469,15 @@ ci_job = "asset-import"
 
 [[criterion]]
 id = "culling"
-describe = "GPU-driven culling's expected values, computed on the CPU so a dispatch can be checked against them rather than against a screenshot: visibility ranges with a parent slot stored plus one so a zeroed record means no parent, HLOD, and shadow caster culling against TWO frustums — the view's own and the camera's, because one frustum cannot answer both of the requirement's questions. `unit.render_gpu_culling`, which is M6's; `unit.render_culling` next door is M3's CPU-side suite and a different claim. `unit.render_gpu_culling` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
+describe = "GPU-driven culling's expected values, computed on the CPU so a dispatch can be checked against them rather than against a screenshot: visibility ranges with a parent slot stored plus one so a zeroed record means no parent, HLOD, and shadow caster culling against TWO frustums — the view's own and the camera's, because one frustum cannot answer both of the requirement's questions. `unit.render_gpu_culling`, which is M6's; `unit.render_culling` next door is M3's CPU-side suite and a different claim. `unit.render_gpu_culling` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST — it AND `integration.render_gpu_culling_teardown`, which runs its cases under the same stall ceiling, as one command inside the wrapper, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores, for CPU pressure to stay at or under 10% and for I/O pressure to stay at or under 10% some and 5% full, all for five seconds running, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
 source = "tasks 8.5"
 kind = "command"
-run = "just test-quiet-host -- just test-unit -R unit.render_gpu_culling && just test-integration -R render_gpu_culling_teardown"
+run = "just test-quiet-host -- just test-suites unit:unit.render_gpu_culling integration:render_gpu_culling_teardown"
+# ONE COMMAND INSIDE THE WRAPPER, BOTH SUITES IN IT. Until M11.c's eighth close this body was
+# `just test-quiet-host -- just test-unit ... && just test-integration ...`: the `&&` is the shell
+# the ledger runs the body in, so the wrapper saw only the unit suite and the teardown suite ran
+# bare after it. `just test-suites` runs both as one command; selftest's
+# `test_quiet_host_bodies` fails any body with a command outside its wrapper.
 # DECLARED, NOT LEFT TO DERIVATION: a quiet host is this criterion's premise, so it must never run
 # beside another criterion, whatever the scheduler could derive from its body.
 needs = ["exclusive"]
@@ -547,7 +552,7 @@ ci_job = "milestone-m6"
 # which cooks, installs, plays, resumes, tears down and patches a world in the profile under test.
 [[criterion]]
 id = "four-profiles"
-describe = "all four profiles build clean and just test-all is green in each — including M6's artefact and the fifteen suites its six new modules brought, none of which is behind a CY_* option"
+describe = "all four profiles build clean and just test-all is green in each — including M6's artefact and the fifteen suites its six new modules brought, none of which is behind a CY_* option. MEASURED ON A QUIET HOST IN EVERY ROW, AND THAT PREMISE IS PART OF THE CLAIM: each profile's `just test-all` runs through `just test-quiet-host`, exactly as `m0:test`'s does, because it carries the same timing-sensitive suites; a host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers, never a pass and never a skip"
 source = "tasks 11.2"
 kind = "command"
 run = '''
@@ -555,14 +560,16 @@ python3 tools/roadmap/matrix.py build debug-default dev-default profile-default 
 for p in debug dev profile release; do
     d="$(python3 tools/roadmap/matrix.py path "$p-default")"
     CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
-    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all || exit 1
 done
 '''
 timeout_s = 28800
 ci_job = "profiles"
-# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, Cargo, and
+# the whole host — `exclusive`, because each row's `test-all` runs on a checked-quiet host.
 needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
-         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo",
+         "exclusive"]
 
 [criterion.falsifies]
 mutate = "delete-lines"

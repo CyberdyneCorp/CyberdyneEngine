@@ -173,7 +173,7 @@ ci_job = "roadmap-status"
 
 [[criterion]]
 id = "determinism-core"
-describe = "the determinism unit suite: profiles and their guarantees, the floating-point policy's twelve replacements and the thirteen `<cmath>` functions section 0's spike forbids, the generated state codecs, hierarchical hashing, **THE VALIDATOR** — two state hashes and a log in, one field on one entity out — and `BuildConfiguration::from_build()` reporting what the BUILD did rather than what the source hoped. One suite rather than five criteria over it, because `criteria.fingerprint` collapses declarations that run the same command and a ledger that lists one check five times is a ledger that reads as five checks. MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
+describe = "the determinism unit suite: profiles and their guarantees, the floating-point policy's twelve replacements and the thirteen `<cmath>` functions section 0's spike forbids, the generated state codecs, hierarchical hashing, **THE VALIDATOR** — two state hashes and a log in, one field on one entity out — and `BuildConfiguration::from_build()` reporting what the BUILD did rather than what the source hoped. One suite rather than five criteria over it, because `criteria.fingerprint` collapses declarations that run the same command and a ledger that lists one check five times is a ledger that reads as five checks. MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores, for CPU pressure to stay at or under 10% and for I/O pressure to stay at or under 10% some and 5% full, all for five seconds running, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
 source = "tasks 2.1, 2.3, 2.4, ROADMAP M9; M11.c's seventh close"
 kind = "recipe"
 run = "just test-quiet-host -- just test-unit -R ^unit.determinism$"
@@ -1115,7 +1115,7 @@ gameplay-framework = "working"
 # bit-identical on every one of the engine's own primitives.
 [[criterion]]
 id = "four-profiles"
-describe = "all four profiles build clean and just test-all is green in each — including src/replay/, src/networking/ and the four-player artefact. CY_NETWORKING defaults ON, as `delivery-roadmap` requires of a capability at Working, and `networking-option-off` above is the other direction"
+describe = "all four profiles build clean and just test-all is green in each — including src/replay/, src/networking/ and the four-player artefact. CY_NETWORKING defaults ON, as `delivery-roadmap` requires of a capability at Working, and `networking-option-off` above is the other direction. MEASURED ON A QUIET HOST IN EVERY ROW, AND THAT PREMISE IS PART OF THE CLAIM: each profile's `just test-all` runs through `just test-quiet-host`, exactly as `m0:test`'s does, because it carries the same timing-sensitive suites; a host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers, never a pass and never a skip"
 source = "tasks 8.1"
 kind = "command"
 run = '''
@@ -1123,14 +1123,16 @@ python3 tools/roadmap/matrix.py build debug-default dev-default profile-default 
 for p in debug dev profile release; do
     d="$(python3 tools/roadmap/matrix.py path "$p-default")"
     CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
-    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all || exit 1
 done
 '''
 timeout_s = 28800
 ci_job = "profiles"
-# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, Cargo, and
+# the whole host — `exclusive`, because each row's `test-all` runs on a checked-quiet host.
 needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
-         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo",
+         "exclusive"]
 
 [criterion.falsifies]
 mutate = "delete-lines"

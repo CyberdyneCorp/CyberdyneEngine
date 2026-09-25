@@ -97,6 +97,7 @@ RECIPE_NEEDS: dict[str, tuple[str, ...]] = {
     "test-unit": (DEFAULT_BUILD,), "test-integration": (DEFAULT_BUILD,),
     "test-smoke": (DEFAULT_BUILD,), "test-render": (DEFAULT_BUILD,),
     "test-all": (DEFAULT_BUILD,), "test-determinism": (DEFAULT_BUILD,),
+    "test-suites": (DEFAULT_BUILD,),
     "test-bench": (DEFAULT_BUILD,), "test-bench-jobs": (DEFAULT_BUILD,),
     "quality-lint": (DEFAULT_BUILD,), "quality-identity": (DEFAULT_BUILD,),
     "generate-check": (DEFAULT_BUILD,), "generate-test": (DEFAULT_BUILD,),

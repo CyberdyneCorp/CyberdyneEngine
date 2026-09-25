@@ -17,7 +17,9 @@
 # by a case that made the wait itself. So the premise is stated and checked from outside instead:
 # a criterion that runs a timing-sensitive suite runs it through this recipe, which builds the tree
 # FIRST (so the build's load is over before the host is judged), waits up to `--wait-s` for every
-# other process together to use at most two cores, runs the command in a session of its own, and
+# other process together to use at most two cores and for CPU and I/O pressure to be low (the I/O
+# half since M11.c's eighth close, whose writeback burst used no core), runs the command in a
+# session of its own, and
 # judges the host across the run with the command's whole process tree subtracted. A host that is
 # not quiet at either point FAILS with "host too busy:" and the numbers — never a pass, never a
 # skip. tools/quiet-host/ is the check; `m11a:world-budget-on-a-device` has used the same one since
@@ -43,6 +45,45 @@ test-quiet-host *args:
     # profile reads CY_PROFILE, so exporting it hands the same profile to every `just` inside.
     export CY_PROFILE="${profile}"
     exec "${wrapper}" ${rest}
+
+# Several suites of different kinds as ONE command. Usage: just test-suites [--profile <p>] <kind>:<regex>...
+#
+# For a criterion whose premise must hold over every suite it runs: `just test-quiet-host` wraps ONE
+# command, and `just` hands `{{args}}` on as text, so `-- a && b` cannot reach the wrapper as one
+# shell line — the `&&` is the criterion's own shell's, and `b` runs outside the wrapper. That was
+# `m6:culling` until M11.c's eighth close: its teardown suite ran bare after the wrapped unit suite.
+# Every spec runs, like `test-all`, so a red suite does not hide the state of the ones after it.
+test-suites *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    specs=(${rest})
+    if [ ${#specs[@]} -eq 0 ]; then
+        echo "test-suites: name at least one <kind>:<regex>, e.g. unit:^unit.determinism\$" >&2
+        exit 2
+    fi
+    failed=()
+    for spec in "${specs[@]}"; do
+        kind="${spec%%:*}"
+        regex="${spec#*:}"
+        if [ "${kind}" = "${spec}" ] || [ -z "${regex}" ]; then
+            echo "test-suites: '${spec}' is not <kind>:<regex>" >&2
+            exit 2
+        fi
+        case "${kind}" in
+            unit|integration|smoke|render|determinism) ;;
+            *) echo "test-suites: '${kind}' is not a suite kind (unit, integration, smoke, render, determinism)" >&2
+               exit 2 ;;
+        esac
+        if ! just _ctest "${kind}" --profile "${profile}" -R "${regex}"; then
+            failed+=("${spec}")
+        fi
+    done
+    if [ ${#failed[@]} -ne 0 ]; then
+        echo "test-suites: failed — ${failed[*]}" >&2
+        exit 1
+    fi
 
 # Unit tests: sub-millisecond, no I/O. Under a minute including the build. Run on every save.
 test-unit *args:

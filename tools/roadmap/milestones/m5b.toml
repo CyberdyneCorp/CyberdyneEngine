@@ -320,7 +320,7 @@ ci_job = "milestone-m5b"
 # cannot tell the driver from a hand on a keyboard. Nothing in it is a test hook.
 [[criterion]]
 id = "window-artefact"
-describe = "the editor's window opens on a project, composites another process's rendered image in its viewport, creates three entities from the keyboard, selects one with the pointer, undoes and redoes them, finds a command by typing in the palette, and saves — each observed rather than assumed: the journal's records, the outliner's rows, the viewport's saturation against a charcoal interface, and a second headless editor over the same journal being offered no recovery. `smoke.editor_window` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores and for CPU pressure to stay at or under 10%, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
+describe = "the editor's window opens on a project, composites another process's rendered image in its viewport, creates three entities from the keyboard, selects one with the pointer, undoes and redoes them, finds a command by typing in the palette, and saves — each observed rather than assumed: the journal's records, the outliner's rows, the viewport's saturation against a charcoal interface, and a second headless editor over the same journal being offered no recovery. `smoke.editor_window` failed once across three full ledger runs under the ledger's own load at M8.c's gate and passed every time alone, so it is MEASURED ON A QUIET HOST, AND THAT PREMISE IS PART OF THE CLAIM. The suite's stall ceiling is a wall-clock assertion, and M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse a loaded host's share of it from inside the case; the owner's decision was that a timing-sensitive suite runs on a quiet host instead, the way `m11a:world-budget-on-a-device` does. `just test-quiet-host` builds the tree first, then waits up to ten minutes for every other process together to use at most two cores, for CPU pressure to stay at or under 10% and for I/O pressure to stay at or under 10% some and 5% full, all for five seconds running, runs the suite in a session of its own, and judges the host across the run a second at a time with the suite's own process tree subtracted, requiring its BUSIEST second to be quiet too. A host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers; it is never a pass and never a skip. `smoke.quiet_host_before`, `smoke.quiet_host_across` and `smoke.quiet_host_own` prove the check is live by loading the host on purpose"
 source = "tasks 1.1, 1.2, 1.3, 1.4, 2.1, 4.1, 5.1, ROADMAP M5.5"
 kind = "recipe"
 run = "just test-quiet-host -- just test-smoke -R editor_window"
@@ -385,7 +385,7 @@ ci_job = "milestone-m5b"
 # `smoke.agent_authoring`, which builds the editor in the profile under test before running it.
 [[criterion]]
 id = "four-profiles"
-describe = "all four profiles build clean and just test-all is green in each — including M5.5's agent artefact, which builds the editor in the profile under test and drives it over MCP"
+describe = "all four profiles build clean and just test-all is green in each — including M5.5's agent artefact, which builds the editor in the profile under test and drives it over MCP. MEASURED ON A QUIET HOST IN EVERY ROW, AND THAT PREMISE IS PART OF THE CLAIM: each profile's `just test-all` runs through `just test-quiet-host`, exactly as `m0:test`'s does, because it carries the same timing-sensitive suites; a host that is not quiet FAILS this criterion with a `host too busy:` reason and its numbers, never a pass and never a skip"
 source = "tasks 5.7"
 kind = "command"
 run = '''
@@ -393,14 +393,16 @@ python3 tools/roadmap/matrix.py build debug-default dev-default profile-default 
 for p in debug dev profile release; do
     d="$(python3 tools/roadmap/matrix.py path "$p-default")"
     CY_BUILD_DIR="$d" just build-editor --profile "$p" || exit 1
-    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1
+    CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all || exit 1
 done
 '''
 timeout_s = 28800
 ci_job = "profiles"
-# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, and Cargo.
+# WHAT IT HOLDS WHILE IT RUNS, declared rather than derived: the four matrix rows, Cargo, and
+# the whole host — `exclusive`, because each row's `test-all` runs on a checked-quiet host.
 needs = ["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default",
-         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo"]
+         "build:ledger-matrix/profile-default", "build:ledger-matrix/release-default", "cargo",
+         "exclusive"]
 
 [criterion.falsifies]
 mutate = "delete-lines"

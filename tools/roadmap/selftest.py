@@ -58,6 +58,7 @@ import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import matrix as matrix_module  # noqa: E402
 import plan as plan_module  # noqa: E402
+import quiet_host as quiet_host_module  # noqa: E402
 import record as record_module  # noqa: E402
 import row_evidence as row_evidence_module  # noqa: E402
 import requirements as requirements_module  # noqa: E402
@@ -1097,6 +1098,70 @@ def just_arguments(run: str) -> list[tuple[str, str]]:
             found.append((recipe, token))
             index += 1
     return found
+
+
+def test_quiet_host_bodies(root: Path) -> None:
+    """A criterion that runs a timing-sensitive suite runs ALL of it inside `just test-quiet-host`.
+
+    REGRESSION, M11.c's eighth close. `m6:culling` was `just test-quiet-host -- just test-unit ...
+    && just test-integration -R render_gpu_culling_teardown`; the body runs under `bash -c`, so the
+    `&&` was that shell's and the teardown suite ran bare after the wrapper had exited, while the
+    criterion said MEASURED ON A QUIET HOST in capitals. `m1:four-profiles` ran `just test-all` bare
+    in four matrix rows and `m2:determinism` ran `unit.determinism` bare. `quiet_host.findings` is
+    the rule; the fixtures below are those three bodies and the shapes around them.
+    """
+    del root
+
+    def found(run: str, **extra) -> list[str]:
+        return quiet_host_module.findings(_criterion("fixture", run, **extra))
+
+    alone = {"needs": ["exclusive"]}
+    old_culling = ("just test-quiet-host -- just test-unit -R unit.render_gpu_culling && "
+                   "just test-integration -R render_gpu_culling_teardown")
+    check("a suite after `&&` on the wrapper's line runs outside it (m6:culling, eighth close)",
+          any("follows the wrapped command" in finding for finding in found(old_culling, **alone)),
+          "\n".join(found(old_culling, **alone)))
+    for operator in (";", "|", "&", "||"):
+        run = f"just test-quiet-host -- just test-all {operator} echo after"
+        check(f"a command after `{operator}` on the wrapper's line is a finding",
+              bool(found(run, **alone)), run)
+    check("a quiet-host body that goes on after the wrapper on a LATER line is judged line by line",
+          not found("just test-quiet-host -- just test-all\necho done", **alone))
+    check("a status guard after the wrapper, `|| exit 1`, runs nothing and is not a finding",
+          not found('CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all '
+                    '|| exit 1', **alone))
+    check("several suites as ONE wrapped command are inside the wrapper",
+          not found("just test-quiet-host -- just test-suites unit:unit.render_gpu_culling "
+                    "integration:render_gpu_culling_teardown", **alone))
+    old_rows = ('for p in debug dev; do\n'
+                '    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1\n'
+                'done')
+    check("a bare `just test-all` is a finding (m1:four-profiles at the eighth close)",
+          any("outside `just test-quiet-host`" in finding for finding in found(old_rows)),
+          "\n".join(found(old_rows)))
+    check("a bare `-R` that selects a named suite is a finding (m2:determinism)",
+          bool(found("just test-unit -R determinism")))
+    check("the suite being wrapped on ANOTHER line does not cover a bare one",
+          bool(found("just test-quiet-host -- just test-all\njust test-smoke -R editor_window",
+                     **alone)))
+    check("a `-R` that selects none of them is not a finding",
+          not found("just test-unit -R render_culling && just test-unit -R unit.artefact_harness"))
+    check("`ctest -N` lists and runs nothing, and is not a finding",
+          not found("ctest --test-dir build/dev -N -R '^unit.determinism$'"))
+    check("a quoted `&&` is prose, not an operator",
+          not found('just test-quiet-host -- just test-all\necho "a && b"', **alone))
+    check("a wrapped criterion that does not declare `exclusive` is a finding",
+          any("exclusive" in finding for finding in found("just test-quiet-host -- just test-all")))
+    check("a `where = \"ci\"` criterion is not judged: this host never evaluates it",
+          not found("just env-doctor && just build-engine && just test-all", where="ci",
+                    reason="three platforms"))
+
+    offenders = [f"{identifier}:{criterion.id}: {finding}"
+                 for identifier in criteria_module.available()
+                 for criterion in criteria_module.load(identifier).criteria
+                 for finding in quiet_host_module.findings(criterion)]
+    check("every criterion under milestones/ runs its timing-sensitive suites wholly inside "
+          "`just test-quiet-host`", not offenders, "\n".join(offenders))
 
 
 def test_just_arguments(root: Path) -> None:
@@ -2649,6 +2714,7 @@ def main() -> int:
         test_ctest_property_syntax(_area(root, "ctest-syntax"))
         test_plan_checks_can_fail(_area(root, "plan-negative"))
         test_just_arguments(_area(root, "just-arguments"))
+        test_quiet_host_bodies(_area(root, "quiet-host"))
         test_matrix_requirement_counts(_area(root, "reqs-column"))
         test_falsifiability_rules(_area(root, "falsify-rules"))
         test_absent_recipe_rule(_area(root, "absent-recipe"))

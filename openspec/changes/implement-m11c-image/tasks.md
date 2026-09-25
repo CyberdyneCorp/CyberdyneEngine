@@ -3441,3 +3441,56 @@ digest, and `m7:gpu-culling` if it declares the same line), a decision on whethe
 `four-profiles`'s bare `test-all` needs the same premise, a decision on whether the wrapper should
 read `/proc/pressure/io` as well as cpu, and then one more ledger run — which, on this run's
 evidence, is expected to have the same single red.
+
+### THE FIX PHASE AFTER THE EIGHTH CLOSE — THE PREMISE OVER THE WHOLE BODY, IN EVERY ROW, AND ON THE DISK
+
+Three things the eighth close left open, fixed rather than ruled on (not yet committed at the time
+of writing; the digests below move and each needs `just roadmap-falsify --record` against a built
+tree before the ninth close):
+
+- **(a) `m6:culling`'s whole body inside one wrapper.** The body is now
+  `just test-quiet-host -- just test-suites unit:unit.render_gpu_culling integration:render_gpu_culling_teardown`.
+  `just test-suites <kind>:<regex>...` (just/test.just) runs several suites of different kinds as
+  ONE command, every spec run so a red one hides nothing, because `just` hands `{{args}}` on as
+  text and `-- a && b` can never reach the wrapper as one shell line. The audit is a rule, not a
+  reading: `tools/roadmap/quiet_host.py`, run over every ledger by `just roadmap-test`'s
+  `test_quiet_host_bodies`, fails a body in which anything but `|| exit <n>` follows the wrapped
+  command on its line (`&&`, `||`, `;`, `|`, `&`), in which `just test-all`, `just test-<kind>`,
+  `just test-suites` or `ctest` runs `unit.determinism`, `unit.render_gpu_culling`,
+  `unit.harness`, `integration.render_gpu_culling_teardown`, `integration.harness` or
+  `smoke.editor_window` outside the wrapper, or which runs the wrapper without
+  `needs = ["exclusive"]`. Over the ladder it found two bodies the eighth close had not listed:
+  **`m2:determinism`** (`just test-unit -R determinism`, which selects `unit.determinism`, bare)
+  and **`m11d5:renderer-options-off-is-clean`** (its tree's `just test-all`, bare). Both now run
+  through the wrapper and declare `exclusive`. `m7:gpu-culling` runs `render.gpu_culling`, a
+  different suite, and was not touched. `where = "ci"` criteria (`three-platforms`) are not
+  judged: the wrapper is Linux-only. `m2:asan-world` runs `unit.determinism` under ASan through
+  a loop variable, with every budget scaled twentyfold; it is NOT wrapped, and whether the premise
+  extends to sanitized runs is left to the owner.
+- **(b) `four-profiles` on a quiet host in every row.** All nineteen declarations, still
+  byte-identical, run `CY_BUILD_DIR="$d" just test-quiet-host --profile "$p" -- just test-all || exit 1`
+  and add `exclusive` to the rows and Cargo they already held.
+- **(c) `cy_quiet_host` judges `/proc/pressure/io`.** Before the run, a second is busy when some
+  task waited on I/O for more than 10% of it or every non-idle task did at once for more than
+  5%, and the reason then leads with `host too busy: io pressure ...`. And the host has to be
+  quiet for FIVE seconds running rather than one (`kSettledWindows`), because I/O comes in pulses:
+  a configure read 11%, 39%, 10%, 7%, 7%, 59% in six successive seconds, and a one-second check
+  would have started the suite into the rest of it. PSI is machine-wide and cannot subtract our
+  own I/O, so, like CPU pressure, it is not judged across the run. Measured here a second at a
+  time: idle at most 3.0% some and 2.7% full over 360 s; a cold `just build-engine` a median of
+  63% / 57% over 854 s; one bounded fsync writer 16% to 79% from its first second.
+  `smoke.quiet_host_io` starts a bounded pulsed fsync writer (killed by its PID) and requires the
+  wrapper to refuse with the io reason, then, with the writer gone, to pass.
+
+**Two mutations declared.** `m2:determinism` and `m11d5:renderer-options-off-is-clean` were on the
+unproven list, and a moved digest cannot be re-recorded there (the list only shrinks), while
+neither body names a file a mutation can be derived from. So each now declares one:
+`m2:determinism` takes `m9:determinism-core`'s (`node.hash = combine(node.hash, value);` in
+`src/core/determinism/src/hash.cpp`, since both run `unit.determinism`), and
+`renderer-options-off-is-clean` deletes `if(CY_RENDERER_D3D12)` in `src/backends/CMakeLists.txt`,
+which leaves the D3D12 module unconditional and its `endif()` dangling so the OFF configure stops.
+
+**Digests that moved** (22 entries; each needs a re-proof): `m6:culling`, `m2:determinism`,
+`m11d5:renderer-options-off-is-clean`, and `four-profiles` in all nineteen ledgers (`m1`, `m2`,
+`m3`, `m4`, `m5`, `m5b`, `m6`, `m7`, `m8a`, `m8b`, `m8c`, `m9`, `m10`, `m11a`, `m11b`, `m11c`,
+`m11d`, `m11d5`, `m11e`).
