@@ -576,6 +576,35 @@ impl SpecialisedEditors {
         Ok(index)
     }
 
+    /// Update one emitter's renderer and simulation target without touching its stage graphs.
+    pub fn set_vfx_emitter_settings(
+        &mut self,
+        index: usize,
+        path: vfx::SimulationPath,
+        renderer: String,
+    ) -> Result<()> {
+        let document = self
+            .vfx_document
+            .as_mut()
+            .ok_or_else(|| Problem::new("configure a VFX emitter", "no VFX document is open"))?;
+        let emitter = document
+            .emitters
+            .get_mut(index)
+            .ok_or_else(|| Problem::new("configure a VFX emitter", "unknown emitter"))?;
+        let previous = (
+            emitter.path,
+            std::mem::replace(&mut emitter.renderer, renderer),
+        );
+        emitter.path = path;
+        if let Err(problem) = document.encode() {
+            let emitter = &mut document.emitters[index];
+            emitter.path = previous.0;
+            emitter.renderer = previous.1;
+            return Err(problem);
+        }
+        Ok(())
+    }
+
     /// Which editor is active, if any.
     pub fn active(&self) -> Option<Domain> {
         self.active
@@ -907,6 +936,12 @@ mod tests {
                 .count(),
             1
         );
+        host.set_vfx_emitter_settings(0, vfx::SimulationPath::CpuRequired, "Mesh".into())
+            .unwrap();
+        let saved = host.vfx_document_snapshot().unwrap().unwrap();
+        let reopened = vfx::VfxDocument::decode_text(&saved.encode_text().unwrap()).unwrap();
+        assert_eq!(reopened.emitters[0].path, vfx::SimulationPath::CpuRequired);
+        assert_eq!(reopened.emitters[0].renderer, "Mesh");
     }
 
     #[test]

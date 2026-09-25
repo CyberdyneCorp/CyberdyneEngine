@@ -11,9 +11,11 @@ use cy_editor_core::problem::Problem;
 use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 
 use crate::runtime::RuntimeSession;
+use crate::vfx_capabilities::VfxAuthoringCapabilities;
 
 const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
 const VFX_CATALOGUE_OPERATION: &str = "vfx.catalogue.get";
+const VFX_CAPABILITIES_OPERATION: &str = "vfx.authoring-capabilities.get";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
@@ -220,6 +222,10 @@ pub struct BackendServices {
     vfx_catalogue_state: MaterialCatalogueState,
     vfx_catalogue_request: Option<RequestId>,
     vfx_catalogue_requested: bool,
+    vfx_capabilities: Versioned<Option<VfxAuthoringCapabilities>>,
+    vfx_capabilities_state: MaterialCatalogueState,
+    vfx_capabilities_request: Option<RequestId>,
+    vfx_capabilities_requested: bool,
     material_request: Option<(RequestId, MaterialOperation)>,
     material_state: MaterialRequestState,
     preview_handle: Option<u64>,
@@ -241,6 +247,10 @@ impl Default for BackendServices {
             vfx_catalogue_state: MaterialCatalogueState::Unavailable,
             vfx_catalogue_request: None,
             vfx_catalogue_requested: false,
+            vfx_capabilities: Versioned::new(None),
+            vfx_capabilities_state: MaterialCatalogueState::Unavailable,
+            vfx_capabilities_request: None,
+            vfx_capabilities_requested: false,
             material_request: None,
             material_state: MaterialRequestState::Idle,
             preview_handle: None,
@@ -268,11 +278,16 @@ impl BackendServices {
             self.catalogue_request = None;
             self.vfx_catalogue_request = None;
             self.vfx_catalogue_requested = false;
+            self.vfx_capabilities_request = None;
+            self.vfx_capabilities_requested = false;
             if self.catalogue_state == MaterialCatalogueState::Loading {
                 self.catalogue_state = MaterialCatalogueState::Failed;
             }
             if self.vfx_catalogue_state == MaterialCatalogueState::Loading {
                 self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+            }
+            if self.vfx_capabilities_state == MaterialCatalogueState::Loading {
+                self.vfx_capabilities_state = MaterialCatalogueState::Failed;
             }
             if let Some((request, _)) = self.material_request.take() {
                 self.material_state = MaterialRequestState::Failed {
@@ -302,6 +317,25 @@ impl BackendServices {
                     }
                     Err(problem) => {
                         self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                        return Some(problem);
+                    }
+                }
+            } else if self.vfx_catalogue_requested
+                && self.vfx_catalogue_request.is_none()
+                && !self.vfx_capabilities_requested
+            {
+                self.vfx_capabilities_requested = true;
+                match runtime.service_request(
+                    SERVICE_SCHEMA_VERSION,
+                    VFX_CAPABILITIES_OPERATION,
+                    Vec::new(),
+                ) {
+                    Ok(request) => {
+                        self.vfx_capabilities_request = Some(request);
+                        self.vfx_capabilities_state = MaterialCatalogueState::Loading;
+                    }
+                    Err(problem) => {
+                        self.vfx_capabilities_state = MaterialCatalogueState::Failed;
                         return Some(problem);
                     }
                 }
@@ -344,6 +378,9 @@ impl BackendServices {
         }
         if Some(*request) == self.vfx_catalogue_request {
             return self.accept_vfx_catalogue(*kind, *schema_version, payload);
+        }
+        if Some(*request) == self.vfx_capabilities_request {
+            return self.accept_vfx_capabilities(*kind, *schema_version, payload);
         }
         if self.material_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_material(*request, *kind, *schema_version, payload);
@@ -424,6 +461,46 @@ impl BackendServices {
                 Some(Problem::new(
                     "load the VFX node catalogue",
                     "the runtime did not provide a compatible VFX catalogue",
+                ))
+            }
+        }
+    }
+
+    fn accept_vfx_capabilities(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        match kind {
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => None,
+            ServiceEventKind::Completed => {
+                self.vfx_capabilities_request = None;
+                if schema_version != SERVICE_SCHEMA_VERSION {
+                    self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                    return Some(Problem::new(
+                        "load VFX authoring capabilities",
+                        format!("the runtime returned unsupported schema {schema_version}"),
+                    ));
+                }
+                match VfxAuthoringCapabilities::decode(payload) {
+                    Ok(capabilities) => {
+                        self.vfx_capabilities.set(Some(capabilities));
+                        self.vfx_capabilities_state = MaterialCatalogueState::Ready;
+                        None
+                    }
+                    Err(problem) => {
+                        self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                        Some(problem)
+                    }
+                }
+            }
+            ServiceEventKind::Failed | ServiceEventKind::Cancelled => {
+                self.vfx_capabilities_request = None;
+                self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                Some(Problem::new(
+                    "load VFX authoring capabilities",
+                    "the runtime did not provide renderer and target options",
                 ))
             }
         }
@@ -568,6 +645,18 @@ impl BackendServices {
     #[must_use]
     pub const fn vfx_catalogue_state(&self) -> MaterialCatalogueState {
         self.vfx_catalogue_state
+    }
+
+    /// Last validated engine renderer and target options, retained across disconnects.
+    #[must_use]
+    pub fn vfx_authoring_capabilities(&self) -> Option<&VfxAuthoringCapabilities> {
+        self.vfx_capabilities.get().as_ref()
+    }
+
+    /// State of the renderer and target query.
+    #[must_use]
+    pub const fn vfx_authoring_capabilities_state(&self) -> MaterialCatalogueState {
+        self.vfx_capabilities_state
     }
 
     /// Revision used by presentation to install a snapshot only once.
@@ -1172,6 +1261,62 @@ mod tests {
         }
         assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
 
+        assert!(backend.maintain(&runtime).is_none());
+        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request,
+            operation,
+            payload,
+            ..
+        } = request
+        else {
+            panic!("the third backend message was not a service request")
+        };
+        assert_eq!(operation, VFX_CAPABILITIES_OPERATION);
+        assert!(payload.is_empty());
+        let mut capabilities = Writer::new();
+        capabilities.u32(1);
+        capabilities.u32(1);
+        capabilities.u8(5);
+        capabilities.text("Decal");
+        capabilities.u8(0);
+        capabilities.text("No projection pass");
+        capabilities.u32(2);
+        for (path, name, ready) in [(0, "GpuPreferred", false), (1, "CpuRequired", true)] {
+            capabilities.u8(path);
+            capabilities.text(name);
+            capabilities.u8(1);
+            capabilities.u8(u8::from(ready));
+            capabilities.text(if ready {
+                "EffectRequiresCpu"
+            } else {
+                "NoDeviceInThisWorld"
+            });
+            capabilities.text("reason");
+        }
+        write_frame(
+            &mut runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: capabilities.finish(),
+            }
+            .encode(),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.vfx_authoring_capabilities().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            backend.vfx_authoring_capabilities().unwrap().renderers[0].reason,
+            "No projection pass"
+        );
+
         drop(runtime_writer);
         let deadline = Instant::now() + Duration::from_secs(5);
         while runtime.is_connected() && Instant::now() < deadline {
@@ -1185,6 +1330,7 @@ mod tests {
             "runtime loss must not discard the catalogue a live authored graph uses"
         );
         assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
+        assert!(backend.vfx_authoring_capabilities().is_some());
     }
 
     #[test]

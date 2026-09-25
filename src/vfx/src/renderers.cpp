@@ -257,6 +257,26 @@ const char* renderer_kind_name(RendererKind kind) noexcept {
     return "unknown";
 }
 
+RendererAvailability renderer_availability(RendererKind kind) noexcept {
+    switch (kind) {
+        case RendererKind::Sprite:
+        case RendererKind::Mesh:
+        case RendererKind::Ribbon:
+        case RendererKind::Beam:
+        case RendererKind::Trail:
+            return {true, ""};
+        case RendererKind::Decal:
+            return {false, "No decal projection pass consumes VFX decal rows"};
+        case RendererKind::Light:
+            return {false, "No clustered-light assignment consumes VFX light rows"};
+        case RendererKind::Volume:
+            return {false, "No volumetric pass consumes VFX volume rows"};
+        case RendererKind::Count:
+            return {};
+    }
+    return {};
+}
+
 const char* sorting_mode_name(SortingMode mode) noexcept {
     switch (mode) {
         case SortingMode::None:

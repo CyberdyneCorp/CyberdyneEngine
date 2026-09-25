@@ -376,9 +376,9 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
   overflow, so a raise is a GPU-side append with both of its declared bounds enforced — but nothing
   feeds a channel's contents back in as a dispatch, so "a bullet impact spawns sparks, and a spark
   collision spawns dust" is one link short.
-* **The editor's VFX graph editor is not built.** `vfx-system`'s authoring requirement is
-  `editor-*`'s surface over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`,
-  all three of which are public for exactly that reason.
+* **The editor's VFX graph editor is partial.** It can author and reopen system/emitter/stage drafts
+  through the shared canvas. `vfx-system` still needs compilation, diagnostics, canonical cooking,
+  and preview over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`.
 * **The GPU sort is bounded at `kGpuSortCapacity` (2048) particles a block**, because it is one
   workgroup over group-shared memory — one render-graph pass rather than the 66 a global bitonic
   sort would need, and the RHI deliberately exposes no barrier outside the graph's executor. A block
@@ -401,3 +401,9 @@ Each registered data-interface field also becomes a typed `vfx.sample.<interface
 `register_vfx_interface_nodes` adds project fields after their interfaces are registered, and those
 nodes lower through the existing sampler path. The generic `vfx.sample` node remains readable for
 older authored graphs.
+
+`vfx.authoring-capabilities.get` publishes renderer availability from `renderer_availability`
+in the renderer module and CPU/GPU execution prerequisites from `target_availability` in the
+runtime. Sprite, Mesh, Ribbon, Beam and Trail have draw paths. Decal, Light and Volume remain
+unavailable with specific missing-pass reasons. Without an attached preview device the GPU target
+can still be authored and compiled, but runtime availability reports `NoDeviceInThisWorld`.

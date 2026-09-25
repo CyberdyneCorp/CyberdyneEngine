@@ -8,6 +8,7 @@
 #if defined(CY_EDITOR_HAS_VFX)
 #    include <cy/vfx/asset.h>
 #    include <cy/vfx/interfaces.h>
+#    include <cy/vfx/renderers.h>
 #endif
 
 #include <cstring>
@@ -214,6 +215,58 @@ CY_TEST_CASE("editor_backend: VFX palette equals the compiler registry") {
     CY_CHECK_EQ(cursor, event.payload_size);
     api->service_close(&host, session);
 }
+
+CY_TEST_CASE("editor_backend: VFX renderer and target availability comes from runtime owners") {
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CY_REQUIRE(api != nullptr);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 3,
+                                   "vfx.authoring-capabilities.get", nullptr, 0};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(event.payload_size >= 8U);
+    CY_CHECK_EQ(read_u32(event.payload), 1U);
+    CY_REQUIRE_EQ(read_u32(event.payload + 4), cy::vfx::kRendererKindCount);
+    cy::usize cursor = 8;
+    for (cy::u32 index = 0; index < cy::vfx::kRendererKindCount; ++index) {
+        CY_REQUIRE(cursor < event.payload_size);
+        CY_CHECK_EQ(event.payload[cursor++], static_cast<cy::u8>(index));
+        const auto kind = static_cast<cy::vfx::RendererKind>(index);
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                    std::string_view(cy::vfx::renderer_kind_name(kind)));
+        CY_REQUIRE(cursor < event.payload_size);
+        const bool available = event.payload[cursor++] != 0;
+        const auto owned = cy::vfx::renderer_availability(kind);
+        CY_CHECK_EQ(available, owned.available);
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                    std::string_view(owned.reason));
+        CY_CHECK_EQ(available, index < 5U);
+    }
+    CY_REQUIRE(cursor + 4 <= event.payload_size);
+    CY_REQUIRE_EQ(read_u32(event.payload + cursor), 2U);
+    cursor += 4;
+    for (const cy::vfx::SimulationPath path : {cy::vfx::SimulationPath::GpuPreferred,
+                                               cy::vfx::SimulationPath::CpuRequired}) {
+        CY_REQUIRE(cursor < event.payload_size);
+        CY_CHECK_EQ(event.payload[cursor++], static_cast<cy::u8>(path));
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                    std::string_view(cy::vfx::path_name(path)));
+        const auto owned = cy::vfx::target_availability(path, nullptr);
+        CY_REQUIRE(cursor + 2 <= event.payload_size);
+        CY_CHECK_EQ(event.payload[cursor++] != 0, owned.compile_available);
+        CY_CHECK_EQ(event.payload[cursor++] != 0, owned.runtime_available);
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                    std::string_view(cy::vfx::fallback_reason_name(owned.reason)));
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                    std::string_view(owned.explanation));
+    }
+    CY_CHECK_EQ(cursor, event.payload_size);
+    api->service_close(&host, session);
+}
 #endif
 
 CY_TEST_CASE("editor_backend: cancellation wins before publication") {
@@ -262,7 +315,7 @@ CY_TEST_CASE("editor_backend: capabilities are discoverable and schema mismatche
     CY_REQUIRE(event.payload_size >= 8U);
     CY_CHECK_EQ(read_u32(event.payload), 1U);
 #if defined(CY_EDITOR_HAS_VFX)
-    CY_CHECK_EQ(read_u32(event.payload + 4), 10U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 11U);
 #else
     CY_CHECK_EQ(read_u32(event.payload + 4), 9U);
 #endif

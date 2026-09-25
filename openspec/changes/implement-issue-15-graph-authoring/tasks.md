@@ -5,7 +5,7 @@
 - [x] 1.1a Publish the registered VFX node names, stable identities, and typed pins through `vfx.catalogue.get`; test every entry against `register_vfx_nodes`.
 - [x] 1.1b Add typed VFX node property descriptors and populate the sample interface choices from the registered data-interface catalogue.
 - [x] 1.1c Generate typed sample nodes for registered interface fields and lower them through the existing VFX compiler; verify a project-defined interface.
-- [ ] 1.1d Expose renderer availability and reasons, and target capability queries from their owning registries.
+- [x] 1.1d Expose renderer availability and reasons, and target capability queries from their owning registries.
 - [x] 1.2a Fetch/install the catalogue in the editor and open `Domain::VfxGraph` on the shared canvas; test backend-only node discovery and missing-backend refusal.
 - [x] 1.2b Make the VFX graph panel reachable in the desktop UI with shared-canvas node and property editing, service status, and accessibility coverage. Draft persistence remains task 2.1.
 

@@ -6,6 +6,7 @@
 #include <cy/graph/text.h>
 #include <cy/rendering/material/compiler.h>
 #if defined(CY_EDITOR_HAS_VFX)
+#    include <cy/vfx/authoring_capabilities.h>
 #    include <cy/vfx/catalogue.h>
 #endif
 
@@ -547,7 +548,7 @@ CyResult capabilities(CyServiceSession_T& session,
         "preview.destroy",  "preview.parameter.update", "preview.reload",
     };
 #if defined(CY_EDITOR_HAS_VFX)
-    constexpr u32 vfx_operations = 1;
+    constexpr u32 vfx_operations = 2;
 #else
     constexpr u32 vfx_operations = 0;
 #endif
@@ -564,7 +565,8 @@ CyResult capabilities(CyServiceSession_T& session,
         }
     }
 #if defined(CY_EDITOR_HAS_VFX)
-    if (!put_text(session.event_payload, "vfx.catalogue.get")) {
+    if (!put_text(session.event_payload, "vfx.catalogue.get") ||
+        !put_text(session.event_payload, "vfx.authoring-capabilities.get")) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
 #endif
@@ -669,6 +671,11 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
 #if defined(CY_EDITOR_HAS_VFX)
     } else if (!session->cancelled && operation == "vfx.catalogue.get") {
         if (Status encoded = vfx::encode_vfx_catalogue(session->event_payload); !encoded) {
+            result = CY_RESULT_OUT_OF_MEMORY;
+        }
+    } else if (!session->cancelled && operation == "vfx.authoring-capabilities.get") {
+        if (Status encoded = vfx::encode_authoring_capabilities(session->event_payload, nullptr);
+            !encoded) {
             result = CY_RESULT_OUT_OF_MEMORY;
         }
 #endif

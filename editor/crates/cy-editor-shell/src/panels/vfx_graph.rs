@@ -7,6 +7,7 @@ use cy_editor_interface::Domain;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout};
 use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
 use cy_editor_services::MaterialCatalogueState;
+use cy_editor_services::vfx_capabilities::VfxAuthoringCapabilities;
 
 use super::{Intent, Panels, material_graph, nothing_here, secondary};
 
@@ -145,14 +146,84 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
     let name = panels.specialised.vfx_document().unwrap().name.clone();
     ui.label(format!("System: {name}"));
+    emitter_choices(panels, ui);
+    stage_tabs(panels, ui);
+    current_emitter_settings(panels, ui);
+    if let Some(problem) = &panels.inputs.vfx_document_problem {
+        ui.colored_label(egui::Color32::RED, problem);
+    }
+}
+
+fn emitter_choices(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let Some(capabilities) = panels.editor.backend.vfx_authoring_capabilities().cloned() else {
+        ui.label(secondary(
+            panels.shell,
+            "Renderer and simulation target options are loading from the engine.",
+        ));
+        return;
+    };
+    let selected_renderer = capabilities
+        .renderers
+        .iter()
+        .find(|renderer| renderer.kind == panels.inputs.vfx_new_renderer);
+    let selected_target = capabilities
+        .targets
+        .iter()
+        .find(|target| target.path == panels.inputs.vfx_new_path);
     ui.horizontal(|ui| {
         ui.label("Emitter");
         ui.text_edit_singleline(&mut panels.inputs.vfx_emitter_name);
-        if ui.button("Add emitter").clicked() {
+        egui::ComboBox::from_id_salt("vfx-new-renderer")
+            .selected_text(selected_renderer.map_or("Renderer", |value| value.name.as_str()))
+            .show_ui(ui, |ui| {
+                for renderer in &capabilities.renderers {
+                    ui.add_enabled_ui(renderer.available, |ui| {
+                        ui.selectable_value(
+                            &mut panels.inputs.vfx_new_renderer,
+                            renderer.kind,
+                            &renderer.name,
+                        )
+                        .on_hover_text(&renderer.reason);
+                    });
+                }
+            });
+        egui::ComboBox::from_id_salt("vfx-new-target")
+            .selected_text(selected_target.map_or("Target", |value| value.name.as_str()))
+            .show_ui(ui, |ui| {
+                for target in &capabilities.targets {
+                    ui.add_enabled_ui(target.compile_available, |ui| {
+                        ui.selectable_value(
+                            &mut panels.inputs.vfx_new_path,
+                            target.path,
+                            &target.name,
+                        )
+                        .on_hover_text(&target.explanation);
+                    });
+                }
+            });
+        let renderer = capabilities
+            .renderers
+            .iter()
+            .find(|entry| entry.kind == panels.inputs.vfx_new_renderer && entry.available);
+        let target = capabilities
+            .targets
+            .iter()
+            .find(|entry| entry.path == panels.inputs.vfx_new_path && entry.compile_available);
+        if ui
+            .add_enabled(
+                renderer.is_some() && target.is_some(),
+                egui::Button::new("Add emitter"),
+            )
+            .clicked()
+        {
             let emitter = Emitter {
                 name: panels.inputs.vfx_emitter_name.clone(),
-                path: SimulationPath::GpuPreferred,
-                renderer: "Sprite".into(),
+                path: if panels.inputs.vfx_new_path == 1 {
+                    SimulationPath::CpuRequired
+                } else {
+                    SimulationPath::GpuPreferred
+                },
+                renderer: renderer.expect("enabled above").name.clone(),
                 stages: Vec::new(),
                 modules: Vec::new(),
                 interfaces: Vec::new(),
@@ -164,6 +235,25 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
+    for renderer in &capabilities.renderers {
+        if !renderer.available {
+            ui.label(secondary(
+                panels.shell,
+                format!("{} unavailable: {}", renderer.name, renderer.reason),
+            ));
+        }
+    }
+    for target in &capabilities.targets {
+        if !target.runtime_available {
+            ui.label(secondary(
+                panels.shell,
+                format!("{} preview: {}", target.name, target.explanation),
+            ));
+        }
+    }
+}
+
+fn stage_tabs(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let emitters: Vec<_> = panels
         .specialised
         .vfx_document()
@@ -189,9 +279,76 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             }
         });
     });
-    if let Some(problem) = &panels.inputs.vfx_document_problem {
-        ui.colored_label(egui::Color32::RED, problem);
+}
+
+fn current_emitter_settings(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let Some((index, _)) = panels.specialised.active_vfx_stage() else {
+        return;
+    };
+    let Some(emitter) = panels
+        .specialised
+        .vfx_document()
+        .and_then(|document| document.emitters.get(index))
+        .cloned()
+    else {
+        return;
+    };
+    let Some(capabilities) = panels.editor.backend.vfx_authoring_capabilities().cloned() else {
+        return;
+    };
+    let mut renderer = emitter.renderer.clone();
+    let mut path = u8::from(emitter.path == SimulationPath::CpuRequired);
+    ui.horizontal(|ui| {
+        ui.label(format!("{} settings", emitter.name));
+        renderer_picker(ui, &capabilities, &mut renderer);
+        target_picker(ui, &capabilities, &mut path);
+    });
+    let target = if path == 1 {
+        SimulationPath::CpuRequired
+    } else {
+        SimulationPath::GpuPreferred
+    };
+    if renderer != emitter.renderer || target != emitter.path {
+        let result = panels
+            .specialised
+            .set_vfx_emitter_settings(index, target, renderer);
+        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
     }
+}
+
+fn renderer_picker(
+    ui: &mut egui::Ui,
+    capabilities: &VfxAuthoringCapabilities,
+    current: &mut String,
+) {
+    egui::ComboBox::from_id_salt("vfx-current-renderer")
+        .selected_text(current.as_str())
+        .show_ui(ui, |ui| {
+            for renderer in &capabilities.renderers {
+                ui.add_enabled_ui(renderer.available, |ui| {
+                    ui.selectable_value(current, renderer.name.clone(), &renderer.name)
+                        .on_hover_text(&renderer.reason);
+                });
+            }
+        });
+}
+
+fn target_picker(ui: &mut egui::Ui, capabilities: &VfxAuthoringCapabilities, current: &mut u8) {
+    let label = capabilities
+        .targets
+        .iter()
+        .find(|target| target.path == *current)
+        .map_or("Target", |target| target.name.as_str());
+    egui::ComboBox::from_id_salt("vfx-current-target")
+        .selected_text(label)
+        .show_ui(ui, |ui| {
+            for target in &capabilities.targets {
+                ui.add_enabled_ui(target.compile_available, |ui| {
+                    ui.selectable_value(current, target.path, &target.name)
+                        .on_hover_text(&target.explanation);
+                });
+            }
+        });
 }
 
 fn palette(

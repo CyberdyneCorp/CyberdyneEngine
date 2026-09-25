@@ -179,6 +179,10 @@ pub struct Inputs {
     pub vfx_document_problem: Option<String>,
     /// Project-relative VFX document path for save and reopen.
     pub vfx_reference: String,
+    /// Backend renderer identity selected for the next emitter.
+    pub vfx_new_renderer: u8,
+    /// Backend simulation path selected for the next emitter.
+    pub vfx_new_path: u8,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -260,6 +264,8 @@ impl Default for Inputs {
             vfx_emitter_name: "Emitter0".into(),
             vfx_document_problem: None,
             vfx_reference: "effects/NewVfx.cyvfxdoc".into(),
+            vfx_new_renderer: 0,
+            vfx_new_path: 0,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

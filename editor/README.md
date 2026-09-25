@@ -515,6 +515,9 @@ Material Graph. Its palette includes compiler-registered nodes and typed sample 
 from data-interface fields. The panel can create a system and emitters, then select each emitter's
 Spawn, Initialise, Update, Event, Render, or Compute stage. Stage selection snapshots the shared
 canvas and restores the selected stage; graph-tab switches preserve the active draft. The
+renderer and CPU/GPU selectors come from `vfx.authoring-capabilities.get`; missing Decal, Light,
+and Volume compositors appear with engine-provided reasons. GPU authoring is available while
+runtime readiness waits for an attached preview device. The
 **Save VFX draft** action writes a versioned `.cyvfxdoc` through the `vfx.document.save` command,
 so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable

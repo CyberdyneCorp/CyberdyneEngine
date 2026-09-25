@@ -459,34 +459,46 @@ bool device_dispatch_available() noexcept {
     return true;
 }
 
-PathDecision decide_path(const CompiledEmitter& emitter,
-                         const DeviceCapability& capability) noexcept {
-    PathDecision decision;
-    if (emitter.path() == SimulationPath::CpuRequired) {
-        decision.path = ExecutionPath::Cpu;
-        decision.reason = FallbackReason::EffectRequiresCpu;
-        decision.explanation = fallback_explanation(decision.reason);
-        decision.is_fallback = false;
-        return decision;
+TargetAvailability target_availability(SimulationPath path,
+                                       const DeviceCapability* device) noexcept {
+    if (path == SimulationPath::CpuRequired) {
+        return {true, true, FallbackReason::EffectRequiresCpu,
+                fallback_explanation(FallbackReason::EffectRequiresCpu)};
     }
     FallbackReason reason = FallbackReason::None;
-    if (!capability.gpu_path_enabled) {
+    if (device == nullptr) {
+        reason = FallbackReason::NoDeviceInThisWorld;
+    } else if (!device->gpu_path_enabled) {
         reason = FallbackReason::DisabledByHost;
-    } else if (!capability.compute) {
+    } else if (!device->compute) {
         reason = FallbackReason::DeviceLacksCompute;
-    } else if (!capability.indirect_dispatch) {
+    } else if (!device->indirect_dispatch) {
         reason = FallbackReason::DeviceLacksIndirectDispatch;
     } else if (!device_dispatch_available()) {
         reason = FallbackReason::NoDeviceInThisWorld;
     }
-    if (reason == FallbackReason::None) {
+    return {true, reason == FallbackReason::None, reason, fallback_explanation(reason)};
+}
+
+PathDecision decide_path(const CompiledEmitter& emitter,
+                         const DeviceCapability& capability) noexcept {
+    PathDecision decision;
+    const TargetAvailability availability = target_availability(emitter.path(), &capability);
+    if (emitter.path() == SimulationPath::CpuRequired) {
+        decision.path = ExecutionPath::Cpu;
+        decision.reason = availability.reason;
+        decision.explanation = availability.explanation;
+        decision.is_fallback = false;
+        return decision;
+    }
+    if (availability.runtime_available) {
         decision.path = ExecutionPath::Gpu;
-        decision.explanation = fallback_explanation(FallbackReason::None);
+        decision.explanation = availability.explanation;
         return decision;
     }
     decision.path = ExecutionPath::Cpu;
-    decision.reason = reason;
-    decision.explanation = fallback_explanation(reason);
+    decision.reason = availability.reason;
+    decision.explanation = availability.explanation;
     decision.is_fallback = true;
     return decision;
 }

@@ -72,6 +72,29 @@ struct Cooked {
 
 }  // namespace
 
+CY_TEST_CASE("VFX target availability reports device prerequisites without changing CPU intent") {
+    const TargetAvailability no_device = target_availability(SimulationPath::GpuPreferred, nullptr);
+    CY_CHECK(no_device.compile_available);
+    CY_CHECK(!no_device.runtime_available);
+    CY_CHECK_EQ(no_device.reason, FallbackReason::NoDeviceInThisWorld);
+
+    DeviceCapability device;
+    CY_CHECK(target_availability(SimulationPath::GpuPreferred, &device).runtime_available);
+    device.compute = false;
+    CY_CHECK_EQ(target_availability(SimulationPath::GpuPreferred, &device).reason,
+                FallbackReason::DeviceLacksCompute);
+    device.compute = true;
+    device.indirect_dispatch = false;
+    CY_CHECK_EQ(target_availability(SimulationPath::GpuPreferred, &device).reason,
+                FallbackReason::DeviceLacksIndirectDispatch);
+    device.gpu_path_enabled = false;
+    CY_CHECK_EQ(target_availability(SimulationPath::GpuPreferred, &device).reason,
+                FallbackReason::DisabledByHost);
+    const TargetAvailability cpu = target_availability(SimulationPath::CpuRequired, nullptr);
+    CY_CHECK(cpu.runtime_available);
+    CY_CHECK_EQ(cpu.reason, FallbackReason::EffectRequiresCpu);
+}
+
 CY_TEST_CASE("an effect plays, spawns, ages and dies, and the step report says so") {
     Cooked cooked;
     CY_REQUIRE(cooked.ok);

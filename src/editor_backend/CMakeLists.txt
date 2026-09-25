@@ -8,7 +8,7 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::abi cy::graph-material)
 
 if(CY_VFX)
-    target_link_libraries(cy_editor_backend PRIVATE cy::vfx-compiler)
+    target_link_libraries(cy_editor_backend PRIVATE cy::vfx)
     target_compile_definitions(cy_editor_backend PRIVATE CY_EDITOR_HAS_VFX=1)
 endif()
 
@@ -17,7 +17,7 @@ if(CY_BUILD_TESTS)
     function(cy_editor_backend_declare_tests)
         set(editor_backend_test_dependencies cy::editor-backend)
         if(CY_VFX)
-            list(APPEND editor_backend_test_dependencies cy::vfx-compiler)
+            list(APPEND editor_backend_test_dependencies cy::vfx)
         endif()
         get_property(tests_dir GLOBAL PROPERTY CY_EDITOR_BACKEND_TESTS_DIR)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
