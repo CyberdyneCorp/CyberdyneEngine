@@ -15,6 +15,7 @@
 #include "world_view.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,8 @@ public:
 
     [[nodiscard]] Status initialize(u32 width, u32 height, const char* project) noexcept;
     [[nodiscard]] Status prepare_world(const scene::serialization::World& world) noexcept;
+    [[nodiscard]] Status preview(std::string_view reference,
+                                 std::string_view canonical_graph) noexcept;
     [[nodiscard]] Status render(const scene::serialization::World& world,
                                 const first_light::Camera& camera,
                                 bool editor_lighting = true) noexcept;
@@ -120,6 +123,7 @@ private:
     std::vector<LightMarker> light_markers_;
     std::vector<CameraMarker> camera_markers_;
     std::vector<std::pair<std::string, u32>> material_slots_;
+    std::optional<std::pair<std::string, std::string>> preview_graph_;
     std::vector<std::pair<AssetId, render::TextureHandle>> texture_handles_;
     rhi::BufferHandle positions_;
     rhi::BufferHandle normals_;

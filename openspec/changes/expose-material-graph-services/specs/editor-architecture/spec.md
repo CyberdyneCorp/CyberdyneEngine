@@ -114,3 +114,10 @@ fields and SHALL be saved with the scene. Graph saves SHALL preserve existing ob
 - **WHEN** an author changes a declared graph parameter in the Inspector
 - **THEN** the scene SHALL store that object's override in an undoable transaction
 - **AND** a supported Diffuse colour override SHALL appear in the authored viewport
+
+#### Scenario: Preview an unsaved graph colour
+- **WHEN** an author changes the colour of a supported graph assigned to an authored mesh
+- **THEN** the editor SHALL submit the current canvas through the material service without saving either graph file
+- **AND** the hosted viewport SHALL display the new colour after the matching validated request
+- **AND** an invalid or unsupported graph SHALL leave the last valid preview intact and report a diagnostic
+- **AND** an explicit per-object colour override SHALL continue to take precedence

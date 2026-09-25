@@ -79,6 +79,11 @@ Graph**, and click **Open graph** to see and edit those nodes and links. **Valid
 the engine to validate and write the canonical graph; the editor then saves that graph
 and its editable canvas source in `project/materials/`.
 
+Editing a valid colour in the opened graph previews it on the Cube in the hosted viewport
+without saving. A rejected or unsupported edit keeps the last valid viewport colour and shows a
+material diagnostic. Object colour overrides that differ from the saved graph default remain in
+control. **Save .cygraph** persists the graph and editable canvas; graph previews alone do not.
+
 The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
 override. Changing it updates that cube in the authored viewport and saves with the
 scene. **Sync graph properties** in the Inspector adds newly declared graph parameters

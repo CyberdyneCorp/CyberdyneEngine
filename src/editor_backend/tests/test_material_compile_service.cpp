@@ -8,6 +8,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -95,6 +97,28 @@ public:
     cy::u32 programs = 0;
 };
 
+class AuthoringRuntime final : public cy::editor::MaterialAuthoringRuntime {
+public:
+    cy::Status preview(std::string_view reference,
+                       std::string_view canonical_graph) noexcept override {
+        asset = reference;
+        graph = canonical_graph;
+        ++updates;
+        return cy::ok();
+    }
+    std::string asset;
+    std::string graph;
+    int updates = 0;
+};
+
+void append_text(std::vector<cy::u8>& payload, std::string_view text) {
+    const auto size = static_cast<cy::u32>(text.size());
+    for (cy::u32 byte = 0; byte < 4; ++byte) {
+        payload.push_back(static_cast<cy::u8>((size >> (byte * 8)) & 0xff));
+    }
+    payload.insert(payload.end(), text.begin(), text.end());
+}
+
 }  // namespace
 
 CY_TEST_CASE("editor_backend: material compile returns stable artefact and dependency identities") {
@@ -179,6 +203,37 @@ CY_TEST_CASE("editor_backend: author returns a canonical graph only for a valid 
                reinterpret_cast<const cy::u8*>(invalid.data()), invalid.size()};
     event = submit_and_poll(*api, host, session, request);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    api->service_close(&host, session);
+}
+
+CY_TEST_CASE("editor_backend: live graph preview validates before updating the authored scene") {
+    cy::abi::Host host(allocator());
+    AuthoringRuntime runtime;
+    cy::editor::MaterialService service(allocator(), nullptr, &runtime);
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const auto canvas = source_canvas();
+    std::vector<cy::u8> payload;
+    append_text(payload, "materials/live.cygraph");
+    append_text(payload, {reinterpret_cast<const char*>(canvas.data()), canvas.size()});
+    CyServiceRequest request{sizeof(CyServiceRequest), 1, 61, "material.preview.set",
+                             payload.data(), payload.size()};
+    auto event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_EQ(runtime.asset, "materials/live.cygraph");
+    CY_CHECK(runtime.graph.starts_with("cygraph 1"));
+    CY_CHECK_EQ(runtime.updates, 1);
+
+    payload.clear();
+    append_text(payload, "materials/live.cygraph");
+    append_text(payload, "cymatcanvas 1\nmaterial broken\nnode 1 material.output\nlink 99 out 1 surface\n");
+    request = {sizeof(CyServiceRequest), 1, 62, "material.preview.set",
+               payload.data(), payload.size()};
+    event = submit_and_poll(*api, host, session, request);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    CY_CHECK_EQ(runtime.updates, 1);
     api->service_close(&host, session);
 }
 

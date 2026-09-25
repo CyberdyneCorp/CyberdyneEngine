@@ -4,6 +4,7 @@
 #include <cy/abi/host.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/rendering/material/compiler.h>
+#include <string_view>
 
 namespace cy::editor {
 
@@ -39,13 +40,23 @@ public:
     [[nodiscard]] virtual Status destroy(u64 preview) noexcept = 0;
 };
 
+/// Applies an unsaved, validated graph to the authored scene owned by the host.
+class MaterialAuthoringRuntime {
+public:
+    virtual ~MaterialAuthoringRuntime() = default;
+    [[nodiscard]] virtual Status preview(std::string_view reference,
+                                         std::string_view canonical_graph) noexcept = 0;
+};
+
 /// Engine-owned material authoring backend. Both C ABI and live protocol adapters submit the same
 /// operation names and payload schemas to this object.
 class MaterialService final : public abi::EditorServiceBackend {
 public:
     explicit MaterialService(Allocator& allocator,
-                             MaterialPreviewRuntime* preview_runtime = nullptr) noexcept
-        : allocator_(&allocator), preview_runtime_(preview_runtime) {}
+                             MaterialPreviewRuntime* preview_runtime = nullptr,
+                             MaterialAuthoringRuntime* authoring_runtime = nullptr) noexcept
+        : allocator_(&allocator), preview_runtime_(preview_runtime),
+          authoring_runtime_(authoring_runtime) {}
 
     [[nodiscard]] CyResult open(CyServiceSession* out_session) noexcept override;
     void close(CyServiceSession session) noexcept override;
@@ -58,6 +69,7 @@ public:
 private:
     Allocator* allocator_;
     MaterialPreviewRuntime* preview_runtime_;
+    MaterialAuthoringRuntime* authoring_runtime_;
 };
 
 }  // namespace cy::editor

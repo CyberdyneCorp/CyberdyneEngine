@@ -16,6 +16,7 @@ const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
+const MATERIAL_PREVIEW_OPERATION: &str = "material.preview.set";
 const PREVIEW_CREATE_OPERATION: &str = "preview.create";
 const PREVIEW_RELOAD_OPERATION: &str = "preview.reload";
 const PREVIEW_DESTROY_OPERATION: &str = "preview.destroy";
@@ -45,6 +46,8 @@ pub enum MaterialOperation {
     Compile,
     /// Validate and obtain engine-canonical graph text for saving.
     Author,
+    /// Apply an unsaved graph to the authored scene.
+    Preview,
 }
 
 /// One renderer material slot which shall receive a compiled artefact.
@@ -140,6 +143,11 @@ pub enum MaterialRequestState {
         request: RequestId,
         /// Canonical `.cygraph` text.
         graph: String,
+    },
+    /// The authored scene accepted the unsaved graph.
+    Previewed {
+        /// Request which produced the result.
+        request: RequestId,
     },
     /// The compiler produced a stable artefact.
     Compiled {
@@ -380,6 +388,7 @@ impl BackendServices {
             MaterialOperation::Validate => MATERIAL_VALIDATE_OPERATION,
             MaterialOperation::Compile => MATERIAL_COMPILE_OPERATION,
             MaterialOperation::Author => MATERIAL_AUTHOR_OPERATION,
+            MaterialOperation::Preview => MATERIAL_PREVIEW_OPERATION,
         };
         let request = runtime.service_request(SERVICE_SCHEMA_VERSION, operation_name, payload)?;
         self.material_request = Some((request, operation));
@@ -773,6 +782,7 @@ fn read_u64_payload(payload: &[u8], offset: usize) -> cy_editor_core::problem::R
 enum DecodedMaterialResult {
     Validated,
     Authored(String),
+    Previewed,
     Compiled {
         artefact: u64,
         graph: u64,
@@ -786,6 +796,7 @@ impl DecodedMaterialResult {
         match self {
             Self::Validated => MaterialRequestState::Validated { request },
             Self::Authored(graph) => MaterialRequestState::Authored { request, graph },
+            Self::Previewed => MaterialRequestState::Previewed { request },
             Self::Compiled {
                 artefact,
                 graph,
@@ -824,6 +835,7 @@ fn decode_material_result(
     let result = match operation {
         MaterialOperation::Validate => DecodedMaterialResult::Validated,
         MaterialOperation::Author => DecodedMaterialResult::Authored(reader.text()?),
+        MaterialOperation::Preview => DecodedMaterialResult::Previewed,
         MaterialOperation::Compile => {
             let artefact = reader.u64()?;
             let graph = reader.u64()?;

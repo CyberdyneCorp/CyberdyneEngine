@@ -12,6 +12,10 @@ The first vertical slice supports:
   filters, semantic/stage/domain metadata and required target-capability bits. Schema 1 remains
   readable by the editor for compatibility;
 - `material.validate` — parses and lowers canonical CyberGraph input;
+- `material.author` — validates a canvas and returns engine-canonical `.cygraph` text;
+- `material.preview.set` — validates an unsaved canvas and applies its canonical graph to a
+  runtime-owned authored scene. Its schema-1 payload is two little-endian, length-prefixed UTF-8
+  strings: project-relative `.cygraph` reference followed by `cymatcanvas` source;
 - `material.compile` — compiles the material family and returns its cook identity, source graph
   dependency identity, program count, and stable texture-asset dependency identities;
 - `preview.create`, `preview.destroy`, `preview.parameter.update`, and `preview.reload` — isolated
@@ -30,3 +34,5 @@ the operation. The interface carries engine-owned compiled material and stable b
 renderer, Metal or compiler type crosses the C ABI/live protocol or enters the Rust editor.
 Hosts without that interface reject `preview.create` with `preview-runtime-unavailable` and omit
 the preview feature bit rather than reporting a protocol-only echo as a visible reload.
+`material.preview.set` uses a separate `MaterialAuthoringRuntime` host seam; it never writes the
+graph asset. Hosts without an authored scene reject it with `material.preview.unavailable`.

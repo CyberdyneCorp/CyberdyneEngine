@@ -270,6 +270,18 @@ impl Editor {
             .request_material(&self.runtime, operation, canvas)
     }
 
+    /// Apply an unsaved canvas to the hosted authored scene without writing the graph asset.
+    pub fn preview_material_graph(
+        &mut self,
+        reference: &str,
+        canvas: &str,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        let mut payload = cy_editor_core::codec::Writer::new();
+        payload.text(reference);
+        payload.text(canvas);
+        self.request_material(MaterialOperation::Preview, payload.finish())
+    }
+
     /// Cooperatively cancel the currently pending material operation.
     pub fn cancel_material_request(&self) -> Result<()> {
         self.backend.cancel_material(&self.runtime)

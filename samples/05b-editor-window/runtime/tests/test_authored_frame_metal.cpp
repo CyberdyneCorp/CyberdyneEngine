@@ -9,6 +9,7 @@
 
 #include "authored_frame.h"
 
+#include <fstream>
 #include <string>
 #include <string_view>
 
@@ -444,6 +445,27 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
         const u64 default_red = red_sum(frame.pixels());
         CY_REQUIRE(frame.render(graph_override, view));
         CY_CHECK(default_red > red_sum(frame.pixels()) + 1000U);
+
+        const std::string reference = "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+        std::ifstream graph_file(std::string(CY_TEST_PROJECT) + "/" + reference);
+        CY_REQUIRE(graph_file.good());
+        std::string graph_source((std::istreambuf_iterator<char>(graph_file)),
+                                 std::istreambuf_iterator<char>());
+        std::string preview_source = graph_source;
+        const usize colour_at = preview_source.find("0.720000029");
+        CY_REQUIRE(colour_at != std::string::npos);
+        preview_source.replace(colour_at, sizeof("0.720000029") - 1, "0.100000001");
+        CY_REQUIRE(frame.preview(reference, preview_source));
+        CY_REQUIRE(frame.render(graph_default, view));
+        const u64 preview_red = red_sum(frame.pixels());
+        CY_CHECK(default_red > preview_red + 1000U);
+        CY_REQUIRE(frame.render(graph_override, view));
+        CY_CHECK(preview_red > red_sum(frame.pixels()) + 1000U);
+        CY_REQUIRE(frame.preview(reference, graph_source));
+        CY_REQUIRE(frame.render(graph_default, view));
+        const u64 restored_red = red_sum(frame.pixels());
+        CY_CHECK((restored_red > default_red ? restored_red - default_red
+                                             : default_red - restored_red) < 1000U);
     }
     rhi::destroy_device(allocator(), *device);
 }

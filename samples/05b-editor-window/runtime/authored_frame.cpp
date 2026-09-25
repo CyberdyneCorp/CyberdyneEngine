@@ -325,6 +325,16 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
       lights_(allocator),
       pixels_(allocator) {}
 
+Status AuthoredFrame::preview(std::string_view reference,
+                              std::string_view canonical_graph) noexcept {
+    auto colour = graph_diffuse_colour(canonical_graph, *allocator_);
+    if (!colour) {
+        return make_unexpected(colour.error());
+    }
+    preview_graph_ = std::make_pair(std::string(reference), std::string(canonical_graph));
+    return ok();
+}
+
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
     if (!shadow_view_.is_null()) {
@@ -598,8 +608,13 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(
     if (Status status = assets::fs::read_whole(path.c_str(), source); !status) {
         return make_unexpected(status.error());
     }
-    auto colour = graph_diffuse_colour(
-        {reinterpret_cast<const char*>(source.data()), source.size()}, *allocator_);
+    const std::string_view saved(reinterpret_cast<const char*>(source.data()), source.size());
+    if (preview_graph_ && preview_graph_->first == reference && preview_graph_->second == saved) {
+        preview_graph_.reset();
+    }
+    const bool previewing = preview_graph_ && preview_graph_->first == reference;
+    const std::string_view active = previewing ? std::string_view(preview_graph_->second) : saved;
+    auto colour = graph_diffuse_colour(active, *allocator_);
     if (!colour) {
         return make_unexpected(colour.error());
     }
@@ -607,7 +622,16 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(
         const std::string component = "Material: " +
             std::string(std::filesystem::path(reference).stem().string());
         const ser::WorldValue* override = field_value(world, node, component, colour->parameter);
-        if (override != nullptr && override->kind == ser::WorldValueKind::Vec3) {
+        bool inherited = false;
+        if (previewing && override != nullptr && override->kind == ser::WorldValueKind::Vec3) {
+            auto original = graph_diffuse_colour(saved, *allocator_);
+            if (original && original->parameter == colour->parameter) {
+                inherited = std::abs(override->lanes[0] - original->value.x) < 0.0001F &&
+                            std::abs(override->lanes[1] - original->value.y) < 0.0001F &&
+                            std::abs(override->lanes[2] - original->value.z) < 0.0001F;
+            }
+        }
+        if (override != nullptr && override->kind == ser::WorldValueKind::Vec3 && !inherited) {
             colour->value = Vec4{override->lanes[0], override->lanes[1], override->lanes[2], 1.0F};
         }
     }

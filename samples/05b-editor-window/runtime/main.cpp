@@ -257,6 +257,19 @@ struct PickFrame {
     std::vector<CameraMarker> cameras;
 };
 
+class AuthoredMaterialPreview final : public editor::MaterialAuthoringRuntime {
+public:
+    explicit AuthoredMaterialPreview(AuthoredFrame& frame) noexcept : frame_(&frame) {}
+
+    [[nodiscard]] Status preview(std::string_view reference,
+                                 std::string_view canonical_graph) noexcept override {
+        return frame_->preview(reference, canonical_graph);
+    }
+
+private:
+    AuthoredFrame* frame_;
+};
+
 struct Host {
     Options options;
     AuthoredFrame* authored_frame = nullptr;
@@ -1415,14 +1428,17 @@ int main(int argc, char** argv) {
 
         Host host;
         ScriptRuntime scripts(allocator, options.project);
+        AuthoredMaterialPreview authored_preview(authored_frame);
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
         MetalMaterialRuntime material_runtime(allocator, renderer, view_world);
         // AuthoredFrame owns the visible scene pipeline. The first-light preview runtime
         // cannot bind a material to its authored mesh identities; compilation remains available.
         editor::MaterialService editor_service(allocator,
-                                               view_world.loaded() ? nullptr : &material_runtime);
+                                               view_world.loaded() ? nullptr : &material_runtime,
+                                               view_world.loaded() ? &authored_preview : nullptr);
 #else
-        editor::MaterialService editor_service(allocator);
+        editor::MaterialService editor_service(allocator, nullptr,
+                                               view_world.loaded() ? &authored_preview : nullptr);
 #endif
         CyServiceSession service_session = nullptr;
         if (editor_service.open(&service_session) != CY_RESULT_OK) {

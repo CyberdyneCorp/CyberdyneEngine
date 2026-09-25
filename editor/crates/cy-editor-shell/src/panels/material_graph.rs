@@ -63,6 +63,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     Ok(name) => {
                         panels.inputs.material_name = name;
                         panels.inputs.material_open_reference = Some(reference.clone());
+                        panels.inputs.material_preview_source = None;
                         panels.inputs.material_property_problem = None;
                     }
                     Err(problem) => panels.inputs.material_property_problem = Some(problem),
@@ -160,6 +161,32 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             }
         }
         None => {}
+    }
+    if action.is_none()
+        && state == MaterialCatalogueState::Ready
+        && !matches!(request_state, MaterialRequestState::Pending { .. })
+    {
+        preview_changed_graph(panels.editor, panels.inputs, canvas);
+    }
+}
+
+fn preview_changed_graph(editor: &mut Editor, inputs: &mut super::Inputs, canvas: &GraphCanvas) {
+    let Some(reference) = inputs.material_open_reference.clone() else {
+        return;
+    };
+    let Ok(source) = canvas_interchange(&inputs.material_name, canvas) else {
+        return;
+    };
+    let semantic: String = source
+        .lines()
+        .filter(|line| !line.starts_with("# layout "))
+        .flat_map(|line| [line, "\n"])
+        .collect();
+    if inputs.material_preview_source.as_ref() == Some(&(reference.clone(), semantic.clone())) {
+        return;
+    }
+    if editor.preview_material_graph(&reference, &source).is_ok() {
+        inputs.material_preview_source = Some((reference, semantic));
     }
 }
 
@@ -653,6 +680,10 @@ fn material_request_status(
         MaterialRequestState::Authored { request, .. } => (
             Semantic::Live,
             format!("Graph authored · request #{}", request.as_u64()),
+        ),
+        MaterialRequestState::Previewed { request } => (
+            Semantic::Live,
+            format!("Live preview · request #{}", request.as_u64()),
         ),
         MaterialRequestState::Compiled {
             request,

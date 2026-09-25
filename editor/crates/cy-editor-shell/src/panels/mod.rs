@@ -156,6 +156,8 @@ pub struct Inputs {
     pub material_name: String,
     /// Project asset opened into the canvas; independent of later scene selection.
     pub material_open_reference: Option<String>,
+    /// Last semantic graph submitted for live scene preview.
+    pub material_preview_source: Option<(String, String)>,
     /// Authored graph waiting for its request-correlated canonical result.
     pub material_save: Option<(u64, String, String)>,
     /// Active terrain sculpt or paint tool keyword.
@@ -229,6 +231,7 @@ impl Default for Inputs {
             material_property_problem: None,
             material_name: "editor_preview".into(),
             material_open_reference: None,
+            material_preview_source: None,
             material_save: None,
             terrain_tool: "raise".into(),
             terrain_layer: None,
