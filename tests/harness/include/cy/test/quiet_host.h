@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // cy/test/quiet_host.h — whether this run is inside `cy_quiet_host`, and so whether the stall
 // ceiling fails a case.
 //
