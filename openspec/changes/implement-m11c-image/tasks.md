@@ -3510,3 +3510,37 @@ same mutate-build-restore-run sequence was green in all four rows. There, the io
 row back while the matrix rebuild was written back, at 7% and then 45% `full`, and then passed it.
 The busiest second across each row's run showed 0.8 to 1.3 of the 2 cores other processes may
 use. The third attempt proved it outright.
+
+### THE NINTH CLOSE — NOT RUN, BECAUSE THE GATE REFUTED THE FIX IT WOULD HAVE CERTIFIED
+
+The fix phase above landed as `3d23315`, `d20ef4b` and `20ffe90` (origin/main at `20ffe90`). Its
+gate refuted the claim that every timing-sensitive suite now runs inside `cy_quiet_host`, and
+both counter-examples reproduce on `build/m11c-final`:
+
+- **`m3:sanitizers-render`** loops `just test-sanitize --tests "$t"` over
+  `rhi render_graph render_ shader material`, bare. `test-sanitize` passes `--tests` to
+  `ctest --tests-regex`, and `ctest -N -R render_` selects `unit.render_gpu_culling` (#59) and
+  `integration.render_gpu_culling_teardown` (#60) — the very suites the eighth close was about.
+  `CY_TEST_BUDGET_SCALE=20` scales their budgets but not the harness's wall-clock stall ceiling.
+- **`m2:asan-world`** runs `unit.determinism` the same way (`--tests determinism`), bare; the fix
+  phase recorded this and left it to the owner.
+- **`tools/roadmap/quiet_host.py` does not see either**: it does not treat `just test-sanitize
+  --tests` as running a suite, nor resolve a `for t in ...` loop variable against the named
+  suites, so `test_quiet_host_bodies` is green over both bodies.
+
+No ledger was run. The closing condition requires every affected criterion to be honestly green,
+and with the premise still unenforced over two criteria that run the named suites no ledger
+verdict at `20ffe90` could meet it; the fix for these two bodies and for the rule moves their
+digests again, so a three-hour ledger now would be superseded by the one that fix needs anyway.
+`gates.toml`, `ci.yml`, `status.yaml`, `capability-matrix.md` and `ROADMAP.md` are unchanged;
+`milestone-m11c` stays `joins-on-close`, and gate items 9.1 and 9.2 stay unticked.
+
+**Reds, by id** (refuted, not measured): `m3:sanitizers-render` and `m2:asan-world` (premise not
+enforced), `m11c:roadmap-tiers` (the closing change's own forcing function, as at every close).
+
+**What would close M11.c:** the owner's ruling on whether the quiet-host premise covers sanitized
+runs. If it does, both bodies run each suite through `just test-quiet-host --` (the loop kept, the
+wrapper inside it) with `needs = ["exclusive"]`; `quiet_host.py` learns `test-sanitize --tests`
+and loop expansion, with a selftest case per blind spot proven red on the current rule; the two
+digests are re-proven. If it does not, the rule must say so explicitly (sanitized runs exempt,
+with the reason) rather than by omission. Then one ledger run at a pinned commit.
