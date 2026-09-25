@@ -158,9 +158,12 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     // The number here is the pipeline's own, so the two cannot disagree again.
     const bool depth_only = pipeline == FramePipelineKind::Depth;
     const u64 offsets[3] = {0, 0, 0};
-    const usize stream_count = pipeline == FramePipelineKind::Shadow
-                                   ? 1U
-                                   : (depth_only ? kDepthPassStreamCount : kForwardPassStreamCount);
+    usize stream_count = kForwardPassStreamCount;
+    if (pipeline == FramePipelineKind::Shadow) {
+        stream_count = 1U;
+    } else if (depth_only) {
+        stream_count = kDepthPassStreamCount;
+    }
     commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(geometry.streams, stream_count),
                                  Span<const u64>(offsets, stream_count));
 

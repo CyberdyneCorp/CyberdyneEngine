@@ -1318,7 +1318,7 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
         const Mat4 shadow_to_clip = shadow_projection * shadow_view * Mat4::from_translation(eye);
         for (u32 row = 0; row < 4; ++row) {
             for (u32 column = 0; column < 4; ++column) {
-                data.view.shadow_to_clip[row * 4U + column] = shadow_to_clip.at(row, column);
+                data.view.shadow_to_clip[(row * 4U) + column] = shadow_to_clip.at(row, column);
             }
         }
         data.view.shadow_control[0] = shadow_slot_;
