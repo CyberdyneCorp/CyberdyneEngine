@@ -3288,3 +3288,156 @@ a spare slot the link waits for, or no jobserver at all and `-flto` bounded anot
 by the release row linking inside a saturated pool; item A's regression cases run in dev, profile
 and release, not only Debug; then one complete ledger run with no undeclared red, which no run
 since `4a1ad21` has produced.
+
+### THE CLOSE, EIGHTH ATTEMPT — ONE COMPLETE LEDGER RUN AT `20bd703`, ONE UNDECLARED RED, AND M11.c DOES NOT CLOSE
+
+**Before the run, the close was barred once, by the gate's own verdict.** The fix phase after the
+seventh close landed five commits on `main`: `9930973` (defect 1: `test_budget_contention.cpp:952`
+reads its `write` result, so the harness suite compiles above `-O0`), `6213bd2` (defect 2:
+`job_slot.py --link` strips every jobserver word from `MAKEFLAGS`, reads the link's last `-flto=N`,
+holds N pool slots before the link starts, and `profiles.cmake` puts `-flto=${CY_LTO_JOBS}` (4) on
+the Shipping link line only), `5ba2d44` (the owner's decision: the stall allowance is REMOVED
+rather than patched a fourth time — `stall_verdict` subtracts runqueue wait and nothing else, the
+D-clock is a diagnostic in the message, and `m0:test`, `m5b:window-artefact`, `m6:culling`,
+`m7:viewport` and `m9:determinism-core` run through `cy_quiet_host` with `needs = ["exclusive"]`),
+`83a2092` (the wrapper counts a command's descendants as its own whatever session they start) and
+`20bd703` (the falsifiability proofs for those five and for `four-profiles` on the matrix). The
+gate then judged:
+
+- **HOLDS**: a release LTO link inside a saturated pool completes. `test_recipes.py` 20/20, a real
+  GCC LTO link started inside a saturated pool of 3 completing where `c7ff54b` hung, and two LTO
+  links over eight compiles never exceeding the pool.
+- **REFUTED**: "every timing-sensitive criterion declares and enforces a quiet host". The harness
+  half holds — `budget.cpp`'s `stall_verdict` subtracts runqueue wait only, and the seventh close's
+  double-forked-orphans probe now reports `stalled:` through the real guard where `23b0370`
+  reported `contended:` — but the criteria half does not. **`m6:culling` wraps only half of its own
+  run.** `tools/roadmap/milestones/m6.toml:475` is
+  `just test-quiet-host -- just test-unit -R unit.render_gpu_culling && just test-integration -R render_gpu_culling_teardown`;
+  `criteria.py:614` executes a body with `bash -c`, so the `&&` is bash's and
+  `just test-integration -R render_gpu_culling_teardown` runs BARE, outside the wrapper, after it.
+  That suite (`src/servers/render/culling/tests/test_teardown.cpp`, "teardown under load") runs its
+  cases under the same harness stall ceiling as the unit half, so the premise the criterion states
+  in capitals — MEASURED ON A QUIET HOST — is enforced over one of its two suites. The proof
+  `20bd703` recorded for it is genuine as far as it goes (the unit half went red under the declared
+  mutation inside the wrapper, `exit 8`) and says nothing about the half the wrapper never sees.
+  The gate's remaining refutations did not survive the relay to this close in full; item (1) was
+  verified here by reading the body and the executor, and the other four bodies were read as well:
+  `m0:test`, `m5b:window-artefact`, `m7:viewport` and `m9:determinism-core` are each ONE command
+  inside the wrapper, so among the five the defect is `m6:culling`'s alone.
+
+Under the owner's rule that a refuted fix's criterion is not honestly green, `m6:culling` is not
+counted as green whatever the ledger prints for it, so **this run was taken to measure, and it is
+not closed over.**
+
+**Also found before the run, by reading the bodies and not by the gate:** `m1:four-profiles` (19
+byte-identical declarations) runs `just test-all --profile <p>` BARE in each of its four matrix
+rows. `test-all` is the command `m0:test` now wraps in `cy_quiet_host`, and it carries
+`integration.harness`, `unit.determinism`, `unit.render_gpu_culling` and every other suite whose
+stall ceiling was the reason for the owner's decision. So one ledger runs those suites once on a
+checked-quiet host and four more times on an unchecked one. Under the ledger's default of one
+criterion at a time (`schedule.default_jobs` = 1) the host is quiet in fact, but `four-profiles`
+neither states the premise nor checks it, which is what the decision asked of a timing-sensitive
+criterion.
+
+**Run**: `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, alone on the host (load 0.26,
+no compiler and no other agent's build running when it started), 18:44:42 to 21:46:00 local
+(21:44:42Z to 00:46:00Z), **3 h 01 m 18 s (10,878 s)**; the criterion times sum to 10,704 s.
+HEAD was `20bd703` before and after, equal to `origin/main`, and the tree was clean before and
+after. It finished on its own; nothing hung and nothing was killed. The ledger printed
+**`M11C is not closed: 1 of 442 evaluated criteria failed.`**
+
+| bucket | count |
+|---|---|
+| declared | **447** |
+| evaluated on this host | **442** (421 ok, 21 failed) |
+| FAIL (not a declared gap) | **1**: `m11c:roadmap-tiers` |
+| declared gaps, still open (do not block) | **20** |
+| declared gaps that now pass (these block) | **0** |
+| NOT EVALUATED, legitimately | **5**, the same five as the fourth to sixth closes |
+
+The 20 declared gaps, by id, with the rung each says will close it: `m8c:steam-audio-configures`
+(m11e), `m9:record-matches-plan-history` (m11e), `m11a:world-streams`, `m11a:save-inspector`,
+`m11a:save-forbidden-patterns-checked`, `m11a:save-benchmark`, `m11a:save-has-an-engine-consumer`,
+`m11a:steam-audio-simulates`, `m11a:thirdparty-dependencies-at-working`,
+`m11a:determinism-suites`, `m11a:network-at-complete-grade`, `m11a:roadmap-tiers` (all m11e),
+`m11b:gameplay-at-complete-grade` (m11e), `m11b:ml-inference-or-a-deferral` (m13),
+`m11b:the-game-exists`, `m11b:the-game-is-playable`, `m11b:the-game-drawn`,
+`m11b:the-game-is-honest-about-its-content` (m12), `m11b:roadmap-tiers` (m11e) and
+`m11c:every-shader-reaches-every-target` (m11d). The five not evaluated: `m0:three-platforms`,
+`m5:editor-three-platforms`, `m10:pcg-gpu-domain-agreement`,
+`m11a:lockstep-agrees-across-architectures`, `m11a:pcg-regenerates-across-architectures` — one
+operating system, one architecture, one GPU vendor.
+
+**What the seventh close asked for, each answered by this run:**
+
+- *The harness suite compiled in all four profiles, proven by the matrix build*: **yes.**
+  `m1:four-profiles` is ok in **1,127.5 s** — `matrix.py build` of the four rows at once, warm, in
+  under three minutes by the process tree (`m1:headless-host` finished 22:12:20Z; at 22:15:10Z
+  the body was already in the debug row's `test-all`), then `build-editor` and `test-all` in each
+  row. At the seventh close the same body sat at 0 % CPU for eleven minutes.
+- *An LTO link never handed an empty jobserver, proven by the release row linking inside a
+  saturated pool*: **yes.** The release row's Shipping links ran `-flto=4` with no jobserver while
+  the dev and profile rows were compiling in the same 22-slot pool, and every one of them completed;
+  the sampler saw no `lto1` older than one sample.
+- *Item A's regression cases run in dev, profile and release, not only Debug*: **yes**, as part of
+  `test-all` in each row — bare, see above.
+- *One complete ledger run with no undeclared red*: **no, and it never can be, by construction**:
+  the one red is `m11c:roadmap-tiers`, "3 capability tier(s) below this milestone's exit", which
+  clears only when the closing change writes `denoising`, `ray-tracing-infrastructure` and
+  `rendering-culling-and-lod` at Complete. Every other verdict in the run is ok, a declared gap, or
+  legitimately not evaluated. **This is the first ledger since `4a1ad21` with that shape.**
+
+**The five wrapped criteria, each green through `cy_quiet_host`**: `m0:test` 378.3 s,
+`m5b:window-artefact` 50.6 s (`m7:viewport` collapsed into it — same body, one check),
+`m6:culling` 30.6 s (not counted, above), `m9:determinism-core` 103.7 s (70.8 s at the sixth
+close; the difference is the wrapper waiting for the host to settle after `m8c:feature-options-off`
+had just built two trees), and `m11a:world-budget-on-a-device` 13.6 s under `--quiet-host`. None
+reported `host too busy:`.
+
+**What the run cost, and what it did to the host (item C):**
+
+- **ccache: 512 hits in 9,541 cacheable calls (5.4 %)**, 9,029 misses, no new uncacheable calls,
+  from `ccache --dir ~/.cache/cyberdyne-ccache -s` before and after; the store grew from 10.9 to
+  12.4 GiB. The trees were warm — 9,541 calls reached ccache against 23,470 at the sixth close —
+  but what reached it was mostly new: `5ba2d44` rewrote `tests/harness/include/cy/test/test.h`,
+  which every fixture includes, and `6213bd2` changed the launcher every compile runs through. The
+  build passes `max_size=60G` on ccache's own command line, so the 5.0 GiB `ccache -p` prints is
+  the unconfigured default and not in force. A warm ledger's hit rate is still unmeasured; the
+  next ledger on this host, with no harness-header or launcher change in between, is the first
+  that can show it.
+- **The machine-wide cap held.** A sampler read every 5 s (2,113 samples) and counted non-zombie
+  processes by name. The peak was **22 `cc1plus`** and **22 links** (`collect2` + `ld` pairs), and
+  neither count went above 22; `clang-tidy` peaked at 44 during `m0:lint` (22 jobs × the pip
+  wrapper and its binary), as at the seventh close. The 1-minute load averaged **8.1**.
+- **The load peaked at 59.0, at 23:58Z, and it was not CPU.** With no compiler running, kernel
+  I/O pressure read `full avg10=70 %`, 1.9 GB of dirty pages were draining onto `sda` (the one
+  SATA SSD that holds the repository, the ccache store, `/tmp` and Docker's data) at 100 % busy,
+  and 37 processes sat in uninterruptible wait: the ledger's own `cmake` configure of
+  `build/m11c-final` (90 s in D state for a step that takes 5 s), and `runc`, `sh` and
+  `redis-cli` from three Docker containers (`hdl_backend_api`, `hdl_postgres`, `hdl_redis`, all
+  "unhealthy") whose health checks were stalling on the same disk. A 3-second census of every
+  process's `write_bytes` found nobody writing: the burst was the writeback of what
+  `m8b:feature-options-off` had just built into four `ledger-matrix/off-*` rows. 152 samples
+  (12.7 min) had a 1-minute load over 24. **This is exactly the wait the removed allowance used to
+  excuse, and now nothing does**: `stall_verdict` subtracts runqueue wait only, and `cy_quiet_host`
+  judges the host on `/proc/pressure/cpu` and on cores used by everyone else — it does not read
+  `/proc/pressure/io`. No criterion went red for it this run because the burst fell on build-type
+  criteria (`m8c:firewall-*`, whose configures merely slowed) and not on a wrapped suite. A wrapped
+  suite that starts during such a burst would be judged "quiet" by the wrapper and then fail with
+  `stalled:` in the harness. That is a gap in the premise, not in the suite, and it is recorded
+  here rather than fixed, because the owner's decision named CPU load and the criteria say so.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`gates.toml`, `ci.yml` and `status.yaml` are unchanged. `milestone-m11c` stays at
+`state = "joins-on-close"`, `ci.yml`'s milestone job still runs `m11b`, and `capability-matrix.md`
+and `ROADMAP.md` are unchanged. Gate items 9.1 and 9.2 stay unticked. On the ledger's face this
+run meets the closing condition — every criterion ok except `m11c:roadmap-tiers`, the declared
+gaps and the five that cannot be evaluated here — and it is the first run since `4a1ad21` to do
+so. It is not closed over because the gate refuted the fix that made `m6:culling`'s green
+possible: the criterion claims a quiet host and enforces it over one of its two suites. What
+would close M11.c: `m6:culling`'s second suite inside the wrapper (one body, one re-proof of its
+digest, and `m7:gpu-culling` if it declares the same line), a decision on whether
+`four-profiles`'s bare `test-all` needs the same premise, a decision on whether the wrapper should
+read `/proc/pressure/io` as well as cpu, and then one more ledger run — which, on this run's
+evidence, is expected to have the same single red.
