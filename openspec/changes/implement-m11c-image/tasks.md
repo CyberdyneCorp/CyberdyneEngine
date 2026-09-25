@@ -3544,3 +3544,88 @@ wrapper inside it) with `needs = ["exclusive"]`; `quiet_host.py` learns `test-sa
 and loop expansion, with a selftest case per blind spot proven red on the current rule; the two
 digests are re-proven. If it does not, the rule must say so explicitly (sanitized runs exempt,
 with the reason) rather than by omission. Then one ledger run at a pinned commit.
+
+### THE FIX PHASE AFTER THE NINTH CLOSE — OPTION B: THE PREMISE MOVES INTO THE HARNESS
+
+**The owner's decision (option B).** Three gates in a row found another route by which a
+timing-sensitive suite ran outside `cy_quiet_host` — `m6:culling`'s second suite,
+`four-profiles`'s bare `test-all`, and `m3:sanitizers-render` / `m2:asan-world`'s
+`just test-sanitize --tests` loops — and no audit of a body's text sees every route. So the
+premise is enforced where the verdict is reached, in `tests/harness/`, and a route the ledger
+cannot see stops being a hole:
+
+- **The wrapper sets a marker.** `cy_quiet_host` puts `CY_QUIET_HOST=<its pid>:<its start time>`
+  (field 22 of `/proc/self/stat`) in the environment of the command it runs, in the forked child
+  just before `exec`, i.e. only after its pre-run quiet check passed (`tools/quiet-host/main.cpp`).
+  A nested wrapper overwrites it with its own.
+- **The harness verifies it, and does not believe it.** `tests/harness/src/quiet_host_marker.cpp`
+  (`cy/test/quiet_host.h`) trusts the marker only when, read from `/proc`, its pid is a live
+  ANCESTOR of the test process, started at the marker's tick, whose executable is
+  `cy_quiet_host`. A marker exported by hand, left over, copied from another terminal's wrapper,
+  naming a reused pid, or naming the shell or ctest is refused, and the reason says which rule
+  refused it.
+- **Inside a verified wrapper a stall FAILS the case**, exactly as before; the message says
+  `enforced: inside cy_quiet_host: cy_quiet_host is pid N, ...`. **Anywhere else the same `stalled:` diagnosis goes
+  to stderr, marked `not enforced: not on a quiet host (<reason>)`, and the case passes** unless
+  its CPU budget failed. That covers the sanitizer loops, a developer's `just test-unit`, and
+  every run on Windows and macOS. This is the owner's explicit, accepted trade-off.
+- **The CPU budget is enforced everywhere**, and its `over budget:` message names the stall
+  ceiling's state too.
+- **`tools/roadmap/quiet_host.py` keeps only what is still true**: nothing may follow the wrapped
+  command on its line but `|| exit <n>` (a `&&` tail would run unenforced while the line reads
+  as wrapped), and a wrapped criterion declares `exclusive`. The clause that named six suites
+  and failed any body running one bare is REMOVED, not extended. It was blind to loops,
+  `test-sanitize` and command substitution, and under option B a bare run is an honest,
+  unenforced run rather than a hidden hole. The selftest now asserts that the sanitizer loop and
+  a bare `-R determinism` are not findings.
+
+**Regression tests, each proven red against HEAD (`b8e22a8`)**, by running the new
+`smoke.quiet_host_marker` leg (`tools/quiet-host/quiet_host_test.py --leg marker`) against
+HEAD's own `cy_quiet_host` and `cy_test_stall_probe`. All four halves were red there:
+
+- **(a)** inside the wrapper, the probe's own-`vfork` 300 ms case fails as `stalled:` and says
+  `enforced: inside cy_quiet_host`. HEAD failed it but never said so.
+- **(b)** outside the wrapper, the same case passes with the `not enforced` line. HEAD failed it
+  (exit 1).
+- **(c)** under five forged markers (malformed, a dead pid, the test's own process, a live
+  `cy_quiet_host` that is not an ancestor, and the right ancestor with the wrong start time), the
+  case passes with the `not enforced` line. HEAD failed every one.
+- **(d)** the spin over its 0.25 ms CPU budget fails both outside and inside the wrapper, naming
+  the ceiling's state. HEAD printed no state.
+
+The same claims also hold in `integration.harness` (both halves when that suite itself runs
+inside the wrapper, as `m0:test` runs it) and in `unit.harness` (the marker's judgement), and
+each was shown red under a mutation of the new code:
+
+- M1, the harness enforcing everywhere as HEAD did: 6 `integration.harness` cases red.
+- M2, any ancestor trusted as the wrapper: the unit `Restarted` check and two forgeries red.
+- M3, a live pid trusted without the ancestry walk: the smoke leg's non-ancestor-wrapper
+  forgery red.
+- M4, the wrapper not setting the marker: the smoke leg's inside halves red.
+
+Every mutation was restored and md5-verified.
+
+**Verified on `build/m11c-qh3` (Development) and `build/m11c-qh3-debug` (Debug, harness targets
+only)**, not committed:
+
+- `unit.harness`, `integration.harness` and all six `smoke.quiet_host_*` legs pass inside one
+  `cy_quiet_host` run through ctest. That run exercises the enforced halves, including
+  `integration.harness` with its own verified marker. Both harness suites also pass bare, where
+  only the unenforced halves and the forgeries run. `clang-tidy` has no findings on the changed
+  sources, and `just quality-format-check` is clean.
+- **`m9:determinism-core`: ok**, in 18.1 s, on a host the wrapper judged quiet before and across
+  the run. A first attempt had failed correctly, with `host too busy:` across the run: another
+  agent's build and this phase's own prover were on the host. The suite itself was green.
+- **`m3:sanitizers-render`: ok**, in 1,710.5 s, on cold `sanitize-*` trees under
+  `build/m11c-qh3`. Its body is unchanged: it still runs bare, and the stalls of its render suites
+  are now reported rather than enforced.
+- `tools/ci/test_recipes.py`: 20/20. `just roadmap-test`: **531/531**. A first run went 530/531
+  ("every criterion on the ladder is either proven or on the list") because this phase ran
+  `git stash` / `git stash pop` in the middle of it, which briefly put HEAD's files under the
+  prover's sandbox copy. A standalone `falsify.reconcile` over a fresh `prove_the_ladder()`
+  then found 0 findings, and the re-run passed every check.
+
+**No digest moved.** No `tools/roadmap/milestones/*.toml` body, artefact, tier or declared
+mutation changed, so nothing needs `just roadmap-falsify --record`. `m3:sanitizers-render` and
+`m2:asan-world` keep their bare bodies on purpose: under option B that is honest, and the rule
+no longer calls it a finding.
