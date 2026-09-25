@@ -33,6 +33,7 @@ struct Entry {
     const char* name;
     const char* description;
     Body body;
+    std::uint64_t first_iterations;
 };
 
 // A function-local static, not a namespace-scope vector: registration happens during static
@@ -84,9 +85,10 @@ double time_once(Body body, std::uint64_t iterations) {
 
 /// Choose an iteration count that takes at least min_time_ms, then measure it reps times and keep
 /// the fastest.
-double measure(Body body, double min_time_ms, int reps, std::uint64_t& iterations_out) {
+double measure(Body body, double min_time_ms, int reps, std::uint64_t first_iterations,
+               std::uint64_t& iterations_out) {
     constexpr std::uint64_t kMaxIterations = 1ULL << 32;
-    std::uint64_t iterations = 1024;
+    std::uint64_t iterations = std::max<std::uint64_t>(first_iterations, 1);
     double elapsed_ms = 0.0;
 
     while (iterations < kMaxIterations) {
@@ -193,8 +195,12 @@ bool parse_options(int argc, char** argv, Options& options) {
 
 }  // namespace
 
-Registration::Registration(const char* name, const char* description, Body body) {
-    registry().push_back(Entry{.name = name, .description = description, .body = body});
+Registration::Registration(const char* name, const char* description, Body body,
+                           std::uint64_t first_iterations) {
+    registry().push_back(Entry{.name = name,
+                               .description = description,
+                               .body = body,
+                               .first_iterations = first_iterations});
 }
 
 }  // namespace cy::bench
@@ -220,8 +226,8 @@ int main(int argc, char** argv) {
     }
 
     std::uint64_t calibration_iterations = 0;
-    const double calibration_ns =
-        measure(&calibration_workload, options.min_time_ms, options.reps, calibration_iterations);
+    const double calibration_ns = measure(&calibration_workload, options.min_time_ms, options.reps,
+                                          kDefaultFirstIterations, calibration_iterations);
     std::printf("calibration  %.3f ns/op over %llu iterations (a dependent multiply-add chain)\n\n",
                 calibration_ns, static_cast<unsigned long long>(calibration_iterations));
 
@@ -233,7 +239,8 @@ int main(int argc, char** argv) {
             continue;
         }
         std::uint64_t iterations = 0;
-        const double ns_per_op = measure(entry.body, options.min_time_ms, options.reps, iterations);
+        const double ns_per_op = measure(entry.body, options.min_time_ms, options.reps,
+                                         entry.first_iterations, iterations);
         const double ratio = calibration_ns > 0.0 ? ns_per_op / calibration_ns : 0.0;
         results.push_back(Result{.name = entry.name,
                                  .description = entry.description,

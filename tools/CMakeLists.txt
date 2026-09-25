@@ -35,6 +35,11 @@ add_subdirectory(material)
 # is, and its own CMakeLists.txt returns early otherwise.
 add_subdirectory(shaders)
 
+# save/ is `close-save-system-gaps`: `cy_save_inspect`, the command line over the save inspector in
+# src/save/ — what is in a save, why each field is there, and the semantic diff of two. Like cook/
+# it is a thin front end over engine code, and nothing links it into a runtime.
+add_subdirectory(save)
+
 # quiet-host/ is M11.c's seventh close: the quiet-host premise as a library (`cy::host-load`, which
 # samples/10-world links for `--quiet-host`) and as the wrapper `cy_quiet_host` that every ledger
 # criterion running a timing-sensitive suite goes through. Its own CMakeLists.txt says why a

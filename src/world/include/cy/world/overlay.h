@@ -105,6 +105,9 @@ struct CellOverlay {
     /// Entities created at runtime that persist with this cell, in the same ECS-native form a cook
     /// produces — so activation stages authored blocks and created blocks by one code path.
     CookedCell created;
+    /// True since the last `PersistenceOverlay::clear_dirty()`: something was recorded against
+    /// this cell. What an autosave captures instead of the whole overlay.
+    bool dirty = true;
 
     explicit CellOverlay(Allocator& allocator) noexcept
         : removed(allocator),
@@ -160,9 +163,21 @@ public:
     /// The bytes of one subsystem blob, or an empty span. Reading this does not load the cell.
     [[nodiscard]] Span<const u8> blob(CellId cell, u32 channel, u64 key) const noexcept;
     [[nodiscard]] const WorldVariable* variable(u64 key) const noexcept;
+    /// The bytes of one override this overlay holds, found by the record rather than searched for.
+    /// `change` must be one of `find(cell)->overrides`.
+    [[nodiscard]] Span<const u8> override_bytes(const ComponentOverride& change) const noexcept;
 
     /// Every cell the overlay holds state for. The save's iteration, and it streams nothing.
     [[nodiscard]] Status cells(Array<CellId>& out) const noexcept;
+
+    /// The cells something was recorded against since the last `clear_dirty()`, sorted as
+    /// `cells()` is. `save-and-persistence`: "an autosave ... SHALL cost work proportional to what
+    /// changed, not to the size of the world" — an autosave translates these and no others.
+    [[nodiscard]] Status dirty_cells(Array<CellId>& out) const noexcept;
+    [[nodiscard]] usize dirty_cell_count() const noexcept;
+    /// Mark every cell clean. Called once the capture that read `dirty_cells()` has been durably
+    /// committed, and not before, for the reason `save::Overlay::clear_dirty()` gives.
+    void clear_dirty() noexcept;
 
     /// Layer states, as identifier-and-state pairs. Replicated as such, never as per-entity
     /// messages.
@@ -171,6 +186,9 @@ public:
     }
 
     [[nodiscard]] usize cell_count() const noexcept { return cells_.size(); }
+    /// How many world state variables are set. What lets a translation that cannot carry them
+    /// refuse rather than drop them — src/world/persistence/.
+    [[nodiscard]] usize variable_count() const noexcept { return variables_.size(); }
 
 private:
     [[nodiscard]] Expected<CellOverlay*, Error> entry_for(CellId cell) noexcept;

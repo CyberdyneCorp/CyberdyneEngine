@@ -377,6 +377,17 @@ def _taxonomy_legs(report: Report, probe: Probe,
     return kinds
 
 
+#: Both registration macros of benchmarks/harness: `CY_BENCHMARK` and `CY_BENCHMARK_STARTING_AT`,
+#: the form a millisecond-scale body uses. Matching only the first read benchmarks/save/'s two
+#: bodies as absent and their baseline entries as thresholds nobody runs.
+_BENCHMARK_REGISTRATION = re.compile(r'\bCY_BENCHMARK(?:_STARTING_AT)?\(\s*"([^"]+)"')
+
+
+def registered_benchmarks(source: str) -> set[str]:
+    """The benchmark names a C++ source registers, through either registration macro."""
+    return set(_BENCHMARK_REGISTRATION.findall(source))
+
+
 def _benchmark_leg(report: Report) -> None:
     """"a committed baseline and PER-BENCHMARK tolerances" — over what the tree registers.
 
@@ -386,8 +397,7 @@ def _benchmark_leg(report: Report) -> None:
     """
     registered = set()
     for path in (REPO_ROOT / "benchmarks").rglob("*.cpp"):
-        registered.update(re.findall(r'CY_BENCHMARK\(\s*"([^"]+)"',
-                                     path.read_text(encoding="utf-8")))
+        registered.update(registered_benchmarks(path.read_text(encoding="utf-8")))
     baseline = json.loads(read("benchmarks/baseline.json"))["benchmarks"]
     missing = sorted(registered - set(baseline))
     orphans = sorted(set(baseline) - registered)

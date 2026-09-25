@@ -44,6 +44,9 @@ Status PersistenceOverlay::check_content_version(u64 installed) const noexcept {
 Expected<CellOverlay*, Error> PersistenceOverlay::entry_for(CellId cell) noexcept {
     for (CellOverlay& entry : cells_.span()) {
         if (entry.cell == cell) {
+            // Every recording path reaches its cell through here, so this is the one place a cell
+            // becomes dirty.
+            entry.dirty = true;
             return &entry;
         }
     }
@@ -245,6 +248,39 @@ Status PersistenceOverlay::cells(Array<CellId>& out) const noexcept {
     // reached, and the insertion order of the overlay is the order the player happened to play in.
     std::sort(out.data() + first, out.data() + out.size());
     return ok();
+}
+
+Status PersistenceOverlay::dirty_cells(Array<CellId>& out) const noexcept {
+    const usize first = out.size();
+    for (const CellOverlay& entry : cells_.span()) {
+        if (!entry.dirty) {
+            continue;
+        }
+        if (Status pushed = out.push_back(entry.cell); !pushed) {
+            return pushed;
+        }
+    }
+    std::sort(out.data() + first, out.data() + out.size());
+    return ok();
+}
+
+usize PersistenceOverlay::dirty_cell_count() const noexcept {
+    usize count = 0;
+    for (const CellOverlay& entry : cells_.span()) {
+        count += entry.dirty ? 1U : 0U;
+    }
+    return count;
+}
+
+void PersistenceOverlay::clear_dirty() noexcept {
+    std::ranges::for_each(cells_.span(), [](CellOverlay& entry) { entry.dirty = false; });
+}
+
+Span<const u8> PersistenceOverlay::override_bytes(const ComponentOverride& change) const noexcept {
+    if (static_cast<usize>(change.first) + change.size > values_.size()) {
+        return {};
+    }
+    return Span<const u8>{values_.data() + change.first, change.size};
 }
 
 // --- The dynamic index -------------------------------------------------------------------------

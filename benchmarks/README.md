@@ -15,6 +15,7 @@ itself.
 | `micro/` | Benchmarks with no engine dependency. Today: one, and it measures the harness. |
 | `ecs/` | The ECS's per-entity costs: query iteration, random access, spawn, block activation, deferred structural change. |
 | `gameplay/` | `gameplay-framework`'s performance table: command submission and commit, hierarchical tag tests, the indexed ownership query, and the batch-admit round trip. |
+| `save/` | `save-and-persistence`'s large-world save benchmark: one autosave — the capture through `cy::world-persistence` and the encoding of every dirty region — over 1 048 576 persistent objects and over 65 536, with the same 20 480 dirty records. |
 | `tools/compare.py` | Turns a run into a pass or a failure against the baseline. |
 | `baseline.json` | The thresholds. A reviewed file: changing it is recording an intentional trade-off. |
 
@@ -32,6 +33,10 @@ CY_BENCHMARK("ecs/iterate-1m",
     CY_BENCH_KEEP(result);
 }
 ```
+
+A body whose one iteration takes milliseconds — `save/`'s autosaves — is declared with
+`CY_BENCHMARK_STARTING_AT(name, description, 1)`, so the runner starts scaling from one iteration
+rather than from the thousand a nanosecond body needs; otherwise one sample is a thousand autosaves.
 
 The description is a required argument, because `testing-and-quality` requires each benchmark to
 declare what a regression would mean — a threshold that fires at three in the morning is only
@@ -133,6 +138,18 @@ gameplay/command-commit + gameplay/batch-admit     the framework's per-entity co
 A move in that fraction is attributable to whichever of the three ratios moved, which is what the
 requirement asks for. **What it is not** is an attribution of a *running* frame: that is a profiler
 zone summed over the frame, in `src/core/diagnostics/`, and no gameplay system declares one yet.
+
+## `save/` is a pair, and the pair is the scenario
+
+`save-and-persistence` asks for a benchmark of "a world of over a million persistent objects with
+most regions unloaded and tens of thousands of dirty records", and for one scenario of it: "save
+cost SHALL scale with changes rather than with world size". A threshold on one body cannot say that
+— a million-object autosave that took 5 ms or 80 ms is a number either way — so `save/` measures the
+same autosave twice, over a world sixteen times smaller the second time. Each body has its own entry
+in `baseline.json`, and `m11a:save-benchmark` additionally requires the two to stay within 1.5x of
+each other. Both bodies are memory-bound — a million records in each overlay — so they carry the
+wider tolerance `ecs/` does. bench_save.cpp says what one operation is and why the write to storage
+is left out of it.
 
 ## What is not here yet
 

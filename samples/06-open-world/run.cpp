@@ -520,95 +520,20 @@ u32 Session::probe_prefetch() noexcept {
     return count_resident_not_activated();
 }
 
-// --- The save, and the conversion this sample pays for
-// --------------------------------------------
+// --- The save
+// ---------------------------------------------------------------------------------------------
 //
-// THERE ARE TWO OVERLAY MODELS IN THIS TREE AND THIS IS WHERE A PROGRAM MEETS BOTH.
-// `world::PersistenceOverlay` is what the world maintains — keyed by `CellId`, holding raw
-// component bytes addressed by the runtime's dense `ecs::ComponentTypeId`. `save::Overlay` is what
-// a save is — keyed by `RegionKey`, holding per-field `serialize::ValueRecord`s addressed by
-// `reflect::TypeId`. Both headers correctly cite the same requirement.
-//
-// The two functions below are the conversion, and they are the honest cost of that duplication:
-// this sample knows that the only component it ever overrides is `Structure`, so it can name the
-// descriptor. A game with a hundred component types could not, and would need the world's overlay
-// to carry `reflect::TypeInfo` at the point of recording — which is what src/save/README.md's
-// recommended resolution says. Recorded here rather than hidden, because an artefact that quietly
-// papered over it would be the wrong kind of evidence.
+// THE TRANSLATION BETWEEN THE TWO OVERLAY MODELS IS THE ENGINE'S, NOT THIS SAMPLE'S. Until M11.e
+// the ninety lines converting `world::PersistenceOverlay` into `save::Overlay` and back lived here
+// and could describe exactly one component, because they named `Structure`'s descriptor. They are
+// now `cy::world-persistence` (src/world/persistence/), which reads every descriptor out of the ECS
+// component registry this session already registered its components into — so the sample passes
+// the registry and names no type at all.
 
-Status Session::to_save_overlay(save::Overlay& out) const noexcept {
-    Array<world::CellId> cells(*allocator_);
-    if (Status listed = overlay_.cells(cells); !listed) {
-        return listed;
-    }
-    for (const world::CellId cell : cells.span()) {
-        const world::CellOverlay* entry = overlay_.find(cell);
-        if (entry == nullptr) {
-            continue;
-        }
-        const save::RegionKey region{cell.value};
-        for (const world::PersistentId removed : entry->removed.span()) {
-            if (Status destroyed = out.destroy_entity(region, save::PersistentId{0, removed.value});
-                !destroyed) {
-                return destroyed;
-            }
-        }
-        for (const world::ComponentOverride& change : entry->overrides.span()) {
-            const Span<const u8> bytes =
-                overlay_.component_override(cell, change.entity, change.component);
-            if (bytes.size() != sizeof(Structure) || change.component != components_.structure) {
-                return make_unexpected(
-                    Error{ErrorCode::Internal, "an override this sample cannot describe", 0});
-            }
-            Structure structure;
-            std::memcpy(&structure, bytes.data(), sizeof(Structure));
-            if (Status recorded =
-                    out.record_component(region, save::PersistentId{0, change.entity.value},
-                                         structure_type(), &structure, 1);
-                !recorded) {
-                return recorded;
-            }
-        }
-    }
-    return ok();
-}
-
-Status Session::from_save_overlay(const save::Overlay& saved, ResumeReport& report) noexcept {
-    reflect::FieldIndex fields;
-    if (Status built = fields.build(structure_type()); !built) {
-        return built;
-    }
-    for (const save::Region& region : saved.regions()) {
-        const world::CellId cell{region.key.value()};
-        ++report.regions;
-        for (const save::Entry& entry : region.entries.span()) {
-            const world::PersistentId id{entry.id.low()};
-            if (entry.kind == save::EntryKind::Tombstone) {
-                if (Status removed = overlay_.record_removed(cell, id); !removed) {
-                    return removed;
-                }
-                continue;
-            }
-            for (const save::ComponentDelta& delta : entry.components.span()) {
-                if (delta.type != structure_type().id) {
-                    continue;
-                }
-                Structure structure;
-                if (Status applied = serialize::record_to_object(delta.record, fields, &structure);
-                    !applied) {
-                    return applied;
-                }
-                const Span<const u8> bytes{reinterpret_cast<const u8*>(&structure),
-                                           sizeof(Structure)};
-                if (Status recorded =
-                        overlay_.record_component(cell, id, components_.structure, bytes);
-                    !recorded) {
-                    return recorded;
-                }
-            }
-        }
-    }
-    return ok();
+world::SaveTranslation Session::save_translation() const noexcept {
+    world::SaveTranslation translation;
+    translation.components = &ecs_.components();
+    return translation;
 }
 
 Status Session::verify_region(const save::Region& region, ResumeReport& report) noexcept {
@@ -662,7 +587,8 @@ Status Session::verify_region(const save::Region& region, ResumeReport& report) 
 Expected<u32, Error> Session::checkpoint(const char* directory,
                                          const Telemetry& telemetry) noexcept {
     save::Overlay overlay(*allocator_);
-    if (Status converted = to_save_overlay(overlay); !converted) {
+    if (Status converted = world::to_save_overlay(overlay_, save_translation(), overlay);
+        !converted) {
         return make_unexpected(converted.error());
     }
     RunState state;
@@ -736,9 +662,12 @@ Status Session::resume(const char* directory, ResumeReport& out) noexcept {
     out.saved_content_digest = state.content_digest;
     out.installed_content_digest = content_->digest();
 
-    if (Status applied = from_save_overlay(saved, out); !applied) {
+    world::TranslationReport translated;
+    if (Status applied = world::from_save_overlay(saved, save_translation(), overlay_, &translated);
+        !applied) {
         return applied;
     }
+    out.regions = translated.regions;
 
     // ACTIVATE EXACTLY THE CELLS THE SAVE HOLDS STATE FOR. A direct request rather than a route:
     // what is being checked is that the state came back, and settling a camera over each of them in

@@ -481,6 +481,9 @@ Status SaveArchive::read_manifest(u32 generation, Manifest& out, LoadReport& rep
 
 Status SaveArchive::load_generation(u32 generation, const LoadPolicy& policy, Overlay& out,
                                     LoadReport& report) noexcept {
+    if (!is_open()) {
+        return fail(ErrorCode::Unavailable, "the save archive is not open");
+    }
     Manifest manifest(*allocator_);
     if (Status read = read_manifest(generation, manifest, report); !read) {
         return read;
@@ -579,7 +582,11 @@ Status SaveArchive::load(const LoadPolicy& policy, Overlay& out, LoadReport& rep
         if (last) {
             return ok();
         }
+        // A load that fails hands back NOTHING rather than the chunks it had applied before the one
+        // that failed: part of a save is state nobody saved. `forbidden save pattern
+        // invented-state`.
         if (!is_recoverable(attempt.failure)) {
+            out.clear();  // a failed load restores nothing
             return last;
         }
         // The next older generation, which shares every chunk that did not change — so a fallback
@@ -591,6 +598,7 @@ Status SaveArchive::load(const LoadPolicy& policy, Overlay& out, LoadReport& rep
             }
         }
         if (older == 0) {
+            out.clear();  // a failed load restores nothing
             return last;
         }
         candidate = older;

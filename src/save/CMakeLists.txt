@@ -43,6 +43,9 @@ cy_add_module(
         src/conflict.cpp
         src/container.cpp
         src/identity.cpp
+        src/inspect.cpp
+        src/inspect_diff.cpp
+        src/inspect_text.cpp
         src/overlay.cpp
         src/service.cpp
         src/storage.cpp

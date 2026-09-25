@@ -133,6 +133,12 @@ public:
     /// told about rather than one that happens quietly.
     [[nodiscard]] Status load(const LoadPolicy& policy, Overlay& out, LoadReport& report) noexcept;
 
+    /// Load ONE generation, its journal replayed over it, into `out` — with no fallback to an older
+    /// one. What the save inspector reads each generation through, so that what it reports a save
+    /// contains is what this loader decodes rather than what a second reader thinks.
+    [[nodiscard]] Status load_generation(u32 generation, const LoadPolicy& policy, Overlay& out,
+                                         LoadReport& report) noexcept;
+
     /// Read one generation's manifest without loading any chunk. The save inspector's entry point,
     /// and what a save-selection screen reads.
     [[nodiscard]] Status read_manifest(u32 generation, Manifest& out, LoadReport& report) noexcept;
@@ -161,8 +167,6 @@ private:
     [[nodiscard]] Status write_manifest(const Manifest& manifest,
                                         assets::ContentHash& hash) noexcept;
     [[nodiscard]] Status write_pointer(u32 generation, const assets::ContentHash& hash) noexcept;
-    [[nodiscard]] Status load_generation(u32 generation, const LoadPolicy& policy, Overlay& out,
-                                         LoadReport& report) noexcept;
     [[nodiscard]] Status replay_journal(u32 generation, const LoadPolicy& policy, Overlay& out,
                                         LoadReport& report) noexcept;
     void notify(WritePhase phase) noexcept;

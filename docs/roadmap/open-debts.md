@@ -32,10 +32,6 @@ gate did.
 | M11.c <br> *retroactive, over M11.a's green gate* | `determinism-suites` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `network-at-complete-grade` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `roadmap-tiers` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.a's green gate* | `save-benchmark` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.c <br> *retroactive, over M11.a's green gate* | `save-forbidden-patterns-checked` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
-| M11.a | `save-has-an-engine-consumer` | **M11.e** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
-| M11.c <br> *retroactive, over M11.a's green gate* | `save-inspector` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `steam-audio-simulates` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `thirdparty-dependencies-at-working` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
 | M11.c <br> *retroactive, over M11.a's green gate* | `world-streams` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
@@ -80,7 +76,7 @@ runs `just roadmap-falsify prove --record`. Nineteen of the twenty-one below are
 that state, and reading this section off the verdict alone would have deleted them.
 
 **THE GATES OF M11.a AND M11.b SHOULD NOT STAND AS THEY ARE READ TODAY.**
-15 criteria below were red when those gates were flipped to
+12 criteria below were red when those gates were flipped to
 `state = "green"` in `tools/roadmap/gates.toml`, and by the ledger's own arithmetic —
 "an ordinary failure beside a declared gap still fails the milestone" — a rung with a
 red criterion nobody declared is not closed. The declarations written over them since
@@ -94,9 +90,6 @@ so this document states the finding and moves nothing.
 | M11.a | `determinism-suites` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3 suite(s) match ^(determinism.simulation\|integration.replay\|integration.network)$ |
 | M11.a | `network-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 r… |
 | M11.a | `roadmap-tiers` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): audio: recorded 'working', below this milestone's exit of 'complete' |
-| M11.a | `save-benchmark` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
-| M11.a | `save-forbidden-patterns-checked` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no tools/save/check_forbidden.py — not one of the ten forbidden save patterns is checked by anything |
-| M11.a | `save-inspector` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 45 skipped |
 | M11.a | `steam-audio-simulates` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 31 skipped |
 | M11.a | `thirdparty-dependencies-at-working` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree |
 | M11.a | `world-streams` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49 tiles_resident: 49 evicted: 0 stitched_vertices: 0 |
