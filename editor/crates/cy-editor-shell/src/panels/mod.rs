@@ -29,7 +29,7 @@ mod hierarchy;
 mod history;
 mod inspector;
 mod material_graph;
-mod material_parameters;
+use cy_editor_services::material_parameters;
 pub(crate) use material_graph::finish_save as finish_material_save;
 mod pending;
 mod semantic_merge;

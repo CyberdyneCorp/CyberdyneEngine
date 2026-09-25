@@ -345,6 +345,27 @@ pub struct DesktopAgentHost {
 }
 
 impl DesktopAgentHost {
+    /// Whether a queued request needs pixels copied from the human viewport this UI frame.
+    #[must_use]
+    pub fn wants_viewport_image(&self) -> bool {
+        fn asks_for_viewport(request: &AgentRequest) -> bool {
+            matches!(request, AgentRequest::ReadResource { uri } if uri.starts_with("viewport:"))
+                || matches!(request, AgentRequest::Observe(_))
+        }
+        self.approved
+            .iter()
+            .any(|queued| asks_for_viewport(&queued.request))
+            || self
+                .endpoint
+                .shared
+                .service
+                .lock()
+                .expect("agent queue mutex poisoned")
+                .pending
+                .iter()
+                .any(|pending| asks_for_viewport(&pending.request))
+    }
+
     /// Build both halves. The endpoint may move to a transport thread; the host stays with Editor.
     #[must_use]
     pub fn new(session: AgentSession, capacity: usize) -> (Self, DesktopAgentEndpoint) {

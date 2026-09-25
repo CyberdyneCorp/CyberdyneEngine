@@ -526,6 +526,16 @@ fn apply_domain(
         else {
             continue;
         };
+        if let Some(reference) = kind.strip_prefix(crate::material_graph::GRAPH_DOMAIN_PREFIX) {
+            if let Ok((graph, source)) =
+                crate::material_graph::decode_pair(if forward { after } else { before })
+            {
+                let _ = project.put_source(reference, graph.as_deref());
+                let canvas = Path::new(reference).with_extension("cymatcanvas");
+                let _ = project.put_source(&canvas.to_string_lossy(), source.as_deref());
+            }
+            continue;
+        }
         if kind != SOURCE_DOMAIN {
             continue;
         }
@@ -734,6 +744,51 @@ mod tests {
         replay(&mut project, &document, &redone);
         assert_eq!(project.read_source("game/Player.swift").unwrap(), "two");
         drop(held);
+    }
+
+    #[test]
+    fn undo_and_redo_restore_both_material_graph_files() {
+        let (mut project, _held) = project();
+        let reference = "materials/cube.cygraph";
+        project.put_source(reference, Some("old graph")).unwrap();
+        project
+            .put_source("materials/cube.cymatcanvas", Some("old source"))
+            .unwrap();
+        let mut document = Document::new("worlds/scene.cyworld");
+        document
+            .with_transaction("Save material graph", Actor::human("designer"), |doc| {
+                doc.record(Operation::Domain {
+                    node: None,
+                    kind: format!("{}{reference}", crate::material_graph::GRAPH_DOMAIN_PREFIX),
+                    before: crate::material_graph::encode_pair(
+                        Some("old graph"),
+                        Some("old source"),
+                    ),
+                    after: crate::material_graph::encode_pair(
+                        Some("new graph"),
+                        Some("new source"),
+                    ),
+                })
+            })
+            .unwrap();
+        project.put_source(reference, Some("new graph")).unwrap();
+        project
+            .put_source("materials/cube.cymatcanvas", Some("new source"))
+            .unwrap();
+        let undone = document.undo().unwrap().unwrap();
+        rewind(&mut project, &document, &undone);
+        assert_eq!(project.read_source(reference).unwrap(), "old graph");
+        assert_eq!(
+            project.read_source("materials/cube.cymatcanvas").unwrap(),
+            "old source"
+        );
+        let redone = document.redo().unwrap().unwrap();
+        replay(&mut project, &document, &redone);
+        assert_eq!(project.read_source(reference).unwrap(), "new graph");
+        assert_eq!(
+            project.read_source("materials/cube.cymatcanvas").unwrap(),
+            "new source"
+        );
     }
 
     #[test]

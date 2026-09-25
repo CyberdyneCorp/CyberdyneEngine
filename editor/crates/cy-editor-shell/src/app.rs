@@ -966,6 +966,23 @@ impl eframe::App for EditorWindow {
         // 5: everything the frame asked for, once, in order.
         self.apply(intents);
         self.sync_source_language();
+        #[cfg(target_os = "macos")]
+        if self
+            .agent
+            .as_ref()
+            .is_some_and(|agent| agent.wants_viewport_image())
+        {
+            if let (Ok(png), Some(mut frame)) = (
+                self.link.capture_png(),
+                self.editor.viewports.focused().stream.latest().cloned(),
+            ) {
+                frame.image = cy_editor_viewport::transport::FrameImage::Encoded(png);
+                self.editor.viewports.focused_mut().stream.accept(
+                    frame,
+                    cy_editor_viewport_transport::darwin::monotonic_nanos() / 1_000,
+                );
+            }
+        }
         // Human intents are applied first. Agent work then receives a fixed slice of the frame, so
         // a saturated client cannot turn the window into its worker thread.
         if let Some(agent) = self.agent.as_mut() {

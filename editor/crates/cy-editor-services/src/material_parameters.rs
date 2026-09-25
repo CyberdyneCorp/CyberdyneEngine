@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::Editor;
+use crate::primitives::material_of;
 use cy_editor_core::Actor;
 use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_documents::operation::Operation;
-use cy_editor_services::Editor;
-use cy_editor_services::primitives::material_of;
 
 struct Parameter {
     name: String,
@@ -102,7 +102,7 @@ fn parameters(source: &str) -> Result<Vec<Parameter>, String> {
 }
 
 /// Install fields for every object using this graph. Existing object overrides survive a graph save.
-pub(super) fn sync(
+pub fn sync(
     editor: &mut Editor,
     reference: &str,
     prior_source: Option<&str>,
@@ -235,7 +235,7 @@ pub(super) fn sync(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cy_editor_services::project::ProjectService;
+    use crate::project::ProjectService;
 
     #[test]
     fn graph_parameter_defaults_keep_their_declared_types() {

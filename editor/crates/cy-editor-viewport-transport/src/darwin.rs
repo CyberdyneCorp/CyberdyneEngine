@@ -15,7 +15,7 @@ use cy_editor_viewport::state::ViewState;
 use cy_editor_viewport::transport::{
     FrameImage, PresentedFrame, SharedImage, Transport, TransportKind,
 };
-use objc2_io_surface::IOSurfaceRef;
+use objc2_io_surface::{IOSurfaceLockOptions, IOSurfaceRef};
 use objc2_metal::{
     MTLDevice, MTLPixelFormat, MTLStorageMode, MTLTextureDescriptor, MTLTextureType,
     MTLTextureUsage,
@@ -224,7 +224,7 @@ pub struct ViewportSession {
     handshake: Handshake,
     textures: Vec<wgpu::Texture>,
     views: Vec<wgpu::TextureView>,
-    _surfaces: Vec<objc2_core_foundation::CFRetained<IOSurfaceRef>>,
+    surfaces: Vec<objc2_core_foundation::CFRetained<IOSurfaceRef>>,
     stream: std::os::unix::net::UnixStream,
     page: AnnouncementPage,
     view_state: ViewState,
@@ -291,7 +291,7 @@ impl ViewportSession {
             handshake,
             textures,
             views,
-            _surfaces: surfaces,
+            surfaces,
             stream,
             page,
             view_state: ViewState::new(),
@@ -316,6 +316,48 @@ impl ViewportSession {
     #[must_use]
     pub fn texture(&self, slot: usize) -> Option<&wgpu::Texture> {
         self.textures.get(slot)
+    }
+
+    /// Copy one completed IOSurface frame into tightly packed RGBA bytes for an agent read.
+    pub fn capture_rgba(&self, slot: usize) -> Result<(u32, u32, Vec<u8>)> {
+        let surface = self
+            .surfaces
+            .get(slot)
+            .ok_or_else(|| Problem::new("capture a viewport frame", "the frame slot is missing"))?;
+        let width = surface.width();
+        let height = surface.height();
+        let row = width.checked_mul(4).ok_or_else(|| {
+            Problem::new("capture a viewport frame", "the frame width is too large")
+        })?;
+        let length = row.checked_mul(height).ok_or_else(|| {
+            Problem::new("capture a viewport frame", "the frame height is too large")
+        })?;
+        let stride = surface.bytes_per_row();
+        if stride < row || surface.alloc_size() < stride.saturating_mul(height) {
+            return Err(Problem::new(
+                "capture a viewport frame",
+                "the surface layout is invalid",
+            ));
+        }
+        // SAFETY: a null seed is accepted by IOSurfaceLock; the retained surface remains live
+        // and locked while its validated allocation is copied row by row.
+        let locked = unsafe { surface.lock(IOSurfaceLockOptions::ReadOnly, std::ptr::null_mut()) };
+        if locked != 0 {
+            return Err(Problem::new(
+                "capture a viewport frame",
+                format!("IOSurface lock failed: {locked}"),
+            ));
+        }
+        let mut bytes = vec![0; length];
+        let source = surface.base_address().as_ptr().cast::<u8>();
+        for y in 0..height {
+            // SAFETY: the row and stride bounds were checked against the retained allocation.
+            let input = unsafe { std::slice::from_raw_parts(source.add(y * stride), row) };
+            bytes[y * row..(y + 1) * row].copy_from_slice(input);
+        }
+        // SAFETY: this balances the successful read-only lock above.
+        unsafe { surface.unlock(IOSurfaceLockOptions::ReadOnly, std::ptr::null_mut()) };
+        Ok((width as u32, height as u32, bytes))
     }
 
     /// Current publisher health.

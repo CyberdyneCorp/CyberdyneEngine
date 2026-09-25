@@ -433,6 +433,18 @@ pub trait ProjectHost {
 
     /// Which mode it is in: `in-editor`, `separate-process` or `remote-device`.
     fn play_mode(&self) -> String;
+
+    /// Read the editable canvas text for a project material graph.
+    fn material_graph_read(&self, reference: &str) -> Result<String>;
+
+    /// Apply unsaved canvas text to the hosted scene and return the request identity.
+    fn material_graph_preview(&mut self, reference: &str, source: &str) -> Result<u64>;
+
+    /// Ask the engine to author a graph and save its canonical result when it arrives.
+    fn material_graph_save(&mut self, reference: &str, source: &str) -> Result<u64>;
+
+    /// Report the latest engine material request and transient preview state.
+    fn material_graph_status(&self) -> String;
 }
 
 /// Result of a fingerprint-guarded source write.

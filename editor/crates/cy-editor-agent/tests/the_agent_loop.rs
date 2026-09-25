@@ -107,9 +107,9 @@ fn an_observation_with_no_frame_says_so_rather_than_inventing_one() {
 #[test]
 fn a_shipping_frame_request_gets_an_image_with_nothing_drawn_over_it() {
     // "WHEN an agent requests an image representing the shipping frame THEN gizmos, selection
-    // outlines and overlays SHALL be excluded." The editor's own viewport has overlays on by
-    // default, so the request is answered from the connection's own viewport with them cleared —
-    // which leaves the person's view exactly as they left it.
+    // outlines and overlays SHALL be excluded." The runtime frame has no UI overlays; the
+    // editor composites those after it. Read the focused runtime image without opening a viewport
+    // that the desktop transport never pumps.
     let (mut editor, _) = editor_with_a_document();
     let human_viewport = editor.viewports.focused_id();
     let human_overlays = editor.viewports.focused().overlays.active();
@@ -122,19 +122,9 @@ fn a_shipping_frame_request_gets_an_image_with_nothing_drawn_over_it() {
     let mut request = ViewportRequest::shipping_frame(editor.viewports.focused());
     request.viewport = human_viewport;
 
-    // The first attempt opens the agent's own viewport and finds nothing in it yet.
-    let _ = connection.observe(&mut editor, &request, 0);
-    let agent_viewport = editor
-        .viewports
-        .all()
-        .iter()
-        .find(|viewport| viewport.name == cy_editor_agent::observe::AGENT_VIEWPORT)
-        .map(|viewport| viewport.id)
-        .expect("the connection opened its own viewport");
-    assert_ne!(agent_viewport, human_viewport);
     deliver(
         &mut editor,
-        agent_viewport,
+        human_viewport,
         7,
         FrameImage::Encoded(PNG.to_vec()),
     );
@@ -147,6 +137,7 @@ fn a_shipping_frame_request_gets_an_image_with_nothing_drawn_over_it() {
     assert!(observation.represents_the_shipping_frame());
     assert_eq!(observation.media_type(), "image/png");
     assert_eq!(observation.frame.as_u64(), 7);
+    assert_eq!(observation.viewport, human_viewport);
     assert_eq!(
         editor.viewports.focused().overlays.active(),
         human_overlays,

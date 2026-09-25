@@ -44,7 +44,7 @@ use crate::source_language::SourceLanguageService;
 use crate::source_workspace::SourceWorkspaceService;
 use crate::viewports::ViewportService;
 use crate::workspace::Workspace;
-use crate::{BackendServices, MaterialOperation};
+use crate::{BackendServices, MaterialOperation, MaterialRequestState};
 
 /// Structured progress/result of the most recent script-module reload.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -71,6 +71,14 @@ struct PendingPick {
     intent: PickIntent,
     mode: SelectionMode,
     cycle: u32,
+}
+
+struct PendingGraphSave {
+    request: u64,
+    reference: String,
+    source: String,
+    document: DocumentId,
+    actor: Actor,
 }
 
 /// The editor's authoritative state.
@@ -139,6 +147,8 @@ pub struct Editor {
     permitted: (String, Vec<String>),
     pending_reloads: std::collections::BTreeMap<u64, (String, u32)>,
     pending_picks: std::collections::BTreeMap<u64, PendingPick>,
+    pending_graph_save: Option<PendingGraphSave>,
+    graph_save_status: String,
     reload_revision: Revision,
 }
 
@@ -188,6 +198,8 @@ impl Editor {
             permitted: unrestricted(),
             pending_reloads: std::collections::BTreeMap::new(),
             pending_picks: std::collections::BTreeMap::new(),
+            pending_graph_save: None,
+            graph_save_status: "idle".into(),
             reload_revision: Revision::INITIAL,
         }
     }
@@ -285,6 +297,74 @@ impl Editor {
     /// Cooperatively cancel the currently pending material operation.
     pub fn cancel_material_request(&self) -> Result<()> {
         self.backend.cancel_material(&self.runtime)
+    }
+
+    fn finish_graph_save(&mut self) {
+        let Some(pending) = self.pending_graph_save.as_ref() else {
+            return;
+        };
+        let request = pending.request;
+        let result = match self.backend.material_request_state() {
+            MaterialRequestState::Authored {
+                request: done,
+                graph,
+            } if done.as_u64() == request => Some(Ok(graph.clone())),
+            MaterialRequestState::Failed {
+                request: Some(done),
+                diagnostics,
+            } if done.as_u64() == request => Some(Err(format!(
+                "{} diagnostic(s): {}",
+                diagnostics.len(),
+                diagnostics
+                    .first()
+                    .map_or("engine rejected graph", |item| item.message.as_str())
+            ))),
+            MaterialRequestState::Cancelled { request: done } if done.as_u64() == request => {
+                Some(Err("request cancelled".into()))
+            }
+            _ => None,
+        };
+        let Some(result) = result else { return };
+        let pending = self.pending_graph_save.take().expect("pending graph save");
+        let reference = pending.reference;
+        let source = pending.source;
+        let prior = crate::material_graph::read(self.project.root(), &reference).ok();
+        let prior_graph = crate::material_graph::paths(self.project.root(), &reference)
+            .ok()
+            .and_then(|(path, _)| std::fs::read_to_string(path).ok());
+        let outcome = result.and_then(|graph| {
+            if self.documents.get(pending.document).is_none() {
+                return Err("the scene document closed before the graph save completed".to_owned());
+            }
+            crate::material_graph::save(self.project.root(), &reference, &source, &graph)
+                .map_err(|problem| problem.because)?;
+            let document = self.documents.get_mut(pending.document).expect("checked above");
+            document.begin(format!("Save material graph {reference}"), pending.actor);
+            document
+                .record(cy_editor_documents::operation::Operation::Domain {
+                    node: None,
+                    kind: format!(
+                        "{}{}",
+                        crate::material_graph::GRAPH_DOMAIN_PREFIX,
+                        reference
+                    ),
+                    before: crate::material_graph::encode_pair(
+                        prior_graph.as_deref(),
+                        prior.as_deref(),
+                    ),
+                    after: crate::material_graph::encode_pair(Some(&graph), Some(&source)),
+                })
+                .map_err(|problem| problem.to_string())?;
+            document.commit().map_err(|problem| problem.to_string())?;
+            Ok(())
+        });
+        self.graph_save_status = match outcome {
+            Ok(()) => match crate::material_parameters::sync(self, &reference, prior.as_deref()) {
+                Ok(_) => format!("saved: {reference}"),
+                Err(problem) => format!("saved: {reference}; property sync failed: {problem}"),
+            },
+            Err(problem) => format!("failed: {problem}"),
+        };
     }
 
     /// Open a document, offering recovery when its journal holds anything.
@@ -497,6 +577,7 @@ impl Editor {
                 problem,
             ));
         }
+        self.finish_graph_save();
         if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
             let pending = std::mem::take(&mut self.pending_reloads);
             if let Some((request, (module, generation))) = pending.into_iter().next_back() {
@@ -1139,6 +1220,94 @@ impl cy_editor_commands::ProjectHost for Editor {
 
     fn play_mode(&self) -> String {
         self.play_mode.name().to_string()
+    }
+
+    fn material_graph_read(&self, reference: &str) -> Result<String> {
+        crate::material_graph::read(self.project.root(), reference)
+    }
+
+    fn material_graph_preview(&mut self, reference: &str, source: &str) -> Result<u64> {
+        crate::material_graph::paths(self.project.root(), reference)?;
+        if !source.starts_with("cymatcanvas 1\n") {
+            return Err(Problem::new(
+                "preview a material graph",
+                "expected cymatcanvas 1 source",
+            ));
+        }
+        self.preview_material_graph(reference, source)
+            .map(|request| request.as_u64())
+    }
+
+    fn material_graph_save(&mut self, reference: &str, source: &str) -> Result<u64> {
+        crate::material_graph::paths(self.project.root(), reference)?;
+        if !source.starts_with("cymatcanvas 1\n") {
+            return Err(Problem::new(
+                "save a material graph",
+                "expected cymatcanvas 1 source",
+            ));
+        }
+        if self.pending_graph_save.is_some() {
+            return Err(Problem::new(
+                "save a material graph",
+                "another graph save is pending",
+            ));
+        }
+        let document = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a material graph",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let request =
+            self.request_material(MaterialOperation::Author, source.as_bytes().to_vec())?;
+        let id = request.as_u64();
+        self.pending_graph_save = Some(PendingGraphSave {
+            request: id,
+            reference: reference.to_owned(),
+            source: source.to_owned(),
+            document,
+            actor: self.actor.clone(),
+        });
+        self.graph_save_status = format!("pending: {id}");
+        Ok(id)
+    }
+
+    fn material_graph_status(&self) -> String {
+        let request = match self.backend.material_request_state() {
+            MaterialRequestState::Idle => "idle".to_owned(),
+            MaterialRequestState::Pending { request, operation } => {
+                format!("pending {} {operation:?}", request.as_u64())
+            }
+            MaterialRequestState::Validated { request } => {
+                format!("validated {}", request.as_u64())
+            }
+            MaterialRequestState::Authored { request, .. } => {
+                format!("authored {}", request.as_u64())
+            }
+            MaterialRequestState::Previewed { request } => {
+                format!("previewed {}", request.as_u64())
+            }
+            MaterialRequestState::Compiled { request, .. } => {
+                format!("compiled {}", request.as_u64())
+            }
+            MaterialRequestState::Failed {
+                request,
+                diagnostics,
+            } => format!(
+                "failed {:?}: {} diagnostic(s)",
+                request.map(|id| id.as_u64()),
+                diagnostics.len()
+            ),
+            MaterialRequestState::Cancelled { request } => {
+                format!("cancelled {}", request.as_u64())
+            }
+        };
+        format!(
+            "save: {}; request: {}; preview: {:?}",
+            self.graph_save_status,
+            request,
+            self.backend.material_preview_state()
+        )
     }
 }
 

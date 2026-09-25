@@ -33,6 +33,7 @@
 - [x] 5.9 Save validated canvas edits as engine-canonical `.cygraph` plus reopenable `.cymatcanvas` through a request-correlated author operation; reject invalid graphs without overwriting assets and cover the service with a regression test.
 - [x] 5.10 Expose declared graph parameters as undoable per-object Inspector fields, preserve overrides across graph saves, and apply supported Diffuse colour overrides during live authored rendering.
 - [x] 5.11 Preview unsaved supported graph colour changes in the authored viewport through the material service; preserve explicit object overrides and cover valid/invalid requests and rendered colour with regressions.
+- [x] 5.12 Project editable graph read, live preview, asynchronous canonical save, and request status through the MCP command registry; return PNG pixels from the hosted engine viewport and report Play/Stop state. Verify a graph colour change, PNG capture, Play/Stop, and save against a live hosted scene through MCP.
 
 ## 6. Validate and document the vertical slice
 

@@ -126,6 +126,7 @@ wgpu-types = "=30.0.1"
 objc2-io-surface = { version = "=0.3.2", default-features = false, features = [
     "IOSurfaceRef",
     "IOSurfaceTypes",
+    "libc",
     "objc2",
     "objc2-core-foundation",
 ] }

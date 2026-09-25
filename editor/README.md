@@ -85,6 +85,24 @@ Use `--agent-scope operator` only when the desktop human should be able to confi
 external work; `read` remains the default and `author` remains limited to undoable edits and
 `game/` source.
 
+For a hosted material scene, an MCP client can call `material.graph.read` with a project-relative
+`.cygraph` reference, edit the returned `source` (`cymatcanvas 1` text), and call
+`material.graph.preview` with that reference and source. Poll `material.graph.status`, then read
+`viewport:` to receive a PNG copied from the engine frame shown by the desktop viewport. Call
+`material.graph.save` to ask the engine to author the graph; poll status until it says `saved` or
+`failed`. A successful save writes both the canonical `.cygraph` and editable `.cymatcanvas` and
+records their prior contents in the active scene's undo history.
+`play.enter` and `play.leave` control the hosted simulation; `play:` reports `state`, `mode`, and
+connection status. These commands work over `--mcp` with the desktop open, without computer-use
+automation. The default `viewport:` read captures the current editor camera and excludes UI
+overlays. Restated camera/projection and independent debug-view requests still need a pumped
+agent viewport and may report that no frame has arrived; use the registered viewport view-mode
+commands to change the focused renderer view before reading `viewport:`.
+
+The hosted MCP verification captured the [copper cube](../docs/design/images/editor-mcp-material-before-metal.png)
+and the [green preview](../docs/design/images/editor-mcp-material-preview-metal.png) from the
+same engine scene. The plane, shadow, and camera framing stayed fixed across the two reads.
+
 The domain editors named by `editor-rust-application` arrive later. Their layer positions are
 already decided by the rule above.
 
