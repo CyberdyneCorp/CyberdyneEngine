@@ -27,13 +27,21 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let mut open = None;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.set_min_width(160.0);
+            ui.set_width(180.0);
             ui.label(secondary(panels.shell, "Swift Sources"));
             egui::ScrollArea::vertical()
                 .id_salt("swift-files")
                 .show(ui, |ui| {
                     for path in panels.source_workspace.files() {
-                        if ui.selectable_label(false, path).clicked() {
+                        let name = path.rsplit('/').next().unwrap_or(path);
+                        if ui
+                            .add_sized(
+                                [172.0, metrics.hit_target()],
+                                egui::Button::new(name).selected(false),
+                            )
+                            .on_hover_text(path)
+                            .clicked()
+                        {
                             open = Some(path.clone());
                         }
                     }

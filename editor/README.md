@@ -203,6 +203,10 @@ text the edit began from, so a human, agent or external tool cannot silently ove
 Reload, Keep and Merge remain explicit choices. SourceKit-LSP supplies diagnostics, navigation,
 completion, hover, symbols and rename only when the server advertises them. Editing, saving and the
 existing Swift build/reload loop remain usable when SourceKit-LSP is absent or terminates.
+For a selected scripted node, the small arrow beside `ScriptBehaviour.class` resolves its
+`@Behaviour(name:)` declaration, opens that project source, and activates the Swift Workspace tab.
+Generated Swift files under the project's `build/` directory are omitted from the source tree;
+file labels stay compact and reveal their full paths on hover.
 
 Semantic Diff compares document operations by stable identity. Merge classifies independent changes
 and typed conflicts, accepts local, incoming or a validated replacement for each conflict, and

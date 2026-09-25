@@ -77,6 +77,8 @@ pub enum Intent {
     ResolveDocumentClose(DocumentId, cy_editor_services::CloseDecision),
     /// Open a Swift source in an editor-owned buffer.
     OpenSource(String),
+    /// Resolve an authored Swift behaviour and open its source in the workspace.
+    OpenBehaviourSource(String),
     /// Save the active Swift buffer through the registered conflict-safe command.
     SaveSource,
     /// Open a diagnostic source and move to its exact zero-based line and UTF-16 column.

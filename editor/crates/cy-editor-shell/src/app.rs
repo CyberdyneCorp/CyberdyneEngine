@@ -41,6 +41,7 @@ use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::Revision;
 use cy_editor_core::value::Value;
 use cy_editor_interface::SpecialisedEditors;
+use cy_editor_interface::docking::PanelId;
 use cy_editor_interface::notifications::{Choice, Modal};
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
@@ -355,11 +356,14 @@ impl EditorWindow {
                 Intent::ResolveDocumentClose(document, decision) => {
                     self.close_document(document, Some(decision));
                 }
-                Intent::OpenSource(path) => {
-                    if let Err(problem) = self.source_workspace.open(&self.editor.sources, &path) {
-                        self.editor
+                Intent::OpenSource(path) => self.open_source(&path),
+                Intent::OpenBehaviourSource(name) => {
+                    match self.editor.sources.behaviour_source(&name) {
+                        Ok(path) => self.open_source(&path),
+                        Err(problem) => self
+                            .editor
                             .notifications
-                            .post(Notification::error(problem.what.clone(), problem));
+                            .post(Notification::error(problem.what.clone(), problem)),
                     }
                 }
                 Intent::SaveSource => self.save_source(),
@@ -410,6 +414,38 @@ impl EditorWindow {
                     }
                 }
             }
+        }
+    }
+
+    fn open_source(&mut self, path: &str) {
+        if let Err(problem) = self.source_workspace.open(&self.editor.sources, path) {
+            self.editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem));
+            return;
+        }
+        self.show_source_workspace();
+    }
+
+    fn show_source_workspace(&mut self) {
+        let key = PanelKey::new("swift-workspace").expect("a valid built-in panel key");
+        if self.dock.find_tab(&key).is_none() {
+            self.capture_layout();
+            let layout = self.shell.workspaces.current_mut();
+            let Some(beside) = layout.panels().into_iter().next() else {
+                return;
+            };
+            let panel = PanelId::new("swift-workspace").expect("a valid built-in panel id");
+            if layout.dock_beside(&beside, panel).is_err() {
+                return;
+            }
+            self.titles.define("swift-workspace", "Swift Workspace");
+            self.dock = dock::to_dock_state(layout);
+        }
+        if let Some(path) = self.dock.find_tab(&key) {
+            let _ = self.dock.set_active_tab(path);
+            self.dock.set_focused_node_and_surface(path.node_path());
+            self.capture_layout();
         }
     }
 

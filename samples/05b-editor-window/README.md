@@ -74,6 +74,8 @@ Camera. `project/game/SpinCube.swift` registers the `SpinCube` behaviour; the cu
 `ScriptBehaviour.class` field attaches it to that node. Run **Project → Build**, wait for the Swift
 module build to finish, then press Play. The behaviour rotates the cube 45 degrees per second
 around local Z on fixed ticks. Pause holds its angle; Stop restores the saved identity rotation.
+Select the cube and click the arrow beside `ScriptBehaviour.class` in the Inspector to open
+`SpinCube.swift` in the editor's Swift Workspace.
 The runtime refuses Play with a specific message if the scene names a script but no built module
 exists. Audio remains unavailable in this sample host.
 Stop older sample runtimes when switching projects: each active host continues rendering even

@@ -8,11 +8,9 @@
 //! `Transform` a nicer layout, and from then on every type either has bespoke code or looks
 //! second-class, and the generation is decoration.
 //!
-//! **There is no type name in this file.** The whole of the drawing is a walk over
-//! `GeneratedInspector::sections()` and a `match` on [`Control`], which is derived from a field's
-//! *kind*. `Control::Custom` is the registered override, and it is drawn as a named placeholder here
-//! rather than dispatched, because a custom editor is a toolkit object and registering one is a
-//! plugin capability that arrives with plugins.
+//! The form remains generated from `GeneratedInspector::sections()` and [`Control`], which is
+//! derived from a field's kind. One contextual action on `ScriptBehaviour.class` opens the named
+//! Swift source; it does not replace the generated text control or edit the document.
 //!
 //! --- WHEN THERE IS NOTHING TO GENERATE FROM --------------------------------------------------------
 //!
@@ -36,7 +34,7 @@ use cy_editor_interface::inspector::{Control, InspectorRow, InspectorSection, la
 use cy_editor_visual::colour::Semantic;
 use cy_editor_visual::density::TextRole;
 
-use super::{Panels, nothing_here, numeric, secondary, status};
+use super::{Intent, Panels, nothing_here, numeric, secondary, status};
 use crate::theme;
 
 /// Draw the inspector.
@@ -89,11 +87,19 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
     let mut edits: Vec<Edit> = Vec::new();
     let mut expansions: Vec<(String, bool)> = Vec::new();
+    let mut source_to_open = None;
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             for section in panels.shell.inspector.sections() {
-                draw_section(panels.shell, ui, section, &mut edits, &mut expansions);
+                draw_section(
+                    panels.shell,
+                    ui,
+                    section,
+                    &mut edits,
+                    &mut expansions,
+                    &mut source_to_open,
+                );
             }
         });
 
@@ -101,6 +107,9 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         panels.shell.inspector.set_expanded(&type_name, expanded);
     }
     apply(panels, edits);
+    if let Some(class) = source_to_open {
+        panels.intents.push(Intent::OpenBehaviourSource(class));
+    }
 }
 
 /// A committed change a row asked for, applied once the section walk has finished.
@@ -139,6 +148,7 @@ fn draw_section(
     section: &InspectorSection,
     edits: &mut Vec<Edit>,
     expansions: &mut Vec<(String, bool)>,
+    source_to_open: &mut Option<String>,
 ) {
     let metrics = shell.metrics();
     let header = egui::CollapsingHeader::new(
@@ -163,7 +173,14 @@ fn draw_section(
             ));
         }
         for row in &section.rows {
-            draw_row(shell, ui, row, edits);
+            draw_row(
+                shell,
+                ui,
+                row,
+                section.title == "ScriptBehaviour",
+                edits,
+                source_to_open,
+            );
         }
         if !section.advanced.is_empty() {
             egui::CollapsingHeader::new(secondary(shell, "Advanced"))
@@ -171,7 +188,14 @@ fn draw_section(
                 .default_open(false)
                 .show(ui, |ui| {
                     for row in &section.advanced {
-                        draw_row(shell, ui, row, edits);
+                        draw_row(
+                            shell,
+                            ui,
+                            row,
+                            section.title == "ScriptBehaviour",
+                            edits,
+                            source_to_open,
+                        );
                     }
                 });
         }
@@ -186,7 +210,9 @@ fn draw_row(
     shell: &cy_editor_interface::shell::Shell,
     ui: &mut egui::Ui,
     row: &InspectorRow,
+    script_behaviour: bool,
     edits: &mut Vec<Edit>,
+    source_to_open: &mut Option<String>,
 ) {
     let metrics = shell.metrics();
     ui.horizontal(|ui| {
@@ -205,6 +231,20 @@ fn draw_row(
         ui.add_enabled_ui(row.writable, |ui| {
             control(shell, ui, row, edits);
         });
+        if script_behaviour
+            && row.name == "class"
+            && let CommonValue::Same(Value::Text(class)) = &row.committed
+            && !class.trim().is_empty()
+            && ui
+                .add_sized(
+                    [metrics.hit_target(), metrics.hit_target()],
+                    egui::Button::new("↗"),
+                )
+                .on_hover_text("Open Swift behaviour source")
+                .clicked()
+        {
+            *source_to_open = Some(class.clone());
+        }
         if let Some(unit) = &row.unit {
             ui.label(secondary(shell, unit.suffix()));
         }

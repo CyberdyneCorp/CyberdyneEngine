@@ -153,6 +153,28 @@ impl SourceWorkspaceService {
         self.files.get()
     }
 
+    /// Find the editable source that registers a Swift behaviour by its authored class name.
+    pub fn behaviour_source(&self, name: &str) -> Result<String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(
+                Problem::new("open a Swift behaviour", "the class name is empty")
+                    .with_remedy("enter a registered behaviour name in ScriptBehaviour.class"),
+            );
+        }
+        for file in self.files() {
+            let snapshot = self.open(&file.path)?;
+            if declares_behaviour(&snapshot.text, name) {
+                return Ok(file.path.clone());
+            }
+        }
+        Err(Problem::new(
+            format!("open Swift behaviour {name}"),
+            "no project Swift source registers this behaviour",
+        )
+        .with_remedy("check the @Behaviour name and refresh the Swift Workspace"))
+    }
+
     /// Rediscover Swift files and report whether the observable set changed.
     pub fn refresh(&mut self) -> Result<bool> {
         let mut files = Vec::new();
@@ -268,6 +290,9 @@ impl SourceWorkspaceService {
             }
             let path = entry.path();
             if file_type.is_dir() {
+                if path == self.root.join("build") {
+                    continue;
+                }
                 self.walk(&path, found)?;
             } else if path.extension().and_then(std::ffi::OsStr::to_str) == Some("swift") {
                 let relative = path.strip_prefix(&self.root).map_err(|_| {
@@ -343,6 +368,18 @@ fn require_swift(path: &str) -> Result<()> {
         )
         .with_remedy("choose a .swift file, or use the content browser for another asset type"))
     }
+}
+
+fn declares_behaviour(source: &str, name: &str) -> bool {
+    source.split("@Behaviour(").skip(1).any(|after| {
+        after.split_once(')').is_some_and(|(arguments, _)| {
+            arguments.split(',').any(|argument| {
+                argument.split_once(':').is_some_and(|(key, value)| {
+                    key.trim() == "name" && value.trim().trim_matches('"') == name
+                })
+            })
+        })
+    })
 }
 
 #[cfg(test)]
