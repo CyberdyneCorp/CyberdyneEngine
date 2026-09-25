@@ -3619,11 +3619,22 @@ only)**, not committed:
 - **`m3:sanitizers-render`: ok**, in 1,710.5 s, on cold `sanitize-*` trees under
   `build/m11c-qh3`. Its body is unchanged: it still runs bare, and the stalls of its render suites
   are now reported rather than enforced.
-- `tools/ci/test_recipes.py`: 20/20. `just roadmap-test`: **531/531**. A first run went 530/531
-  ("every criterion on the ladder is either proven or on the list") because this phase ran
-  `git stash` / `git stash pop` in the middle of it, which briefly put HEAD's files under the
-  prover's sandbox copy. A standalone `falsify.reconcile` over a fresh `prove_the_ladder()`
-  then found 0 findings, and the re-run passed every check.
+- `tools/ci/test_recipes.py`: 20/20. `just roadmap-test`: **531/531** before the commit, but
+  only because the prover's sandbox copies TRACKED files and `cy/test/quiet_host.h` was still
+  untracked. Once it was committed, the first `just roadmap-test` on the clean tree went
+  **530/531**: `m11d:full-gate-set` was red unmutated, because `just quality-licence` found the
+  new header had no `SPDX-License-Identifier: MIT`. (An earlier 530/531 in this phase was put down
+  to a `git stash` during the run. That explanation was never checked against the licence gate.)
+  The header now carries the SPDX line (`f032866`). The gate itself is the regression test, and
+  it was shown red without the fix. `just roadmap-test` on the pushed tree: **531/531**, 0 ladder
+  findings.
+- Re-verified on the clean committed tree: `unit.harness`, `integration.harness` and all six
+  `smoke.quiet_host_*` legs pass inside one `cy_quiet_host` in `build/m11c-qh3`, and
+  `smoke.quiet_host_marker` was judged there, not skipped. The same holds for `unit.harness`,
+  `integration.harness` and `smoke.quiet_host_marker` in `build/m11c-qh3-debug`, and both harness
+  suites pass bare in both trees. The stall probe's mutex case passes bare with `not enforced: no
+  CY_QUIET_HOST marker`, passes under a forged `$$:123` marker with `the pid was reused`, and
+  fails inside the wrapper with `enforced: inside cy_quiet_host`.
 
 **No digest moved.** No `tools/roadmap/milestones/*.toml` body, artefact, tier or declared
 mutation changed, so nothing needs `just roadmap-falsify --record`. `m3:sanitizers-render` and
