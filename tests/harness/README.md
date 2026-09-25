@@ -65,9 +65,12 @@ from a build in another terminal. The owner's decision was to stop patching the 
 - the premise that the host is quiet is **stated in the ledger criteria** that run timing-sensitive
   suites and **checked from outside the process**: `just test-quiet-host -- <command>`
   (`tools/quiet-host/`, the same check `m11a:world-budget-on-a-device` has used since M11.c) waits
-  for every other process together to use at most two cores, runs the command in a session of its
-  own, judges the host across the run by its busiest second with the command's whole process tree
-  subtracted, and **fails with `host too busy:` and the numbers** — never a pass, never a skip;
+  for every other process together to use at most two cores and for CPU and I/O pressure to be
+  low, for five seconds running (the I/O half since M11.c's eighth close, whose writeback burst
+  used no core — `tools/quiet-host/README.md` has the measured limits), runs the command in a
+  session of its own, judges the host across the run by its busiest second with the command's
+  whole process tree subtracted, and **fails with `host too busy:` and the numbers** — never a
+  pass, never a skip;
 - on that premise a case over its ceiling is the case's own, whatever it was waiting for.
 
 | Clock | Reads | Fails a case when |

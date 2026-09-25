@@ -270,6 +270,39 @@ void read_pressure(HostReading& out) noexcept {
     out.has_pressure = fields.ok();
 }
 
+/// `/proc/pressure/io`: a `some` line and a `full` line, each ending in `total=<microseconds>`.
+/// Both are required: a kernel that reports one and not the other is not one this reads.
+void read_io_pressure(HostReading& out) noexcept {
+    std::FILE* file = std::fopen("/proc/pressure/io", "r");
+    if (file == nullptr) {
+        return;
+    }
+    bool some = false;
+    bool full = false;
+    char line[256] = {};
+    while (std::fgets(line, sizeof(line), file) != nullptr) {
+        const char* total = std::strstr(line, "total=");
+        if (total == nullptr) {
+            continue;
+        }
+        Fields fields(total);
+        fields.expect("total=");
+        const u64 value = fields.whole();
+        if (!fields.ok()) {
+            continue;
+        }
+        if (std::strncmp(line, "some ", 5) == 0) {
+            out.io_some_us = value;
+            some = true;
+        } else if (std::strncmp(line, "full ", 5) == 0) {
+            out.io_full_us = value;
+            full = true;
+        }
+    }
+    std::fclose(file);
+    out.has_io_pressure = some && full;
+}
+
 void read_load(HostReading& out) noexcept {
     char line[256] = {};
     if (!first_line("/proc/loadavg", line, sizeof(line))) {
@@ -286,6 +319,12 @@ void read_load(HostReading& out) noexcept {
     return later > earlier ? later - earlier : 0;
 }
 
+/// The share of the window a PSI `total` counter advanced by, or zero when either end lacks it.
+[[nodiscard]] f64 pressure_share(bool known, u64 later_us, u64 earlier_us, f64 wall_us) noexcept {
+    return known && wall_us > 0.0 ? static_cast<f64>(difference(later_us, earlier_us)) / wall_us
+                                  : 0.0;
+}
+
 }  // namespace
 
 u32 host_cores() noexcept {
@@ -298,6 +337,7 @@ HostReading read_host(const OwnScope& own) noexcept {
     reading.at = std::chrono::steady_clock::now();
     reading.readable = read_stat(reading) && read_own(reading, own);
     read_pressure(reading);
+    read_io_pressure(reading);
     read_load(reading);
     return reading;
 }
@@ -320,34 +360,70 @@ QuietVerdict judge_window(const HostReading& before, const HostReading& after, u
         (static_cast<f64>(others) / static_cast<f64>(total)) * static_cast<f64>(cores);
 
     const f64 wall_us = std::chrono::duration<f64, std::micro>(after.at - before.at).count();
-    const bool pressure_known = before.has_pressure && after.has_pressure && wall_us > 0.0;
-    verdict.pressure =
-        pressure_known
-            ? static_cast<f64>(difference(after.pressure_us, before.pressure_us)) / wall_us
-            : 0.0;
+    verdict.pressure = pressure_share(before.has_pressure && after.has_pressure, after.pressure_us,
+                                      before.pressure_us, wall_us);
+    const bool io_known = before.has_io_pressure && after.has_io_pressure;
+    verdict.io_some = pressure_share(io_known, after.io_some_us, before.io_some_us, wall_us);
+    verdict.io_full = pressure_share(io_known, after.io_full_us, before.io_full_us, wall_us);
 
     const bool cores_ok = verdict.other_cores <= limits.max_other_cores;
     const bool pressure_ok = !judge_pressure || verdict.pressure <= limits.max_pressure;
-    verdict.quiet = cores_ok && pressure_ok;
-    std::snprintf(verdict.reason, sizeof(verdict.reason),
-                  "host %s: other processes used %.2f of %u cores (limit %.2f), CPU pressure "
-                  "%.1f%% (%s%.1f%%), loadavg %.2f against %u cores, over %.1f s",
-                  verdict.quiet ? "quiet" : "too busy", verdict.other_cores, cores,
-                  limits.max_other_cores, verdict.pressure * 100.0,
+    verdict.io_busy = judge_pressure && (verdict.io_some > limits.max_io_some ||
+                                         verdict.io_full > limits.max_io_full);
+    verdict.quiet = cores_ok && pressure_ok && !verdict.io_busy;
+
+    // THE I/O CLAUSE LEADS WHEN IT DECIDED THE VERDICT, so that "host too busy: io" names the cause
+    // the way the eighth close had to be told it: by a reader of the log, not of /proc.
+    char io[160] = {};
+    if (judge_pressure) {
+        std::snprintf(io, sizeof(io),
+                      "io pressure some %.1f%% (limit %.1f%%), full %.1f%% (limit %.1f%%)",
+                      verdict.io_some * 100.0, limits.max_io_some * 100.0, verdict.io_full * 100.0,
+                      limits.max_io_full * 100.0);
+    } else {
+        std::snprintf(io, sizeof(io),
+                      "io pressure some %.1f%%, full %.1f%% (not judged while this program runs, "
+                      "limits %.1f%% and %.1f%%)",
+                      verdict.io_some * 100.0, verdict.io_full * 100.0, limits.max_io_some * 100.0,
+                      limits.max_io_full * 100.0);
+    }
+    char cpu[240] = {};
+    std::snprintf(cpu, sizeof(cpu),
+                  "other processes used %.2f of %u cores (limit %.2f), CPU pressure %.1f%% "
+                  "(%s%.1f%%)",
+                  verdict.other_cores, cores, limits.max_other_cores, verdict.pressure * 100.0,
                   judge_pressure ? "limit " : "not judged while this program runs, limit ",
-                  limits.max_pressure * 100.0, after.load_one_minute, cores, wall_us / 1.0e6);
+                  limits.max_pressure * 100.0);
+    const char* state = verdict.quiet ? "quiet" : "too busy";
+    const f64 seconds = wall_us / 1.0e6;
+    if (verdict.io_busy) {
+        std::snprintf(verdict.reason, sizeof(verdict.reason),
+                      "host %s: %s; %s, loadavg %.2f against %u cores, over %.1f s", state, io, cpu,
+                      after.load_one_minute, cores, seconds);
+    } else {
+        std::snprintf(verdict.reason, sizeof(verdict.reason),
+                      "host %s: %s, %s, loadavg %.2f against %u cores, over %.1f s", state, cpu, io,
+                      after.load_one_minute, cores, seconds);
+    }
     return verdict;
 }
 
 QuietVerdict wait_for_quiet(u32 wait_seconds, const QuietLimits& limits) noexcept {
     const u32 cores = host_cores();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(wait_seconds);
-    QuietVerdict verdict;
+    u32 settled = 0;
     for (;;) {
         const HostReading before = read_host();
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        verdict = judge_window(before, read_host(), cores, limits, true);
-        if (verdict.quiet || std::chrono::steady_clock::now() >= deadline) {
+        const QuietVerdict verdict = judge_window(before, read_host(), cores, limits, true);
+        if (verdict.quiet) {
+            if (++settled >= kSettledWindows) {
+                return verdict;
+            }
+            continue;
+        }
+        settled = 0;
+        if (std::chrono::steady_clock::now() >= deadline) {
             return verdict;
         }
         std::printf("  waiting for a quiet host: %s\n", verdict.reason);

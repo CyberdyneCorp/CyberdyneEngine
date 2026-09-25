@@ -36,6 +36,17 @@
 // the host went quiet. CPU pressure (`/proc/pressure/cpu`, the share of time some task waited for a
 // core) is judged only BEFORE the take, while this program is idle and cannot be what is waiting.
 //
+// I/O PRESSURE IS JUDGED TOO, and for the same reason only before the take. M11.c's eighth close
+// saw the ledger's load peak at 59 with no compiler running: 1.9 GB of another criterion's build
+// was being written back onto the one disk, `/proc/pressure/io` read `full avg10=70%`, and every
+// process touching that disk sat in uninterruptible wait. The CPU check calls that host quiet —
+// nobody is using a core — and a wrapped suite started into it would take the burst as a `stalled:`
+// case. So a window is also busy when some task waited on I/O for more than `max_io_some` of it, or
+// every non-idle task did at once for more than `max_io_full`. PSI is machine-wide and cannot
+// subtract our own I/O, which is why it is not judged across the take: a suite's own fsyncs, or a
+// nested wrapper's writer, would be counted against the host it measures. A burst that STARTS after
+// the check is therefore not seen; it errs the way a CPU-pressure burst mid-take always has.
+//
 // Linux only. Where `/proc` cannot be read the verdict is "cannot tell", and that FAILS too: a
 // check that passes whenever it cannot look is the silent pass the criterion exists to refuse.
 
@@ -58,6 +69,10 @@ struct HostReading {
     /// `/proc/pressure/cpu`'s `some total`, in microseconds. Absent on kernels without PSI.
     bool has_pressure = false;
     u64 pressure_us = 0;
+    /// `/proc/pressure/io`'s `some total` and `full total`, in microseconds.
+    bool has_io_pressure = false;
+    u64 io_some_us = 0;
+    u64 io_full_us = 0;
     f64 load_one_minute = 0.0;
     std::chrono::steady_clock::time_point at;
 };
@@ -80,6 +95,17 @@ struct QuietLimits {
     f64 max_other_cores = 2.0;
     /// The share of the window in which some task on the host waited for a core.
     f64 max_pressure = 0.10;
+    /// The share of the window in which some task waited on I/O, and in which EVERY non-idle task
+    /// did at once. MEASURED ON THIS HOST (24 cores, one SATA SSD holding the repository, the
+    /// ccache store and /tmp), a second at a time from the same `total=` counters: idle, 360
+    /// seconds read at most 3.0% some and 2.7% full; a cold `just build-engine` read a median of
+    /// 63% some and 57% full over 854 seconds, 74% of them above both limits; one bounded fsync
+    /// writer read 16% to 79% from its first second; the eighth close's writeback burst read `full
+    /// avg10=70%`. The limits sit above the idle host by three and two times and below the writer's
+    /// FIRST second. `full` is the tighter because it is the one that stops a suite outright:
+    /// nothing on the host ran while it accrued.
+    f64 max_io_some = 0.10;
+    f64 max_io_full = 0.05;
 };
 
 struct QuietVerdict {
@@ -88,9 +114,13 @@ struct QuietVerdict {
     bool readable = false;
     f64 other_cores = 0.0;
     f64 pressure = 0.0;
+    f64 io_some = 0.0;
+    f64 io_full = 0.0;
+    /// Whether I/O pressure made the window busy. Only judged where CPU pressure is.
+    bool io_busy = false;
     /// "host too busy: ...", "host quiet: ..." or "host load unreadable: ...", with the numbers
     /// that decided it.
-    char reason[320] = {};
+    char reason[480] = {};
 };
 
 /// The host's cores, as the process sees them.
@@ -101,14 +131,24 @@ struct QuietVerdict {
 
 /// The verdict over the window between two readings. `judge_pressure` is false for a window in
 /// which the measured program was itself running flat out, since its own threads waiting for a
-/// core would otherwise be counted against the host.
+/// core — or its own I/O — would otherwise be counted against the host. It covers CPU and I/O
+/// pressure alike; the cores used by others are judged in every window.
 [[nodiscard]] QuietVerdict judge_window(const HostReading& before, const HostReading& after,
                                         u32 cores, const QuietLimits& limits,
                                         bool judge_pressure) noexcept;
 
-/// Look for up to `wait_seconds`, a second at a time, until one window is quiet. Every busy window
-/// is printed as it is seen, so a run that waited says what it waited for. Returns the last
-/// verdict, quiet or not.
+/// How many one-second windows in a row must be quiet before the host is. ONE WAS NOT ENOUGH ONCE
+/// I/O WAS JUDGED: a writeback burst comes in pulses — the kernel's flusher wakes every five
+/// seconds (`vm.dirty_writeback_centisecs` = 500 here) — and a configure measured on this host read
+/// 11%, 39%, 10%, 7%, 7%, 59% in six successive seconds, so the first quiet second of a burst
+/// started the suite into the rest of it. Five windows span one flusher period.
+inline constexpr u32 kSettledWindows = 5;
+
+/// Look, a second at a time, until `kSettledWindows` windows in a row are quiet. Every busy window
+/// is printed as it is seen, so a run that waited says what it waited for. The deadline
+/// `wait_seconds` is checked at a busy window: a quiet run already under way when it passes is
+/// finished (at most `kSettledWindows - 1` seconds more), and a busy window after it ends the wait.
+/// Returns the settling window's verdict when quiet, and otherwise the busy window that ended it.
 [[nodiscard]] QuietVerdict wait_for_quiet(u32 wait_seconds, const QuietLimits& limits) noexcept;
 
 /// THE HOST ACROSS THE TAKE, JUDGED BY ITS BUSIEST SECOND. An average over the whole take would let

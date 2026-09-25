@@ -37,6 +37,10 @@ cy_add_module(
 #   * `smoke.quiet_host_nested`  the same, with each worker in a session of its own — the wrapper
 #                                inside a suite it wraps, which `just test-all` is; a census by
 #                                session id alone counted them against the host.
+#   * `smoke.quiet_host_io`      a bounded fsync writer loads the DISK before the command; the
+#                                command must not run and the reason must be "host too busy: io",
+#                                and with the writer killed the same run must pass. The eighth
+#                                close's writeback burst was judged quiet by a CPU-only check.
 #
 # Declared here rather than beside the wrapper because tools/ is configured before tests/ and the
 # taxonomy's timeouts live in tests/CMakeLists.txt. RUN_SERIAL because they load four cores on
@@ -45,7 +49,7 @@ cy_add_module(
 if(TARGET cy_quiet_host)
     find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
-        foreach(leg IN ITEMS before across own nested)
+        foreach(leg IN ITEMS before across own nested io)
             add_test(NAME smoke.quiet_host_${leg}
                      COMMAND "${Python3_EXECUTABLE}"
                              "${CMAKE_SOURCE_DIR}/tools/quiet-host/quiet_host_test.py"
@@ -55,6 +59,7 @@ if(TARGET cy_quiet_host)
                                  LABELS "smoke" TIMEOUT "${CY_TEST_TIMEOUT_smoke}" RUN_SERIAL TRUE)
         endforeach()
         set_tests_properties(smoke.quiet_host_across smoke.quiet_host_own smoke.quiet_host_nested
+                             smoke.quiet_host_io
                              PROPERTIES SKIP_RETURN_CODE 3)
     else()
         message(STATUS "tests/harness: smoke.quiet_host_* need python3, so they are not declared.")

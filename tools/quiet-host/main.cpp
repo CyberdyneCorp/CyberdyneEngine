@@ -24,8 +24,12 @@
 // ================================================================================================
 //
 //  1. BEFORE: waits up to `--wait-s` (default 600 s), a second at a time, for every other process
-//     together to use at most two cores and for CPU pressure to stay at or under 10%. Still busy
-//     at the deadline: the command is NOT run, "host too busy: <numbers>" goes to stderr, exit 1.
+//     together to use at most two cores, for CPU pressure to stay at or under 10%, and for I/O
+//     pressure to stay at or under the limits host_load.h states (a writeback burst from another
+//     criterion's build uses no core and stalls every process on the disk), all of it for five
+//     seconds running (`kSettledWindows`: a burst comes in pulses). Still busy at the deadline:
+//     the command is NOT run, "host too busy: <numbers>" goes to stderr, exit 1 — and
+//     "host too busy: io ..." when I/O pressure is what decided it.
 //  2. RUNS the command in a session of its own (`setsid`), so that every process it starts — a
 //     build, ctest, the test binaries, their children — can be told from the rest of the machine.
 //  3. ACROSS THE RUN: judges the host a second at a time with the command's whole tree subtracted
