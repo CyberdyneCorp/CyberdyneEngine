@@ -82,7 +82,7 @@ fn names(input: &mut Reader<'_>) -> Result<()> {
     Ok(())
 }
 
-fn validate_emitter(input: &mut Reader<'_>) -> Result<()> {
+fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<()> {
     identifier(input)?;
     if input.u8()? > 1 {
         return Err(malformed());
@@ -100,7 +100,40 @@ fn validate_emitter(input: &mut Reader<'_>) -> Result<()> {
         }
     }
     names(input)?;
-    names(input)
+    names(input)?;
+    if version >= 2 {
+        if input.u32()? == 0 {
+            return Err(malformed());
+        }
+        for _ in 0..read_count(input)? {
+            identifier(input)?;
+            let kind = input.text()?;
+            if !matches!(
+                kind.as_str(),
+                "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
+            ) {
+                return Err(malformed());
+            }
+            let minimum = f32::from_bits(input.u32()?);
+            let maximum = f32::from_bits(input.u32()?);
+            let tolerance = f32::from_bits(input.u32()?);
+            if !minimum.is_finite()
+                || !maximum.is_finite()
+                || !tolerance.is_finite()
+                || minimum > maximum
+                || tolerance < 0.0
+            {
+                return Err(malformed());
+            }
+            if !matches!(
+                input.text()?.as_str(),
+                "Auto" | "Float32" | "Float16" | "Unorm8" | "Snorm16"
+            ) {
+                return Err(malformed());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
@@ -125,15 +158,24 @@ fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
 
 fn validate_payload(bytes: &[u8]) -> Result<()> {
     let mut input = Reader::new(bytes);
-    if input.u32()? != 1 {
+    let version = input.u32()?;
+    if version != 1 && version != 2 {
         return Err(malformed());
     }
     identifier(&mut input)?;
     for _ in 0..read_count(&mut input)? {
-        validate_emitter(&mut input)?;
+        validate_emitter(&mut input, version)?;
     }
     for _ in 0..read_count(&mut input)? {
         validate_parameter(&mut input)?;
+    }
+    if version >= 2 {
+        for _ in 0..read_count(&mut input)? {
+            identifier(&mut input)?;
+            if input.u32()? == 0 || input.u32()? == 0 || input.u8()? > 1 {
+                return Err(malformed());
+            }
+        }
     }
     if input.remaining() != 0 {
         return Err(malformed());
@@ -144,6 +186,16 @@ fn validate_payload(bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_core::codec::Writer;
+
+    fn source(bytes: &[u8]) -> String {
+        use std::fmt::Write as _;
+        let mut source = String::from("cyvfxdoc 1\n");
+        for byte in bytes {
+            write!(source, "{byte:02x}").unwrap();
+        }
+        source
+    }
 
     #[test]
     fn reference_cannot_escape_the_project() {
@@ -162,5 +214,37 @@ mod tests {
         assert!(validate_source("cyvfxdoc 1\n0").is_err());
         assert!(validate_source("cyvfxdoc 2\n0102").is_err());
         assert!(validate_source("cyvfxdoc 1\nxyz!").is_err());
+    }
+
+    #[test]
+    fn version_two_declarations_are_validated_before_save() {
+        let mut out = Writer::new();
+        out.u32(2);
+        out.text("sparks");
+        out.u32(1);
+        out.text("smoke");
+        out.u8(0);
+        out.text("Sprite");
+        out.u32(0);
+        out.u32(0);
+        out.u32(0);
+        out.u32(2048);
+        out.u32(1);
+        out.text("position");
+        out.text("vec3");
+        out.u32((-100.0_f32).to_bits());
+        out.u32(100.0_f32.to_bits());
+        out.u32(0.01_f32.to_bits());
+        out.text("Auto");
+        out.u32(0);
+        out.u32(1);
+        out.text("on_death");
+        out.u32(128);
+        out.u32(2);
+        out.u8(0);
+        let mut bytes = out.finish();
+        assert!(validate_source(&source(&bytes)).is_ok());
+        *bytes.last_mut().unwrap() = 2;
+        assert!(validate_source(&source(&bytes)).is_err());
     }
 }

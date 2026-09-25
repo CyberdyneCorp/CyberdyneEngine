@@ -7,7 +7,7 @@ use cy_editor_core::problem::{Problem, Result};
 use super::graph::GraphCanvas;
 use super::material::{graph_canvas_interchange, load_graph_canvas_interchange};
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const MAX_ITEMS: u32 = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,7 +86,7 @@ pub struct StageGraph {
 }
 
 /// An authored emitter and its stage graph references.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Emitter {
     /// Stable author-facing name.
     pub name: String,
@@ -100,6 +100,40 @@ pub struct Emitter {
     pub modules: Vec<String>,
     /// Bound data-interface names.
     pub interfaces: Vec<String>,
+    /// Maximum live particles at full quality.
+    pub capacity: u32,
+    /// Typed particle storage declarations used by the VFX compiler.
+    pub attributes: Vec<Attribute>,
+}
+
+/// One particle attribute with an explicit precision policy.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attribute {
+    /// Attribute identifier used by graph nodes.
+    pub name: String,
+    /// Engine numeric type name.
+    pub kind: String,
+    /// Author declared lower range bound.
+    pub minimum: f32,
+    /// Author declared upper range bound.
+    pub maximum: f32,
+    /// Maximum acceptable storage error.
+    pub tolerance: f32,
+    /// Auto, Float32, Float16, Unorm8, or Snorm16.
+    pub precision: String,
+}
+
+/// A bounded event channel shared by emitters in this system.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventChannel {
+    /// Channel identifier used by event nodes.
+    pub name: String,
+    /// Maximum events emitted in one frame.
+    pub max_events_per_frame: u32,
+    /// Maximum event propagation depth.
+    pub max_chain_depth: u32,
+    /// Whether events may be read back on the CPU.
+    pub readback: bool,
 }
 
 /// A typed parameter exposed to gameplay or folded by the compiler.
@@ -124,6 +158,8 @@ pub struct VfxDocument {
     pub emitters: Vec<Emitter>,
     /// System parameters.
     pub parameters: Vec<Parameter>,
+    /// System event channels.
+    pub channels: Vec<EventChannel>,
 }
 
 impl VfxDocument {
@@ -135,6 +171,7 @@ impl VfxDocument {
             name,
             emitters: Vec::new(),
             parameters: Vec::new(),
+            channels: Vec::new(),
         })
     }
 
@@ -211,6 +248,16 @@ impl VfxDocument {
             }
             write_names(&mut out, &emitter.modules)?;
             write_names(&mut out, &emitter.interfaces)?;
+            out.u32(emitter.capacity);
+            out.u32(count(emitter.attributes.len())?);
+            for attribute in &emitter.attributes {
+                out.text(&attribute.name);
+                out.text(&attribute.kind);
+                out.u32(attribute.minimum.to_bits());
+                out.u32(attribute.maximum.to_bits());
+                out.u32(attribute.tolerance.to_bits());
+                out.text(&attribute.precision);
+            }
         }
         out.u32(count(self.parameters.len())?);
         for parameter in &self.parameters {
@@ -220,6 +267,13 @@ impl VfxDocument {
                 out.u32(value.to_bits());
             }
             out.u8(u8::from(parameter.exposed));
+        }
+        out.u32(count(self.channels.len())?);
+        for channel in &self.channels {
+            out.text(&channel.name);
+            out.u32(channel.max_events_per_frame);
+            out.u32(channel.max_chain_depth);
+            out.u8(u8::from(channel.readback));
         }
         Ok(out.finish())
     }
@@ -260,7 +314,8 @@ impl VfxDocument {
     /// Read a versioned authoring payload, rejecting malformed or unsupported entries.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut input = Reader::new(bytes);
-        if input.u32()? != VERSION {
+        let version = input.u32()?;
+        if version != 1 && version != VERSION {
             return Err(invalid("unsupported VFX document version"));
         }
         let mut document = Self::new(input.text()?)?;
@@ -279,13 +334,34 @@ impl VfxDocument {
                     canvas: input.text()?,
                 });
             }
+            let modules = read_names(&mut input)?;
+            let interfaces = read_names(&mut input)?;
+            let (capacity, attributes) = if version == 1 {
+                (1024, Vec::new())
+            } else {
+                let capacity = input.u32()?;
+                let mut attributes = Vec::new();
+                for _ in 0..read_count(&mut input)? {
+                    attributes.push(Attribute {
+                        name: input.text()?,
+                        kind: input.text()?,
+                        minimum: f32::from_bits(input.u32()?),
+                        maximum: f32::from_bits(input.u32()?),
+                        tolerance: f32::from_bits(input.u32()?),
+                        precision: input.text()?,
+                    });
+                }
+                (capacity, attributes)
+            };
             document.emitters.push(Emitter {
                 name,
                 path,
                 renderer,
                 stages,
-                modules: read_names(&mut input)?,
-                interfaces: read_names(&mut input)?,
+                modules,
+                interfaces,
+                capacity,
+                attributes,
             });
         }
         for _ in 0..read_count(&mut input)? {
@@ -307,6 +383,20 @@ impl VfxDocument {
                 exposed,
             });
         }
+        if version >= 2 {
+            for _ in 0..read_count(&mut input)? {
+                document.channels.push(EventChannel {
+                    name: input.text()?,
+                    max_events_per_frame: input.u32()?,
+                    max_chain_depth: input.u32()?,
+                    readback: match input.u8()? {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(invalid("invalid event readback flag")),
+                    },
+                });
+            }
+        }
         if input.remaining() != 0 {
             return Err(invalid("trailing VFX document data"));
         }
@@ -318,10 +408,15 @@ impl VfxDocument {
         identifier(&self.name)?;
         count(self.emitters.len())?;
         count(self.parameters.len())?;
+        count(self.channels.len())?;
         for emitter in &self.emitters {
             identifier(&emitter.name)?;
             identifier(&emitter.renderer)?;
             count(emitter.stages.len())?;
+            count(emitter.attributes.len())?;
+            if emitter.capacity == 0 {
+                return Err(invalid("emitter capacity must be positive"));
+            }
             for (index, stage) in emitter.stages.iter().enumerate() {
                 if emitter.stages[..index]
                     .iter()
@@ -333,6 +428,23 @@ impl VfxDocument {
             for name in emitter.modules.iter().chain(&emitter.interfaces) {
                 identifier(name)?;
             }
+            for attribute in &emitter.attributes {
+                identifier(&attribute.name)?;
+                if !matches!(
+                    attribute.kind.as_str(),
+                    "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
+                ) || !matches!(
+                    attribute.precision.as_str(),
+                    "Auto" | "Float32" | "Float16" | "Unorm8" | "Snorm16"
+                ) || !attribute.minimum.is_finite()
+                    || !attribute.maximum.is_finite()
+                    || !attribute.tolerance.is_finite()
+                    || attribute.minimum > attribute.maximum
+                    || attribute.tolerance < 0.0
+                {
+                    return Err(invalid("invalid typed VFX attribute"));
+                }
+            }
         }
         for parameter in &self.parameters {
             identifier(&parameter.name)?;
@@ -342,6 +454,12 @@ impl VfxDocument {
             ) || parameter.value.iter().any(|value| !value.is_finite())
             {
                 return Err(invalid("invalid typed VFX parameter"));
+            }
+        }
+        for channel in &self.channels {
+            identifier(&channel.name)?;
+            if channel.max_events_per_frame == 0 || channel.max_chain_depth == 0 {
+                return Err(invalid("event channel bounds must be positive"));
             }
         }
         Ok(())
@@ -415,6 +533,8 @@ mod tests {
             stages: Vec::new(),
             modules: Vec::new(),
             interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
         });
         let mut canvas = canvas();
         canvas
@@ -457,6 +577,15 @@ mod tests {
                 stages: Vec::new(),
                 modules: vec!["shared_drag".into()],
                 interfaces: vec!["scene_depth".into()],
+                capacity: 2048,
+                attributes: vec![Attribute {
+                    name: "position".into(),
+                    kind: "vec3".into(),
+                    minimum: -100.0,
+                    maximum: 100.0,
+                    tolerance: 0.01,
+                    precision: "Auto".into(),
+                }],
             });
         }
         document
@@ -470,6 +599,12 @@ mod tests {
             kind: "float".into(),
             value: [2.0, 0.0, 0.0, 0.0],
             exposed: true,
+        });
+        document.channels.push(EventChannel {
+            name: "on_death".into(),
+            max_events_per_frame: 128,
+            max_chain_depth: 2,
+            readback: false,
         });
         assert_eq!(
             VfxDocument::decode(&document.encode().unwrap()).unwrap(),
@@ -502,11 +637,36 @@ mod tests {
             ],
             modules: Vec::new(),
             interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
         });
         assert!(document.encode().is_err());
         document.emitters[0].stages.pop();
         let mut bytes = document.encode().unwrap();
         bytes.push(0);
         assert!(VfxDocument::decode(&bytes).is_err());
+    }
+
+    #[test]
+    fn version_one_draft_upgrades_with_engine_defaults() {
+        let mut old = Writer::new();
+        old.u32(1);
+        old.text("sparks");
+        old.u32(1);
+        old.text("smoke");
+        old.u8(0);
+        old.text("Sprite");
+        old.u32(0);
+        old.u32(0);
+        old.u32(0);
+        old.u32(0);
+        let draft = VfxDocument::decode(&old.finish()).unwrap();
+        assert_eq!(draft.emitters[0].capacity, 1024);
+        assert!(draft.emitters[0].attributes.is_empty());
+        assert!(draft.channels.is_empty());
+        assert_eq!(
+            VfxDocument::decode(&draft.encode().unwrap()).unwrap(),
+            draft
+        );
     }
 }

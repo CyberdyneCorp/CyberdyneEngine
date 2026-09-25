@@ -227,6 +227,8 @@ fn emitter_choices(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 stages: Vec::new(),
                 modules: Vec::new(),
                 interfaces: Vec::new(),
+                capacity: 1024,
+                attributes: Vec::new(),
             };
             let result = panels
                 .specialised

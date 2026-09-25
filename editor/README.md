@@ -523,3 +523,7 @@ so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable
 authoring data; engine canonicalisation, compilation, cooking, and runtime preview are tracked by
 `openspec/changes/implement-issue-15-graph-authoring/`.
+The current draft payload records emitter capacity, typed particle attributes with range,
+tolerance, and precision, plus bounded system event channels. Existing version 1 draft payloads
+open with engine defaults (capacity 1024 and no attribute or channel declarations) and save as
+version 2 payloads. The `.cyvfxdoc` text envelope remains version 1.

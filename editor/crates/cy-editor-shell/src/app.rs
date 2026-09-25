@@ -1463,6 +1463,8 @@ mod tests {
             stages: Vec::new(),
             modules: Vec::new(),
             interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
         });
         author.specialised.start_vfx_document(document).unwrap();
         author

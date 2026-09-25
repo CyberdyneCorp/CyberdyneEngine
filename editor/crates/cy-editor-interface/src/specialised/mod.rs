@@ -900,6 +900,8 @@ mod tests {
             stages: Vec::new(),
             modules: Vec::new(),
             interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
         });
         host.start_vfx_document(document).unwrap();
         host.select_vfx_stage(0, vfx::Stage::Spawn).unwrap();
@@ -970,6 +972,8 @@ mod tests {
             }],
             modules: Vec::new(),
             interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
         });
         assert!(host.start_vfx_document(invalid).is_err());
         assert_eq!(host.vfx_document().unwrap().name, "current");
