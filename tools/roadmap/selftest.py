@@ -1101,14 +1101,19 @@ def just_arguments(run: str) -> list[tuple[str, str]]:
 
 
 def test_quiet_host_bodies(root: Path) -> None:
-    """A criterion that runs a timing-sensitive suite runs ALL of it inside `just test-quiet-host`.
+    """A criterion that runs through `just test-quiet-host` keeps its whole line inside it.
 
     REGRESSION, M11.c's eighth close. `m6:culling` was `just test-quiet-host -- just test-unit ...
     && just test-integration -R render_gpu_culling_teardown`; the body runs under `bash -c`, so the
     `&&` was that shell's and the teardown suite ran bare after the wrapper had exited, while the
-    criterion said MEASURED ON A QUIET HOST in capitals. `m1:four-profiles` ran `just test-all` bare
-    in four matrix rows and `m2:determinism` ran `unit.determinism` bare. `quiet_host.findings` is
-    the rule; the fixtures below are those three bodies and the shapes around them.
+    criterion said MEASURED ON A QUIET HOST in capitals.
+
+    WHAT IS NO LONGER CHECKED, M11.c's ninth close (option B). The rule used to name six
+    timing-sensitive suites and fail any body that ran one bare; a sanitizer loop (`for t in ...;
+    do just test-sanitize --tests "$t"`) ran two of them past it. The harness now enforces its
+    stall ceiling only inside a verified `cy_quiet_host` and reports a stall anywhere else, so a
+    bare suite is an honest, unenforced run rather than a hole in the premise: the fixtures below
+    say that it is NOT a finding, and that the two rules that are still true still hold.
     """
     del root
 
@@ -1133,35 +1138,26 @@ def test_quiet_host_bodies(root: Path) -> None:
     check("several suites as ONE wrapped command are inside the wrapper",
           not found("just test-quiet-host -- just test-suites unit:unit.render_gpu_culling "
                     "integration:render_gpu_culling_teardown", **alone))
-    old_rows = ('for p in debug dev; do\n'
-                '    CY_BUILD_DIR="$d" just test-all --profile "$p" || exit 1\n'
-                'done')
-    check("a bare `just test-all` is a finding (m1:four-profiles at the eighth close)",
-          any("outside `just test-quiet-host`" in finding for finding in found(old_rows)),
-          "\n".join(found(old_rows)))
-    check("a bare `-R` that selects a named suite is a finding (m2:determinism)",
-          bool(found("just test-unit -R determinism")))
-    check("the suite being wrapped on ANOTHER line does not cover a bare one",
-          bool(found("just test-quiet-host -- just test-all\njust test-smoke -R editor_window",
-                     **alone)))
-    check("a `-R` that selects none of them is not a finding",
-          not found("just test-unit -R render_culling && just test-unit -R unit.artefact_harness"))
-    check("`ctest -N` lists and runs nothing, and is not a finding",
-          not found("ctest --test-dir build/dev -N -R '^unit.determinism$'"))
     check("a quoted `&&` is prose, not an operator",
           not found('just test-quiet-host -- just test-all\necho "a && b"', **alone))
     check("a wrapped criterion that does not declare `exclusive` is a finding",
           any("exclusive" in finding for finding in found("just test-quiet-host -- just test-all")))
     check("a `where = \"ci\"` criterion is not judged: this host never evaluates it",
-          not found("just env-doctor && just build-engine && just test-all", where="ci",
+          not found("just test-quiet-host -- just test-all && echo after", where="ci",
                     reason="three platforms"))
+    sanitizer_loop = ('for t in rhi render_graph render_ shader material; do\n'
+                      '    just test-sanitize --tests "$t" || exit 1\n'
+                      'done')
+    check("a bare suite is NOT a finding: the harness reports its stalls unenforced (option B)",
+          not found(sanitizer_loop) and not found("just test-unit -R determinism"),
+          "\n".join(found(sanitizer_loop)))
 
     offenders = [f"{identifier}:{criterion.id}: {finding}"
                  for identifier in criteria_module.available()
                  for criterion in criteria_module.load(identifier).criteria
                  for finding in quiet_host_module.findings(criterion)]
-    check("every criterion under milestones/ runs its timing-sensitive suites wholly inside "
-          "`just test-quiet-host`", not offenders, "\n".join(offenders))
+    check("every criterion under milestones/ that runs through `just test-quiet-host` keeps its "
+          "whole line inside it and declares `exclusive`", not offenders, "\n".join(offenders))
 
 
 def test_just_arguments(root: Path) -> None:
