@@ -13,6 +13,26 @@ pub struct EmitterCount {
     pub live: u32,
 }
 
+/// One attribute read from a live particle through the engine's derived layout.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParticleAttribute {
+    /// Authored attribute name.
+    pub name: String,
+    /// Components decoded to f32 by the engine.
+    pub values: Vec<f32>,
+}
+
+/// A bounded readback of the first live particle in emitter order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParticleSample {
+    /// Index into the snapshot's emitter list.
+    pub emitter: u32,
+    /// Live slot within that emitter's particle block.
+    pub slot: u32,
+    /// Up to 32 allocated attributes.
+    pub attributes: Vec<ParticleAttribute>,
+}
+
 /// One engine snapshot. The viewport renderer is connected separately.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VfxPreviewSnapshot {
@@ -36,19 +56,31 @@ pub struct VfxPreviewSnapshot {
     pub pool_used_bytes: u64,
     /// Pool byte budget.
     pub pool_total_bytes: u64,
+    /// Cumulative particles refused by the pool budget.
+    pub pool_shortfall_particles: u32,
+    /// Cumulative pool allocations reduced by the budget.
+    pub pool_reduced_requests: u32,
+    /// Events raised in the most recent simulation step.
+    pub events_raised: u32,
+    /// Events delivered in the most recent simulation step.
+    pub events_delivered: u32,
     /// Events dropped by bounded channels in the most recent step.
     pub events_dropped: u32,
     /// Events truncated by chain depth in the most recent step.
     pub events_truncated: u32,
+    /// Readback events deferred by the byte budget.
+    pub readback_deferred: u32,
     /// Per-emitter population in document order.
     pub emitters: Vec<EmitterCount>,
+    /// One live particle sampled from the engine world, if any exists.
+    pub sample: Option<ParticleSample>,
 }
 
 impl VfxPreviewSnapshot {
     /// Decode the complete engine-owned schema and reject partial results.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut input = Reader::new(bytes);
-        if input.u32()? != 1 {
+        if input.u32()? != 2 {
             return Err(invalid("unsupported VFX preview schema"));
         }
         let cook_key = input.u64()?;
@@ -92,6 +124,12 @@ impl VfxPreviewSnapshot {
             }
             emitters.push(EmitterCount { name, live });
         }
+        let pool_shortfall_particles = input.u32()?;
+        let pool_reduced_requests = input.u32()?;
+        let events_raised = input.u32()?;
+        let events_delivered = input.u32()?;
+        let readback_deferred = input.u32()?;
+        let sample = decode_sample(&mut input, &emitters)?;
         if !input.is_empty() {
             return Err(invalid("trailing VFX preview data"));
         }
@@ -106,11 +144,66 @@ impl VfxPreviewSnapshot {
             cpu_fallbacks,
             pool_used_bytes,
             pool_total_bytes,
+            pool_shortfall_particles,
+            pool_reduced_requests,
+            events_raised,
+            events_delivered,
             events_dropped,
             events_truncated,
+            readback_deferred,
             emitters,
+            sample,
         })
     }
+}
+
+fn decode_sample(
+    input: &mut Reader<'_>,
+    emitters: &[EmitterCount],
+) -> Result<Option<ParticleSample>> {
+    let sample = match input.u8()? {
+        0 => None,
+        1 => {
+            let emitter = input.u32()?;
+            let slot = input.u32()?;
+            let count = input.u32()?;
+            if emitter as usize >= emitters.len()
+                || emitters[emitter as usize].live == 0
+                || count > 32
+            {
+                return Err(invalid("invalid VFX preview particle sample"));
+            }
+            let mut attributes = Vec::new();
+            for _ in 0..count {
+                let name = input.text()?;
+                let components = input.u8()?;
+                if name.is_empty()
+                    || !(1..=4).contains(&components)
+                    || attributes
+                        .iter()
+                        .any(|prior: &ParticleAttribute| prior.name == name)
+                {
+                    return Err(invalid("invalid VFX preview attribute"));
+                }
+                let mut values = Vec::new();
+                for _ in 0..components {
+                    let value = input.f32()?;
+                    if !value.is_finite() {
+                        return Err(invalid("non-finite VFX preview attribute"));
+                    }
+                    values.push(value);
+                }
+                attributes.push(ParticleAttribute { name, values });
+            }
+            Some(ParticleSample {
+                emitter,
+                slot,
+                attributes,
+            })
+        }
+        _ => return Err(invalid("invalid VFX preview particle flag")),
+    };
+    Ok(sample)
 }
 
 /// Editor actions accepted by the engine preview service.
@@ -188,7 +281,7 @@ mod tests {
     #[test]
     fn preview_snapshot_keeps_engine_counts_and_refuses_trailing_data() {
         let mut writer = Writer::new();
-        writer.u32(1);
+        writer.u32(2);
         writer.u64(42);
         writer.u8(1);
         writer.f32(0.5);
@@ -205,11 +298,28 @@ mod tests {
         writer.u32(6);
         writer.text("GpuEmitter");
         writer.u32(6);
+        for value in [0, 0, 7, 5, 2] {
+            writer.u32(value);
+        }
+        writer.u8(1);
+        writer.u32(0);
+        writer.u32(3);
+        writer.u32(1);
+        writer.text("position");
+        writer.u8(3);
+        for value in [1.0, 2.0, 3.0] {
+            writer.f32(value);
+        }
         let bytes = writer.finish();
         let snapshot = VfxPreviewSnapshot::decode(&bytes).unwrap();
         assert_eq!(snapshot.cook_key, 42);
         assert_eq!(snapshot.emitters[1].live, 6);
         assert_eq!(snapshot.cpu_fallbacks, 1);
+        assert_eq!(snapshot.events_raised, 7);
+        assert_eq!(
+            snapshot.sample.as_ref().unwrap().attributes[0].values,
+            [1.0, 2.0, 3.0]
+        );
         let mut trailing = bytes;
         trailing.push(0);
         assert!(VfxPreviewSnapshot::decode(&trailing).is_err());

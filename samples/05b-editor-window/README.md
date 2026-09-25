@@ -113,8 +113,9 @@ two-emitter cook. `integration.vfx` also plays the exact cooked document and che
 GPU-preferred fallback on a device-free world, and publication of both emitters' particles.
 In the VFX Graph panel, **Load preview** cooks the open draft and starts an isolated engine
 simulation. Play, Pause, Restart, Scrub, and Apply speed control that simulation. The panel reports
-live and per-emitter particle counts, recent spawn/kill counts, pool usage, event overflow, and CPU
-fallbacks. Editing the exposed `speed` parameter updates the running effect without cooking again.
+live and per-emitter particle counts, recent spawn/kill counts, pool usage and shortfall, event
+traffic and overflow, CPU fallbacks, and up to 32 attributes from the first live particle. Editing
+the exposed `speed` parameter updates the running effect without cooking again.
 The preview currently reports simulation state only; its particles are not composited into the
 editor viewport yet.
 The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a

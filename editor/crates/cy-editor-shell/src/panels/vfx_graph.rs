@@ -139,13 +139,22 @@ fn preview_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         if let Some(state) = &snapshot {
             preview_timeline(panels, ui, connected && !pending);
             ui.label(format!(
-                "{:.2} s · {} live · {} spawned · {} killed · {} CPU fallback · pool {}/{} bytes · events dropped {} / truncated {}",
+                "{:.2} s · {} live · {} spawned · {} killed · {} CPU fallback · pool {}/{} bytes · shortfall {} / reduced {} · events raised {} / delivered {} / dropped {} / truncated {} / deferred {}",
                 state.time_seconds, state.live_particles, state.spawned, state.killed,
                 state.cpu_fallbacks, state.pool_used_bytes, state.pool_total_bytes,
-                state.events_dropped, state.events_truncated
+                state.pool_shortfall_particles, state.pool_reduced_requests,
+                state.events_raised, state.events_delivered, state.events_dropped,
+                state.events_truncated, state.readback_deferred
             ));
             for emitter in &state.emitters {
                 ui.label(format!("{}: {} particles", emitter.name, emitter.live));
+            }
+            if let Some(sample) = &state.sample {
+                ui.collapsing(format!("Particle sample · {} #{}", state.emitters[sample.emitter as usize].name, sample.slot), |ui| {
+                    for attribute in &sample.attributes {
+                        ui.label(format!("{}: {:?}", attribute.name, attribute.values));
+                    }
+                });
             }
             ui.label(secondary(panels.shell, "Preview uses the engine simulation; viewport compositing is pending."));
         }

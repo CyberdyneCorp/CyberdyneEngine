@@ -86,13 +86,19 @@ struct VfxPreviewSnapshot {
     cy::u32 spawned = 0;
     cy::u32 fallbacks = 0;
     cy::u32 emitter_live[2] = {};
+    cy::u32 pool_shortfall = 0;
+    cy::u32 events_raised = 0;
+    bool has_sample = false;
+    cy::u32 sample_emitter = 0;
+    cy::u32 sample_attribute_count = 0;
+    bool sampled_position = false;
 };
 
 VfxPreviewSnapshot preview_snapshot(const CyServiceEvent& event) {
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 65U);
     const cy::u8* bytes = event.payload;
-    CY_REQUIRE_EQ(read_u32(bytes), 1U);
+    CY_REQUIRE_EQ(read_u32(bytes), 2U);
     VfxPreviewSnapshot snapshot;
     snapshot.cook_key = read_u64(bytes + 4);
     snapshot.playing = bytes[12] != 0;
@@ -110,6 +116,33 @@ VfxPreviewSnapshot preview_snapshot(const CyServiceEvent& event) {
         CY_REQUIRE(cursor + 4 <= event.payload_size);
         snapshot.emitter_live[index] = read_u32(bytes + cursor);
         cursor += 4;
+    }
+    CY_REQUIRE(cursor + 21 <= event.payload_size);
+    snapshot.pool_shortfall = read_u32(bytes + cursor);
+    cursor += 8;  // pool shortfall and reduced requests
+    snapshot.events_raised = read_u32(bytes + cursor);
+    cursor += 12;  // raised, delivered, deferred
+    snapshot.has_sample = bytes[cursor++] != 0;
+    if (snapshot.has_sample) {
+        CY_REQUIRE(cursor + 12 <= event.payload_size);
+        snapshot.sample_emitter = read_u32(bytes + cursor);
+        cursor += 8;  // emitter and particle slot
+        snapshot.sample_attribute_count = read_u32(bytes + cursor);
+        cursor += 4;
+        CY_REQUIRE(snapshot.sample_attribute_count <= 32U);
+        for (cy::u32 index = 0; index < snapshot.sample_attribute_count; ++index) {
+            const std::string_view name = read_text(bytes, event.payload_size, cursor);
+            CY_REQUIRE(cursor < event.payload_size);
+            const cy::u8 components = bytes[cursor++];
+            CY_REQUIRE(components >= 1);
+            CY_REQUIRE(components <= 4);
+            CY_REQUIRE(cursor + components * 4 <= event.payload_size);
+            if (name == "position") {
+                snapshot.sampled_position = true;
+                CY_CHECK_EQ(components, 3U);
+            }
+            cursor += components * 4;
+        }
     }
     CY_CHECK_EQ(cursor, event.payload_size);
     return snapshot;
@@ -154,6 +187,11 @@ CY_TEST_CASE("editor_backend: VFX preview controls and live parameters use the e
     CY_CHECK_EQ(first.fallbacks, 1U);
     CY_CHECK_EQ(first.emitter_live[0], 2U);
     CY_CHECK_EQ(first.emitter_live[1], 2U);
+    CY_CHECK(first.has_sample);
+    CY_CHECK_EQ(first.sample_emitter, 0U);
+    CY_CHECK_GT(first.sample_attribute_count, 0U);
+    CY_CHECK(first.sampled_position);
+    CY_CHECK_EQ(first.pool_shortfall, 0U);
 
     std::vector<cy::u8> parameter;
     append_text(parameter, "speed");

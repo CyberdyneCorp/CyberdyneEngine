@@ -321,6 +321,50 @@ cy::f32 read_f32(const Array<u8>& bytes, usize offset) noexcept {
     return value;
 }
 
+Status put_preview_sample(Array<u8>& out, const VfxPreviewState& preview,
+                          const cy::vfx::EffectInstance* instance) noexcept {
+    if (instance == nullptr) {
+        return put_u8(out, 0);
+    }
+    for (u32 emitter = 0; emitter < preview.system->emitters().size(); ++emitter) {
+        const auto flags = preview.world.alive_flags(instance->first_block + emitter);
+        for (u32 particle = 0; particle < flags.size(); ++particle) {
+            if (flags[particle] == 0) {
+                continue;
+            }
+            const auto slots = preview.system->emitters()[emitter].layout().slots();
+            u32 count = 0;
+            for (const cy::vfx::AttributeSlot& slot : slots) {
+                count += !slot.elided && count < 32U ? 1U : 0U;
+            }
+            if (!put_u8(out, 1) || !put_u32(out, emitter) || !put_u32(out, particle) ||
+                !put_u32(out, count)) {
+                return cy::fail(cy::ErrorCode::OutOfMemory, "VFX preview sample encoding failed");
+            }
+            for (const cy::vfx::AttributeSlot& slot : slots) {
+                if (slot.elided || count == 0) {
+                    continue;
+                }
+                if (!put_text(out, slot.name.text()) ||
+                    !put_u8(out, static_cast<u8>(slot.components))) {
+                    return cy::fail(cy::ErrorCode::OutOfMemory,
+                                    "VFX preview attribute encoding failed");
+                }
+                for (u32 component = 0; component < slot.components; ++component) {
+                    if (!put_f32(out, preview.world.read_attribute(*instance, emitter, particle,
+                                                                   slot.name, component))) {
+                        return cy::fail(cy::ErrorCode::OutOfMemory,
+                                        "VFX preview attribute encoding failed");
+                    }
+                }
+                --count;
+            }
+            return cy::ok();
+        }
+    }
+    return put_u8(out, 0);
+}
+
 CyResult preview_snapshot(CyServiceSession_T& session) noexcept {
     const VfxPreviewState& preview = session.vfx_preview;
     if (!preview.system) {
@@ -329,7 +373,7 @@ CyResult preview_snapshot(CyServiceSession_T& session) noexcept {
     const cy::vfx::StepReport& step = preview.world.last_step();
     const cy::vfx::PoolReport& pool = preview.world.pool().report();
     session.event_payload.clear();
-    if (!put_u32(session.event_payload, 1) ||
+    if (!put_u32(session.event_payload, 2) ||
         !put_u64(session.event_payload, preview.system->cook_key()) ||
         !put_u8(session.event_payload, preview.playing ? 1U : 0U) ||
         !put_f32(session.event_payload, preview.time_seconds) ||
@@ -359,6 +403,19 @@ CyResult preview_snapshot(CyServiceSession_T& session) noexcept {
             !put_u32(session.event_payload, live)) {
             return CY_RESULT_OUT_OF_MEMORY;
         }
+    }
+    u32 raised = 0;
+    u32 delivered = 0;
+    for (const cy::vfx::ChannelReport& channel : preview.world.events().reports()) {
+        raised += channel.raised;
+        delivered += channel.delivered;
+    }
+    if (!put_u32(session.event_payload, pool.shortfall_particles) ||
+        !put_u32(session.event_payload, pool.reduced_requests) ||
+        !put_u32(session.event_payload, raised) || !put_u32(session.event_payload, delivered) ||
+        !put_u32(session.event_payload, preview.world.readback().report().deferred) ||
+        !put_preview_sample(session.event_payload, preview, instance)) {
+        return CY_RESULT_OUT_OF_MEMORY;
     }
     return CY_RESULT_OK;
 }
