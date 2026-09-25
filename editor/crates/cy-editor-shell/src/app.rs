@@ -358,6 +358,7 @@ impl EditorWindow {
                             .post(Notification::error(problem.what.clone(), problem));
                     }
                 }
+                Intent::OpenVfxDocument(reference) => self.open_vfx_document(&reference),
                 Intent::ImportExternal { paths, destination } => {
                     for path in paths {
                         let arguments = Arguments::new()
@@ -565,6 +566,50 @@ impl EditorWindow {
                 .editor
                 .notifications
                 .post(Notification::info(outcome.summary.clone())),
+            Err(problem) => self
+                .editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem)),
+        }
+    }
+
+    fn open_vfx_document(&mut self, reference: &str) {
+        let arguments = Arguments::new().with("reference", Value::Text(reference.into()));
+        let result = self
+            .registry
+            .invoke(
+                "vfx.document.read",
+                &self.scope,
+                &mut self.editor,
+                &arguments,
+            )
+            .and_then(|outcome| {
+                let Some(Value::Text(source)) = outcome.values.get("source") else {
+                    return Err(cy_editor_core::problem::Problem::new(
+                        "open a VFX document",
+                        "the read command returned no source",
+                    ));
+                };
+                let document =
+                    cy_editor_interface::specialised::vfx::VfxDocument::decode_text(source)?;
+                self.specialised.start_vfx_document(document)?;
+                if self
+                    .specialised
+                    .vfx_document()
+                    .is_some_and(|document| !document.emitters.is_empty())
+                {
+                    self.specialised
+                        .select_vfx_stage(0, cy_editor_interface::specialised::vfx::Stage::Spawn)?;
+                }
+                Ok(())
+            });
+        match result {
+            Ok(()) => {
+                self.inputs.vfx_reference = reference.into();
+                self.editor.notifications.post(Notification::info(format!(
+                    "Opened VFX document {reference}"
+                )));
+            }
             Err(problem) => self
                 .editor
                 .notifications
@@ -1376,6 +1421,92 @@ mod tests {
                 .get("vfx.backend_only")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn vfx_draft_saved_through_command_reopens_in_a_fresh_window() {
+        use cy_editor_interface::specialised::graph::Layout;
+        use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
+
+        let root = scratch("vfx-draft-round-trip");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let make_window = || {
+            let mut registry = Registry::new();
+            cy_editor_services::builtin::register(&mut registry).unwrap();
+            let editor =
+                Editor::new(Actor::human("designer")).with_project(ProjectService::new(&root));
+            let mut window = EditorWindow::new(editor, registry, Scope::unrestricted()).unwrap();
+            let mut catalogue = Writer::new();
+            catalogue.u32(1);
+            catalogue.u32(1);
+            catalogue.u32(1);
+            catalogue.u32(42);
+            catalogue.u32(1);
+            catalogue.text("vfx.test_node");
+            catalogue.u32(0);
+            catalogue.u32(0);
+            window
+                .specialised
+                .install_vfx_catalogue(&catalogue.finish())
+                .unwrap();
+            window
+        };
+
+        let mut author = make_window();
+        author.editor.open_document("worlds/city.cyworld").unwrap();
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "smoke".into(),
+            path: SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+        });
+        author.specialised.start_vfx_document(document).unwrap();
+        author
+            .specialised
+            .select_vfx_stage(0, Stage::Spawn)
+            .unwrap();
+        author
+            .specialised
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.test_node", Layout { x: 23.0, y: 45.0 })
+            .unwrap();
+        let source = author
+            .specialised
+            .vfx_document_snapshot()
+            .unwrap()
+            .unwrap()
+            .encode_text()
+            .unwrap();
+        let reference = "effects/sparks.cyvfxdoc";
+        author.apply(vec![Intent::Invoke(
+            "vfx.document.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(source.clone())),
+        )]);
+        assert_eq!(
+            author.editor.project.read_source(reference).unwrap(),
+            source
+        );
+
+        let mut reopened = make_window();
+        reopened.apply(vec![Intent::OpenVfxDocument(reference.into())]);
+        let session = reopened.specialised.open(Domain::VfxGraph).unwrap();
+        let canvas = session.graph.unwrap();
+        let node = canvas.nodes().next().unwrap();
+        assert_eq!(node.type_name, "vfx.test_node");
+        assert_eq!(
+            canvas.layout_of(node.key),
+            Some(Layout { x: 23.0, y: 45.0 })
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn answer_catalogue(

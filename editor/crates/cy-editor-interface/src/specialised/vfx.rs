@@ -224,6 +224,39 @@ impl VfxDocument {
         Ok(out.finish())
     }
 
+    /// Text envelope used by project save commands and source control.
+    pub fn encode_text(&self) -> Result<String> {
+        use std::fmt::Write as _;
+
+        let bytes = self.encode()?;
+        let mut source = String::with_capacity(11 + bytes.len() * 2);
+        source.push_str("cyvfxdoc 1\n");
+        for byte in bytes {
+            let _ = write!(source, "{byte:02x}");
+        }
+        Ok(source)
+    }
+
+    /// Reopen a project document without trusting its envelope or payload.
+    pub fn decode_text(source: &str) -> Result<Self> {
+        let payload = source
+            .strip_prefix("cyvfxdoc 1\n")
+            .ok_or_else(|| invalid("unsupported VFX document text version"))?;
+        if payload.is_empty() || payload.len() % 2 != 0 {
+            return Err(invalid("invalid hexadecimal VFX document payload"));
+        }
+        let mut bytes = Vec::with_capacity(payload.len() / 2);
+        for pair in payload.as_bytes().chunks_exact(2) {
+            let digits = std::str::from_utf8(pair)
+                .map_err(|_| invalid("invalid hexadecimal VFX document payload"))?;
+            bytes.push(
+                u8::from_str_radix(digits, 16)
+                    .map_err(|_| invalid("invalid hexadecimal VFX document payload"))?,
+            );
+        }
+        Self::decode(&bytes)
+    }
+
     /// Read a versioned authoring payload, rejecting malformed or unsupported entries.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut input = Reader::new(bytes);
@@ -427,10 +460,10 @@ mod tests {
             });
         }
         document
-            .set_stage(0, Stage::Spawn, "cpu graph".into())
+            .set_stage(0, Stage::Spawn, "cyvfxcanvas 1\nemitter cpu\n".into())
             .unwrap();
         document
-            .set_stage(1, Stage::Update, "gpu graph".into())
+            .set_stage(1, Stage::Update, "cyvfxcanvas 1\nemitter gpu\n".into())
             .unwrap();
         document.parameters.push(Parameter {
             name: "speed".into(),
@@ -442,6 +475,12 @@ mod tests {
             VfxDocument::decode(&document.encode().unwrap()).unwrap(),
             document
         );
+        assert_eq!(
+            VfxDocument::decode_text(&document.encode_text().unwrap()).unwrap(),
+            document
+        );
+        cy_editor_services::vfx_document::validate_source(&document.encode_text().unwrap())
+            .unwrap();
     }
 
     #[test]

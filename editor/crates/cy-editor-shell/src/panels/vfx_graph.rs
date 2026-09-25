@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 //! VFX node editing uses the same graph canvas and backend catalogue as material authoring.
 
+use cy_editor_commands::Arguments;
+use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout};
 use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
 use cy_editor_services::MaterialCatalogueState;
 
-use super::{Panels, material_graph, nothing_here, secondary};
+use super::{Intent, Panels, material_graph, nothing_here, secondary};
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let state = panels.editor.backend.vfx_catalogue_state();
@@ -56,7 +58,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let canvas = session.graph.expect("VFX uses the shared graph canvas");
     ui.label(secondary(
         panels.shell,
-        "Editable stage draft · saving and runtime preview are not available yet",
+        "Editable stage draft · cooking and runtime preview are not available yet",
     ));
     let available = ui.available_size();
     ui.horizontal(|ui| {
@@ -89,6 +91,45 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 }
 
 fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.label("Document");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_reference);
+        if ui.button("Open VFX document").clicked() {
+            panels
+                .intents
+                .push(Intent::OpenVfxDocument(panels.inputs.vfx_reference.clone()));
+        }
+        if panels.specialised.vfx_document().is_some() && ui.button("Save VFX draft").clicked() {
+            let result = panels
+                .specialised
+                .vfx_document_snapshot()
+                .and_then(|document| {
+                    document
+                        .ok_or_else(|| {
+                            cy_editor_core::problem::Problem::new(
+                                "save a VFX document",
+                                "no VFX document is open",
+                            )
+                        })?
+                        .encode_text()
+                });
+            match result {
+                Ok(source) => {
+                    let arguments = Arguments::new()
+                        .with(
+                            "reference",
+                            Value::Text(panels.inputs.vfx_reference.clone()),
+                        )
+                        .with("source", Value::Text(source));
+                    panels
+                        .intents
+                        .push(Intent::Invoke("vfx.document.save".into(), arguments));
+                    panels.inputs.vfx_document_problem = None;
+                }
+                Err(problem) => panels.inputs.vfx_document_problem = Some(problem.to_string()),
+            }
+        }
+    });
     if panels.specialised.vfx_document().is_none() {
         ui.horizontal(|ui| {
             ui.label("System");

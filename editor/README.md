@@ -514,7 +514,9 @@ The VFX Graph tab loads the engine's `vfx.catalogue.get` result into the same no
 Material Graph. Its palette includes compiler-registered nodes and typed sample nodes generated
 from data-interface fields. The panel can create a system and emitters, then select each emitter's
 Spawn, Initialise, Update, Event, Render, or Compute stage. Stage selection snapshots the shared
-canvas and restores the selected stage; graph-tab switches preserve the active draft. The panel
-states that VFX saving and runtime preview are not available yet. Transactions, canonical save,
-compiler integration, cook, and preview work are tracked by
+canvas and restores the selected stage; graph-tab switches preserve the active draft. The
+**Save VFX draft** action writes a versioned `.cyvfxdoc` through the `vfx.document.save` command,
+so it participates in scene-document undo/redo and can be reopened through
+`vfx.document.read`. A scene document must be active for save history. This source is editable
+authoring data; engine canonicalisation, compilation, cooking, and runtime preview are tracked by
 `openspec/changes/implement-issue-15-graph-authoring/`.

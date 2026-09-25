@@ -445,6 +445,12 @@ pub trait ProjectHost {
 
     /// Report the latest engine material request and transient preview state.
     fn material_graph_status(&self) -> String;
+
+    /// Read a project VFX authoring document, without compiling or changing it.
+    fn vfx_document_read(&self, reference: &str) -> Result<String>;
+
+    /// Save a versioned VFX authoring document in one undoable project transaction.
+    fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()>;
 }
 
 /// Result of a fingerprint-guarded source write.

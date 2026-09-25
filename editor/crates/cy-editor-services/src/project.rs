@@ -536,6 +536,11 @@ fn apply_domain(
             }
             continue;
         }
+        if let Some(reference) = kind.strip_prefix(crate::vfx_document::DOMAIN_PREFIX) {
+            let wanted = decode_source(if forward { after } else { before });
+            let _ = project.put_source(reference, wanted.as_deref());
+            continue;
+        }
         if kind != SOURCE_DOMAIN {
             continue;
         }

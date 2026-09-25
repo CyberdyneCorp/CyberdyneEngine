@@ -491,6 +491,19 @@ impl SpecialisedEditors {
     /// Begin editing one VFX system on the existing shared graph canvas.
     pub fn start_vfx_document(&mut self, document: vfx::VfxDocument) -> Result<()> {
         document.encode()?;
+        let catalogue = self.catalogues.get(&Domain::VfxGraph).ok_or_else(|| {
+            Problem::new(
+                "open a VFX document",
+                "the engine VFX catalogue is unavailable",
+            )
+        })?;
+        let mut probe = GraphCanvas::new(1);
+        probe.load(catalogue.clone());
+        for (emitter_index, emitter) in document.emitters.iter().enumerate() {
+            for stage in &emitter.stages {
+                document.open_stage(emitter_index, stage.stage, &mut probe)?;
+            }
+        }
         self.open(Domain::VfxGraph)?;
         self.vfx_document = Some(document);
         self.vfx_stage = None;
@@ -894,6 +907,37 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn invalid_saved_vfx_stage_does_not_replace_the_open_document() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish()).unwrap();
+        host.start_vfx_document(vfx::VfxDocument::new("current").unwrap())
+            .unwrap();
+        let mut invalid = vfx::VfxDocument::new("invalid").unwrap();
+        invalid.emitters.push(vfx::Emitter {
+            name: "smoke".into(),
+            path: vfx::SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: vec![vfx::StageGraph {
+                stage: vfx::Stage::Spawn,
+                canvas: "not a canvas".into(),
+            }],
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+        });
+        assert!(host.start_vfx_document(invalid).is_err());
+        assert_eq!(host.vfx_document().unwrap().name, "current");
     }
 
     #[test]

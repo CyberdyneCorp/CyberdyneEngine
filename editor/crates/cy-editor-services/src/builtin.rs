@@ -46,6 +46,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Writing source, building it, reloading it, and play. See `crate::authoring`.
     crate::authoring::register(registry)?;
     crate::material_commands::register(registry)?;
+    crate::vfx_commands::register(registry)?;
     // Creating a box, a sphere, a cylinder, a plane or a capsule — as a generated source asset and
     // an ordinary mesh instance. See `crate::primitives`.
     crate::primitives::register(registry)?;
@@ -537,7 +538,8 @@ fn apply_sources(
             _ => None,
         })
         .collect();
-    if wanted.is_empty() && moves.is_empty() && graphs.is_empty() {
+    let vfx_documents = vfx_sources(transaction, forward);
+    if wanted.is_empty() && moves.is_empty() && graphs.is_empty() && vfx_documents.is_empty() {
         return;
     }
     let Some(project) = context.project() else {
@@ -560,6 +562,32 @@ fn apply_sources(
             let _ = project.material_graph_preview(&reference, source);
         }
     }
+    for (reference, source) in vfx_documents {
+        let _ = project.put_source(&reference, source.as_deref());
+    }
+}
+
+fn vfx_sources(
+    transaction: &cy_editor_documents::transaction::Transaction,
+    forward: bool,
+) -> Vec<(String, Option<String>)> {
+    transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => Some((
+                kind.strip_prefix(crate::vfx_document::DOMAIN_PREFIX)?
+                    .to_owned(),
+                crate::project::decode_source(if forward { after } else { before }),
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 /// A node identity as this editor prints it, or `None` for an empty string.
@@ -613,12 +641,12 @@ mod tests {
         // and six asset-browser operations, including asynchronous external import.
         // Terrain authoring adds create, add-layer, commit-stroke, enable, and reorder commands.
         // Scene actors add camera and light creation.
-        // Material graphs add read, preview, save, and status commands.
+        // Material graphs add read, preview, save, and status commands; VFX drafts add read/save.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4 + 2
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();
@@ -694,6 +722,59 @@ mod tests {
                 .read_source("materials/cube.cymatcanvas")
                 .unwrap(),
             "new source"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn vfx_document_commands_save_read_undo_and_redo_one_project_asset() {
+        let root = std::env::temp_dir().join(format!(
+            "cy-vfx-document-command-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut editor = Editor::default().with_project(crate::project::ProjectService::new(&root));
+        editor.open_document("worlds/city.cyworld").unwrap();
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        let reference = "effects/sparks.cyvfxdoc";
+        let source = "cyvfxdoc 1\n0100000006000000737061726b730000000000000000";
+        let scope = Scope::unrestricted();
+        let save = Arguments::new()
+            .with("reference", Value::Text(reference.into()))
+            .with("source", Value::Text(source.into()));
+        editor
+            .invoke(&registry, "vfx.document.save", &scope, &save)
+            .unwrap();
+        let read = Arguments::new().with("reference", Value::Text(reference.into()));
+        let outcome = editor
+            .invoke(&registry, "vfx.document.read", &scope, &read)
+            .unwrap();
+        assert_eq!(
+            outcome.values.get("source"),
+            Some(&Value::Text(source.into()))
+        );
+
+        editor
+            .invoke(&registry, "edit.undo", &scope, &Arguments::new())
+            .unwrap();
+        assert!(!editor.project.source_exists(reference));
+        editor
+            .invoke(&registry, "edit.redo", &scope, &Arguments::new())
+            .unwrap();
+        assert_eq!(editor.project.read_source(reference).unwrap(), source);
+        assert!(
+            editor
+                .invoke(
+                    &registry,
+                    "vfx.document.save",
+                    &scope,
+                    &Arguments::new()
+                        .with("reference", Value::Text("../outside.cyvfxdoc".into()))
+                        .with("source", Value::Text(source.into())),
+                )
+                .is_err()
         );
         std::fs::remove_dir_all(root).unwrap();
     }

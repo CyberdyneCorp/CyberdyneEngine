@@ -65,6 +65,8 @@ pub enum Intent {
     Invoke(String, Arguments),
     /// Open a document by asset path.
     OpenAsset(String),
+    /// Open an editable VFX authoring document through its registered read command.
+    OpenVfxDocument(String),
     /// Stage and import files selected outside the project.
     ImportExternal {
         /// Native paths supplied by the chooser or operating-system drop.
@@ -175,6 +177,8 @@ pub struct Inputs {
     pub vfx_emitter_name: String,
     /// Last refused VFX system or stage action.
     pub vfx_document_problem: Option<String>,
+    /// Project-relative VFX document path for save and reopen.
+    pub vfx_reference: String,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -255,6 +259,7 @@ impl Default for Inputs {
             vfx_system_name: "NewVfx".into(),
             vfx_emitter_name: "Emitter0".into(),
             vfx_document_problem: None,
+            vfx_reference: "effects/NewVfx.cyvfxdoc".into(),
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),
