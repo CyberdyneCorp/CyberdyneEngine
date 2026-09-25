@@ -89,7 +89,7 @@ from artefact import (  # noqa: E402 — the path above has to be set first
     socket_path,
 )
 
-WORLD = "worlds/city.cyworld"
+WORLD = "worlds/city-blocks.cyworld"
 
 # The journal's format, from `cy_editor_documents::journal`. Eight magic bytes, a little-endian
 # format version, then records of a little-endian length and checksum followed by the payload.
@@ -714,7 +714,7 @@ def act_open(session: Session, journal: Path, shots: Path, report: Report) -> No
     report.did(
         "the editor opened the project's world",
         f"{session.width}x{session.height}, journal empty, {rows} outliner rows from "
-        f"worlds/city.cyworld",
+        f"{WORLD}",
     )
 
 
@@ -1366,6 +1366,39 @@ def prepare(work: Path) -> tuple[Path, Path, Path]:
     return root, journal, shots
 
 
+def undrawn_nodes(project: Path, world: str) -> list[str]:
+    """The nodes of `world` the engine's viewport has nothing to draw for.
+
+    Since PR #14 the runtime draws a node only through a `MeshRenderer.mesh` that resolves in the
+    project; a transform-only node is deliberately not given a stand-in box. `worlds/city.cyworld`
+    is exactly that, and act 1's chroma check saw a black viewport over it on Linux (issue #18).
+    So the world this driver opens is checked here, without a display, rather than at act 1.
+    Cooked mesh references are not followed; this fixture uses `.cyprim` primitives only.
+    """
+    meshes: dict[str, str] = {}  # type id -> the field id of its `mesh`
+    mesh_type = None
+    component = None
+    name = None
+    drawn: dict[str, bool] = {}
+    for line in (project / world).read_text().splitlines():
+        words = line.split()
+        if line.startswith("type "):
+            mesh_type = words[1] if line.endswith('"MeshRenderer"') else None
+        elif line.startswith("  field ") and mesh_type is not None and '"mesh"' in words:
+            meshes[mesh_type] = words[1]
+        elif line.startswith("node "):
+            name = line.rsplit('"', 2)[-2]
+            drawn[name] = False
+            component = None
+        elif line.startswith("  component "):
+            component = words[1]
+        elif line.startswith("    field ") and name is not None and component in meshes:
+            if words[1] == meshes[component] and len(words) > 2:
+                reference = words[2].strip('"')
+                drawn[name] |= reference.endswith(".cyprim") and (project / reference).is_file()
+    return [node for node, has_mesh in drawn.items() if not has_mesh]
+
+
 def selftest() -> int:
     """The mapping's own negative case, with no display and no editor. `integration.editor_window_selftest`.
 
@@ -1405,6 +1438,13 @@ def selftest() -> int:
     # The dock this driver was measured against: the viewport panel at (301, 120)-(1236, 661).
     if abs(left - 301) > 2 or abs(top - 120) > 2:
         failures.append(f"viewport_rect puts the panel at ({left}, {top}), not (301, 120)")
+    # The world act 1 photographs must give the engine something to draw, and the check must be
+    # able to say no: the transform-only city world is its negative case.
+    project = SAMPLE / "project"
+    if undrawn := undrawn_nodes(project, WORLD):
+        failures.append(f"{WORLD} has nodes the viewport draws nothing for: {undrawn}")
+    if len(undrawn_nodes(project, "worlds/city.cyworld")) != 3:
+        failures.append("undrawn_nodes did not report the three transform-only city nodes")
     for failure in failures:
         print(f"editor-window selftest: {failure}", file=sys.stderr)
     print("editor-window selftest: FAILED" if failures else

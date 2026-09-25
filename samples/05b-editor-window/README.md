@@ -63,9 +63,18 @@ shows the textured tree and its edited transform while the on-disk world was sti
 `cyworld 1` file. That scripted session placed the FBX twice, once automatically after external
 import and once through an explicit MCP `asset.import` call.
 
-The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
-`render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
-in the engine's forward frame.
+The pixel regressions are `smoke.editor_authored_frame_metal` and `render.pipeline_metal` on
+macOS, and `smoke.editor_authored_frame_vulkan` on Linux. Both authored-frame suites build from
+`runtime/tests/test_authored_frame.cpp`. They cover empty-to-mesh rendering, transforms, lights,
+shadows, and material graph previews. `render.pipeline_metal` covers substitution of a material
+texture in the engine's forward frame.
+
+Because nodes without a mesh draw nothing, `smoke.editor_window` opens
+`project/worlds/city-blocks.cyworld`. It holds the same Pillar, Crate, and Marker as
+`worlds/city.cyworld`, each drawn as a tinted `assets/primitives/Box.cyprim`. `city.cyworld` stays
+transform-only, and its viewport is black. The serialization and editor tests pin its bytes and
+identities. `integration.editor_window_selftest` fails if the smoke world contains a node the
+viewport cannot draw (issue #18).
 
 ## Material Graph cube
 

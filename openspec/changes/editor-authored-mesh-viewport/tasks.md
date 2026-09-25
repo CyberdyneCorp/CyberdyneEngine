@@ -25,3 +25,4 @@
 - [x] 3.3 Preview pending gizmo transforms in the engine viewport and reconcile commit/cancel without duplicate history application; cover the runtime mirror with a regression.
 - [x] 3.4 Align numeric transform columns, use the mark alone in the header, and lighten the orientation widget overlay; cover layout and opacity behavior.
 - [x] 3.5 Inspect the live editor while dragging Move, Rotate, and Scale and capture the revised UI.
+- [x] 3.6 Run the authored-frame pixel suite on Vulkan and point the Linux editor-window smoke at a world with drawable meshes. The transform-only `city.cyworld` renders black once no stand-in geometry is drawn (issue #18). Verify `smoke.editor_window` on Linux in dev and debug.
