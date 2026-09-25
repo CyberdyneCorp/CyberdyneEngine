@@ -96,10 +96,11 @@ read the sprite's billboard basis out of last frame's clip matrix for two days w
 did not render the same frame twice green. Regenerate both headers whenever `cy/frame.slang`'s block
 changes; this suite is what says so.
 
-**Compiled, and on Metal not run.** `strip_msl.h` is `slangc -target metal`'s output for the same two
-entry points, and its entry-point signature has the shape `particle_msl.h`'s has — a device buffer
-at `buffer(0)` and the frame block at `buffer(1)` — but no Metal device on the machine it was
-written on has drawn a strip.
+**Metal sprite compositing is exercised by the editor.** The authored viewport smoke test loads
+the committed two-emitter VFX draft, advances the engine simulation, and checks that drawing its
+sprites changes the Metal frame. The MSL embed step maps Slang's compacted particle argument buffer
+to the renderer's set 2 slot and keeps the frame data in set 1. `strip_msl.h` is compiled for Metal,
+but the editor smoke test does not draw strips.
 
 ## The picture
 

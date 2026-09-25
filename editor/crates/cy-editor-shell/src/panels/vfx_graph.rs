@@ -65,7 +65,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let canvas = session.graph.expect("VFX uses the shared graph canvas");
     ui.label(secondary(
         panels.shell,
-        "Editable stage draft · engine simulation preview · viewport particles pending",
+        "Editable stage draft · engine simulation preview · viewport particles",
     ));
     let available = ui.available_size();
     ui.horizontal(|ui| {
@@ -156,7 +156,7 @@ fn preview_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     }
                 });
             }
-            ui.label(secondary(panels.shell, "Preview uses the engine simulation; viewport compositing is pending."));
+            ui.label(secondary(panels.shell, "Preview particles are drawn by the engine in the viewport."));
         }
         if pending {
             ui.label("Engine preview request pending…");

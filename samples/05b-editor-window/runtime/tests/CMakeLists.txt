@@ -48,6 +48,12 @@ function(cy_editor_window_runtime_declare_tests)
                 "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
         target_include_directories(cy_test_smoke_editor_authored_frame_metal PRIVATE
                                    "${tests_dir}/..")
+        if(CY_VFX)
+            target_link_libraries(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                  cy::vfx cy::rendering-particles cy::editor-backend)
+            target_compile_definitions(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                       CY_EDITOR_WINDOW_HAS_VFX=1)
+        endif()
 
         cy_add_test(
             NAME editor_material_metal

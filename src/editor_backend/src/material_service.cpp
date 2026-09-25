@@ -1008,6 +1008,19 @@ CyResult capabilities(CyServiceSession_T& session,
 
 namespace cy::editor {
 
+const vfx::SimulationWorld* MaterialService::vfx_preview_world(
+    CyServiceSession session) const noexcept {
+#if defined(CY_EDITOR_HAS_VFX)
+    if (session != nullptr && session->vfx_preview.system &&
+        session->vfx_preview.world.find(session->vfx_preview.handle) != nullptr) {
+        return &session->vfx_preview.world;
+    }
+#else
+    (void)session;
+#endif
+    return nullptr;
+}
+
 CyResult MaterialService::open(CyServiceSession* out_session) noexcept {
     void* memory = allocator_->allocate(sizeof(CyServiceSession_T), alignof(CyServiceSession_T));
     if (memory == nullptr) {

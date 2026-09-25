@@ -1071,8 +1071,9 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
 
     Span<const u32> texels;
     if (host.authored_frame != nullptr) {
-        if (Status frame = host.authored_frame->render(host.view_world->world(), host.camera,
-                                                       host.game_camera == ~u64{0});
+        if (Status frame = host.authored_frame->render(
+                host.view_world->world(), host.camera, host.game_camera == ~u64{0},
+                host.editor_service->vfx_preview_world(host.service_session));
             !frame) {
             report("authored frame", frame.error());
             return false;

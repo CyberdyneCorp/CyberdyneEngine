@@ -3,15 +3,20 @@
 #include <cy/backends/rhi/backend.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include <cy/editor/material_service.h>
+#endif
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/test/test.h>
 #include <cy_reflect_generated_scene.h>
 
 #include "authored_frame.h"
 
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace cy;
 using namespace cy::sample::editor_window;
@@ -472,3 +477,84 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
     }
     rhi::destroy_device(allocator(), *device);
 }
+
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
+    (void)rhi::metal::register_metal_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "smoke.editor_vfx_preview_metal";
+    rhi::BackendSelection selection;
+    auto device =
+        rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(640, 360, CY_TEST_PROJECT, false));
+        ser::World empty(allocator());
+        CY_REQUIRE(ser::read_world(kEmpty, "worlds/test.cyworld", empty).has_value());
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(empty, view, false));
+        Array<u32> baseline(allocator());
+        CY_REQUIRE(baseline.append(frame.pixels()));
+
+        const std::string path =
+            std::string(CY_TEST_PROJECT) +
+            "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
+        std::ifstream file(path);
+        CY_REQUIRE(file.good());
+        const std::string source(std::istreambuf_iterator<char>{file}, {});
+        editor::MaterialService service(allocator());
+        CyServiceSession session = nullptr;
+        CY_REQUIRE_EQ(service.open(&session), CY_RESULT_OK);
+        u64 request_id = 1;
+        const auto call = [&](const char* operation, const std::vector<u8>& payload) {
+            const CyServiceRequest request{sizeof(CyServiceRequest),
+                                           1,
+                                           request_id++,
+                                           operation,
+                                           payload.data(),
+                                           payload.size()};
+            CY_REQUIRE_EQ(service.submit(session, request), CY_RESULT_OK);
+            CyServiceEvent event{};
+            bool present = false;
+            CY_REQUIRE_EQ(service.poll(session, event, present), CY_RESULT_OK);
+            CY_REQUIRE(present);
+            CY_REQUIRE_EQ(event.kind, static_cast<u32>(CY_SERVICE_EVENT_COMPLETED));
+        };
+        call("vfx.preview.load", {source.begin(), source.end()});
+        call("vfx.preview.control", {0});
+        f32 seconds = 1.0F / 30.0F;
+        u32 bits = 0;
+        std::memcpy(&bits, &seconds, sizeof(bits));
+        std::vector<u8> interval{static_cast<u8>(bits), static_cast<u8>(bits >> 8U),
+                                 static_cast<u8>(bits >> 16U), static_cast<u8>(bits >> 24U)};
+        for (u32 frame_index = 0; frame_index < 15; ++frame_index) {
+            call("vfx.preview.step", interval);
+        }
+        const vfx::SimulationWorld* preview = service.vfx_preview_world(session);
+        CY_REQUIRE(preview != nullptr);
+        CY_REQUIRE(frame.render(empty, view, false, preview));
+        CY_CHECK_GT(frame.vfx_particle_report().particles, 0U);
+        CY_CHECK_EQ(frame.vfx_particle_report().draws, 1U);
+        const auto records = frame.vfx_records();
+        CY_REQUIRE(!records.empty());
+        CY_CHECK_EQ(records[0].size, 0.22F);
+        CY_CHECK_GT(records[0].color[3], 0.0F);
+        usize changed = 0;
+        for (usize pixel = 0; pixel < baseline.size(); ++pixel) {
+            changed += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK_GT(changed, 20U);
+        CY_REQUIRE(frame.render(empty, view, false));
+        CY_CHECK_EQ(frame.vfx_particle_report().particles, 0U);
+        CY_CHECK_EQ(frame.vfx_particle_report().draws, 0U);
+        usize residual = 0;
+        for (usize pixel = 0; pixel < baseline.size(); ++pixel) {
+            residual += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK_EQ(residual, 0U);
+        service.close(session);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif

@@ -162,6 +162,7 @@ CY_TEST_CASE("editor_backend: VFX preview controls and live parameters use the e
     CY_REQUIRE(api != nullptr);
     CyServiceSession session = nullptr;
     CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    CY_CHECK_EQ(service.vfx_preview_world(session), nullptr);
     cy::u64 request_id = 1;
     const auto call = [&](const char* operation, const std::vector<cy::u8>& payload) {
         const CyServiceRequest request{
@@ -173,6 +174,7 @@ CY_TEST_CASE("editor_backend: VFX preview controls and live parameters use the e
     CY_CHECK_EQ(empty.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
     const std::vector<cy::u8> authored(source.begin(), source.end());
     const VfxPreviewSnapshot loaded = preview_snapshot(call("vfx.preview.load", authored));
+    CY_REQUIRE(service.vfx_preview_world(session) != nullptr);
     CY_CHECK_NE(loaded.cook_key, 0U);
     CY_CHECK_FALSE(loaded.playing);
     CY_CHECK_EQ(loaded.live, 0U);

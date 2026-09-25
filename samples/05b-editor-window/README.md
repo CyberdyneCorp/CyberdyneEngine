@@ -116,10 +116,11 @@ simulation. Play, Pause, Restart, Scrub, and Apply speed control that simulation
 live and per-emitter particle counts, recent spawn/kill counts, pool usage and shortfall, event
 traffic and overflow, CPU fallbacks, and up to 32 attributes from the first live particle. Editing
 the exposed `speed` parameter updates the running effect without cooking again.
-The preview currently reports simulation state only; its particles are not composited into the
-editor viewport yet.
+The hosted runtime also publishes the simulation's sprite particles through the engine's
+transparent frame pass. The authored Metal viewport test compares the same empty world before and
+after loading and stepping this exact draft, and checks that the VFX renderer draws live particles.
 The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
-machine without a Vulkan device it reports a skip, so image verification remains open there.
+machine without a Vulkan device it reports a skip.
 
 For a visible scene while inspecting the VFX Graph tab, launch the editor with
 `just run-editor-live --project samples/05b-editor-window/project --world worlds/spinning-cube.cyworld`.
