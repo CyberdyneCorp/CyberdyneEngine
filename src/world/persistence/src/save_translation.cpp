@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The translation between the world's persistence overlay and a save's. See save_translation.h.
 
 #include <cy/world/persistence/save_translation.h>

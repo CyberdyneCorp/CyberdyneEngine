@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The large-world save benchmark. M11.e, closing `m11a:save-benchmark`.
 //
 // ================================================================================================

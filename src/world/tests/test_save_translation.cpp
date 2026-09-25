@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The translation between the world's persistence overlay and a save's. src/world/persistence/.
 //
 // THE ROUND TRIP GOES THROUGH A REAL SAVE. Each case that says "save" commits to a `SaveArchive`

@@ -1,4 +1,5 @@
 #pragma once
+// SPDX-License-Identifier: MIT
 // The translation between the world's persistence overlay and a save's. M11.e, closing
 // `m11a:save-has-an-engine-consumer`.
 //
