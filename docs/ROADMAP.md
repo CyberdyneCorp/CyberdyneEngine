@@ -1522,6 +1522,14 @@ not perform), `virtual-shadows` (6), `rendering-global-illumination` (9),
 `rendering-architecture` (2), `rendering-geometry-and-resources` (1) and `vfx-system` (5).
 `m11c:roadmap-tiers` expects the three, and `m11e:roadmap-tiers` expects the twelve.
 
+**What closed.** M11.c closed on its re-judged column: `denoising`, `ray-tracing-infrastructure`
+and `rendering-culling-and-lod` are recorded Complete, and the other twelve rows stay at Working with
+their **C** at M11.e. The evidence is the eleventh ledger at `6323b40` — 2 of 442 red, the closing
+change's own `m11c:roadmap-tiers` and one intermittent editor-window smoke case inside
+`m1:four-profiles` — closed by the owner's ruling on that ledger plus a re-run of `m1:four-profiles`
+alone with the flake's fix
+([`implement-m11c-image`](../openspec/changes/implement-m11c-image/tasks.md) section 9).
+
 **Closing artefact**: **an art-directed beauty shot** — real materials, tone mapping,
 anti-aliasing, tuned post — assembled **through the editor M11.b finished** rather than in C++, and
 published beside a statement of what was authored and what the renderer produced.
