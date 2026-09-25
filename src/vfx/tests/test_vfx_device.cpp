@@ -40,8 +40,14 @@
 #include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/test/test.h>
+#include <cy/vfx/authoring.h>
+#include <cy/vfx/catalogue.h>
+#include <cy/vfx/interfaces.h>
 
 #include <cstdio>
+#include <fstream>
+#include <iterator>
+#include <string>
 
 using namespace cy;
 using namespace cy::vfx;
@@ -147,6 +153,56 @@ void save(const char* name, Span<const u32> texels) noexcept {
 }
 
 }  // namespace
+
+CY_TEST_CASE("the editor's two-emitter VFX sample changes the rendered image") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    const std::string path =
+        std::string(CY_SOURCE_DIR) +
+        "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
+    std::ifstream input(path);
+    CY_REQUIRE(input.good());
+    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    auto asset = read_authoring_document(source, allocator());
+    CY_REQUIRE(asset.has_value());
+    graph::NodeRegistry nodes(allocator());
+    DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(register_vfx_nodes(nodes).has_value());
+    CY_REQUIRE(register_builtin_interfaces(interfaces).has_value());
+    asset->resolve(nodes);
+    graph::DiagnosticSink diagnostics(allocator());
+    CompileReport cook(allocator());
+    auto compiled =
+        compile_system(*asset, nodes, interfaces, vfx::CompileOptions{}, diagnostics, cook);
+    CY_REQUIRE(compiled.has_value());
+
+    VfxScene scene(allocator());
+    const Vec3 position{0.0F, 0.0F, -5.0F};
+    SceneOptions options;
+    options.system = &*compiled;
+    options.spawns = {&position, 1};
+    CY_REQUIRE(scene.build(fixture.device(), options).has_value());
+    scene.set_read_back(true);
+    CY_REQUIRE(warm(scene, 20).has_value());
+    assembly::AssemblyReport report;
+    CY_REQUIRE(scene.render(report).has_value());
+    CY_CHECK(report.executed);
+    CY_CHECK_GT(scene.steps().live_particles, 0U);
+    CY_CHECK_EQ(scene.published().emitters, 2U);
+    CY_CHECK_EQ(scene.published().particles, scene.steps().live_particles);
+    CY_CHECK_GT(lit_texels(scene.pixels()), 100U);
+    save("vfx-issue15-two-emitters.png", scene.pixels());
+
+    Array<u32> visible(allocator());
+    CY_REQUIRE(visible.append(scene.pixels()).has_value());
+    scene.set_draw_particles(false);
+    CY_REQUIRE(scene.render(report).has_value());
+    CY_CHECK_GT(scene.differing_texels(visible.span()), 100U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
 
 CY_TEST_CASE("a simulated effect reaches the frame and puts lit texels on the device") {
     DeviceFixture fixture;

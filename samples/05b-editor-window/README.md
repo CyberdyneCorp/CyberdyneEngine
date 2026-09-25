@@ -104,12 +104,16 @@ reopened four-node source and a successful engine compile.
 ## VFX graph draft
 
 `project/effects/issue15_two_emitters.cyvfxdoc` is an editable VFX draft with separate CPU and GPU
-emitters, Spawn-stage graph layouts, a typed system parameter, a bounded event channel, particle
-attribute declarations, and a `texture` data-interface binding on each emitter. The draft was
+emitters, Spawn and Initialise stage graph layouts, a typed system parameter, a bounded event
+channel, particle attributes for position, lifetime, size, colour and emission, and a `texture`
+data-interface binding on each emitter. The draft was
 saved, read, undone, and redone through the editor's MCP commands. The engine reader and compiler
 load this exact file in `unit.editor_backend`; they validate both execution paths and produce a
-two-emitter cook. The draft is not installed as a running effect yet, so the viewport does not draw
-its particles.
+two-emitter cook. `integration.vfx` also plays the exact cooked document and checks CPU execution,
+GPU-preferred fallback on a device-free world, and publication of both emitters' particles. The
+draft is not installed as a running editor effect yet, so the viewport does not draw its particles.
+The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
+machine without a Vulkan device it reports a skip, so image verification remains open there.
 
 For a visible scene while inspecting the VFX Graph tab, launch the editor with
 `just run-editor-live --project samples/05b-editor-window/project --world worlds/spinning-cube.cyworld`.
