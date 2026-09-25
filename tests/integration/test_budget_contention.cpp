@@ -31,6 +31,7 @@
 // refuses to set one reports that rather than asserting on a condition it could not create.
 
 #include <cy/test/fixtures.h>
+#include <cy/test/quiet_host.h>
 #include <cy/test/test.h>
 
 #include <algorithm>
@@ -52,6 +53,7 @@
 #    include <unistd.h>
 
 #    include <condition_variable>
+#    include <csignal>
 #    include <cstdint>
 #    include <cstdlib>
 #    include <cstring>
@@ -661,12 +663,33 @@ CY_TEST_CASE("harness: a case that burns its own CPU is not blocked") {
 // the verdict the guard itself printed. CY_TEST_BUDGET_SCALE=0.25 makes the budget 0.25 ms and the
 // ceiling exactly 25 ms, so each 300 ms case is twelve times over it. `757b3d9` excused the vfork
 // case with no pressure at all; `4a1ad21` excused it beside the case's own readers; `23b0370`
-// excused it beside the case's own ORPHANED readers. Each must fail as `stalled:` and none may be
+// excused it beside the case's own ORPHANED readers. Each is `stalled:` and none may ever be
 // called `contended:`.
+//
+// SINCE M11.c'S NINTH CLOSE (the owner's option B) a stall FAILS the case only inside a verified
+// `cy_quiet_host`, so each probe is judged twice. With the marker stripped from its environment it
+// must PASS and print its `stalled:` diagnosis marked "not enforced: not on a quiet host" — and
+// that half runs on every host. With this process's own marker inherited it must FAIL as
+// `stalled:`, "enforced: inside cy_quiet_host" — and that half runs only when this suite is itself
+// inside the wrapper, as `m0:test` runs it; `smoke.quiet_host_marker` starts the wrapper itself.
+// A spin over its CPU budget fails in both.
 
 namespace {
 
 #if defined(__linux__)
+constexpr const char* kNotEnforced = "not enforced: not on a quiet host";
+constexpr const char* kEnforced = "enforced: inside cy_quiet_host";
+
+/// What the probe's environment says about the quiet host.
+enum class Marker {
+    /// No `CY_QUIET_HOST`: the probe was not started by the wrapper.
+    Stripped,
+    /// This process's own, verified or not: the probe is a descendant of whatever this is.
+    Inherited,
+    /// The text given, and nothing else.
+    Forged,
+};
+
 /// What a probe run printed, and how it ended.
 struct ProbeRun {
     bool started = false;
@@ -674,7 +697,18 @@ struct ProbeRun {
     std::string output;
 };
 
-ProbeRun run_probe(const char* test_case, const char* scale, const char* extra = nullptr) {
+struct ProbeSetting {
+    const char* scale = "0.25";
+    const char* extra = nullptr;
+    Marker marker = Marker::Stripped;
+    const char* forged = nullptr;
+};
+
+[[nodiscard]] bool starts_with(const char* entry, const char* prefix) {
+    return std::strncmp(entry, prefix, std::strlen(prefix)) == 0;
+}
+
+ProbeRun run_probe(const char* test_case, const ProbeSetting& setting) {
     ProbeRun run;
     int pipe_ends[2];
     if (::pipe(pipe_ends) != 0) {
@@ -682,15 +716,23 @@ ProbeRun run_probe(const char* test_case, const char* scale, const char* extra =
     }
     // The child's environment is built here rather than by `setenv`, which would change the scale
     // this process's own guard re-reads.
+    const std::string marker_prefix = std::string(cy::test::kQuietHostMarkerVariable) + "=";
     std::vector<std::string> variables;
     for (char** entry = environ; *entry != nullptr; ++entry) {
-        if (std::strncmp(*entry, "CY_TEST_BUDGET_SCALE=", 21) != 0) {
-            variables.emplace_back(*entry);
+        if (starts_with(*entry, "CY_TEST_BUDGET_SCALE=")) {
+            continue;
         }
+        if (setting.marker != Marker::Inherited && starts_with(*entry, marker_prefix.c_str())) {
+            continue;
+        }
+        variables.emplace_back(*entry);
     }
-    variables.emplace_back(std::string("CY_TEST_BUDGET_SCALE=") + scale);
-    if (extra != nullptr) {
-        variables.emplace_back(extra);
+    variables.emplace_back(std::string("CY_TEST_BUDGET_SCALE=") + setting.scale);
+    if (setting.marker == Marker::Forged) {
+        variables.emplace_back(marker_prefix + setting.forged);
+    }
+    if (setting.extra != nullptr) {
+        variables.emplace_back(setting.extra);
     }
     std::vector<char*> envp;
     envp.reserve(variables.size() + 1);
@@ -724,26 +766,59 @@ ProbeRun run_probe(const char* test_case, const char* scale, const char* extra =
     return run;
 }
 
-/// The probe failed the case, and said why with `verdict` — and never called it contended.
-void expect_probe_failed(const char* test_case, const char* verdict, const char* scale = "0.25",
-                         const char* extra = nullptr) {
-    const ProbeRun run = run_probe(test_case, scale, extra);
+[[nodiscard]] bool has(const ProbeRun& run, const char* text) {
+    return run.output.find(text) != std::string::npos;
+}
+
+/// Outside a verified wrapper: the case PASSED, and its stall was reported, never as contended.
+void expect_stall_reported(const char* test_case, const ProbeSetting& setting) {
+    const ProbeRun run = run_probe(test_case, setting);
+    CY_TEST_MESSAGE(test_case << " (no trusted marker):\n" << run.output);
+    CY_REQUIRE(run.started);
+    CY_CHECK(WIFEXITED(run.status));
+    CY_CHECK_EQ(WEXITSTATUS(run.status), 0);
+    CY_CHECK(has(run, "stalled:"));
+    CY_CHECK(has(run, kNotEnforced));
+    CY_CHECK_FALSE(has(run, kEnforced));
+    CY_CHECK_FALSE(has(run, "contended:"));
+}
+
+/// The case FAILED, said why with `verdict`, named the ceiling's state, and never said contended.
+void expect_probe_failed(const char* test_case, const char* verdict, const ProbeSetting& setting,
+                         const char* state) {
+    const ProbeRun run = run_probe(test_case, setting);
     CY_TEST_MESSAGE(test_case << ":\n" << run.output);
     CY_REQUIRE(run.started);
     CY_CHECK(WIFEXITED(run.status));
     CY_CHECK_NE(WEXITSTATUS(run.status), 0);
-    CY_CHECK(run.output.find(verdict) != std::string::npos);
-    CY_CHECK(run.output.find("contended:") == std::string::npos);
+    CY_CHECK(has(run, verdict));
+    CY_CHECK(has(run, state));
+    CY_CHECK_FALSE(has(run, "contended:"));
+}
+
+/// Both halves of a stall probe: reported and passed with no marker, failed with a trusted one.
+void expect_probe_stalled(const char* test_case, ProbeSetting setting = {}) {
+    setting.marker = Marker::Stripped;
+    expect_stall_reported(test_case, setting);
+    if (!cy::test::stall_ceiling_enforced()) {
+        CY_TEST_MESSAGE("this suite is not inside a verified cy_quiet_host ("
+                        << cy::test::quiet_host().reason
+                        << "), so the enforced half is smoke.quiet_host_marker's");
+        return;
+    }
+    setting.marker = Marker::Inherited;
+    expect_probe_failed(test_case, "stalled:", setting, kEnforced);
 }
 #endif
 
 }  // namespace
 
-CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child fails as stalled") {
+CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child is a stall") {
 #if defined(__linux__)
     // M11.c's fifth close: `757b3d9` reported this case as "contended: ... 300.040 ms blocked on
-    // the host's disk or a page fault" and passed it. It must fail.
-    expect_probe_failed("probe: a case whose own vfork child holds it", "stalled:");
+    // the host's disk or a page fault" and passed it. It is a stall: failed inside the wrapper,
+    // reported outside it.
+    expect_probe_stalled("probe: a case whose own vfork child holds it");
 #else
     CY_TEST_MESSAGE("the probe's vfork case is Linux's; nothing to run here");
 #endif
@@ -751,17 +826,17 @@ CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child f
 
 CY_TEST_CASE(
     "harness: the gate's probe — a case held by its own vfork child while its own threads read "
-    "the disk fails as stalled") {
+    "the disk is a stall") {
 #if defined(__linux__)
     // M11.c's sixth close: `4a1ad21` reported this case as "contended: ... 212.557 ms ... was the
-    // host's I/O pressure" and passed it. It must fail, whatever the rest of the host does.
+    // host's I/O pressure" and passed it. It is a stall, whatever the rest of the host does.
     //
     // THE CEILING IS 100 ms HERE, a third of the window, which is the gate's own arithmetic: at
     // scale 1 the unit budget is 1 ms, and the case's thread spends about half of that creating
     // the foreman and waiting on it.
-    expect_probe_failed(
+    expect_probe_stalled(
         "probe: a case whose own vfork child holds it while its own threads read the disk",
-        "stalled:", "1");
+        {.scale = "1"});
 #else
     CY_TEST_MESSAGE("the probe's vfork case is Linux's; nothing to run here");
 #endif
@@ -769,12 +844,12 @@ CY_TEST_CASE(
 
 CY_TEST_CASE(
     "harness: the gate's probe — a case held by its own vfork child while its own ORPHANED "
-    "readers press the disk fails as stalled") {
+    "readers press the disk is a stall") {
 #if defined(__linux__)
     // M11.c's seventh close, and the case that ended the allowance. The same readers as above,
     // but PROCESSES double-forked and re-parented to init, so that no census of the case's own
     // tree could see them: `23b0370` excused 208 ms of this case's wait through the real guard
-    // and passed it as `contended`. It must fail: nothing inside the process can tell its own
+    // and passed it as `contended`. It is a stall: nothing inside the process can tell its own
     // orphans from another terminal's build, so the guard excuses neither.
     // The readers are started before the probe's `main`, as the gate's were, and only when asked
     // for: the variable is what asks.
@@ -785,20 +860,63 @@ CY_TEST_CASE(
     // would be a coin. At scale 2 the question is whether the old guard excused more than 100 ms
     // of its own orphans' pressure, which it always did; the guard now excuses nothing, so the
     // case is a stall at any ceiling under its 300 ms window.
-    expect_probe_failed(
+    expect_probe_stalled(
         "probe: a case whose own vfork child holds it while its own orphaned readers press the "
         "disk",
-        "stalled:", "2", "CY_STALL_PROBE_ORPHANS=1");
+        {.scale = "2", .extra = "CY_STALL_PROBE_ORPHANS=1"});
 #else
     CY_TEST_MESSAGE("the probe's vfork case is Linux's; nothing to run here");
 #endif
 }
 
-CY_TEST_CASE("harness: the gate's probe — a held mutex fails as stalled, a spin as over budget") {
+CY_TEST_CASE("harness: the gate's probe — a held mutex is a stall, a spin over budget everywhere") {
 #if defined(__linux__)
-    expect_probe_failed("probe: a case waiting on a mutex another thread holds", "stalled:");
-    expect_probe_failed("probe: a case that spins", "over budget:");
+    expect_probe_stalled("probe: a case waiting on a mutex another thread holds");
+    // THE CPU BUDGET IS ENFORCED ON EVERY HOST: outside the wrapper as well as inside it.
+    expect_probe_failed("probe: a case that spins", "over budget:", {}, kNotEnforced);
+    if (cy::test::stall_ceiling_enforced()) {
+        expect_probe_failed("probe: a case that spins",
+                            "over budget:", {.marker = Marker::Inherited}, kEnforced);
+    }
 #else
     CY_TEST_MESSAGE("the probe is run as a POSIX child process; nothing to run here");
+#endif
+}
+
+CY_TEST_CASE("harness: a forged quiet-host marker is not trusted, and the stall is only reported") {
+#if defined(__linux__)
+    // Option B's forgeries. The harness trusts `CY_QUIET_HOST=<pid>:<start ticks>` only when the
+    // pid is a live ANCESTOR, started at that tick, whose executable is `cy_quiet_host`; a marker
+    // exported by hand satisfies none of that. Each forgery below breaks exactly one rule, and the
+    // probe's vfork case must pass with its stall reported and "not enforced".
+    const long self = static_cast<long>(::getpid());
+    const unsigned long long ticks = cy::test::process_start_ticks(self);
+    CY_REQUIRE_NE(ticks, 0ULL);
+
+    // A live process that is not an ancestor of the probe: a sleep this case starts and kills by
+    // its pid.
+    pid_t sleeper = 0;
+    char sleep_program[] = "sleep";
+    char sleep_seconds[] = "30";
+    char* sleep_argv[] = {sleep_program, sleep_seconds, nullptr};
+    CY_REQUIRE_EQ(::posix_spawnp(&sleeper, "sleep", nullptr, nullptr, sleep_argv, environ), 0);
+    const unsigned long long sleeper_ticks = cy::test::process_start_ticks(sleeper);
+
+    const std::string malformed = "yes";
+    const std::string dead = "2147483647:1";
+    const std::string not_the_wrapper = std::to_string(self) + ":" + std::to_string(ticks);
+    const std::string reused = std::to_string(self) + ":" + std::to_string(ticks + 1);
+    const std::string unrelated =
+        std::to_string(static_cast<long>(sleeper)) + ":" + std::to_string(sleeper_ticks);
+    for (const std::string* forged : {&malformed, &dead, &not_the_wrapper, &reused, &unrelated}) {
+        CY_TEST_MESSAGE("forged marker: " << *forged);
+        expect_stall_reported("probe: a case whose own vfork child holds it",
+                              {.marker = Marker::Forged, .forged = forged->c_str()});
+    }
+    ::kill(sleeper, SIGKILL);
+    int status = 0;
+    CY_CHECK_EQ(::waitpid(sleeper, &status, 0), sleeper);
+#else
+    CY_TEST_MESSAGE("the marker is verified through /proc; nothing to forge here");
 #endif
 }

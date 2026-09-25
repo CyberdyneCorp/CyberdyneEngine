@@ -10,6 +10,7 @@ only directory permitted to name doctest.
 | `src/main.cpp` | doctest's `main`, so no test file carries one. |
 | `src/budget.cpp` | The per-test budget check: the CPU clock, the wall-clock stall ceiling, and the contention clock that separates the two. |
 | `src/host_blocking.cpp` | The fourth clock: a sampler that sees the case's thread in an uninterruptible wait. A diagnostic in the stall message, never an excuse. |
+| `include/cy/test/quiet_host.h`, `src/quiet_host_marker.cpp` | Whether this run is inside a verified `cy_quiet_host`, and so whether the stall ceiling fails a case or only reports it. |
 | `src/fixtures.cpp` | The filesystem half of the fixtures. |
 
 ## Why a wrapper
@@ -73,10 +74,40 @@ from a build in another terminal. The owner's decision was to stop patching the 
   pass, never a skip;
 - on that premise a case over its ceiling is the case's own, whatever it was waiting for.
 
+## Where the stall ceiling is enforced, and where it is only reported
+
+M11.c's eighth and ninth closes found that the premise could not be guaranteed from the ledger's
+text: three gates in a row found another route by which a wrapped suite also ran bare — a `&&`
+after the wrapper, a matrix row's `test-all`, a sanitizer loop over `just test-sanitize --tests`.
+So the owner moved the premise **into the harness** (option B):
+
+- **Inside `cy_quiet_host`, a stall fails the case**, exactly as above. The harness learns it is
+  inside from `CY_QUIET_HOST=<pid>:<start time>`, which the wrapper sets for the command it runs
+  **only after its pre-run quiet check passed**, and it verifies the marker through `/proc` rather
+  than believing it (`src/quiet_host_marker.cpp`): the pid must be a live **ancestor** of the test
+  process, started at the marker's tick (field 22 of `/proc/<pid>/stat`, so a reused pid is
+  refused), whose executable is `cy_quiet_host`. A marker exported by hand in a shell, left over
+  from an earlier run, copied from another terminal's wrapper, or naming the shell or ctest names
+  no such ancestor and is refused. The stall message then says
+  `enforced: inside cy_quiet_host: cy_quiet_host is pid N, ...`.
+- **Anywhere else a stall is reported and does not fail the case**: the same `stalled:` diagnosis
+  on stderr, marked `not enforced: not on a quiet host (<why the marker was refused>)`. That is a
+  developer's `just test-unit`, a sanitizer run, a bare matrix row, and every run on Windows and
+  macOS, where the wrapper does not exist. A wall-clock verdict nobody checked the host for says
+  nothing about the case, and this is the owner's explicit, accepted trade-off: an unwrapped route
+  loses the stall check rather than failing on the machine's account.
+- **The CPU budget is enforced everywhere**, inside the wrapper and out, because CPU time does not
+  grow when a neighbour spins. Its `over budget:` message names the stall ceiling's state as well.
+
+Proven by `smoke.quiet_host_marker` (the wrapper around the stall probe, and the probe under five
+forged markers), by `integration.harness`'s probe cases (both halves when the suite itself runs
+inside the wrapper, as `m0:test` runs it; the unenforced half and the forgeries everywhere) and by
+`unit.harness`'s marker cases.
+
 | Clock | Reads | Fails a case when |
 |---|---|---|
 | CPU | `CLOCK_THREAD_CPUTIME_ID` | the case spends more than its kind's budget, scaled to this machine |
-| Wall | `steady_clock` | the case's own time over the window exceeds a hundred times that budget |
+| Wall | `steady_clock` | the case's own time over the window exceeds a hundred times that budget, **and** the run is inside a verified `cy_quiet_host`; elsewhere reported, not failed |
 | Contention | `/proc/thread-self/schedstat` | never — it is subtracted, and `budget_measures_contention()` says whether it exists |
 | Host blocking | `/proc/self/task/<tid>/stat`, sampled | never — it is reported, and `budget_measures_host_blocking()` says whether it exists |
 
@@ -91,8 +122,9 @@ readers is seen as blocked and is a stall; and that a case which sleeps, holds a
 CPU accumulates no blocking and is still a stall. It also runs `tests/integration/stall_probe.cpp` —
 the gates' probes, real `CY_TEST_CASE`s — as a child process and reads the verdict the guard
 printed: the vfork case, the vfork case beside its own readers, the vfork case beside its own
-**orphaned** readers and the held mutex fail as `stalled:`, the spin as `over budget:`, and none is
-ever `contended:`.
+**orphaned** readers and the held mutex are `stalled:` — failed inside a verified wrapper,
+reported and passed outside one — the spin fails as `over budget:` in both, and none is ever
+`contended:`.
 
 ## What the harness does not have yet
 

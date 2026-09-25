@@ -14,6 +14,7 @@ cy_add_module(
         src/fixtures.cpp
         src/host_blocking.cpp
         src/main.cpp
+        src/quiet_host_marker.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::dep::doctest)
 
@@ -41,6 +42,11 @@ cy_add_module(
 #                                command must not run and the reason must be "host too busy: io",
 #                                and with the writer killed the same run must pass. The eighth
 #                                close's writeback burst was judged quiet by a CPU-only check.
+#   * `smoke.quiet_host_marker`  the harness's side of the premise (M11.c's ninth close, option
+#                                B): the stall probe (tests/integration/stall_probe.cpp) FAILS as
+#                                `stalled:` inside the wrapper, passes with "not enforced: not on
+#                                a quiet host" outside it and under every forged `CY_QUIET_HOST`,
+#                                and its spin fails its CPU budget in both.
 #
 # Declared here rather than beside the wrapper because tools/ is configured before tests/ and the
 # taxonomy's timeouts live in tests/CMakeLists.txt. RUN_SERIAL because they load four cores on
@@ -49,17 +55,20 @@ cy_add_module(
 if(TARGET cy_quiet_host)
     find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
-        foreach(leg IN ITEMS before across own nested io)
+        # The probe is declared in tests/integration/, configured after this directory; a
+        # generator expression resolves it at generate time, wherever it is declared.
+        foreach(leg IN ITEMS before across own nested io marker)
             add_test(NAME smoke.quiet_host_${leg}
                      COMMAND "${Python3_EXECUTABLE}"
                              "${CMAKE_SOURCE_DIR}/tools/quiet-host/quiet_host_test.py"
                              --wrapper "$<TARGET_FILE:cy_quiet_host>" --leg ${leg}
+                             --probe "$<TARGET_FILE:cy_test_stall_probe>"
                      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
             set_tests_properties(smoke.quiet_host_${leg} PROPERTIES
                                  LABELS "smoke" TIMEOUT "${CY_TEST_TIMEOUT_smoke}" RUN_SERIAL TRUE)
         endforeach()
         set_tests_properties(smoke.quiet_host_across smoke.quiet_host_own smoke.quiet_host_nested
-                             smoke.quiet_host_io
+                             smoke.quiet_host_io smoke.quiet_host_marker
                              PROPERTIES SKIP_RETURN_CODE 3)
     else()
         message(STATUS "tests/harness: smoke.quiet_host_* need python3, so they are not declared.")

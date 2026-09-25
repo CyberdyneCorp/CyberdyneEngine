@@ -5,6 +5,7 @@
 // reasoning is in cy/test/test.h beside the class it governs; what lives here is the two clocks and
 // the two checks they feed.
 
+#include <cy/test/quiet_host.h>
 #include <cy/test/test.h>
 
 #include "host_blocking.h"
@@ -362,8 +363,9 @@ double budget_scale() {
 // three closes of trying to excuse it from inside the case ended with the owner's decision that
 // NOTHING IS EXCUSED: an uninterruptible wait is reported in the stall message so that the stall is
 // explained, and the premise that the host was quiet is checked from outside the process, by
-// `tools/quiet-host/` around every ledger criterion that runs a timing-sensitive suite. On that
-// premise a case over its ceiling is the case's own, whatever it was waiting for.
+// `tools/quiet-host/`. Since the ninth close the harness asks whether that check was made for THIS
+// run (quiet_host_marker.cpp): inside a verified `cy_quiet_host` a case over its ceiling is the
+// case's own and fails, whatever it was waiting for; anywhere else it is reported, not failed.
 std::uint64_t contended_now_ns() {
 #if defined(__linux__)
     // One descriptor per thread, `pread` from offset zero: /proc regenerates the contents on each
@@ -399,6 +401,17 @@ std::uint64_t contended_now_ns() {
     return 0;
 #endif
 }
+
+namespace {
+
+/// The words every budget message uses for the stall ceiling's state. The tests of option B read
+/// them: "enforced: inside cy_quiet_host" and "not enforced: not on a quiet host".
+const char* stall_ceiling_state() noexcept {
+    return stall_ceiling_enforced() ? "enforced: inside cy_quiet_host"
+                                    : "not enforced: not on a quiet host";
+}
+
+}  // namespace
 
 /// How many cases this binary excused as contended. A counter rather than a flag, so a suite that
 /// is contended every run is visible as a number rather than as one line lost in the output.
@@ -530,8 +543,10 @@ BudgetGuard::~BudgetGuard() {
         budget_ns = std::max(budget_ns, rebuilt);
     }
 
-    char message[1536];
+    char message[2048];
     if (cpu_ns > budget_ns) {
+        // ENFORCED ON EVERY HOST: CPU time does not grow when a neighbour spins. The stall
+        // ceiling's state is named anyway, so that a reader of any failure knows which one ran.
         std::snprintf(
             message, sizeof(message),
             "over budget: '%s' spent %.3f ms of CPU (%llu ns) against a budget of %.3f ms "
@@ -540,9 +555,11 @@ BudgetGuard::~BudgetGuard() {
             "the case's own CPU time, which counts SECONDS rather than cycles: on a host whose "
             "governor idles at 800 MHz, M7's gate measured the same case at five times its "
             "boosted-clock figure, so an IDLE machine is this instrument's worst case. Check the "
-            "margin with CY_TEST_BUDGET_SCALE=0.5 before believing a regression.",
+            "margin with CY_TEST_BUDGET_SCALE=0.5 before believing a regression. The CPU budget "
+            "is enforced on every host; the stall ceiling here is %s: %s.",
             name_, static_cast<double>(cpu_ns) / 1e6, static_cast<unsigned long long>(cpu_ns),
-            static_cast<double>(budget_ns) / 1e6, budget_ns, static_cast<double>(wall_ns) / 1e6);
+            static_cast<double>(budget_ns) / 1e6, budget_ns, static_cast<double>(wall_ns) / 1e6,
+            stall_ceiling_state(), quiet_host().reason);
         DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
         return;
     }
@@ -585,13 +602,20 @@ BudgetGuard::~BudgetGuard() {
         "`testing-and-quality` places any of those in tests/integration/ or above. Only waiting "
         "for a core is subtracted; an uninterruptible wait is NEVER excused, because nothing a "
         "process can read says whether it or the host caused it (M11.c's fifth to seventh closes). "
-        "The suites this ceiling judges are run on a QUIET HOST by their ledger criteria "
-        "(`just test-quiet-host -- ...`), so on that premise this is the case's own time. Set "
-        "CY_TEST_BUDGET_SCALE to relax both limits for one run.",
+        "The ceiling is %s: %s. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
         name_, static_cast<double>(wall_ns) / 1e6, static_cast<unsigned long long>(wall_ns),
         static_cast<double>(cpu_ns) / 1e6, static_cast<double>(contended) / 1e6,
         static_cast<double>(blocked) / 1e6, host_sampled_ ? "sampled" : "not measured here",
-        static_cast<double>(ceiling) / 1e6, kStallMultiplier);
+        static_cast<double>(ceiling) / 1e6, kStallMultiplier, stall_ceiling_state(),
+        quiet_host().reason);
+    if (!stall_ceiling_enforced()) {
+        // REPORTED, NOT FAILED: wall clock measures the machine as much as the case, and no
+        // `cy_quiet_host` checked this machine for this run (the owner's option B, M11.c's ninth
+        // close). The same diagnosis, so that a stall seen on a developer's machine is still a
+        // stall to look at, and a run under the wrapper fails it.
+        std::fprintf(stderr, "cy::test: %s\n", message);
+        return;
+    }
     DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
 }
 

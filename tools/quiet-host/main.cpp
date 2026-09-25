@@ -31,7 +31,12 @@
 //     the command is NOT run, "host too busy: <numbers>" goes to stderr, exit 1 — and
 //     "host too busy: io ..." when I/O pressure is what decided it.
 //  2. RUNS the command in a session of its own (`setsid`), so that every process it starts — a
-//     build, ctest, the test binaries, their children — can be told from the rest of the machine.
+//     build, ctest, the test binaries, their children — can be told from the rest of the machine,
+//     and with `CY_QUIET_HOST=<this pid>:<this process's start time>` in its environment. The
+//     marker is set only here, after step 1 passed; the test harness enforces its wall-clock stall
+//     ceiling only when it finds the marker AND verifies through /proc that the pid is a live
+//     ancestor started at that tick whose executable is this one (tests/harness/, M11.c's ninth
+//     close, the owner's option B). A marker exported by hand names no such ancestor.
 //  3. ACROSS THE RUN: judges the host a second at a time with the command's whole tree subtracted
 //     (host_load.h says how), and requires the BUSIEST second to be quiet. A run shorter than a
 //     second is judged over a full second, because a tick's resolution decides nothing shorter.
@@ -46,6 +51,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -143,12 +149,52 @@ void request_stop(int /*signal*/) {
     return true;
 }
 
-[[nodiscard]] pid_t start(char** command) {
+/// Field 22 of /proc/self/stat, this process's start time in clock ticks since boot: the nonce
+/// in the marker, which the harness compares with the same field of the ancestor the marker
+/// names, so that a pid reused after this wrapper exited is not trusted. 0 when unreadable.
+[[nodiscard]] unsigned long long own_start_ticks() {
+    std::FILE* file = std::fopen("/proc/self/stat", "re");
+    if (file == nullptr) {
+        return 0;
+    }
+    char buffer[1024];
+    const std::size_t got = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    buffer[got] = '\0';
+    // The command name in field 2 may contain anything, so fields are counted after the LAST ')':
+    // the state is field 3, and the start time is the nineteenth number after it.
+    const char* cursor = std::strrchr(buffer, ')');
+    if (cursor == nullptr || cursor[1] != ' ' || cursor[2] == '\0') {
+        return 0;
+    }
+    cursor += 3;
+    unsigned long long value = 0;
+    for (int field = 4; field <= 22; ++field) {
+        char* end = nullptr;
+        value = std::strtoull(cursor, &end, 10);
+        if (end == cursor) {
+            return 0;
+        }
+        cursor = end;
+    }
+    return value;
+}
+
+/// `CY_QUIET_HOST=<pid>:<start ticks>`, built before the fork so the child only calls `putenv`.
+[[nodiscard]] std::string quiet_host_marker() {
+    return "CY_QUIET_HOST=" + std::to_string(static_cast<long>(::getpid())) + ":" +
+           std::to_string(own_start_ticks());
+}
+
+[[nodiscard]] pid_t start(char** command, std::string& marker) {
     const pid_t child = ::fork();
     if (child == 0) {
         // Its own session, so that host_load can count the whole tree as ours; and the default
         // signal dispositions, so that the session dies of the SIGTERM below like any other.
         (void)::setsid();
+        // THE MARKER, and only now: the pre-run check has passed. It replaces any marker this
+        // wrapper inherited, so a wrapper nested inside another run names itself.
+        (void)::putenv(marker.data());
         ::execvp(command[0], command);
         std::fprintf(stderr, "cy_quiet_host: cannot run '%s': %s\n", command[0],
                      std::strerror(errno));
@@ -220,7 +266,8 @@ int main(int argc, char** argv) {
 
     std::signal(SIGINT, request_stop);
     std::signal(SIGTERM, request_stop);
-    const pid_t child = start(options.command);
+    std::string marker = quiet_host_marker();
+    const pid_t child = start(options.command, marker);
     if (child < 0) {
         std::fprintf(stderr, "cy_quiet_host: cannot fork: %s\n", std::strerror(errno));
         return 1;

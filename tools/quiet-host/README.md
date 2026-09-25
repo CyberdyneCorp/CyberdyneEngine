@@ -40,6 +40,8 @@ premise and run through this wrapper instead.
 2. **Runs the command in a session of its own** (`setsid`), so that everything it starts — a
    build, ctest, the test binaries and their children — is told from the rest of the machine by
    its session id, and its CPU time (with the children each process has reaped) is subtracted.
+   The command's environment carries **`CY_QUIET_HOST=<the wrapper's pid>:<its start time>`**,
+   set only here, after step 1 passed (below).
 3. **Across the run.** Judges the host a second at a time and requires the **busiest** second to
    be quiet: one busy second is enough to make the one case that trips a ceiling. A run shorter
    than a second is held open to a full second, because a tick's resolution decides nothing
@@ -55,6 +57,35 @@ against the outer run's host (they did, once: `m0:test`'s first proof failed on 
 It errs one way. An orphan that also calls `setsid` (a daemon) or a member reaped by init is no
 longer counted as ours, so the host looks busier, never quieter. Where `/proc` cannot be read the
 verdict is "cannot tell", and that fails too.
+
+## The marker the harness verifies (M11.c's ninth close, option B)
+
+The test harness enforces its wall-clock stall ceiling **only inside this wrapper**; anywhere else
+it prints the same `stalled:` diagnosis marked `not enforced: not on a quiet host` and passes the
+case unless its CPU budget failed (`tests/harness/README.md`). It learns where it is from
+`CY_QUIET_HOST`, and it does not take the variable's word for it. The value is the wrapper's pid
+and its start time — field 22 of `/proc/<pid>/stat`, in clock ticks since boot, the kernel's own
+nonce for one process instance — and the harness trusts it only when, read from `/proc`, that pid
+is a live **ancestor** of the test process, started at that tick, whose executable is
+`cy_quiet_host`. So:
+
+- the marker exists only in the command's environment, and only once the pre-run check passed:
+  a wrapper that refuses the host never runs the command, so nothing ever sees a marker for a
+  host that was not quiet;
+- a marker **exported by hand** in a shell, left over from an earlier run or copied from another
+  terminal's wrapper names a process that is not an ancestor (or is dead) and is refused;
+- a marker naming a **reused pid** has the wrong start time and is refused;
+- a marker naming the shell, ctest or any other real ancestor names something that is not
+  `cy_quiet_host` and is refused;
+- a nested wrapper overwrites the marker with its own, and a descendant that daemonises out of the
+  tree loses its ancestry — both err towards reporting, never towards failing a case on a host
+  nobody checked.
+
+The host check across the run (step 3) is unchanged and still fails the whole run when it is
+busy: the marker says the host was quiet before the command started, and the wrapper's exit
+status says whether it stayed so. `smoke.quiet_host_marker` is the regression: the stall probe
+fails as `stalled:` inside the wrapper, passes with the "not enforced" line outside it and under
+five forged markers, and fails its CPU budget in both.
 
 ## I/O pressure, and why it is judged before the run only
 
@@ -103,22 +134,22 @@ ledger's own load and pass every time alone — and, since M11.c's eighth close,
 nothing beside it, and says in its own text that a busy host is a failure with a reason, never a
 pass and never a skip.
 
-**The WHOLE suite runs inside the wrapper, and that is checked, not read.** `m6:culling` was
+**What the ledger rule still checks, and what it no longer claims.** `m6:culling` was
 `just test-quiet-host -- just test-unit ... && just test-integration ...` until the eighth close:
 the ledger runs a body with `bash -c`, so the `&&` was that shell's and the teardown suite ran
 bare after the wrapper exited. Several suites under one premise are ONE command,
-`just test-quiet-host -- just test-suites <kind>:<regex>...`. `tools/roadmap/quiet_host.py` is
-the rule and `just roadmap-test` (`test_quiet_host_bodies`) runs it over every ledger: nothing may
-follow the wrapped command on its line but `|| exit <n>`, no command may run `unit.determinism`,
-`unit.render_gpu_culling`, `unit.harness`, `integration.render_gpu_culling_teardown`,
-`integration.harness` or `smoke.editor_window` (or `just test-all`, which runs them all) outside
-the wrapper, and a wrapped criterion declares `exclusive`. `where = "ci"` criteria are not
-judged: `three-platforms` runs on Windows and macOS too, where the wrapper does not exist.
-`m2:asan-world` is NOT wrapped and the rule does not see it: it runs `unit.determinism` among
-five suites under AddressSanitizer through `just test-sanitize --tests "$t"`, a loop variable,
-where every budget and so every stall ceiling is scaled twentyfold. Whether the premise extends
-to sanitized runs is a decision the owner has not taken, and it is recorded here rather than
-taken silently.
+`just test-quiet-host -- just test-suites <kind>:<regex>...`. `tools/roadmap/quiet_host.py`, run
+by `just roadmap-test` (`test_quiet_host_bodies`) over every ledger, checks the two things that
+are still true: nothing follows the wrapped command on its line but `|| exit <n>`, and a wrapped
+criterion declares `exclusive`. It USED to also name six suites and fail any body that ran one
+outside the wrapper; the ninth close's gate found `m3:sanitizers-render` and `m2:asan-world`
+running two of them through a `for t in ...; do just test-sanitize --tests "$t"` loop it could not
+see, and no reading of a body's text sees every route. Since option B that clause is gone rather
+than taught another route: a suite run outside the wrapper — a sanitizer loop, a developer's
+`just test-unit` — is a run whose stalls the harness **reports and does not enforce**, honestly,
+so it is no longer a hole in the premise. `where = "ci"` criteria are not judged:
+`three-platforms` runs on Windows and macOS too, where the wrapper does not exist and the stall
+ceiling is therefore reported only.
 
 `just test-quiet-host` builds the tree **before** the pre-run check, so that the build's own load is over
 before the host is judged and the wrapped `just test-*` finds nothing to rebuild.

@@ -113,10 +113,12 @@ inline constexpr unsigned long long kStallMultiplier = 100;
 /// subtracted (`contended_ns`, M9 task 7.5b) because the kernel counts it exactly. Nothing else
 /// is: M11.c's fifth, sixth and seventh closes each refuted an allowance that tried to excuse an
 /// uninterruptible wait as the host's I/O, every time with a case that made the wait itself, and
-/// the owner's decision was that the premise be stated and checked from outside instead. The
-/// ledger criteria that run timing-sensitive suites run them through `just test-quiet-host -- ...`
-/// (tools/quiet-host/), which fails with "host too busy:" rather than letting a loaded machine's
-/// figure stand for the case's.
+/// the owner's decision was that the premise be stated and checked from outside instead:
+/// `just test-quiet-host -- ...` (tools/quiet-host/) fails with "host too busy:" rather than
+/// letting a loaded machine's figure stand for the case's. And since M11.c's ninth close (option
+/// B) the ceiling FAILS a case only when the run is inside that wrapper, verified through /proc;
+/// anywhere else the stall is reported, "not enforced: not on a quiet host", and the case passes
+/// unless its CPU budget failed. See cy/test/quiet_host.h.
 ///
 /// The budget is scaled by the CY_TEST_BUDGET_SCALE environment variable, and defaults to a relaxed
 /// scale under a sanitizer, where a five- to twenty-fold slowdown is the tool working correctly

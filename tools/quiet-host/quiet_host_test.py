@@ -38,14 +38,32 @@ passes nor skips. This test is what goes red if that check is removed or stops l
     once its fsyncs are over: a limit the idle host trips would fail every wrapped criterion. That
     half needs a quiet host to begin with; a host still busy for any reason but I/O exits 3.
 
+  * LEG 6, THE MARKER THE HARNESS TRUSTS (`--leg marker`, with `--probe`, the stall probe binary
+    of tests/integration/). Since M11.c's ninth close the harness enforces its wall-clock stall
+    ceiling only inside this wrapper, which it learns from `CY_QUIET_HOST=<pid>:<start time>`, set
+    by the wrapper for its command after the pre-run check passed and verified by the harness
+    through /proc (the pid is a live ANCESTOR, started at that tick, whose executable is
+    `cy_quiet_host`). Against the probe's real `CY_TEST_CASE`s:
+      (b) outside the wrapper, the case held 300 ms by its own `vfork` child PASSES, and prints its
+          `stalled:` diagnosis marked "not enforced: not on a quiet host";
+      (c) the same with a FORGED marker — malformed, naming a dead pid, naming this test's own
+          process (a live ancestor that is not the wrapper), naming a live `cy_quiet_host` that is
+          not an ancestor, and naming the right ancestor with the wrong start time — is refused:
+          it passes with the same "not enforced" line;
+      (d) the case that spins past its CPU budget FAILS outside the wrapper, and inside it;
+      (a) inside the wrapper, the vfork case FAILS as `stalled:` and says the ceiling was
+          "enforced: inside cy_quiet_host".
+    The inside half needs a quiet host; on a busy one the wrapper refuses and the leg exits 3,
+    after the outside half has been judged — a forged marker must never be trusted on any host.
+
 THE SPINNERS ARE NICED TO 19 AND THERE ARE FOUR OF THEM: two more than the two cores' worth the
 check allows everyone else, so the verdict is not borderline, and niced so that they yield to any
 real work on the machine rather than disturbing it. They are killed by their own PIDs.
 
-EACH LEG IS ITS OWN CTest ENTRY (`--leg before|across|own|nested|io`), so that a leg being
+EACH LEG IS ITS OWN CTest ENTRY (`--leg before|across|own|nested|io|marker`), so that a leg being
 unjudgeable on a busy host never hides another leg's verdict inside one skipped test.
 
-Exit codes: 0 the leg held; 1 it failed; 3 (legs 2 to 5) it could not be evaluated.
+Exit codes: 0 the leg held; 1 it failed; 3 (legs 2 to 6) it could not be evaluated.
 """
 
 from __future__ import annotations
@@ -267,11 +285,134 @@ def leg_io_pressure(wrapper: str) -> tuple[list[str], str]:
                 f"run"], ""
 
 
+#: What the harness prints beside a stall it did not fail, and beside one it did.
+NOT_ENFORCED = "not enforced: not on a quiet host"
+ENFORCED = "enforced: inside cy_quiet_host"
+#: The environment variable the wrapper sets and the harness verifies.
+MARKER = "CY_QUIET_HOST"
+#: The stall probe's cases (tests/integration/stall_probe.cpp): held 300 ms by its own vfork child,
+#: and spinning 300 ms against a CPU budget of 0.25 ms.
+VFORK_CASE = "probe: a case whose own vfork child holds it"
+SPIN_CASE = "probe: a case that spins"
+
+
+def start_ticks(pid: int) -> int:
+    """Field 22 of /proc/<pid>/stat, counted after the LAST `)`."""
+    text = Path(f"/proc/{pid}/stat").read_text()
+    return int(text[text.rindex(")") + 2:].split()[19])
+
+
+def probe_environment(marker: str | None) -> dict[str, str]:
+    """This process's environment, with the scale pinned and the marker exactly as given.
+
+    The inherited marker is always dropped first: under `m0:test` this test itself runs inside a
+    wrapper, and an inherited, genuine marker would make every "outside" run an inside one.
+    """
+    environment = {key: value for key, value in os.environ.items() if key != MARKER}
+    environment["CY_TEST_BUDGET_SCALE"] = "0.25"
+    if marker is not None:
+        environment[MARKER] = marker
+    return environment
+
+
+def run_probe(probe: str, case: str, marker: str | None) -> subprocess.CompletedProcess:
+    return subprocess.run([probe, f"--test-case={case}"], env=probe_environment(marker),
+                          capture_output=True, text=True, timeout=120, check=False)
+
+
+def judge_outside(label: str, run: subprocess.CompletedProcess, spin: bool) -> list[str]:
+    """(b), (c) and the outside half of (d): what a run with no trusted marker must show."""
+    output = run.stdout + run.stderr
+    problems = []
+    if NOT_ENFORCED not in output:
+        problems.append(f"{label}: no '{NOT_ENFORCED}' line")
+    if ENFORCED in output:
+        problems.append(f"{label}: the harness trusted the marker")
+    if spin:
+        if run.returncode == 0 or "over budget:" not in output:
+            problems.append(f"{label}: the spin over its CPU budget did not fail "
+                            f"(exit {run.returncode})")
+    elif run.returncode != 0 or "stalled:" not in output:
+        problems.append(f"{label}: expected the vfork case to pass with its stall reported, got "
+                        f"exit {run.returncode}")
+    if problems:
+        sys.stdout.write(output[-3000:])
+    return problems
+
+
+def forged_markers(wrapper: str) -> tuple[list[tuple[str, str]], subprocess.Popen]:
+    """Every forgery the harness must refuse, and the live unrelated wrapper one of them names."""
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    # A wrapper that is alive for the whole leg — waiting for the host or running its sleep, either
+    # way a live `cy_quiet_host` — and that is NOT an ancestor of the probe.
+    unrelated = subprocess.Popen([wrapper, "--wait-s", "60", "--", "sleep", "60"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.2)
+    me = os.getpid()
+    return [
+        ("a malformed marker", "yes"),
+        ("a marker naming a dead pid", f"{dead.pid}:1"),
+        ("a marker naming this test's own process, a live ancestor that is not the wrapper",
+         f"{me}:{start_ticks(me)}"),
+        ("a marker naming a live cy_quiet_host that is not an ancestor",
+         f"{unrelated.pid}:{start_ticks(unrelated.pid)}"),
+        ("a marker naming a live ancestor with the wrong start time",
+         f"{me}:{start_ticks(me) + 1}"),
+    ], unrelated
+
+
+def leg_marker(wrapper: str, probe: str | None) -> tuple[list[str], str]:
+    """Problems found, or an empty list and a reason the inside half could not be judged."""
+    if probe is None:
+        return ["--leg marker needs --probe"], ""
+    problems: list[str] = []
+    problems += judge_outside("(b) outside the wrapper", run_probe(probe, VFORK_CASE, None), False)
+    problems += judge_outside("(d) outside the wrapper", run_probe(probe, SPIN_CASE, None), True)
+    forgeries, unrelated = forged_markers(wrapper)
+    try:
+        for label, marker in forgeries:
+            problems += judge_outside(f"(c) {label}", run_probe(probe, VFORK_CASE, marker), False)
+    finally:
+        # SIGTERM, not SIGKILL: a wrapper already running its `sleep` ends the command's whole
+        # session on SIGTERM, and a SIGKILL would leave the sleep orphaned.
+        unrelated.terminate()
+        try:
+            unrelated.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            unrelated.kill()
+            unrelated.wait()
+
+    # Every half is judged, so that one red half never hides another's verdict.
+    for label, case, verdict in (("(a) inside the wrapper", VFORK_CASE, "stalled:"),
+                                 ("(d) inside the wrapper", SPIN_CASE, "over budget:")):
+        run = subprocess.run([wrapper, "--wait-s", "60", "--", probe, f"--test-case={case}"],
+                             env=probe_environment(None), capture_output=True, text=True,
+                             timeout=180, check=False)
+        output = run.stdout + run.stderr
+        if "host too busy:" in run.stderr:
+            if problems:
+                return problems, ""
+            return [], f"{label}: the host was not quiet, so the wrapper refused or failed the run"
+        inside: list[str] = []
+        if run.returncode == 0 or verdict not in output:
+            inside.append(f"{label}: expected '{verdict}' and a failing run, got exit "
+                          f"{run.returncode}")
+        if ENFORCED not in output or NOT_ENFORCED in output:
+            inside.append(f"{label}: the harness did not say the ceiling was enforced")
+        if inside:
+            sys.stdout.write(output[-3000:])
+        problems += inside
+    return problems, ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--wrapper", required=True, help="the cy_quiet_host binary")
-    parser.add_argument("--leg", required=True, choices=("before", "across", "own", "nested", "io"),
+    parser.add_argument("--leg", required=True,
+                        choices=("before", "across", "own", "nested", "io", "marker"),
                         help="which check to load the host against")
+    parser.add_argument("--probe", help="the stall probe binary, for --leg marker")
     arguments = parser.parse_args()
 
     if arguments.leg == "before":
@@ -283,7 +424,9 @@ def main() -> int:
             "own": ("leg 3, the command's own load", leg_own_load),
             "nested": ("leg 4, the command's own load in a nested session",
                        lambda wrapper: leg_own_load(wrapper, NESTED_LOAD)),
-            "io": ("leg 5, I/O pressure before the run", leg_io_pressure)}
+            "io": ("leg 5, I/O pressure before the run", leg_io_pressure),
+            "marker": ("leg 6, the marker the harness trusts",
+                       lambda wrapper: leg_marker(wrapper, arguments.probe))}
     label, leg = legs[arguments.leg]
     problems, unjudged = leg(arguments.wrapper)
     if unjudged:

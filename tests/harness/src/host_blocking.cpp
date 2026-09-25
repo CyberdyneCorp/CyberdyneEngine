@@ -36,7 +36,9 @@
 // the ledger criteria that run timing-sensitive suites, and checked from OUTSIDE the process:
 // `tools/quiet-host/` waits for a quiet host, runs the suite, judges the host across the run and
 // fails with "host too busy:" when it was not. A case over its ceiling on a quiet host is the
-// case's own, whatever it was waiting for.
+// case's own, whatever it was waiting for — and since the ninth close the harness fails it only
+// when it has verified that it IS inside that wrapper (quiet_host_marker.cpp), and reports it
+// otherwise.
 //
 // What is left of the fourth clock is its diagnostic value: the stall message says how long the
 // case was in an uninterruptible wait, so a stall behind a build's writeback is explained rather

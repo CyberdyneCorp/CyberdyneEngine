@@ -6,12 +6,18 @@
 // because of it. The first case below is that flake, reduced to something deterministic: it fails
 // under a wall-clock budget and passes under a CPU one, so the fix cannot be undone silently.
 
+#include <cy/test/quiet_host.h>
 #include <cy/test/test.h>
 
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <thread>
+
+#if defined(__linux__)
+#    include <unistd.h>
+#endif
 
 CY_TEST_CASE("harness: the budget is CPU time, so a descheduled case is not a failing case") {
     // Two milliseconds of sleep: twice the unit budget in wall clock, and no CPU at all. That is
@@ -245,4 +251,53 @@ CY_TEST_CASE("harness: the stall verdict reads runqueue wait and nothing else") 
     // And the three probes, at the gate's own ceilings: no input the verdict takes excuses them.
     CY_CHECK(stall_verdict(300 * kMs, 0, 25 * kMs) == StallVerdict::Stalled);
     CY_CHECK(stall_verdict(300 * kMs, 0, 100 * kMs) == StallVerdict::Stalled);
+}
+
+// --- M11.c's ninth close, option B: the stall ceiling fails a case only inside cy_quiet_host ---
+
+CY_TEST_CASE("harness: a quiet-host marker that is absent or malformed is not trusted") {
+    using cy::test::judge_quiet_host_marker;
+    using cy::test::QuietHostMarker;
+    CY_CHECK(judge_quiet_host_marker(nullptr).verdict == QuietHostMarker::Absent);
+    CY_CHECK(judge_quiet_host_marker("").verdict == QuietHostMarker::Absent);
+#if defined(__linux__)
+    for (const char* text : {"yes", "1", "12:", ":12", "0:5", "-4:5", "12:x", "12:5 ", "12:-5"}) {
+        const bool malformed = judge_quiet_host_marker(text).verdict == QuietHostMarker::Malformed;
+        if (!malformed) {
+            CY_TEST_FAIL_CHECK("a malformed marker was not refused as malformed: " << text);
+        }
+    }
+#endif
+}
+
+CY_TEST_CASE("harness: a quiet-host marker exported by hand is not trusted") {
+    using cy::test::judge_quiet_host_marker;
+    using cy::test::process_start_ticks;
+    using cy::test::QuietHostMarker;
+#if defined(__linux__)
+    // A stray export: every way a marker can name a process that is not the wrapper this run
+    // descends from. Each is refused, and the reason says which rule refused it.
+    const long self = static_cast<long>(::getpid());
+    const long parent = static_cast<long>(::getppid());
+    const std::string own = std::to_string(self) + ":" + std::to_string(process_start_ticks(self));
+    // This process is live and not its own ancestor.
+    CY_CHECK(judge_quiet_host_marker(own.c_str()).verdict == QuietHostMarker::NotAnAncestor);
+    // A pid above any kernel's pid_max (2^22) is dead: a wrapper that has exited.
+    CY_CHECK(judge_quiet_host_marker("2147483647:1").verdict == QuietHostMarker::NotAnAncestor);
+    // The parent IS an ancestor, but a start time one tick off is a reused pid.
+    const std::string reused =
+        std::to_string(parent) + ":" + std::to_string(process_start_ticks(parent) + 1);
+    CY_CHECK(judge_quiet_host_marker(reused.c_str()).verdict == QuietHostMarker::Restarted);
+    // The parent with its real start time is the right ancestor in every respect but one — ctest
+    // or a shell, not the wrapper — unless this binary was started by the wrapper directly.
+    const std::string real =
+        std::to_string(parent) + ":" + std::to_string(process_start_ticks(parent));
+    const cy::test::QuietHostJudgement judged = judge_quiet_host_marker(real.c_str());
+    CY_TEST_MESSAGE(judged.reason);
+    CY_CHECK((judged.verdict == QuietHostMarker::NotTheWrapper ||
+              judged.verdict == QuietHostMarker::Trusted));
+    CY_CHECK_NE(process_start_ticks(self), 0ULL);
+#else
+    CY_CHECK(judge_quiet_host_marker("1:1").verdict == QuietHostMarker::Unsupported);
+#endif
 }
