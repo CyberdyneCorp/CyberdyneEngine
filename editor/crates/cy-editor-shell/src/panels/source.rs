@@ -5,6 +5,8 @@ use cy_editor_commands::Arguments;
 
 use super::{Intent, Panels, nothing_here, secondary};
 
+mod swift_highlight;
+
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let metrics = panels.metrics();
     match panels.editor.source_language.state() {
@@ -115,12 +117,24 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         if ui.add_enabled(dirty, egui::Button::new("Save")).clicked() {
             panels.intents.push(Intent::SaveSource);
         }
-        if ui.button("Build").clicked() {
+        if ui
+            .add_enabled(!dirty, egui::Button::new("Build"))
+            .on_hover_text(if dirty {
+                "Save the source before building"
+            } else {
+                "Compile Swift sources and update the running Play session"
+            })
+            .clicked()
+        {
             panels
                 .intents
                 .push(Intent::Invoke("project.build".into(), Arguments::new()));
         }
-        if ui.button("Reload Module").clicked() {
+        if ui
+            .button("Reload Module")
+            .on_hover_text("Apply the latest successful build to the running Play session")
+            .clicked()
+        {
             panels
                 .intents
                 .push(Intent::Invoke("project.reload".into(), Arguments::new()));
@@ -137,9 +151,15 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let id = egui::Id::new(("swift-editor-text", &path));
             prepare_cursor(ui, id, &text, cursor_request);
+            let mut layouter = |ui: &egui::Ui, source: &dyn egui::TextBuffer, wrap_width: f32| {
+                let mut job = swift_highlight::highlight(source.as_str(), ui);
+                job.wrap.max_width = wrap_width;
+                ui.fonts_mut(|fonts| fonts.layout_job(job))
+            };
             egui::TextEdit::multiline(&mut text)
                 .id(id)
                 .code_editor()
+                .layouter(&mut layouter)
                 .desired_width(f32::INFINITY)
                 .desired_rows(24)
                 .hint_text("// Swift source")

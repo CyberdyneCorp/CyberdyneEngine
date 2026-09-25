@@ -16,3 +16,7 @@ Entering Play SHALL switch the visible scene to Game view, run the fixed-step ph
 #### Scenario: Scripted scene node
 - **WHEN** a node names a registered Swift behaviour in `ScriptBehaviour.class` and the project module is built before Play
 - **THEN** the runtime invokes its fixed update after physics while playing, suspends it during Pause, and restores the authored transform on Stop
+
+#### Scenario: Edit a running Swift behaviour
+- **WHEN** an author saves and builds a changed Swift source during Play
+- **THEN** the editor requests a reload, the hosted runtime applies the new generation while preserving compatible live behaviour state, and the Swift Workspace reports success or a specific refusal

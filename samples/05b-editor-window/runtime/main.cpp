@@ -678,6 +678,35 @@ Status tick_scripts(void* user, gameplay::PlaySession& play, f32 dt) noexcept {
     return static_cast<ScriptRuntime*>(user)->tick(play, dt);
 }
 
+void answer_reload(Host& host, const runtime::EditorRequest& request) noexcept {
+    if (request.module.empty() || request.library.empty()) {
+        (void)host.bridge->send_rejected(request.request, "missing script module or library",
+                                         "build the project script module first");
+        return;
+    }
+    const std::string module(reinterpret_cast<const char*>(request.module.data()),
+                             request.module.size());
+    const std::string library(reinterpret_cast<const char*>(request.library.data()),
+                              request.library.size());
+    if (module != "game" || library.empty()) {
+        (void)host.bridge->send_rejected(request.request, "invalid script module or library",
+                                         "build the project script module first");
+        return;
+    }
+    const Expected<abi::ReloadReport, Error> result = host.scripts->reload(library.c_str());
+    if (!result) {
+        (void)host.bridge->send_rejected(request.request, result.error().message,
+                                         "keep the previous module or restart Play");
+        return;
+    }
+    if (result->failure != abi::ReloadFailure::None) {
+        (void)host.bridge->send_rejected(request.request, abi::reload_failure_name(result->failure),
+                                         result->detail);
+        return;
+    }
+    (void)host.bridge->send_reloaded(request.request, module.c_str(), request.generation);
+}
+
 void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
     const std::string_view asked(reinterpret_cast<const char*>(request.payload.data()),
                                  request.payload.size());
@@ -888,6 +917,9 @@ void serve_editor(Host& host) noexcept {
                 break;
             case runtime::EditorMessage::Play:
                 answer_play(host, request);
+                break;
+            case runtime::EditorMessage::Reload:
+                answer_reload(host, request);
                 break;
             case runtime::EditorMessage::ServiceRequest:
             case runtime::EditorMessage::ServiceCancel:

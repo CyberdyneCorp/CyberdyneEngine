@@ -76,6 +76,11 @@ module build to finish, then press Play. The behaviour rotates the cube 45 degre
 around local Z on fixed ticks. Pause holds its angle; Stop restores the saved identity rotation.
 Select the cube and click the arrow beside `ScriptBehaviour.class` in the Inspector to open
 `SpinCube.swift` in the editor's Swift Workspace.
+The workspace colors Swift syntax and the sample's `Package.swift` gives SourceKit-LSP the
+`CyberdyneKit` dependency for diagnostics. Save edited source, then choose **Build**. A successful
+build automatically reloads the running Play session. **Reload Module** can also reapply the latest
+successful build explicitly. The reload status reports success or a reason for refusal. Stop and
+Play again also loads the newest successful build.
 The runtime refuses Play with a specific message if the scene names a script but no built module
 exists. Audio remains unavailable in this sample host.
 Stop older sample runtimes when switching projects: each active host continues rendering even

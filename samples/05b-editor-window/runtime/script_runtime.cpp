@@ -120,12 +120,13 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
     manifest_.entry_symbol = "cy_module_entry";
     manifest_.min_abi_major = CY_ABI_MAJOR;
     manifest_.min_abi_minor = 0;
-    manifest_.hot_reload = false;
+    manifest_.hot_reload = true;
     if (Expected<abi::ReloadReport, Error> loaded = runtime_->load(manifest_, library.c_str());
         !loaded) {
         stop();
         return make_unexpected(loaded.error());
     }
+    active_library_ = library;
     for (const ScriptedNode& node : nodes) {
         const ecs::Entity entity = play.entity_for(node.identity);
         if (!entity.valid()) {
@@ -144,9 +145,24 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
 
 void ScriptRuntime::stop() noexcept {
     identities_.clear();
+    active_library_.clear();
     runtime_.reset();
     host_.bind_world(nullptr);
     binding_.reset();
+}
+
+Expected<abi::ReloadReport, Error> ScriptRuntime::reload(const char* library) noexcept {
+    if (!runtime_) {
+        return fail(ErrorCode::Unavailable, "start Play before reloading a Swift module");
+    }
+    if (active_library_ == library) {
+        return fail(ErrorCode::InvalidArgument, "this Swift module generation is already active");
+    }
+    Expected<abi::ReloadReport, Error> report = runtime_->reload(library);
+    if (report && report->failure == abi::ReloadFailure::None) {
+        active_library_ = library;
+    }
+    return report;
 }
 
 Status ScriptRuntime::tick(gameplay::PlaySession& play, f32 dt) noexcept {

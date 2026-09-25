@@ -95,6 +95,7 @@ pub struct EditorWindow {
     source_control: SourceControlViewModel,
     asset_browser: AssetBrowserViewModel,
     source_workspace: SourceWorkspaceViewModel,
+    last_auto_reload_generation: u32,
     agent: Option<cy_editor_agent::DesktopAgentHost>,
     diff: DiffViewModel,
     merge_view: MergeViewModel,
@@ -182,6 +183,7 @@ impl EditorWindow {
             source_control: SourceControlViewModel::new(),
             asset_browser: AssetBrowserViewModel::new(),
             source_workspace: SourceWorkspaceViewModel::new(),
+            last_auto_reload_generation: 0,
             agent: None,
             diff: DiffViewModel::new(),
             merge_view: MergeViewModel::new(),
@@ -906,6 +908,14 @@ impl eframe::App for EditorWindow {
         self.source_workspace.refresh(&self.editor.sources);
         self.source_workspace
             .refresh_build(&self.editor.project, &self.editor.operations);
+        let build = self.source_workspace.build();
+        if build.state == "succeeded" && build.generation > self.last_auto_reload_generation {
+            self.last_auto_reload_generation = build.generation;
+            if self.editor.viewports.focused().play != cy_editor_viewport::play::PlayState::Editing
+            {
+                self.invoke("project.reload", &Arguments::new());
+            }
+        }
         self.source_workspace.refresh_reload(
             self.editor.reload_revision(),
             self.editor.reload_report.as_ref(),

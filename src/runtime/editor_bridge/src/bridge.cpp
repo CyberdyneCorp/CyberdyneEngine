@@ -212,6 +212,10 @@ private:
                 out.mode = {};
             }
             return true;
+        case static_cast<u8>(EditorMessage::Reload):
+            out.kind = EditorMessage::Reload;
+            return reader.u64_value(out.request) && reader.byte_span(out.module) &&
+                   reader.byte_span(out.library) && reader.u32_value(out.generation);
         case static_cast<u8>(EditorMessage::ServiceRequest):
             out.kind = EditorMessage::ServiceRequest;
             return reader.u64_value(out.request) && reader.u32_value(out.schema_version) &&
@@ -573,6 +577,23 @@ Status EditorBridge::send_rejected(u64 request, const char* reason, const char* 
         return written;
     }
     if (Status written = writer.text(remedy); !written) {
+        return written;
+    }
+    return send(outgoing_.span());
+}
+
+Status EditorBridge::send_reloaded(u64 request, const char* module, u32 generation) noexcept {
+    Writer writer(outgoing_);
+    if (Status written = writer.u8_value(static_cast<u8>(EditorMessage::Reloaded)); !written) {
+        return written;
+    }
+    if (Status written = writer.u64_value(request); !written) {
+        return written;
+    }
+    if (Status written = writer.text(module); !written) {
+        return written;
+    }
+    if (Status written = writer.u32_value(generation); !written) {
         return written;
     }
     return send(outgoing_.span());

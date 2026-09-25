@@ -146,6 +146,10 @@ struct EditorRequest {
     /// older than this field; a host reading it should treat empty as `in-editor`, which is what
     /// the editor has always meant when it did not say.
     Span<const u8> mode;
+    /// Reload only: module name, unique library path, and requested build generation.
+    Span<const u8> module;
+    Span<const u8> library;
+    u32 generation = 0;
 };
 
 /// The runtime's end of the editor's control socket.
@@ -193,6 +197,7 @@ public:
     [[nodiscard]] Status send_applied(u64 request, u64 frame, Span<const u8> observed) noexcept;
     [[nodiscard]] Status send_rejected(u64 request, const char* reason,
                                        const char* remedy) noexcept;
+    [[nodiscard]] Status send_reloaded(u64 request, const char* module, u32 generation) noexcept;
     [[nodiscard]] Status send_picked(u64 request, Span<const u8> candidates) noexcept;
     [[nodiscard]] Status send_gizmo_geometry(u64 request, Span<const u8> layout) noexcept;
 
