@@ -76,6 +76,8 @@ module build to finish, then press Play. The behaviour rotates the cube 45 degre
 around local Z on fixed ticks. Pause holds its angle; Stop restores the saved identity rotation.
 The runtime refuses Play with a specific message if the scene names a script but no built module
 exists. Audio remains unavailable in this sample host.
+Stop older sample runtimes when switching projects: each active host continues rendering even
+without an attached editor and can delay the visible viewport on the same GPU.
 
 The same cube sits beside the imported tree in the live issue #13 demo at
 `/tmp/cy-editor-scene-view-demo/worlds/main.cyworld`. The source FBX and cooked assets remain in

@@ -327,6 +327,9 @@ What it draws and what it refuses to draw:
 * **The viewport shows the engine's own frame, or a sentence saying why it cannot.** There is no
   toolkit-drawn approximation, no grid and no placeholder cube. `editor-viewport-and-gizmos` forbids
   a second renderer, and an approximation is one arriving a frame at a time.
+  Short frame hitches remain in the pacing counters; the stale-image warning starts after 250 ms
+  without a fresh focused frame (500 ms when unfocused). Its age refers to the displayed frame,
+  so it does not claim the runtime stopped when delivery or the UI was delayed.
 * **The inspector is generated from reflection**, from the open world's schema or from the engine's
   registered component types. There is no type name anywhere in `panels/inspector.rs`; when nothing
   has been described it says so rather than showing a hand-written form.

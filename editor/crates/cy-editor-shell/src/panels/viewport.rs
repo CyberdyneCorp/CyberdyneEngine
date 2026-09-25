@@ -927,7 +927,7 @@ mod tests {
     ///
     /// The check is that the two clocks are the SAME clock, which is the whole of the defect. It is
     /// written as a bound rather than an equality because the two readings are taken a few hundred
-    /// nanoseconds apart, and as a bound far below the stale budget (50 ms) so that a failure means
+    /// nanoseconds apart, and as a bound far below the stale budget (250 ms) so that a failure means
     /// the epochs differ rather than that the machine hiccuped.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
