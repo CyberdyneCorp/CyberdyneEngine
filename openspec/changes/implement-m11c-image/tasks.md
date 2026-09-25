@@ -3640,3 +3640,50 @@ only)**, not committed:
 mutation changed, so nothing needs `just roadmap-falsify --record`. `m3:sanitizers-render` and
 `m2:asan-world` keep their bare bodies on purpose: under option B that is honest, and the rule
 no longer calls it a finding.
+
+### THE TENTH CLOSE — NOT RUN, BECAUSE THE GATE REFUTED OPTION B'S MARKER CHECK
+
+Option B landed as `d8c0e6c`, `b129445`, `9cbe99c`, `f032866` and `6b56f79` (origin/main at
+`6b56f79`). The gate refuted the claim that a forged `CY_QUIET_HOST` marker is not trusted.
+`quiet_host_marker.cpp` checks three things: the named pid is a live ancestor, its start tick
+matches field 22 of `/proc/<pid>/stat`, and the BASENAME of `/proc/<pid>/exe` is
+`cy_quiet_host`. The last check is the only thing tying the marker to the wrapper, and it looks
+only at the file name. Nothing ties the marker to the real binary or to its pre-run quiet check
+having passed. The gate's reproduction on `build/m11c-qh3`:
+
+- `cp /bin/bash <scratch>/forge/cy_quiet_host`;
+- run that copy with `-c`, export `CY_QUIET_HOST=$$:<its own start tick>`, and run
+  `cy_test_stall_probe "--test-case=probe: a case whose own vfork child holds it"`.
+
+The probe printed `enforced: inside cy_quiet_host: cy_quiet_host is pid N, its ancestry, start
+time and executable verified through /proc`, then failed `stalled:` with rc=1. No quiet check
+ran. The same probe run bare printed `not enforced ... no CY_QUIET_HOST marker` and exited 0.
+The closer confirmed by reading the code that `executable_name()` reduces `/proc/<pid>/exe` to
+its basename.
+
+How serious is it? The forgery goes in the STRICT direction: a forged marker makes the harness
+ENFORCE a stall on a host nobody checked. It cannot make a real stall pass. So no false green
+comes from it, only a possible false red. It still falsifies the fix phase's stated contract
+("enforced exactly when inside a wrapper whose pre-run check passed"; "a forged marker is not
+trusted"), and the closing condition requires the claims a criterion stands on to be true.
+
+No ledger was run, because no ledger verdict at `6b56f79` could certify a refuted contract, and
+the fix changes the harness that every suite links, so any ledger run now would be superseded.
+`gates.toml`, `ci.yml`, `status.yaml`, `capability-matrix.md` and `ROADMAP.md` are unchanged.
+`milestone-m11c` stays `joins-on-close`, and gate items 9.1 and 9.2 stay unticked.
+
+**Reds, by id** (refuted, not measured): the option-B contract behind `m0:test`'s and
+`four-profiles`'s wrapped runs (`smoke.quiet_host_marker`'s forgery half does not cover a renamed
+binary), and `m11c:roadmap-tiers` (the closing change's own forcing function, as at every close).
+
+**What would close M11.c:** one of the following.
+
+- Bind the marker to the real wrapper. For example, the harness could compare the ancestor's
+  `/proc/<pid>/exe` against the `cy_quiet_host` the build produced (the same dev/inode, or the
+  same resolved path, passed at configure time). Or the wrapper could hand its child a secret
+  over an inherited file descriptor, which a shell export cannot copy. A forgery case should be
+  added to `smoke.quiet_host_marker` for a copied or renamed binary, proven red on `6b56f79`.
+- Or the owner rules that a strict-direction forgery is acceptable, and the contract is reworded
+  to say so ("the marker is trusted by name; forging it can only make a run stricter").
+
+Then one ledger run at a pinned commit.
