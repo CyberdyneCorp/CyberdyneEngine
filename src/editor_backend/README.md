@@ -15,11 +15,16 @@ The first vertical slice supports:
   compiler's registered node types, typed pins, property descriptors, and registered data-interface
   names for sample controls. The editor requests it after the material
   catalogue and opens the VFX shared canvas only when a compatible nonempty catalogue arrives.
-  Emitter compilation and preview are subsequent issue #15 work tracked in
+  Runtime preview is subsequent issue #15 work tracked in
   `openspec/changes/implement-issue-15-graph-authoring/`;
 - `vfx.authoring-capabilities.get` (when `CY_VFX` is enabled) — renderer kinds and named
   compositing refusals from the VFX renderer, plus CPU/GPU target compile and runtime availability
   from the VFX runtime. Its schema-1 payload reports no GPU preview device until one is attached;
+- `vfx.compile` (when `CY_VFX` is enabled) — reads an editable `.cyvfxdoc` through the engine,
+  resolves the compiler node registry, and compiles the system. Schema 1 returns the cook key,
+  kernel counts, per-emitter memory and cost reports, derived attribute layouts, and generated
+  Slang. Failed requests return engine node and pin diagnostics. Module asset resolution and
+  runtime preview are still pending;
 - `material.validate` — parses and lowers canonical CyberGraph input;
 - `material.author` — validates a canvas and returns engine-canonical `.cygraph` text;
 - `material.preview.set` — validates an unsaved canvas and applies its canonical graph to a

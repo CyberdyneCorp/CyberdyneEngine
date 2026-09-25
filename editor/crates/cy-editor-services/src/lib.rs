@@ -56,6 +56,7 @@ pub mod source_workspace;
 pub mod terrain;
 pub mod vfx_capabilities;
 pub mod vfx_commands;
+pub mod vfx_compile;
 pub mod vfx_document;
 pub mod viewports;
 pub mod workspace;

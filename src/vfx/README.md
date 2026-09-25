@@ -391,6 +391,15 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
 * **A curve is the identity over [0, 1]** on both paths until a cooked curve resource is bound. Both
   spellings — the CPU executor's and the generated Slang's — say so at the same place, because two
   spellings of one function is how a fallback and a GPU path come to disagree.
+## Editor authoring bridge
+
+`read_authoring_document` is compiled into `cy::vfx-compiler`. It decodes editor `.cyvfxdoc`
+payload versions 1 and 2 into `VfxSystemAsset` and reads each `cyvfxcanvas` stage into CyberGraph.
+The compiler then resolves the registered node types and runs `compile_system`. The runtime target
+does not parse graphs. The editor service's `vfx.compile` operation publishes the resulting cook
+identity, memory layout, generated Slang, and graph diagnostics. Module asset references are
+refused until a module resolver is available; compilation currently does not start a preview.
+
 ## Editor catalogue
 
 `register_vfx_nodes` is the source of the VFX graph palette. Each built-in node has an explicit

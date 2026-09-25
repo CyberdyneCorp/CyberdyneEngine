@@ -282,6 +282,11 @@ impl Editor {
             .request_material(&self.runtime, operation, canvas)
     }
 
+    /// Ask the engine to compile an editable VFX document.
+    pub fn request_vfx_compile(&mut self, source: String) -> Result<cy_editor_protocol::RequestId> {
+        self.backend.request_vfx_compile(&self.runtime, source)
+    }
+
     /// Apply an unsaved canvas to the hosted authored scene without writing the graph asset.
     pub fn preview_material_graph(
         &mut self,

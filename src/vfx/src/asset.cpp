@@ -61,6 +61,12 @@ const char* path_name(SimulationPath path) noexcept {
     return path == SimulationPath::CpuRequired ? "CpuRequired" : "GpuPreferred";
 }
 
+const char* asset_renderer_name(u8 kind) noexcept {
+    constexpr const char* names[kAssetRendererCount] = {"Sprite", "Mesh", "Ribbon", "Beam",
+                                                        "Trail", "Decal", "Light", "Volume"};
+    return kind < kAssetRendererCount ? names[kind] : "unknown";
+}
+
 const char* precision_name(Precision precision) noexcept {
     switch (precision) {
         case Precision::Auto:

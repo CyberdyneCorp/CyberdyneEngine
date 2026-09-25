@@ -234,27 +234,8 @@ u32 publication_slots(const SimulationWorld& world) noexcept {
 }
 
 const char* renderer_kind_name(RendererKind kind) noexcept {
-    switch (kind) {
-        case RendererKind::Sprite:
-            return "Sprite";
-        case RendererKind::Mesh:
-            return "Mesh";
-        case RendererKind::Ribbon:
-            return "Ribbon";
-        case RendererKind::Beam:
-            return "Beam";
-        case RendererKind::Trail:
-            return "Trail";
-        case RendererKind::Decal:
-            return "Decal";
-        case RendererKind::Light:
-            return "Light";
-        case RendererKind::Volume:
-            return "Volume";
-        case RendererKind::Count:
-            break;
-    }
-    return "unknown";
+    static_assert(kAssetRendererCount == static_cast<u8>(RendererKind::Count));
+    return asset_renderer_name(static_cast<u8>(kind));
 }
 
 RendererAvailability renderer_availability(RendererKind kind) noexcept {

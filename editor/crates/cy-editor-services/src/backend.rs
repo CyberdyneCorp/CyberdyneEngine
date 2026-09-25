@@ -12,10 +12,12 @@ use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 
 use crate::runtime::RuntimeSession;
 use crate::vfx_capabilities::VfxAuthoringCapabilities;
+use crate::vfx_compile::{VfxCompileFailure, VfxCompileReport};
 
 const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
 const VFX_CATALOGUE_OPERATION: &str = "vfx.catalogue.get";
 const VFX_CAPABILITIES_OPERATION: &str = "vfx.authoring-capabilities.get";
+const VFX_COMPILE_OPERATION: &str = "vfx.compile";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
@@ -206,6 +208,22 @@ pub enum MaterialPreviewState {
     },
 }
 
+/// Request-correlated result of compiling a VFX system in the engine.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum VfxCompileState {
+    /// No draft has been compiled.
+    #[default]
+    Idle,
+    /// The engine is compiling the submitted draft.
+    Pending(RequestId),
+    /// The engine produced a cooked system and report.
+    Compiled(RequestId, VfxCompileReport),
+    /// The engine refused the draft with structured diagnostics.
+    Failed(Option<RequestId>, VfxCompileFailure),
+    /// The engine acknowledged cancellation.
+    Cancelled(RequestId),
+}
+
 #[derive(Clone, Copy)]
 enum PreviewOperation {
     Create,
@@ -226,6 +244,8 @@ pub struct BackendServices {
     vfx_capabilities_state: MaterialCatalogueState,
     vfx_capabilities_request: Option<RequestId>,
     vfx_capabilities_requested: bool,
+    vfx_compile_request: Option<RequestId>,
+    vfx_compile_state: VfxCompileState,
     material_request: Option<(RequestId, MaterialOperation)>,
     material_state: MaterialRequestState,
     preview_handle: Option<u64>,
@@ -251,6 +271,8 @@ impl Default for BackendServices {
             vfx_capabilities_state: MaterialCatalogueState::Unavailable,
             vfx_capabilities_request: None,
             vfx_capabilities_requested: false,
+            vfx_compile_request: None,
+            vfx_compile_state: VfxCompileState::Idle,
             material_request: None,
             material_state: MaterialRequestState::Idle,
             preview_handle: None,
@@ -297,6 +319,16 @@ impl BackendServices {
                         "the runtime disconnected before publishing a terminal event",
                     )],
                 };
+            }
+            if let Some(request) = self.vfx_compile_request.take() {
+                self.vfx_compile_state = VfxCompileState::Failed(
+                    Some(request),
+                    VfxCompileFailure {
+                        code: "service-disconnected".into(),
+                        message: "the runtime disconnected before compilation completed".into(),
+                        diagnostics: Vec::new(),
+                    },
+                );
             }
             self.preview_handle = None;
             self.preview_request = None;
@@ -384,6 +416,9 @@ impl BackendServices {
         }
         if self.material_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_material(*request, *kind, *schema_version, payload);
+        }
+        if self.vfx_compile_request == Some(*request) {
+            return self.accept_vfx_compile(*request, *kind, *schema_version, payload);
         }
         if self.preview_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_preview(*request, *kind, *schema_version, payload);
@@ -504,6 +539,100 @@ impl BackendServices {
                 ))
             }
         }
+    }
+
+    /// Submit a complete authoring document to the engine VFX compiler.
+    pub fn request_vfx_compile(
+        &mut self,
+        runtime: &RuntimeSession,
+        source: String,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if self.vfx_compile_request.is_some() {
+            return Err(Problem::new(
+                "compile a VFX system",
+                "a VFX compile is already pending",
+            ));
+        }
+        let request = runtime.service_request(
+            SERVICE_SCHEMA_VERSION,
+            VFX_COMPILE_OPERATION,
+            source.into_bytes(),
+        )?;
+        self.vfx_compile_request = Some(request);
+        self.vfx_compile_state = VfxCompileState::Pending(request);
+        Ok(request)
+    }
+
+    /// Latest engine VFX compiler result.
+    #[must_use]
+    pub const fn vfx_compile_state(&self) -> &VfxCompileState {
+        &self.vfx_compile_state
+    }
+
+    fn accept_vfx_compile(
+        &mut self,
+        request: RequestId,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
+            return None;
+        }
+        self.vfx_compile_request = None;
+        if schema_version != SERVICE_SCHEMA_VERSION {
+            return Some(self.fail_vfx_compile(
+                request,
+                "schema-unsupported",
+                "incompatible VFX service schema",
+            ));
+        }
+        match kind {
+            ServiceEventKind::Completed => match VfxCompileReport::decode(payload) {
+                Ok(report) => self.vfx_compile_state = VfxCompileState::Compiled(request, report),
+                Err(problem) => {
+                    return Some(self.fail_vfx_compile(
+                        request,
+                        "result-unreadable",
+                        &problem.because,
+                    ));
+                }
+            },
+            ServiceEventKind::Failed => match VfxCompileFailure::decode(payload) {
+                Ok(failure) => {
+                    let summary = format!("{}: {}", failure.code, failure.message);
+                    self.vfx_compile_state = VfxCompileState::Failed(Some(request), failure);
+                    return Some(Problem::new("compile a VFX system", summary));
+                }
+                Err(problem) => {
+                    return Some(self.fail_vfx_compile(
+                        request,
+                        "diagnostic-unreadable",
+                        &problem.because,
+                    ));
+                }
+            },
+            ServiceEventKind::Cancelled => {
+                self.vfx_compile_state = VfxCompileState::Cancelled(request);
+            }
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
+        }
+        None
+    }
+
+    fn fail_vfx_compile(&mut self, request: RequestId, code: &str, message: &str) -> Problem {
+        self.vfx_compile_state = VfxCompileState::Failed(
+            Some(request),
+            VfxCompileFailure {
+                code: code.into(),
+                message: message.into(),
+                diagnostics: Vec::new(),
+            },
+        );
+        Problem::new("compile a VFX system", message)
     }
 
     /// Submit validation or compilation for the current transient material canvas.
@@ -1435,6 +1564,79 @@ mod tests {
                 dependencies: vec!["0123456789abcdef0123456789abcdef".into()],
             }
         );
+    }
+
+    #[test]
+    fn vfx_compile_result_is_request_correlated_and_keeps_engine_diagnostics() {
+        let request = cy_editor_protocol::RequestId::from_raw(91);
+        let mut backend = BackendServices::new();
+        backend.vfx_compile_request = Some(request);
+        backend.vfx_compile_state = VfxCompileState::Pending(request);
+
+        let mut output = Writer::new();
+        output.u32(1);
+        output.u64(0xCAFE);
+        output.u32(0);
+        output.u32(0);
+        output.u32(0);
+        let output = output.finish();
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request: cy_editor_protocol::RequestId::from_raw(90),
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: output.clone(),
+                })
+                .is_none()
+        );
+        assert_eq!(
+            backend.vfx_compile_state(),
+            &VfxCompileState::Pending(request)
+        );
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request,
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: output,
+                })
+                .is_none()
+        );
+        assert!(matches!(
+            backend.vfx_compile_state(),
+            VfxCompileState::Compiled(id, report) if *id == request && report.cook_key == 0xCAFE
+        ));
+
+        backend.vfx_compile_request = Some(request);
+        let mut failure = Writer::new();
+        failure.u32(1);
+        failure.text("vfx.compile");
+        failure.text("invalid pin");
+        failure.u32(1);
+        failure.u8(2);
+        failure.text("graph.pin-type");
+        failure.text("type mismatch");
+        failure.text("float3");
+        failure.u64(7);
+        failure.text("value");
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request,
+                    kind: ServiceEventKind::Failed,
+                    schema_version: 1,
+                    payload: failure.finish(),
+                })
+                .is_some()
+        );
+        assert!(matches!(
+            backend.vfx_compile_state(),
+            VfxCompileState::Failed(Some(id), failure)
+                if *id == request && failure.diagnostics[0].node == 7
+                    && failure.diagnostics[0].pin == "value"
+        ));
     }
 
     #[test]

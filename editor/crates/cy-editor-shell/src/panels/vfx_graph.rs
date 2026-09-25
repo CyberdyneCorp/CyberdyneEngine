@@ -7,6 +7,7 @@ use cy_editor_interface::Domain;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout};
 use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
 use cy_editor_services::MaterialCatalogueState;
+use cy_editor_services::backend::VfxCompileState;
 use cy_editor_services::vfx_capabilities::VfxAuthoringCapabilities;
 
 use super::{Intent, Panels, material_graph, nothing_here, secondary};
@@ -34,6 +35,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
     ui.heading("VFX Graph");
     document_controls(panels, ui);
+    compile_report(panels, ui);
     if panels.specialised.active_vfx_stage().is_none() {
         ui.heading("Engine catalogue");
         nothing_here(
@@ -59,7 +61,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let canvas = session.graph.expect("VFX uses the shared graph canvas");
     ui.label(secondary(
         panels.shell,
-        "Editable stage draft · cooking and runtime preview are not available yet",
+        "Editable stage draft · engine compilation available · runtime preview pending",
     ));
     let available = ui.available_size();
     ui.horizontal(|ui| {
@@ -130,6 +132,34 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 Err(problem) => panels.inputs.vfx_document_problem = Some(problem.to_string()),
             }
         }
+        if panels.specialised.vfx_document().is_some()
+            && ui
+                .add_enabled(
+                    panels.editor.runtime.is_connected()
+                        && !matches!(
+                            panels.editor.backend.vfx_compile_state(),
+                            VfxCompileState::Pending(_)
+                        ),
+                    egui::Button::new("Compile VFX"),
+                )
+                .clicked()
+        {
+            let result = panels
+                .specialised
+                .vfx_document_snapshot()
+                .and_then(|document| {
+                    document
+                        .ok_or_else(|| {
+                            cy_editor_core::problem::Problem::new(
+                                "compile a VFX system",
+                                "no VFX document is open",
+                            )
+                        })?
+                        .encode_text()
+                })
+                .and_then(|source| panels.editor.request_vfx_compile(source).map(|_| ()));
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
     });
     if panels.specialised.vfx_document().is_none() {
         ui.horizontal(|ui| {
@@ -151,6 +181,76 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     current_emitter_settings(panels, ui);
     if let Some(problem) = &panels.inputs.vfx_document_problem {
         ui.colored_label(egui::Color32::RED, problem);
+    }
+}
+
+fn compile_report(panels: &Panels<'_>, ui: &mut egui::Ui) {
+    match panels.editor.backend.vfx_compile_state() {
+        VfxCompileState::Idle => {}
+        VfxCompileState::Pending(_) => {
+            ui.label(secondary(
+                panels.shell,
+                "Engine VFX compilation in progress…",
+            ));
+        }
+        VfxCompileState::Compiled(_, report) => {
+            ui.label(format!(
+                "Last engine cook {:016x} · {} kernels · {} bytes/particle",
+                report.cook_key, report.kernels, report.total_bytes_per_particle
+            ));
+            for emitter in &report.emitters {
+                ui.collapsing(&emitter.name, |ui| {
+                    ui.label(format!(
+                        "{} kernels · {} bytes/particle · max population {} · cost {} units",
+                        emitter.kernels,
+                        emitter.bytes_per_particle,
+                        emitter.max_population,
+                        emitter.estimated_cost_units
+                    ));
+                    for slot in &emitter.layout {
+                        ui.label(format!(
+                            "{}: {} · precision {} · offset {} · stride {}{}",
+                            slot.name,
+                            slot.kind,
+                            slot.precision,
+                            slot.offset,
+                            slot.stride,
+                            if slot.elided { " · elided" } else { "" }
+                        ));
+                    }
+                    for (index, source) in emitter.sources.iter().enumerate() {
+                        ui.collapsing(format!("Generated Slang {}", index + 1), |ui| {
+                            ui.code(source);
+                        });
+                    }
+                });
+            }
+        }
+        VfxCompileState::Failed(_, failure) => {
+            ui.colored_label(
+                egui::Color32::RED,
+                format!("{}: {}", failure.code, failure.message),
+            );
+            for diagnostic in &failure.diagnostics {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    format!(
+                        "{} · node {}{}: {}",
+                        diagnostic.code,
+                        diagnostic.node,
+                        if diagnostic.pin.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" · {}", diagnostic.pin)
+                        },
+                        diagnostic.message
+                    ),
+                );
+            }
+        }
+        VfxCompileState::Cancelled(_) => {
+            ui.label(secondary(panels.shell, "Engine VFX compilation cancelled."));
+        }
     }
 }
 

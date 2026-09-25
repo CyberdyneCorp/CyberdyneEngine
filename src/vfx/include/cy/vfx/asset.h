@@ -49,6 +49,10 @@ using graph::Graph;
 using graph::NodeRegistry;
 class DataInterfaceRegistry;
 
+/// Stable renderer identity spelling shared by authored assets and runtime publications.
+inline constexpr u8 kAssetRendererCount = 8;
+[[nodiscard]] const char* asset_renderer_name(u8 kind) noexcept;
+
 /// The six stages `vfx-system`'s table declares. `Count` is the size of a per-stage array and never
 /// a stage.
 enum class Stage : u8 {

@@ -6,8 +6,11 @@
 #include <cy/graph/text.h>
 #include <cy/rendering/material/compiler.h>
 #if defined(CY_EDITOR_HAS_VFX)
+#    include <cy/vfx/authoring.h>
 #    include <cy/vfx/authoring_capabilities.h>
 #    include <cy/vfx/catalogue.h>
+#    include <cy/vfx/compile.h>
+#    include <cy/vfx/interfaces.h>
 #endif
 
 #include <cstring>
@@ -99,6 +102,96 @@ CyResult failed(CyServiceSession_T& session, const char* code, const char* detai
     }
     return CY_RESULT_OK;
 }
+
+#if defined(CY_EDITOR_HAS_VFX)
+CyResult failed_vfx(CyServiceSession_T& session, const char* code, const char* message,
+                    const cy::graph::DiagnosticSink& diagnostics) noexcept {
+    session.failed_event = true;
+    session.event_payload.clear();
+    if (!put_u32(session.event_payload, 1) || !put_text(session.event_payload, code) ||
+        !put_text(session.event_payload, message) ||
+        !put_u32(session.event_payload, static_cast<u32>(diagnostics.entries().size()))) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    for (const cy::graph::Diagnostic& diagnostic : diagnostics.entries()) {
+        if (!put_u8(session.event_payload, static_cast<u8>(diagnostic.severity)) ||
+            !put_text(session.event_payload, diagnostic.code) ||
+            !put_text(session.event_payload, diagnostic.message) ||
+            !put_text(session.event_payload, diagnostic.detail.text()) ||
+            !put_u64(session.event_payload, diagnostic.node) ||
+            !put_text(session.event_payload, diagnostic.pin.text())) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+    }
+    return CY_RESULT_OK;
+}
+
+CyResult compile_vfx(CyServiceSession_T& session, cy::Allocator& allocator) noexcept {
+    const std::string_view source(reinterpret_cast<const char*>(session.request_payload.data()),
+                                  session.request_payload.size());
+    auto asset = cy::vfx::read_authoring_document(source, allocator);
+    cy::graph::DiagnosticSink diagnostics(allocator);
+    if (!asset) {
+        return failed_vfx(session, "vfx.document.parse", asset.error().message, diagnostics);
+    }
+    cy::graph::NodeRegistry registry(allocator);
+    cy::vfx::DataInterfaceRegistry interfaces(allocator);
+    if (Status registered = cy::vfx::register_vfx_nodes(registry); !registered) {
+        return failed_vfx(session, "vfx.catalogue", registered.error().message, diagnostics);
+    }
+    if (Status registered = cy::vfx::register_builtin_interfaces(interfaces); !registered) {
+        return failed_vfx(session, "vfx.interfaces", registered.error().message, diagnostics);
+    }
+    asset->resolve(registry);
+    cy::vfx::CompileReport report(allocator);
+    auto compiled = cy::vfx::compile_system(*asset, registry, interfaces,
+                                             cy::vfx::CompileOptions{}, diagnostics, report);
+    if (!compiled) {
+        return failed_vfx(session, "vfx.compile", compiled.error().message, diagnostics);
+    }
+    session.event_payload.clear();
+    if (!put_u32(session.event_payload, 1) ||
+        !put_u64(session.event_payload, compiled->cook_key()) ||
+        !put_u32(session.event_payload, report.kernels) ||
+        !put_u32(session.event_payload, report.total_bytes_per_particle) ||
+        !put_u32(session.event_payload, static_cast<u32>(compiled->emitters().size()))) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    for (usize index = 0; index < compiled->emitters().size(); ++index) {
+        const cy::vfx::CompiledEmitter& emitter = compiled->emitters()[index];
+        const cy::vfx::EmitterReport& details = report.emitters[index];
+        if (!put_text(session.event_payload, emitter.name().text()) ||
+            !put_u8(session.event_payload, static_cast<u8>(emitter.path())) ||
+            !put_u32(session.event_payload, details.kernels) ||
+            !put_u32(session.event_payload, details.bytes_per_particle) ||
+            !put_u32(session.event_payload, details.max_population) ||
+            !put_u64(session.event_payload, details.estimated_cost_units) ||
+            !put_u32(session.event_payload, details.folded_constants) ||
+            !put_u32(session.event_payload, static_cast<u32>(emitter.layout().slots().size()))) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+        for (const cy::vfx::AttributeSlot& slot : emitter.layout().slots()) {
+            if (!put_text(session.event_payload, slot.name.text()) ||
+                !put_text(session.event_payload, cy::vfx::vfx_type_name(slot.type)) ||
+                !put_u8(session.event_payload, static_cast<u8>(slot.precision)) ||
+                !put_u32(session.event_payload, slot.array_offset) ||
+                !put_u32(session.event_payload, slot.stride) ||
+                !put_u8(session.event_payload, slot.elided ? 1U : 0U)) {
+                return CY_RESULT_OUT_OF_MEMORY;
+            }
+        }
+        if (!put_u32(session.event_payload, static_cast<u32>(emitter.sources().size()))) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+        for (const cy::graph::GeneratedSource& generated : emitter.sources()) {
+            if (!put_text(session.event_payload, {generated.text.data(), generated.text.size()})) {
+                return CY_RESULT_OUT_OF_MEMORY;
+            }
+        }
+    }
+    return CY_RESULT_OK;
+}
+#endif
 
 Status put_graph_location(Array<u8>& out, const cy::graph::Graph& graph,
                           cy::graph::NodeKey node_key, cy::Name pin_name) noexcept {
@@ -548,7 +641,7 @@ CyResult capabilities(CyServiceSession_T& session,
         "preview.destroy",  "preview.parameter.update", "preview.reload",
     };
 #if defined(CY_EDITOR_HAS_VFX)
-    constexpr u32 vfx_operations = 2;
+    constexpr u32 vfx_operations = 3;
 #else
     constexpr u32 vfx_operations = 0;
 #endif
@@ -566,7 +659,8 @@ CyResult capabilities(CyServiceSession_T& session,
     }
 #if defined(CY_EDITOR_HAS_VFX)
     if (!put_text(session.event_payload, "vfx.catalogue.get") ||
-        !put_text(session.event_payload, "vfx.authoring-capabilities.get")) {
+        !put_text(session.event_payload, "vfx.authoring-capabilities.get") ||
+        !put_text(session.event_payload, "vfx.compile")) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
 #endif
@@ -678,6 +772,8 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
             !encoded) {
             result = CY_RESULT_OUT_OF_MEMORY;
         }
+    } else if (!session->cancelled && operation == "vfx.compile") {
+        result = compile_vfx(*session, *allocator_);
 #endif
     } else if (!session->cancelled && operation == "material.validate") {
         result = compile_graph(*session, preview_runtime_, *allocator_, false);

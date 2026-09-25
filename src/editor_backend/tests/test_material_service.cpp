@@ -6,13 +6,16 @@
 #include <cy/graph/cybergraph.h>
 #include <cy/test/test.h>
 #if defined(CY_EDITOR_HAS_VFX)
+#    include <cy/vfx/authoring.h>
 #    include <cy/vfx/asset.h>
 #    include <cy/vfx/interfaces.h>
 #    include <cy/vfx/renderers.h>
 #endif
 
 #include <cstring>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -134,6 +137,159 @@ CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
 }
 
 #if defined(CY_EDITOR_HAS_VFX)
+void append_u32(std::vector<cy::u8>& bytes, cy::u32 value) {
+    for (cy::u32 index = 0; index < 4; ++index) {
+        bytes.push_back(static_cast<cy::u8>((value >> (index * 8)) & 0xffU));
+    }
+}
+
+void append_text(std::vector<cy::u8>& bytes, std::string_view value) {
+    append_u32(bytes, static_cast<cy::u32>(value.size()));
+    bytes.insert(bytes.end(), value.begin(), value.end());
+}
+
+std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 version = 2) {
+    std::vector<cy::u8> bytes;
+    append_u32(bytes, version);
+    append_text(bytes, "sparks");
+    append_u32(bytes, 2);
+    for (const char* name : {"cpu", "gpu"}) {
+        append_text(bytes, name);
+        bytes.push_back(name[0] == 'c' ? 1 : 0);
+        append_text(bytes, "Sprite");
+        append_u32(bytes, 1);
+        bytes.push_back(0);  // Spawn
+        const std::string canvas = std::string("cyvfxcanvas 1\nemitter ") + name + "\nnode 1 " +
+                                   std::string(node_type) +
+                                   "\n# layout 1 12 34\nprop 1 value 3\nnode 2 vfx.spawn_count\n"
+                                   "link 1 out 2 value\n";
+        append_text(bytes, canvas);
+        append_u32(bytes, 0);     // modules
+        append_u32(bytes, 0);     // interfaces
+        if (version >= 2) {
+            append_u32(bytes, 2048);  // capacity
+            append_u32(bytes, 1);     // attributes
+            append_text(bytes, "position");
+            append_text(bytes, "vec3");
+            append_u32(bytes, 0);  // minimum
+            append_u32(bytes, 0x42c80000U);  // maximum 100
+            append_u32(bytes, 0);  // tolerance
+            append_text(bytes, "Auto");
+        }
+    }
+    append_u32(bytes, 0);  // parameters
+    if (version >= 2) {
+        append_u32(bytes, 1);  // channels
+        append_text(bytes, "on_death");
+        append_u32(bytes, 128);
+        append_u32(bytes, 2);
+        bytes.push_back(0);
+    }
+    std::string source = "cyvfxdoc 1\n";
+    constexpr char hex[] = "0123456789abcdef";
+    for (const cy::u8 byte : bytes) {
+        source.push_back(hex[byte >> 4U]);
+        source.push_back(hex[byte & 0x0fU]);
+    }
+    return source;
+}
+
+CY_TEST_CASE("editor_backend: VFX document compiles through the engine service") {
+    const std::string source = vfx_document();
+    auto asset = cy::vfx::read_authoring_document(source, allocator());
+    CY_REQUIRE(asset.has_value());
+    CY_REQUIRE_EQ(asset->emitters().size(), 2U);
+    CY_CHECK_EQ(asset->emitters()[0].capacity(), 2048U);
+    CY_CHECK_EQ(asset->emitters()[0].attributes().size(), 1U);
+    CY_CHECK_EQ(asset->channels().size(), 1U);
+    CY_CHECK_EQ(asset->emitters()[0].stage(cy::vfx::Stage::Spawn)->layout(1)->x, 12.0F);
+
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CY_REQUIRE(api != nullptr);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 4, "vfx.compile",
+                                   reinterpret_cast<const cy::u8*>(source.data()), source.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    cy::usize cursor = 0;
+    CY_REQUIRE_EQ(read_u32(event.payload + cursor), 1U);
+    cursor += 4;
+    CY_CHECK_NE(read_u64(event.payload + cursor), 0U);
+    cursor += 8;
+    CY_CHECK_EQ(read_u32(event.payload + cursor), 2U);
+    cursor += 4;
+    cursor += 4;  // bytes per particle
+    CY_REQUIRE_EQ(read_u32(event.payload + cursor), 2U);
+    cursor += 4;
+    for (const char* name : {"cpu", "gpu"}) {
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), name);
+        CY_CHECK_EQ(event.payload[cursor++], name[0] == 'c' ? 1U : 0U);
+        CY_CHECK_EQ(read_u32(event.payload + cursor), 1U);
+        cursor += 4;
+        cursor += 4 * 2 + 8 + 4;  // size, population, cost, folded constants
+        const cy::u32 slots = read_u32(event.payload + cursor);
+        cursor += 4;
+        CY_CHECK_EQ(slots, 0U);  // Unused declaration has no storage slot.
+        for (cy::u32 index = 0; index < slots; ++index) {
+            CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), "position");
+            (void)read_text(event.payload, event.payload_size, cursor);
+            cursor += 1 + 4 + 4 + 1;
+        }
+        CY_REQUIRE_EQ(read_u32(event.payload + cursor), 1U);
+        cursor += 4;
+        CY_CHECK_FALSE(read_text(event.payload, event.payload_size, cursor).empty());
+    }
+    CY_CHECK_EQ(cursor, event.payload_size);
+    api->service_close(&host, session);
+}
+
+CY_TEST_CASE("editor_backend: engine reader upgrades old drafts and refuses corrupt sources") {
+    auto old = cy::vfx::read_authoring_document(vfx_document("vfx.constant", 1), allocator());
+    CY_REQUIRE(old.has_value());
+    CY_REQUIRE_EQ(old->emitters().size(), 2U);
+    CY_CHECK_EQ(old->emitters()[0].capacity(), 1024U);
+    CY_CHECK(old->channels().empty());
+
+    std::string truncated = vfx_document();
+    truncated.resize(truncated.size() - 2);
+    CY_CHECK_FALSE(cy::vfx::read_authoring_document(truncated, allocator()).has_value());
+    std::string corrupt = vfx_document();
+    corrupt.back() = 'z';
+    CY_CHECK_FALSE(cy::vfx::read_authoring_document(corrupt, allocator()).has_value());
+}
+
+CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") {
+    const std::string source = vfx_document("vfx.unknown");
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CY_REQUIRE(api != nullptr);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 5, "vfx.compile",
+                                   reinterpret_cast<const cy::u8*>(source.data()), source.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    cy::usize cursor = 0;
+    CY_REQUIRE_EQ(read_u32(event.payload + cursor), 1U);
+    cursor += 4;
+    CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), "vfx.compile");
+    (void)read_text(event.payload, event.payload_size, cursor);
+    CY_REQUIRE(read_u32(event.payload + cursor) > 0U);
+    cursor += 4;
+    cursor += 1;  // severity
+    CY_CHECK_FALSE(read_text(event.payload, event.payload_size, cursor).empty());
+    (void)read_text(event.payload, event.payload_size, cursor);
+    (void)read_text(event.payload, event.payload_size, cursor);
+    CY_CHECK_EQ(read_u64(event.payload + cursor), 1U);
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: VFX palette equals the compiler registry") {
     cy::abi::Host host(allocator());
     cy::editor::MaterialService service(allocator());
@@ -315,7 +471,7 @@ CY_TEST_CASE("editor_backend: capabilities are discoverable and schema mismatche
     CY_REQUIRE(event.payload_size >= 8U);
     CY_CHECK_EQ(read_u32(event.payload), 1U);
 #if defined(CY_EDITOR_HAS_VFX)
-    CY_CHECK_EQ(read_u32(event.payload + 4), 11U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 12U);
 #else
     CY_CHECK_EQ(read_u32(event.payload + 4), 9U);
 #endif
