@@ -511,6 +511,16 @@ impl SpecialisedEditors {
         Ok(())
     }
 
+    /// Close the opened VFX draft after its project asset is removed by undo.
+    pub fn close_vfx_document(&mut self) {
+        self.vfx_document = None;
+        self.vfx_stage = None;
+        self.graph_drafts.remove(&Domain::VfxGraph);
+        if self.active == Some(Domain::VfxGraph) {
+            self.canvas.load(self.canvas.catalogue().clone());
+        }
+    }
+
     /// Select one emitter stage, preserving the previously visible stage first.
     pub fn select_vfx_stage(&mut self, emitter: usize, stage: vfx::Stage) -> Result<()> {
         if self.active != Some(Domain::VfxGraph) {
