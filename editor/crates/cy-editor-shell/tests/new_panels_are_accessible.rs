@@ -19,13 +19,14 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 9] = [
+const NEW_PANELS: [(&str, &str); 10] = [
     ("undo-history", "Undo"),
     ("settings", "Apply"),
     ("source-control", "Refresh"),
     ("agent-sessions", "No agent is connected."),
     ("swift-workspace", "No Swift source is open."),
     ("editor-materials", "Engine catalogue"),
+    ("editor-vfx-graph", "Engine catalogue"),
     ("editor-terrain", "No world is open."),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
@@ -68,6 +69,9 @@ impl Harness {
         specialised
             .install_material_catalogue(&test_material_catalogue())
             .expect("engine material catalogue");
+        specialised
+            .install_vfx_catalogue(&test_vfx_catalogue())
+            .expect("engine VFX catalogue");
         Self {
             editor: Editor::new(Actor::human("accessibility-auditor")),
             registry,
@@ -197,6 +201,23 @@ fn test_material_catalogue() -> Vec<u8> {
     catalogue.u8(1);
     catalogue.text("out");
     catalogue.text("value");
+    catalogue.u32(0);
+    catalogue.finish()
+}
+
+fn test_vfx_catalogue() -> Vec<u8> {
+    let mut catalogue = Writer::new();
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(1001);
+    catalogue.u32(1);
+    catalogue.text("vfx.constant");
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u8(1);
+    catalogue.text("out");
+    catalogue.text("float");
     catalogue.u32(0);
     catalogue.finish()
 }

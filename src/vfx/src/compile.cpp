@@ -379,23 +379,41 @@ struct Lowering {
 [[nodiscard]] Expected<NodeId, Error> lower_sample(Lowering& state, const Graph& graph,
                                                    const GraphNode& node) noexcept {
     const NodeNames& n = names();
-    const Literal* interface_name = graph.property(node.key, n.prop_interface);
-    const Literal* field_name = graph.property(node.key, n.prop_field);
-    if (interface_name == nullptr || field_name == nullptr) {
+    Name interface_name;
+    Name field_name;
+    const std::string_view type = node.type.text();
+    if (type.starts_with("vfx.sample.")) {
+        const std::string_view source = type.substr(sizeof("vfx.sample.") - 1);
+        const usize separator = source.rfind('.');
+        if (separator != std::string_view::npos) {
+            interface_name = Name::intern(source.substr(0, separator));
+            field_name = Name::intern(source.substr(separator + 1));
+        }
+    } else {
+        const Literal* interface_property = graph.property(node.key, n.prop_interface);
+        const Literal* field_property = graph.property(node.key, n.prop_field);
+        if (interface_property != nullptr) {
+            interface_name = interface_property->text;
+        }
+        if (field_property != nullptr) {
+            field_name = field_property->text;
+        }
+    }
+    if (interface_name.is_empty() || field_name.is_empty()) {
         report(*state.sink, node.key, n.prop_interface,
                "vfx: a sample node names an interface and a field");
         return fail(ErrorCode::InvalidArgument, "vfx: a sample with no interface");
     }
-    const DataInterface* interface = state.interfaces->find(interface_name->text);
+    const DataInterface* interface = state.interfaces->find(interface_name);
     if (interface == nullptr) {
         report(*state.sink, node.key, n.prop_interface,
-               "vfx: no data interface of that name is registered", interface_name->text);
+               "vfx: no data interface of that name is registered", interface_name);
         return fail(ErrorCode::NotFound, "vfx: an unregistered data interface");
     }
-    const InterfaceField* field = interface->find_field(field_name->text);
+    const InterfaceField* field = interface->find_field(field_name);
     if (field == nullptr) {
         report(*state.sink, node.key, n.prop_field, "vfx: that data interface has no such field",
-               field_name->text);
+               field_name);
         return fail(ErrorCode::NotFound, "vfx: an unknown interface field");
     }
     // THE COOK-TIME GATE. `vfx-system`: "WHEN an effect declares CPU simulation and uses a GPU-only
@@ -459,7 +477,7 @@ Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph, NodeKey
     const NodeNames& n = names();
     Expected<NodeId, Error> produced = fail(ErrorCode::Internal, "vfx: unlowered");
 
-    if (node->type == n.sample) {
+    if (node->type == n.sample || node->type.text().starts_with("vfx.sample.")) {
         produced = lower_sample(state, graph, *node);
     } else if (node->type == n.curve || node->type == n.noise) {
         auto argument = lower_pin(state, graph, key, "x");

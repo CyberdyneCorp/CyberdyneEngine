@@ -391,3 +391,13 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
 * **A curve is the identity over [0, 1]** on both paths until a cooked curve resource is bound. Both
   spellings — the CPU executor's and the generated Slang's — say so at the same place, because two
   spellings of one function is how a fallback and a GPU path come to disagree.
+## Editor catalogue
+
+`register_vfx_nodes` is the source of the VFX graph palette. Each built-in node has an explicit
+type identity in `src/asset.cpp`; registered pin identities are stable within its type. The
+`vfx.catalogue.get` editor service serializes the registry's actual definitions, and its parity
+test compares every node and pin against that registry. `CY_VFX=OFF` omits the operation.
+Each registered data-interface field also becomes a typed `vfx.sample.<interface>.<field>` node.
+`register_vfx_interface_nodes` adds project fields after their interfaces are registered, and those
+nodes lower through the existing sampler path. The generic `vfx.sample` node remains readable for
+older authored graphs.

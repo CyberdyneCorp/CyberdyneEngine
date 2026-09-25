@@ -2,8 +2,10 @@
 
 #include <cy/vfx/asset.h>
 
+#include <cy/vfx/interfaces.h>
 #include <cy/vfx/ir.h>
 
+#include <string>
 #include <utility>
 
 namespace cy::vfx {
@@ -239,6 +241,7 @@ namespace {
 /// One row of the library. The pins are built at registration because `PinDesc` holds `Name`s and a
 /// `Name` cannot be interned in a constant expression.
 struct NodeRow {
+    graph::NodeTypeId identity;
     const char* type;
     /// Input pin names and their types, `nullptr`-terminated pairs.
     const char* const* inputs;
@@ -259,43 +262,46 @@ constexpr const char* kMake3[] = {"x", "float", "y", "float", "z", "float", null
 constexpr const char* kMake4[] = {"x", "float", "y", "float", "z", "float", "w", "float", nullptr};
 
 constexpr NodeRow kLibrary[] = {
-    {"vfx.constant", kNone, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.parameter", kNone, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.attribute", kNone, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.input", kNone, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.random", kNone, "float", Determinism::SeedDependent, true, Capability::Randomness},
-    {"vfx.sample", kUnary, "float", Determinism::Deterministic, true, Capability::ReadWorld},
-    {"vfx.curve", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.noise", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.add", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.sub", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.mul", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.div", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.min", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.max", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.dot", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.cross", kBinary, "float3", Determinism::Deterministic, true, Capability::None},
-    {"vfx.length", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.normalize", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.sin", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.cos", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.pow", kBinary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.saturate", kUnary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.lerp", kTernary, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.select", kSelect, "float", Determinism::Deterministic, true, Capability::None},
-    {"vfx.less", kBinary, "bool", Determinism::Deterministic, true, Capability::None},
-    {"vfx.greater", kBinary, "bool", Determinism::Deterministic, true, Capability::None},
-    {"vfx.make_float3", kMake3, "float3", Determinism::Deterministic, true, Capability::None},
-    {"vfx.make_float4", kMake4, "float4", Determinism::Deterministic, true, Capability::None},
+    {1001, "vfx.constant", kNone, "float", Determinism::Deterministic, true, Capability::None},
+    {1002, "vfx.parameter", kNone, "float", Determinism::Deterministic, true, Capability::None},
+    {1003, "vfx.attribute", kNone, "float", Determinism::Deterministic, true, Capability::None},
+    {1004, "vfx.input", kNone, "float", Determinism::Deterministic, true, Capability::None},
+    {1005, "vfx.random", kNone, "float", Determinism::SeedDependent, true, Capability::Randomness},
+    {1006, "vfx.sample", kUnary, "float", Determinism::Deterministic, true, Capability::ReadWorld},
+    {1007, "vfx.curve", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1008, "vfx.noise", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1009, "vfx.add", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1010, "vfx.sub", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1011, "vfx.mul", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1012, "vfx.div", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1013, "vfx.min", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1014, "vfx.max", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1015, "vfx.dot", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1016, "vfx.cross", kBinary, "float3", Determinism::Deterministic, true, Capability::None},
+    {1017, "vfx.length", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1018, "vfx.normalize", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1019, "vfx.sin", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1020, "vfx.cos", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1021, "vfx.pow", kBinary, "float", Determinism::Deterministic, true, Capability::None},
+    {1022, "vfx.saturate", kUnary, "float", Determinism::Deterministic, true, Capability::None},
+    {1023, "vfx.lerp", kTernary, "float", Determinism::Deterministic, true, Capability::None},
+    {1024, "vfx.select", kSelect, "float", Determinism::Deterministic, true, Capability::None},
+    {1025, "vfx.less", kBinary, "bool", Determinism::Deterministic, true, Capability::None},
+    {1026, "vfx.greater", kBinary, "bool", Determinism::Deterministic, true, Capability::None},
+    {1027, "vfx.make_float3", kMake3, "float3", Determinism::Deterministic, true, Capability::None},
+    {1028, "vfx.make_float4", kMake4, "float4", Determinism::Deterministic, true, Capability::None},
     // THE THREE NODES THAT ARE NOT PURE, and the reason this domain has its own IR. Each one is a
     // WRITE — of an attribute, of the kill predicate, of the spawn count — and a hash-consed
     // expression DAG has no Store. They become entries in the kernel's ordered write list.
-    {"vfx.set_attribute", kValueOnly, nullptr, Determinism::Deterministic, false, Capability::None},
-    {"vfx.kill_if", kPredicate, nullptr, Determinism::Deterministic, false, Capability::None},
-    {"vfx.spawn_count", kValueOnly, nullptr, Determinism::Deterministic, false, Capability::None},
+    {1029, "vfx.set_attribute", kValueOnly, nullptr, Determinism::Deterministic, false,
+     Capability::None},
+    {1030, "vfx.kill_if", kPredicate, nullptr, Determinism::Deterministic, false, Capability::None},
+    {1031, "vfx.spawn_count", kValueOnly, nullptr, Determinism::Deterministic, false,
+     Capability::None},
     // A GPU-TO-GPU EVENT RAISE. Not pure, like the three above: it is a write into an event
     // channel, and `vfx-system` requires that channel to carry both of its bounds.
-    {"vfx.emit_event", kPredicate, nullptr, Determinism::Deterministic, false, Capability::None},
+    {1032, "vfx.emit_event", kPredicate, nullptr, Determinism::Deterministic, false,
+     Capability::None},
 };
 
 [[nodiscard]] Status register_row(NodeRegistry& registry, const NodeRow& row,
@@ -303,6 +309,7 @@ constexpr NodeRow kLibrary[] = {
     pins.clear();
     for (const char* const* cursor = row.inputs; *cursor != nullptr; cursor += 2) {
         PinDesc pin;
+        pin.identity = static_cast<graph::PinId>(pins.size() + 1);
         pin.name = Name::intern(cursor[0]);
         pin.type = Name::intern(cursor[1]);
         pin.direction = PinDirection::Input;
@@ -313,6 +320,7 @@ constexpr NodeRow kLibrary[] = {
     }
     if (row.output_type != nullptr) {
         PinDesc pin;
+        pin.identity = static_cast<graph::PinId>(pins.size() + 1);
         pin.name = Name::intern("out");
         pin.type = Name::intern(row.output_type);
         pin.direction = PinDirection::Output;
@@ -322,6 +330,7 @@ constexpr NodeRow kLibrary[] = {
     }
 
     NodeTypeDesc desc;
+    desc.identity = row.identity;
     desc.name = Name::intern(row.type);
     desc.plugin = Name::intern(kPlugin);
     desc.version = 1;
@@ -332,7 +341,54 @@ constexpr NodeRow kLibrary[] = {
     return registry.register_type(desc);
 }
 
+[[nodiscard]] graph::NodeTypeId sample_identity(std::string_view name) noexcept {
+    u32 hash = 2166136261U;
+    for (const char character : name) {
+        hash = (hash ^ static_cast<u8>(character)) * 16777619U;
+    }
+    return 0x80000000U | (hash & 0x7fffffffU);
+}
+
 }  // namespace
+
+Status register_vfx_interface_nodes(NodeRegistry& registry,
+                                    const DataInterfaceRegistry& interfaces) noexcept {
+    for (const DataInterface& interface : interfaces.all()) {
+        for (const InterfaceField& field : interface.fields()) {
+            const std::string name = std::string("vfx.sample.") +
+                                     std::string(interface.name().text()) + "." + field.name;
+            PinDesc pins[2];
+            pins[0].identity = 1;
+            pins[0].name = Name::intern("x");
+            pins[0].type = Name::intern("float");
+            pins[0].direction = PinDirection::Input;
+            pins[0].required = true;
+            pins[1].identity = 2;
+            pins[1].name = Name::intern("out");
+            pins[1].type = Name::intern(vfx_type_name(field.type));
+            pins[1].direction = PinDirection::Output;
+            NodeTypeDesc desc;
+            desc.identity = sample_identity(name);
+            desc.name = Name::intern(name);
+            desc.plugin = Name::intern(kPlugin);
+            desc.version = interface.version();
+            desc.pins = {pins, 2};
+            desc.requires_capabilities = Capability::ReadWorld;
+            if (const graph::NodeType* existing = registry.find(desc.name); existing != nullptr) {
+                if (existing->identity() == desc.identity && existing->version() == desc.version &&
+                    existing->pins().size() == 2 && existing->pins()[1].type == pins[1].type) {
+                    continue;
+                }
+                return fail(ErrorCode::AlreadyExists,
+                            "a VFX interface field changed without a new catalogue identity");
+            }
+            if (Status registered = registry.register_type(desc); !registered) {
+                return registered;
+            }
+        }
+    }
+    return ok();
+}
 
 Status register_vfx_nodes(NodeRegistry& registry) noexcept {
     Array<PinDesc> pins(registry.allocator());
@@ -359,7 +415,11 @@ Status register_vfx_nodes(NodeRegistry& registry) noexcept {
             }
         }
     }
-    return ok();
+    DataInterfaceRegistry interfaces(registry.allocator());
+    if (Status registered = register_builtin_interfaces(interfaces); !registered) {
+        return registered;
+    }
+    return register_vfx_interface_nodes(registry, interfaces);
 }
 
 }  // namespace cy::vfx

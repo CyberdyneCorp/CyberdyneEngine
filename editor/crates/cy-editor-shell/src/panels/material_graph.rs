@@ -103,6 +103,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 panels.shell,
                 canvas,
                 state,
+                "Empty material graph\nChoose a node from the engine catalogue",
                 &mut panels.inputs.material_link_source,
                 &mut panels.inputs.material_link_problem,
             );
@@ -392,7 +393,7 @@ fn palette(
     });
     material_request_status(ui, shell, canvas, backend.request);
     material_preview_status(ui, shell, backend.preview);
-    material_properties(ui, canvas, assets, property_problem);
+    graph_properties(ui, canvas, assets, property_problem);
     ui.add_space(shell.metrics().gap() * 0.5);
     ui.add(
         egui::TextEdit::singleline(filter)
@@ -485,7 +486,7 @@ fn material_preview_status(
     );
 }
 
-fn material_properties(
+pub(super) fn graph_properties(
     ui: &mut egui::Ui,
     canvas: &mut GraphCanvas,
     assets: &AssetCatalogueService,
@@ -725,11 +726,12 @@ fn select_backend_location(canvas: &mut GraphCanvas, node: u64) {
     }
 }
 
-fn draw_canvas(
+pub(super) fn draw_canvas(
     ui: &mut egui::Ui,
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
     state: MaterialCatalogueState,
+    empty_message: &str,
     pending_source: &mut Option<(u64, u32, String, String)>,
     link_problem: &mut Option<String>,
 ) {
@@ -805,7 +807,7 @@ fn draw_canvas(
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "Empty material graph\nChoose a node from the engine catalogue",
+            empty_message,
             egui::FontId::proportional(shell.metrics().text(TextRole::Body)),
             theme::role(shell.theme, Semantic::SecondaryText),
         );

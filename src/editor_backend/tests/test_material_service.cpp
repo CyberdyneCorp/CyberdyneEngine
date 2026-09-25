@@ -5,6 +5,10 @@
 #include <cy/editor/material_service.h>
 #include <cy/graph/cybergraph.h>
 #include <cy/test/test.h>
+#if defined(CY_EDITOR_HAS_VFX)
+#    include <cy/vfx/asset.h>
+#    include <cy/vfx/interfaces.h>
+#endif
 
 #include <cstring>
 #include <string_view>
@@ -128,6 +132,90 @@ CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
     api->service_close(&host, session);
 }
 
+#if defined(CY_EDITOR_HAS_VFX)
+CY_TEST_CASE("editor_backend: VFX palette equals the compiler registry") {
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CY_REQUIRE(api != nullptr);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 2, "vfx.catalogue.get", nullptr, 0};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(event.payload_size >= 12U);
+    CY_CHECK_EQ(read_u32(event.payload), 2U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 2U);
+
+    cy::graph::NodeRegistry registry(allocator());
+    CY_REQUIRE(cy::vfx::register_vfx_nodes(registry).has_value());
+    cy::vfx::DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(cy::vfx::register_builtin_interfaces(interfaces).has_value());
+    CY_REQUIRE_EQ(read_u32(event.payload + 8), registry.size());
+    cy::usize cursor = 12;
+    for (const cy::graph::NodeType& node : registry.types()) {
+        CY_REQUIRE(cursor + 12 <= event.payload_size);
+        CY_CHECK_EQ(read_u32(event.payload + cursor), node.identity());
+        cursor += 4;
+        CY_CHECK_EQ(read_u32(event.payload + cursor), node.version());
+        cursor += 4;
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), node.name().text());
+        CY_REQUIRE(cursor + 4 <= event.payload_size);
+        CY_REQUIRE_EQ(read_u32(event.payload + cursor), node.pins().size());
+        cursor += 4;
+        for (const cy::graph::PinDesc& pin : node.pins()) {
+            CY_REQUIRE(cursor + 5 <= event.payload_size);
+            CY_CHECK_EQ(read_u32(event.payload + cursor), pin.identity);
+            cursor += 4;
+            CY_CHECK_EQ(event.payload[cursor++], static_cast<cy::u8>(pin.direction));
+            CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), pin.name.text());
+            CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), pin.type.text());
+        }
+        CY_REQUIRE(cursor + 4 <= event.payload_size);
+        const cy::u32 property_count = read_u32(event.payload + cursor);
+        cursor += 4;
+        for (cy::u32 property = 0; property < property_count; ++property) {
+            CY_REQUIRE(cursor + 5 <= event.payload_size);
+            const cy::u32 identity = read_u32(event.payload + cursor);
+            cursor += 4;
+            const cy::u8 kind = event.payload[cursor++];
+            const std::string_view name = read_text(event.payload, event.payload_size, cursor);
+            (void)read_text(event.payload, event.payload_size, cursor);  // default
+            (void)read_text(event.payload, event.payload_size, cursor);  // tooltip
+            (void)read_text(event.payload, event.payload_size, cursor);  // semantic
+            (void)read_text(event.payload, event.payload_size, cursor);  // asset kind
+            CY_REQUIRE(cursor + 4 <= event.payload_size);
+            const cy::u32 choice_count = read_u32(event.payload + cursor);
+            cursor += 4;
+            if (node.name().text() == "vfx.sample" && name == "interface") {
+                CY_CHECK_EQ(identity, 1U);
+                CY_CHECK_EQ(kind, 4U);
+                CY_REQUIRE_EQ(choice_count, interfaces.size());
+                for (const cy::vfx::DataInterface& interface : interfaces.all()) {
+                    CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                                interface.name().text());
+                }
+            } else {
+                for (cy::u32 choice = 0; choice < choice_count; ++choice) {
+                    (void)read_text(event.payload, event.payload_size, cursor);
+                }
+            }
+            CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), "compile");
+            CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), "vfx");
+            CY_REQUIRE(cursor + 34 <= event.payload_size);
+            CY_CHECK_EQ(read_u64(event.payload + cursor), static_cast<cy::u64>(node.required()));
+            cursor += 34;  // capabilities, lanes, flags, three optional doubles
+        }
+        if (node.name().text() == "vfx.sample") {
+            CY_CHECK_EQ(property_count, 2U);
+        }
+    }
+    CY_CHECK_EQ(cursor, event.payload_size);
+    api->service_close(&host, session);
+}
+#endif
+
 CY_TEST_CASE("editor_backend: cancellation wins before publication") {
     cy::abi::Host host(allocator());
     cy::editor::MaterialService service(allocator());
@@ -173,7 +261,11 @@ CY_TEST_CASE("editor_backend: capabilities are discoverable and schema mismatche
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 8U);
     CY_CHECK_EQ(read_u32(event.payload), 1U);
+#if defined(CY_EDITOR_HAS_VFX)
+    CY_CHECK_EQ(read_u32(event.payload + 4), 10U);
+#else
     CY_CHECK_EQ(read_u32(event.payload + 4), 9U);
+#endif
 
     const CyServiceRequest too_new{sizeof(CyServiceRequest), 2, 2, "capabilities.get", nullptr, 0};
     event = submit_and_poll(*api, host, session, too_new);

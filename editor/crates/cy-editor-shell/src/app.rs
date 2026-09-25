@@ -88,6 +88,7 @@ pub struct EditorWindow {
     shell: Shell,
     specialised: SpecialisedEditors,
     material_catalogue_revision: Revision,
+    vfx_catalogue_revision: Revision,
     documents: DocumentTabsViewModel,
     hierarchy: HierarchyViewModel,
     history: HistoryViewModel,
@@ -176,6 +177,7 @@ impl EditorWindow {
             shell,
             specialised,
             material_catalogue_revision: Revision::INITIAL,
+            vfx_catalogue_revision: Revision::INITIAL,
             documents: DocumentTabsViewModel::new(),
             hierarchy: HierarchyViewModel::new(),
             history: HistoryViewModel::new(),
@@ -302,6 +304,23 @@ impl EditorWindow {
         if let Err(problem) = self.specialised.install_material_catalogue(payload) {
             self.editor.notifications.post(Notification::error(
                 "The material catalogue is incompatible",
+                problem,
+            ));
+        }
+    }
+
+    fn sync_vfx_catalogue(&mut self) {
+        let revision = self.editor.backend.vfx_catalogue_revision();
+        if revision == self.vfx_catalogue_revision {
+            return;
+        }
+        self.vfx_catalogue_revision = revision;
+        let Some(payload) = self.editor.backend.vfx_catalogue() else {
+            return;
+        };
+        if let Err(problem) = self.specialised.install_vfx_catalogue(payload) {
+            self.editor.notifications.post(Notification::error(
+                "The VFX catalogue is incompatible",
                 problem,
             ));
         }
@@ -906,6 +925,7 @@ impl eframe::App for EditorWindow {
         crate::panels::finish_material_save(&mut self.editor, &mut self.inputs);
         self.finish_imports();
         self.sync_material_catalogue();
+        self.sync_vfx_catalogue();
         #[cfg(target_os = "linux")]
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {
@@ -1267,7 +1287,7 @@ mod tests {
     }
 
     #[test]
-    fn the_production_window_installs_a_runtime_owned_material_catalogue() {
+    fn the_production_window_installs_runtime_owned_graph_catalogues() {
         let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
         let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
         let mut window = window();
@@ -1278,16 +1298,6 @@ mod tests {
         window.editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
 
         window.editor.pump();
-        let submitted =
-            Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
-        let Message::ServiceRequest {
-            request, operation, ..
-        } = submitted
-        else {
-            panic!("the window did not request an engine catalogue")
-        };
-        assert_eq!(operation, "material.catalogue.get");
-
         let mut catalogue = Writer::new();
         catalogue.u32(1);
         catalogue.u32(7);
@@ -1301,17 +1311,12 @@ mod tests {
         catalogue.text("out");
         catalogue.text("value");
         catalogue.u32(0);
-        write_frame(
+        answer_catalogue(
+            &mut runtime_reader,
             &mut runtime_writer,
-            &Message::ServiceEvent {
-                request,
-                kind: ServiceEventKind::Completed,
-                schema_version: 1,
-                payload: catalogue.finish(),
-            }
-            .encode(),
-        )
-        .unwrap();
+            "material.catalogue.get",
+            catalogue.finish(),
+        );
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while window.editor.backend.material_catalogue().is_none()
@@ -1321,6 +1326,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         window.sync_material_catalogue();
+        window.sync_vfx_catalogue();
         let session = window
             .specialised
             .open(Domain::Materials)
@@ -1334,6 +1340,69 @@ mod tests {
                 .is_some(),
             "a backend-only node must appear without an editor source change"
         );
+
+        window.editor.pump();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1001);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        answer_catalogue(
+            &mut runtime_reader,
+            &mut runtime_writer,
+            "vfx.catalogue.get",
+            catalogue.finish(),
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while window.editor.backend.vfx_catalogue().is_none()
+            && std::time::Instant::now() < deadline
+        {
+            window.editor.pump();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        window.sync_vfx_catalogue();
+        assert!(
+            window
+                .specialised
+                .open(Domain::VfxGraph)
+                .expect("the runtime catalogue opens the VFX graph editor")
+                .graph
+                .expect("VFX uses the shared graph")
+                .catalogue()
+                .get("vfx.backend_only")
+                .is_some()
+        );
+    }
+
+    fn answer_catalogue(
+        runtime_reader: &mut std::io::PipeReader,
+        runtime_writer: &mut std::io::PipeWriter,
+        expected_operation: &str,
+        payload: Vec<u8>,
+    ) {
+        let submitted = Message::decode(&read_frame(runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request, operation, ..
+        } = submitted
+        else {
+            panic!("the window did not request an engine catalogue")
+        };
+        assert_eq!(operation, expected_operation);
+        write_frame(
+            runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload,
+            }
+            .encode(),
+        )
+        .unwrap();
     }
 
     #[test]

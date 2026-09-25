@@ -13,6 +13,7 @@ use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 use crate::runtime::RuntimeSession;
 
 const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
+const VFX_CATALOGUE_OPERATION: &str = "vfx.catalogue.get";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
@@ -215,6 +216,10 @@ pub struct BackendServices {
     material_catalogue: Versioned<Option<Vec<u8>>>,
     catalogue_state: MaterialCatalogueState,
     catalogue_request: Option<RequestId>,
+    vfx_catalogue: Versioned<Option<Vec<u8>>>,
+    vfx_catalogue_state: MaterialCatalogueState,
+    vfx_catalogue_request: Option<RequestId>,
+    vfx_catalogue_requested: bool,
     material_request: Option<(RequestId, MaterialOperation)>,
     material_state: MaterialRequestState,
     preview_handle: Option<u64>,
@@ -232,6 +237,10 @@ impl Default for BackendServices {
             material_catalogue: Versioned::new(None),
             catalogue_state: MaterialCatalogueState::Unavailable,
             catalogue_request: None,
+            vfx_catalogue: Versioned::new(None),
+            vfx_catalogue_state: MaterialCatalogueState::Unavailable,
+            vfx_catalogue_request: None,
+            vfx_catalogue_requested: false,
             material_request: None,
             material_state: MaterialRequestState::Idle,
             preview_handle: None,
@@ -257,8 +266,13 @@ impl BackendServices {
         if !runtime.is_connected() {
             self.connected = false;
             self.catalogue_request = None;
+            self.vfx_catalogue_request = None;
+            self.vfx_catalogue_requested = false;
             if self.catalogue_state == MaterialCatalogueState::Loading {
                 self.catalogue_state = MaterialCatalogueState::Failed;
+            }
+            if self.vfx_catalogue_state == MaterialCatalogueState::Loading {
+                self.vfx_catalogue_state = MaterialCatalogueState::Failed;
             }
             if let Some((request, _)) = self.material_request.take() {
                 self.material_state = MaterialRequestState::Failed {
@@ -275,6 +289,23 @@ impl BackendServices {
             return None;
         }
         if self.connected {
+            if self.catalogue_request.is_none() && !self.vfx_catalogue_requested {
+                self.vfx_catalogue_requested = true;
+                match runtime.service_request(
+                    SERVICE_SCHEMA_VERSION,
+                    VFX_CATALOGUE_OPERATION,
+                    Vec::new(),
+                ) {
+                    Ok(request) => {
+                        self.vfx_catalogue_request = Some(request);
+                        self.vfx_catalogue_state = MaterialCatalogueState::Loading;
+                    }
+                    Err(problem) => {
+                        self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                        return Some(problem);
+                    }
+                }
+            }
             return self.advance_preview(runtime);
         }
 
@@ -310,6 +341,9 @@ impl BackendServices {
         };
         if Some(*request) == self.catalogue_request {
             return self.accept_catalogue(*kind, *schema_version, payload);
+        }
+        if Some(*request) == self.vfx_catalogue_request {
+            return self.accept_vfx_catalogue(*kind, *schema_version, payload);
         }
         if self.material_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_material(*request, *kind, *schema_version, payload);
@@ -359,6 +393,38 @@ impl BackendServices {
                     )
                     .with_remedy("retry after the runtime is ready"),
                 )
+            }
+        }
+    }
+
+    fn accept_vfx_catalogue(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        match kind {
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => None,
+            ServiceEventKind::Completed => {
+                self.vfx_catalogue_request = None;
+                if schema_version != SERVICE_SCHEMA_VERSION {
+                    self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                    return Some(Problem::new(
+                        "load the VFX node catalogue",
+                        format!("the runtime returned unsupported schema {schema_version}"),
+                    ));
+                }
+                self.vfx_catalogue.set(Some(payload.to_vec()));
+                self.vfx_catalogue_state = MaterialCatalogueState::Ready;
+                None
+            }
+            ServiceEventKind::Failed | ServiceEventKind::Cancelled => {
+                self.vfx_catalogue_request = None;
+                self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                Some(Problem::new(
+                    "load the VFX node catalogue",
+                    "the runtime did not provide a compatible VFX catalogue",
+                ))
             }
         }
     }
@@ -484,6 +550,24 @@ impl BackendServices {
     #[must_use]
     pub fn material_catalogue(&self) -> Option<&[u8]> {
         self.material_catalogue.get().as_deref()
+    }
+
+    /// Latest engine VFX catalogue snapshot, retained across disconnects.
+    #[must_use]
+    pub fn vfx_catalogue(&self) -> Option<&[u8]> {
+        self.vfx_catalogue.get().as_deref()
+    }
+
+    /// Revision for installing a new VFX palette in the shared canvas.
+    #[must_use]
+    pub const fn vfx_catalogue_revision(&self) -> Revision {
+        self.vfx_catalogue.revision()
+    }
+
+    /// Current request state for the engine VFX definitions.
+    #[must_use]
+    pub const fn vfx_catalogue_state(&self) -> MaterialCatalogueState {
+        self.vfx_catalogue_state
     }
 
     /// Revision used by presentation to install a snapshot only once.
@@ -1049,6 +1133,45 @@ mod tests {
             MaterialCatalogueState::Ready
         );
 
+        assert!(backend.maintain(&runtime).is_none());
+        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request,
+            schema_version,
+            operation,
+            payload,
+        } = request
+        else {
+            panic!("the second backend message was not a service request")
+        };
+        assert_eq!(schema_version, 1);
+        assert_eq!(operation, VFX_CATALOGUE_OPERATION);
+        assert!(payload.is_empty());
+        let mut vfx_catalogue = Writer::new();
+        vfx_catalogue.u32(1);
+        vfx_catalogue.u32(1);
+        vfx_catalogue.u32(0);
+        let vfx_catalogue = vfx_catalogue.finish();
+        write_frame(
+            &mut runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: vfx_catalogue.clone(),
+            }
+            .encode(),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.vfx_catalogue().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
+
         drop(runtime_writer);
         let deadline = Instant::now() + Duration::from_secs(5);
         while runtime.is_connected() && Instant::now() < deadline {
@@ -1061,6 +1184,7 @@ mod tests {
             Some(catalogue.as_slice()),
             "runtime loss must not discard the catalogue a live authored graph uses"
         );
+        assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
     }
 
     #[test]

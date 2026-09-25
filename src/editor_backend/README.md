@@ -11,6 +11,12 @@ The first vertical slice supports:
   typed-property catalogue with manifest identities, typed constraints, enum choices, asset-kind
   filters, semantic/stage/domain metadata and required target-capability bits. Schema 1 remains
   readable by the editor for compatibility;
+- `vfx.catalogue.get` (when `CY_VFX` is enabled) — schema-2 catalogue generated from the VFX
+  compiler's registered node types, typed pins, property descriptors, and registered data-interface
+  names for sample controls. The editor requests it after the material
+  catalogue and opens the VFX shared canvas only when a compatible nonempty catalogue arrives.
+  Emitter-level renderers, compilation, and preview are subsequent
+  issue #15 work tracked in `openspec/changes/implement-issue-15-graph-authoring/`;
 - `material.validate` — parses and lowers canonical CyberGraph input;
 - `material.author` — validates a canvas and returns engine-canonical `.cygraph` text;
 - `material.preview.set` — validates an unsaved canvas and applies its canonical graph to a

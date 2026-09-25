@@ -37,6 +37,7 @@ mod settings;
 mod source;
 mod source_control;
 mod terrain;
+mod vfx_graph;
 mod viewport;
 
 use cy_editor_commands::{Arguments, Registry, Scope};
@@ -160,6 +161,20 @@ pub struct Inputs {
     pub material_preview_source: Option<(String, String)>,
     /// Authored graph waiting for its request-correlated canonical result.
     pub material_save: Option<(u64, String, String)>,
+    /// Search text for the engine-owned VFX node palette.
+    pub vfx_filter: String,
+    /// Selected output pin for a VFX connection gesture.
+    pub vfx_link_source: Option<(u64, u32, String, String)>,
+    /// Last rejected VFX connection.
+    pub vfx_link_problem: Option<String>,
+    /// Last rejected VFX property edit.
+    pub vfx_property_problem: Option<String>,
+    /// New VFX system name entered in the panel.
+    pub vfx_system_name: String,
+    /// New emitter name entered in the panel.
+    pub vfx_emitter_name: String,
+    /// Last refused VFX system or stage action.
+    pub vfx_document_problem: Option<String>,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -233,6 +248,13 @@ impl Default for Inputs {
             material_open_reference: None,
             material_preview_source: None,
             material_save: None,
+            vfx_filter: String::new(),
+            vfx_link_source: None,
+            vfx_link_problem: None,
+            vfx_property_problem: None,
+            vfx_system_name: "NewVfx".into(),
+            vfx_emitter_name: "Emitter0".into(),
+            vfx_document_problem: None,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),
@@ -346,6 +368,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "inspector" => inspector::show(self, ui),
                 "content-browser" => browser::show(self, ui),
                 "editor-materials" => material_graph::show(self, ui),
+                "editor-vfx-graph" => vfx_graph::show(self, ui),
                 "editor-terrain" => terrain::show(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),

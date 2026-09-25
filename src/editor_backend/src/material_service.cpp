@@ -5,6 +5,9 @@
 #include <cy/graph/material/lower_material.h>
 #include <cy/graph/text.h>
 #include <cy/rendering/material/compiler.h>
+#if defined(CY_EDITOR_HAS_VFX)
+#    include <cy/vfx/catalogue.h>
+#endif
 
 #include <cstring>
 #include <iterator>
@@ -543,10 +546,16 @@ CyResult capabilities(CyServiceSession_T& session,
         "material.compile", "material.author",          "preview.create",
         "preview.destroy",  "preview.parameter.update", "preview.reload",
     };
+#if defined(CY_EDITOR_HAS_VFX)
+    constexpr u32 vfx_operations = 1;
+#else
+    constexpr u32 vfx_operations = 0;
+#endif
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 1) ||
-        !put_u32(session.event_payload, static_cast<u32>(std::size(operations) +
-                                                         (authoring_runtime != nullptr ? 1 : 0)))) {
+        !put_u32(session.event_payload,
+                 static_cast<u32>(std::size(operations) + (authoring_runtime != nullptr ? 1 : 0) +
+                                  vfx_operations))) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     for (const char* operation : operations) {
@@ -554,6 +563,11 @@ CyResult capabilities(CyServiceSession_T& session,
             return CY_RESULT_OUT_OF_MEMORY;
         }
     }
+#if defined(CY_EDITOR_HAS_VFX)
+    if (!put_text(session.event_payload, "vfx.catalogue.get")) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+#endif
     if (authoring_runtime != nullptr && !put_text(session.event_payload, "material.preview.set")) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
@@ -652,6 +666,12 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
             !encoded) {
             result = CY_RESULT_OUT_OF_MEMORY;
         }
+#if defined(CY_EDITOR_HAS_VFX)
+    } else if (!session->cancelled && operation == "vfx.catalogue.get") {
+        if (Status encoded = vfx::encode_vfx_catalogue(session->event_payload); !encoded) {
+            result = CY_RESULT_OUT_OF_MEMORY;
+        }
+#endif
     } else if (!session->cancelled && operation == "material.validate") {
         result = compile_graph(*session, preview_runtime_, *allocator_, false);
     } else if (!session->cancelled && operation == "material.compile") {

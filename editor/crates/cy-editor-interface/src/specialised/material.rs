@@ -401,6 +401,16 @@ impl<'a> MaterialAuthoring<'a> {
 /// This is the same interchange used by [`MaterialAuthoring`]; it is not a canonical CyberGraph
 /// and contains no compiler implementation.
 pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
+    graph_canvas_interchange(name, canvas, "cymatcanvas", "material")
+}
+
+/// Serialize any domain's shared canvas as editable interchange facts.
+pub(crate) fn graph_canvas_interchange(
+    name: &str,
+    canvas: &GraphCanvas,
+    format: &str,
+    subject: &str,
+) -> Result<String> {
     if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
         return Err(Problem::new(
             "name a material",
@@ -408,8 +418,8 @@ pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
         ));
     }
     let mut out = String::new();
-    let _ = writeln!(out, "cymatcanvas {INTERCHANGE_VERSION}");
-    let _ = writeln!(out, "material {name}");
+    let _ = writeln!(out, "{format} {INTERCHANGE_VERSION}");
+    let _ = writeln!(out, "{subject} {name}");
     for node in canvas.nodes() {
         let _ = writeln!(out, "node {} {}", node.key.ordinal(), node.type_name);
         if let Some(at) = canvas.layout_of(node.key) {
@@ -478,8 +488,18 @@ fn load_canvas_nodes(
 /// Reopen an engine material canvas source using the active engine catalogue.
 /// The canonical `.cygraph` is produced by the engine's material authoring service.
 pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result<String> {
+    load_graph_canvas_interchange(source, canvas, "cymatcanvas", "material")
+}
+
+/// Restore any domain's shared canvas through its active backend catalogue.
+pub(crate) fn load_graph_canvas_interchange(
+    source: &str,
+    canvas: &mut GraphCanvas,
+    format: &str,
+    subject: &str,
+) -> Result<String> {
     let mut lines = source.lines();
-    if lines.next() != Some("cymatcanvas 1") {
+    if lines.next() != Some(format!("{format} {INTERCHANGE_VERSION}").as_str()) {
         return Err(Problem::new(
             "open a material graph",
             "unsupported canvas version",
@@ -487,7 +507,7 @@ pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result
     }
     let name = lines
         .next()
-        .and_then(|line| line.strip_prefix("material "))
+        .and_then(|line| line.strip_prefix(&format!("{subject} ")))
         .ok_or_else(|| Problem::new("open a material graph", "missing material name"))?
         .to_owned();
     if name.is_empty()

@@ -57,6 +57,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/asset.cpp
+        src/catalogue.cpp
         src/compile.cpp
         src/emit_slang.cpp
         src/gpu_layout.cpp

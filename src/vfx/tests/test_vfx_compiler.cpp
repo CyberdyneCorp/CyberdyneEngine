@@ -543,12 +543,18 @@ CY_TEST_CASE(
     desc.cost = InterfaceCost::Moderate;
     desc.cpu_available = true;
     CY_REQUIRE(interfaces.register_interface(desc).has_value());
+    CY_REQUIRE(register_vfx_interface_nodes(registry, interfaces).has_value());
+    const graph::NodeType* flow_type = registry.find(Name::intern("vfx.sample.project_grid.flow"));
+    CY_REQUIRE(flow_type != nullptr);
+    CY_REQUIRE_EQ(flow_type->pins().size(), 2U);
+    CY_CHECK_EQ(flow_type->pins()[1].type, Name::intern("float3"));
 
     VfxSystemAsset asset(allocator(), Name::intern("custom"));
     Emitter emitter(allocator(), Name::intern("reader"));
     emitter.set_capacity(16);
     StageBuilder stage(allocator(), "update");
-    const NodeKey pressure = stage.sample("project_grid", "pressure", stage.attribute("position"));
+    const NodeKey pressure =
+        stage.sample_field("project_grid", "pressure", stage.attribute("position"));
     stage.write("size", pressure);
     CY_REQUIRE(stage.ok());
     CY_REQUIRE(emitter.set_stage(Stage::Update, stage.take()).has_value());
@@ -576,7 +582,7 @@ CY_TEST_CASE("a CPU-path effect using a GPU-only interface fails to cook, naming
     // FAIL with a diagnostic naming the interface."
     emitter.set_path(SimulationPath::CpuRequired);
     StageBuilder stage(allocator(), "update");
-    stage.write("size", stage.sample("scene_sdf", "distance", stage.attribute("position")));
+    stage.write("size", stage.sample_field("scene_sdf", "distance", stage.attribute("position")));
     CY_REQUIRE(stage.ok());
     CY_REQUIRE(emitter.set_stage(Stage::Update, stage.take()).has_value());
     CY_REQUIRE(asset.add_emitter(std::move(emitter)).has_value());

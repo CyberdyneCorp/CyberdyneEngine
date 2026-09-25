@@ -47,6 +47,7 @@ namespace cy::vfx {
 
 using graph::Graph;
 using graph::NodeRegistry;
+class DataInterfaceRegistry;
 
 /// The six stages `vfx-system`'s table declares. `Count` is the size of a per-stage array and never
 /// a stage.
@@ -290,5 +291,10 @@ inline constexpr const char* kCurve = "curve";
 /// Register the built-in VFX node types. Idempotent: registering twice is refused by the registry
 /// itself, which is how a caller finds out it did.
 [[nodiscard]] Status register_vfx_nodes(NodeRegistry& registry) noexcept;
+
+/// Add typed sample nodes for every field in a data-interface registry. Call this after adding
+/// project interfaces so their fields reach the editor palette and the cook registry alike.
+[[nodiscard]] Status register_vfx_interface_nodes(NodeRegistry& registry,
+                                                  const DataInterfaceRegistry& interfaces) noexcept;
 
 }  // namespace cy::vfx
