@@ -2,9 +2,11 @@
 
 #include <cy/scene/node.h>
 
+#include <bit>
 #include <cstdlib>
 #include <filesystem>
 #include <string_view>
+#include <vector>
 
 namespace cy::sample::editor_window {
 namespace {
@@ -14,7 +16,91 @@ namespace ser = scene::serialization;
 struct ScriptedNode {
     u64 identity;
     std::string type;
+    const ser::WorldNode* authored;
 };
+
+void append_word(std::vector<u8>& bytes, u32 value) {
+    for (u32 shift = 0; shift < 32; shift += 8) {
+        bytes.push_back(static_cast<u8>(value >> shift));
+    }
+}
+
+void append_integer(std::vector<u8>& bytes, u64 value) {
+    for (u32 shift = 0; shift < 64; shift += 8) {
+        bytes.push_back(static_cast<u8>(value >> shift));
+    }
+}
+
+bool append_export(std::vector<u8>& bytes, const ser::World& world,
+                   const ser::WorldFieldDecl& field, const ser::WorldValue& value) {
+    const std::string_view name = world.text(field.name);
+    if (name == "class" || name.empty() || name.size() > UINT32_MAX) {
+        return false;
+    }
+    u32 kind = CY_VAR_NIL;
+    std::vector<u8> payload;
+    switch (value.kind) {
+        case ser::WorldValueKind::Bool:
+            kind = CY_VAR_BOOL;
+            payload.push_back(value.integer != 0 ? 1 : 0);
+            break;
+        case ser::WorldValueKind::Int:
+            kind = CY_VAR_I64;
+            append_integer(payload, static_cast<u64>(value.integer));
+            break;
+        case ser::WorldValueKind::Float:
+            kind = CY_VAR_F32;
+            append_word(payload, std::bit_cast<u32>(value.lanes[0]));
+            break;
+        case ser::WorldValueKind::Double:
+            kind = CY_VAR_F64;
+            append_integer(payload, std::bit_cast<u64>(value.real));
+            break;
+        case ser::WorldValueKind::Text: {
+            kind = CY_VAR_STRING;
+            const Span<const u8> text = world.blob(value);
+            append_word(payload, static_cast<u32>(text.size()));
+            payload.insert(payload.end(), text.begin(), text.end());
+            break;
+        }
+        default:
+            return false;
+    }
+    append_word(bytes, static_cast<u32>(name.size()));
+    bytes.insert(bytes.end(), name.begin(), name.end());
+    append_word(bytes, kind);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return true;
+}
+
+std::vector<u8> authored_exports(const ser::World& world, const ser::WorldNode& node,
+                                 u32 schema) {
+    std::vector<u8> bytes;
+    append_word(bytes, 0x54535943);  // CYST, the Swift state-blob magic.
+    append_word(bytes, schema);
+    append_word(bytes, 0);
+    u32 count = 0;
+    for (const ser::WorldTypeDecl& type : world.types()) {
+        if (world.text(type.name) != "ScriptBehaviour") {
+            continue;
+        }
+        const ser::WorldComponent* component = node.find(type.file_type);
+        if (component == nullptr) {
+            break;
+        }
+        for (const ser::WorldFieldDecl& field : type.fields()) {
+            const ser::WorldField* held = component->find(field.file_field);
+            if (held != nullptr && append_export(bytes, world, field, held->value)) {
+                ++count;
+            }
+        }
+        break;
+    }
+    for (u32 index = 0; index < 4; ++index) {
+        bytes[8 + index] = static_cast<u8>(count >> (index * 8));
+    }
+    return count == 0 ? std::vector<u8>{} : bytes;
+}
 
 std::string script_type(const ser::World& world, const ser::WorldNode& node) {
     for (const ser::WorldTypeDecl& declared : world.types()) {
@@ -91,7 +177,7 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
         }
         std::string type = script_type(authored, node);
         if (!type.empty()) {
-            nodes.push_back(ScriptedNode{node.identity, std::move(type)});
+            nodes.push_back(ScriptedNode{node.identity, std::move(type), &node});
         }
     }
     if (nodes.empty()) {
@@ -137,6 +223,23 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
             !created) {
             stop();
             return make_unexpected(created.error());
+        } else {
+            const abi::BehaviourInstance* instance = runtime_->instance(*created);
+            if (instance == nullptr || instance->record == nullptr) {
+                stop();
+                return fail(ErrorCode::Internal, "the created script instance was lost");
+            }
+            const CyBehaviourVTable& callbacks = instance->record->vtable;
+            const std::vector<u8> exports =
+                authored_exports(authored, *node.authored, callbacks.schema_version);
+            if (!exports.empty() && callbacks.deserialize != nullptr &&
+                callbacks.deserialize(instance->instance, exports.data(),
+                                      static_cast<u32>(exports.size()), callbacks.schema_version,
+                                      callbacks.user_data) != CY_RESULT_OK) {
+                stop();
+                return fail(ErrorCode::InvalidArgument,
+                            "the authored ScriptBehaviour exports could not be applied");
+            }
         }
         identities_.push_back(node.identity);
     }

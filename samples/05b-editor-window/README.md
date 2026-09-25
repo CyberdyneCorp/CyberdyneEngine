@@ -76,6 +76,13 @@ module build to finish, then press Play. The behaviour rotates the cube 45 degre
 around local Z on fixed ticks. Pause holds its angle; Stop restores the saved identity rotation.
 Select the cube and click the arrow beside `ScriptBehaviour.class` in the Inspector to open
 `SpinCube.swift` in the editor's Swift Workspace.
+The cube's `degreesPerSecond` property appears below `ScriptBehaviour.class` in the Inspector.
+Changing it writes an authored per-object value to the world; save the scene and press Play again
+to apply that speed to the Swift behaviour. The sample starts at 45 degrees per second.
+The [export Inspector capture](../../docs/design/images/editor-script-export-inspector.png)
+shows the authored value beside its Swift declaration. For another behaviour, declare a matching
+field on its authored `ScriptBehaviour` component with the same name and value kind as the Swift
+`@Export` property; the hosted runtime applies authored scalar and text fields on Play.
 The workspace colors Swift syntax and the sample's `Package.swift` gives SourceKit-LSP the
 `CyberdyneKit` dependency for diagnostics. Save edited source, then choose **Build**. A successful
 build automatically reloads the running Play session. **Reload Module** can also reapply the latest

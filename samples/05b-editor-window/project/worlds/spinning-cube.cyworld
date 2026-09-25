@@ -9,6 +9,7 @@ type 2 runtime "MeshRenderer"
   field 13 vec3 "tint" "Per-instance base colour multiplier."
 type 3 runtime "ScriptBehaviour"
   field 6 text "class" "The registered Swift behaviour to run during Play."
+  field 14 float "degreesPerSecond" "SpinCube rotation speed in degrees per second (0–360)."
 type 4 runtime "LightSource"
   field 7 int "kind" ""
   field 8 float "intensity" ""
@@ -36,6 +37,7 @@ node 1 - "demo" "SpinCube"
     field 13 1 0.25 0.12
   component 3
     field 6 "SpinCube"
+    field 14 45
 node 2 - "demo" "Directional Light"
   component 1
     field 1 -0.3826834 0 0 0.9238795
