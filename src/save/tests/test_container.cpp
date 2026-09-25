@@ -249,7 +249,8 @@ CY_TEST_CASE("an incompatible build is named rather than reported as corruption"
     LoadReport report;
     CY_CHECK_FALSE(check_compatibility(manifest, policy, report).has_value());
     CY_CHECK_EQ(report.failure, LoadFailure::IncompatibleBuild);
-    CY_CHECK_EQ(std::string_view(report.detail), std::string_view("2.0.0"));
+    CY_CHECK_EQ(std::string_view(report.subject), std::string_view("2.0.0"));
+    CY_CHECK_GT(std::string_view(report.detail).size(), 0U);
 
     // The same save under a migratable policy loads.
     LoadReport permissive;
@@ -303,7 +304,9 @@ CY_TEST_CASE("a missing plugin is named, and is not reported as corruption") {
     LoadReport report;
     CY_CHECK_FALSE(check_compatibility(manifest, policy, report).has_value());
     CY_CHECK_EQ(report.failure, LoadFailure::MissingPlugin);
-    CY_CHECK_EQ(std::string_view(report.detail), std::string_view("weather"));
+    CY_CHECK_EQ(std::string_view(report.subject), std::string_view("weather"));
+    CY_CHECK_EQ(report.subject_version, 3U);
+    CY_CHECK_GT(std::string_view(report.detail).size(), 0U);
     CY_CHECK_EQ(std::string_view(load_failure_name(report.failure)),
                 std::string_view("missing-plugin"));
 }

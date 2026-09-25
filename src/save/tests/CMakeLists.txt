@@ -57,8 +57,13 @@ function(cy_save_declare_tests)
             "${tests_dir}/test_checkpoint.cpp"
             "${tests_dir}/test_conflict.cpp"
             "${tests_dir}/test_container.cpp"
+            "${tests_dir}/test_forbidden.cpp"
+            "${tests_dir}/test_inspect.cpp"
             "${tests_dir}/test_overlay.cpp"
             "${tests_dir}/test_traits.cpp"
+        # The committed fixture save the inspector cases read: data/inspect-campaign/, written by
+        # inspect_fixture.h and held byte-identical to it by a save_archive case.
+        DEFINITIONS "CY_SAVE_FIXTURE_DIR=\"${tests_dir}/data\""
         DEPENDENCIES cy::save)
 
     # KIND determinism, NOT integration, since M10 task 6.4 — and the source stays here, with the
@@ -76,6 +81,8 @@ function(cy_save_declare_tests)
         NAME save_archive
         KIND integration
         SOURCES "${tests_dir}/test_archive.cpp"
+        # Where "the committed inspector fixture is what its generator writes" finds it.
+        DEFINITIONS "CY_SAVE_FIXTURE_DIR=\"${tests_dir}/data\""
         DEPENDENCIES cy::save)
 
     # KIND determinism, NOT integration, since M10 task 6.4. `testing-and-quality`'s row for that

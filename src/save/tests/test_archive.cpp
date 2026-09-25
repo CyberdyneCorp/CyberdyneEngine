@@ -2,13 +2,16 @@
 
 #include <cy/save/archive.h>
 #include <cy/save/conflict.h>
+#include <cy/save/inspect.h>
 #include <cy/save/storage.h>
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
 #include "fixtures.h"
+#include "inspect_fixture.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <string_view>
@@ -472,4 +475,97 @@ CY_TEST_CASE("a conflict is decided on meaning, not on which file was written la
     CY_CHECK_EQ(resolution.outcome, ConflictOutcome::KeepRemote);
     CY_CHECK_EQ(remote_manifest.progress, 40ULL);
     CY_CHECK_EQ(local_manifest.progress, 12ULL);
+}
+
+CY_TEST_CASE("a refused load still names the build that wrote the save after the load returns") {
+    MemoryBackend store(test_allocator());
+    SaveArchive archive(test_allocator());
+    CY_REQUIRE(archive.open(store).has_value());
+    Overlay written(test_allocator());
+    populate(written);
+    CY_REQUIRE(archive.commit(written, identity()).has_value());
+
+    LoadPolicy policy;
+    policy.compatibility = Compatibility::ExactBuild;
+    policy.build_id = "6.0.1+test";
+    Overlay read(test_allocator());
+    LoadReport report;
+    CY_CHECK_FALSE(archive.load(policy, read, report).has_value());
+    CY_CHECK_EQ(report.failure, LoadFailure::IncompatibleBuild);
+
+    // Reuse the stack the load ran on before the report is read, as any caller's next call does.
+    // Before `subject`, `detail` pointed into the manifest `load_generation` had declared as a
+    // local, and this read printed whatever the next call had left there.
+    Manifest unrelated(test_allocator());
+    LoadReport scratch;
+    CY_REQUIRE(archive.read_manifest(1, unrelated, scratch).has_value());
+    CY_CHECK_EQ(std::string_view(report.subject), std::string_view("6.0.0+test"));
+    CY_CHECK_EQ(std::string_view(report.detail),
+                std::string_view("the save was written by a build this policy does not accept"));
+}
+
+CY_TEST_CASE("the committed inspector fixture is what its generator writes, byte for byte") {
+    // src/save/tests/data/inspect-campaign/ is inspect_fixture.h's campaign, committed. Every
+    // object in it must be the generator's and the generator must write nothing that is not in it —
+    // so the fixture cannot drift from the table that describes it, and a change to the container's
+    // encoding fails here rather than leaving a fixture that quietly means something else.
+    const char* regenerate = std::getenv("CY_SAVE_WRITE_FIXTURE");
+    if (regenerate != nullptr && regenerate[0] != '\0') {
+        FilesystemBackend target;
+        CY_REQUIRE(target.open(regenerate).has_value());
+        CY_REQUIRE(write_fixture_campaign(target, test_allocator()).has_value());
+    }
+    MemoryBackend generated(test_allocator());
+    CY_REQUIRE(write_fixture_campaign(generated, test_allocator()).has_value());
+    FilesystemBackend committed;
+    CY_REQUIRE(committed.open(CY_SAVE_FIXTURE_DIR "/inspect-campaign").has_value());
+
+    struct Comparison {
+        const SaveBackend* generated = nullptr;
+        const SaveBackend* committed = nullptr;
+        u32 objects = 0;
+        u32 differing = 0;
+    };
+    const auto compare = [](void* user, std::string_view key) noexcept {
+        auto& state = *static_cast<Comparison*>(user);
+        ++state.objects;
+        Array<u8> mine(test_allocator());
+        Array<u8> theirs(test_allocator());
+        const bool read = state.generated->read(key, mine).has_value() &&
+                          state.committed->read(key, theirs).has_value();
+        const bool same =
+            read && mine.size() == theirs.size() &&
+            (mine.empty() || std::memcmp(mine.data(), theirs.data(), mine.size()) == 0);
+        state.differing += same ? 0U : 1U;
+        return true;
+    };
+    Comparison check{&generated, &committed};
+    CY_REQUIRE(committed.list("", compare, &check).has_value());
+    CY_CHECK_EQ(check.differing, 0U);
+    CY_CHECK_EQ(static_cast<usize>(check.objects), generated.object_count());
+    CY_CHECK_GT(check.objects, 3U);
+}
+
+CY_TEST_CASE("a save is inspected from the committed fixture, as inspect_fixture.h describes it") {
+    // The fixture on disk, read through the filesystem backend — the same bytes `cy_save_inspect`
+    // is pointed at by m11a:save-inspector. Here rather than in unit.save because it reads a
+    // directory, which costs a unit case its whole budget.
+    FilesystemBackend committed;
+    CY_REQUIRE(committed.open(CY_SAVE_FIXTURE_DIR "/inspect-campaign").has_value());
+    SaveArchive archive(test_allocator());
+    CY_REQUIRE(archive.open(committed).has_value());
+    reflect::TypeRegistry types;
+    CY_REQUIRE(fixture_types(types).has_value());
+    InspectOptions options;
+    options.types = &types;
+    SaveInspection inspection(test_allocator());
+    CY_REQUIRE(inspect_save(archive, 0, options, inspection).has_value());
+    CY_CHECK_FALSE(inspection.restore.failed());
+    CY_CHECK_EQ(inspection.generation, 3U);
+    CY_CHECK_EQ(inspection.generations.size(), 3U);
+    CY_CHECK_EQ(inspection.manifest.simulation_point, kFixtureTicks[2]);
+    CY_CHECK_EQ(inspection.modified, 2U);
+    CY_CHECK_EQ(inspection.created, 0U);
+    CY_CHECK_EQ(inspection.tombstoned, 1U);
+    CY_CHECK_EQ(inspection.fragments, 1U);
 }

@@ -804,8 +804,8 @@ known_gap_declared_by = "m11c"
 
 [[criterion]]
 id = "save-inspector"
-describe = "a save can be inspected and diffed. `Save diagnostics and inspection` asks what is in a save, why a field is in it, and what changed between two of them; there is no inspector in the tree and no semantic diff"
-source = "save-and-persistence (Save diagnostics and inspection), src/save/README.md"
+describe = "a save can be inspected and diffed. `Save diagnostics and inspection` asks what is in a save, why a field is in it, and what changed between two of them. `cy/save/inspect.h` answers all three through the engine's own loader, and this criterion runs both halves of it: the `a save is inspected*` and `a semantic diff*` cases of `unit.save`, which hold the inspector to a committed three-generation fixture save, and `cy_save_inspect` itself over that fixture — its entity counts, one `why` line per saved field and entry, and the semantic diff of its last two generations"
+source = "save-and-persistence (Save diagnostics and inspection), src/save/README.md, openspec/changes/close-save-system-gaps"
 kind = "command"
 run = '''
 set -e
@@ -817,35 +817,55 @@ filter='a save is inspected*,a semantic diff*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 2 it names"
-test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.save any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "the filter selected ${selected:-0} case(s) of the 7 it names"
+test "${selected:-0}" -ge 7 || { echo "the named case(s) are not in unit.save any more — renamed, deleted, or the filter is stale"; exit 1; }
+tool="$d/tools/save/cy_save_inspect"
+test -x "$tool" || { echo "no $tool — the save inspector's command line was not built"; exit 1; }
+fixture=src/save/tests/data/inspect-campaign
+shown="$("$tool" show "$fixture" --why)" || { echo "$shown"; echo "cy_save_inspect show FAILED over the committed fixture"; exit 1; }
+printf '%s\n' "$shown" | grep -Fx "entities modified=2 created=0 tombstoned=1 fragments=1" || { echo "$shown"; echo "the inspector's counts are not the fixture's"; exit 1; }
+why=$(printf '%s\n' "$shown" | grep -c '^why ' || true)
+echo "the inspector explained ${why} saved field(s) and entries of the 7 the fixture's newest generation holds"
+test "$why" -eq 7
+diffed="$("$tool" diff "$fixture@2" "$fixture@3")" || { echo "$diffed"; echo "cy_save_inspect diff FAILED"; exit 1; }
+printf '%s\n' "$diffed"
+printf '%s\n' "$diffed" | grep -q '^diff entity-reverted .*entity=10000000000000000000000000000002'
+printf '%s\n' "$diffed" | grep -q '^diff field-changed .*entity=1000000000000000000000000000000a component=9402:- field=2:-'
+printf '%s\n' "$diffed" | grep -Fxq "diff total=6"
 '''
 ci_job = "milestone-m11a"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11a to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `unit.save` is registered and holds 71 cases; the filter `a save is inspected*,a semantic diff*` selects 0 of them and skips 45. There is no inspector binary, no `cy_save inspect` and no semantic diff anywhere in `src/save/` or `tools/` — the word appears only in comments describing numbers an inspector WOULD read. `save-and-persistence`'s Save diagnostics and inspection requirement asks what is in a save, why a field is in it, and what changed between two of them, and none of the three can be asked today. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/save/src/inspect.cpp"
+token  = "++usage.modified;"
+note   = "the inspector stops counting modified entities, so the fixture's newest generation reports `modified=0` rather than 2: `a save is inspected: manifest, scope inventory, entity counts and sizes` fails and the tool's counts line no longer matches"
 
 [[criterion]]
 id = "save-forbidden-patterns-checked"
-describe = "the ten forbidden save patterns are CHECKED. The specification says each `SHALL be checkable` and not one of them is checked by any tool, criterion or grep today, which is the difference between a rule and a sentence"
-source = "save-and-persistence (Forbidden save patterns)"
+describe = "the ten forbidden save patterns are CHECKED. The specification says each `SHALL be checkable`; `tools/save/check_forbidden.py` checks all ten — a static check over save code for the seven that are shapes of code, and a run of the `forbidden save pattern <id>:` cases of `unit.save` for the nine that are properties of what a save does — and FAILS rather than passes when a runtime case cannot run or no longer exists. `tools/save/selftest.py` runs first and proves every static check red by planting its pattern in a copy of the real tree"
+source = "save-and-persistence (Forbidden save patterns), openspec/changes/close-save-system-gaps"
 kind = "command"
 run = '''
 set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
 checker=tools/save/check_forbidden.py
 test -f "$checker" || { echo "no $checker — not one of the ten forbidden save patterns is checked by anything"; exit 1; }
 python3 "$checker" --list | tee /tmp/cy-m11a-save.txt
 count=$(grep -c . /tmp/cy-m11a-save.txt || true)
 echo "$count forbidden save pattern(s) are checked"
 test "$count" -ge 10
-python3 "$checker"
+python3 tools/save/selftest.py
+just build-engine --profile dev > /dev/null
+python3 "$checker" --binary "$d/cy_test_unit_save"
 '''
 ci_job = "milestone-m11a"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11a to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `tools/save/check_forbidden.py` does not exist, so the criterion stops at its own first line. Not one of the ten forbidden save patterns the specification says SHALL be checkable is checked by any tool, criterion or grep in the tree. The gap between a rule and a sentence is the whole subject, and it is still a sentence. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/save/src/archive.cpp"
+token  = "a failed load restores nothing"
+note   = "SaveArchive::load stops clearing the caller's overlay when every generation fails, so a load whose last chunk is corrupt hands back the chunks it applied before it; `forbidden save pattern invented-state: an unrecoverable load leaves nothing behind` fails and the checker reports invented-state"
 
 [[criterion]]
 id = "save-benchmark"

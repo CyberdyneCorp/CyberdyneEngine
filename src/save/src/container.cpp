@@ -2,6 +2,7 @@
 
 #include <cy/save/container.h>
 
+#include <cstdio>
 #include <cstring>
 
 namespace cy::save {
@@ -179,6 +180,16 @@ Expected<serialize::TaggedChunk, Error> read_one_chunk(Span<const u8> bytes,
         report.detail = "a save artefact carries no chunk";
     }
     return chunk;
+}
+
+/// Copy what a failure names into the report, which owns it. Truncated rather than refused: a
+/// subject is for a person to read, and the first 63 bytes of a build identity name it.
+void name_subject(LoadReport& report, const char* subject, u32 version) noexcept {
+    const usize length = std::strlen(subject);
+    const usize kept = length < LoadReport::kSubjectLength ? length : LoadReport::kSubjectLength;
+    std::memcpy(report.subject, subject, kept);
+    report.subject[kept] = '\0';
+    report.subject_version = version;
 }
 
 /// Make sure a failure NAMES something. Every path below reports its own diagnostic; this is the
@@ -495,6 +506,9 @@ Status apply_payload(serialize::ValueRecord& record, const LoadPolicy& policy,
         if (Status migrated = policy.schemas->migrate(record); !migrated) {
             report.failure = LoadFailure::MigrationFailed;
             report.detail = "a record could not be migrated to the current schema version";
+            char type[LoadReport::kSubjectLength + 1] = {};
+            (void)std::snprintf(type, sizeof(type), "type %u", record.type().value());
+            name_subject(report, type, written_at);
             return migrated;
         }
         report.records_migrated += record.schema_version() != written_at ? 1U : 0U;
@@ -815,7 +829,10 @@ Status check_build(const Manifest& manifest, const LoadPolicy& policy,
         return ok();
     }
     report.failure = LoadFailure::IncompatibleBuild;
-    report.detail = manifest.build_id;
+    // A literal, and the build itself in `subject`: `manifest` is the caller's, and a load's
+    // manifest is a local that is gone by the time anybody reads the report.
+    report.detail = "the save was written by a build this policy does not accept";
+    name_subject(report, manifest.build_id, 0);
     return fail(ErrorCode::Unsupported, "the save was written by an incompatible build");
 }
 
@@ -840,9 +857,8 @@ Status check_plugins(const Manifest& manifest, const LoadPolicy& policy,
             continue;
         }
         report.failure = LoadFailure::MissingPlugin;
-        // Points into the caller's manifest, which outlives the report by construction: the report
-        // is read beside the manifest that produced it.
-        report.detail = plugin.name;
+        report.detail = "a plugin the save requires is not present";
+        name_subject(report, plugin.name, plugin.version);
         return fail(ErrorCode::NotFound, "a plugin the save requires is not present");
     }
     return ok();

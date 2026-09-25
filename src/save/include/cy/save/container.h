@@ -105,11 +105,19 @@ enum class Compatibility : u8 {
 /// counts are the save inspector's numbers and a successful load has them too.
 struct LoadReport {
     LoadFailure failure = LoadFailure::None;
-    /// What was incompatible, missing or damaged. A literal or a pointer into caller storage that
-    /// outlives the report; nothing here owns text.
+    /// What was incompatible, missing or damaged, as a sentence. Always a string literal: what the
+    /// failure NAMES is `subject` below, which the report owns.
     const char* detail = "";
     /// The chunk the failure names, when it names one.
     assets::ContentHash chunk;
+    /// WHAT the failure names, owned by the report: the build that wrote an incompatible save, the
+    /// plugin a save requires, the type a migration could not carry. Owned rather than pointed at,
+    /// because the manifest a load reads is the load's own, and a report outlives the load.
+    static constexpr usize kSubjectLength = 63;
+    char subject[kSubjectLength + 1] = {};
+    /// The version that goes with `subject`: the plugin's, or the schema version a record could not
+    /// be migrated from. Zero when the subject has none.
+    u32 subject_version = 0;
 
     u32 chunks_read = 0;
     u32 records_read = 0;
