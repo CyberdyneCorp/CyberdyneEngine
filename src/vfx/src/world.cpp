@@ -193,6 +193,8 @@ Status SimulationWorld::initialize(const WorldDescription& description) noexcept
         !made) {
         return made;
     }
+    events_.reset();
+    readback_.reset();
     readback_.set_budget(description.readback_bytes_per_frame);
     instances_.clear();
     blocks_.clear();

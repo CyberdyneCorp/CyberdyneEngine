@@ -287,6 +287,42 @@ impl Editor {
         self.backend.request_vfx_compile(&self.runtime, source)
     }
 
+    /// Load an unsaved VFX document into the engine's isolated preview world.
+    pub fn request_vfx_preview_load(
+        &mut self,
+        source: String,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend.request_vfx_preview_load(&self.runtime, source)
+    }
+
+    /// Control the engine VFX preview.
+    pub fn request_vfx_preview_action(
+        &mut self,
+        action: crate::vfx_preview::VfxPreviewAction,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_action(&self.runtime, action)
+    }
+
+    /// Advance the running VFX preview by one frame interval.
+    pub fn request_vfx_preview_step(
+        &mut self,
+        seconds: f32,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_step(&self.runtime, seconds)
+    }
+
+    /// Change one exposed parameter in the engine instance without compiling.
+    pub fn request_vfx_preview_parameter(
+        &mut self,
+        name: &str,
+        values: &[f32],
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_parameter(&self.runtime, name, values)
+    }
+
     /// Apply an unsaved canvas to the hosted authored scene without writing the graph asset.
     pub fn preview_material_graph(
         &mut self,

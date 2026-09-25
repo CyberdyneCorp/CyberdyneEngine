@@ -5,7 +5,7 @@
 //! knows.  Keeping the bytes here (below presentation) lets a runtime disappear without taking an
 //! authored graph or the last compatible catalogue snapshot with it.
 
-use cy_editor_core::codec::Reader;
+use cy_editor_core::codec::{Reader, Writer};
 use cy_editor_core::observe::{Revision, Versioned};
 use cy_editor_core::problem::Problem;
 use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
@@ -13,11 +13,16 @@ use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 use crate::runtime::RuntimeSession;
 use crate::vfx_capabilities::VfxAuthoringCapabilities;
 use crate::vfx_compile::{VfxCompileFailure, VfxCompileReport};
+use crate::vfx_preview::{VfxPreviewAction, VfxPreviewSnapshot, parameter_update};
 
 const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
 const VFX_CATALOGUE_OPERATION: &str = "vfx.catalogue.get";
 const VFX_CAPABILITIES_OPERATION: &str = "vfx.authoring-capabilities.get";
 const VFX_COMPILE_OPERATION: &str = "vfx.compile";
+const VFX_PREVIEW_LOAD_OPERATION: &str = "vfx.preview.load";
+const VFX_PREVIEW_CONTROL_OPERATION: &str = "vfx.preview.control";
+const VFX_PREVIEW_STEP_OPERATION: &str = "vfx.preview.step";
+const VFX_PREVIEW_PARAMETER_OPERATION: &str = "vfx.preview.parameter.update";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
@@ -246,6 +251,9 @@ pub struct BackendServices {
     vfx_capabilities_requested: bool,
     vfx_compile_request: Option<RequestId>,
     vfx_compile_state: VfxCompileState,
+    vfx_preview_request: Option<RequestId>,
+    vfx_preview_snapshot: Option<VfxPreviewSnapshot>,
+    vfx_preview_problem: Option<String>,
     material_request: Option<(RequestId, MaterialOperation)>,
     material_state: MaterialRequestState,
     preview_handle: Option<u64>,
@@ -273,6 +281,9 @@ impl Default for BackendServices {
             vfx_capabilities_requested: false,
             vfx_compile_request: None,
             vfx_compile_state: VfxCompileState::Idle,
+            vfx_preview_request: None,
+            vfx_preview_snapshot: None,
+            vfx_preview_problem: None,
             material_request: None,
             material_state: MaterialRequestState::Idle,
             preview_handle: None,
@@ -296,43 +307,7 @@ impl BackendServices {
     /// Submit discovery work once per runtime connection.
     pub fn maintain(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
         if !runtime.is_connected() {
-            self.connected = false;
-            self.catalogue_request = None;
-            self.vfx_catalogue_request = None;
-            self.vfx_catalogue_requested = false;
-            self.vfx_capabilities_request = None;
-            self.vfx_capabilities_requested = false;
-            if self.catalogue_state == MaterialCatalogueState::Loading {
-                self.catalogue_state = MaterialCatalogueState::Failed;
-            }
-            if self.vfx_catalogue_state == MaterialCatalogueState::Loading {
-                self.vfx_catalogue_state = MaterialCatalogueState::Failed;
-            }
-            if self.vfx_capabilities_state == MaterialCatalogueState::Loading {
-                self.vfx_capabilities_state = MaterialCatalogueState::Failed;
-            }
-            if let Some((request, _)) = self.material_request.take() {
-                self.material_state = MaterialRequestState::Failed {
-                    request: Some(request),
-                    diagnostics: vec![local_diagnostic(
-                        "service-disconnected",
-                        "the runtime disconnected before publishing a terminal event",
-                    )],
-                };
-            }
-            if let Some(request) = self.vfx_compile_request.take() {
-                self.vfx_compile_state = VfxCompileState::Failed(
-                    Some(request),
-                    VfxCompileFailure {
-                        code: "service-disconnected".into(),
-                        message: "the runtime disconnected before compilation completed".into(),
-                        diagnostics: Vec::new(),
-                    },
-                );
-            }
-            self.preview_handle = None;
-            self.preview_request = None;
-            self.preview_pending_artefact = self.preview_applied_artefact;
+            self.disconnect();
             return None;
         }
         if self.connected {
@@ -394,6 +369,49 @@ impl BackendServices {
         }
     }
 
+    fn disconnect(&mut self) {
+        self.connected = false;
+        self.catalogue_request = None;
+        self.vfx_catalogue_request = None;
+        self.vfx_catalogue_requested = false;
+        self.vfx_capabilities_request = None;
+        self.vfx_capabilities_requested = false;
+        if self.catalogue_state == MaterialCatalogueState::Loading {
+            self.catalogue_state = MaterialCatalogueState::Failed;
+        }
+        if self.vfx_catalogue_state == MaterialCatalogueState::Loading {
+            self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+        }
+        if self.vfx_capabilities_state == MaterialCatalogueState::Loading {
+            self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+        }
+        if let Some((request, _)) = self.material_request.take() {
+            self.material_state = MaterialRequestState::Failed {
+                request: Some(request),
+                diagnostics: vec![local_diagnostic(
+                    "service-disconnected",
+                    "the runtime disconnected before publishing a terminal event",
+                )],
+            };
+        }
+        if let Some(request) = self.vfx_compile_request.take() {
+            self.vfx_compile_state = VfxCompileState::Failed(
+                Some(request),
+                VfxCompileFailure {
+                    code: "service-disconnected".into(),
+                    message: "the runtime disconnected before compilation completed".into(),
+                    diagnostics: Vec::new(),
+                },
+            );
+        }
+        if self.vfx_preview_request.take().is_some() || self.vfx_preview_snapshot.take().is_some() {
+            self.vfx_preview_problem = Some("the runtime disconnected from the VFX preview".into());
+        }
+        self.preview_handle = None;
+        self.preview_request = None;
+        self.preview_pending_artefact = self.preview_applied_artefact;
+    }
+
     /// Reconcile service events drained by the editor's ordinary frame pump.
     pub fn accept(&mut self, message: &Message) -> Option<Problem> {
         let Message::ServiceEvent {
@@ -419,6 +437,9 @@ impl BackendServices {
         }
         if self.vfx_compile_request == Some(*request) {
             return self.accept_vfx_compile(*request, *kind, *schema_version, payload);
+        }
+        if self.vfx_preview_request == Some(*request) {
+            return self.accept_vfx_preview(*kind, *schema_version, payload);
         }
         if self.preview_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_preview(*request, *kind, *schema_version, payload);
@@ -567,6 +588,133 @@ impl BackendServices {
     #[must_use]
     pub const fn vfx_compile_state(&self) -> &VfxCompileState {
         &self.vfx_compile_state
+    }
+
+    /// Start an isolated engine preview from the current unsaved VFX document.
+    pub fn request_vfx_preview_load(
+        &mut self,
+        runtime: &RuntimeSession,
+        source: String,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        self.submit_vfx_preview(runtime, VFX_PREVIEW_LOAD_OPERATION, source.into_bytes())
+    }
+
+    /// Send one play, pause, restart, scrub, or time-scale action to the engine.
+    pub fn request_vfx_preview_action(
+        &mut self,
+        runtime: &RuntimeSession,
+        action: VfxPreviewAction,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        self.submit_vfx_preview(runtime, VFX_PREVIEW_CONTROL_OPERATION, action.encode()?)
+    }
+
+    /// Advance an already playing engine preview by one bounded frame interval.
+    pub fn request_vfx_preview_step(
+        &mut self,
+        runtime: &RuntimeSession,
+        seconds: f32,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if !seconds.is_finite() || !(0.0..=0.25).contains(&seconds) {
+            return Err(Problem::new(
+                "advance VFX preview",
+                "invalid frame interval",
+            ));
+        }
+        let mut payload = Writer::new();
+        payload.f32(seconds);
+        self.submit_vfx_preview(runtime, VFX_PREVIEW_STEP_OPERATION, payload.finish())
+    }
+
+    /// Update one exposed parameter in the running engine instance without recompiling.
+    pub fn request_vfx_preview_parameter(
+        &mut self,
+        runtime: &RuntimeSession,
+        name: &str,
+        values: &[f32],
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        self.submit_vfx_preview(
+            runtime,
+            VFX_PREVIEW_PARAMETER_OPERATION,
+            parameter_update(name, values)?,
+        )
+    }
+
+    fn submit_vfx_preview(
+        &mut self,
+        runtime: &RuntimeSession,
+        operation: &str,
+        payload: Vec<u8>,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if self.vfx_preview_request.is_some() {
+            return Err(Problem::new(
+                "use VFX preview",
+                "a preview request is already pending",
+            ));
+        }
+        let request = runtime.service_request(SERVICE_SCHEMA_VERSION, operation, payload)?;
+        self.vfx_preview_request = Some(request);
+        self.vfx_preview_problem = None;
+        Ok(request)
+    }
+
+    /// Latest engine preview state, including bounded debug counts.
+    #[must_use]
+    pub fn vfx_preview_snapshot(&self) -> Option<&VfxPreviewSnapshot> {
+        self.vfx_preview_snapshot.as_ref()
+    }
+
+    /// Whether a preview command is still running in the hosted engine.
+    #[must_use]
+    pub const fn vfx_preview_pending(&self) -> bool {
+        self.vfx_preview_request.is_some()
+    }
+
+    /// Last preview refusal, if any.
+    #[must_use]
+    pub fn vfx_preview_problem(&self) -> Option<&str> {
+        self.vfx_preview_problem.as_deref()
+    }
+
+    fn accept_vfx_preview(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
+            return None;
+        }
+        self.vfx_preview_request = None;
+        let result = if schema_version == SERVICE_SCHEMA_VERSION {
+            match kind {
+                ServiceEventKind::Completed => VfxPreviewSnapshot::decode(payload),
+                ServiceEventKind::Failed => Err(decode_failure(payload)),
+                ServiceEventKind::Cancelled => Err(Problem::new(
+                    "use VFX preview",
+                    "the engine cancelled the preview request",
+                )),
+                ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
+            }
+        } else {
+            Err(Problem::new(
+                "use VFX preview",
+                "incompatible engine preview schema",
+            ))
+        };
+        match result {
+            Ok(snapshot) => {
+                self.vfx_preview_snapshot = Some(snapshot);
+                self.vfx_preview_problem = None;
+                None
+            }
+            Err(problem) => {
+                self.vfx_preview_problem = Some(problem.to_string());
+                Some(problem)
+            }
+        }
     }
 
     fn accept_vfx_compile(

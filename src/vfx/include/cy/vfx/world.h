@@ -231,6 +231,7 @@ public:
     [[nodiscard]] BudgetController& budget() noexcept { return budget_; }
     [[nodiscard]] const BudgetController& budget() const noexcept { return budget_; }
     [[nodiscard]] EventRouter& events() noexcept { return events_; }
+    [[nodiscard]] const EventRouter& events() const noexcept { return events_; }
     [[nodiscard]] ReadbackQueue& readback() noexcept { return readback_; }
     [[nodiscard]] const StepReport& last_step() const noexcept { return last_step_; }
 

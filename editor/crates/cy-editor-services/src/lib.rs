@@ -58,6 +58,7 @@ pub mod vfx_capabilities;
 pub mod vfx_commands;
 pub mod vfx_compile;
 pub mod vfx_document;
+pub mod vfx_preview;
 pub mod viewports;
 pub mod workspace;
 pub mod workspace_store;

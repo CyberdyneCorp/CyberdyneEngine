@@ -110,8 +110,13 @@ data-interface binding on each emitter. The draft was
 saved, read, undone, and redone through the editor's MCP commands. The engine reader and compiler
 load this exact file in `unit.editor_backend`; they validate both execution paths and produce a
 two-emitter cook. `integration.vfx` also plays the exact cooked document and checks CPU execution,
-GPU-preferred fallback on a device-free world, and publication of both emitters' particles. The
-draft is not installed as a running editor effect yet, so the viewport does not draw its particles.
+GPU-preferred fallback on a device-free world, and publication of both emitters' particles.
+In the VFX Graph panel, **Load preview** cooks the open draft and starts an isolated engine
+simulation. Play, Pause, Restart, Scrub, and Apply speed control that simulation. The panel reports
+live and per-emitter particle counts, recent spawn/kill counts, pool usage, event overflow, and CPU
+fallbacks. Editing the exposed `speed` parameter updates the running effect without cooking again.
+The preview currently reports simulation state only; its particles are not composited into the
+editor viewport yet.
 The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
 machine without a Vulkan device it reports a skip, so image verification remains open there.
 

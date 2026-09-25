@@ -211,6 +211,12 @@ pub struct Inputs {
     pub vfx_channel_depth: u32,
     /// New event channel's CPU readback flag.
     pub vfx_channel_readback: bool,
+    /// Target time for the engine preview scrub control.
+    pub vfx_preview_scrub_seconds: f32,
+    /// Requested engine preview time scale.
+    pub vfx_preview_time_scale: f32,
+    /// Latest exposed parameter edit waiting for the engine preview request slot.
+    pub vfx_live_parameters: std::collections::VecDeque<(String, [f32; 4], usize)>,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -308,6 +314,9 @@ impl Default for Inputs {
             vfx_channel_events: 1024,
             vfx_channel_depth: 4,
             vfx_channel_readback: false,
+            vfx_preview_scrub_seconds: 0.0,
+            vfx_preview_time_scale: 1.0,
+            vfx_live_parameters: std::collections::VecDeque::new(),
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

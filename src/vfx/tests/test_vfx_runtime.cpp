@@ -149,6 +149,25 @@ CY_TEST_CASE("VFX target availability reports device prerequisites without chang
     CY_CHECK_EQ(cpu.reason, FallbackReason::EffectRequiresCpu);
 }
 
+CY_TEST_CASE("reinitializing a VFX world discards its previous event and readback state") {
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    EventChannelDecl channel;
+    channel.name = Name::intern("old_channel");
+    channel.max_events_per_frame = 2;
+    CY_REQUIRE(world.events().declare(channel).has_value());
+    EventRecord event;
+    CY_REQUIRE(world.readback().publish(channel.name, {&event, 1}).has_value());
+    CY_CHECK_EQ(world.events().reports().size(), 1U);
+    CY_CHECK_EQ(world.readback().report().published, 1U);
+
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    CY_CHECK(world.events().reports().empty());
+    CY_CHECK_EQ(world.readback().report().published, 0U);
+    CY_REQUIRE(world.readback().begin_frame().has_value());
+    CY_CHECK(world.readback().available(channel.name).empty());
+}
+
 CY_TEST_CASE("an effect plays, spawns, ages and dies, and the step report says so") {
     Cooked cooked;
     CY_REQUIRE(cooked.ok);

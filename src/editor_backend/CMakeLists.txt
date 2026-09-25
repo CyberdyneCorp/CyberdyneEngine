@@ -48,6 +48,11 @@ if(CY_BUILD_TESTS)
             DEPENDENCIES cy::editor-backend)
         target_compile_definitions(cy_test_integration_editor_backend_compile PRIVATE
             CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+        if(CY_VFX)
+            target_sources(cy_test_integration_editor_backend_compile PRIVATE
+                "${tests_dir}/test_vfx_preview_service.cpp")
+            target_link_libraries(cy_test_integration_editor_backend_compile PRIVATE cy::vfx)
+        endif()
     endfunction()
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_editor_backend_declare_tests)
 endif()

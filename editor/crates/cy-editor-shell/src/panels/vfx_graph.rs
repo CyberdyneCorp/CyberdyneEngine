@@ -11,6 +11,7 @@ use cy_editor_interface::specialised::vfx::{
 use cy_editor_services::MaterialCatalogueState;
 use cy_editor_services::backend::VfxCompileState;
 use cy_editor_services::vfx_capabilities::VfxAuthoringCapabilities;
+use cy_editor_services::vfx_preview::VfxPreviewAction;
 
 use super::{Intent, Panels, material_graph, nothing_here, secondary};
 
@@ -37,6 +38,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
     ui.heading("VFX Graph");
     document_controls(panels, ui);
+    preview_controls(panels, ui);
     compile_report(panels, ui);
     if panels.specialised.active_vfx_stage().is_none() {
         ui.heading("Engine catalogue");
@@ -63,7 +65,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let canvas = session.graph.expect("VFX uses the shared graph canvas");
     ui.label(secondary(
         panels.shell,
-        "Editable stage draft · engine compilation available · runtime preview pending",
+        "Editable stage draft · engine simulation preview · viewport particles pending",
     ));
     let available = ui.available_size();
     ui.horizontal(|ui| {
@@ -92,6 +94,124 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 &mut panels.inputs.vfx_link_problem,
             );
         });
+    });
+}
+
+fn preview_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    if panels.specialised.vfx_document().is_none() {
+        return;
+    }
+    ui.collapsing("Engine VFX preview", |ui| {
+        let connected = panels.editor.runtime.is_connected();
+        let pending = panels.editor.backend.vfx_preview_pending();
+        let snapshot = panels.editor.backend.vfx_preview_snapshot().cloned();
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(connected && !pending, egui::Button::new("Load preview"))
+                .clicked()
+            {
+                let result = panels
+                    .specialised
+                    .vfx_document_snapshot()
+                    .and_then(|document| {
+                        document
+                            .ok_or_else(|| cy_editor_core::problem::Problem::new(
+                                "load VFX preview", "no VFX document is open"
+                            ))?
+                            .encode_text()
+                    })
+                    .and_then(|source| panels.editor.request_vfx_preview_load(source).map(|_| ()));
+                panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+            }
+            if let Some(state) = &snapshot {
+                let action = if state.playing { VfxPreviewAction::Pause } else { VfxPreviewAction::Play };
+                let label = if state.playing { "Pause" } else { "Play" };
+                if ui.add_enabled(connected && !pending, egui::Button::new(label)).clicked() {
+                    let result = panels.editor.request_vfx_preview_action(action);
+                    panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+                }
+                if ui.add_enabled(connected && !pending, egui::Button::new("Restart")).clicked() {
+                    let result = panels.editor.request_vfx_preview_action(VfxPreviewAction::Restart);
+                    panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+                }
+            }
+        });
+        if let Some(state) = &snapshot {
+            preview_timeline(panels, ui, connected && !pending);
+            ui.label(format!(
+                "{:.2} s · {} live · {} spawned · {} killed · {} CPU fallback · pool {}/{} bytes · events dropped {} / truncated {}",
+                state.time_seconds, state.live_particles, state.spawned, state.killed,
+                state.cpu_fallbacks, state.pool_used_bytes, state.pool_total_bytes,
+                state.events_dropped, state.events_truncated
+            ));
+            for emitter in &state.emitters {
+                ui.label(format!("{}: {} particles", emitter.name, emitter.live));
+            }
+            ui.label(secondary(panels.shell, "Preview uses the engine simulation; viewport compositing is pending."));
+        }
+        if pending {
+            ui.label("Engine preview request pending…");
+        }
+        if let Some(problem) = panels.editor.backend.vfx_preview_problem() {
+            ui.colored_label(egui::Color32::RED, problem);
+        }
+    });
+    if !panels.editor.backend.vfx_preview_pending()
+        && panels.editor.backend.vfx_preview_snapshot().is_some()
+        && let Some((name, values, lanes)) = panels.inputs.vfx_live_parameters.pop_front()
+    {
+        let result = panels
+            .editor
+            .request_vfx_preview_parameter(&name, &values[..lanes]);
+        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+    }
+    if panels
+        .editor
+        .backend
+        .vfx_preview_snapshot()
+        .is_some_and(|state| state.playing)
+        && !panels.editor.backend.vfx_preview_pending()
+    {
+        let seconds = ui
+            .ctx()
+            .input(|input| input.stable_dt)
+            .clamp(1.0 / 240.0, 0.25);
+        let result = panels.editor.request_vfx_preview_step(seconds);
+        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        ui.ctx().request_repaint();
+    }
+}
+
+fn preview_timeline(panels: &mut Panels<'_>, ui: &mut egui::Ui, enabled: bool) {
+    ui.horizontal(|ui| {
+        ui.label("Scrub (seconds)");
+        ui.add(
+            egui::DragValue::new(&mut panels.inputs.vfx_preview_scrub_seconds).range(0.0..=30.0),
+        );
+        if ui
+            .add_enabled(enabled, egui::Button::new("Scrub"))
+            .clicked()
+        {
+            let result = panels
+                .editor
+                .request_vfx_preview_action(VfxPreviewAction::Scrub(
+                    panels.inputs.vfx_preview_scrub_seconds,
+                ));
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+        ui.label("Time scale");
+        ui.add(egui::DragValue::new(&mut panels.inputs.vfx_preview_time_scale).range(0.1..=4.0));
+        if ui
+            .add_enabled(enabled, egui::Button::new("Apply speed"))
+            .clicked()
+        {
+            let result = panels
+                .editor
+                .request_vfx_preview_action(VfxPreviewAction::TimeScale(
+                    panels.inputs.vfx_preview_time_scale,
+                ));
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
     });
 }
 
@@ -272,15 +392,18 @@ fn parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     for (index, mut parameter) in parameters.into_iter().enumerate() {
         let mut remove = false;
         let mut changed = false;
+        let mut value_changed = false;
         ui.horizontal(|ui| {
             ui.label(format!("{} ({})", parameter.name, parameter.kind));
-            changed |= parameter_values(ui, &parameter.kind, &mut parameter.value);
+            value_changed = parameter_values(ui, &parameter.kind, &mut parameter.value);
+            changed |= value_changed;
             changed |= ui
                 .checkbox(&mut parameter.exposed, "Runtime exposed")
                 .changed();
             remove = ui.button("Remove").clicked();
         });
         if changed || remove {
+            let live = parameter.clone();
             let result = panels.specialised.edit_vfx_metadata(|document| {
                 if remove {
                     document.parameters.remove(index);
@@ -289,6 +412,23 @@ fn parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 }
                 Ok(())
             });
+            if result.is_ok()
+                && value_changed
+                && !remove
+                && live.exposed
+                && panels.editor.backend.vfx_preview_snapshot().is_some()
+            {
+                let lanes = match live.kind.as_str() {
+                    "vec2" => 2,
+                    "vec3" => 3,
+                    "vec4" => 4,
+                    _ => 1,
+                };
+                panels
+                    .inputs
+                    .vfx_live_parameters
+                    .push_back((live.name, live.value, lanes));
+            }
             panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     }
