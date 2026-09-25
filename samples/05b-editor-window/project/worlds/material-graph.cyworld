@@ -1,0 +1,50 @@
+cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+type 3 runtime "LightSource"
+  field 6 int "kind" ""
+  field 7 float "intensity" ""
+  field 8 bool "enabled" ""
+  field 9 bool "casts_shadow" ""
+type 4 runtime "Camera"
+  field 10 float "projection.fov_y" ""
+  field 11 bool "enabled" ""
+node 0 - "demo" "Plane"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 -0.7 0
+    field 3 5 1 5
+  component 2
+    field 4 "assets/primitives/Plane.cyprim"
+    field 5 ""
+node 1 - "demo" "Graph Cube"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0.1 0
+    field 3 1.3 1.3 1.3
+  component 2
+    field 4 "assets/primitives/SpinCube.cyprim"
+    field 5 "materials/copper_clay.cygraph"
+node 2 - "demo" "Directional Light"
+  component 1
+    field 1 -0.3826834 0 0 0.9238795
+    field 2 0 4 3
+    field 3 1 1 1
+  component 3
+    field 6 0
+    field 7 100000
+    field 8 true
+    field 9 true
+node 3 - "demo" "Camera"
+  component 1
+    field 1 -0.15 0 0 0.988686
+    field 2 0 2 7
+    field 3 1 1 1
+  component 4
+    field 10 0.9
+    field 11 true

@@ -67,6 +67,28 @@ The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
 `render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
 in the engine's forward frame.
 
+## Material Graph cube
+
+Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,
+and a Camera. The Cube's `MeshRenderer.material` references
+`project/materials/copper_clay.cygraph`, which the engine authored from the four-node
+`copper_clay.cymatcanvas` source: a `float3` color constant feeds Diffuse, a scalar
+one feeds Diffuse weight and Output opacity, and Diffuse feeds Output surface. Select **Graph Cube**, switch to **Material
+Graph**, and click **Open graph** to see and edit those nodes and links. **Validate** and
+**Compile** send the visible graph to the engine material service.
+
+To regenerate the canonical material after editing the canvas source outside the editor,
+run `cy_material author project/materials/copper_clay.cymatcanvas --graph
+project/materials/copper_clay.cygraph` from this sample directory. The current editor
+panel compiles edits for preview but does not save `.cygraph` files. The authored scene
+renderer currently resolves constant-color Diffuse graphs with opaque output to its
+standard material path; other graph shapes report an unsupported-material error.
+
+The [live scene capture](../../docs/design/images/editor-material-graph-scene-metal.png)
+shows the graph-colored Cube and its shadow on the Plane. The
+[node capture](../../docs/design/images/editor-material-graph-nodes-metal.png) shows the
+reopened four-node source and a successful engine compile.
+
 ## Swift cube during Play
 
 Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and

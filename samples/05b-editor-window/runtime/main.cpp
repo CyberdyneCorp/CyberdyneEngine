@@ -1417,7 +1417,10 @@ int main(int argc, char** argv) {
         ScriptRuntime scripts(allocator, options.project);
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
         MetalMaterialRuntime material_runtime(allocator, renderer, view_world);
-        editor::MaterialService editor_service(allocator, &material_runtime);
+        // AuthoredFrame owns the visible scene pipeline. The first-light preview runtime
+        // cannot bind a material to its authored mesh identities; compilation remains available.
+        editor::MaterialService editor_service(allocator,
+                                               view_world.loaded() ? nullptr : &material_runtime);
 #else
         editor::MaterialService editor_service(allocator);
 #endif

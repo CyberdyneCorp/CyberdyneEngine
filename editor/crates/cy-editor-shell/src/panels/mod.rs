@@ -150,6 +150,8 @@ pub struct Inputs {
     pub material_link_problem: Option<String>,
     /// The latest typed material-property refusal, shown beside the generated controls.
     pub material_property_problem: Option<String>,
+    /// Name emitted when the opened graph is compiled.
+    pub material_name: String,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -219,6 +221,7 @@ impl Default for Inputs {
             material_link_source: None,
             material_link_problem: None,
             material_property_problem: None,
+            material_name: "editor_preview".into(),
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

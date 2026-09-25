@@ -42,6 +42,11 @@ disconnects, while visibly reporting that backend compilation and preview servic
 - **WHEN** an author selects a material node from the palette
 - **THEN** the shared graph canvas SHALL create and display one node carrying the catalogue type and stable node identity
 
+#### Scenario: Opening a mesh's graph source
+- **WHEN** a selected mesh references a graph material with a project canvas source
+- **THEN** the Material Graph panel SHALL reopen its nodes, properties, and links on the shared canvas
+- **AND** an invalid source SHALL leave the current canvas intact and show a refusal
+
 #### Scenario: Connecting visible pins edits the shared graph
 - **WHEN** an author selects an output pin and then a compatible input pin
 - **THEN** the panel SHALL add one shared-canvas link addressed by the stable node and pin identities

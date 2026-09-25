@@ -34,7 +34,6 @@ use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
 use crate::picking;
-use crate::primitives::{material_slots_of, mesh_of};
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
@@ -45,7 +44,7 @@ use crate::source_language::SourceLanguageService;
 use crate::source_workspace::SourceWorkspaceService;
 use crate::viewports::ViewportService;
 use crate::workspace::Workspace;
-use crate::{BackendServices, MaterialOperation, MaterialPreviewTarget};
+use crate::{BackendServices, MaterialOperation};
 
 /// Structured progress/result of the most recent script-module reload.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -264,26 +263,8 @@ impl Editor {
         canvas: Vec<u8>,
     ) -> Result<cy_editor_protocol::RequestId> {
         if operation == MaterialOperation::Compile {
-            let mut targets = Vec::new();
-            if let Some(document_id) = self.workspace.active()
-                && let Some(document) = self.documents.get(document_id)
-            {
-                for node in self.selection.get().nodes() {
-                    if mesh_of(document, node).is_none() {
-                        continue;
-                    }
-                    let slot_count = material_slots_of(document, node).len().max(1);
-                    for slot in 0..slot_count {
-                        targets.push(MaterialPreviewTarget {
-                            entity: node.as_u128(),
-                            slot: u32::try_from(slot).unwrap_or(u32::MAX),
-                        });
-                    }
-                }
-            }
-            if !targets.is_empty() {
-                self.backend.set_material_preview_targets(targets)?;
-            }
+            // Authored meshes belong to AuthoredFrame, not the first-light preview renderer.
+            self.backend.clear_material_preview_targets();
         }
         self.backend
             .request_material(&self.runtime, operation, canvas)

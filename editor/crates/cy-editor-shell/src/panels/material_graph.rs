@@ -12,10 +12,11 @@ use cy_editor_interface::specialised::graph::{
     GraphCanvas, Layout as GraphLayout, NodeKey, Pin, PinDirection, Property, PropertyKind,
     Severity,
 };
-use cy_editor_interface::specialised::material::canvas_interchange;
+use cy_editor_interface::specialised::material::{canvas_interchange, load_canvas_interchange};
+use cy_editor_services::primitives::material_of;
 use cy_editor_services::{
-    AssetCatalogueService, MaterialCatalogueState, MaterialDiagnosticSeverity, MaterialOperation,
-    MaterialPreviewState, MaterialRequestState,
+    AssetCatalogueService, Editor, MaterialCatalogueState, MaterialDiagnosticSeverity,
+    MaterialOperation, MaterialPreviewState, MaterialRequestState,
 };
 use cy_editor_visual::colour::{Semantic, Surface};
 use cy_editor_visual::density::TextRole;
@@ -29,6 +30,8 @@ const NODE_HEADER: f32 = 48.0;
 const PIN_ROW: f32 = 18.0;
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let selected_graph = selected_material_graph(panels.editor);
+    let project_root = panels.editor.project.root().to_path_buf();
     let state = panels.editor.backend.material_catalogue_state();
     let request_state = panels.editor.backend.material_request_state().clone();
     let preview_state = panels.editor.backend.material_preview_state().clone();
@@ -52,6 +55,20 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let canvas = session
         .graph
         .expect("the material domain is declared as a graph surface");
+    if let Some(reference) = &selected_graph {
+        ui.horizontal(|ui| {
+            ui.label(format!("Selected material: {reference}"));
+            if ui.button("Open graph").clicked() {
+                match open_selected_graph(&project_root, reference, canvas) {
+                    Ok(name) => {
+                        panels.inputs.material_name = name;
+                        panels.inputs.material_property_problem = None;
+                    }
+                    Err(problem) => panels.inputs.material_property_problem = Some(problem),
+                }
+            }
+        });
+    }
     let available = ui.available_size();
     let mut action = None;
     ui.horizontal(|ui| {
@@ -88,7 +105,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     });
     match action {
         Some(PaletteAction::Request(operation)) => {
-            match canvas_interchange("editor_preview", canvas).and_then(|payload| {
+            match canvas_interchange(&panels.inputs.material_name, canvas).and_then(|payload| {
                 panels
                     .editor
                     .request_material(operation, payload.into_bytes())
@@ -118,6 +135,32 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         }
         None => {}
     }
+}
+
+fn selected_material_graph(editor: &Editor) -> Option<String> {
+    let document = editor.documents.get(editor.workspace.active()?)?;
+    let mut selected = editor.selection.get().nodes();
+    let node = selected.next()?;
+    if selected.next().is_some() {
+        return None;
+    }
+    material_of(document, node).filter(|path| path.ends_with(".cygraph"))
+}
+
+fn open_selected_graph(
+    root: &std::path::Path,
+    reference: &str,
+    canvas: &mut GraphCanvas,
+) -> std::result::Result<String, String> {
+    let source = std::path::Path::new(reference).with_extension("cymatcanvas");
+    if !source
+        .components()
+        .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("material path must stay inside the project".to_owned());
+    }
+    let text = std::fs::read_to_string(root.join(source)).map_err(|error| error.to_string())?;
+    load_canvas_interchange(&text, canvas).map_err(|problem| problem.to_string())
 }
 
 #[derive(Clone, Copy)]

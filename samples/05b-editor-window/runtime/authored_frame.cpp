@@ -8,6 +8,8 @@
 #include <cy/import/model.h>
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
+#include <cy/graph/text.h>
+#include <cy/graph/material/lower_material.h>
 #include <cy/rendering/material/standard.h>
 #include <cy/servers/render/sort.h>
 
@@ -31,6 +33,77 @@ constexpr u32 kCapacity = 4096;
 constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
+
+Expected<Vec4, Error> graph_diffuse_colour(std::string_view source,
+                                            Allocator& allocator) noexcept {
+    graph::NodeRegistry registry(allocator);
+    if (Status status = graph::material::register_material_nodes(registry); !status) {
+        return make_unexpected(status.error());
+    }
+    graph::DiagnosticSink diagnostics(allocator);
+    auto parsed = graph::parse_graph(source, &registry, allocator, diagnostics);
+    if (!parsed) {
+        return make_unexpected(parsed.error());
+    }
+    if (diagnostics.errors() != 0) {
+        return fail(ErrorCode::InvalidArgument, "authored frame: material graph has unknown nodes");
+    }
+    const graph::Graph& authored = *parsed;
+    if (authored.nodes().size() != 4 || authored.links().size() != 4) {
+        return fail(ErrorCode::Unsupported,
+                    "authored frame: only constant-colour diffuse graphs are supported here");
+    }
+    graph::NodeKey output = graph::kInvalidNodeKey;
+    for (const graph::GraphNode& node : authored.nodes()) {
+        if (node.type.text() == "material.output") {
+            output = node.key;
+        }
+    }
+    graph::NodeKey diffuse = graph::kInvalidNodeKey;
+    graph::NodeKey colour = graph::kInvalidNodeKey;
+    graph::NodeKey opacity = graph::kInvalidNodeKey;
+    graph::NodeKey weight = graph::kInvalidNodeKey;
+    for (const graph::Link& link : authored.links()) {
+        if (link.to == output && link.to_pin.text() == "surface") {
+            diffuse = link.from;
+        }
+        if (link.to == output && link.to_pin.text() == "opacity") {
+            opacity = link.from;
+        }
+    }
+    for (const graph::Link& link : authored.links()) {
+        if (link.to == diffuse && link.to_pin.text() == "colour") {
+            colour = link.from;
+        }
+        if (link.to == diffuse && link.to_pin.text() == "weight") {
+            weight = link.from;
+        }
+    }
+    const graph::GraphNode* closure = authored.find_node(diffuse);
+    const graph::GraphNode* constant = authored.find_node(colour);
+    const graph::GraphNode* opacity_node = authored.find_node(opacity);
+    if (closure == nullptr || closure->type.text() != "material.diffuse" ||
+        constant == nullptr || constant->type.text() != "material.constant" ||
+        opacity_node == nullptr || opacity_node->type.text() != "material.constant" ||
+        weight != opacity) {
+        return fail(ErrorCode::Unsupported,
+                    "authored frame: graph material requires a constant-colour diffuse surface");
+    }
+    const graph::Literal* value = authored.property(colour, Name::intern("value"));
+    const graph::Literal* type = authored.property(colour, Name::intern("type"));
+    const graph::Literal* alpha = authored.property(opacity, Name::intern("value"));
+    const graph::Literal* alpha_type = authored.property(opacity, Name::intern("type"));
+    if (value == nullptr || type == nullptr || type->text.text() != "float3") {
+        return fail(ErrorCode::Unsupported,
+                    "authored frame: graph material diffuse colour must be float3");
+    }
+    if (alpha == nullptr || alpha_type == nullptr || alpha_type->text.text() != "float" ||
+        alpha->value.x != 1.0F) {
+        return fail(ErrorCode::Unsupported,
+                    "authored frame: graph material opacity must be constant one");
+    }
+    return Vec4{value->value.x, value->value.y, value->value.z, 1.0F};
+}
 
 u32 read_u32(const u8* bytes) noexcept {
     return static_cast<u32>(bytes[0]) | (static_cast<u32>(bytes[1]) << 8U) |
@@ -437,6 +510,27 @@ Expected<u32, Error> AuthoredFrame::material_slot(const std::string& reference) 
     }
     if (material_slots_.size() + 1 >= kMaterialCapacity) {
         return fail(ErrorCode::OutOfRange, "authored frame: material capacity exceeded");
+    }
+    if (reference.ends_with(".cygraph")) {
+        Array<u8> source(*allocator_);
+        const std::string path = project_ + "/" + reference;
+        if (Status status = assets::fs::read_whole(path.c_str(), source); !status) {
+            return make_unexpected(status.error());
+        }
+        auto colour = graph_diffuse_colour(
+            {reinterpret_cast<const char*>(source.data()), source.size()}, *allocator_);
+        if (!colour) {
+            return make_unexpected(colour.error());
+        }
+        const u32 slot = static_cast<u32>(material_slots_.size() + 1);
+        const StandardParameters ids;
+        if (Status status = assembly_.materials().set_color(
+                material_program_, slot, ids.base_color_factor, *colour);
+            !status) {
+            return make_unexpected(status.error());
+        }
+        material_slots_.emplace_back(reference, slot);
+        return slot;
     }
     const std::string path = project_ + "/.cy/cooked/" + reference + ".cyasset";
     Array<u8> cooked(*allocator_);

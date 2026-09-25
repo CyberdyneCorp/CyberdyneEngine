@@ -421,6 +421,7 @@ impl BackendServices {
                         self.material_state = result.with_request(request);
                         if let MaterialRequestState::Compiled { artefact, .. } =
                             &self.material_state
+                            && !self.preview_targets.is_empty()
                         {
                             self.preview_pending_artefact = Some(*artefact);
                         }
@@ -496,6 +497,13 @@ impl BackendServices {
         }
         self.preview_targets = targets;
         Ok(())
+    }
+
+    /// Keep compilation independent of the first-light preview for authored scenes.
+    pub fn clear_material_preview_targets(&mut self) {
+        self.preview_targets.clear();
+        self.preview_pending_artefact = None;
+        self.preview_state = MaterialPreviewState::Idle;
     }
 
     /// Apply a typed value to the currently acknowledged artefact generation.

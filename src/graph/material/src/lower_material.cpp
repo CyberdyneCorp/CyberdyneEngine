@@ -105,14 +105,14 @@ struct PropertySpec {
 
 constexpr PropertySpec kConstantProperties[] = {
     {1, "type", PropertyKind::Enumeration, "float", "Value type", "value-type",
-     "float|vec2|vec3|vec4", "", "compile"},
+     "float|float2|float3|float4", "", "compile"},
     {2, "value", PropertyKind::Vector, "0", "Constant value", "numeric", "", "", "compile"},
 };
 constexpr PropertySpec kParameterProperties[] = {
     {1, "symbol", PropertyKind::Text, "parameter", "Shader parameter name", "identifier", "", "",
      "compile"},
     {2, "type", PropertyKind::Enumeration, "float", "Value type", "value-type",
-     "float|vec2|vec3|vec4", "", "compile"},
+     "float|float2|float3|float4", "", "compile"},
     {3, "default", PropertyKind::Vector, "0", "Default runtime value", "numeric", "", "",
      "runtime"},
     {4, "static", PropertyKind::Bool, "false", "Request static specialisation", "specialisation",
@@ -122,15 +122,15 @@ constexpr PropertySpec kNamedProperties[] = {
     {1, "symbol", PropertyKind::Text, "", "Engine attribute or field name", "identifier", "", "",
      "compile"},
     {2, "type", PropertyKind::Enumeration, "float", "Value type", "value-type",
-     "float|vec2|vec3|vec4", "", "compile"},
+     "float|float2|float3|float4", "", "compile"},
 };
 constexpr PropertySpec kTextureProperties[] = {
     {1, "symbol", PropertyKind::Text, "texture", "Bindless texture slot name", "identifier", "", "",
      "compile"},
     {2, "texture", PropertyKind::Asset, "", "Project texture asset", "texture", "", "texture",
      "fragment", 0, 0, 0.0, 0.0, 0.0, 1},
-    {3, "type", PropertyKind::Enumeration, "vec4", "Sample value type", "value-type",
-     "float|vec2|vec3|vec4", "", "compile"},
+    {3, "type", PropertyKind::Enumeration, "float4", "Sample value type", "value-type",
+     "float|float2|float3|float4", "", "compile"},
     {4, "average", PropertyKind::Vector, "1,1,1,1", "Fallback and analysis average",
      "linear-colour", "", "", "fragment", 4},
     {5, "shadow_critical", PropertyKind::Bool, "false", "Retain in shadow derivations",
@@ -140,7 +140,7 @@ constexpr PropertySpec kTextureProperties[] = {
 };
 constexpr PropertySpec kTypedProperties[] = {
     {1, "type", PropertyKind::Enumeration, "float", "Result value type", "value-type",
-     "float|vec2|vec3|vec4", "", "compile"},
+     "float|float2|float3|float4", "", "compile"},
 };
 
 [[nodiscard]] Span<const PropertySpec> properties_for(std::string_view type) noexcept {
