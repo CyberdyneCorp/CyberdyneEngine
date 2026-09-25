@@ -3687,3 +3687,24 @@ binary), and `m11c:roadmap-tiers` (the closing change's own forcing function, as
   to say so ("the marker is trusted by name; forging it can only make a run stricter").
 
 Then one ledger run at a pinned commit.
+
+### THE OWNER'S RULING AFTER THE TENTH CLOSE — THE ENGINE WORK IS DONE, AND THE ELEVENTH CLOSE RUNS
+
+Recorded before the eleventh close's run, in substance as the owner gave it:
+
+- **M11.c's engine work is done.** The eighth close's ledger (at `20bd703`) had exactly one
+  undeclared red, `m11c:roadmap-tiers`, which is the closing change's own forcing function.
+- **The last five attempts were blocked only by gate refutations of the test stall tooling**, i.e.
+  by how the harness judges wall-clock stalls on a busy host, not by any engine row.
+- **Option B is the accepted design.** `tests/harness/` enforces the stall ceiling only under a
+  verified `cy_quiet_host`; elsewhere it reports the stall and does not fail; CPU budgets are
+  enforced everywhere.
+- **The tenth gate's refutation does not block the close.** A binary renamed `cy_quiet_host` is
+  trusted by name, but a forged marker can only make enforcement STRICTER: it makes the harness
+  enforce a ceiling on a host nobody checked. It can never let a case escape a ceiling it should
+  get, so it yields at most a false red, never a false green. The contract is read accordingly:
+  the marker is trusted by name, and forging it can only make a run stricter.
+- **Hardening the marker moves to M11.d** as an ordinary task (checking the executable's path or
+  identity, not only its name), recorded in `openspec/changes/implement-m11d-desktop/tasks.md`.
+- **No further gate runs for this close.** The eleventh close is one ledger run at a pinned
+  commit; if its only undeclared red is `m11c:roadmap-tiers`, M11.c closes on it.

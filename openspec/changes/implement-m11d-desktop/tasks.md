@@ -511,6 +511,17 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 - [ ] 9.6 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the
       same change that closes it, because a declared gap that starts passing fails the ledger; any it
       does not close keeps `known_gap_closes` pointed at the rung that will
+- [ ] 9.7 **Bind the quiet-host marker to the real wrapper.** Moved here from M11.c's tenth close by
+      the owner's ruling. `tests/harness/src/quiet_host_marker.cpp` trusts `CY_QUIET_HOST` when the
+      named pid is a live ancestor with the marker's start tick and the BASENAME of its
+      `/proc/<pid>/exe` is `cy_quiet_host`, so any binary renamed `cy_quiet_host` is trusted. It did
+      not block M11.c because the forgery only goes in the strict direction: it can make the harness
+      enforce a stall ceiling on an unchecked host (a possible false red), never let a case escape a
+      ceiling it should get (no false green). Check the executable's identity, not its name — e.g.
+      compare the ancestor's `/proc/<pid>/exe` against the `cy_quiet_host` the build produced (same
+      dev/inode or resolved path, passed at configure time), or hand the child a secret over an
+      inherited file descriptor — and add a copied/renamed-binary forgery case to
+      `smoke.quiet_host_marker`, proven red on the current check
 
 ## 10. The gate
 
