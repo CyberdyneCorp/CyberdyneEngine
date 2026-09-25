@@ -27,31 +27,40 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         }
     }
     let mut open = None;
+    let available = ui.available_size();
+    let sources_width = 190.0_f32.min(available.x * 0.35);
     ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.set_width(180.0);
-            ui.label(secondary(panels.shell, "Swift Sources"));
-            egui::ScrollArea::vertical()
-                .id_salt("swift-files")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for path in panels.source_workspace.files() {
-                        let name = path.rsplit('/').next().unwrap_or(path);
-                        if ui
-                            .add_sized(
-                                [172.0, metrics.hit_target()],
-                                egui::Button::new(name).selected(false),
-                            )
-                            .on_hover_text(path)
-                            .clicked()
-                        {
-                            open = Some(path.clone());
+        ui.allocate_ui_with_layout(
+            egui::vec2(sources_width, available.y),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.label(secondary(panels.shell, "Swift Sources"));
+                egui::ScrollArea::vertical()
+                    .id_salt("swift-files")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for path in panels.source_workspace.files() {
+                            let name = path.rsplit('/').next().unwrap_or(path);
+                            if ui
+                                .add_sized(
+                                    [ui.available_width(), metrics.hit_target()],
+                                    egui::Button::new(name).selected(false),
+                                )
+                                .on_hover_text(path)
+                                .clicked()
+                            {
+                                open = Some(path.clone());
+                            }
                         }
-                    }
-                });
-        });
+                    });
+            },
+        );
         ui.separator();
-        ui.vertical(|ui| editor(panels, ui));
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), available.y),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| editor(panels, ui),
+        );
     });
     if let Some(path) = open {
         panels.intents.push(Intent::OpenSource(path));
