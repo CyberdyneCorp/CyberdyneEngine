@@ -28,7 +28,7 @@
 ## 4. The forbidden save patterns (`m11a:save-forbidden-patterns-checked`)
 
 - [x] 4.1 Add `tools/save/check_forbidden.py`: the ten patterns in the specification's order, a static check over save code for the seven that are shapes of code, and a run of the `forbidden save pattern <id>:` cases of `unit.save` for the nine that are properties of what a save does
-- [x] 4.2 Add `tools/save/selftest.py`: every static check planted in a copy of the real tree and reported, prose left alone, and an empty tree refused
+- [x] 4.2 Add `tools/save/check_forbidden_test.py`: every static check planted in a copy of the real tree and reported, prose left alone, and an empty tree refused
 - [x] 4.3 Add `src/save/tests/test_forbidden.cpp`, one or more cases per runtime pattern
 - [x] 4.4 Fix the defects the runtime cases found — a failed load leaving part of a save in the caller's overlay, and a refused load's `detail` pointing into a manifest the load had already destroyed — each with a regression case watched red first
 - [x] 4.5 Rewrite `m11a:save-forbidden-patterns-checked` to run the selftest and the checker with the suite binary, declare its mutation, and delete its known-gap declaration

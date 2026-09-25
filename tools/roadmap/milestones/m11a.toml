@@ -843,7 +843,7 @@ note   = "the inspector stops counting modified entities, so the fixture's newes
 
 [[criterion]]
 id = "save-forbidden-patterns-checked"
-describe = "the ten forbidden save patterns are CHECKED. The specification says each `SHALL be checkable`; `tools/save/check_forbidden.py` checks all ten — a static check over save code for the seven that are shapes of code, and a run of the `forbidden save pattern <id>:` cases of `unit.save` for the nine that are properties of what a save does — and FAILS rather than passes when a runtime case cannot run or no longer exists. `tools/save/selftest.py` runs first and proves every static check red by planting its pattern in a copy of the real tree"
+describe = "the ten forbidden save patterns are CHECKED. The specification says each `SHALL be checkable`; `tools/save/check_forbidden.py` checks all ten — a static check over save code for the seven that are shapes of code, and a run of the `forbidden save pattern <id>:` cases of `unit.save` for the nine that are properties of what a save does — and FAILS rather than passes when a runtime case cannot run or no longer exists. `tools/save/check_forbidden_test.py` runs first and proves every static check red by planting its pattern in a copy of the real tree"
 source = "save-and-persistence (Forbidden save patterns), openspec/changes/close-save-system-gaps"
 kind = "command"
 run = '''
@@ -855,7 +855,7 @@ python3 "$checker" --list | tee /tmp/cy-m11a-save.txt
 count=$(grep -c . /tmp/cy-m11a-save.txt || true)
 echo "$count forbidden save pattern(s) are checked"
 test "$count" -ge 10
-python3 tools/save/selftest.py
+python3 tools/save/check_forbidden_test.py
 just build-engine --profile dev > /dev/null
 python3 "$checker" --binary "$d/cy_test_unit_save"
 '''

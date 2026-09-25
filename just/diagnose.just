@@ -28,5 +28,5 @@ diagnose-save-patterns:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    python3 tools/save/selftest.py
+    python3 tools/save/check_forbidden_test.py
     python3 tools/save/check_forbidden.py --binary "${CY_BUILD_DIR:-build/{{default_profile}}}/cy_test_unit_save"

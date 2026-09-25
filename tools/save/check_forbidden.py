@@ -25,7 +25,7 @@ invented state) or only code (runtime identity) carry the one that can see them.
 Without `--binary` the runtime checks cannot run, and the script says so and FAILS rather than
 reporting the static half as the whole: a check that is skipped is not a check that passed.
 
-`tools/save/selftest.py` proves every static check red by planting its pattern in a copy of the
+`tools/save/check_forbidden_test.py` proves every static check red by planting its pattern in a copy of the
 real tree, and proves the checker refuses an empty tree.
 """
 

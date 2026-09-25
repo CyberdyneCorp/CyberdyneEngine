@@ -18,7 +18,7 @@ edit, and runs the checker there with `--root --static-only`:
 The runtime half is proved differently — each `forbidden save pattern <id>:` case in unit.save is
 a test, and src/save/README.md records the mutation each was watched failing under.
 
-    python3 tools/save/selftest.py
+    python3 tools/save/check_forbidden_test.py
 """
 
 from __future__ import annotations

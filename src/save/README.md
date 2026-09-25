@@ -144,7 +144,7 @@ recorded at Working for the second consecutive milestone.
 | 17 | Checkpoints and restore | **partial** | memory-only; "in memory **as well as** on storage" is half-built |
 | 18 | Save diagnostics and inspection | **satisfied at M11.e** | `inspect.h`: `inspect_save`, `explain_fields`, `diff_saves`, and `cy_save_inspect` / `just diagnose-save` over them; `tests/test_inspect.cpp`, seven cases over the three-generation fixture campaign `tests/inspect_fixture.h` writes, and two in `tests/test_archive.cpp` over its committed copy (`tests/data/inspect-campaign/`) |
 | 19 | Save performance and testing | **partial** | transactional, fuzz and migration testing are all here; the **large-world save benchmark** is `benchmarks/save/` since M11.e — one autosave over 1 048 576 persistent objects and over 65 536, the same 20 480 dirty records in each, thresholds in `benchmarks/baseline.json` and `m11a:save-benchmark` requiring the two within 1.5x — and there are still no save-as-fixture tests |
-| 20 | Forbidden save patterns | **checked at M11.e** | `tools/save/check_forbidden.py`: a static check over save code for seven of the ten, a `forbidden save pattern <id>:` case in `tests/test_forbidden.cpp` for nine; `tools/save/selftest.py` plants each static pattern in a copy of the tree and requires it reported |
+| 20 | Forbidden save patterns | **checked at M11.e** | `tools/save/check_forbidden.py`: a static check over save code for seven of the ten, a `forbidden save pattern <id>:` case in `tests/test_forbidden.cpp` for nine; `tools/save/check_forbidden_test.py` plants each static pattern in a copy of the tree and requires it reported |
 
 **Nine of the twenty are satisfied. Three are outright unmet — 15, 18 and 20 — and eight more are
 partial, one of which (19) is missing an artefact the requirement says the engine SHALL maintain.**
@@ -215,7 +215,7 @@ fails rather than reporting the static half as the whole. `just diagnose-save-pa
 | boolean-load | a load, restore, decode or inspect declared returning `bool` | loads return `Status`, and each failure has a named reason |
 | invented-state | — | an unrecoverable load leaves the overlay empty; a fallback equals the older save exactly |
 
-`tools/save/selftest.py` plants each static pattern in a copy of the real tree and requires it
+`tools/save/check_forbidden_test.py` plants each static pattern in a copy of the real tree and requires it
 reported, leaves prose naming every trigger word alone, and requires an empty tree to be refused. The
 checker's first run over this tree found one real instance — `cy_save_inspect`'s own inspect helper
 returned `bool` — and it returns a `Status` now.
