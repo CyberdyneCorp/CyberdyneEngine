@@ -527,6 +527,11 @@ The current draft payload records emitter capacity, typed particle attributes wi
 tolerance, and precision, plus bounded system event channels. Existing version 1 draft payloads
 open with engine defaults (capacity 1024 and no attribute or channel declarations) and save as
 version 2 payloads. The `.cyvfxdoc` text envelope remains version 1.
+The VFX panel exposes those declarations in collapsible sections: typed system parameters with
+runtime exposure, per-emitter capacity and particle attributes with precision controls, and event
+channels with event/depth limits and optional CPU readback. Invalid metadata edits leave the open
+draft intact. **Save VFX draft** records the resulting document through the project transaction
+command; direct editing history and separately saved modules remain OpenSpec tasks.
 **Compile VFX** submits the current stage snapshots to the engine's `vfx.compile` service. The
 engine reads the document into `VfxSystemAsset`, resolves its registered nodes, and runs
 `compile_system`; the panel shows the last cook identity, per-emitter kernel and memory counts,

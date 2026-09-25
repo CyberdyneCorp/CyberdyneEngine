@@ -1423,6 +1423,31 @@ mod tests {
         );
     }
 
+    fn add_vfx_declarations(draft: &mut cy_editor_interface::specialised::vfx::VfxDocument) {
+        use cy_editor_interface::specialised::vfx::{Attribute, EventChannel, Parameter};
+        draft.emitters[0].capacity = 4096;
+        draft.emitters[0].attributes.push(Attribute {
+            name: "position".into(),
+            kind: "vec3".into(),
+            minimum: -100.0,
+            maximum: 100.0,
+            tolerance: 0.01,
+            precision: "Auto".into(),
+        });
+        draft.parameters.push(Parameter {
+            name: "wind".into(),
+            kind: "vec3".into(),
+            value: [1.0, 2.0, 3.0, 0.0],
+            exposed: true,
+        });
+        draft.channels.push(EventChannel {
+            name: "on_death".into(),
+            max_events_per_frame: 128,
+            max_chain_depth: 2,
+            readback: false,
+        });
+    }
+
     #[test]
     fn vfx_draft_saved_through_command_reopens_in_a_fresh_window() {
         use cy_editor_interface::specialised::graph::Layout;
@@ -1479,6 +1504,13 @@ mod tests {
             .unwrap()
             .add("vfx.test_node", Layout { x: 23.0, y: 45.0 })
             .unwrap();
+        author
+            .specialised
+            .edit_vfx_metadata(|draft| {
+                add_vfx_declarations(draft);
+                Ok(())
+            })
+            .unwrap();
         let source = author
             .specialised
             .vfx_document_snapshot()
@@ -1508,6 +1540,17 @@ mod tests {
             canvas.layout_of(node.key),
             Some(Layout { x: 23.0, y: 45.0 })
         );
+        let document = reopened.specialised.vfx_document().unwrap();
+        assert_eq!(document.emitters[0].capacity, 4096);
+        assert_eq!(
+            document.emitters[0].attributes[0].tolerance.to_bits(),
+            0.01_f32.to_bits()
+        );
+        assert_eq!(
+            document.parameters[0].value.map(f32::to_bits),
+            [1.0_f32, 2.0, 3.0, 0.0].map(f32::to_bits)
+        );
+        assert_eq!(document.channels[0].max_events_per_frame, 128);
         std::fs::remove_dir_all(root).unwrap();
     }
 

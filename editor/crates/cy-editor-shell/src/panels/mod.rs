@@ -183,6 +183,34 @@ pub struct Inputs {
     pub vfx_new_renderer: u8,
     /// Backend simulation path selected for the next emitter.
     pub vfx_new_path: u8,
+    /// New system parameter name.
+    pub vfx_parameter_name: String,
+    /// New system parameter type.
+    pub vfx_parameter_kind: String,
+    /// New parameter value lanes.
+    pub vfx_parameter_values: [f32; 4],
+    /// New parameter exposure flag.
+    pub vfx_parameter_exposed: bool,
+    /// New particle attribute name.
+    pub vfx_attribute_name: String,
+    /// New particle attribute type.
+    pub vfx_attribute_kind: String,
+    /// New attribute lower range bound.
+    pub vfx_attribute_minimum: f32,
+    /// New attribute upper range bound.
+    pub vfx_attribute_maximum: f32,
+    /// New attribute tolerance for precision selection.
+    pub vfx_attribute_tolerance: f32,
+    /// New attribute precision override.
+    pub vfx_attribute_precision: String,
+    /// New event channel name.
+    pub vfx_channel_name: String,
+    /// New event channel's per-frame event limit.
+    pub vfx_channel_events: u32,
+    /// New event channel's propagation depth limit.
+    pub vfx_channel_depth: u32,
+    /// New event channel's CPU readback flag.
+    pub vfx_channel_readback: bool,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -266,6 +294,20 @@ impl Default for Inputs {
             vfx_reference: "effects/NewVfx.cyvfxdoc".into(),
             vfx_new_renderer: 0,
             vfx_new_path: 0,
+            vfx_parameter_name: "speed".into(),
+            vfx_parameter_kind: "float".into(),
+            vfx_parameter_values: [0.0; 4],
+            vfx_parameter_exposed: true,
+            vfx_attribute_name: "position".into(),
+            vfx_attribute_kind: "vec3".into(),
+            vfx_attribute_minimum: -100.0,
+            vfx_attribute_maximum: 100.0,
+            vfx_attribute_tolerance: 0.0,
+            vfx_attribute_precision: "Auto".into(),
+            vfx_channel_name: "on_death".into(),
+            vfx_channel_events: 1024,
+            vfx_channel_depth: 4,
+            vfx_channel_readback: false,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

@@ -605,6 +605,23 @@ impl SpecialisedEditors {
         Ok(())
     }
 
+    /// Apply a metadata edit atomically. Stage graphs remain on the shared canvas; the edited
+    /// document is installed only after the full versioned payload passes validation.
+    pub fn edit_vfx_metadata(
+        &mut self,
+        edit: impl FnOnce(&mut vfx::VfxDocument) -> Result<()>,
+    ) -> Result<()> {
+        let mut document = self
+            .vfx_document
+            .as_ref()
+            .ok_or_else(|| Problem::new("edit VFX metadata", "no VFX document is open"))?
+            .clone();
+        edit(&mut document)?;
+        document.encode()?;
+        self.vfx_document = Some(document);
+        Ok(())
+    }
+
     /// Which editor is active, if any.
     pub fn active(&self) -> Option<Domain> {
         self.active
@@ -944,6 +961,66 @@ mod tests {
         let reopened = vfx::VfxDocument::decode_text(&saved.encode_text().unwrap()).unwrap();
         assert_eq!(reopened.emitters[0].path, vfx::SimulationPath::CpuRequired);
         assert_eq!(reopened.emitters[0].renderer, "Mesh");
+    }
+
+    #[test]
+    fn vfx_metadata_edit_keeps_stage_draft_and_rejects_invalid_changes_atomically() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish()).unwrap();
+        let mut document = vfx::VfxDocument::new("sparks").unwrap();
+        document.emitters.push(vfx::Emitter {
+            name: "smoke".into(),
+            path: vfx::SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        host.start_vfx_document(document).unwrap();
+        host.select_vfx_stage(0, vfx::Stage::Spawn).unwrap();
+        host.open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.backend_only", graph::Layout { x: 5.0, y: 6.0 })
+            .unwrap();
+        host.edit_vfx_metadata(|draft| {
+            draft.emitters[0].capacity = 2048;
+            draft.parameters.push(vfx::Parameter {
+                name: "speed".into(),
+                kind: "float".into(),
+                value: [1.0, 0.0, 0.0, 0.0],
+                exposed: true,
+            });
+            Ok(())
+        })
+        .unwrap();
+        let snapshot = host.vfx_document_snapshot().unwrap().unwrap();
+        assert_eq!(snapshot.emitters[0].capacity, 2048);
+        assert!(
+            snapshot.emitters[0].stages[0]
+                .canvas
+                .contains("node 1 vfx.backend_only")
+        );
+        assert!(
+            host.edit_vfx_metadata(|draft| {
+                draft.emitters[0].capacity = 0;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert_eq!(host.vfx_document().unwrap().emitters[0].capacity, 2048);
     }
 
     #[test]

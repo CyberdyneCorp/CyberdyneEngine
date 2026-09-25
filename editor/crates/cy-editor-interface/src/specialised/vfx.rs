@@ -409,8 +409,14 @@ impl VfxDocument {
         count(self.emitters.len())?;
         count(self.parameters.len())?;
         count(self.channels.len())?;
-        for emitter in &self.emitters {
+        for (emitter_index, emitter) in self.emitters.iter().enumerate() {
             identifier(&emitter.name)?;
+            if self.emitters[..emitter_index]
+                .iter()
+                .any(|prior| prior.name == emitter.name)
+            {
+                return Err(invalid("duplicate VFX emitter"));
+            }
             identifier(&emitter.renderer)?;
             count(emitter.stages.len())?;
             count(emitter.attributes.len())?;
@@ -428,8 +434,14 @@ impl VfxDocument {
             for name in emitter.modules.iter().chain(&emitter.interfaces) {
                 identifier(name)?;
             }
-            for attribute in &emitter.attributes {
+            for (attribute_index, attribute) in emitter.attributes.iter().enumerate() {
                 identifier(&attribute.name)?;
+                if emitter.attributes[..attribute_index]
+                    .iter()
+                    .any(|prior| prior.name == attribute.name)
+                {
+                    return Err(invalid("duplicate VFX attribute"));
+                }
                 if !matches!(
                     attribute.kind.as_str(),
                     "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
@@ -446,8 +458,14 @@ impl VfxDocument {
                 }
             }
         }
-        for parameter in &self.parameters {
+        for (parameter_index, parameter) in self.parameters.iter().enumerate() {
             identifier(&parameter.name)?;
+            if self.parameters[..parameter_index]
+                .iter()
+                .any(|prior| prior.name == parameter.name)
+            {
+                return Err(invalid("duplicate VFX parameter"));
+            }
             if !matches!(
                 parameter.kind.as_str(),
                 "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
@@ -456,8 +474,14 @@ impl VfxDocument {
                 return Err(invalid("invalid typed VFX parameter"));
             }
         }
-        for channel in &self.channels {
+        for (channel_index, channel) in self.channels.iter().enumerate() {
             identifier(&channel.name)?;
+            if self.channels[..channel_index]
+                .iter()
+                .any(|prior| prior.name == channel.name)
+            {
+                return Err(invalid("duplicate VFX event channel"));
+            }
             if channel.max_events_per_frame == 0 || channel.max_chain_depth == 0 {
                 return Err(invalid("event channel bounds must be positive"));
             }
@@ -668,5 +692,27 @@ mod tests {
             VfxDocument::decode(&draft.encode().unwrap()).unwrap(),
             draft
         );
+    }
+
+    #[test]
+    fn duplicate_compiler_declarations_are_refused() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.parameters.push(Parameter {
+            name: "wind".into(),
+            kind: "float".into(),
+            value: [0.0; 4],
+            exposed: true,
+        });
+        document.parameters.push(document.parameters[0].clone());
+        assert!(document.encode().is_err());
+        document.parameters.pop();
+        document.channels.push(EventChannel {
+            name: "death".into(),
+            max_events_per_frame: 10,
+            max_chain_depth: 2,
+            readback: false,
+        });
+        document.channels.push(document.channels[0].clone());
+        assert!(document.encode().is_err());
     }
 }

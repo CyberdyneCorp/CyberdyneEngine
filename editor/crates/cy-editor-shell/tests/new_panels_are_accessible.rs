@@ -280,3 +280,34 @@ fn enabled_new_panel_actions_are_keyboard_focusable_without_pointer_input() {
         }
     }
 }
+
+#[test]
+fn vfx_metadata_sections_are_visible_on_an_open_engine_catalogue() {
+    use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
+
+    let mut harness = Harness::new();
+    let mut document = VfxDocument::new("sparks").unwrap();
+    document.emitters.push(Emitter {
+        name: "smoke".into(),
+        path: SimulationPath::GpuPreferred,
+        renderer: "Sprite".into(),
+        stages: Vec::new(),
+        modules: Vec::new(),
+        interfaces: Vec::new(),
+        capacity: 1024,
+        attributes: Vec::new(),
+    });
+    harness.specialised.start_vfx_document(document).unwrap();
+    harness
+        .specialised
+        .select_vfx_stage(0, Stage::Spawn)
+        .unwrap();
+    let evidence = harness.frame("editor-vfx-graph", egui::vec2(900.0, 700.0), Vec::new());
+    for section in ["System parameters", "Event channels", "Particle attributes"] {
+        assert!(
+            evidence.labels.iter().any(|label| label.contains(section)),
+            "missing {section} in {:?}",
+            evidence.labels
+        );
+    }
+}

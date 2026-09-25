@@ -5,7 +5,9 @@ use cy_editor_commands::Arguments;
 use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout};
-use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
+use cy_editor_interface::specialised::vfx::{
+    Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument,
+};
 use cy_editor_services::MaterialCatalogueState;
 use cy_editor_services::backend::VfxCompileState;
 use cy_editor_services::vfx_capabilities::VfxAuthoringCapabilities;
@@ -179,9 +181,293 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     emitter_choices(panels, ui);
     stage_tabs(panels, ui);
     current_emitter_settings(panels, ui);
+    declaration_controls(panels, ui);
     if let Some(problem) = &panels.inputs.vfx_document_problem {
         ui.colored_label(egui::Color32::RED, problem);
     }
+}
+
+fn declaration_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    egui::ScrollArea::vertical()
+        .id_salt("vfx-declarations")
+        .max_height(240.0)
+        .show(ui, |ui| {
+            ui.collapsing("System parameters", |ui| parameter_controls(panels, ui));
+            ui.collapsing("Event channels", |ui| channel_controls(panels, ui));
+            if let Some((emitter, _)) = panels.specialised.active_vfx_stage() {
+                ui.collapsing("Particle attributes", |ui| {
+                    attribute_controls(panels, ui, emitter);
+                });
+            }
+        });
+}
+
+fn numeric_kind(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, kind: &mut String) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(kind.as_str())
+        .show_ui(ui, |ui| {
+            for choice in ["float", "vec2", "vec3", "vec4", "int", "bool"] {
+                ui.selectable_value(kind, choice.to_string(), choice);
+            }
+        });
+}
+
+fn precision(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, selected: &mut String) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(selected.as_str())
+        .show_ui(ui, |ui| {
+            for choice in ["Auto", "Float32", "Float16", "Unorm8", "Snorm16"] {
+                ui.selectable_value(selected, choice.to_string(), choice);
+            }
+        });
+}
+
+fn parameter_values(ui: &mut egui::Ui, kind: &str, values: &mut [f32; 4]) -> bool {
+    match kind {
+        "bool" => {
+            let mut enabled = values[0] != 0.0;
+            let changed = ui.checkbox(&mut enabled, "Value").changed();
+            if changed {
+                values[0] = if enabled { 1.0 } else { 0.0 };
+            }
+            changed
+        }
+        "int" => {
+            let mut value = values[0];
+            let changed = ui
+                .add(egui::DragValue::new(&mut value).speed(1.0))
+                .changed();
+            if changed {
+                values[0] = value.round().clamp(-16_777_216.0, 16_777_216.0);
+            }
+            changed
+        }
+        _ => {
+            let lanes = match kind {
+                "vec2" => 2,
+                "vec3" => 3,
+                "vec4" => 4,
+                _ => 1,
+            };
+            let mut changed = false;
+            for (lane, value) in values.iter_mut().take(lanes).enumerate() {
+                ui.label(["X", "Y", "Z", "W"][lane]);
+                changed |= ui.add(egui::DragValue::new(value)).changed();
+            }
+            changed
+        }
+    }
+}
+
+fn parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let parameters = panels
+        .specialised
+        .vfx_document()
+        .unwrap()
+        .parameters
+        .clone();
+    for (index, mut parameter) in parameters.into_iter().enumerate() {
+        let mut remove = false;
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label(format!("{} ({})", parameter.name, parameter.kind));
+            changed |= parameter_values(ui, &parameter.kind, &mut parameter.value);
+            changed |= ui
+                .checkbox(&mut parameter.exposed, "Runtime exposed")
+                .changed();
+            remove = ui.button("Remove").clicked();
+        });
+        if changed || remove {
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                if remove {
+                    document.parameters.remove(index);
+                } else {
+                    document.parameters[index] = parameter;
+                }
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    }
+    ui.horizontal(|ui| {
+        ui.label("New");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_parameter_name);
+        numeric_kind(
+            ui,
+            "new-vfx-parameter-kind",
+            &mut panels.inputs.vfx_parameter_kind,
+        );
+        parameter_values(
+            ui,
+            &panels.inputs.vfx_parameter_kind,
+            &mut panels.inputs.vfx_parameter_values,
+        );
+        ui.checkbox(&mut panels.inputs.vfx_parameter_exposed, "Runtime exposed");
+        if ui.button("Add parameter").clicked() {
+            let parameter = Parameter {
+                name: panels.inputs.vfx_parameter_name.clone(),
+                kind: panels.inputs.vfx_parameter_kind.clone(),
+                value: panels.inputs.vfx_parameter_values,
+                exposed: panels.inputs.vfx_parameter_exposed,
+            };
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                document.parameters.push(parameter);
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
+}
+
+fn channel_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let channels = panels.specialised.vfx_document().unwrap().channels.clone();
+    for (index, mut channel) in channels.into_iter().enumerate() {
+        let mut remove = false;
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label(&channel.name);
+            ui.label("Events/frame");
+            changed |= ui
+                .add(egui::DragValue::new(&mut channel.max_events_per_frame).range(1..=1_000_000))
+                .changed();
+            ui.label("Depth");
+            changed |= ui
+                .add(egui::DragValue::new(&mut channel.max_chain_depth).range(1..=64))
+                .changed();
+            changed |= ui.checkbox(&mut channel.readback, "CPU readback").changed();
+            remove = ui.button("Remove").clicked();
+        });
+        if changed || remove {
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                if remove {
+                    document.channels.remove(index);
+                } else {
+                    document.channels[index] = channel;
+                }
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    }
+    ui.horizontal(|ui| {
+        ui.label("New");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_channel_name);
+        ui.label("Events/frame");
+        ui.add(egui::DragValue::new(&mut panels.inputs.vfx_channel_events).range(1..=1_000_000));
+        ui.label("Depth");
+        ui.add(egui::DragValue::new(&mut panels.inputs.vfx_channel_depth).range(1..=64));
+        ui.checkbox(&mut panels.inputs.vfx_channel_readback, "CPU readback");
+        if ui.button("Add channel").clicked() {
+            let channel = EventChannel {
+                name: panels.inputs.vfx_channel_name.clone(),
+                max_events_per_frame: panels.inputs.vfx_channel_events,
+                max_chain_depth: panels.inputs.vfx_channel_depth,
+                readback: panels.inputs.vfx_channel_readback,
+            };
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                document.channels.push(channel);
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
+}
+
+fn attribute_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize) {
+    let authored = panels.specialised.vfx_document().unwrap().emitters[emitter].clone();
+    let mut capacity = authored.capacity;
+    ui.horizontal(|ui| {
+        ui.label(format!("{} capacity", authored.name));
+        if ui
+            .add(egui::DragValue::new(&mut capacity).range(1..=1_000_000))
+            .changed()
+        {
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                document.emitters[emitter].capacity = capacity;
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
+    for (index, mut attribute) in authored.attributes.into_iter().enumerate() {
+        let mut remove = false;
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label(format!("{} ({})", attribute.name, attribute.kind));
+            ui.label("Min");
+            changed |= ui
+                .add(egui::DragValue::new(&mut attribute.minimum))
+                .changed();
+            ui.label("Max");
+            changed |= ui
+                .add(egui::DragValue::new(&mut attribute.maximum))
+                .changed();
+            ui.label("Tolerance");
+            changed |= ui
+                .add(egui::DragValue::new(&mut attribute.tolerance).range(0.0..=f32::MAX))
+                .changed();
+            let previous = attribute.precision.clone();
+            precision(
+                ui,
+                ("vfx-precision", emitter, index),
+                &mut attribute.precision,
+            );
+            changed |= attribute.precision != previous;
+            remove = ui.button("Remove").clicked();
+        });
+        if changed || remove {
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                if remove {
+                    document.emitters[emitter].attributes.remove(index);
+                } else {
+                    document.emitters[emitter].attributes[index] = attribute;
+                }
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    }
+    ui.horizontal(|ui| {
+        ui.label("New");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_attribute_name);
+        numeric_kind(
+            ui,
+            "new-vfx-attribute-kind",
+            &mut panels.inputs.vfx_attribute_kind,
+        );
+        ui.label("Min");
+        ui.add(egui::DragValue::new(
+            &mut panels.inputs.vfx_attribute_minimum,
+        ));
+        ui.label("Max");
+        ui.add(egui::DragValue::new(
+            &mut panels.inputs.vfx_attribute_maximum,
+        ));
+        ui.label("Tolerance");
+        ui.add(
+            egui::DragValue::new(&mut panels.inputs.vfx_attribute_tolerance).range(0.0..=f32::MAX),
+        );
+        precision(
+            ui,
+            "new-vfx-attribute-precision",
+            &mut panels.inputs.vfx_attribute_precision,
+        );
+        if ui.button("Add attribute").clicked() {
+            let attribute = Attribute {
+                name: panels.inputs.vfx_attribute_name.clone(),
+                kind: panels.inputs.vfx_attribute_kind.clone(),
+                minimum: panels.inputs.vfx_attribute_minimum,
+                maximum: panels.inputs.vfx_attribute_maximum,
+                tolerance: panels.inputs.vfx_attribute_tolerance,
+                precision: panels.inputs.vfx_attribute_precision.clone(),
+            };
+            let result = panels.specialised.edit_vfx_metadata(|document| {
+                document.emitters[emitter].attributes.push(attribute);
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
 }
 
 fn compile_report(panels: &Panels<'_>, ui: &mut egui::Ui) {
