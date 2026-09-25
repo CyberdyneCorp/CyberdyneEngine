@@ -3494,3 +3494,19 @@ which leaves the D3D12 module unconditional and its `endif()` dangling so the OF
 `m11d5:renderer-options-off-is-clean`, and `four-profiles` in all nineteen ledgers (`m1`, `m2`,
 `m3`, `m4`, `m5`, `m5b`, `m6`, `m7`, `m8a`, `m8b`, `m8c`, `m9`, `m10`, `m11a`, `m11b`, `m11c`,
 `m11d`, `m11d5`, `m11e`).
+
+**All 22 re-proven**, each with `just roadmap-falsify prove <ledger> --only <id> --build-dir <tree>
+--mutate-the-tree --record` on a clean tree: `m6:culling`, `m2:determinism` and
+`m11d5:renderer-options-off-is-clean` against `build/qh-dev` (the last on a cold
+`build/qh-dev/renderers-off`; red under its mutation at `just build-engine`), and
+`m1:four-profiles` against the ledger matrix, carried to the eighteen identical declarations. The
+two formerly unproven entries left the list: 281 proven, 397 not yet shown able to fail.
+`four-profiles` took three attempts. The first was refused by the wrapper itself: the host was not
+quiet across one row's `test-all`, which exited 0, and the prover recorded
+`red against a built tree`. That record was discarded, not committed. The second went red under
+the mutation and did not come back green after the restore. The prover keeps only the first line
+of a run's output, so the row and the reason for that failure are not known. Run by hand, the
+same mutate-build-restore-run sequence was green in all four rows. There, the io check held one
+row back while the matrix rebuild was written back, at 7% and then 45% `full`, and then passed it.
+The busiest second across each row's run showed 0.8 to 1.3 of the 2 cores other processes may
+use. The third attempt proved it outright.

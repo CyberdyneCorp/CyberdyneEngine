@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 279 proven, 399 not yet shown able to fail.
+# 281 proven, 397 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -62,7 +62,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1:
 [[proof]]
 ledger = "m1"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -110,7 +110,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-2-0 (exi
 [[proof]]
 ledger = "m10"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -278,7 +278,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -526,7 +526,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -846,7 +846,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-verify (ex
 [[proof]]
 ledger = "m11c"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1166,7 +1166,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11d"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1270,7 +1270,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11d5"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1298,6 +1298,14 @@ digest = "bf97e3858c524956"
 verdict = "proven"
 mutation = "delete-lines '### Requirement:' in openspec/specs/audio/spec.md (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "renderer-options-off-is-clean"
+digest = "4a3c39e61aeb8c39"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'if(CY_RENDERER_D3D12)' in src/backends/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1: error: Recipe `build-engine` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11d5"
@@ -1358,7 +1366,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11e"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1453,8 +1461,16 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m2"
+criterion = "determinism"
+digest = "54bffeff55c4086e"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'node.hash = combine(node.hash, value);' in src/core/determinism/src/hash.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1: error: Recipe `test-quiet-host` failed with exit code 1), and green again once restored"
+
+[[proof]]
+ledger = "m2"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1502,7 +1518,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m3"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1566,7 +1582,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-san/xr-dev
 [[proof]]
 ledger = "m4"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1606,7 +1622,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1646,7 +1662,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5b"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1710,15 +1726,15 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m6"
 criterion = "culling"
-digest = "4aa9ee38a6930587"
+digest = "66e7e4e2d10d1167"
 verdict = "proven against a built tree"
 mutation = "delete-lines '++counters.tested;' in src/servers/render/culling/src/gpu_cull.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 8: error: Recipe `test-quiet-host` failed with exit code 8), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1: error: Recipe `test-quiet-host` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m6"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1766,7 +1782,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m7"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1854,7 +1870,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8a"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1910,7 +1926,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m8b"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -1974,7 +1990,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/ledger-matrix (
 [[proof]]
 ledger = "m8c"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -2118,7 +2134,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1:
 [[proof]]
 ledger = "m9"
 criterion = "four-profiles"
-digest = "f60fa704c44d138b"
+digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'const volatile f32 fov_y = kShotFovY;' in samples/07-fidelity/frame.cpp (declared)"
 detail = "as m1:four-profiles, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/ledger-matrix/dev-default (exit 1: release-default  FAILED (exit 1)), and green again once restored"
@@ -3077,14 +3093,6 @@ detail = "this host cannot evaluate it, so it cannot judge it either: Metal exis
 
 [[unproven]]
 ledger = "m11d5"
-criterion = "renderer-options-off-is-clean"
-digest = "b3567a020f9bdf8a"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d5"
 criterion = "rhi-row-at-complete-grade"
 digest = "6021d475593759c3"
 verdict = "no mutation"
@@ -3279,14 +3287,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 ledger = "m2"
 criterion = "cooking"
 digest = "ba6b1302c781702e"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m2"
-criterion = "determinism"
-digest = "ee74a2449bd34626"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
