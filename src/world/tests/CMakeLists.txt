@@ -13,6 +13,8 @@
 #                       the partitioner and spatial binding, cooked cells and their validation,
 #                       streaming sources and their shapes, layers, HLOD and representation tiers,
 #                       and the persistence overlay. Every case is tens of cells at most.
+#   world_persistence   the translation between the world's overlay and a save's, round-tripped
+#                       through a committed generation in an in-memory store.
 #   world_activation    publishes into a real `cy::ecs::World`: staged preparation across frames,
 #                       atomic publication, layer switching over twenty thousand rows, the overlay
 #                       applied during activation, and TEARDOWN MID-PREPARATION. Thousands of
@@ -56,6 +58,15 @@ function(cy_world_declare_tests)
             "${cy_world_tests_dir}/test_partition.cpp"
             "${cy_world_tests_dir}/test_sources.cpp"
         DEPENDENCIES cy::world cy::ecs cy::core-reflect)
+
+    # The translation into a save's overlay: src/world/persistence/. Its round trips commit to an
+    # in-memory store and load back, which is memory work only, so the suite is `unit`.
+    # `m11a:save-has-an-engine-consumer` runs its first two cases by name.
+    cy_add_test(
+        NAME world_persistence
+        KIND unit
+        SOURCES "${cy_world_tests_dir}/test_save_translation.cpp"
+        DEPENDENCIES cy::world-persistence cy::world cy::save cy::ecs cy::core-reflect)
 
     # cy::core-diagnostics is here for one case: "publishing a cell leaves a level-transition
     # breadcrumb naming the cell" reads the breadcrumb ring back. `cy::world` links it privately, so

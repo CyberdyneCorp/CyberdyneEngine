@@ -65,11 +65,12 @@ cache — which is what act 5 measures, in the outcome column of a build report 
   continuously. The first draft of this sample set it to megabytes, evicted nothing all run, and
   reported success. The cell payloads are charged to the I/O budget instead, which is where the
   tens of megabytes the route reads come from.
-* **There are two overlay models in this tree and this program meets both.**
+* **There are two overlay models in this tree and the engine translates between them.**
   `cy::world::PersistenceOverlay` holds raw component bytes addressed by a runtime component index;
-  `cy::save::Overlay` holds per-field value records addressed by `reflect::TypeId`. `run.cpp`
-  converts between them and says so at the point it does it. That conversion is the honest cost of
-  the duplication, not a design: `src/save/README.md` carries the recommended resolution.
+  `cy::save::Overlay` holds per-field value records addressed by `reflect::TypeId`. Until M11.e
+  `run.cpp` converted between them itself and could describe only `Structure`; the conversion is now
+  `cy::world-persistence` (`src/world/persistence/`), which reads every descriptor from the ECS
+  component registry, and this sample calls it with that registry and names no type.
 * **Nothing here is on a GPU.** The virtual texturing is the address spaces, the page tables, the
   caches, the feedback path and the producers; the device side is M7's. That is why this artefact
   runs in continuous integration, and why the picture above is a map rather than a screenshot.

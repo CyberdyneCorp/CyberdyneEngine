@@ -59,6 +59,10 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-values cy::ecs
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
+# The translation into a save's overlay is a separate target so that this one keeps its rule — no
+# file I/O and no save format — and a consumer of the world model does not inherit cy::save.
+add_subdirectory(persistence)
+
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()

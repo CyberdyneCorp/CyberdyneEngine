@@ -869,46 +869,77 @@ note   = "SaveArchive::load stops clearing the caller's overlay when every gener
 
 [[criterion]]
 id = "save-benchmark"
-describe = "the large-world save benchmark the requirement says the engine SHALL maintain exists and has a committed baseline. `benchmarks/` holds `ecs`, `gameplay` and `micro` and no save entry at all"
-source = "save-and-persistence, benchmarks/baseline.json"
+describe = "the large-world save benchmark the requirement says the engine SHALL maintain RUNS, stays within its committed baseline, and shows save cost scaling with changes rather than with world size. `benchmarks/save/` measures one autosave — the capture through `cy::world-persistence` and the encoding of every dirty region — over a world of 1 048 576 persistent objects and over one sixteen times smaller, with the same 20 480 dirty records in both; this criterion runs it, compares each body against `benchmarks/baseline.json`, and requires the two bodies to stay within 1.5x of each other"
+source = "save-and-persistence (Save performance and testing), benchmarks/save/bench_save.cpp, benchmarks/baseline.json"
 kind = "command"
 run = '''
 set -eo pipefail
-test -d benchmarks/save
-python3 - <<'CHECK'
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+runner="$d/benchmarks/cy_bench_save"
+test -x "$runner" || { echo "no $runner — benchmarks/save/ declares no runner"; exit 1; }
+results="$d/benchmarks/results/cy_bench_save.json"
+mkdir -p "$(dirname "$results")"
+"$runner" --json "$results"
+python3 benchmarks/tools/compare.py --results "$results" --baseline benchmarks/baseline.json
+python3 - "$results" <<'CHECK'
 import json, sys
-baseline = json.load(open("benchmarks/baseline.json"))
-text = json.dumps(baseline)
-present = "save" in text
-print("benchmarks/baseline.json carries a save entry:", present)
-sys.exit(0 if present else 1)
+measured = {entry["name"]: entry for entry in json.load(open(sys.argv[1]))["benchmarks"]}
+large = measured.get("save/autosave-1m-objects")
+small = measured.get("save/autosave-64k-objects")
+if large is None or small is None:
+    print("the runner did not measure both bodies; the scaling claim needs the pair")
+    sys.exit(1)
+ratio = large["ns_per_op"] / small["ns_per_op"]
+print(f"one autosave: {large['ns_per_op'] / 1e6:.2f} ms over 1 048 576 objects, "
+      f"{small['ns_per_op'] / 1e6:.2f} ms over 65 536 — {ratio:.2f}x for a world 16x larger")
+sys.exit(0 if ratio <= 1.5 else 1)
 CHECK
 '''
 ci_job = "milestone-m11a"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11a to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `benchmarks/` holds `ecs`, `gameplay`, `harness`, `micro` and `tools`; there is no `benchmarks/save`, `git log` has never touched one, and `benchmarks/baseline.json`'s three top-level keys carry no save entry. The criterion exits at `test -d benchmarks/save` with no output, which is what its recorded verdict `(no output)` is. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+# THE MUTATION IS IN THE ENGINE, NOT IN THE BENCHMARK. With `clear_dirty()` a no-op every cell the
+# world overlay has ever recorded against stays dirty, so the autosave captures and encodes the
+# whole world: the large body becomes ~16x the small one and far above its baseline, and both the
+# threshold and the scaling check go red.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/world/src/overlay.cpp"
+token  = "entry.dirty = false;"
+note   = "PersistenceOverlay::clear_dirty() stops clearing, so the autosave translates and encodes every cell rather than the 80 that changed; save/autosave-1m-objects exceeds its threshold and its ratio to save/autosave-64k-objects exceeds 1.5"
 
 [[criterion]]
 id = "save-has-an-engine-consumer"
-describe = "something in the engine above `src/save/` links `cy::save`. The only thing outside it that does today is `samples/06-open-world`, which is where the ordered load pipeline and the ninety-line translation between `world::PersistenceOverlay` and `save::Overlay` live — a sample standing in for an engine module is the shape of a capability that was never integrated"
-source = "save-and-persistence, src/save/README.md"
+describe = "an engine module above `src/save/` links `cy::save`, owns the translation between `world::PersistenceOverlay` and `save::Overlay`, and round-trips a world overlay through a committed save unchanged. `cy::world-persistence` (src/world/persistence/) is that module and `samples/06-open-world` calls it rather than keeping its own copy; this criterion runs the two cases of `unit.world_persistence` that compare the overlay that went into a save with the one that came out — equal after the round trip, and told apart when one field changed"
+source = "save-and-persistence, src/world/persistence/README.md, src/world/tests/test_save_translation.cpp"
 kind = "command"
 run = '''
 set -eo pipefail
-users=$(grep -rl "cy::save" --include=CMakeLists.txt src/ | grep -v "^src/save/" || true)
-count=$(printf '%s' "$users" | grep -c . || true)
-echo "$count engine module(s) above src/save/ link cy::save:"
-printf '%s\n' "${users:-  none}"
-test "$count" -ge 1
+d="${CY_BUILD_DIR:-build/dev}"
+grep -q "cy::save" src/world/persistence/CMakeLists.txt || { echo "src/world/persistence/ no longer links cy::save"; exit 1; }
+if grep -q "Session::to_save_overlay\|Session::from_save_overlay" samples/06-open-world/run.cpp; then
+    echo "samples/06-open-world carries its own translation again rather than calling the engine's"
+    exit 1
+fi
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_world_persistence"
+test -x "$binary" || { echo "no $binary — the suite unit.world_persistence does not exist"; exit 1; }
+filter='a world overlay survives a save and a load unchanged,a changed persistent field is detected after the round trip'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.world_persistence any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11a"
 
-# --- Section 8: audio, which is a dependency adoption before it is a backend ----------------------
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/world/persistence/src/save_translation.cpp"
+token  = "std::memcpy(data_, bytes.data(), bytes.size());"
+note   = "the capture stops copying an override's bytes into the aligned scratch object, so every saved record holds whatever the scratch held before; the round trip no longer equals the original overlay and `a world overlay survives a save and a load unchanged` goes red"
 
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation. RE-POINTED AT M11.e BY M11.c's GATE-FINDINGS PHASE. M11.c closed none of the three gaps that named it and this is one of them. BOTH HALVES ARE STILL OPEN, which is more than the presence-only complaint above says: re-run on 2026-09-17, the search still reports 0 engine modules above src/save/ linking cy::save, so the SUBJECT is absent as well as the check being weak. samples/06-open-world is still the only consumer in the tree and the ninety-line translation between world::PersistenceOverlay and save::Overlay still lives in it. Closing this needs an engine module that owns that translation AND a check that runs it and compares two answers rather than counting a string — and M11.e is the rung that sweeps save-and-persistence to Complete or records its deferral."""
-known_gap_closes = "m11e"
+# --- Section 8: audio, which is a dependency adoption before it is a backend ----------------------
 
 [[criterion]]
 id = "steam-audio-simulates"

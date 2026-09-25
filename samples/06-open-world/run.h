@@ -25,6 +25,7 @@
 #include <cy/save/storage.h>
 #include <cy/servers/render/virtual_texturing/system.h>
 #include <cy/servers/residency/server.h>
+#include <cy/world/persistence/save_translation.h>
 #include <cy/world/streaming.h>
 
 #include "content.h"
@@ -143,11 +144,9 @@ private:
     /// resident without anything simulating. The M6 exit criterion "a test holds bytes resident
     /// with simulation off", reached from the gameplay API rather than from a test.
     [[nodiscard]] u32 probe_prefetch() noexcept;
-    /// Copy the world's overlay into a save overlay, and back. See the note in run.cpp: there are
-    /// two overlay models in this tree and this conversion is where the sample pays for that.
-    [[nodiscard]] Status to_save_overlay(save::Overlay& out) const noexcept;
-    [[nodiscard]] Status from_save_overlay(const save::Overlay& saved,
-                                           ResumeReport& report) noexcept;
+    /// What the engine's translation between the world's overlay and a save's reads its
+    /// descriptors from: this session's ECS component registry. See src/world/persistence/.
+    [[nodiscard]] world::SaveTranslation save_translation() const noexcept;
     [[nodiscard]] Status verify_region(const save::Region& region, ResumeReport& report) noexcept;
     [[nodiscard]] Status pass_landmark(const Landmark& landmark, Telemetry& telemetry) noexcept;
     [[nodiscard]] u32 count_resident_not_activated() const noexcept;

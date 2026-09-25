@@ -23,10 +23,16 @@ namespace cy::bench {
 /// microbenchmark operates on.
 using Body = void (*)(std::uint64_t iterations);
 
+/// The iteration count the runner tries first before scaling towards the minimum time. Right for a
+/// body whose one iteration is nanoseconds; a body whose one iteration is milliseconds declares a
+/// smaller one with CY_BENCHMARK_STARTING_AT, or it pays a thousand of them per sample.
+inline constexpr std::uint64_t kDefaultFirstIterations = 1024;
+
 /// Registers a benchmark at static initialisation. Constructed by CY_BENCHMARK; there is no other
 /// way to add one, so every benchmark in a binary carries a description.
 struct Registration {
-    Registration(const char* name, const char* description, Body body);
+    Registration(const char* name, const char* description, Body body,
+                 std::uint64_t first_iterations = kDefaultFirstIterations);
 };
 
 /// Keep a value the optimiser would otherwise delete. A benchmark whose result is unused measures
@@ -60,9 +66,9 @@ inline void keep(const T& value) {
 /// Keep a value the optimiser would delete.
 #define CY_BENCH_KEEP(value) ::cy::bench::keep(value)
 
-#define CY_BENCHMARK_IMPL(name, description, fn, reg)                         \
-    static void fn(std::uint64_t CY_BENCH_ITERATIONS);                        \
-    static const ::cy::bench::Registration reg{(name), (description), &(fn)}; \
+#define CY_BENCHMARK_IMPL(name, description, first, fn, reg)                           \
+    static void fn(std::uint64_t CY_BENCH_ITERATIONS);                                 \
+    static const ::cy::bench::Registration reg{(name), (description), &(fn), (first)}; \
     static void fn([[maybe_unused]] std::uint64_t CY_BENCH_ITERATIONS)
 
 /// Declare a benchmark.
@@ -71,8 +77,14 @@ inline void keep(const T& value) {
 ///         for (std::uint64_t i = 0; i < CY_BENCH_ITERATIONS; ++i) { … }
 ///         CY_BENCH_KEEP(result);
 ///     }
-#define CY_BENCHMARK(name, description)                                   \
-    CY_BENCHMARK_IMPL(name, description, CY_BENCH_UNIQUE(cy_bench_body_), \
+#define CY_BENCHMARK(name, description)                                        \
+    CY_BENCHMARK_IMPL(name, description, ::cy::bench::kDefaultFirstIterations, \
+                      CY_BENCH_UNIQUE(cy_bench_body_), CY_BENCH_UNIQUE(cy_bench_registration_))
+
+/// Declare a benchmark whose one iteration is expensive — milliseconds rather than nanoseconds —
+/// so the runner starts scaling from `first` iterations rather than from a thousand.
+#define CY_BENCHMARK_STARTING_AT(name, description, first)                       \
+    CY_BENCHMARK_IMPL(name, description, first, CY_BENCH_UNIQUE(cy_bench_body_), \
                       CY_BENCH_UNIQUE(cy_bench_registration_))
 
 #endif  // CY_BENCH_BENCH_H

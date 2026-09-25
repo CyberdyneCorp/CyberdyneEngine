@@ -44,6 +44,7 @@ cy_add_module(
         run.cpp
     PRIVATE_DEPENDENCIES
         cy::world
+        cy::world-persistence
         cy::save
         cy::servers-residency
         cy::servers-render-virtual-texturing
