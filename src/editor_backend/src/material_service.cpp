@@ -241,10 +241,11 @@ CyResult compile_graph(CyServiceSession_T& session,
         return failed(session, "catalogue-unavailable", status.error().message);
     }
     cy::graph::DiagnosticSink diagnostics(allocator);
-    std::string_view text = input.empty()
-                                ? std::string_view(reinterpret_cast<const char*>(session.request_payload.data()),
-                                                   session.request_payload.size())
-                                : input;
+    std::string_view text =
+        input.empty()
+            ? std::string_view(reinterpret_cast<const char*>(session.request_payload.data()),
+                               session.request_payload.size())
+            : input;
     Array<char> canonical(allocator);
     if (text.starts_with("cymatcanvas ")) {
         cy::graph::Graph authored(allocator, cy::Name::intern("editor_material"));
@@ -301,37 +302,42 @@ CyResult preview_authored_graph(CyServiceSession_T& session,
     }
     const auto& bytes = session.request_payload;
     if (bytes.size() < 8) {
-        return failed_material(session, "material.preview.payload", "missing graph reference or source");
+        return failed_material(session, "material.preview.payload",
+                               "missing graph reference or source");
     }
     const usize reference_size = read_u32(bytes, 0);
     if (reference_size == 0 || reference_size > bytes.size() - 8) {
-        return failed_material(session, "material.preview.payload", "invalid graph reference length");
+        return failed_material(session, "material.preview.payload",
+                               "invalid graph reference length");
     }
     const usize source_offset = 4 + reference_size;
     const usize source_size = read_u32(bytes, source_offset);
     if (source_size == 0 || source_size != bytes.size() - source_offset - 4) {
         return failed_material(session, "material.preview.payload", "invalid graph source length");
     }
-    const std::string_view reference(reinterpret_cast<const char*>(bytes.data() + 4), reference_size);
+    const std::string_view reference(reinterpret_cast<const char*>(bytes.data() + 4),
+                                     reference_size);
     const std::string_view source(reinterpret_cast<const char*>(bytes.data() + source_offset + 4),
                                   source_size);
     if (!reference.ends_with(".cygraph") || reference.find("..") != std::string_view::npos ||
         reference.starts_with('/')) {
-        return failed_material(session, "material.preview.reference", "invalid project graph reference");
+        return failed_material(session, "material.preview.reference",
+                               "invalid project graph reference");
     }
     if (const CyResult result = compile_graph(session, nullptr, allocator, false, true, source);
         result != CY_RESULT_OK || session.failed_event) {
         return result;
     }
     const usize graph_size = read_u32(session.event_payload, 5);
-    const std::string_view canonical(reinterpret_cast<const char*>(session.event_payload.data() + 9),
-                                     graph_size);
+    const std::string_view canonical(
+        reinterpret_cast<const char*>(session.event_payload.data() + 9), graph_size);
     if (Status applied = runtime->preview(reference, canonical); !applied) {
         return failed_material(session, "material.preview.unsupported", applied.error().message);
     }
     session.event_payload.clear();
     return put_u32(session.event_payload, 2) && put_u8(session.event_payload, 1)
-               ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
+               ? CY_RESULT_OK
+               : CY_RESULT_OUT_OF_MEMORY;
 }
 
 bool preview_slot(const CyServiceSession_T& session, u64 handle, usize& slot) noexcept {
@@ -533,14 +539,14 @@ CyResult capabilities(CyServiceSession_T& session,
                       const cy::editor::MaterialPreviewRuntime* preview_runtime,
                       const cy::editor::MaterialAuthoringRuntime* authoring_runtime) noexcept {
     constexpr const char* operations[] = {
-        "capabilities.get",         "material.catalogue.get", "material.validate",
-        "material.compile",         "material.author",        "preview.create",         "preview.destroy",
-        "preview.parameter.update", "preview.reload",
+        "capabilities.get", "material.catalogue.get",   "material.validate",
+        "material.compile", "material.author",          "preview.create",
+        "preview.destroy",  "preview.parameter.update", "preview.reload",
     };
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 1) ||
         !put_u32(session.event_payload, static_cast<u32>(std::size(operations) +
-                                                        (authoring_runtime != nullptr ? 1 : 0)))) {
+                                                         (authoring_runtime != nullptr ? 1 : 0)))) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     for (const char* operation : operations) {

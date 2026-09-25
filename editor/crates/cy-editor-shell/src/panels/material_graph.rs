@@ -108,42 +108,53 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             );
         });
     });
+    let had_action = action.is_some();
+    handle_palette_action(panels.editor, panels.inputs, canvas, action);
+    if !had_action
+        && panels.editor.runtime.is_connected()
+        && state == MaterialCatalogueState::Ready
+        && !matches!(request_state, MaterialRequestState::Pending { .. })
+    {
+        preview_changed_graph(panels.editor, panels.inputs, canvas);
+    }
+}
+
+fn handle_palette_action(
+    editor: &mut Editor,
+    inputs: &mut super::Inputs,
+    canvas: &GraphCanvas,
+    action: Option<PaletteAction>,
+) {
     match action {
         Some(PaletteAction::Save) => {
-            let reference = panels
-                .inputs
+            let reference = inputs
                 .material_open_reference
                 .clone()
-                .unwrap_or_else(|| format!("materials/{}.cygraph", panels.inputs.material_name));
-            match canvas_interchange(&panels.inputs.material_name, canvas).and_then(|source| {
-                let request = panels
-                    .editor
+                .unwrap_or_else(|| format!("materials/{}.cygraph", inputs.material_name));
+            match canvas_interchange(&inputs.material_name, canvas).and_then(|source| {
+                let request = editor
                     .request_material(MaterialOperation::Author, source.as_bytes().to_vec())?;
-                panels.inputs.material_save = Some((request.as_u64(), reference, source));
+                inputs.material_save = Some((request.as_u64(), reference, source));
                 Ok(())
             }) {
                 Ok(()) => {}
                 Err(problem) => {
-                    panels
-                        .editor
+                    editor
                         .notifications
                         .post(cy_editor_services::Notification::error(
                             "Material save failed",
                             problem,
-                        ))
+                        ));
                 }
             }
         }
         Some(PaletteAction::Request(operation)) => {
-            match canvas_interchange(&panels.inputs.material_name, canvas).and_then(|payload| {
-                panels
-                    .editor
-                    .request_material(operation, payload.into_bytes())
-            }) {
+            match canvas_interchange(&inputs.material_name, canvas)
+                .and_then(|payload| editor.request_material(operation, payload.into_bytes()))
+            {
                 Ok(_) => {}
                 Err(problem) => {
-                    panels
-                        .editor
+                    editor
                         .notifications
                         .post(cy_editor_services::Notification::error(
                             "The material request could not be submitted",
@@ -153,9 +164,8 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             }
         }
         Some(PaletteAction::Cancel) => {
-            if let Err(problem) = panels.editor.cancel_material_request() {
-                panels
-                    .editor
+            if let Err(problem) = editor.cancel_material_request() {
+                editor
                     .notifications
                     .post(cy_editor_services::Notification::error(
                         "The material request could not be cancelled",
@@ -164,13 +174,6 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             }
         }
         None => {}
-    }
-    if action.is_none()
-        && panels.editor.runtime.is_connected()
-        && state == MaterialCatalogueState::Ready
-        && !matches!(request_state, MaterialRequestState::Pending { .. })
-    {
-        preview_changed_graph(panels.editor, panels.inputs, canvas);
     }
 }
 

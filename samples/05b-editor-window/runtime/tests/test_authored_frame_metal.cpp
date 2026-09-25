@@ -439,14 +439,17 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
                                "field 6 0.05 0.20 0.10");
         ser::World graph_default(allocator());
         ser::World graph_override(allocator());
-        CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", graph_default).has_value());
-        CY_REQUIRE(ser::read_world(changed_albedo, "worlds/graph.cyworld", graph_override).has_value());
+        CY_REQUIRE(
+            ser::read_world(kGraphMaterial, "worlds/graph.cyworld", graph_default).has_value());
+        CY_REQUIRE(
+            ser::read_world(changed_albedo, "worlds/graph.cyworld", graph_override).has_value());
         CY_REQUIRE(frame.render(graph_default, view));
         const u64 default_red = red_sum(frame.pixels());
         CY_REQUIRE(frame.render(graph_override, view));
         CY_CHECK(default_red > red_sum(frame.pixels()) + 1000U);
 
-        const std::string reference = "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+        const std::string reference =
+            "samples/05b-editor-window/project/materials/copper_clay.cygraph";
         std::ifstream graph_file(std::string(CY_TEST_PROJECT) + "/" + reference);
         CY_REQUIRE(graph_file.good());
         std::string graph_source((std::istreambuf_iterator<char>(graph_file)),

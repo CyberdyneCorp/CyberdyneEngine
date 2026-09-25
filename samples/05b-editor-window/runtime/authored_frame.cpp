@@ -4,12 +4,12 @@
 #include <cy/core/assets/cooked.h>
 #include <cy/core/assets/file.h>
 #include <cy/core/math/projection.h>
+#include <cy/graph/material/lower_material.h>
+#include <cy/graph/text.h>
 #include <cy/import/mesh.h>
 #include <cy/import/model.h>
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
-#include <cy/graph/text.h>
-#include <cy/graph/material/lower_material.h>
 #include <cy/rendering/material/standard.h>
 #include <cy/servers/render/sort.h>
 
@@ -88,8 +88,7 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
     const graph::GraphNode* closure = authored.find_node(diffuse);
     const graph::GraphNode* constant = authored.find_node(colour);
     const graph::GraphNode* opacity_node = authored.find_node(opacity);
-    if (closure == nullptr || closure->type.text() != "material.diffuse" ||
-        constant == nullptr ||
+    if (closure == nullptr || closure->type.text() != "material.diffuse" || constant == nullptr ||
         (constant->type.text() != "material.constant" &&
          constant->type.text() != "material.parameter") ||
         opacity_node == nullptr || opacity_node->type.text() != "material.constant" ||
@@ -98,7 +97,8 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
                     "authored frame: graph material requires a constant-colour diffuse surface");
     }
     const bool parameter = constant->type.text() == "material.parameter";
-    const graph::Literal* value = authored.property(colour, Name::intern(parameter ? "default" : "value"));
+    const graph::Literal* value =
+        authored.property(colour, Name::intern(parameter ? "default" : "value"));
     const graph::Literal* type = authored.property(colour, Name::intern("type"));
     const graph::Literal* alpha = authored.property(opacity, Name::intern("value"));
     const graph::Literal* alpha_type = authored.property(opacity, Name::intern("type"));
@@ -527,10 +527,10 @@ Expected<u32, Error> AuthoredFrame::material_slot(const ser::World& world,
         return 0U;
     }
     const bool graph_reference = reference.ends_with(".cygraph");
-    const std::string key = graph_reference ? reference + "#" + std::to_string(node.identity)
-                                            : reference;
-    const auto found = std::ranges::find_if(
-        material_slots_, [&](const auto& entry) { return entry.first == key; });
+    const std::string key =
+        graph_reference ? reference + "#" + std::to_string(node.identity) : reference;
+    const auto found = std::ranges::find_if(material_slots_,
+                                            [&](const auto& entry) { return entry.first == key; });
     if (found != material_slots_.end() && !graph_reference) {
         return found->second;
     }
@@ -539,8 +539,10 @@ Expected<u32, Error> AuthoredFrame::material_slot(const ser::World& world,
     }
     if (graph_reference) {
         const u32 slot = found == material_slots_.end()
-                             ? static_cast<u32>(material_slots_.size() + 1) : found->second;
-        return graph_material_slot(world, node, reference, key, slot, found == material_slots_.end());
+                             ? static_cast<u32>(material_slots_.size() + 1)
+                             : found->second;
+        return graph_material_slot(world, node, reference, key, slot,
+                                   found == material_slots_.end());
     }
     return cooked_material_slot(reference);
 }
@@ -600,9 +602,11 @@ Expected<u32, Error> AuthoredFrame::cooked_material_slot(const std::string& refe
     return slot;
 }
 
-Expected<u32, Error> AuthoredFrame::graph_material_slot(
-    const ser::World& world, const ser::WorldNode& node, const std::string& reference,
-    const std::string& key, u32 slot, bool new_slot) noexcept {
+Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
+                                                        const ser::WorldNode& node,
+                                                        const std::string& reference,
+                                                        const std::string& key, u32 slot,
+                                                        bool new_slot) noexcept {
     Array<u8> source(*allocator_);
     const std::string path = project_ + "/" + reference;
     if (Status status = assets::fs::read_whole(path.c_str(), source); !status) {
@@ -619,8 +623,8 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(
         return make_unexpected(colour.error());
     }
     if (!colour->parameter.empty()) {
-        const std::string component = "Material: " +
-            std::string(std::filesystem::path(reference).stem().string());
+        const std::string component =
+            "Material: " + std::string(std::filesystem::path(reference).stem().string());
         const ser::WorldValue* override = field_value(world, node, component, colour->parameter);
         bool inherited = false;
         if (previewing && override != nullptr && override->kind == ser::WorldValueKind::Vec3) {
@@ -636,8 +640,8 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(
         }
     }
     const StandardParameters ids;
-    if (Status status = assembly_.materials().set_color(
-            material_program_, slot, ids.base_color_factor, colour->value);
+    if (Status status = assembly_.materials().set_color(material_program_, slot,
+                                                        ids.base_color_factor, colour->value);
         !status) {
         return make_unexpected(status.error());
     }

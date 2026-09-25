@@ -326,6 +326,12 @@ impl ViewportSession {
             .ok_or_else(|| Problem::new("capture a viewport frame", "the frame slot is missing"))?;
         let width = surface.width();
         let height = surface.height();
+        let image_width = u32::try_from(width).map_err(|_| {
+            Problem::new("capture a viewport frame", "the frame width is too large")
+        })?;
+        let image_height = u32::try_from(height).map_err(|_| {
+            Problem::new("capture a viewport frame", "the frame height is too large")
+        })?;
         let row = width.checked_mul(4).ok_or_else(|| {
             Problem::new("capture a viewport frame", "the frame width is too large")
         })?;
@@ -357,7 +363,7 @@ impl ViewportSession {
         }
         // SAFETY: this balances the successful read-only lock above.
         unsafe { surface.unlock(IOSurfaceLockOptions::ReadOnly, std::ptr::null_mut()) };
-        Ok((width as u32, height as u32, bytes))
+        Ok((image_width, image_height, bytes))
     }
 
     /// Current publisher health.

@@ -338,7 +338,10 @@ impl Editor {
             }
             crate::material_graph::save(self.project.root(), &reference, &source, &graph)
                 .map_err(|problem| problem.because)?;
-            let document = self.documents.get_mut(pending.document).expect("checked above");
+            let document = self
+                .documents
+                .get_mut(pending.document)
+                .expect("checked above");
             document.begin(format!("Save material graph {reference}"), pending.actor);
             document
                 .record(cy_editor_documents::operation::Operation::Domain {
@@ -1235,7 +1238,7 @@ impl cy_editor_commands::ProjectHost for Editor {
             ));
         }
         self.preview_material_graph(reference, source)
-            .map(|request| request.as_u64())
+            .map(cy_editor_protocol::RequestId::as_u64)
     }
 
     fn material_graph_save(&mut self, reference: &str, source: &str) -> Result<u64> {
@@ -1295,7 +1298,7 @@ impl cy_editor_commands::ProjectHost for Editor {
                 diagnostics,
             } => format!(
                 "failed {:?}: {} diagnostic(s)",
-                request.map(|id| id.as_u64()),
+                request.map(cy_editor_protocol::RequestId::as_u64),
                 diagnostics.len()
             ),
             MaterialRequestState::Cancelled { request } => {

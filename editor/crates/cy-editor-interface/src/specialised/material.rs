@@ -442,6 +442,39 @@ pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
     Ok(out)
 }
 
+fn load_canvas_nodes(
+    facts: &[&str],
+    canvas: &mut GraphCanvas,
+) -> Result<std::collections::BTreeMap<u64, NodeKey>> {
+    let mut keys = std::collections::BTreeMap::new();
+    for line in facts {
+        let Some(rest) = line.strip_prefix("node ") else {
+            continue;
+        };
+        let (id, kind) = rest
+            .split_once(' ')
+            .ok_or_else(|| Problem::new("open a material graph", "invalid node"))?;
+        let id = id
+            .parse::<u64>()
+            .map_err(|_| Problem::new("open a material graph", "invalid node key"))?;
+        // Layout is a visual fallback; the interchange may replace it with exact saved positions.
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "fallback layout coordinates are approximate"
+        )]
+        let at = Layout {
+            x: 28.0 + (keys.len() % 3) as f32 * 225.0,
+            y: 34.0 + (keys.len() / 3) as f32 * 170.0,
+        };
+        let key = NodeKey::new(id)?;
+        canvas.add_with_key(key, kind, at)?;
+        if keys.insert(id, key).is_some() {
+            return Err(Problem::new("open a material graph", "duplicate node key"));
+        }
+    }
+    Ok(keys)
+}
+
 /// Reopen an engine material canvas source using the active engine catalogue.
 /// The canonical `.cygraph` is produced by the engine's material authoring service.
 pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result<String> {
@@ -469,28 +502,8 @@ pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result
     }
     let mut loaded = canvas.clone();
     loaded.load(canvas.catalogue().clone());
-    let mut keys = std::collections::BTreeMap::new();
     let facts: Vec<&str> = lines.collect();
-    for line in &facts {
-        let Some(rest) = line.strip_prefix("node ") else {
-            continue;
-        };
-        let (id, kind) = rest
-            .split_once(' ')
-            .ok_or_else(|| Problem::new("open a material graph", "invalid node"))?;
-        let id = id
-            .parse::<u64>()
-            .map_err(|_| Problem::new("open a material graph", "invalid node key"))?;
-        let at = Layout {
-            x: 28.0 + (keys.len() % 3) as f32 * 225.0,
-            y: 34.0 + (keys.len() / 3) as f32 * 170.0,
-        };
-        let key = NodeKey::new(id)?;
-        loaded.add_with_key(key, kind, at)?;
-        if keys.insert(id, key).is_some() {
-            return Err(Problem::new("open a material graph", "duplicate node key"));
-        }
-    }
+    let keys = load_canvas_nodes(&facts, &mut loaded)?;
     for line in &facts {
         if let Some(rest) = line.strip_prefix("# layout ") {
             let words: Vec<_> = rest.split_whitespace().collect();

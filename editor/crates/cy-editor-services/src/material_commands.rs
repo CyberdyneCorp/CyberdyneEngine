@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Material graph authoring through the same registry used by panels and MCP.
 
 use cy_editor_commands::{

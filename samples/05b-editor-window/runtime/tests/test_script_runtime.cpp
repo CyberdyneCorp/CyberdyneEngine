@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
 #include <cy/gameplay/play/session.h>

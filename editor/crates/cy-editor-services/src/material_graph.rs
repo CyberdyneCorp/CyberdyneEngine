@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Project material graph files shared by the UI and command surface.
 
 use std::path::{Component, Path, PathBuf};

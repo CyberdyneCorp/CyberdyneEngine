@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Project graph parameters become generated, undoable scene Inspector fields.
 
 use std::collections::BTreeMap;
@@ -6,8 +7,12 @@ use std::path::Path;
 use crate::Editor;
 use crate::primitives::material_of;
 use cy_editor_core::Actor;
+use cy_editor_core::ids::{FieldId, NodeId, TypeId};
 use cy_editor_core::value::{Value, ValueKind};
+use cy_editor_documents::Document;
 use cy_editor_documents::operation::Operation;
+
+type ParameterField = (FieldId, Value, Option<Value>);
 
 struct Parameter {
     name: String,
@@ -153,11 +158,10 @@ pub fn sync(
         "Material: {}",
         path.file_stem().unwrap_or_default().to_string_lossy()
     );
-    let component = document
-        .schema()
-        .type_named(&title)
-        .map(|kind| kind.id)
-        .unwrap_or_else(|| document.schema_mut().declare_type(&title, false));
+    let component = match document.schema().type_named(&title) {
+        Some(kind) => kind.id,
+        None => document.schema_mut().declare_type(&title, false),
+    };
     let mut fields = Vec::new();
     for parameter in declared {
         let field = match document
@@ -190,46 +194,55 @@ pub fn sync(
     }
     let mut changed = 0;
     for node in nodes {
-        let old = document
-            .content()
-            .node(node)
-            .and_then(|state| state.components.get(&component))
-            .cloned();
-        let values: Vec<_> = fields
-            .iter()
-            .map(|(field, default, prior_default)| {
-                let existing = old.as_ref().and_then(|values| values.get(field));
-                let value = match existing {
-                    Some(value) if prior_default.as_ref() != Some(value) => value.clone(),
-                    _ => default.clone(),
-                };
-                (*field, value)
-            })
-            .collect();
-        if old.as_ref().is_some_and(|current| {
-            current
-                .iter()
-                .eq(values.iter().map(|(field, value)| (field, value)))
-        }) {
-            continue;
-        }
-        document.begin("Sync material properties", Actor::human("Editor"));
-        if let Some(old) = old {
-            document
-                .record(Operation::RemoveComponent {
-                    node,
-                    component,
-                    before: old.into_iter().collect(),
-                })
-                .map_err(|problem| problem.to_string())?;
-        }
-        document
-            .add_component(node, component, values)
-            .map_err(|problem| problem.to_string())?;
-        document.commit().map_err(|problem| problem.to_string())?;
-        changed += 1;
+        changed += usize::from(sync_node(document, node, component, &fields)?);
     }
     Ok(changed)
+}
+
+fn sync_node(
+    document: &mut Document,
+    node: NodeId,
+    component: TypeId,
+    fields: &[ParameterField],
+) -> Result<bool, String> {
+    let old = document
+        .content()
+        .node(node)
+        .and_then(|state| state.components.get(&component))
+        .cloned();
+    let values: Vec<_> = fields
+        .iter()
+        .map(|(field, default, prior_default)| {
+            let existing = old.as_ref().and_then(|values| values.get(field));
+            let value = match existing {
+                Some(value) if prior_default.as_ref() != Some(value) => value.clone(),
+                _ => default.clone(),
+            };
+            (*field, value)
+        })
+        .collect();
+    if old.as_ref().is_some_and(|current| {
+        current
+            .iter()
+            .eq(values.iter().map(|(field, value)| (field, value)))
+    }) {
+        return Ok(false);
+    }
+    document.begin("Sync material properties", Actor::human("Editor"));
+    if let Some(old) = old {
+        document
+            .record(Operation::RemoveComponent {
+                node,
+                component,
+                before: old.into_iter().collect(),
+            })
+            .map_err(|problem| problem.to_string())?;
+    }
+    document
+        .add_component(node, component, values)
+        .map_err(|problem| problem.to_string())?;
+    document.commit().map_err(|problem| problem.to_string())?;
+    Ok(true)
 }
 
 #[cfg(test)]

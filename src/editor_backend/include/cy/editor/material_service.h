@@ -55,7 +55,8 @@ public:
     explicit MaterialService(Allocator& allocator,
                              MaterialPreviewRuntime* preview_runtime = nullptr,
                              MaterialAuthoringRuntime* authoring_runtime = nullptr) noexcept
-        : allocator_(&allocator), preview_runtime_(preview_runtime),
+        : allocator_(&allocator),
+          preview_runtime_(preview_runtime),
           authoring_runtime_(authoring_runtime) {}
 
     [[nodiscard]] CyResult open(CyServiceSession* out_session) noexcept override;

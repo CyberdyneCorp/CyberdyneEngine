@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "script_runtime.h"
 
 #include <cy/scene/node.h>
@@ -73,8 +74,7 @@ bool append_export(std::vector<u8>& bytes, const ser::World& world,
     return true;
 }
 
-std::vector<u8> authored_exports(const ser::World& world, const ser::WorldNode& node,
-                                 u32 schema) {
+std::vector<u8> authored_exports(const ser::World& world, const ser::WorldNode& node, u32 schema) {
     std::vector<u8> bytes;
     append_word(bytes, 0x54535943);  // CYST, the Swift state-blob magic.
     append_word(bytes, schema);

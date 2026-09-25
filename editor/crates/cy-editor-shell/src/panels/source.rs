@@ -68,7 +68,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     ui.add_space(metrics.gap() * 0.25);
 }
 
-fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+fn source_tabs(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let tabs: Vec<_> = panels
         .source_workspace
         .buffers()
@@ -103,7 +103,10 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     if let Some(index) = activate {
         panels.source_workspace.activate(index);
     }
+}
 
+fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    source_tabs(panels, ui);
     let Some(active) = panels.source_workspace.active() else {
         nothing_here(
             ui,
@@ -159,9 +162,15 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let diagnostic_height = if diagnostics.is_empty() {
         0.0
     } else {
-        panels.metrics().hit_target() * diagnostics.len().min(4) as f32
+        panels.metrics().hit_target()
+            * f32::from(u8::try_from(diagnostics.len().min(4)).expect("at most four diagnostics"))
     };
     let code_height = (ui.available_height() - diagnostic_height).max(160.0);
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the editor layout height is a nonnegative screen size and rows are approximate"
+    )]
     let rows = (code_height / ui.text_style_height(&egui::TextStyle::Monospace)) as usize;
     let response = egui::ScrollArea::both()
         .id_salt("swift-editor")
