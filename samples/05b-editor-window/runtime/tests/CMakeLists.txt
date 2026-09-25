@@ -8,6 +8,7 @@
 set_property(GLOBAL PROPERTY CY_EDITOR_WINDOW_RUNTIME_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_editor_window_runtime_declare_tests)
+    find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
     get_property(tests_dir GLOBAL PROPERTY CY_EDITOR_WINDOW_RUNTIME_TESTS_DIR)
     foreach(kind IN ITEMS unit integration smoke)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -103,6 +104,38 @@ function(cy_editor_window_runtime_declare_tests)
         DEPENDENCIES cy::servers-render
         DEFINITIONS
             "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+
+    if(APPLE AND CY_SCRIPTING AND Python3_Interpreter_FOUND)
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py" --probe
+            RESULT_VARIABLE spin_swift_result OUTPUT_QUIET ERROR_QUIET)
+        if(spin_swift_result EQUAL 0)
+            set(spin_module_dir "${CMAKE_CURRENT_BINARY_DIR}/spin-module")
+            set(spin_module "${spin_module_dir}/out/libCyGame_g1.so")
+            add_custom_command(
+                OUTPUT "${spin_module}"
+                COMMAND "${Python3_EXECUTABLE}"
+                        "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py"
+                        --work "${spin_module_dir}" --out "${spin_module_dir}/out"
+                        --generation "1=${tests_dir}/../../project/game"
+                DEPENDS "${tests_dir}/../../project/game/SpinCube.swift"
+                        "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py"
+                VERBATIM)
+            add_custom_target(cy_editor_spin_module DEPENDS "${spin_module}")
+            cy_add_test(
+                NAME editor_script_runtime
+                KIND smoke
+                SOURCES "${tests_dir}/test_script_runtime.cpp"
+                        "${tests_dir}/../script_runtime.cpp"
+                DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference
+                             cy::scene-serialization cy::scene
+                DEFINITIONS "CY_SPIN_MODULE=\"${spin_module}\"")
+            add_dependencies(cy_test_smoke_editor_script_runtime cy_editor_spin_module)
+            target_include_directories(cy_test_smoke_editor_script_runtime PRIVATE
+                                       "${tests_dir}/..")
+        endif()
+    endif()
 
     foreach(target cy_test_unit_editor_window_runtime cy_test_integration_editor_window_overlay
                    cy_test_integration_editor_window_one_world

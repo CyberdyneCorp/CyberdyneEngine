@@ -834,7 +834,14 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         return make_unexpected(inserted.error());
     }
     instances_.push_back(std::move(instance));
-    return transforms_.push_back(relative_transform(matrix, eye));
+    InstanceTransform transformed = relative_transform(matrix, eye);
+    const ser::WorldValue* tint = field_value(world, node, "MeshRenderer", "tint");
+    if (tint != nullptr && tint->kind == ser::WorldValueKind::Vec3) {
+        for (u32 channel = 0; channel < 3; ++channel) {
+            transformed.tint[channel] = tint->lanes[channel];
+        }
+    }
+    return transforms_.push_back(transformed);
 }
 
 Span<const DrawSurface> AuthoredFrame::surfaces(const VisibleInstance& instance,

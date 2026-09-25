@@ -143,9 +143,12 @@ direction; point lights show their position because they emit in every direction
 first enabled scene Camera and hides editor handles; if no scene
 Camera exists, the view explains that one is needed. Switching views alone does not start the
 simulation. Play selects Game and advances hosted physics; Pause holds it; Stop restores the
-authored world and Editor view. The current sample hosted runtime reports Swift gameplay and audio
-as unavailable, so Play does not yet run project scripts or sound. The runtime status is shown in
-the editor instead of implying those services are active. The Editor's studio fill is omitted from
+authored world and Editor view. The hosted runtime loads a built project Swift module when a node
+has a `ScriptBehaviour` component with a text `class` field naming a registered `@Behaviour`.
+It calls `onFixedUpdate` after physics during Play, pauses it with the simulation, and restores
+authored transforms on Stop. Run `project.build` and wait for completion before Play; a missing
+module or unknown behaviour is reported as a Play refusal. Audio is still unavailable in this
+host and is reported separately. The Editor's studio fill is omitted from
 Game rendering, so authored lights determine its illumination.
 Disabling the last authored light removes its illumination in both views; its Editor handle remains
 selectable so it can be enabled again. Rotating a directional or spot light changes where it shines.

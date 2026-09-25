@@ -83,6 +83,7 @@
 #include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
+#include "script_runtime.h"
 #include "world_view.h"
 
 #include "renderer.h"
@@ -280,6 +281,7 @@ struct Host {
     /// M8.a TASK 5.1: what pressing play actually does. Null until a world is open — a play session
     /// over M3's ring would be a simulation of a fixture, which is what this milestone ends.
     gameplay::PlaySession* play = nullptr;
+    ScriptRuntime* scripts = nullptr;
     /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
     /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
     /// session that created one would create and destroy a whole backend per press of play.
@@ -672,6 +674,10 @@ void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
 /// THE ANSWER IS ALWAYS THE STATE NOW IN FORCE, never a silence. A runtime that ignored a play it
 /// could not honour would leave the editor showing "PLAYING" over a world that is not moving, which
 /// is worse than a refusal: it is a refusal a person cannot see.
+Status tick_scripts(void* user, gameplay::PlaySession& play, f32 dt) noexcept {
+    return static_cast<ScriptRuntime*>(user)->tick(play, dt);
+}
+
 void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
     const std::string_view asked(reinterpret_cast<const char*>(request.payload.data()),
                                  request.payload.size());
@@ -739,19 +745,29 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             // The mode the editor asked for, carried into the session so that `enter` refuses one
             // this build cannot run rather than this function having to remember to.
             configuration.mode = host.play_mode;
+            configuration.gameplay_tick = &tick_scripts;
+            configuration.gameplay_user = host.scripts;
             if (Status entered = host.play->enter(configuration); !entered) {
                 (void)host.bridge->send_playing(request.request, "editing",
                                                 gameplay::play_mode_name(host.play_mode),
                                                 entered.error().message);
                 return;
             }
+            if (Status started = host.scripts->start(*host.play, host.view_world->world());
+                !started) {
+                (void)host.play->stop();
+                (void)host.bridge->send_playing(request.request, "editing",
+                                                gameplay::play_mode_name(host.play_mode),
+                                                started.error().message);
+                return;
+            }
             host.play_sessions += 1;
             host.play_bodies = host.play->report().bodies;
             (void)std::snprintf(detail, sizeof(detail),
                                 "%u entities, %u bodies, %u colliders; "
-                                "Swift gameplay and audio unavailable in this host",
+                                "%u Swift behaviour(s); audio unavailable in this host",
                                 host.play->report().entities, host.play->report().bodies,
-                                host.play->report().colliders);
+                                host.play->report().colliders, host.scripts->count());
             break;
         }
         case gameplay::PlayState::Paused:
@@ -764,6 +780,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             break;
         case gameplay::PlayState::Editing: {
             const bool was_playing = host.play->state() != gameplay::PlayState::Editing;
+            host.scripts->stop();
             if (Status stopped = host.play->stop(); !stopped) {
                 (void)std::snprintf(detail, sizeof(detail), "%s", stopped.error().message);
                 break;
@@ -1365,6 +1382,7 @@ int main(int argc, char** argv) {
         }
 
         Host host;
+        ScriptRuntime scripts(allocator, options.project);
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
         MetalMaterialRuntime material_runtime(allocator, renderer, view_world);
         editor::MaterialService editor_service(allocator, &material_runtime);
@@ -1381,6 +1399,7 @@ int main(int argc, char** argv) {
         host.scene = &scene;
         host.view_world = &view_world;
         host.play = play.get();
+        host.scripts = &scripts;
         host.physics = physics_server;
         host.renderer = &renderer;
         host.publisher = publisher->get();
@@ -1430,6 +1449,7 @@ int main(int argc, char** argv) {
         // it deliberately does NOT stop play, because a destructor that wrote into the authored
         // world would put a restore on a path nobody asked for.
         if (play && play->state() != gameplay::PlayState::Editing) {
+            scripts.stop();
             (void)play->stop();
         }
         play.reset();

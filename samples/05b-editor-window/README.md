@@ -67,6 +67,23 @@ The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
 `render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
 in the engine's forward frame.
 
+## Swift cube during Play
+
+Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and
+Camera. `project/game/SpinCube.swift` registers the `SpinCube` behaviour; the cube's
+`ScriptBehaviour.class` field attaches it to that node. Run **Project → Build**, wait for the Swift
+module build to finish, then press Play. The behaviour rotates the cube 45 degrees per second
+around local Z on fixed ticks. Pause holds its angle; Stop restores the saved identity rotation.
+The runtime refuses Play with a specific message if the scene names a script but no built module
+exists. Audio remains unavailable in this sample host.
+
+The same cube sits beside the imported tree in the live issue #13 demo at
+`/tmp/cy-editor-scene-view-demo/worlds/main.cyworld`. The source FBX and cooked assets remain in
+that local project. Captures show the [authored cube beside the tree](../../docs/design/images/editor-spincube-tree-edit-metal.png)
+and [the cube rotated by its Swift behaviour](../../docs/design/images/editor-spincube-tree-playing-metal.png).
+`smoke.editor_script_runtime` runs the built Swift module against an authored cube and checks
+rotation, Pause, and exact restoration on Stop.
+
 ## Why this artefact exists
 
 M5 closed on a scripted session, and `implement-m5b-operable/proposal.md` says plainly why that was

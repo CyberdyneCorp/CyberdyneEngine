@@ -20,7 +20,8 @@
 
 - [x] 3.1 Add distinct Editor and Game view state and visible mode controls, preserve editor camera, and render only the active view; verify switching without Play does not tick physics.
 - [x] 3.2 Make Play switch to Game and Stop restore Editor and the authored world; verify physics advances in Play, pauses in Pause, and resets on Stop.
-- [ ] 3.3 Connect project Swift gameplay and audio services to hosted Play where available, report unavailable services clearly, and verify execution/status regressions.
+- [x] 3.3a Connect built project Swift behaviours to hosted Play; execute fixed updates, pause them, restore transforms on Stop, report missing modules, and verify execution with a compiled Swift regression.
+- [ ] 3.3b Connect project audio services to hosted Play where available and verify execution/status regressions.
 
 ## 4. Delivery
 

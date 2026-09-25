@@ -100,6 +100,8 @@ enum class PlayState : u8 {
 [[nodiscard]] Expected<PlayState, Error> play_state_of(std::string_view name) noexcept;
 
 /// What a session needs that it does not own.
+class PlaySession;
+
 struct PlayConfiguration {
     /// Where this session's runtime runs. M11.b task 3.1.
     ///
@@ -129,6 +131,9 @@ struct PlayConfiguration {
     /// leaves the world resolved. Optional: a session over a world nobody resolved does not need
     /// one, and a total restore is not expected to happen at all.
     const scene::serialization::AuthoringSchema* schema = nullptr;
+    /// Optional project gameplay step, after physics and before scene propagation.
+    Status (*gameplay_tick)(void* user, PlaySession& session, f32 dt) noexcept = nullptr;
+    void* gameplay_user = nullptr;
 };
 
 /// What one session did.

@@ -474,6 +474,14 @@ Status PlaySession::advance_one() noexcept {
     if (Status reported = bridge_->last_error(); !reported) {
         return reported;
     }
+    if (configuration_.gameplay_tick != nullptr) {
+        const f32 dt =
+            static_cast<f32>(clock_.rate().denominator) / static_cast<f32>(clock_.rate().numerator);
+        if (Status scripted = configuration_.gameplay_tick(configuration_.gameplay_user, *this, dt);
+            !scripted) {
+            return scripted;
+        }
+    }
     if (Status propagated =
             scene::propagate(*tree_, scene::PropagationPhase::Simulation, nullptr, nullptr);
         !propagated) {

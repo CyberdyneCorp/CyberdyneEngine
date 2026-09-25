@@ -12,3 +12,7 @@ Entering Play SHALL switch the visible scene to Game view, run the fixed-step ph
 #### Scenario: Missing runtime service
 - **WHEN** a project requests gameplay script or audio execution but the hosted runtime lacks that service
 - **THEN** the editor reports which service is unavailable
+
+#### Scenario: Scripted scene node
+- **WHEN** a node names a registered Swift behaviour in `ScriptBehaviour.class` and the project module is built before Play
+- **THEN** the runtime invokes its fixed update after physics while playing, suspends it during Pause, and restores the authored transform on Stop
