@@ -35,6 +35,9 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let state = panels.editor.backend.material_catalogue_state();
     let request_state = panels.editor.backend.material_request_state().clone();
     let preview_state = panels.editor.backend.material_preview_state().clone();
+    if !panels.editor.runtime.is_connected() {
+        panels.inputs.material_preview_source = None;
+    }
     if !panels.specialised.can_open(Domain::Materials) {
         unavailable(panels, ui, state);
         return;
@@ -163,6 +166,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         None => {}
     }
     if action.is_none()
+        && panels.editor.runtime.is_connected()
         && state == MaterialCatalogueState::Ready
         && !matches!(request_state, MaterialRequestState::Pending { .. })
     {
