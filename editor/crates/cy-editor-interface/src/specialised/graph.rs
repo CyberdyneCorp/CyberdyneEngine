@@ -503,6 +503,13 @@ impl GraphCanvas {
 
     /// Place a node of this type. Refuses a type the loaded catalogue does not declare.
     pub fn add(&mut self, type_name: &str, at: Layout) -> Result<NodeKey> {
+        let key = NodeKey::new(self.next_ordinal)?;
+        self.add_with_key(key, type_name, at)?;
+        Ok(key)
+    }
+
+    /// Restore a node using its authored identity, including gaps left by deleted nodes.
+    pub fn add_with_key(&mut self, key: NodeKey, type_name: &str, at: Layout) -> Result<()> {
         if self.catalogue.get(type_name).is_none() {
             return Err(Problem::new(
                 format!("place a {type_name} node"),
@@ -513,8 +520,13 @@ impl GraphCanvas {
             )
             .with_remedy("open the domain whose catalogue declares it"));
         }
-        let key = NodeKey::new(self.next_ordinal)?;
-        self.next_ordinal += 1;
+        if self.nodes.contains_key(&key) {
+            return Err(Problem::new(
+                "restore a graph node",
+                "duplicate node identity",
+            ));
+        }
+        self.next_ordinal = self.next_ordinal.max(key.ordinal().saturating_add(1));
         self.nodes.insert(
             key,
             Node {
@@ -526,7 +538,7 @@ impl GraphCanvas {
             },
         );
         self.layout.insert(key, at);
-        Ok(key)
+        Ok(())
     }
 
     /// Every node, in key order.

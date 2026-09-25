@@ -104,6 +104,17 @@ publication, while authored graph state remains in the editor document.
 
 ## Migration Plan
 
+### Authored graph persistence and scene overrides
+
+The `material.author` service reuses validation and lowering, then serializes the parsed graph
+with CyberGraph's canonical writer. The editor stages the returned graph and the editable canvas
+as project files after the matching terminal request. Material parameter declarations become a
+generated `Material: <asset stem>` scene component; its fields are ordinary document values, so
+Inspector edits use existing transaction, undo, and world-save paths. The authored renderer reads
+those values per object and refreshes its standard-material colour binding each frame for the
+currently supported opaque Diffuse shape. Full compiled shader-variant binding remains a separate
+renderer integration task; unsupported graph shapes fail visibly.
+
 1. Introduce identities, envelope codecs and tests without changing existing message tags or graph
    writing.
 2. Append ABI 1.2 service entries and regenerate descriptions/SDK bindings.

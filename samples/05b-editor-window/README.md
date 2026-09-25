@@ -72,17 +72,24 @@ in the engine's forward frame.
 Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,
 and a Camera. The Cube's `MeshRenderer.material` references
 `project/materials/copper_clay.cygraph`, which the engine authored from the four-node
-`copper_clay.cymatcanvas` source: a `float3` color constant feeds Diffuse, a scalar
+`copper_clay.cymatcanvas` source: a `float3` `albedo` parameter feeds Diffuse, a scalar
 one feeds Diffuse weight and Output opacity, and Diffuse feeds Output surface. Select **Graph Cube**, switch to **Material
 Graph**, and click **Open graph** to see and edit those nodes and links. **Validate** and
-**Compile** send the visible graph to the engine material service.
+**Compile** send the visible graph to the engine material service. **Save .cygraph** asks
+the engine to validate and write the canonical graph; the editor then saves that graph
+and its editable canvas source in `project/materials/`.
 
-To regenerate the canonical material after editing the canvas source outside the editor,
-run `cy_material author project/materials/copper_clay.cymatcanvas --graph
-project/materials/copper_clay.cygraph` from this sample directory. The current editor
-panel compiles edits for preview but does not save `.cygraph` files. The authored scene
-renderer currently resolves constant-color Diffuse graphs with opaque output to its
-standard material path; other graph shapes report an unsupported-material error.
+The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
+override. Changing it updates that cube in the authored viewport and saves with the
+scene. **Sync graph properties** in the Inspector adds newly declared graph parameters
+to objects using the graph. Save the scene separately after editing object values.
+The authored scene renderer maps opaque Diffuse graphs with a constant or `float3`
+parameter colour to its standard material path, reloading the graph on subsequent
+frames. The Material Graph compiler can validate and save other graphs, but the
+authored scene renderer reports unsupported shapes until it can bind compiled shader
+variants. To regenerate a canonical graph outside the editor, run `cy_material author
+project/materials/copper_clay.cymatcanvas --graph
+project/materials/copper_clay.cygraph` from this sample directory.
 
 The [live scene capture](../../docs/design/images/editor-material-graph-scene-metal.png)
 shows the graph-colored Cube and its shadow on the Plane. The

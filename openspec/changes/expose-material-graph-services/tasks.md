@@ -29,7 +29,9 @@
 - [x] 5.5 Add stable-ID pin interaction and navigable shared-canvas preflight diagnostics to the Material Graph panel; verify compatible links persist and incompatible links remain non-mutating, visibly refused edits.
 - [x] 5.6 Submit the visible material canvas to asynchronous validation and compilation operations, correlate terminal events by request identity, and show validation or compiled artefact state without linking compiler code into the editor; verify authored state survives failures and disconnects.
 - [x] 5.7 Carry ordered, versioned material diagnostics with stable codes and node/pin locations through the backend result, and make those locations navigable in the Material Graph; verify legacy failures remain readable and an invalid graph selects its responsible node without mutating authored state.
-- [x] 5.8 Add a Plane/Cube material-graph sample, reopen its material nodes from the selected mesh, and display a constant-color Diffuse graph in the authored scene renderer. Keep unsupported graphs explicit until the authored renderer consumes compiled shader variants.
+- [x] 5.8 Add a Plane/Cube material-graph sample, reopen its material nodes from the selected mesh, and display an opaque Diffuse graph in the authored scene renderer. Keep unsupported graphs explicit until the authored renderer consumes compiled shader variants.
+- [x] 5.9 Save validated canvas edits as engine-canonical `.cygraph` plus reopenable `.cymatcanvas` through a request-correlated author operation; reject invalid graphs without overwriting assets and cover the service with a regression test.
+- [x] 5.10 Expose declared graph parameters as undoable per-object Inspector fields, preserve overrides across graph saves, and apply supported Diffuse colour overrides during live authored rendering.
 
 ## 6. Validate and document the vertical slice
 

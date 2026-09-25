@@ -31,6 +31,7 @@
 use cy_editor_core::value::Value;
 use cy_editor_documents::selection::CommonValue;
 use cy_editor_interface::inspector::{Control, InspectorRow, InspectorSection, lanes};
+use cy_editor_services::primitives::material_of;
 use cy_editor_visual::colour::Semantic;
 use cy_editor_visual::density::TextRole;
 
@@ -49,6 +50,32 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             .size(metrics.text(TextRole::Title)),
     );
     ui.add_space(metrics.gap() * 0.5);
+
+    let graph = panels
+        .editor
+        .workspace
+        .active()
+        .and_then(|active| panels.editor.documents.get(active))
+        .and_then(|document| {
+            let mut nodes = panels.editor.selection.get().nodes();
+            let node = nodes.next()?;
+            if nodes.next().is_some() {
+                return None;
+            }
+            material_of(document, node).filter(|reference| reference.ends_with(".cygraph"))
+        });
+    if let Some(reference) = graph
+        && ui.button("Sync graph properties").clicked()
+        && let Err(message) = super::material_parameters::sync(panels.editor, &reference, None)
+    {
+        panels
+            .editor
+            .notifications
+            .post(cy_editor_services::Notification::error(
+                "Material properties could not be synced",
+                cy_editor_core::problem::Problem::new("sync graph properties", message),
+            ));
+    }
 
     if panels.shell.inspector.catalogue().is_none() {
         nothing_here(

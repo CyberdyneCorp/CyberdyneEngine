@@ -173,7 +173,7 @@ CY_TEST_CASE("editor_backend: capabilities are discoverable and schema mismatche
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 8U);
     CY_CHECK_EQ(read_u32(event.payload), 1U);
-    CY_CHECK_EQ(read_u32(event.payload + 4), 8U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 9U);
 
     const CyServiceRequest too_new{sizeof(CyServiceRequest), 2, 2, "capabilities.get", nullptr, 0};
     event = submit_and_poll(*api, host, session, too_new);

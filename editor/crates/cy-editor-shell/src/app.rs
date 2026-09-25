@@ -884,6 +884,7 @@ impl eframe::App for EditorWindow {
 
         // 1 and 2: the editor's housekeeping, then the engine's newest frame.
         self.editor.pump();
+        crate::panels::finish_material_save(&mut self.editor, &mut self.inputs);
         self.finish_imports();
         self.sync_material_catalogue();
         #[cfg(target_os = "linux")]

@@ -68,7 +68,14 @@ private:
 
     [[nodiscard]] Status resolve_meshes(const scene::serialization::World& world) noexcept;
     [[nodiscard]] Status load_mesh(const std::string& reference) noexcept;
-    [[nodiscard]] Expected<u32, Error> material_slot(const std::string& reference) noexcept;
+    [[nodiscard]] Expected<u32, Error> material_slot(const scene::serialization::World& world,
+                                                     const scene::serialization::WorldNode& node,
+                                                     const std::string& reference) noexcept;
+    [[nodiscard]] Expected<u32, Error> graph_material_slot(
+        const scene::serialization::World& world,
+        const scene::serialization::WorldNode& node, const std::string& reference,
+        const std::string& key, u32 slot, bool new_slot) noexcept;
+    [[nodiscard]] Expected<u32, Error> cooked_material_slot(const std::string& reference) noexcept;
     [[nodiscard]] Expected<rhi::BindlessIndex, Error> texture_slot(AssetId identity) noexcept;
     [[nodiscard]] Status upload_geometry() noexcept;
     [[nodiscard]] Status create_materials() noexcept;

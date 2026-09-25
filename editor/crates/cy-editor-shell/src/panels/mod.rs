@@ -29,6 +29,8 @@ mod hierarchy;
 mod history;
 mod inspector;
 mod material_graph;
+mod material_parameters;
+pub(crate) use material_graph::finish_save as finish_material_save;
 mod pending;
 mod semantic_merge;
 mod settings;
@@ -152,6 +154,10 @@ pub struct Inputs {
     pub material_property_problem: Option<String>,
     /// Name emitted when the opened graph is compiled.
     pub material_name: String,
+    /// Project asset opened into the canvas; independent of later scene selection.
+    pub material_open_reference: Option<String>,
+    /// Authored graph waiting for its request-correlated canonical result.
+    pub material_save: Option<(u64, String, String)>,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -222,6 +228,8 @@ impl Default for Inputs {
             material_link_problem: None,
             material_property_problem: None,
             material_name: "editor_preview".into(),
+            material_open_reference: None,
+            material_save: None,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

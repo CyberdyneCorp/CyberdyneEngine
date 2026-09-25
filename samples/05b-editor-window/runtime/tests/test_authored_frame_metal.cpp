@@ -122,6 +122,27 @@ node 1 0 "test" "Camera"
     field 4 1.1
     field 5 true
 )";
+constexpr std::string_view kGraphMaterial = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+type 3 runtime "Material: copper_clay"
+  field 6 vec3 "albedo" ""
+node 0 - "test" "Graph Block"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 2
+    field 4 "content/beauty/meshes/block.cyprim"
+    field 5 "samples/05b-editor-window/project/materials/copper_clay.cygraph"
+  component 3
+    field 6 0.72 0.20 0.10
+)";
 constexpr std::string_view kShadowScene = R"(cyworld 1
 type 1 runtime "Transform"
   field 1 quat "rotation" ""
@@ -409,6 +430,20 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
             moved_shadow_pixels += static_cast<usize>(shadowed[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK(moved_shadow_pixels > 100);
+
+        std::string changed_albedo(kGraphMaterial);
+        const usize albedo_at = changed_albedo.find("field 6 0.72 0.20 0.10");
+        CY_REQUIRE(albedo_at != std::string::npos);
+        changed_albedo.replace(albedo_at, sizeof("field 6 0.72 0.20 0.10") - 1,
+                               "field 6 0.05 0.20 0.10");
+        ser::World graph_default(allocator());
+        ser::World graph_override(allocator());
+        CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", graph_default).has_value());
+        CY_REQUIRE(ser::read_world(changed_albedo, "worlds/graph.cyworld", graph_override).has_value());
+        CY_REQUIRE(frame.render(graph_default, view));
+        const u64 default_red = red_sum(frame.pixels());
+        CY_REQUIRE(frame.render(graph_override, view));
+        CY_CHECK(default_red > red_sum(frame.pixels()) + 1000U);
     }
     rhi::destroy_device(allocator(), *device);
 }

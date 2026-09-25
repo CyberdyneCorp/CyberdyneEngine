@@ -1,8 +1,9 @@
 cymatcanvas 1
 material copper_clay
-node 1 material.constant
+node 1 material.parameter
+prop 1 symbol albedo
 prop 1 type float3
-prop 1 value 0.72 0.20 0.10 0
+prop 1 default 0.72 0.20 0.10 0
 node 2 material.constant
 prop 2 type float
 prop 2 value 1 0 0 0

@@ -2,9 +2,10 @@ cygraph 1
 graph "copper_clay" version 1
 capability
 deterministic true
-node 1 "material.constant" v1 {
+node 1 "material.parameter" v1 {
+    prop "default" : "vec4" = (0.720000029, 0.200000003, 0.100000001, 0, 0)
+    prop "symbol" : "name" = "albedo"
     prop "type" : "name" = "float3"
-    prop "value" : "vec4" = (0.720000029, 0.200000003, 0.100000001, 0, 0)
 }
 node 2 "material.constant" v1 {
     prop "type" : "name" = "float"

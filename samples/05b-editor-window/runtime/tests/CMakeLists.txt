@@ -41,7 +41,7 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/test_authored_frame_metal.cpp"
                 "${tests_dir}/../authored_frame.cpp"
             DEPENDENCIES
-                cy::rendering-pipeline cy::import cy::core-assets
+                cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene
                 cy::rhi-metal
             DEFINITIONS

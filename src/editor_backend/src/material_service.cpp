@@ -219,9 +219,22 @@ CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::G
     return CY_RESULT_OK;
 }
 
+CyResult author_graph_result(CyServiceSession_T& session, const cy::graph::Graph& graph,
+                             Array<char>& canonical) noexcept {
+    canonical.clear();
+    if (Status written = cy::graph::write_graph(graph, canonical); !written) {
+        return failed_material(session, "material.graph.write", written.error().message);
+    }
+    session.event_payload.clear();
+    return put_u32(session.event_payload, 2) && put_u8(session.event_payload, 1) &&
+                   put_text(session.event_payload, {canonical.data(), canonical.size()})
+               ? CY_RESULT_OK
+               : CY_RESULT_OUT_OF_MEMORY;
+}
+
 CyResult compile_graph(CyServiceSession_T& session,
                        cy::editor::MaterialPreviewRuntime* preview_runtime,
-                       cy::Allocator& allocator, bool compile) noexcept {
+                       cy::Allocator& allocator, bool compile, bool author = false) noexcept {
     cy::graph::NodeRegistry registry(allocator);
     if (Status status = cy::graph::material::register_material_nodes(registry); !status) {
         return failed(session, "catalogue-unavailable", status.error().message);
@@ -265,6 +278,9 @@ CyResult compile_graph(CyServiceSession_T& session,
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 2) || !put_u8(session.event_payload, 1)) {
         return CY_RESULT_OUT_OF_MEMORY;
+    }
+    if (author) {
+        return author_graph_result(session, graph.value(), canonical);
     }
     if (!compile) {
         return CY_RESULT_OK;
@@ -472,7 +488,7 @@ CyResult capabilities(CyServiceSession_T& session,
                       const cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     constexpr const char* operations[] = {
         "capabilities.get",         "material.catalogue.get", "material.validate",
-        "material.compile",         "preview.create",         "preview.destroy",
+        "material.compile",         "material.author",        "preview.create",         "preview.destroy",
         "preview.parameter.update", "preview.reload",
     };
     session.event_payload.clear();
@@ -584,6 +600,8 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
         result = compile_graph(*session, preview_runtime_, *allocator_, false);
     } else if (!session->cancelled && operation == "material.compile") {
         result = compile_graph(*session, preview_runtime_, *allocator_, true);
+    } else if (!session->cancelled && operation == "material.author") {
+        result = compile_graph(*session, preview_runtime_, *allocator_, false, true);
     } else if (!session->cancelled && operation == "preview.create") {
         result = preview_create(*session, preview_runtime_);
     } else if (!session->cancelled && operation == "preview.destroy") {

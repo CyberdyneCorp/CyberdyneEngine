@@ -154,6 +154,34 @@ CY_TEST_CASE("editor_backend: the visible editor canvas crosses the service comp
     api->service_close(&host, session);
 }
 
+CY_TEST_CASE("editor_backend: author returns a canonical graph only for a valid canvas") {
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const cy::Array<cy::u8> canvas = source_canvas();
+    CyServiceRequest request{sizeof(CyServiceRequest), 1, 50, "material.author",
+                             canvas.data(), canvas.size()};
+    CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(event.payload_size >= 9U);
+    CY_CHECK_EQ(read_u32(event.payload), 2U);
+    CY_CHECK_EQ(event.payload[4], 1U);
+    const cy::u32 size = read_u32(event.payload + 5);
+    CY_REQUIRE_EQ(event.payload_size, 9U + size);
+    CY_REQUIRE(size > 8);
+    CY_CHECK_EQ(std::memcmp(event.payload + 9, "cygraph 1", 9), 0);
+
+    constexpr std::string_view invalid = "cymatcanvas 1\nmaterial broken\nnode 1 material.output\nlink 99 out 1 surface\n";
+    request = {sizeof(CyServiceRequest), 1, 51, "material.author",
+               reinterpret_cast<const cy::u8*>(invalid.data()), invalid.size()};
+    event = submit_and_poll(*api, host, session, request);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: material preview vertical slice crosses the public ABI") {
     cy::abi::Host host(allocator());
     PublicationRuntime preview_runtime;

@@ -62,6 +62,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 match open_selected_graph(&project_root, reference, canvas) {
                     Ok(name) => {
                         panels.inputs.material_name = name;
+                        panels.inputs.material_open_reference = Some(reference.clone());
                         panels.inputs.material_property_problem = None;
                     }
                     Err(problem) => panels.inputs.material_property_problem = Some(problem),
@@ -104,6 +105,31 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         });
     });
     match action {
+        Some(PaletteAction::Save) => {
+            let reference = panels
+                .inputs
+                .material_open_reference
+                .clone()
+                .unwrap_or_else(|| format!("materials/{}.cygraph", panels.inputs.material_name));
+            match canvas_interchange(&panels.inputs.material_name, canvas).and_then(|source| {
+                let request = panels
+                    .editor
+                    .request_material(MaterialOperation::Author, source.as_bytes().to_vec())?;
+                panels.inputs.material_save = Some((request.as_u64(), reference, source));
+                Ok(())
+            }) {
+                Ok(()) => {}
+                Err(problem) => {
+                    panels
+                        .editor
+                        .notifications
+                        .post(cy_editor_services::Notification::error(
+                            "Material save failed",
+                            problem,
+                        ))
+                }
+            }
+        }
         Some(PaletteAction::Request(operation)) => {
             match canvas_interchange(&panels.inputs.material_name, canvas).and_then(|payload| {
                 panels
@@ -163,9 +189,111 @@ fn open_selected_graph(
     load_canvas_interchange(&text, canvas).map_err(|problem| problem.to_string())
 }
 
+pub(crate) fn finish_save(editor: &mut Editor, inputs: &mut super::Inputs) {
+    let Some((request, _, _)) = inputs.material_save.as_ref() else {
+        return;
+    };
+    let result = match editor.backend.material_request_state() {
+        MaterialRequestState::Authored {
+            request: done,
+            graph,
+        } if done.as_u64() == *request => Some(Ok(graph.clone())),
+        MaterialRequestState::Failed {
+            request: Some(done),
+            ..
+        } if done.as_u64() == *request => Some(Err(
+            "the engine rejected this graph; see Problems".to_owned()
+        )),
+        MaterialRequestState::Cancelled { request: done } if done.as_u64() == *request => {
+            Some(Err("the graph save was cancelled".to_owned()))
+        }
+        _ => None,
+    };
+    let Some(result) = result else { return };
+    let (_, reference, source) = inputs.material_save.take().expect("pending save");
+    let previous = std::fs::read_to_string(
+        editor
+            .project
+            .root()
+            .join(std::path::Path::new(&reference).with_extension("cymatcanvas")),
+    )
+    .ok();
+    let outcome =
+        result.and_then(|graph| save_graph(editor.project.root(), &reference, &source, &graph));
+    match outcome {
+        Ok(()) => {
+            inputs.material_open_reference = Some(reference.clone());
+            editor
+                .notifications
+                .post(cy_editor_services::Notification::info(format!(
+                    "Saved {reference}"
+                )));
+            if let Err(message) =
+                super::material_parameters::sync(editor, &reference, previous.as_deref())
+            {
+                editor
+                    .notifications
+                    .post(cy_editor_services::Notification::error(
+                        "Material saved; scene properties could not be synced",
+                        cy_editor_core::problem::Problem::new("sync graph properties", message),
+                    ));
+            }
+        }
+        Err(message) => editor
+            .notifications
+            .post(cy_editor_services::Notification::error(
+                "Material save failed",
+                cy_editor_core::problem::Problem::new("save material graph", message),
+            )),
+    }
+}
+
+fn save_graph(
+    root: &std::path::Path,
+    reference: &str,
+    source: &str,
+    graph: &str,
+) -> Result<(), String> {
+    let path = std::path::Path::new(reference);
+    if path
+        .extension()
+        .is_none_or(|extension| extension != "cygraph")
+        || !path
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("material graph path must be a project-relative .cygraph".into());
+    }
+    let graph_path = root.join(path);
+    let source_path = graph_path.with_extension("cymatcanvas");
+    let parent = graph_path
+        .parent()
+        .ok_or("material graph has no directory")?;
+    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let graph_stage = graph_path.with_extension("cygraph.tmp");
+    let source_stage = source_path.with_extension("cymatcanvas.tmp");
+    std::fs::write(&graph_stage, graph).map_err(|error| error.to_string())?;
+    std::fs::write(&source_stage, source).map_err(|error| error.to_string())?;
+    let previous_source = std::fs::read(&source_path).ok();
+    std::fs::rename(&source_stage, &source_path).map_err(|error| error.to_string())?;
+    if let Err(error) = std::fs::rename(&graph_stage, &graph_path) {
+        match previous_source {
+            Some(bytes) => {
+                let _ = std::fs::write(&source_path, bytes);
+            }
+            None => {
+                let _ = std::fs::remove_file(&source_path);
+            }
+        }
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 enum PaletteAction {
     Request(MaterialOperation),
+    Save,
     Cancel,
 }
 
@@ -217,6 +345,12 @@ fn palette(
             .clicked()
         {
             action = Some(PaletteAction::Request(MaterialOperation::Compile));
+        }
+        if ui
+            .add_enabled(ready && !pending, egui::Button::new("Save .cygraph"))
+            .clicked()
+        {
+            action = Some(PaletteAction::Save);
         }
         if pending && ui.button("Cancel").clicked() {
             action = Some(PaletteAction::Cancel);
@@ -515,6 +649,10 @@ fn material_request_status(
         MaterialRequestState::Validated { request } => (
             Semantic::Live,
             format!("Validated · request #{}", request.as_u64()),
+        ),
+        MaterialRequestState::Authored { request, .. } => (
+            Semantic::Live,
+            format!("Graph authored · request #{}", request.as_u64()),
         ),
         MaterialRequestState::Compiled {
             request,
@@ -1210,6 +1348,29 @@ mod tests {
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
 
     use super::*;
+
+    #[test]
+    fn graph_save_writes_both_formats_and_rejects_paths_outside_project() {
+        let root = std::env::temp_dir().join(format!("cy-material-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        save_graph(
+            &root,
+            "materials/paint.cygraph",
+            "cymatcanvas 1\n",
+            "cygraph 1\n",
+        )
+        .expect("save material assets");
+        assert_eq!(
+            std::fs::read_to_string(root.join("materials/paint.cygraph")).unwrap(),
+            "cygraph 1\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("materials/paint.cymatcanvas")).unwrap(),
+            "cymatcanvas 1\n"
+        );
+        assert!(save_graph(&root, "../outside.cygraph", "", "").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn visible_cards_follow_engine_type_and_pin_identities() {

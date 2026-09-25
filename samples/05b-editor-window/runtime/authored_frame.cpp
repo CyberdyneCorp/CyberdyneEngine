@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string_view>
 
 namespace cy::sample::editor_window {
@@ -34,8 +35,13 @@ constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
 
-Expected<Vec4, Error> graph_diffuse_colour(std::string_view source,
-                                            Allocator& allocator) noexcept {
+struct GraphColour {
+    Vec4 value;
+    std::string parameter;
+};
+
+Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
+                                                  Allocator& allocator) noexcept {
     graph::NodeRegistry registry(allocator);
     if (Status status = graph::material::register_material_nodes(registry); !status) {
         return make_unexpected(status.error());
@@ -83,13 +89,16 @@ Expected<Vec4, Error> graph_diffuse_colour(std::string_view source,
     const graph::GraphNode* constant = authored.find_node(colour);
     const graph::GraphNode* opacity_node = authored.find_node(opacity);
     if (closure == nullptr || closure->type.text() != "material.diffuse" ||
-        constant == nullptr || constant->type.text() != "material.constant" ||
+        constant == nullptr ||
+        (constant->type.text() != "material.constant" &&
+         constant->type.text() != "material.parameter") ||
         opacity_node == nullptr || opacity_node->type.text() != "material.constant" ||
         weight != opacity) {
         return fail(ErrorCode::Unsupported,
                     "authored frame: graph material requires a constant-colour diffuse surface");
     }
-    const graph::Literal* value = authored.property(colour, Name::intern("value"));
+    const bool parameter = constant->type.text() == "material.parameter";
+    const graph::Literal* value = authored.property(colour, Name::intern(parameter ? "default" : "value"));
     const graph::Literal* type = authored.property(colour, Name::intern("type"));
     const graph::Literal* alpha = authored.property(opacity, Name::intern("value"));
     const graph::Literal* alpha_type = authored.property(opacity, Name::intern("type"));
@@ -102,7 +111,9 @@ Expected<Vec4, Error> graph_diffuse_colour(std::string_view source,
         return fail(ErrorCode::Unsupported,
                     "authored frame: graph material opacity must be constant one");
     }
-    return Vec4{value->value.x, value->value.y, value->value.z, 1.0F};
+    const graph::Literal* symbol = authored.property(colour, Name::intern("symbol"));
+    return GraphColour{Vec4{value->value.x, value->value.y, value->value.z, 1.0F},
+                       parameter && symbol != nullptr ? std::string(symbol->text.text()) : ""};
 }
 
 u32 read_u32(const u8* bytes) noexcept {
@@ -499,39 +510,32 @@ Status AuthoredFrame::create_materials() noexcept {
     return ok();
 }
 
-Expected<u32, Error> AuthoredFrame::material_slot(const std::string& reference) noexcept {
+Expected<u32, Error> AuthoredFrame::material_slot(const ser::World& world,
+                                                  const ser::WorldNode& node,
+                                                  const std::string& reference) noexcept {
     if (reference.empty()) {
         return 0U;
     }
+    const bool graph_reference = reference.ends_with(".cygraph");
+    const std::string key = graph_reference ? reference + "#" + std::to_string(node.identity)
+                                            : reference;
     const auto found = std::ranges::find_if(
-        material_slots_, [&](const auto& entry) { return entry.first == reference; });
-    if (found != material_slots_.end()) {
+        material_slots_, [&](const auto& entry) { return entry.first == key; });
+    if (found != material_slots_.end() && !graph_reference) {
         return found->second;
     }
-    if (material_slots_.size() + 1 >= kMaterialCapacity) {
+    if (found == material_slots_.end() && material_slots_.size() + 1 >= kMaterialCapacity) {
         return fail(ErrorCode::OutOfRange, "authored frame: material capacity exceeded");
     }
-    if (reference.ends_with(".cygraph")) {
-        Array<u8> source(*allocator_);
-        const std::string path = project_ + "/" + reference;
-        if (Status status = assets::fs::read_whole(path.c_str(), source); !status) {
-            return make_unexpected(status.error());
-        }
-        auto colour = graph_diffuse_colour(
-            {reinterpret_cast<const char*>(source.data()), source.size()}, *allocator_);
-        if (!colour) {
-            return make_unexpected(colour.error());
-        }
-        const u32 slot = static_cast<u32>(material_slots_.size() + 1);
-        const StandardParameters ids;
-        if (Status status = assembly_.materials().set_color(
-                material_program_, slot, ids.base_color_factor, *colour);
-            !status) {
-            return make_unexpected(status.error());
-        }
-        material_slots_.emplace_back(reference, slot);
-        return slot;
+    if (graph_reference) {
+        const u32 slot = found == material_slots_.end()
+                             ? static_cast<u32>(material_slots_.size() + 1) : found->second;
+        return graph_material_slot(world, node, reference, key, slot, found == material_slots_.end());
     }
+    return cooked_material_slot(reference);
+}
+
+Expected<u32, Error> AuthoredFrame::cooked_material_slot(const std::string& reference) noexcept {
     const std::string path = project_ + "/.cy/cooked/" + reference + ".cyasset";
     Array<u8> cooked(*allocator_);
     if (Status status = assets::fs::read_whole(path.c_str(), cooked); !status) {
@@ -583,6 +587,39 @@ Expected<u32, Error> AuthoredFrame::material_slot(const std::string& reference) 
         }
     }
     material_slots_.emplace_back(reference, slot);
+    return slot;
+}
+
+Expected<u32, Error> AuthoredFrame::graph_material_slot(
+    const ser::World& world, const ser::WorldNode& node, const std::string& reference,
+    const std::string& key, u32 slot, bool new_slot) noexcept {
+    Array<u8> source(*allocator_);
+    const std::string path = project_ + "/" + reference;
+    if (Status status = assets::fs::read_whole(path.c_str(), source); !status) {
+        return make_unexpected(status.error());
+    }
+    auto colour = graph_diffuse_colour(
+        {reinterpret_cast<const char*>(source.data()), source.size()}, *allocator_);
+    if (!colour) {
+        return make_unexpected(colour.error());
+    }
+    if (!colour->parameter.empty()) {
+        const std::string component = "Material: " +
+            std::string(std::filesystem::path(reference).stem().string());
+        const ser::WorldValue* override = field_value(world, node, component, colour->parameter);
+        if (override != nullptr && override->kind == ser::WorldValueKind::Vec3) {
+            colour->value = Vec4{override->lanes[0], override->lanes[1], override->lanes[2], 1.0F};
+        }
+    }
+    const StandardParameters ids;
+    if (Status status = assembly_.materials().set_color(
+            material_program_, slot, ids.base_color_factor, colour->value);
+        !status) {
+        return make_unexpected(status.error());
+    }
+    if (new_slot) {
+        material_slots_.emplace_back(key, slot);
+    }
     return slot;
 }
 
@@ -907,7 +944,7 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         if (material_reference.empty() && material_index == 0) {
             material_reference = primary;
         }
-        Expected<u32, Error> material = material_slot(material_reference);
+        Expected<u32, Error> material = material_slot(world, node, material_reference);
         if (!material) {
             return make_unexpected(material.error());
         }

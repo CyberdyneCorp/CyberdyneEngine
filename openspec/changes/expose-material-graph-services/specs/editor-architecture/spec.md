@@ -98,3 +98,19 @@ mutating the document.
 #### Scenario: Undo restores the previous material
 - **WHEN** an author undoes a material assignment
 - **THEN** the exact preceding material reference SHALL be restored without changing the mesh
+
+### Requirement: Material graphs and object parameters remain editable and persistent
+The Material Graph SHALL save a validated canvas through the engine's canonical graph writer,
+preserve its editable canvas source, and keep invalid edits in memory without overwriting either
+asset. A selected object's declared graph parameters SHALL appear as typed, undoable Inspector
+fields and SHALL be saved with the scene. Graph saves SHALL preserve existing object overrides.
+
+#### Scenario: Save and reopen a graph
+- **WHEN** the engine accepts the authored canvas
+- **THEN** the editor SHALL save `.cygraph` and `.cymatcanvas` beside one another
+- **AND** reopening the graph SHALL restore nodes, properties, and links
+
+#### Scenario: Edit an object parameter
+- **WHEN** an author changes a declared graph parameter in the Inspector
+- **THEN** the scene SHALL store that object's override in an undoable transaction
+- **AND** a supported Diffuse colour override SHALL appear in the authored viewport
