@@ -195,6 +195,21 @@ PassId declare_prepare(RenderGraph& graph, FrameState& state) noexcept {
     return builder.id();
 }
 
+PassId declare_shadow(RenderGraph& graph, FrameState& state) noexcept {
+    const FrameDescription& description = *state.description;
+    if (!valid(description.shadow_color) || !valid(description.shadow_depth)) {
+        return kInvalidPass;
+    }
+    PassBuilder builder = graph.add_pass("directional shadow", QueueKind::Graphics);
+    builder.write(description.shadow_color, Access::ColorAttachmentWrite);
+    builder.write(description.shadow_depth, Access::DepthStencilAttachmentWrite);
+    if (valid(state.resources->draw_instances)) {
+        builder.read(state.resources->draw_instances, Access::VertexStorageRead);
+    }
+    attach(builder, description, FramePassKind::Shadow);
+    return builder.id();
+}
+
 /// Stage 2. Depth, and whatever the derived mode adds to it.
 PassId declare_prepass(RenderGraph& graph, FrameState& state) noexcept {
     const FrameResources& resources = *state.resources;
@@ -378,6 +393,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
     switch (kind) {
         case FramePassKind::Prepare:
             return "prepare";
+        case FramePassKind::Shadow:
+            return "shadow";
         case FramePassKind::DepthPrepass:
             return "depth prepass";
         case FramePassKind::DepthResolve:
@@ -453,6 +470,8 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
 
     // 1. Prepare.
     stage(FramePassKind::Prepare, "prepare", declare_prepare(graph, state));
+
+    stage(FramePassKind::Shadow, "directional shadow", declare_shadow(graph, state));
 
     // 2. Depth prepass, and its MSAA resolve — "plus MSAA depth resolve if required", so that the
     // screen-space passes below work at single-sample resolution.

@@ -29,6 +29,8 @@ mod hierarchy;
 mod history;
 mod inspector;
 mod material_graph;
+use cy_editor_services::material_parameters;
+pub(crate) use material_graph::finish_save as finish_material_save;
 mod pending;
 mod semantic_merge;
 mod settings;
@@ -77,6 +79,8 @@ pub enum Intent {
     ResolveDocumentClose(DocumentId, cy_editor_services::CloseDecision),
     /// Open a Swift source in an editor-owned buffer.
     OpenSource(String),
+    /// Resolve an authored Swift behaviour and open its source in the workspace.
+    OpenBehaviourSource(String),
     /// Save the active Swift buffer through the registered conflict-safe command.
     SaveSource,
     /// Open a diagnostic source and move to its exact zero-based line and UTF-16 column.
@@ -148,6 +152,14 @@ pub struct Inputs {
     pub material_link_problem: Option<String>,
     /// The latest typed material-property refusal, shown beside the generated controls.
     pub material_property_problem: Option<String>,
+    /// Name emitted when the opened graph is compiled.
+    pub material_name: String,
+    /// Project asset opened into the canvas; independent of later scene selection.
+    pub material_open_reference: Option<String>,
+    /// Last semantic graph submitted for live scene preview.
+    pub material_preview_source: Option<(String, String)>,
+    /// Authored graph waiting for its request-correlated canonical result.
+    pub material_save: Option<(u64, String, String)>,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -217,6 +229,10 @@ impl Default for Inputs {
             material_link_source: None,
             material_link_problem: None,
             material_property_problem: None,
+            material_name: "editor_preview".into(),
+            material_open_reference: None,
+            material_preview_source: None,
+            material_save: None,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

@@ -41,13 +41,16 @@ use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::Revision;
 use cy_editor_core::value::Value;
 use cy_editor_interface::SpecialisedEditors;
+use cy_editor_interface::docking::PanelId;
 use cy_editor_interface::notifications::{Choice, Modal};
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
 use cy_editor_interface::thumbnails::Thumbnails;
 use cy_editor_reflection::Catalogue;
 use cy_editor_services::notifications::Notification;
-use cy_editor_services::{CloseDecision, CloseOutcome, Editor, WorkspaceStore};
+use cy_editor_services::{
+    CloseDecision, CloseOutcome, Editor, ExternalImportCompletion, WorkspaceStore,
+};
 use cy_editor_viewmodels::{
     AssetBrowserViewModel, DiffViewModel, DocumentTabsViewModel, HierarchyViewModel,
     HistoryViewModel, MergeViewModel, SettingsViewModel, SourceControlViewModel,
@@ -92,6 +95,7 @@ pub struct EditorWindow {
     source_control: SourceControlViewModel,
     asset_browser: AssetBrowserViewModel,
     source_workspace: SourceWorkspaceViewModel,
+    last_auto_reload_generation: u32,
     agent: Option<cy_editor_agent::DesktopAgentHost>,
     diff: DiffViewModel,
     merge_view: MergeViewModel,
@@ -179,6 +183,7 @@ impl EditorWindow {
             source_control: SourceControlViewModel::new(),
             asset_browser: AssetBrowserViewModel::new(),
             source_workspace: SourceWorkspaceViewModel::new(),
+            last_auto_reload_generation: 0,
             agent: None,
             diff: DiffViewModel::new(),
             merge_view: MergeViewModel::new(),
@@ -353,11 +358,14 @@ impl EditorWindow {
                 Intent::ResolveDocumentClose(document, decision) => {
                     self.close_document(document, Some(decision));
                 }
-                Intent::OpenSource(path) => {
-                    if let Err(problem) = self.source_workspace.open(&self.editor.sources, &path) {
-                        self.editor
+                Intent::OpenSource(path) => self.open_source(&path),
+                Intent::OpenBehaviourSource(name) => {
+                    match self.editor.sources.behaviour_source(&name) {
+                        Ok(path) => self.open_source(&path),
+                        Err(problem) => self
+                            .editor
                             .notifications
-                            .post(Notification::error(problem.what.clone(), problem));
+                            .post(Notification::error(problem.what.clone(), problem)),
                     }
                 }
                 Intent::SaveSource => self.save_source(),
@@ -411,37 +419,73 @@ impl EditorWindow {
         }
     }
 
+    fn open_source(&mut self, path: &str) {
+        if let Err(problem) = self.source_workspace.open(&self.editor.sources, path) {
+            self.editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem));
+            return;
+        }
+        self.show_source_workspace();
+    }
+
+    fn show_source_workspace(&mut self) {
+        let key = PanelKey::new("swift-workspace").expect("a valid built-in panel key");
+        if self.dock.find_tab(&key).is_none() {
+            self.capture_layout();
+            let layout = self.shell.workspaces.current_mut();
+            let Some(beside) = layout.panels().into_iter().next() else {
+                return;
+            };
+            let panel = PanelId::new("swift-workspace").expect("a valid built-in panel id");
+            if layout.dock_beside(&beside, panel).is_err() {
+                return;
+            }
+            self.titles.define("swift-workspace", "Swift Workspace");
+            self.dock = dock::to_dock_state(layout);
+        }
+        if let Some(path) = self.dock.find_tab(&key) {
+            let _ = self.dock.set_active_tab(path);
+            self.dock.set_focused_node_and_surface(path.node_path());
+            self.capture_layout();
+        }
+    }
+
     fn finish_imports(&mut self) {
         for completion in self.editor.take_completed_imports() {
-            match completion.result {
-                Ok(outcome) => {
-                    if let Err(problem) = self.editor.asset_catalogue.refresh() {
-                        self.editor
-                            .notifications
-                            .post(Notification::error(problem.what.clone(), problem));
-                    }
-                    self.editor.notifications.post(Notification::info(format!(
-                        "Imported {} as request #{} ({} sub-assets, cache {})",
-                        outcome.source,
-                        completion.request,
-                        outcome.sub_assets.len(),
-                        outcome.cache
-                    )));
-                    let placeable =
-                        outcome.first("mesh/").is_some() || outcome.first("prefab").is_some();
-                    if placeable
-                        && self.editor.workspace.active().is_some()
-                        && let Some(source) = completion.source
-                    {
-                        let arguments = Arguments::new().with("path", Value::Text(source));
-                        self.invoke("asset.place", &arguments);
-                    }
+            self.finish_import(completion);
+        }
+    }
+
+    fn finish_import(&mut self, completion: ExternalImportCompletion) {
+        match completion.result {
+            Ok(outcome) => {
+                if let Err(problem) = self.editor.asset_catalogue.refresh() {
+                    self.editor
+                        .notifications
+                        .post(Notification::error(problem.what.clone(), problem));
                 }
-                Err(problem) => self
-                    .editor
-                    .notifications
-                    .post(Notification::error(problem.what.clone(), problem)),
+                self.editor.notifications.post(Notification::info(format!(
+                    "Imported {} as request #{} ({} sub-assets, cache {})",
+                    outcome.source,
+                    completion.request,
+                    outcome.sub_assets.len(),
+                    outcome.cache
+                )));
+                let placeable =
+                    outcome.first("mesh/").is_some() || outcome.first("prefab").is_some();
+                if placeable
+                    && self.editor.workspace.active().is_some()
+                    && let Some(source) = completion.source
+                {
+                    let arguments = Arguments::new().with("path", Value::Text(source));
+                    self.invoke("asset.import", &arguments);
+                }
             }
+            Err(problem) => self
+                .editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem)),
         }
     }
 
@@ -818,6 +862,25 @@ impl EditorWindow {
             Pressed::Nothing => String::new(),
         }
     }
+
+    #[cfg(target_os = "macos")]
+    fn capture_agent_viewport(&mut self) {
+        if self
+            .agent
+            .as_ref()
+            .is_some_and(cy_editor_agent::DesktopAgentHost::wants_viewport_image)
+            && let (Ok(png), Some(mut frame)) = (
+                self.link.capture_png(),
+                self.editor.viewports.focused().stream.latest().cloned(),
+            )
+        {
+            frame.image = cy_editor_viewport::transport::FrameImage::Encoded(png);
+            self.editor.viewports.focused_mut().stream.accept(
+                frame,
+                cy_editor_viewport_transport::darwin::monotonic_nanos() / 1_000,
+            );
+        }
+    }
 }
 
 /// Bind the window's own actions into the shell's keymap, reporting any conflict.
@@ -840,6 +903,7 @@ impl eframe::App for EditorWindow {
 
         // 1 and 2: the editor's housekeeping, then the engine's newest frame.
         self.editor.pump();
+        crate::panels::finish_material_save(&mut self.editor, &mut self.inputs);
         self.finish_imports();
         self.sync_material_catalogue();
         #[cfg(target_os = "linux")]
@@ -864,6 +928,14 @@ impl eframe::App for EditorWindow {
         self.source_workspace.refresh(&self.editor.sources);
         self.source_workspace
             .refresh_build(&self.editor.project, &self.editor.operations);
+        let build = self.source_workspace.build();
+        if build.state == "succeeded" && build.generation > self.last_auto_reload_generation {
+            self.last_auto_reload_generation = build.generation;
+            if self.editor.viewports.focused().play != cy_editor_viewport::play::PlayState::Editing
+            {
+                self.invoke("project.reload", &Arguments::new());
+            }
+        }
         self.source_workspace.refresh_reload(
             self.editor.reload_revision(),
             self.editor.reload_report.as_ref(),
@@ -913,6 +985,8 @@ impl eframe::App for EditorWindow {
         // 5: everything the frame asked for, once, in order.
         self.apply(intents);
         self.sync_source_language();
+        #[cfg(target_os = "macos")]
+        self.capture_agent_viewport();
         // Human intents are applied first. Agent work then receives a fixed slice of the frame, so
         // a saturated client cannot turn the window into its worker thread.
         if let Some(agent) = self.agent.as_mut() {
@@ -1037,11 +1111,52 @@ pub fn run(window: EditorWindow) -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_commands::{
+        AssetImportOutcome, AssetImportRequest, ImportedSceneNode, ImportedSubAsset,
+    };
     use cy_editor_core::Actor;
     use cy_editor_core::codec::Writer;
     use cy_editor_interface::Domain;
     use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
-    use cy_editor_services::RuntimeSession;
+    use cy_editor_services::assets::ImportRunner;
+    use cy_editor_services::primitives::{material_slots_of, mesh_of};
+    use cy_editor_services::{AssetImportService, ProjectService, RuntimeSession, Template};
+
+    struct SceneRunner;
+
+    impl ImportRunner for SceneRunner {
+        fn describe(&self) -> String {
+            "scene fixture".into()
+        }
+
+        fn extensions(&self) -> Vec<String> {
+            vec![".fbx".into()]
+        }
+
+        fn run(
+            &self,
+            _root: &std::path::Path,
+            request: &AssetImportRequest,
+        ) -> cy_editor_core::problem::Result<AssetImportOutcome> {
+            Ok(AssetImportOutcome {
+                source: request.source.clone(),
+                sub_assets: vec![ImportedSubAsset {
+                    name: "mesh/Tree".into(),
+                    id: "11111111111111111111111111111111".into(),
+                    kind: "mesh".into(),
+                    source: request.source.clone(),
+                    ..ImportedSubAsset::default()
+                }],
+                scene: vec![ImportedSceneNode {
+                    name: "Tree".into(),
+                    mesh: Some("11111111111111111111111111111111".into()),
+                    materials: vec!["22222222222222222222222222222222".into()],
+                    ..ImportedSceneNode::default()
+                }],
+                ..AssetImportOutcome::default()
+            })
+        }
+    }
 
     fn scratch(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("cy-editor-shell-{name}-{}", std::process::id()))
@@ -1073,6 +1188,50 @@ mod tests {
         };
         assert_eq!(paths.len(), 3);
         assert_eq!(destination, "Models");
+    }
+
+    #[test]
+    fn completed_external_fbx_uses_its_imported_mesh_and_material_slots() {
+        let project = scratch("fbx-completion");
+        let _ = std::fs::remove_dir_all(&project);
+        Template::named("empty").unwrap().create(&project).unwrap();
+        std::fs::create_dir_all(project.join("Imported")).unwrap();
+        std::fs::write(project.join("Imported/tree.fbx"), "source").unwrap();
+        let mut registry = Registry::new();
+        cy_editor_services::builtin::register(&mut registry).unwrap();
+        let editor = Editor::new(Actor::human("designer"))
+            .with_project(ProjectService::new(&project))
+            .with_importer(AssetImportService::new(&project).with_runner(Arc::new(SceneRunner)));
+        let mut window = EditorWindow::new(editor, registry, Scope::unrestricted()).unwrap();
+        let world = window.editor.open_document("worlds/main.cyworld").unwrap();
+        window.finish_import(ExternalImportCompletion {
+            request: 1,
+            source: Some("Imported/tree.fbx".into()),
+            result: Ok(AssetImportOutcome {
+                source: "Imported/tree.fbx".into(),
+                sub_assets: vec![ImportedSubAsset {
+                    name: "prefab".into(),
+                    kind: "prefab".into(),
+                    ..ImportedSubAsset::default()
+                }],
+                ..AssetImportOutcome::default()
+            }),
+        });
+        let document = window.editor.documents.get(world).unwrap();
+        let tree = document
+            .content()
+            .nodes()
+            .next()
+            .expect("the FBX was placed");
+        assert_eq!(
+            mesh_of(document, tree).as_deref(),
+            Some("11111111111111111111111111111111")
+        );
+        assert_eq!(
+            material_slots_of(document, tree),
+            vec!["22222222222222222222222222222222"]
+        );
+        std::fs::remove_dir_all(project).unwrap();
     }
 
     #[test]

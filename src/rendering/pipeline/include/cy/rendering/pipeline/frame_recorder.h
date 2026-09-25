@@ -163,6 +163,14 @@ public:
     [[nodiscard]] Status initialize(FramePipelines& pipelines, FrameBindings& bindings) noexcept;
 
     void set_geometry(const GeometrySource& source) noexcept { geometry_ = source; }
+    void set_shadow_targets(ResourceId color, ResourceId depth, u32 extent) noexcept {
+        shadow_color_ = color;
+        shadow_depth_ = depth;
+        shadow_extent_ = extent;
+    }
+    [[nodiscard]] ResourceId shadow_color() const noexcept { return shadow_color_; }
+    [[nodiscard]] ResourceId shadow_depth() const noexcept { return shadow_depth_; }
+    [[nodiscard]] u32 shadow_extent() const noexcept { return shadow_extent_; }
     [[nodiscard]] const GeometrySource& geometry() const noexcept { return geometry_; }
 
     /// Attach a consumer to a stage. Refuses a stage the layer records itself only for `Prepare` —
@@ -201,6 +209,9 @@ private:
     FramePipelines* pipelines_ = nullptr;
     FrameBindings* bindings_ = nullptr;
     GeometrySource geometry_;
+    ResourceId shadow_color_ = kInvalidResource;
+    ResourceId shadow_depth_ = kInvalidResource;
+    u32 shadow_extent_ = 0;
     PassExtension extensions_[kMaxPassExtensions];
     u32 extension_count_ = 0;
     RecorderReport report_;

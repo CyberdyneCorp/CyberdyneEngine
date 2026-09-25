@@ -236,6 +236,7 @@ fn visit(root: &Path, directory: &Path, entries: &mut Vec<AssetEntry>) -> Result
         } else if file_type.is_file()
             && !path.to_string_lossy().ends_with(".meta")
             && !path.to_string_lossy().ends_with(".import")
+            && path.file_name() != Some(std::ffi::OsStr::new("Package.resolved"))
             && let Ok(relative) = path.strip_prefix(root)
         {
             let relative_path = relative.to_string_lossy().replace('\\', "/");
@@ -365,7 +366,7 @@ fn fingerprint_bundle(source: &Path) -> Result<String> {
 }
 
 fn excluded_directory(name: &str) -> bool {
-    matches!(name, ".git" | ".cy" | "build" | "target")
+    matches!(name, ".build" | ".git" | ".cy" | "build" | "target")
 }
 
 fn kind_of(path: &str) -> &'static str {

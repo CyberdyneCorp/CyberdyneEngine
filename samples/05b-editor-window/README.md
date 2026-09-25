@@ -24,6 +24,118 @@ those handles into the frame and publishes exactly those handles to the editor, 
 hit-tests what it was sent. Until M7 the viewport showed a magenta test pattern from a fixture in
 the editor's own Cargo workspace.
 
+## Authoring an empty scene with an FBX
+
+Open or create a `.cyworld` in the editor. Drop an FBX from Finder or the file manager into the
+editor window. The external import stages the FBX and companion textures in the project, cooks the
+mesh, and adds its mesh instance to the open world. Select the instance in the hierarchy or viewport,
+use the Move, Rotate, and Scale gizmo modes, then save the world. The runtime reads the same world
+transactions and shows the cooked geometry with its full node transform on the next frame.
+For a new empty world, the editor sends the current unsaved world when import first adds component
+declarations. The runtime can therefore resolve the new mesh and material fields immediately;
+subsequent transforms continue through the ordinary transaction stream.
+
+The authored viewport uses `FrameAssembly` and `FrameRecorder` on Metal or Vulkan. It reads `.cyprim`
+sources and imported cooked mesh identities, uses mesh section material assignments, and derives
+picking and camera framing from the transformed mesh bounds. An empty world starts with no fixture
+boxes. Missing cooked assets are reported by identity. Embedded and external FBX base-colour images
+are cooked as texture sub-assets and resolved through the material's stable asset identity. Metal
+binds the cooked texture in the frame's sampled texture table. The editor preview adds neutral fill
+light so the material remains legible in a scene without authored lighting.
+
+| Blender reference | Engine Metal capture |
+| --- | --- |
+| ![The source FBX in Blender](../../docs/design/images/editor-fbx-blender-reference.png) | ![The imported FBX rendered by the engine with its cooked base-colour texture](../../docs/design/images/editor-imported-fbx-textured-metal.png) |
+
+Both images use the same tree FBX from issue #13. The engine image is a device capture of a scene
+containing only that object; Blender uses separate studio lighting and a slightly closer camera.
+The bark pattern and mesh silhouette agree. FBX image UVs are converted to the renderer's top-origin
+coordinates, and Metal transfers BC7 textures using compressed-block row strides.
+
+The [live editor capture](../../docs/design/images/editor-live-textured-fbx-metal.png) shows the
+same imported tree selected in an authored world, with its mesh and material identities visible in
+the Inspector and the engine's Metal viewport showing the cooked texture.
+
+The [MCP import capture](../../docs/design/images/editor-mcp-import-reopened-metal.png) shows the
+tree after MCP placement and Move, Rotate, and Scale, followed by saving and reopening the world.
+The [live MCP capture before saving](../../docs/design/images/editor-mcp-live-fbx-before-save-metal.png)
+shows the textured tree and its edited transform while the on-disk world was still the empty
+`cyworld 1` file. That scripted session placed the FBX twice, once automatically after external
+import and once through an explicit MCP `asset.import` call.
+
+The Metal pixel regressions are `smoke.editor_authored_frame_metal` and
+`render.pipeline_metal`; they cover empty-to-mesh rendering and substitution of a material texture
+in the engine's forward frame.
+
+## Material Graph cube
+
+Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,
+and a Camera. The Cube's `MeshRenderer.material` references
+`project/materials/copper_clay.cygraph`, which the engine authored from the four-node
+`copper_clay.cymatcanvas` source: a `float3` `albedo` parameter feeds Diffuse, a scalar
+one feeds Diffuse weight and Output opacity, and Diffuse feeds Output surface. Select **Graph Cube**, switch to **Material
+Graph**, and click **Open graph** to see and edit those nodes and links. **Validate** and
+**Compile** send the visible graph to the engine material service. **Save .cygraph** asks
+the engine to validate and write the canonical graph; the editor then saves that graph
+and its editable canvas source in `project/materials/`.
+
+Editing a valid colour in the opened graph previews it on the Cube in the hosted viewport
+without saving. A rejected or unsupported edit keeps the last valid viewport colour and shows a
+material diagnostic. Object colour overrides that differ from the saved graph default remain in
+control. **Save .cygraph** persists the graph and editable canvas; graph previews alone do not.
+
+The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
+override. Changing it updates that cube in the authored viewport and saves with the
+scene. **Sync graph properties** in the Inspector adds newly declared graph parameters
+to objects using the graph. Save the scene separately after editing object values.
+The authored scene renderer maps opaque Diffuse graphs with a constant or `float3`
+parameter colour to its standard material path, reloading the graph on subsequent
+frames. The Material Graph compiler can validate and save other graphs, but the
+authored scene renderer reports unsupported shapes until it can bind compiled shader
+variants. To regenerate a canonical graph outside the editor, run `cy_material author
+project/materials/copper_clay.cymatcanvas --graph
+project/materials/copper_clay.cygraph` from this sample directory.
+
+The [live scene capture](../../docs/design/images/editor-material-graph-scene-metal.png)
+shows the graph-colored Cube and its shadow on the Plane. The
+[node capture](../../docs/design/images/editor-material-graph-nodes-metal.png) shows the
+reopened four-node source and a successful engine compile.
+
+## Swift cube during Play
+
+Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and
+Camera. `project/game/SpinCube.swift` registers the `SpinCube` behaviour; the cube's
+`ScriptBehaviour.class` field attaches it to that node. Run **Project → Build**, wait for the Swift
+module build to finish, then press Play. The behaviour rotates the cube 45 degrees per second
+around local Z on fixed ticks. Pause holds its angle; Stop restores the saved identity rotation.
+Select the cube and click the arrow beside `ScriptBehaviour.class` in the Inspector to open
+`SpinCube.swift` in the editor's Swift Workspace.
+The cube's `degreesPerSecond` property appears below `ScriptBehaviour.class` in the Inspector.
+Changing it writes an authored per-object value to the world; save the scene and press Play again
+to apply that speed to the Swift behaviour. The sample starts at 45 degrees per second.
+The [export Inspector capture](../../docs/design/images/editor-script-export-inspector.png)
+shows the authored value beside its Swift declaration. For another behaviour, declare a matching
+field on its authored `ScriptBehaviour` component with the same name and value kind as the Swift
+`@Export` property; the hosted runtime applies authored scalar and text fields on Play.
+The workspace colors Swift syntax and the sample's `Package.swift` gives SourceKit-LSP the
+`CyberdyneKit` dependency for diagnostics. Save edited source, then choose **Build**. A successful
+build automatically reloads the running Play session. **Reload Module** can also reapply the latest
+successful build explicitly. The reload status reports success or a reason for refusal. Stop and
+Play again also loads the newest successful build.
+The Swift source list shows project scripts and hides SwiftPM's `.build` checkout and generated
+package files. The code area grows with the Swift Workspace panel while keeping diagnostics below it.
+The runtime refuses Play with a specific message if the scene names a script but no built module
+exists. Audio remains unavailable in this sample host.
+Stop older sample runtimes when switching projects: each active host continues rendering even
+without an attached editor and can delay the visible viewport on the same GPU.
+
+The same cube sits beside the imported tree in the live issue #13 demo at
+`/tmp/cy-editor-scene-view-demo/worlds/main.cyworld`. The source FBX and cooked assets remain in
+that local project. Captures show the [authored cube beside the tree](../../docs/design/images/editor-spincube-tree-edit-metal.png)
+and [the cube rotated by its Swift behaviour](../../docs/design/images/editor-spincube-tree-playing-metal.png).
+`smoke.editor_script_runtime` runs the built Swift module against an authored cube and checks
+rotation, Pause, and exact restoration on Stop.
+
 ## Why this artefact exists
 
 M5 closed on a scripted session, and `implement-m5b-operable/proposal.md` says plainly why that was
@@ -291,14 +403,6 @@ and which the runtime had never heard of when it started.
 
 ## What the runtime is still a stand-in for
 
-* **The scene has a fixed number of slots.** `first_light::Scene` is built once and its objects
-  cannot be grown, so the runtime builds it with `kWorldCapacity` box slots and blanks the ones the
-  world does not fill. A world with more nodes than that is reported with both numbers rather than
-  silently truncated.
-* **Every authored node is drawn as the unit box.** A mesh asset per node is `asset-import-pipeline`'s
-  and M8.a's later phases; what this artefact demonstrates is the seam, not the content.
-* **A rotation is rendered as its yaw.** `first_light::Object` holds one angle. The world keeps the
-  whole quaternion and writes it back out unchanged.
 * **The frame reaches the shared image through host memory.** The engine renders on the RHI's device
   and the publisher owns its own, so the frame is read back and uploaded — 106 µs a frame at
   1280x720, measured. `src/backends/viewport/README.md` says what would remove it.

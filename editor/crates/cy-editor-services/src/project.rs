@@ -526,6 +526,16 @@ fn apply_domain(
         else {
             continue;
         };
+        if let Some(reference) = kind.strip_prefix(crate::material_graph::GRAPH_DOMAIN_PREFIX) {
+            if let Ok((graph, source)) =
+                crate::material_graph::decode_pair(if forward { after } else { before })
+            {
+                let _ = project.put_source(reference, graph.as_deref());
+                let canvas = Path::new(reference).with_extension("cymatcanvas");
+                let _ = project.put_source(&canvas.to_string_lossy(), source.as_deref());
+            }
+            continue;
+        }
         if kind != SOURCE_DOMAIN {
             continue;
         }
@@ -545,32 +555,45 @@ pub struct SwiftModuleBuilder {
 }
 
 impl SwiftModuleBuilder {
-    /// Find the driver by walking up from the project, which is where a sample inside this
-    /// repository finds it.
+    /// Find the driver near the project or the editor, so projects outside the checkout build.
     #[must_use]
     pub fn found_near(root: &Path) -> Self {
         let relative = Path::new("bindings")
             .join("swift")
             .join("tools")
             .join("cy_swift_module.py");
-        let mut directory = Some(root);
-        while let Some(current) = directory {
-            let candidate = current.join(&relative);
-            if candidate.is_file() {
-                return Self {
-                    driver: Some(candidate),
-                };
-            }
-            directory = current.parent();
-        }
-        Self { driver: None }
+        let driver = std::env::var_os("CY_SWIFT_MODULE_DRIVER")
+            .map(PathBuf::from)
+            .filter(|path| path.is_file())
+            .or_else(|| find_driver_above(root, &relative))
+            .or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|path| find_driver_above(&path, &relative))
+            })
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|path| find_driver_above(&path, &relative))
+            });
+        Self { driver }
     }
+}
+
+fn find_driver_above(start: &Path, relative: &Path) -> Option<PathBuf> {
+    for directory in start.ancestors() {
+        let candidate = directory.join(relative);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 impl ModuleBuilder for SwiftModuleBuilder {
     fn describe(&self) -> String {
         self.driver.as_ref().map_or_else(
-            || "no Swift module driver found near this project".to_string(),
+            || "no Swift module driver found near this project or editor".to_string(),
             |driver| format!("Swift module, built by {}", driver.display()),
         )
     }
@@ -579,12 +602,9 @@ impl ModuleBuilder for SwiftModuleBuilder {
         let driver = self.driver.as_ref().ok_or_else(|| {
             Problem::new(
                 "build the project's script module",
-                "no Swift module driver was found above the project",
+                "no Swift module driver was found near the project or editor",
             )
-            .with_remedy(
-                "open a project inside a checkout that has bindings/swift/tools/\
-                 cy_swift_module.py, or configure another builder",
-            )
+            .with_remedy("set CY_SWIFT_MODULE_DRIVER to bindings/swift/tools/cy_swift_module.py")
         })?;
         let out = request.work.join("out");
         let output = std::process::Command::new("python3")
@@ -634,6 +654,17 @@ mod tests {
         let directory = tempdir::TempDirectory::new("cy-project");
         let service = ProjectService::new(directory.path());
         (service, directory)
+    }
+
+    #[test]
+    fn an_external_project_finds_the_swift_driver_near_the_editor() {
+        let directory = tempdir::TempDirectory::new("cy-external-project");
+        let builder = SwiftModuleBuilder::found_near(directory.path());
+        let driver = builder
+            .driver
+            .expect("editor checkout provides a Swift module driver");
+        assert_eq!(driver.file_name().unwrap(), "cy_swift_module.py");
+        assert!(driver.is_file());
     }
 
     #[test]
@@ -713,6 +744,51 @@ mod tests {
         replay(&mut project, &document, &redone);
         assert_eq!(project.read_source("game/Player.swift").unwrap(), "two");
         drop(held);
+    }
+
+    #[test]
+    fn undo_and_redo_restore_both_material_graph_files() {
+        let (mut project, _held) = project();
+        let reference = "materials/cube.cygraph";
+        project.put_source(reference, Some("old graph")).unwrap();
+        project
+            .put_source("materials/cube.cymatcanvas", Some("old source"))
+            .unwrap();
+        let mut document = Document::new("worlds/scene.cyworld");
+        document
+            .with_transaction("Save material graph", Actor::human("designer"), |doc| {
+                doc.record(Operation::Domain {
+                    node: None,
+                    kind: format!("{}{reference}", crate::material_graph::GRAPH_DOMAIN_PREFIX),
+                    before: crate::material_graph::encode_pair(
+                        Some("old graph"),
+                        Some("old source"),
+                    ),
+                    after: crate::material_graph::encode_pair(
+                        Some("new graph"),
+                        Some("new source"),
+                    ),
+                })
+            })
+            .unwrap();
+        project.put_source(reference, Some("new graph")).unwrap();
+        project
+            .put_source("materials/cube.cymatcanvas", Some("new source"))
+            .unwrap();
+        let undone = document.undo().unwrap().unwrap();
+        rewind(&mut project, &document, &undone);
+        assert_eq!(project.read_source(reference).unwrap(), "old graph");
+        assert_eq!(
+            project.read_source("materials/cube.cymatcanvas").unwrap(),
+            "old source"
+        );
+        let redone = document.redo().unwrap().unwrap();
+        replay(&mut project, &document, &redone);
+        assert_eq!(project.read_source(reference).unwrap(), "new graph");
+        assert_eq!(
+            project.read_source("materials/cube.cymatcanvas").unwrap(),
+            "new source"
+        );
     }
 
     #[test]

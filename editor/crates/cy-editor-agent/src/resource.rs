@@ -369,6 +369,16 @@ impl Resources {
 
     fn play_state(editor: &Editor) -> Resource {
         let mut content = String::new();
+        let _ = writeln!(
+            content,
+            "state: {}",
+            cy_editor_commands::ProjectHost::play_state(editor)
+        );
+        let _ = writeln!(
+            content,
+            "mode: {}",
+            cy_editor_commands::ProjectHost::play_mode(editor)
+        );
         let _ = writeln!(content, "hosting: {:?}", editor.hosting_mode());
         let _ = writeln!(
             content,

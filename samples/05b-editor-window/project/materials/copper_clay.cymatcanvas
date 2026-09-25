@@ -1,0 +1,15 @@
+cymatcanvas 1
+material copper_clay
+node 1 material.parameter
+prop 1 symbol albedo
+prop 1 type float3
+prop 1 default 0.72 0.20 0.10 0
+node 2 material.constant
+prop 2 type float
+prop 2 value 1 0 0 0
+node 3 material.diffuse
+node 4 material.output
+link 1 out 3 colour
+link 2 out 3 weight
+link 3 out 4 surface
+link 2 out 4 opacity

@@ -129,6 +129,66 @@ CY_TEST_CASE("Metal textures and views preserve generational handle validity") {
     CY_CHECK_FALSE(device.is_valid(*texture));
 }
 
+CY_TEST_CASE("Metal BC7 buffer copies use block rows rather than pixel rows") {
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    cy::rhi::Device& device = fixture.device();
+
+    cy::rhi::TextureDescription texture_description;
+    texture_description.name = "BC7 copy layout";
+    texture_description.format = cy::rhi::Format::Bc7Unorm;
+    texture_description.extent = {8, 8, 1};
+    texture_description.usage =
+        cy::rhi::TextureUsage::TransferDestination | cy::rhi::TextureUsage::TransferSource;
+    const auto texture = device.create_texture(texture_description);
+    CY_REQUIRE(texture);
+
+    cy::rhi::BufferDescription buffer_description;
+    buffer_description.name = "BC7 source";
+    buffer_description.size = 512;
+    buffer_description.usage = cy::rhi::BufferUsage::TransferSource;
+    buffer_description.memory = cy::rhi::MemoryUse::HostVisibleDeviceLocal;
+    const auto upload = device.create_buffer(buffer_description);
+    CY_REQUIRE(upload);
+    buffer_description.name = "BC7 readback";
+    buffer_description.usage = cy::rhi::BufferUsage::TransferDestination;
+    const auto readback = device.create_buffer(buffer_description);
+    CY_REQUIRE(readback);
+
+    cy::u8 expected[64] = {};
+    for (cy::usize block = 0; block < 4; ++block) {
+        expected[block * 16] = 0x40;  // BC7 mode 6.
+        for (cy::usize byte = 1; byte < 16; ++byte) {
+            expected[block * 16 + byte] = static_cast<cy::u8>(block * 37 + byte);
+        }
+    }
+    std::memset(device.buffer_mapped_pointer(*upload), 0, 512);
+    std::memset(device.buffer_mapped_pointer(*readback), 0, 512);
+    std::memcpy(device.buffer_mapped_pointer(*upload), expected, sizeof(expected));
+
+    const auto command = device.acquire_command_buffer(cy::rhi::QueueKind::Graphics, false);
+    CY_REQUIRE(command);
+    CY_REQUIRE(device.begin_command_buffer(*command));
+    cy::rhi::CommandBuffer* commands = device.command_buffer(*command);
+    CY_REQUIRE(commands != nullptr);
+    cy::rhi::BufferTextureCopy region;
+    region.texture_extent = {8, 8, 1};
+    commands->copy_buffer_to_texture(*upload, *texture, {&region, 1});
+    commands->copy_texture_to_buffer(*texture, *readback, {&region, 1});
+    CY_REQUIRE(device.end_command_buffer(*command));
+    cy::rhi::SubmitInfo submit;
+    submit.command_buffers = {&*command, 1};
+    const auto signal = device.submit(submit);
+    CY_REQUIRE(signal);
+    CY_REQUIRE(device.wait_timeline(cy::rhi::QueueKind::Graphics, *signal, 5'000'000'000ULL));
+    CY_CHECK_EQ(std::memcmp(device.buffer_mapped_pointer(*readback), expected, sizeof(expected)),
+                0);
+
+    device.destroy_buffer(*readback);
+    device.destroy_buffer(*upload);
+    device.destroy_texture(*texture);
+}
+
 CY_TEST_CASE("Metal memoryless attachments allocate in tile memory on Apple-family hardware") {
     Fixture fixture;
     CY_REQUIRE(fixture.ok());

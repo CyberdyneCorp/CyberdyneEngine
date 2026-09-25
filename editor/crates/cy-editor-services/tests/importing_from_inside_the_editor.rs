@@ -842,6 +842,150 @@ fn a_material_assignment_preserves_the_mesh_and_survives_undo_and_reload() {
     assert_eq!(material_of(document(&editor), node), None);
 }
 
+fn stage_external_fbx(
+    editor: &mut Editor,
+    registry: &Registry,
+    external: &Path,
+    project: &Path,
+) -> String {
+    invoke(
+        editor,
+        registry,
+        "asset.import-external",
+        &Arguments::new().with("source", Value::Text(external.display().to_string())),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let completion = loop {
+        if let Some(completion) = editor.take_completed_imports().into_iter().next() {
+            break completion;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "external import did not complete"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let staged = completion.source.expect("the external FBX was staged");
+    assert!(completion.result.is_ok(), "the external FBX was imported");
+    assert!(project.join(&staged).is_file());
+    assert!(staged.starts_with("Imported/"), "{staged}");
+    staged
+}
+
+fn assert_saved_mesh_identity(project: &Path) {
+    let saved = std::fs::read_to_string(project.join("worlds/city.cyworld"))
+        .expect("the world was saved to disk");
+    assert!(
+        saved.contains("5e014c7f8f1666b05d2b42948d633399"),
+        "the saved world retains the imported mesh identity"
+    );
+}
+
+#[test]
+fn an_external_fbx_can_be_placed_transformed_saved_and_reopened_from_an_empty_world() {
+    let sandbox = Sandbox::new("external-fbx-scene");
+    let external = sandbox.path().with_extension("fbx");
+    std::fs::write(&external, "external FBX source").expect("an external source file");
+    let registry = registry();
+    let runner = Recording::with_scene();
+    let mut editor = editor_with_a_world(&sandbox, runner.clone());
+    assert!(nodes(&editor).is_empty());
+    let staged = stage_external_fbx(&mut editor, &registry, &external, sandbox.path());
+
+    invoke(
+        &mut editor,
+        &registry,
+        "asset.import",
+        &Arguments::new().with("path", Value::Text(staged.clone())),
+    );
+    let child = nodes(&editor)
+        .into_iter()
+        .find(|node| document(&editor).content().node(*node).unwrap().name == "Seat")
+        .expect("the FBX mesh was placed");
+    invoke(
+        &mut editor,
+        &registry,
+        "edit.select",
+        &Arguments::new().with("entity", Value::Text(child.to_string())),
+    );
+    for (command, amount) in [
+        ("scene.translate", [3.0, 4.0, -2.0]),
+        ("scene.rotate", [15.0, 30.0, 45.0]),
+        ("scene.scale", [1.5, 0.8, 2.0]),
+    ] {
+        invoke(
+            &mut editor,
+            &registry,
+            command,
+            &Arguments::new()
+                .with("amount", Value::Vec3(amount))
+                .with("absolute", Value::Bool(true)),
+        );
+    }
+    let before = document(&editor);
+    let binding = TransformBinding::of_schema(before.schema()).unwrap();
+    let translation = before
+        .content()
+        .field(child, binding.component, binding.translation)
+        .cloned();
+    let rotation = before
+        .content()
+        .field(child, binding.component, binding.rotation)
+        .cloned();
+    let scale = before
+        .content()
+        .field(child, binding.component, binding.scale)
+        .cloned();
+    assert_eq!(translation, Some(Value::Vec3([3.0, 4.0, -2.0])));
+    assert_ne!(rotation, Some(Value::Quat([0.0, 0.0, 0.0, 1.0])));
+    assert_eq!(scale, Some(Value::Vec3([1.5, 0.8, 2.0])));
+    invoke(&mut editor, &registry, "file.save", &Arguments::new());
+    assert_saved_mesh_identity(sandbox.path());
+    drop(editor);
+
+    let mut reopened =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(sandbox.path()));
+    let world = reopened
+        .open_document("worlds/city.cyworld")
+        .expect("the saved world reopens");
+    let restored = reopened.documents.get(world).unwrap();
+    let restored_child = restored
+        .content()
+        .nodes()
+        .find(|node| restored.content().node(*node).unwrap().name == "Seat")
+        .expect("the imported mesh survives reopening");
+    let restored_binding = TransformBinding::of_schema(restored.schema()).unwrap();
+    assert_eq!(
+        mesh_of(restored, restored_child).as_deref(),
+        Some("5e014c7f8f1666b05d2b42948d633399")
+    );
+    assert_eq!(
+        restored.content().field(
+            restored_child,
+            restored_binding.component,
+            restored_binding.translation
+        ),
+        translation.as_ref()
+    );
+    assert_eq!(
+        restored.content().field(
+            restored_child,
+            restored_binding.component,
+            restored_binding.rotation
+        ),
+        rotation.as_ref()
+    );
+    assert_eq!(
+        restored.content().field(
+            restored_child,
+            restored_binding.component,
+            restored_binding.scale
+        ),
+        scale.as_ref()
+    );
+    std::fs::remove_file(external).expect("the external fixture is removed");
+}
+
 #[test]
 fn assigning_a_texture_as_a_material_is_refused_without_mutation() {
     let sandbox = Sandbox::new("wrong-material-kind");

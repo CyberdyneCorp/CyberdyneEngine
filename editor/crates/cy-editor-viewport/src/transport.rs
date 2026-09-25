@@ -409,8 +409,8 @@ pub struct TransportBudget {
     pub requested_interval_micros: u32,
     /// How old the newest frame may be before the editor says it is looking at a stale image.
     ///
-    /// Three requested intervals rather than one: a single interval is normal jitter, and a warning
-    /// that fires on jitter is a warning users learn to ignore.
+    /// Allow short scheduling and GPU hitches before declaring the retained image stale. Frame
+    /// pacing remains visible in the transport statistics; this warning is for a sustained stall.
     pub stale_after_micros: u32,
 }
 
@@ -418,7 +418,7 @@ impl Default for TransportBudget {
     fn default() -> Self {
         Self {
             requested_interval_micros: 16_667,
-            stale_after_micros: 50_000,
+            stale_after_micros: 250_000,
         }
     }
 }
@@ -429,7 +429,7 @@ impl TransportBudget {
     pub const fn unfocused() -> Self {
         Self {
             requested_interval_micros: 50_000,
-            stale_after_micros: 150_000,
+            stale_after_micros: 500_000,
         }
     }
 
@@ -684,7 +684,7 @@ impl FrameStream {
         if self.is_stale(now_micros) {
             let age_ms = self.age_micros(now_micros) / 1000;
             return Some(format!(
-                "The runtime has not produced a frame for {age_ms} ms; this image is stale."
+                "The displayed frame is {age_ms} ms old; the viewport image is stale."
             ));
         }
         if frame.degradation == Degradation::None && frame.resolution_scale >= 1.0 {
@@ -796,10 +796,23 @@ mod tests {
         assert!(stream.advisory(10_000_000).is_none());
 
         stream.accept(frame(1, 1_000_000), 1_005_000);
-        assert!(!stream.is_stale(1_020_000));
-        assert!(stream.is_stale(1_080_000));
-        let advisory = stream.advisory(1_080_000).expect("the user is told");
-        assert!(advisory.contains("stale"), "{advisory}");
+        assert!(
+            !stream.is_stale(1_080_000),
+            "a short scheduling hitch is not a stall"
+        );
+        assert!(!stream.is_stale(1_250_000));
+        assert!(stream.is_stale(1_260_000));
+        let advisory = stream.advisory(1_260_000).expect("the user is told");
+        assert!(advisory.contains("260 ms old"), "{advisory}");
+    }
+
+    #[test]
+    fn an_unfocused_viewport_allows_its_slower_cadence_before_warning() {
+        let mut stream = FrameStream::new(TransportKind::SharedTexture);
+        stream.set_budget(TransportBudget::unfocused()).unwrap();
+        stream.accept(frame(1, 1_000_000), 1_005_000);
+        assert!(!stream.is_stale(1_400_000));
+        assert!(stream.is_stale(1_510_000));
     }
 
     #[test]

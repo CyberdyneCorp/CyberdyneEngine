@@ -219,16 +219,33 @@ CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::G
     return CY_RESULT_OK;
 }
 
+CyResult author_graph_result(CyServiceSession_T& session, const cy::graph::Graph& graph,
+                             Array<char>& canonical) noexcept {
+    canonical.clear();
+    if (Status written = cy::graph::write_graph(graph, canonical); !written) {
+        return failed_material(session, "material.graph.write", written.error().message);
+    }
+    session.event_payload.clear();
+    return put_u32(session.event_payload, 2) && put_u8(session.event_payload, 1) &&
+                   put_text(session.event_payload, {canonical.data(), canonical.size()})
+               ? CY_RESULT_OK
+               : CY_RESULT_OUT_OF_MEMORY;
+}
+
 CyResult compile_graph(CyServiceSession_T& session,
                        cy::editor::MaterialPreviewRuntime* preview_runtime,
-                       cy::Allocator& allocator, bool compile) noexcept {
+                       cy::Allocator& allocator, bool compile, bool author = false,
+                       std::string_view input = {}) noexcept {
     cy::graph::NodeRegistry registry(allocator);
     if (Status status = cy::graph::material::register_material_nodes(registry); !status) {
         return failed(session, "catalogue-unavailable", status.error().message);
     }
     cy::graph::DiagnosticSink diagnostics(allocator);
-    std::string_view text(reinterpret_cast<const char*>(session.request_payload.data()),
-                          session.request_payload.size());
+    std::string_view text =
+        input.empty()
+            ? std::string_view(reinterpret_cast<const char*>(session.request_payload.data()),
+                               session.request_payload.size())
+            : input;
     Array<char> canonical(allocator);
     if (text.starts_with("cymatcanvas ")) {
         cy::graph::Graph authored(allocator, cy::Name::intern("editor_material"));
@@ -266,11 +283,61 @@ CyResult compile_graph(CyServiceSession_T& session,
     if (!put_u32(session.event_payload, 2) || !put_u8(session.event_payload, 1)) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
+    if (author) {
+        return author_graph_result(session, graph.value(), canonical);
+    }
     if (!compile) {
         return CY_RESULT_OK;
     }
     return compile_material_result(session, graph.value(), module.value(), preview_runtime,
                                    allocator);
+}
+
+CyResult preview_authored_graph(CyServiceSession_T& session,
+                                cy::editor::MaterialAuthoringRuntime* runtime,
+                                cy::Allocator& allocator) noexcept {
+    if (runtime == nullptr) {
+        return failed_material(session, "material.preview.unavailable",
+                               "this host has no authored scene material preview");
+    }
+    const auto& bytes = session.request_payload;
+    if (bytes.size() < 8) {
+        return failed_material(session, "material.preview.payload",
+                               "missing graph reference or source");
+    }
+    const usize reference_size = read_u32(bytes, 0);
+    if (reference_size == 0 || reference_size > bytes.size() - 8) {
+        return failed_material(session, "material.preview.payload",
+                               "invalid graph reference length");
+    }
+    const usize source_offset = 4 + reference_size;
+    const usize source_size = read_u32(bytes, source_offset);
+    if (source_size == 0 || source_size != bytes.size() - source_offset - 4) {
+        return failed_material(session, "material.preview.payload", "invalid graph source length");
+    }
+    const std::string_view reference(reinterpret_cast<const char*>(bytes.data() + 4),
+                                     reference_size);
+    const std::string_view source(reinterpret_cast<const char*>(bytes.data() + source_offset + 4),
+                                  source_size);
+    if (!reference.ends_with(".cygraph") || reference.find("..") != std::string_view::npos ||
+        reference.starts_with('/')) {
+        return failed_material(session, "material.preview.reference",
+                               "invalid project graph reference");
+    }
+    if (const CyResult result = compile_graph(session, nullptr, allocator, false, true, source);
+        result != CY_RESULT_OK || session.failed_event) {
+        return result;
+    }
+    const usize graph_size = read_u32(session.event_payload, 5);
+    const std::string_view canonical(
+        reinterpret_cast<const char*>(session.event_payload.data() + 9), graph_size);
+    if (Status applied = runtime->preview(reference, canonical); !applied) {
+        return failed_material(session, "material.preview.unsupported", applied.error().message);
+    }
+    session.event_payload.clear();
+    return put_u32(session.event_payload, 2) && put_u8(session.event_payload, 1)
+               ? CY_RESULT_OK
+               : CY_RESULT_OUT_OF_MEMORY;
 }
 
 bool preview_slot(const CyServiceSession_T& session, u64 handle, usize& slot) noexcept {
@@ -469,21 +536,26 @@ CyResult preview_parameter_update(CyServiceSession_T& session,
 }
 
 CyResult capabilities(CyServiceSession_T& session,
-                      const cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
+                      const cy::editor::MaterialPreviewRuntime* preview_runtime,
+                      const cy::editor::MaterialAuthoringRuntime* authoring_runtime) noexcept {
     constexpr const char* operations[] = {
-        "capabilities.get",         "material.catalogue.get", "material.validate",
-        "material.compile",         "preview.create",         "preview.destroy",
-        "preview.parameter.update", "preview.reload",
+        "capabilities.get", "material.catalogue.get",   "material.validate",
+        "material.compile", "material.author",          "preview.create",
+        "preview.destroy",  "preview.parameter.update", "preview.reload",
     };
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 1) ||
-        !put_u32(session.event_payload, static_cast<u32>(std::size(operations)))) {
+        !put_u32(session.event_payload, static_cast<u32>(std::size(operations) +
+                                                         (authoring_runtime != nullptr ? 1 : 0)))) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     for (const char* operation : operations) {
         if (!put_text(session.event_payload, operation)) {
             return CY_RESULT_OUT_OF_MEMORY;
         }
+    }
+    if (authoring_runtime != nullptr && !put_text(session.event_payload, "material.preview.set")) {
+        return CY_RESULT_OUT_OF_MEMORY;
     }
     // Target feature bits: material compilation and preview lifecycle. Device-specific shader
     // features are queried by the compiler profile in later schema versions rather than guessed.
@@ -574,7 +646,7 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
         result = failed(*session, "schema-unsupported", "this operation supports schema 1");
         out_event.kind = CY_SERVICE_EVENT_FAILED;
     } else if (!session->cancelled && operation == "capabilities.get") {
-        result = capabilities(*session, preview_runtime_);
+        result = capabilities(*session, preview_runtime_, authoring_runtime_);
     } else if (!session->cancelled && operation == "material.catalogue.get") {
         if (Status encoded = graph::material::encode_material_catalogue(session->event_payload);
             !encoded) {
@@ -584,6 +656,10 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
         result = compile_graph(*session, preview_runtime_, *allocator_, false);
     } else if (!session->cancelled && operation == "material.compile") {
         result = compile_graph(*session, preview_runtime_, *allocator_, true);
+    } else if (!session->cancelled && operation == "material.author") {
+        result = compile_graph(*session, preview_runtime_, *allocator_, false, true);
+    } else if (!session->cancelled && operation == "material.preview.set") {
+        result = preview_authored_graph(*session, authoring_runtime_, *allocator_);
     } else if (!session->cancelled && operation == "preview.create") {
         result = preview_create(*session, preview_runtime_);
     } else if (!session->cancelled && operation == "preview.destroy") {

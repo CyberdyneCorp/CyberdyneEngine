@@ -18,7 +18,10 @@
 
 #include "world_view.h"
 
+#include <unistd.h>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 
 using cy::f32;
 using cy::u32;
@@ -170,6 +173,52 @@ private:
 
 }  // namespace
 
+CY_TEST_CASE("a live snapshot gives an initially empty world its imported mesh schema") {
+    const std::filesystem::path project = std::filesystem::temp_directory_path() /
+                                          ("cy-editor-world-sync-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(project / "worlds");
+    {
+        std::ofstream blank(project / "worlds/main.cyworld");
+        blank << "cyworld 1\n";
+    }
+    Registry types;
+    WorldView view(allocator());
+    const std::string directory = project.string();
+    CY_REQUIRE(view.open(directory.c_str(), "worlds/main.cyworld", types.registry));
+    CY_CHECK_EQ(view.world().types().size(), usize{0});
+    CY_CHECK_EQ(view.world().nodes().size(), usize{0});
+
+    constexpr std::string_view imported =
+        "cyworld 1\n"
+        "type 1 runtime \"Transform\"\n"
+        "  field 1 quat \"rotation\" \"\"\n"
+        "  field 2 vec3 \"translation\" \"\"\n"
+        "  field 3 vec3 \"scale\" \"\"\n"
+        "type 2 runtime \"MeshRenderer\"\n"
+        "  field 4 text \"mesh\" \"\"\n"
+        "  field 5 text \"material\" \"\"\n"
+        "node 0 - \"\" \"Tree\"\n"
+        "  component 1\n"
+        "    field 1 0 0 0 1\n"
+        "    field 2 0.5 0 0\n"
+        "    field 3 120 120 120\n"
+        "  component 2\n"
+        "    field 4 \"mesh-id\"\n"
+        "    field 5 \"material-id\"\n";
+    CY_REQUIRE(view.sync(imported));
+    CY_CHECK_EQ(view.world().types().size(), usize{2});
+    CY_CHECK_EQ(view.world().nodes().size(), usize{1});
+    CY_CHECK_EQ(view.present_authored(), 1U);
+    cy::Transform transform;
+    CY_REQUIRE(ser::transform_of(view.world(), view.world().nodes()[0], transform));
+    CY_CHECK_EQ(transform.translation.x, 0.5F);
+    CY_CHECK_EQ(transform.scale.x, 120.0F);
+
+    CY_CHECK_FALSE(view.sync("not a world"));
+    CY_CHECK_EQ(view.world().nodes().size(), usize{1});
+    std::filesystem::remove_all(project);
+}
+
 CY_TEST_CASE("the world the editor opened is the world this runtime draws") {
     Opened opened;
     CY_REQUIRE(opened.view.loaded());
@@ -253,6 +302,8 @@ CY_TEST_CASE("a world larger than the scene's slots is reported, not truncated s
     const u32 presented = opened.view.present(opened.scene);
     CY_CHECK(opened.view.overflowed() > 0U);
     CY_CHECK_EQ(presented + opened.view.overflowed(), 3U + kWorldCapacity);
+    CY_CHECK_EQ(opened.view.present_authored(), 3U + kWorldCapacity);
+    CY_CHECK_EQ(opened.view.overflowed(), 0U);
 }
 
 // --- picking, M8.a task 1.4 -------------------------------------------------------------------

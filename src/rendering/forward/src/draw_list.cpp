@@ -71,6 +71,9 @@ namespace {
     if ((spatial_flags & kSpatialCastsShadow) != 0U) {
         flags |= render::kInstanceCastsShadow;
     }
+    if ((spatial_flags & kSpatialReceivesShadow) != 0U) {
+        flags |= render::kInstanceReceivesShadow;
+    }
     return flags;
 }
 

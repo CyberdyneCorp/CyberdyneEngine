@@ -45,9 +45,11 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     crate::manipulate::register(registry)?;
     // Writing source, building it, reloading it, and play. See `crate::authoring`.
     crate::authoring::register(registry)?;
+    crate::material_commands::register(registry)?;
     // Creating a box, a sphere, a cylinder, a plane or a capsule — as a generated source asset and
     // an ordinary mesh instance. See `crate::primitives`.
     crate::primitives::register(registry)?;
+    crate::scene_actors::register(registry)?;
     // Importing a source asset from inside the editor, and landing it in the world. See
     // `crate::assets`.
     crate::assets::register(registry)?;
@@ -516,7 +518,26 @@ fn apply_sources(
             _ => None,
         })
         .collect();
-    if wanted.is_empty() && moves.is_empty() {
+    let graphs: Vec<(String, Option<String>, Option<String>)> = transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => {
+                let reference = kind.strip_prefix(crate::material_graph::GRAPH_DOMAIN_PREFIX)?;
+                let (graph, source) =
+                    crate::material_graph::decode_pair(if forward { after } else { before })
+                        .ok()?;
+                Some((reference.to_owned(), graph, source))
+            }
+            _ => None,
+        })
+        .collect();
+    if wanted.is_empty() && moves.is_empty() && graphs.is_empty() {
         return;
     }
     let Some(project) = context.project() else {
@@ -530,6 +551,14 @@ fn apply_sources(
     }
     for (from, to, expected) in moves {
         let _ = project.move_asset_if_unchanged(&from, &to, &expected);
+    }
+    for (reference, graph, source) in graphs {
+        let canvas = std::path::Path::new(&reference).with_extension("cymatcanvas");
+        let _ = project.put_source(&reference, graph.as_deref());
+        let _ = project.put_source(&canvas.to_string_lossy(), source.as_deref());
+        if let Some(source) = source.as_deref() {
+            let _ = project.material_graph_preview(&reference, source);
+        }
     }
 }
 
@@ -583,16 +612,90 @@ mod tests {
         // commands, seven provider-neutral source-control commands, two semantic-merge commands,
         // and six asset-browser operations, including asynchronous external import.
         // Terrain authoring adds create, add-layer, commit-stroke, enable, and reorder commands.
+        // Scene actors add camera and light creation.
+        // Material graphs add read, preview, save, and status commands.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());
         }
+    }
+
+    #[test]
+    fn material_graph_save_is_undoable_through_the_registered_commands() {
+        let root =
+            std::env::temp_dir().join(format!("cy-graph-undo-command-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut editor = Editor::default().with_project(crate::project::ProjectService::new(&root));
+        let scene = editor.open_document("worlds/city.cyworld").unwrap();
+        let reference = "materials/cube.cygraph";
+        editor
+            .project
+            .put_source(reference, Some("new graph"))
+            .unwrap();
+        editor
+            .project
+            .put_source("materials/cube.cymatcanvas", Some("new source"))
+            .unwrap();
+        editor
+            .documents
+            .get_mut(scene)
+            .unwrap()
+            .with_transaction("Save material graph", Actor::human("designer"), |doc| {
+                doc.record(cy_editor_documents::operation::Operation::Domain {
+                    node: None,
+                    kind: format!("{}{reference}", crate::material_graph::GRAPH_DOMAIN_PREFIX),
+                    before: crate::material_graph::encode_pair(
+                        Some("old graph"),
+                        Some("old source"),
+                    ),
+                    after: crate::material_graph::encode_pair(
+                        Some("new graph"),
+                        Some("new source"),
+                    ),
+                })
+            })
+            .unwrap();
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        editor
+            .invoke(
+                &registry,
+                "edit.undo",
+                &Scope::unrestricted(),
+                &Arguments::new(),
+            )
+            .unwrap();
+        assert_eq!(editor.project.read_source(reference).unwrap(), "old graph");
+        assert_eq!(
+            editor
+                .project
+                .read_source("materials/cube.cymatcanvas")
+                .unwrap(),
+            "old source"
+        );
+        editor
+            .invoke(
+                &registry,
+                "edit.redo",
+                &Scope::unrestricted(),
+                &Arguments::new(),
+            )
+            .unwrap();
+        assert_eq!(editor.project.read_source(reference).unwrap(), "new graph");
+        assert_eq!(
+            editor
+                .project
+                .read_source("materials/cube.cymatcanvas")
+                .unwrap(),
+            "new source"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

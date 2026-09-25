@@ -91,22 +91,10 @@
 // reason samples/03-first-light's does: `CY_SHADER_SLANG` is off by default and a milestone
 // artefact that only runs on a machine with a shader toolchain is one nobody can run.
 //
-// AND `frame_msl.h` IS DELIBERATELY NOT REGENERATED FOR M11.c TASK 3.7 — said here because a
-// generated file that has quietly stopped matching its source is worse than one that has not been
-// regenerated on purpose. `slangc -target metal` accepts the sampling below, and what it emits for
-// `cyMaterialTextures[]` is an unbounded `texture2d<float, access::sample>[]` entry-point
-// parameter with no argument-buffer declaration behind it — which is exactly the case
-// `cy/material.slang`'s `CY_MATERIAL_METAL_ARGUMENT_BUFFER` exists for and which no Metal
-// translation unit in this tree supplies for the frame. Regenerating it here would commit a
-// shipped artefact nobody on this host can run, so the committed MSL stays the one compiled before
-// this change: on Metal the frame carries the extra `materialTextures` word offsets in its block,
-// reads none of them, and shades the four constants it always did. Closing that is the Metal
-// backend's own rung — M11.d — and it is the same handover `slang_program.h` already records for
-// the fragment-stage lowering.
-//
-// `cyDepthFragment`'s MSL IS the one frame.slang module regenerated since, for M11.c task 3.4: it
-// reads no material table, and against the committed copy the regeneration changed only `#line`
-// numbers before the jitter removal below was made. The other three stay as described above.
+// For Metal, compile with CY_FRAME_METAL=1 and CY_MATERIAL_METAL_ARGUMENT_BUFFER=1. The view
+// resources below form one argument buffer. `embed_msl.py` checks Slang's compacted entry indices
+// and maps them to the RHI's fixed set and push slots. Set 0 carries the bounded material texture
+// table at the RHI's argument indices: globals 0, textures 1..128, sampler 129.
 
 module frame;
 
@@ -177,6 +165,13 @@ public struct CyFrameData
     /// the frame it got before it existed — the picture does not change under a caller that did
     /// not ask for it, which is what keeps every committed capture in the tree honest.
     public uint4 materialTextures;
+    /// Optional directional shadow map, appended to preserve existing frame-block offsets.
+    public float4 shadowToClipRow0;
+    public float4 shadowToClipRow1;
+    public float4 shadowToClipRow2;
+    public float4 shadowToClipRow3;
+    /// x: frame texture slot; y: light index; z: map extent; w: enabled.
+    public uint4 shadowControl;
 };
 
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
@@ -210,20 +205,49 @@ public struct CyInstanceTransform
     public float4 tint;
 };
 
+public struct CyFrameViewSet
+{
+    public ConstantBuffer<CyFrameData> frame;
+    public StructuredBuffer<Light> lights;
+    public StructuredBuffer<uint2> clusterHeaders;
+    public StructuredBuffer<uint> clusterIndices;
+    public StructuredBuffer<CyDrawInstance> drawInstances;
+    public StructuredBuffer<CyInstanceTransform> instances;
+    public StructuredBuffer<uint> materialWords;
+};
+
 [[vk::binding(0, 1)]]
-public ConstantBuffer<CyFrameData> cyFrame;
-[[vk::binding(1, 1)]]
-public StructuredBuffer<Light> cyLights;
-[[vk::binding(2, 1)]]
-public StructuredBuffer<uint2> cyClusterHeaders;
-[[vk::binding(3, 1)]]
-public StructuredBuffer<uint> cyClusterIndices;
-[[vk::binding(4, 1)]]
-public StructuredBuffer<CyDrawInstance> cyDrawInstances;
-[[vk::binding(5, 1)]]
-public StructuredBuffer<CyInstanceTransform> cyInstances;
-[[vk::binding(6, 1)]]
-public StructuredBuffer<uint> cyMaterialWords;
+public ParameterBlock<CyFrameViewSet> cyFrameView;
+
+#define cyFrame cyFrameView.frame
+#define cyLights cyFrameView.lights
+#define cyClusterHeaders cyFrameView.clusterHeaders
+#define cyClusterIndices cyFrameView.clusterIndices
+#define cyDrawInstances cyFrameView.drawInstances
+#define cyInstances cyFrameView.instances
+#define cyMaterialWords cyFrameView.materialWords
+
+#if defined(CY_FRAME_METAL)
+public struct CyFrameGlobalSet
+{
+    public ConstantBuffer<CyGlobalsData> globals;
+    public Texture2D<float4> textures[128];
+    public SamplerState sampler;
+};
+
+[[vk::binding(0, 0)]]
+public ParameterBlock<CyFrameGlobalSet> cyFrameGlobals;
+
+public float4 cyMaterialSampleTexture(uint bindlessIndex, float2 uv)
+{
+    return cyFrameGlobals.textures[bindlessIndex].Sample(cyFrameGlobals.sampler, uv);
+}
+
+public float4 cyMaterialSampleTextureLevel(uint bindlessIndex, float2 uv, float level)
+{
+    return cyFrameGlobals.textures[bindlessIndex].SampleLevel(cyFrameGlobals.sampler, uv, level);
+}
+#endif
 
 /// The one push constant: which draw is being recorded.
 public struct CyDrawPush
@@ -241,6 +265,15 @@ public float4 transformToClip(float3 relative)
     let point = float4(relative, 1.0);
     return float4(dot(cyFrame.relativeToClipRow0, point), dot(cyFrame.relativeToClipRow1, point),
                   dot(cyFrame.relativeToClipRow2, point), dot(cyFrame.relativeToClipRow3, point));
+}
+
+public float4 transformToShadowClip(float3 relative)
+{
+    let point = float4(relative, 1.0);
+    return float4(dot(cyFrame.shadowToClipRow0, point),
+                  dot(cyFrame.shadowToClipRow1, point),
+                  dot(cyFrame.shadowToClipRow2, point),
+                  dot(cyFrame.shadowToClipRow3, point));
 }
 
 public float3 transformToRelative(CyInstanceTransform instance, float3 modelPosition)
@@ -344,6 +377,27 @@ Surface surfaceOf(uint material, float3 tint, float2 uv)
 }
 
 // --- The depth prepass ------------------------------------------------------------------------
+
+public struct CyShadowVertex
+{
+    public float4 position : SV_Position;
+};
+
+[shader("vertex")]
+public CyShadowVertex cyShadowVertex(float3 modelPosition : POSITION)
+{
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    CyShadowVertex output;
+    output.position = transformToShadowClip(transformToRelative(instance, modelPosition));
+    return output;
+}
+
+[shader("fragment")]
+public float cyShadowFragment(CyShadowVertex input) : SV_Target
+{
+    return input.position.z;
+}
 //
 // POSITION ONLY. `render::kDepthPassStreams` is `stream_bit(Position)` and this shader is why that
 // constant exists: binding the normal and UV streams for a pass that writes depth is exactly the
@@ -437,8 +491,40 @@ public CyForwardVertex cyForwardVertex(float3 modelPosition : POSITION,
 /// configured to nothing — and the loop then walks every light. That is a DECLARED fallback rather
 /// than a silent one: it is slower and it is correct, and a frame that quietly shaded nothing
 /// because its grid was empty is the failure this branch exists to make impossible.
+float directionalShadowVisibility(float3 relativePosition, float3 normal)
+{
+    if (cyFrame.shadowControl.w == 0 || cyFrame.shadowControl.x == kCyNoMaterialTexture)
+    {
+        return 1.0;
+    }
+    let clip = transformToShadowClip(relativePosition + normal * 0.005);
+    if (clip.w <= 0.0)
+    {
+        return 1.0;
+    }
+    let ndc = clip.xyz / clip.w;
+    let uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+    {
+        return 1.0;
+    }
+    let radius = 1.0 / float(max(cyFrame.shadowControl.z, 1u));
+    let reference = ndc.z + 0.0005;
+    float visible = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            let sampleUv = uv + float2(float(x), float(y)) * radius;
+            let stored = cyMaterialSampleTextureLevel(cyFrame.shadowControl.x, sampleUv, 0.0).r;
+            visible += reference >= stored ? 1.0 : 0.0;
+        }
+    }
+    return visible / 9.0;
+}
+
 float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal, float3 viewDir,
-                        uint2 pixel)
+                        uint2 pixel, uint instanceFlags)
 {
     float3 lit = float3(0.0);
     let lightCount = cyFrame.counts.x;
@@ -457,7 +543,9 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
             continue;
         }
         let sunSample = evaluateLight(cyLights[global], relativePosition);
-        lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample);
+        let visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
+                             ? directionalShadowVisibility(relativePosition, normal) : 1.0;
+        lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample) * visibility;
     }
 
     if (cyFrame.counts.w == 0 || cyFrame.clusterGrid.dimensions.z == 0)
@@ -506,7 +594,8 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     // position. There is nowhere in this file to put a world-space camera, which is the point.
     let viewDir = normalize(-input.relativePosition);
 
-    var color = accumulateLights(surface, input.relativePosition, normal, viewDir, pixel);
+    var color = accumulateLights(surface, input.relativePosition, normal, viewDir, pixel,
+                                 draw.flags);
     color += surface.emission;
     color += surface.albedo * cyFrame.ambientAndOcclusion.rgb * surface.occlusion;
     return float4(color, surface.opacity);

@@ -156,6 +156,15 @@ impl RuntimeSession {
         session.apply(transaction, when)
     }
 
+    /// Send an unsaved world snapshot so the runtime learns newly declared component fields.
+    pub fn sync_world(&self, world: Vec<u8>) -> Result<RequestId> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new("sync the authored world", "no runtime is attached")
+                .with_remedy("start a runtime; the world remains in the editor document")
+        })?;
+        session.sync_world(world)
+    }
+
     /// Ask the attached runtime what is under the pointer. M6 task 2.6.
     ///
     /// **Picking is the engine's**, because what is picked has to match what was rendered — virtual

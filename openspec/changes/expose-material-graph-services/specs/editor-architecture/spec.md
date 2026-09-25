@@ -42,6 +42,11 @@ disconnects, while visibly reporting that backend compilation and preview servic
 - **WHEN** an author selects a material node from the palette
 - **THEN** the shared graph canvas SHALL create and display one node carrying the catalogue type and stable node identity
 
+#### Scenario: Opening a mesh's graph source
+- **WHEN** a selected mesh references a graph material with a project canvas source
+- **THEN** the Material Graph panel SHALL reopen its nodes, properties, and links on the shared canvas
+- **AND** an invalid source SHALL leave the current canvas intact and show a refusal
+
 #### Scenario: Connecting visible pins edits the shared graph
 - **WHEN** an author selects an output pin and then a compatible input pin
 - **THEN** the panel SHALL add one shared-canvas link addressed by the stable node and pin identities
@@ -93,3 +98,26 @@ mutating the document.
 #### Scenario: Undo restores the previous material
 - **WHEN** an author undoes a material assignment
 - **THEN** the exact preceding material reference SHALL be restored without changing the mesh
+
+### Requirement: Material graphs and object parameters remain editable and persistent
+The Material Graph SHALL save a validated canvas through the engine's canonical graph writer,
+preserve its editable canvas source, and keep invalid edits in memory without overwriting either
+asset. A selected object's declared graph parameters SHALL appear as typed, undoable Inspector
+fields and SHALL be saved with the scene. Graph saves SHALL preserve existing object overrides.
+
+#### Scenario: Save and reopen a graph
+- **WHEN** the engine accepts the authored canvas
+- **THEN** the editor SHALL save `.cygraph` and `.cymatcanvas` beside one another
+- **AND** reopening the graph SHALL restore nodes, properties, and links
+
+#### Scenario: Edit an object parameter
+- **WHEN** an author changes a declared graph parameter in the Inspector
+- **THEN** the scene SHALL store that object's override in an undoable transaction
+- **AND** a supported Diffuse colour override SHALL appear in the authored viewport
+
+#### Scenario: Preview an unsaved graph colour
+- **WHEN** an author changes the colour of a supported graph assigned to an authored mesh
+- **THEN** the editor SHALL submit the current canvas through the material service without saving either graph file
+- **AND** the hosted viewport SHALL display the new colour after the matching validated request
+- **AND** an invalid or unsupported graph SHALL leave the last valid preview intact and report a diagnostic
+- **AND** an explicit per-object colour override SHALL continue to take precedence

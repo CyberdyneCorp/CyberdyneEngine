@@ -132,6 +132,13 @@ pub enum Message {
         /// The transaction, encoded exactly as the journal encodes it.
         transaction: Vec<u8>,
     },
+    /// Replace the hosted world with the editor's current authored snapshot when its schema grows.
+    SyncWorld {
+        /// The request to acknowledge after loading the snapshot.
+        request: RequestId,
+        /// A complete `.cyworld` in the editor's authored file format.
+        world: Vec<u8>,
+    },
     /// The runtime's authoritative echo of an applied change.
     Applied {
         /// Which request.
@@ -442,6 +449,11 @@ impl Message {
     /// `true` when this message was one of them.
     fn write_work(&self, writer: &mut Writer) -> bool {
         match self {
+            Message::SyncWorld { request, world } => {
+                writer.u8(20);
+                writer.u64(request.as_u64());
+                writer.bytes(world);
+            }
             Message::Apply {
                 request,
                 frame,
@@ -634,6 +646,10 @@ impl Message {
                 })?,
                 transaction: reader.bytes()?,
             },
+            20 => Message::SyncWorld {
+                request: RequestId::from_raw(reader.u64()?),
+                world: reader.bytes()?,
+            },
             4 => Message::Applied {
                 request: RequestId::from_raw(reader.u64()?),
                 frame: FrameId::from_raw(reader.u64()?),
@@ -690,12 +706,7 @@ impl Message {
                 mode: reader.text()?,
                 detail: reader.text()?,
             },
-            14 => Message::ViewSuggested {
-                position: [reader.f32()?, reader.f32()?, reader.f32()?],
-                rotation: [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?],
-                fov_y_radians: reader.f32()?,
-                near: reader.f32()?,
-            },
+            14 => Self::decode_view_suggested(&mut reader)?,
             17..=19 => Self::decode_service(tag, &mut reader)?,
             other => {
                 return Err(Problem::new(
@@ -706,6 +717,15 @@ impl Message {
             }
         };
         Ok(message)
+    }
+
+    fn decode_view_suggested(reader: &mut Reader<'_>) -> Result<Self> {
+        Ok(Message::ViewSuggested {
+            position: [reader.f32()?, reader.f32()?, reader.f32()?],
+            rotation: [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?],
+            fov_y_radians: reader.f32()?,
+            near: reader.f32()?,
+        })
     }
 
     fn decode_service(tag: u8, reader: &mut Reader<'_>) -> Result<Self> {
@@ -787,6 +807,10 @@ mod tests {
                 frame: FrameId::from_raw(99),
                 when: ApplyWhen::OnArrival,
                 transaction: vec![1, 2, 3],
+            },
+            Message::SyncWorld {
+                request: RequestId::from_raw(8),
+                world: b"cyworld 1\n".to_vec(),
             },
             Message::Applied {
                 request: RequestId::from_raw(7),

@@ -60,6 +60,13 @@ const ORIENTATION_SIZE: f32 = WIDGET_DEFAULT_SIZE;
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let theme = panels.shell.theme;
     let rect = ui.available_rect_before_wrap();
+    let game_view = panels
+        .editor
+        .viewports
+        .focused()
+        .attachment
+        .game_camera()
+        .is_some();
     ui.painter().rect_filled(
         rect,
         egui::CornerRadius::ZERO,
@@ -71,7 +78,16 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     // the last complete frame is deliberately retained, so `texture()` still answers `Some` and the
     // `else` branch below is never reached. The user got a frozen picture and no explanation, which
     // is the silent-fallback shape this project has now paid for twice.
-    let drawn = if let Some(texture) = panels.link.texture() {
+    let drawn = if game_view && !has_scene_camera(panels) {
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "Game view needs an enabled Camera in this scene",
+            egui::FontId::proportional(panels.shell.metrics().text(TextRole::Body)),
+            theme::role(theme, Semantic::SecondaryText),
+        );
+        false
+    } else if let Some(texture) = panels.link.texture() {
         ui.painter().image(
             texture,
             rect,
@@ -122,13 +138,74 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         false
     };
 
-    let response = ui.interact(
-        rect,
-        ui.id().with("cy-viewport-surface"),
-        egui::Sense::click_and_drag(),
-    );
-    drive(panels, ui, rect, &response);
-    overlays(panels, ui, rect, drawn);
+    if game_view {
+        let state = &mut panels.editor.viewports.focused_mut().state;
+        state.viewport = ViewportRect {
+            x: 0,
+            y: 0,
+            width: to_pixels(rect.width()),
+            height: to_pixels(rect.height()),
+        };
+        panels.link.publish_view_state(state.clone());
+    } else {
+        let response = ui.interact(
+            rect,
+            ui.id().with("cy-viewport-surface"),
+            egui::Sense::click_and_drag(),
+        );
+        drive(panels, ui, rect, &response);
+        overlays(panels, ui, rect, drawn);
+    }
+    view_switch(panels, ui, rect);
+}
+
+fn has_scene_camera(panels: &Panels<'_>) -> bool {
+    let Some(document) = panels
+        .editor
+        .workspace
+        .active()
+        .and_then(|id| panels.editor.documents.get(id))
+    else {
+        return false;
+    };
+    let Some(camera) = document.schema().type_named("Camera") else {
+        return false;
+    };
+    let enabled = camera.field_named("enabled").map(|field| field.id);
+    document.content().nodes().any(|node| {
+        document.content().has_component(node, camera.id)
+            && enabled.is_none_or(|field| {
+                document.content().field(node, camera.id, field)
+                    != Some(&cy_editor_core::value::Value::Bool(false))
+            })
+    })
+}
+
+fn view_switch(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect) {
+    let game = panels
+        .editor
+        .viewports
+        .focused()
+        .attachment
+        .game_camera()
+        .is_some();
+    egui::Area::new(egui::Id::new("viewport-view-switch"))
+        .fixed_pos(rect.left_top() + egui::vec2(12.0, 8.0))
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                if ui.selectable_label(!game, "Editor").clicked() {
+                    panels.editor.viewports.focused_mut().detach_camera();
+                }
+                if ui.selectable_label(game, "Game").clicked() {
+                    panels
+                        .editor
+                        .viewports
+                        .focused_mut()
+                        .attach_to_game_camera(0);
+                }
+            });
+        });
 }
 
 /// Feed the frame's pointer and keys to the viewport's own interaction model, and act on what it says.
@@ -158,7 +235,6 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
         documents,
         selection,
         viewports,
-        notifications,
         ..
     } = &mut *panels.editor;
     let (focused, gizmos) = viewports.interacting();
@@ -199,7 +275,7 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
         outcomes.push(panels.inputs.interaction.handle(&mut context, event));
     }
     for outcome in outcomes {
-        report(outcome, notifications);
+        report(outcome, panels.editor);
     }
 }
 
@@ -223,21 +299,21 @@ fn published_gizmo(editor: &cy_editor_services::Editor) -> Option<cy_editor_view
 /// itself in the viewport's own corner rather than as a notification — `editor-ui-ux` requires that
 /// notifications not interrupt, and a toast per drag would be a wall of them. Only a refusal and an
 /// unanswerable pick are worth saying out loud.
-fn report(outcome: Outcome, notifications: &mut cy_editor_services::NotificationService) {
+fn report(outcome: Outcome, editor: &mut cy_editor_services::Editor) {
     match outcome {
         Outcome::Refused(problem) => {
-            notifications.post(Notification::error(problem.what.clone(), *problem));
+            editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), *problem));
         }
-        Outcome::Pick(_request, _mode) => {
-            // The request is built and carries the frame it was aimed at; what resolves it is the
-            // engine, because picking is engine-side so that what is picked is what was rendered.
-            // Until a runtime answers, saying so once is the honest outcome — inventing a hit from
-            // the editor's own camera is the forbidden pattern this whole path avoids.
-            notifications.post(Notification::info(
-                "Picking is resolved by the runtime; none is attached to answer this click.",
-            ));
+        Outcome::Pick(request, mode) => {
+            if let Err(problem) = editor.request_pick(*request, mode) {
+                editor
+                    .notifications
+                    .post(Notification::error(problem.what.clone(), problem));
+            }
         }
-        Outcome::NothingToPick => notifications.post(Notification::info(
+        Outcome::NothingToPick => editor.notifications.post(Notification::info(
             "No frame has arrived yet, so there is nothing on screen to have clicked.",
         )),
         Outcome::Nothing
@@ -287,7 +363,7 @@ fn overlays(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, drawn:
         }
         let (anchor, align) = match corner {
             Corner::TopLeft => (
-                rect.left_top() + egui::vec2(inset, inset),
+                rect.left_top() + egui::vec2(inset, inset + 28.0),
                 egui::Align2::LEFT_TOP,
             ),
             Corner::TopRight => (
@@ -311,7 +387,11 @@ fn overlays(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, drawn:
                 ui.set_max_width(rect.width() * 0.4);
                 // Flat and charcoal: the overlay is a surface step over the viewport, not a card.
                 egui::Frame::NONE
-                    .fill(theme::overlay_fill(panels.shell.theme))
+                    .fill(if corner == Corner::TopRight {
+                        theme::orientation_fill(panels.shell.theme)
+                    } else {
+                        theme::overlay_fill(panels.shell.theme)
+                    })
                     .corner_radius(egui::CornerRadius::same(3))
                     .inner_margin(egui::Margin::symmetric(
                         theme::margin(metrics.padding()),
@@ -478,7 +558,7 @@ fn numeric_entry(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     for row in Row::ALL {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = metrics.padding() * 0.5;
-            ui.label(secondary(panels.shell, row.label()));
+            numeric_label(ui, secondary(panels.shell, row.label()), metrics.row());
             for (axis, field) in row_fields(&fields, row).into_iter().enumerate() {
                 let editing = panels
                     .inputs
@@ -495,7 +575,8 @@ fn numeric_entry(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 } else {
                     field.text(row)
                 };
-                let response = ui.add(
+                let response = ui.add_sized(
+                    [FIELD_WIDTH, metrics.row()],
                     egui::TextEdit::singleline(&mut text)
                         .desired_width(FIELD_WIDTH)
                         .font(egui::FontId::monospace(metrics.text(TextRole::Body)))
@@ -535,6 +616,44 @@ fn numeric_entry(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 
 /// How wide a numeric field is, in points. Three of them and a label fit the overlay's width.
 const FIELD_WIDTH: f32 = 64.0;
+const LABEL_WIDTH: f32 = 72.0;
+
+fn numeric_label(ui: &mut egui::Ui, label: egui::RichText, row_height: f32) {
+    ui.add_sized([LABEL_WIDTH, row_height], egui::Label::new(label));
+}
+
+#[cfg(test)]
+mod numeric_layout_tests {
+    use super::*;
+
+    #[test]
+    fn transform_rows_start_their_numeric_fields_in_one_column() {
+        let context = egui::Context::default();
+        let mut starts = Vec::new();
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                for label in ["Position", "Rotation", "Scale"] {
+                    ui.horizontal(|ui| {
+                        numeric_label(ui, egui::RichText::new(label), 24.0);
+                        starts.push(
+                            ui.add_sized([FIELD_WIDTH, 24.0], egui::Label::new("0.000"))
+                                .rect
+                                .min
+                                .x,
+                        );
+                    });
+                }
+            });
+        });
+        output.textures_delta.clear();
+        assert_eq!(starts.len(), 3);
+        assert!(
+            starts
+                .iter()
+                .all(|start| (*start - starts[0]).abs() < f32::EPSILON)
+        );
+    }
+}
 
 /// One row's three fields.
 fn row_fields(
@@ -808,7 +927,7 @@ mod tests {
     ///
     /// The check is that the two clocks are the SAME clock, which is the whole of the defect. It is
     /// written as a bound rather than an equality because the two readings are taken a few hundred
-    /// nanoseconds apart, and as a bound far below the stale budget (50 ms) so that a failure means
+    /// nanoseconds apart, and as a bound far below the stale budget (250 ms) so that a failure means
     /// the epochs differ rather than that the machine hiccuped.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]

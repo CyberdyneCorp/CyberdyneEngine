@@ -25,6 +25,7 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/values/asset_id.h>
 #include <cy/import/gltf.h>
 #include <cy/import/importer.h>
 #include <cy/import/mesh.h>
@@ -126,7 +127,7 @@ private:
 // --- The standard material record ---------------------------------------------------------------
 
 /// The cooked material payload's format version. Moved when the layout changes.
-inline constexpr u32 kCookedMaterialVersion = 1;
+inline constexpr u32 kCookedMaterialVersion = 2;
 
 /// The standard material's parameters, as every model importer writes them.
 ///
@@ -136,9 +137,8 @@ inline constexpr u32 kCookedMaterialVersion = 1;
 /// re-exported from one format to the other would cook to different bytes and rebind every
 /// downstream reference. So the record is here, both importers fill it, and one function writes it.
 ///
-/// Texture references are NOT in the record. They are resolved by `AssetId` through the asset
-/// database, which is what makes "a texture referenced by an imported material moves and no
-/// re-import is needed" true.
+/// A texture sub-asset is named while importing and receives its stable id when the import is
+/// published. The cooked material carries that id so the runtime never searches source paths.
 struct StandardMaterial {
     f32 base_colour[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     f32 metallic = 1.0f;
@@ -148,6 +148,10 @@ struct StandardMaterial {
     u32 alpha_mode = 0;
     f32 alpha_cutoff = 0.5f;
     bool double_sided = false;
+    AssetId base_color_texture;
+    /// Import-time link to a sub-asset in the same source. Kept in the cached payload so publishing
+    /// can resolve it after stable ids are bound; the runtime uses `base_color_texture` instead.
+    std::string base_color_texture_name;
 };
 
 /// Write the record, little-endian, as a pure function of the parameters.

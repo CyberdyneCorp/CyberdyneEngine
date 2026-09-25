@@ -1,44 +1,7 @@
 #pragma once
-// The authored world this runtime renders, and what the editor's messages mean against it.
-// M8.a tasks 1.1, 1.3 and 1.4.
-//
-// ================================================================================================
-// WHAT THIS REPLACES
-// ================================================================================================
-//
-// `session.h`, which is gone, and whose own header said what it was: *"the runtime associates each
-// identity the editor names with one of its own objects, IN FIRST-SEEN ORDER, and keeps that
-// association for the session … It is a stand-in for a shared world and it is named as one."*
-//
-// There is no association here, because there is nothing to associate. The runtime opens **the same
-// `.cyworld` the editor opened**, `cy::scene::serialization::read_world` derives each node's
-// identity the way `cy_editor_core::ids` derives it, and the object the editor names is the node
-// with that identity. A world with three nodes and an editor that selects the second one puts the
-// gizmo on the second one, not on whichever object the runtime happened to hand out first.
-//
-// The three consequences, each of which was a defect at M7:
-//
-//   * an entity CREATED in the editor appears in the frame, because a `CreateNode` is applied to
-//     the world and the world is what the frame is built from;
-//   * a scale is applied as a scale, because the transaction's field identifiers are the file's and
-//     the file says which field is which — see `world_transaction.h`;
-//   * a pick resolves against what was drawn, because the same walk that fills the scene's objects
-//     fills the `GpuInstance` and `DrawItem` records `cy::render::pick_ray` reads.
-//
-// ================================================================================================
-// WHY THE RENDER OBJECTS ARE SLOTS IN M3'S SCENE
-// ================================================================================================
-//
-// `first_light::Scene` is built once — its vertex and index buffers are uploaded by
-// `Renderer::prepare` — and exposes its objects as a span that may be written but not grown. That
-// is M3's, this artefact reuses it deliberately (a second renderer would drift from the one
-// `render.golden` photographs), and it is not this milestone's to change.
-//
-// So the scene is built with **capacity**: one ground plane and `kWorldCapacity` box slots. The
-// world's live nodes are written into the leading slots and the rest are given an index count of
-// zero, which draws nothing. A world with more nodes than the capacity is REPORTED, with the two
-// numbers, rather than silently truncated — a viewport quietly missing an object is the shape of
-// failure this milestone exists to end.
+// The editor and runtime open the same .cyworld and derive the same stable node identities.
+// present_authored tracks live nodes for selection without borrowing first-light box slots.
+// The legacy present/publish path remains for the one-world fixture and its tests.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -51,11 +14,13 @@
 #include <cy/servers/render/model.h>
 #include <cy/servers/render/sort.h>
 
+#include <string_view>
+
 #include "scene.h"
 
 namespace cy::sample::editor_window {
 
-/// How many authored nodes one of these runtimes can draw. See the header note.
+/// Legacy first-light test fixture capacity. The authored renderer has its own draw capacity.
 inline constexpr u32 kWorldCapacity = 64;
 
 /// Which scene object an authored node was written into.
@@ -90,10 +55,15 @@ public:
     [[nodiscard]] Status apply(Span<const u8> bytes,
                                scene::serialization::TransactionReport& out) noexcept;
 
+    /// Replace the in-memory world after the editor adds declarations absent from the opened file.
+    [[nodiscard]] Status sync(std::string_view text) noexcept;
+
     /// Write the world's live nodes into `scene`'s object slots.
     ///
     /// Returns how many nodes were written. `overflowed()` says how many did not fit.
     [[nodiscard]] u32 present(first_light::Scene& scene) noexcept;
+    /// Track authored node identities without borrowing fixed first-light object slots.
+    [[nodiscard]] u32 present_authored() noexcept;
 
     /// How many nodes the last `present` could not fit into the scene's slots.
     [[nodiscard]] u32 overflowed() const noexcept { return overflowed_; }

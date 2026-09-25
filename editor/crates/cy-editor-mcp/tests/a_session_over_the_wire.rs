@@ -441,9 +441,8 @@ fn the_viewport_comes_back_as_an_image_with_its_media_type() {
     // Task 3.4, at the wire. The image is the engine's own frame, delivered through the transport
     // the human's viewport uses, and the reply says which kind of image it is.
     //
-    // One server across both halves, deliberately: the connection's own viewport is opened on its
-    // first look and reused thereafter, and a test that opened a second session would be looking
-    // through a second viewport nothing had rendered into.
+    // One server across both halves, deliberately: it reads the focused viewport after the
+    // runtime delivers a frame, without opening an unpumped agent viewport.
     let mut editor = Editor::new(Actor::human("designer"));
     let sink = Sink::default();
     let mut server = McpServer::new(sink.clone(), session());
@@ -461,14 +460,8 @@ fn the_viewport_comes_back_as_an_image_with_its_media_type() {
     };
     assert!(text.contains("no frame has arrived"), "{text}");
 
-    // Now the runtime renders one into the viewport the connection opened.
-    let agent_viewport = editor
-        .viewports
-        .all()
-        .iter()
-        .find(|viewport| viewport.name == cy_editor_agent::observe::AGENT_VIEWPORT)
-        .map(|viewport| viewport.id)
-        .expect("the connection opened its own viewport");
+    // The desktop transport pumps the focused viewport, so MCP reads that same runtime frame.
+    let agent_viewport = editor.viewports.focused_id();
     let mailbox = Mailbox::new();
     mailbox.publish(PresentedFrame::new(
         cy_editor_protocol::FrameId::from_raw(21),
@@ -502,8 +495,8 @@ fn the_viewport_comes_back_as_an_image_with_its_media_type() {
             .iter()
             .filter(|viewport| viewport.name == cy_editor_agent::observe::AGENT_VIEWPORT)
             .count(),
-        1,
-        "one connection opens one viewport, however many times it looks"
+        0,
+        "ordinary frame reads do not open an unpumped viewport"
     );
 }
 

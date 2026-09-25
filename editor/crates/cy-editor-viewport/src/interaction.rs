@@ -548,10 +548,8 @@ impl Interaction {
         let intent = if travelled > CLICK_SLOP {
             PickIntent::rectangle(origin, release)
         } else {
-            // Clicking the same spot again takes the next candidate under it, which is how an object
-            // behind another is reached without moving the camera. The count is advanced here rather
-            // than in the runtime, because it is a property of this pointer.
-            let _cycle = context.viewport.click(release.0, release.1);
+            // The editor advances the click cycle when it sends the request, so this input path
+            // only records the pointer's intent once.
             PickIntent::Click {
                 x: release.0,
                 y: release.1,

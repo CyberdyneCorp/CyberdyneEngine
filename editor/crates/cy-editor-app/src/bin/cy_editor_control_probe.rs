@@ -64,6 +64,7 @@ fn main() {
         camera_rotation: [0.0, 0.0, 0.0, 1.0],
         fov_y_radians: std::f32::consts::FRAC_PI_3,
         near: 0.1,
+        game_camera: None,
     };
     session
         .send(&Message::GizmoIntent {

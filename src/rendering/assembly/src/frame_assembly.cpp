@@ -667,6 +667,8 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.light_count = static_cast<u32>(lights_.size());
     description.draw_instance_count = static_cast<u32>(draws_.instances.size());
     description.output = view.output;
+    description.shadow_color = view.shadow_color;
+    description.shadow_depth = view.shadow_depth;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =

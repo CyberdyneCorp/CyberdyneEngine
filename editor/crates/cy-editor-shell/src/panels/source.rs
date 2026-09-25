@@ -5,6 +5,8 @@ use cy_editor_commands::Arguments;
 
 use super::{Intent, Panels, nothing_here, secondary};
 
+mod swift_highlight;
+
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let metrics = panels.metrics();
     match panels.editor.source_language.state() {
@@ -25,22 +27,40 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         }
     }
     let mut open = None;
+    let available = ui.available_size();
+    let sources_width = 190.0_f32.min(available.x * 0.35);
     ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.set_min_width(160.0);
-            ui.label(secondary(panels.shell, "Swift Sources"));
-            egui::ScrollArea::vertical()
-                .id_salt("swift-files")
-                .show(ui, |ui| {
-                    for path in panels.source_workspace.files() {
-                        if ui.selectable_label(false, path).clicked() {
-                            open = Some(path.clone());
+        ui.allocate_ui_with_layout(
+            egui::vec2(sources_width, available.y),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.label(secondary(panels.shell, "Swift Sources"));
+                egui::ScrollArea::vertical()
+                    .id_salt("swift-files")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for path in panels.source_workspace.files() {
+                            let name = path.rsplit('/').next().unwrap_or(path);
+                            if ui
+                                .add_sized(
+                                    [ui.available_width(), metrics.hit_target()],
+                                    egui::Button::new(name).selected(false),
+                                )
+                                .on_hover_text(path)
+                                .clicked()
+                            {
+                                open = Some(path.clone());
+                            }
                         }
-                    }
-                });
-        });
+                    });
+            },
+        );
         ui.separator();
-        ui.vertical(|ui| editor(panels, ui));
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), available.y),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| editor(panels, ui),
+        );
     });
     if let Some(path) = open {
         panels.intents.push(Intent::OpenSource(path));
@@ -48,7 +68,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     ui.add_space(metrics.gap() * 0.25);
 }
 
-fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+fn source_tabs(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let tabs: Vec<_> = panels
         .source_workspace
         .buffers()
@@ -83,7 +103,10 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     if let Some(index) = activate {
         panels.source_workspace.activate(index);
     }
+}
 
+fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    source_tabs(panels, ui);
     let Some(active) = panels.source_workspace.active() else {
         nothing_here(
             ui,
@@ -107,12 +130,24 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         if ui.add_enabled(dirty, egui::Button::new("Save")).clicked() {
             panels.intents.push(Intent::SaveSource);
         }
-        if ui.button("Build").clicked() {
+        if ui
+            .add_enabled(!dirty, egui::Button::new("Build"))
+            .on_hover_text(if dirty {
+                "Save the source before building"
+            } else {
+                "Compile Swift sources and update the running Play session"
+            })
+            .clicked()
+        {
             panels
                 .intents
                 .push(Intent::Invoke("project.build".into(), Arguments::new()));
         }
-        if ui.button("Reload Module").clicked() {
+        if ui
+            .button("Reload Module")
+            .on_hover_text("Apply the latest successful build to the running Play session")
+            .clicked()
+        {
             panels
                 .intents
                 .push(Intent::Invoke("project.reload".into(), Arguments::new()));
@@ -124,16 +159,37 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     if let Some(conflict) = conflict {
         conflict_controls(panels, ui, &conflict);
     }
+    let diagnostic_height = if diagnostics.is_empty() {
+        0.0
+    } else {
+        panels.metrics().hit_target()
+            * f32::from(u8::try_from(diagnostics.len().min(4)).expect("at most four diagnostics"))
+    };
+    let code_height = (ui.available_height() - diagnostic_height).max(160.0);
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the editor layout height is a nonnegative screen size and rows are approximate"
+    )]
+    let rows = (code_height / ui.text_style_height(&egui::TextStyle::Monospace)) as usize;
     let response = egui::ScrollArea::both()
         .id_salt("swift-editor")
+        .auto_shrink([false, false])
+        .max_height(code_height)
         .show(ui, |ui| {
             let id = egui::Id::new(("swift-editor-text", &path));
             prepare_cursor(ui, id, &text, cursor_request);
+            let mut layouter = |ui: &egui::Ui, source: &dyn egui::TextBuffer, wrap_width: f32| {
+                let mut job = swift_highlight::highlight(source.as_str(), ui);
+                job.wrap.max_width = wrap_width;
+                ui.fonts_mut(|fonts| fonts.layout_job(job))
+            };
             egui::TextEdit::multiline(&mut text)
                 .id(id)
                 .code_editor()
+                .layouter(&mut layouter)
                 .desired_width(f32::INFINITY)
-                .desired_rows(24)
+                .desired_rows(rows.max(24))
                 .hint_text("// Swift source")
                 .show(ui)
         })

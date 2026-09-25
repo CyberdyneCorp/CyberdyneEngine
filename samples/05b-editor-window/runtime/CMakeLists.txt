@@ -54,13 +54,18 @@ cy_add_module(
     LAYER tools
     TYPE EXECUTABLE
     SOURCES
+        authored_frame.cpp
         layout_file.cpp
         main.cpp
         material_runtime.cpp
         overlay.cpp
         pick_wire.cpp
+        script_runtime.cpp
         world_view.cpp
     PRIVATE_DEPENDENCIES
+        cy::rendering-pipeline
+        cy::import
+        cy::core-assets
         cy::sample-first-light
         cy::scene-serialization
         cy::scene
@@ -71,6 +76,7 @@ cy_add_module(
         cy::rendering-material-slang
         cy::shader
         cy::gameplay-play
+        cy::abi
         cy::physics-reference
         cy::rhi
         cy::rhi-null

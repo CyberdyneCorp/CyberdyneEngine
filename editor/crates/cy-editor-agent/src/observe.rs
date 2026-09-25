@@ -152,8 +152,10 @@ pub fn observe(
     request: &ViewportRequest,
     agent_viewport: &mut Option<ViewportId>,
 ) -> Result<Observation> {
-    let restated = request.camera.is_some() || request.projection.is_some();
-    let target = if restated || !request.include_overlays {
+    let restated = request.camera.is_some()
+        || request.projection.is_some()
+        || request.view_mode != editor.viewports.focused().state.view_mode;
+    let target = if restated {
         Some(agent_viewport_of(editor, agent_viewport, request))
     } else {
         None
@@ -167,7 +169,11 @@ pub fn observe(
         .with_remedy("read the play resource, or omit the viewport to use the focused one")
     })?;
 
-    let overlays = viewport.overlays.active();
+    let overlays = if request.include_overlays {
+        viewport.overlays.active()
+    } else {
+        Vec::new()
+    };
     let frame = viewport.stream.latest().ok_or_else(|| {
         Problem::new(
             format!("observe {id}"),
@@ -395,6 +401,26 @@ mod tests {
         let request = ViewportRequest::shipping_frame(&viewport());
         assert!(!request.include_overlays);
         assert_eq!(request.view_mode, ViewMode::Off);
+    }
+
+    #[test]
+    fn a_shipping_read_uses_the_humans_pumped_frame() {
+        let mut editor = Editor::default();
+        let focused = editor.viewports.focused_mut();
+        let frame = cy_editor_viewport::transport::PresentedFrame::new(
+            FrameId::from_raw(42),
+            focused.state.clone(),
+            FrameImage::Encoded(vec![137, 80, 78, 71]),
+            1,
+        );
+        focused.stream.accept(frame, 2);
+        let request = ViewportRequest::shipping_frame(editor.viewports.focused());
+        let mut agent_viewport = None;
+        let observed = observe(&mut editor, &request, &mut agent_viewport).expect("pumped frame");
+        assert_eq!(observed.frame, FrameId::from_raw(42));
+        assert_eq!(observed.bytes(), Some([137, 80, 78, 71].as_slice()));
+        assert!(agent_viewport.is_none());
+        assert!(observed.represents_the_shipping_frame());
     }
 
     #[test]

@@ -54,6 +54,8 @@ public:
     /// **The frame that was on screen when it was clicked**, which is what the answer must be
     /// resolved against rather than whatever the runtime has since rendered.
     u64 frame = 0;
+    u32 display_width = 0;
+    u32 display_height = 0;
     PickKind kind = PickKind::Click;
     /// A click, in the presented frame's pixels from its top-left corner.
     f32 x = 0.0F;
@@ -83,6 +85,9 @@ public:
 /// Decode one. False for a truncated or unreadable request, which is refused rather than answered
 /// with a guess — an invented hit is the forbidden pattern `editor-viewport-and-gizmos` names.
 [[nodiscard]] bool decode_pick_request(Span<const u8> bytes, PickRequest& out) noexcept;
+
+/// Map coordinates in the displayed panel to the pixels the runtime actually rendered.
+void scale_pick_to_rendered_frame(PickRequest& pick, u32 width, u32 height) noexcept;
 
 /// Resolve a decoded request against the frame's records.
 ///

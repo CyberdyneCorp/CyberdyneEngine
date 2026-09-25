@@ -118,6 +118,43 @@ CY_TEST_CASE("a plain frame declares the specification's stages, in its order") 
                 position_of(frame, FramePassKind::Present));
 }
 
+CY_TEST_CASE("an authored directional shadow pass precedes its opaque sample") {
+    RenderGraph graph(allocator());
+    cy::rendering::TextureRequest shadow;
+    shadow.name = "shadow color";
+    shadow.format = cy::rhi::Format::R32Sfloat;
+    shadow.width = 256;
+    shadow.height = 256;
+    const auto color = graph.create_texture(shadow);
+    shadow.name = "shadow depth";
+    shadow.format = cy::rhi::Format::D32Sfloat;
+    const auto depth = graph.create_texture(shadow);
+
+    FrameDescription description = make_description();
+    description.shadow_color = color;
+    description.shadow_depth = depth;
+    const cy::rendering::FrameResourceRead sample{color, cy::rhi::Access::FragmentSampledRead};
+    description.callbacks[static_cast<cy::usize>(FramePassKind::Opaque)].reads =
+        cy::Span<const cy::rendering::FrameResourceRead>(&sample, 1);
+    ForwardFrame frame(allocator());
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_CHECK_LT(position_of(frame, FramePassKind::Prepare),
+                position_of(frame, FramePassKind::Shadow));
+    CY_CHECK_LT(position_of(frame, FramePassKind::Shadow),
+                position_of(frame, FramePassKind::Opaque));
+    bool writes_color = false;
+    bool writes_depth = false;
+    for (const cy::rendering::Use& use : graph.pass_uses(frame.pass_of(FramePassKind::Shadow))) {
+        writes_color |=
+            use.resource == color && use.access == cy::rhi::Access::ColorAttachmentWrite;
+        writes_depth |=
+            use.resource == depth && use.access == cy::rhi::Access::DepthStencilAttachmentWrite;
+    }
+    CY_CHECK(writes_color);
+    CY_CHECK(writes_depth);
+    CY_CHECK(graph.compile(compile_options()).has_value());
+}
+
 CY_TEST_CASE("a disabled feature has no pass and no target") {
     // "WHEN ambient occlusion, SSR, and TAA are all disabled THEN their passes SHALL be absent from
     // the graph and their targets unallocated." The absence is not a branch in a renderer — the

@@ -34,8 +34,8 @@
 //! canonical form and it is the engine's. The same arrangement M8.a chose for `.cyprim`: the editor
 //! writes a source, the engine owns what it becomes.
 //!
-//! The interchange is deliberately NOT a format anything reads twice — nothing loads it, nothing
-//! diffs it, and it is not committed. It exists for the length of one pipe.
+//! A project may retain this interchange beside the canonical graph as a canvas source for the
+//! editor. The engine still owns the canonical `.cygraph` writer and compilation semantics.
 
 use std::fmt::Write as _;
 
@@ -398,8 +398,8 @@ impl<'a> MaterialAuthoring<'a> {
 
 /// Encode an existing visible canvas for the engine-owned material service.
 ///
-/// This is the same transient interchange used by [`MaterialAuthoring`]; it is never persisted as
-/// a canonical CyberGraph and contains no compiler implementation.
+/// This is the same interchange used by [`MaterialAuthoring`]; it is not a canonical CyberGraph
+/// and contains no compiler implementation.
 pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
     if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
         return Err(Problem::new(
@@ -412,8 +412,21 @@ pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
     let _ = writeln!(out, "material {name}");
     for node in canvas.nodes() {
         let _ = writeln!(out, "node {} {}", node.key.ordinal(), node.type_name);
+        if let Some(at) = canvas.layout_of(node.key) {
+            let _ = writeln!(out, "# layout {} {} {}", node.key.ordinal(), at.x, at.y);
+        }
         for (property, value) in canvas.resolved_properties(node.key) {
-            let _ = writeln!(out, "prop {} {} {}", node.key.ordinal(), property, value);
+            let encoded = if canvas
+                .catalogue()
+                .get(&node.type_name)
+                .and_then(|kind| kind.properties.iter().find(|entry| entry.name == property))
+                .is_some_and(|entry| entry.kind == PropertyKind::Vector)
+            {
+                value.replace(',', " ")
+            } else {
+                value
+            };
+            let _ = writeln!(out, "prop {} {} {}", node.key.ordinal(), property, encoded);
         }
     }
     for link in canvas.links() {
@@ -429,6 +442,136 @@ pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
     Ok(out)
 }
 
+fn load_canvas_nodes(
+    facts: &[&str],
+    canvas: &mut GraphCanvas,
+) -> Result<std::collections::BTreeMap<u64, NodeKey>> {
+    let mut keys = std::collections::BTreeMap::new();
+    for line in facts {
+        let Some(rest) = line.strip_prefix("node ") else {
+            continue;
+        };
+        let (id, kind) = rest
+            .split_once(' ')
+            .ok_or_else(|| Problem::new("open a material graph", "invalid node"))?;
+        let id = id
+            .parse::<u64>()
+            .map_err(|_| Problem::new("open a material graph", "invalid node key"))?;
+        // Layout is a visual fallback; the interchange may replace it with exact saved positions.
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "fallback layout coordinates are approximate"
+        )]
+        let at = Layout {
+            x: 28.0 + (keys.len() % 3) as f32 * 225.0,
+            y: 34.0 + (keys.len() / 3) as f32 * 170.0,
+        };
+        let key = NodeKey::new(id)?;
+        canvas.add_with_key(key, kind, at)?;
+        if keys.insert(id, key).is_some() {
+            return Err(Problem::new("open a material graph", "duplicate node key"));
+        }
+    }
+    Ok(keys)
+}
+
+/// Reopen an engine material canvas source using the active engine catalogue.
+/// The canonical `.cygraph` is produced by the engine's material authoring service.
+pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result<String> {
+    let mut lines = source.lines();
+    if lines.next() != Some("cymatcanvas 1") {
+        return Err(Problem::new(
+            "open a material graph",
+            "unsupported canvas version",
+        ));
+    }
+    let name = lines
+        .next()
+        .and_then(|line| line.strip_prefix("material "))
+        .ok_or_else(|| Problem::new("open a material graph", "missing material name"))?
+        .to_owned();
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return Err(Problem::new(
+            "open a material graph",
+            "invalid material name",
+        ));
+    }
+    let mut loaded = canvas.clone();
+    loaded.load(canvas.catalogue().clone());
+    let facts: Vec<&str> = lines.collect();
+    let keys = load_canvas_nodes(&facts, &mut loaded)?;
+    for line in &facts {
+        if let Some(rest) = line.strip_prefix("# layout ") {
+            let words: Vec<_> = rest.split_whitespace().collect();
+            if words.len() != 3 {
+                return Err(Problem::new("open a material graph", "invalid node layout"));
+            }
+            let id = words[0].parse::<u64>().ok();
+            let x = words[1]
+                .parse::<f32>()
+                .ok()
+                .filter(|value| value.is_finite());
+            let y = words[2]
+                .parse::<f32>()
+                .ok()
+                .filter(|value| value.is_finite());
+            let (Some(key), Some(x), Some(y)) = (id.and_then(|id| keys.get(&id)), x, y) else {
+                return Err(Problem::new("open a material graph", "invalid node layout"));
+            };
+            loaded.move_to(*key, Layout { x, y })?;
+        }
+        if let Some(rest) = line.strip_prefix("prop ") {
+            let mut words = rest.splitn(3, ' ');
+            let id = words.next().and_then(|word| word.parse::<u64>().ok());
+            let property = words.next();
+            let value = words.next();
+            let (Some(id), Some(property), Some(value)) = (id, property, value) else {
+                return Err(Problem::new("open a material graph", "invalid property"));
+            };
+            let key = keys
+                .get(&id)
+                .ok_or_else(|| Problem::new("open a material graph", "unknown property node"))?;
+            let value = if loaded
+                .catalogue()
+                .get(&loaded.node(*key).expect("loaded node").type_name)
+                .and_then(|kind| kind.properties.iter().find(|entry| entry.name == property))
+                .is_some_and(|entry| entry.kind == PropertyKind::Vector)
+            {
+                value.split_whitespace().collect::<Vec<_>>().join(",")
+            } else {
+                value.to_owned()
+            };
+            loaded.set_property(*key, property, value)?;
+        }
+        if let Some(rest) = line.strip_prefix("link ") {
+            let words: Vec<_> = rest.split_whitespace().collect();
+            if words.len() != 4 {
+                return Err(Problem::new("open a material graph", "invalid link"));
+            }
+            let from = words[0].parse::<u64>().ok().and_then(|id| keys.get(&id));
+            let to = words[2].parse::<u64>().ok().and_then(|id| keys.get(&id));
+            let (Some(from), Some(to)) = (from, to) else {
+                return Err(Problem::new("open a material graph", "unknown link node"));
+            };
+            loaded.connect(*from, words[1], *to, words[3])?;
+        }
+        if !line.is_empty()
+            && !line.starts_with("node ")
+            && !line.starts_with("prop ")
+            && !line.starts_with("link ")
+            && !line.starts_with('#')
+        {
+            return Err(Problem::new("open a material graph", "unknown canvas fact"));
+        }
+    }
+    *canvas = loaded;
+    Ok(name)
+}
+
 /// Build a `Catalogue` out of [`material_catalogue`]. Separate so the failure is one call's.
 pub(crate) fn catalogue() -> Result<Catalogue> {
     Catalogue::new(material_catalogue())
@@ -437,6 +580,46 @@ pub(crate) fn catalogue() -> Result<Catalogue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canvas_round_trip_preserves_layout_and_properties() {
+        let mut editors = SpecialisedEditors::with_legacy_material_catalogue().unwrap();
+        let canvas = editors.open(Domain::Materials).unwrap().graph.unwrap();
+        let key = canvas
+            .add("material.parameter", Layout { x: 321.0, y: 145.0 })
+            .unwrap();
+        canvas.set_property(key, "symbol", "tint").unwrap();
+        let source = canvas_interchange("layout_probe", canvas)
+            .unwrap()
+            .replace("node 1 ", "node 7 ")
+            .replace("# layout 1 ", "# layout 7 ")
+            .replace("prop 1 ", "prop 7 ");
+        let mut loaded = canvas.clone();
+        assert_eq!(
+            load_canvas_interchange(&source, &mut loaded).unwrap(),
+            "layout_probe"
+        );
+        let restored = loaded.nodes().next().unwrap().key;
+        assert_eq!(restored.ordinal(), 7);
+        assert_eq!(
+            loaded.layout_of(restored),
+            Some(Layout { x: 321.0, y: 145.0 })
+        );
+        assert_eq!(
+            loaded
+                .resolved_properties(restored)
+                .get("symbol")
+                .map(String::as_str),
+            Some("tint")
+        );
+        assert_eq!(
+            loaded
+                .add("material.output", Layout::default())
+                .unwrap()
+                .ordinal(),
+            8
+        );
+    }
     use crate::specialised::{Domain, SpecialisedEditors};
     use cy_editor_core::codec::Writer;
 

@@ -29,6 +29,11 @@
 - [x] 5.5 Add stable-ID pin interaction and navigable shared-canvas preflight diagnostics to the Material Graph panel; verify compatible links persist and incompatible links remain non-mutating, visibly refused edits.
 - [x] 5.6 Submit the visible material canvas to asynchronous validation and compilation operations, correlate terminal events by request identity, and show validation or compiled artefact state without linking compiler code into the editor; verify authored state survives failures and disconnects.
 - [x] 5.7 Carry ordered, versioned material diagnostics with stable codes and node/pin locations through the backend result, and make those locations navigable in the Material Graph; verify legacy failures remain readable and an invalid graph selects its responsible node without mutating authored state.
+- [x] 5.8 Add a Plane/Cube material-graph sample, reopen its material nodes from the selected mesh, and display an opaque Diffuse graph in the authored scene renderer. Keep unsupported graphs explicit until the authored renderer consumes compiled shader variants.
+- [x] 5.9 Save validated canvas edits as engine-canonical `.cygraph` plus reopenable `.cymatcanvas` through a request-correlated author operation; reject invalid graphs without overwriting assets and cover the service with a regression test.
+- [x] 5.10 Expose declared graph parameters as undoable per-object Inspector fields, preserve overrides across graph saves, and apply supported Diffuse colour overrides during live authored rendering.
+- [x] 5.11 Preview unsaved supported graph colour changes in the authored viewport through the material service; preserve explicit object overrides and cover valid/invalid requests and rendered colour with regressions.
+- [x] 5.12 Project editable graph read, live preview, asynchronous canonical save, and request status through the MCP command registry; return PNG pixels from the hosted engine viewport and report Play/Stop state. Verify a graph colour change, PNG capture, Play/Stop, and save against a live hosted scene through MCP.
 
 ## 6. Validate and document the vertical slice
 

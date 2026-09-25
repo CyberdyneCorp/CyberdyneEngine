@@ -215,6 +215,8 @@ struct AssemblyView {
     /// The swapchain image the frame ends in, imported by the caller, or `kInvalidResource` to make
     /// the frame create its own target — which is what a headless run and an offscreen capture do.
     ResourceId output = kInvalidResource;
+    ResourceId shadow_color = kInvalidResource;
+    ResourceId shadow_depth = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport
     /// both invalidate history and neither is a camera that moved fast.
     bool cut = false;

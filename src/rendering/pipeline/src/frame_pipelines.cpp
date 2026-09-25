@@ -108,6 +108,8 @@ const char* frame_pipeline_kind_name(FramePipelineKind kind) noexcept {
             return "resolve";
         case FramePipelineKind::Temporal:
             return "temporal";
+        case FramePipelineKind::Shadow:
+            return "shadow";
         case FramePipelineKind::Count:
             break;
     }
@@ -150,6 +152,12 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
         {"cy frame depth fragment", rhi::ShaderStage::Fragment, "cyDepthFragment",
          words(kFrameDepthFragmentSpirv), kFrameDepthFragmentMsl,
          sizeof(kFrameDepthFragmentMsl) - 1, &depth_fragment_},
+        {"cy frame shadow vertex", rhi::ShaderStage::Vertex, "cyShadowVertex",
+         words(kFrameShadowVertexSpirv), kFrameShadowVertexMsl, sizeof(kFrameShadowVertexMsl) - 1,
+         &shadow_vertex_},
+        {"cy frame shadow fragment", rhi::ShaderStage::Fragment, "cyShadowFragment",
+         words(kFrameShadowFragmentSpirv), kFrameShadowFragmentMsl,
+         sizeof(kFrameShadowFragmentMsl) - 1, &shadow_fragment_},
         {"cy frame forward vertex", rhi::ShaderStage::Vertex, "cyForwardVertex",
          words(kFrameForwardVertexSpirv), kFrameForwardVertexMsl,
          sizeof(kFrameForwardVertexMsl) - 1, &forward_vertex_},
@@ -404,6 +412,37 @@ Status FramePipelines::create_resolve_pipeline(rhi::Device& device,
     return ok();
 }
 
+Status FramePipelines::create_shadow_pipeline(rhi::Device& device) noexcept {
+    const rhi::VertexBinding binding{kPositionStream, kPositionStreamStride,
+                                     rhi::VertexInputRate::PerVertex};
+    const rhi::VertexAttribute attribute{0, kPositionStream, rhi::Format::Rgb32Sfloat, 0};
+    rhi::ColorAttachmentState color;
+    color.format = rhi::Format::R32Sfloat;
+    rhi::GraphicsPipelineDescription description;
+    description.name = "directional shadow depth";
+    description.layout = layout_;
+    description.vertex_shader = shadow_vertex_;
+    description.fragment_shader = shadow_fragment_;
+    description.vertex_bindings = Span<const rhi::VertexBinding>(&binding, 1);
+    description.vertex_attributes = Span<const rhi::VertexAttribute>(&attribute, 1);
+    description.color_attachments = Span<const rhi::ColorAttachmentState>(&color, 1);
+    description.depth_stencil.format = rhi::Format::D32Sfloat;
+    description.depth_stencil.depth_test_enable = true;
+    description.depth_stencil.depth_write_enable = true;
+    description.depth_stencil.depth_compare = rhi::CompareOp::GreaterOrEqual;
+    // Front-face culling keeps the receiver from shadowing itself at a shallow sun angle.
+    description.rasterisation.cull_mode = rhi::CullMode::Front;
+    description.rasterisation.front_face = rhi::FrontFace::CounterClockwise;
+    Expected<rhi::GraphicsPipelineHandle, Error> created =
+        device.create_graphics_pipeline(description);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    pipelines_[static_cast<u32>(FramePipelineKind::Shadow)] = *created;
+    ++created_;
+    return ok();
+}
+
 Status FramePipelines::create_temporal_pipeline(rhi::Device& device,
                                                 const PipelineSetup& setup) noexcept {
     rhi::ColorAttachmentState color;
@@ -428,6 +467,9 @@ Status FramePipelines::create_temporal_pipeline(rhi::Device& device,
 }
 
 Status FramePipelines::create_pipelines(rhi::Device& device, const PipelineSetup& setup) noexcept {
+    if (Status made = create_shadow_pipeline(device); !made) {
+        return made;
+    }
     if (Status made = create_geometry_pipeline(device, setup, FramePipelineKind::Depth); !made) {
         return made;
     }
@@ -515,9 +557,10 @@ void FramePipelines::shutdown() noexcept {
             handle = rhi::DescriptorSetLayoutHandle{};
         }
     }
-    rhi::ShaderModuleHandle* modules[] = {&depth_vertex_,     &depth_fragment_, &forward_vertex_,
-                                          &forward_fragment_, &resolve_vertex_, &resolve_fragment_,
-                                          &temporal_fragment_};
+    rhi::ShaderModuleHandle* modules[] = {
+        &depth_vertex_,    &depth_fragment_,   &shadow_vertex_,
+        &shadow_fragment_, &forward_vertex_,   &forward_fragment_,
+        &resolve_vertex_,  &resolve_fragment_, &temporal_fragment_};
     for (rhi::ShaderModuleHandle* handle : modules) {
         if (!handle->is_null()) {
             device.destroy_shader_module(*handle);

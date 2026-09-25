@@ -286,12 +286,21 @@ void put_f32(Array<u8>& out, f32 value) noexcept {
     put_u32(out, bits);
 }
 
+void put_u64(Array<u8>& out, u64 value) noexcept {
+    put_u32(out, static_cast<u32>(value));
+    put_u32(out, static_cast<u32>(value >> 32U));
+}
+
 [[nodiscard]] u32 get_u32(const u8* data) noexcept {
     u32 value = 0;
     for (u32 index = 0; index < 4; ++index) {
         value |= static_cast<u32>(data[index]) << (index * 8U);
     }
     return value;
+}
+
+[[nodiscard]] u64 get_u64(const u8* data) noexcept {
+    return static_cast<u64>(get_u32(data)) | (static_cast<u64>(get_u32(data + 4)) << 32U);
 }
 
 [[nodiscard]] f32 get_f32(const u8* data) noexcept {
@@ -303,12 +312,15 @@ void put_f32(Array<u8>& out, f32 value) noexcept {
 
 /// The record is 13 little-endian 32-bit words: the version, four base colour lanes, metallic,
 /// roughness, three emissive lanes, the alpha mode, the cutoff and the two-sided flag.
-constexpr usize kMaterialRecordBytes = usize{13} * 4;
+constexpr usize kMaterialRecordBytesV1 = usize{13} * 4;
+constexpr usize kMaterialRecordBytesV2 = kMaterialRecordBytesV1 + 16 + 4;
 
 }  // namespace
 
 Status write_cooked_material(const StandardMaterial& material, Array<u8>& out) noexcept {
-    if (Status reserved = out.reserve(out.size() + kMaterialRecordBytes); !reserved) {
+    if (Status reserved = out.reserve(out.size() + kMaterialRecordBytesV2 +
+                                      material.base_color_texture_name.size());
+        !reserved) {
         return reserved;
     }
     put_u32(out, kCookedMaterialVersion);
@@ -323,16 +335,26 @@ Status write_cooked_material(const StandardMaterial& material, Array<u8>& out) n
     put_u32(out, material.alpha_mode);
     put_f32(out, material.alpha_cutoff);
     put_u32(out, material.double_sided ? 1U : 0U);
+    put_u64(out, material.base_color_texture.high());
+    put_u64(out, material.base_color_texture.low());
+    put_u32(out, static_cast<u32>(material.base_color_texture_name.size()));
+    if (Status appended = out.append(
+            Span<const u8>(reinterpret_cast<const u8*>(material.base_color_texture_name.data()),
+                           material.base_color_texture_name.size()));
+        !appended) {
+        return appended;
+    }
     return ok();
 }
 
 Status read_cooked_material(Span<const u8> payload, StandardMaterial& out) noexcept {
-    if (payload.size() < kMaterialRecordBytes) {
+    if (payload.size() < kMaterialRecordBytesV1) {
         return fail(ErrorCode::InvalidArgument,
                     "a cooked material record is shorter than a header");
     }
     const u8* at = payload.data();
-    if (get_u32(at) != kCookedMaterialVersion) {
+    const u32 version = get_u32(at);
+    if (version != 1 && version != kCookedMaterialVersion) {
         return fail(ErrorCode::InvalidArgument,
                     "a cooked material record at a version this build does not read");
     }
@@ -354,6 +376,21 @@ Status read_cooked_material(Span<const u8> payload, StandardMaterial& out) noexc
     out.alpha_cutoff = get_f32(at);
     at += 4;
     out.double_sided = get_u32(at) != 0U;
+    out.base_color_texture = {};
+    out.base_color_texture_name.clear();
+    if (version == 1) {
+        return ok();
+    }
+    if (payload.size() < kMaterialRecordBytesV2) {
+        return fail(ErrorCode::InvalidArgument, "a cooked material texture link is truncated");
+    }
+    at += 4;
+    out.base_color_texture = AssetId(get_u64(at), get_u64(at + 8));
+    const u32 name_length = get_u32(at + 16);
+    if (name_length != payload.size() - kMaterialRecordBytesV2) {
+        return fail(ErrorCode::InvalidArgument, "a cooked material texture name is truncated");
+    }
+    out.base_color_texture_name.assign(reinterpret_cast<const char*>(at + 20), name_length);
     return ok();
 }
 

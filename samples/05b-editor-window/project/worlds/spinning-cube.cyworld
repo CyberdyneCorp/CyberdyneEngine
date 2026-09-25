@@ -1,0 +1,58 @@
+cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+  field 13 vec3 "tint" "Per-instance base colour multiplier."
+type 3 runtime "ScriptBehaviour"
+  field 6 text "class" "The registered Swift behaviour to run during Play."
+  field 14 float "degreesPerSecond" "SpinCube rotation speed in degrees per second (0–360)."
+type 4 runtime "LightSource"
+  field 7 int "kind" ""
+  field 8 float "intensity" ""
+  field 9 bool "enabled" ""
+  field 10 bool "casts_shadow" ""
+type 5 runtime "Camera"
+  field 11 float "projection.fov_y" ""
+  field 12 bool "enabled" ""
+node 0 - "demo" "Plane"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 -1 0
+    field 3 6 1 6
+  component 2
+    field 4 "assets/primitives/Plane.cyprim"
+    field 5 ""
+node 1 - "demo" "SpinCube"
+  component 1
+    field 1 0 0 0 1
+    field 2 1.5 -0.5 0
+    field 3 0.8 0.8 0.8
+  component 2
+    field 4 "assets/primitives/SpinCube.cyprim"
+    field 5 ""
+    field 13 1 0.25 0.12
+  component 3
+    field 6 "SpinCube"
+    field 14 45
+node 2 - "demo" "Directional Light"
+  component 1
+    field 1 -0.3826834 0 0 0.9238795
+    field 2 0 4 3
+    field 3 1 1 1
+  component 4
+    field 7 0
+    field 8 100000
+    field 9 true
+    field 10 true
+node 3 - "demo" "Camera"
+  component 1
+    field 1 -0.15 0 0 0.988686
+    field 2 0 2 7
+    field 3 1 1 1
+  component 5
+    field 11 0.9
+    field 12 true

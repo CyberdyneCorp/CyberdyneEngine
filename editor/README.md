@@ -85,6 +85,24 @@ Use `--agent-scope operator` only when the desktop human should be able to confi
 external work; `read` remains the default and `author` remains limited to undoable edits and
 `game/` source.
 
+For a hosted material scene, an MCP client can call `material.graph.read` with a project-relative
+`.cygraph` reference, edit the returned `source` (`cymatcanvas 1` text), and call
+`material.graph.preview` with that reference and source. Poll `material.graph.status`, then read
+`viewport:` to receive a PNG copied from the engine frame shown by the desktop viewport. Call
+`material.graph.save` to ask the engine to author the graph; poll status until it says `saved` or
+`failed`. A successful save writes both the canonical `.cygraph` and editable `.cymatcanvas` and
+records their prior contents in the active scene's undo history.
+`play.enter` and `play.leave` control the hosted simulation; `play:` reports `state`, `mode`, and
+connection status. These commands work over `--mcp` with the desktop open, without computer-use
+automation. The default `viewport:` read captures the current editor camera and excludes UI
+overlays. Restated camera/projection and independent debug-view requests still need a pumped
+agent viewport and may report that no frame has arrived; use the registered viewport view-mode
+commands to change the focused renderer view before reading `viewport:`.
+
+The hosted MCP verification captured the [copper cube](../docs/design/images/editor-mcp-material-before-metal.png)
+and the [green preview](../docs/design/images/editor-mcp-material-preview-metal.png) from the
+same engine scene. The plane, shadow, and camera framing stayed fixed across the two reads.
+
 The domain editors named by `editor-rust-application` arrive later. Their layer positions are
 already decided by the rule above.
 
@@ -129,6 +147,51 @@ runtime connection remembers its local endpoint and retries once per second afte
 runtime returns, the existing editor process reconnects and replays the open document's unsaved
 transaction history before incremental live editing resumes.
 
+The Hierarchy Create menu and Scene menu can add a Plane, directional light, point light, spot
+light, or Camera to the open world. Camera creation from the desktop uses the current editor view
+position and rotation. The same commands are available to scripts and MCP clients as
+`scene.create-primitive shape=plane`, `scene.create-light kind=directional|point|spot`, and
+`scene.create-camera`. Created actors use normal scene transactions, can be edited in the Inspector,
+and survive Save and reopen.
+
+The viewport has Editor and Game controls. Editor uses its navigation camera and shows transform,
+light, and Camera handles. Click a light or Camera icon to select its actor and edit its Transform
+and component fields in the Inspector. Directional and spot lights and Cameras show their forward
+direction; point lights show their position because they emit in every direction. Game uses the
+first enabled scene Camera and hides editor handles; if no scene
+Camera exists, the view explains that one is needed. Switching views alone does not start the
+simulation. Play selects Game and advances hosted physics; Pause holds it; Stop restores the
+authored world and Editor view. The hosted runtime loads a built project Swift module when a node
+has a `ScriptBehaviour` component with a text `class` field naming a registered `@Behaviour`.
+It calls `onFixedUpdate` after physics during Play, pauses it with the simulation, and restores
+authored transforms on Stop. Run `project.build` and wait for completion before Play; a missing
+module or unknown behaviour is reported as a Play refusal. Audio is still unavailable in this
+host and is reported separately. The Editor's studio fill is omitted from
+Game rendering, so authored lights determine its illumination.
+Disabling the last authored light removes its illumination in both views; its Editor handle remains
+selectable so it can be enabled again. Rotating a directional or spot light changes where it shines.
+Point lights emit in every direction, so moving one changes the image but rotating one does not.
+An enabled directional light with `casts_shadow` draws a shadow from MeshRenderers whose
+`casts_shadow` is enabled onto MeshRenderers whose `receives_shadow` is enabled. The shadow follows
+light rotation and mesh transforms in both views. The Editor adds a modest fill so unlit sides stay
+visible while the shadow remains readable; Game uses the authored lights. The hosted Metal capture
+uses an sRGB target, matching the frame's tone mapper.
+
+For the imported tree example, the Plane is centered at `(0.5, -1.17, 0)` and scaled to
+`(8, 1, 8)`, below the tree's lowest root. A directional light points downward across it, and a
+point light near the viewing side reveals the dark bark texture. The live captures show the
+[tree shadow](../docs/design/images/editor-tree-plane-shadow-metal.png), the
+[light disabled](../docs/design/images/editor-tree-plane-light-off-metal.png), and the
+[light rotated](../docs/design/images/editor-tree-plane-light-rotated-metal.png).
+
+Live Metal captures: [Editor view with selected light](../docs/design/images/editor-scene-light-editor-metal.png)
+and [Game view during Play](../docs/design/images/editor-scene-light-game-play-metal.png).
+The [selected Camera](../docs/design/images/editor-scene-camera-gizmo-metal.png) and
+[selected directional light](../docs/design/images/editor-scene-directional-gizmo-metal.png)
+captures show their direction handles and Inspector properties. The
+[Game capture](../docs/design/images/editor-scene-game-no-gizmos-metal.png) shows the same scene
+without editor marks.
+
 Every recipe takes `--profile <name>`. The four profiles mean the same thing in Cargo that they mean
 in CMake — M0's spike wrote that column and reserved it unused for five milestones, and
 `crates/cy-editor-app/tests/profiles.rs` reads `justfile`'s table and checks it rather than trusting
@@ -158,6 +221,10 @@ text the edit began from, so a human, agent or external tool cannot silently ove
 Reload, Keep and Merge remain explicit choices. SourceKit-LSP supplies diagnostics, navigation,
 completion, hover, symbols and rename only when the server advertises them. Editing, saving and the
 existing Swift build/reload loop remain usable when SourceKit-LSP is absent or terminates.
+For a selected scripted node, the small arrow beside `ScriptBehaviour.class` resolves its
+`@Behaviour(name:)` declaration, opens that project source, and activates the Swift Workspace tab.
+Generated Swift files under the project's `build/` directory are omitted from the source tree;
+file labels stay compact and reveal their full paths on hover.
 
 Semantic Diff compares document operations by stable identity. Merge classifies independent changes
 and typed conflicts, accepts local, incoming or a validated replacement for each conflict, and
@@ -282,6 +349,9 @@ What it draws and what it refuses to draw:
 * **The viewport shows the engine's own frame, or a sentence saying why it cannot.** There is no
   toolkit-drawn approximation, no grid and no placeholder cube. `editor-viewport-and-gizmos` forbids
   a second renderer, and an approximation is one arriving a frame at a time.
+  Short frame hitches remain in the pacing counters; the stale-image warning starts after 250 ms
+  without a fresh focused frame (500 ms when unfocused). Its age refers to the displayed frame,
+  so it does not claim the runtime stopped when delivery or the UI was delayed.
 * **The inspector is generated from reflection**, from the open world's schema or from the engine's
   registered component types. There is no type name anywhere in `panels/inspector.rs`; when nothing
   has been described it says so rather than showing a hand-written form.
@@ -351,7 +421,8 @@ The mesh reference lives on a `MeshRenderer` component with a `mesh` field, foun
 document's schema and declared there when the world does not already carry it — the same
 by-name relationship `TransformBinding` has, and the engine's own name for the component
 (`src/scene/src/node_template.cpp` declares `cy::render::MeshRenderer` and no build registers it
-yet). Until a renderer does, the reference is authoring data that round-trips through `.cyworld`.
+yet). The editor runtime resolves this authoring reference by name and draws its mesh through
+`FrameAssembly`; it does not require the component to be reflected to render saved worlds.
 
 ## Catalogue-driven material properties
 

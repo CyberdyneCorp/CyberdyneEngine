@@ -78,10 +78,12 @@
 #include <cy/servers/render/viewport_transport.h>
 #include <cy_reflect_generated_scene.h>
 
+#include "authored_frame.h"
 #include "layout_file.h"
 #include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
+#include "script_runtime.h"
 #include "world_view.h"
 
 #include "renderer.h"
@@ -91,6 +93,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
+#include <vector>
 
 #include <csignal>
 
@@ -129,6 +133,12 @@ struct Options {
     f64 rate = 60.0;
     f64 orbit = 0.008;
     bool validation = true;
+};
+
+struct DeviceOwner {
+    Allocator& allocator;
+    rhi::Device* device;
+    ~DeviceOwner() { rhi::destroy_device(allocator, device); }
 };
 
 [[nodiscard]] const char* value_of(int argc, char** argv, const char* key,
@@ -236,8 +246,33 @@ constexpr f32 kFramingPhase = 0.12F;
 }
 
 /// Everything the loop needs, gathered so the frame function is readable.
+struct PickFrame {
+    u64 identity = 0;
+    render::View view;
+    first_light::Camera camera{};
+    bool editor_view = false;
+    std::vector<render::GpuInstance> instances;
+    std::vector<render::DrawItem> draws;
+    std::vector<LightMarker> lights;
+    std::vector<CameraMarker> cameras;
+};
+
+class AuthoredMaterialPreview final : public editor::MaterialAuthoringRuntime {
+public:
+    explicit AuthoredMaterialPreview(AuthoredFrame& frame) noexcept : frame_(&frame) {}
+
+    [[nodiscard]] Status preview(std::string_view reference,
+                                 std::string_view canonical_graph) noexcept override {
+        return frame_->preview(reference, canonical_graph);
+    }
+
+private:
+    AuthoredFrame* frame_;
+};
+
 struct Host {
     Options options;
+    AuthoredFrame* authored_frame = nullptr;
     first_light::Scene* scene = nullptr;
     first_light::Renderer* renderer = nullptr;
     viewport::Publisher* publisher = nullptr;
@@ -259,6 +294,7 @@ struct Host {
     /// M8.a TASK 5.1: what pressing play actually does. Null until a world is open — a play session
     /// over M3's ring would be a simulation of a fixture, which is what this milestone ends.
     gameplay::PlaySession* play = nullptr;
+    ScriptRuntime* scripts = nullptr;
     /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
     /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
     /// session that created one would create and destroy a whole backend per press of play.
@@ -304,6 +340,7 @@ struct Host {
     /// a `cy-viewport-transport-probe` see.
     first_light::Camera asked_camera{};
     bool editor_camera = false;
+    u64 game_camera = ~u64{0};
     render::View view;
     first_light::Camera camera{};
     u64 frames_published = 0;
@@ -328,6 +365,7 @@ struct Host {
     /// The frame's records, kept across frames so a pick does not allocate on the message path.
     Array<render::GpuInstance> instances{system_allocator(MemoryDomain::Gpu)};
     Array<render::DrawItem> draws{system_allocator(MemoryDomain::Gpu)};
+    std::deque<PickFrame> pick_frames;
     /// What the editor sent, by kind. Printed at the end rather than logged per message: an
     /// artefact that reports "0 gizmos answered" needs to be able to say whether the editor asked
     /// and the runtime refused, or whether nothing arrived at all — which is two very different
@@ -335,7 +373,7 @@ struct Host {
     /// SIZED BY THE LAST TAG, not by the last one this runtime answers: `Play` is 15 and
     /// `GizmoGeometry` is 13, so an array sized by the latter would be written past its end by the
     /// counter above the switch the first time an editor pressed play.
-    u64 received[static_cast<usize>(runtime::EditorMessage::ServiceCancel) + 1] = {};
+    u64 received[static_cast<usize>(runtime::EditorMessage::SyncWorld) + 1] = {};
     u64 unknown_messages = 0;
 };
 
@@ -405,6 +443,7 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     host.asked_width = intent.viewport_width;
     host.asked_height = intent.viewport_height;
     adopt_camera(host, intent);
+    host.game_camera = intent.game_camera;
     // THE OBJECT THE EDITOR NAMED, by identity. Not the next unused one: the world this runtime
     // holds is the world the editor has open, so an identity either names a node in it or names
     // nothing, and naming nothing must take the gizmo off the screen rather than move it to an
@@ -431,7 +470,17 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     host.anchored = object;
     host.anchored_identity = intent.identities[0];
 
-    const Vec3 pivot = relative_position(host.scene->objects()[object], host.camera);
+    Vec3 pivot{};
+    if (host.authored_frame == nullptr) {
+        pivot = relative_position(host.scene->objects()[object], host.camera);
+    }
+    Vec3 world_pivot;
+    if (host.authored_frame != nullptr &&
+        host.authored_frame->pivot_for(intent.identities[0], world_pivot)) {
+        pivot = world_pivot - Vec3{static_cast<f32>(host.camera.position[0]),
+                                   static_cast<f32>(host.camera.position[1]),
+                                   static_cast<f32>(host.camera.position[2])};
+    }
     // THE FRAME THE EDITOR IS SHOWING, not the one this runtime has since rendered. The editor
     // refuses a layout that names a different frame, and it is right to: hit-testing a click
     // against a layout from another frame is the same defect as resolving a pick against a newer
@@ -442,6 +491,47 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     if (Status sent = publish_layout(host, request.request); sent) {
         host.gizmos_answered += 1;
     }
+}
+
+[[nodiscard]] bool marker_pixel(const render::View& view, const first_light::Camera& camera,
+                                u32 width, u32 height, Vec3 position, Vec2& pixel) noexcept {
+    const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
+                   static_cast<f32>(camera.position[2])};
+    return project_to_pixel(view, position - eye, pixel) && pixel.x >= 0.0F && pixel.y >= 0.0F &&
+           pixel.x < static_cast<f32>(width) && pixel.y < static_cast<f32>(height);
+}
+
+[[nodiscard]] bool marker_pixel(const Host& host, Vec3 position, Vec2& pixel) noexcept {
+    return marker_pixel(host.view, host.camera, host.options.width, host.options.height, position,
+                        pixel);
+}
+
+[[nodiscard]] u64 picked_actor_marker(const PickFrame& frame, const PickRequest& pick, u32 width,
+                                      u32 height) noexcept {
+    if (!frame.editor_view || pick.kind != PickKind::Click) {
+        return ~u64{0};
+    }
+    const auto hit = [&](u64 identity, Vec3 position) {
+        for (u64 excluded : pick.excluded) {
+            if (excluded == identity) {
+                return false;
+            }
+        }
+        Vec2 pixel;
+        return marker_pixel(frame.view, frame.camera, width, height, position, pixel) &&
+               length(Vec2{pixel.x - pick.x, pixel.y - pick.y}) <= 13.0F;
+    };
+    for (const LightMarker& light : frame.lights) {
+        if (hit(light.identity, light.position)) {
+            return light.identity;
+        }
+    }
+    for (const CameraMarker& camera : frame.cameras) {
+        if (hit(camera.identity, camera.position)) {
+            return camera.identity;
+        }
+    }
+    return ~u64{0};
 }
 
 /// Answer one pick against the frame the editor was looking at. M8.a task 1.4.
@@ -464,14 +554,34 @@ void answer_pick(Host& host, const runtime::EditorRequest& request) noexcept {
     // camera the user never saw. A pick that names no frame — a probe, or a test — is answered
     // against the current one, which is the only frame there is to answer against.
     Array<render::PickCandidate> candidates(allocator);
-    if (pick.frame == 0 || pick.frame == host.published_frame) {
+    const PickFrame* frame = nullptr;
+    for (const PickFrame& candidate : host.pick_frames) {
+        if (candidate.identity == (pick.frame == 0 ? host.published_frame : pick.frame)) {
+            frame = &candidate;
+            break;
+        }
+    }
+    if (frame != nullptr) {
+        scale_pick_to_rendered_frame(pick, host.options.width, host.options.height);
         if (Status resolved =
-                resolve_pick(pick, host.view, host.instances.span(), host.draws.span(), candidates);
+                resolve_pick(pick, frame->view, frame->instances, frame->draws, candidates);
             !resolved) {
             (void)host.bridge->send_rejected(request.request, resolved.error().message,
                                              "the pick names an intent or a size this runtime "
                                              "cannot resolve");
             return;
+        }
+        const u64 marker_id =
+            picked_actor_marker(*frame, pick, host.options.width, host.options.height);
+        if (marker_id != ~u64{0}) {
+            candidates.clear();
+            render::PickCandidate marker;
+            marker.stable_id = marker_id;
+            if (Status added = candidates.push_back(marker); !added) {
+                (void)host.bridge->send_rejected(request.request, "pick the scene actor",
+                                                 "the runtime ran out of memory");
+                return;
+            }
         }
     }
     Array<u8> reply(allocator);
@@ -520,6 +630,13 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
     host.moves_applied += report.applied;
     host.nodes_created += report.created;
     host.nodes_deleted += report.deleted;
+    if (host.authored_frame != nullptr) {
+        (void)host.view_world->present_authored();
+        if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
+            !prepared) {
+            std::fprintf(stderr, "%s: authored scene: %s\n", kTag, prepared.error().message);
+        }
+    }
     if (report.applied > 0 && !host.change_pending) {
         // TASK 1.3, MEASURED. The next frame published is the one that carries this change; the
         // report says how many frames it actually took, worst case over the run.
@@ -528,6 +645,25 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
         host.change_at_micros = monotonic_nanos() / 1000ULL;
     }
     (void)host.bridge->send_applied(request.request, request.frame, request.payload);
+}
+
+void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
+    const std::string_view text(reinterpret_cast<const char*>(request.payload.data()),
+                                request.payload.size());
+    if (Status synced = host.view_world->sync(text); !synced) {
+        (void)host.bridge->send_rejected(request.request, synced.error().message,
+                                         "reopen the same world in the editor and runtime");
+        return;
+    }
+    if (host.authored_frame != nullptr) {
+        if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
+            !prepared) {
+            (void)host.bridge->send_rejected(request.request, prepared.error().message,
+                                             "check the imported mesh and material assets");
+            return;
+        }
+    }
+    (void)host.bridge->send_applied(request.request, host.frames_published, {});
 }
 
 /// The mode the editor asked for, or `InEditor` when it named none.
@@ -551,6 +687,39 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
 /// THE ANSWER IS ALWAYS THE STATE NOW IN FORCE, never a silence. A runtime that ignored a play it
 /// could not honour would leave the editor showing "PLAYING" over a world that is not moving, which
 /// is worse than a refusal: it is a refusal a person cannot see.
+Status tick_scripts(void* user, gameplay::PlaySession& play, f32 dt) noexcept {
+    return static_cast<ScriptRuntime*>(user)->tick(play, dt);
+}
+
+void answer_reload(Host& host, const runtime::EditorRequest& request) noexcept {
+    if (request.module.empty() || request.library.empty()) {
+        (void)host.bridge->send_rejected(request.request, "missing script module or library",
+                                         "build the project script module first");
+        return;
+    }
+    const std::string module(reinterpret_cast<const char*>(request.module.data()),
+                             request.module.size());
+    const std::string library(reinterpret_cast<const char*>(request.library.data()),
+                              request.library.size());
+    if (module != "game" || library.empty()) {
+        (void)host.bridge->send_rejected(request.request, "invalid script module or library",
+                                         "build the project script module first");
+        return;
+    }
+    const Expected<abi::ReloadReport, Error> result = host.scripts->reload(library.c_str());
+    if (!result) {
+        (void)host.bridge->send_rejected(request.request, result.error().message,
+                                         "keep the previous module or restart Play");
+        return;
+    }
+    if (result->failure != abi::ReloadFailure::None) {
+        (void)host.bridge->send_rejected(request.request, abi::reload_failure_name(result->failure),
+                                         result->detail);
+        return;
+    }
+    (void)host.bridge->send_reloaded(request.request, module.c_str(), request.generation);
+}
+
 void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
     const std::string_view asked(reinterpret_cast<const char*>(request.payload.data()),
                                  request.payload.size());
@@ -618,17 +787,29 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             // The mode the editor asked for, carried into the session so that `enter` refuses one
             // this build cannot run rather than this function having to remember to.
             configuration.mode = host.play_mode;
+            configuration.gameplay_tick = &tick_scripts;
+            configuration.gameplay_user = host.scripts;
             if (Status entered = host.play->enter(configuration); !entered) {
                 (void)host.bridge->send_playing(request.request, "editing",
                                                 gameplay::play_mode_name(host.play_mode),
                                                 entered.error().message);
                 return;
             }
+            if (Status started = host.scripts->start(*host.play, host.view_world->world());
+                !started) {
+                (void)host.play->stop();
+                (void)host.bridge->send_playing(request.request, "editing",
+                                                gameplay::play_mode_name(host.play_mode),
+                                                started.error().message);
+                return;
+            }
             host.play_sessions += 1;
             host.play_bodies = host.play->report().bodies;
-            (void)std::snprintf(detail, sizeof(detail), "%u entities, %u bodies, %u colliders",
+            (void)std::snprintf(detail, sizeof(detail),
+                                "%u entities, %u bodies, %u colliders; "
+                                "%u Swift behaviour(s); audio unavailable in this host",
                                 host.play->report().entities, host.play->report().bodies,
-                                host.play->report().colliders);
+                                host.play->report().colliders, host.scripts->count());
             break;
         }
         case gameplay::PlayState::Paused:
@@ -641,6 +822,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             break;
         case gameplay::PlayState::Editing: {
             const bool was_playing = host.play->state() != gameplay::PlayState::Editing;
+            host.scripts->stop();
             if (Status stopped = host.play->stop(); !stopped) {
                 (void)std::snprintf(detail, sizeof(detail), "%s", stopped.error().message);
                 break;
@@ -718,9 +900,10 @@ void serve_editor(Host& host) noexcept {
                 // viewport opens at the origin looking down −Z, and this runtime is the only side
                 // that knows where its world is. Sent on the handshake rather than on every frame,
                 // because a runtime that re-aimed the camera continuously would own it.
-                const first_light::Camera framed = host.view_world->loaded()
-                                                       ? host.view_world->framing(*host.scene)
-                                                       : host.scene->camera_at(kFramingPhase);
+                const first_light::Camera framed =
+                    host.authored_frame != nullptr
+                        ? host.authored_frame->framing(host.scene->camera_at(kFramingPhase))
+                        : host.scene->camera_at(kFramingPhase);
                 const f32 position[3] = {static_cast<f32>(framed.position[0]),
                                          static_cast<f32>(framed.position[1]),
                                          static_cast<f32>(framed.position[2])};
@@ -739,11 +922,17 @@ void serve_editor(Host& host) noexcept {
             case runtime::EditorMessage::Apply:
                 apply_transaction(host, request);
                 break;
+            case runtime::EditorMessage::SyncWorld:
+                sync_world(host, request);
+                break;
             case runtime::EditorMessage::Pick:
                 answer_pick(host, request);
                 break;
             case runtime::EditorMessage::Play:
                 answer_play(host, request);
+                break;
+            case runtime::EditorMessage::Reload:
+                answer_reload(host, request);
                 break;
             case runtime::EditorMessage::ServiceRequest:
             case runtime::EditorMessage::ServiceCancel:
@@ -839,9 +1028,21 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     physics::reference::destroy_server(server, allocator);
 }
 
+void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position, Vec3 forward,
+                          Vec2 origin, bool camera) noexcept {
+    Vec2 tip;
+    if (marker_pixel(host, position + (forward * 0.85F), tip)) {
+        draw_direction_marker(canvas, origin.x, origin.y, tip.x, tip.y, camera);
+    }
+}
+
 /// Render one frame, composite the gizmo into it, and publish it.
 [[nodiscard]] bool publish_frame(Host& host, f32 phase) noexcept {
     host.camera = host.editor_camera ? host.asked_camera : host.scene->camera_at(phase);
+    if (host.game_camera != ~u64{0} && host.authored_frame != nullptr) {
+        (void)host.authored_frame->scene_camera(host.view_world->world(), host.game_camera,
+                                                host.camera);
+    }
     host.view = view_of(host.camera, host.options.width, host.options.height);
 
     // THE WORLD BECOMES THE FRAME, here, once, every frame. Everything the editor committed since
@@ -861,25 +1062,41 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     }
 
     if (host.view_world->loaded()) {
-        (void)host.view_world->present(*host.scene);
-        // And the records a pick resolves against, from the same placement, before the draw.
-        if (Status published =
-                host.view_world->publish(*host.scene, host.camera, host.instances, host.draws);
-            !published) {
-            report("pick records", published.error());
+        if (host.authored_frame != nullptr) {
+            (void)host.view_world->present_authored();
+        } else {
+            (void)host.view_world->present(*host.scene);
         }
     }
 
-    const Expected<first_light::FrameReport, Error> frame =
-        host.renderer->render(*host.scene, host.camera);
-    if (!frame) {
-        report("frame", frame.error());
-        return false;
+    Span<const u32> texels;
+    if (host.authored_frame != nullptr) {
+        if (Status frame = host.authored_frame->render(host.view_world->world(), host.camera,
+                                                       host.game_camera == ~u64{0});
+            !frame) {
+            report("authored frame", frame.error());
+            return false;
+        }
+        texels = host.authored_frame->pixels();
+    } else {
+        const Expected<first_light::FrameReport, Error> frame =
+            host.renderer->render(*host.scene, host.camera);
+        if (!frame) {
+            report("frame", frame.error());
+            return false;
+        }
+        texels = host.renderer->color_texels();
     }
-    const Span<const u32> texels = host.renderer->color_texels();
     if (texels.empty()) {
         report("readback", Error{ErrorCode::Unavailable, "the renderer read back no pixels"});
         return false;
+    }
+    if (host.authored_frame != nullptr) {
+        if (Status published =
+                host.authored_frame->publish(host.camera, host.instances, host.draws);
+            !published) {
+            report("pick records", published.error());
+        }
     }
 
     viewport::FrameStaging staging = host.publisher->begin_frame();
@@ -893,10 +1110,39 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     // is the SAME layout, not a second computation: what a person aims at and what the editor
     // hit-tests came out of one call to `build_gizmo_layout`.
     const Canvas canvas{staging.pixels, staging.width, staging.height};
-    if (host.anchored != WorldView::kNoObject && host.anchored < host.scene->objects().size() &&
+    if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
+        for (const LightMarker& light : host.authored_frame->light_markers()) {
+            Vec2 marker;
+            if (marker_pixel(host, light.position, marker)) {
+                draw_light_marker(canvas, marker.x, marker.y, light.kind);
+                if (light.kind != render::LightKind::Point) {
+                    draw_actor_direction(host, canvas, light.position, light.forward, marker,
+                                         false);
+                }
+            }
+        }
+        for (const CameraMarker& camera : host.authored_frame->camera_markers()) {
+            Vec2 marker;
+            if (marker_pixel(host, camera.position, marker)) {
+                draw_camera_marker(canvas, marker.x, marker.y);
+                draw_actor_direction(host, canvas, camera.position, camera.forward, marker, true);
+            }
+        }
+    }
+    if (host.game_camera == ~u64{0} && host.anchored != WorldView::kNoObject &&
         !host.layout.empty()) {
         const u32 object = host.anchored;
-        const Vec3 pivot = relative_position(host.scene->objects()[object], host.camera);
+        Vec3 pivot{};
+        if (host.authored_frame == nullptr && object < host.scene->objects().size()) {
+            pivot = relative_position(host.scene->objects()[object], host.camera);
+        }
+        Vec3 world_pivot;
+        if (host.authored_frame != nullptr &&
+            host.authored_frame->pivot_for(host.anchored_identity, world_pivot)) {
+            pivot = world_pivot - Vec3{static_cast<f32>(host.camera.position[0]),
+                                       static_cast<f32>(host.camera.position[1]),
+                                       static_cast<f32>(host.camera.position[2])};
+        }
         Vec2 marker{0.0F, 0.0F};
         if (project_to_pixel(host.view, pivot, marker)) {
             draw_selection_marker(canvas, marker.x, marker.y, 26.0F);
@@ -926,6 +1172,23 @@ void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
     }
     host.layout.frame_id = *published;
     host.published_frame = *published;
+    PickFrame pick_frame;
+    pick_frame.identity = *published;
+    pick_frame.view = host.view;
+    pick_frame.camera = host.camera;
+    pick_frame.editor_view = host.game_camera == ~u64{0} && host.authored_frame != nullptr;
+    pick_frame.instances.assign(host.instances.span().begin(), host.instances.span().end());
+    pick_frame.draws.assign(host.draws.span().begin(), host.draws.span().end());
+    if (host.authored_frame != nullptr) {
+        const auto lights = host.authored_frame->light_markers();
+        const auto cameras = host.authored_frame->camera_markers();
+        pick_frame.lights.assign(lights.begin(), lights.end());
+        pick_frame.cameras.assign(cameras.begin(), cameras.end());
+    }
+    host.pick_frames.push_back(std::move(pick_frame));
+    if (host.pick_frames.size() > 64) {
+        host.pick_frames.pop_front();
+    }
     host.frames_published += 1;
     // TASK 1.3'S NUMBER, taken here because this is where the change actually reached a viewer.
     if (host.change_pending) {
@@ -975,10 +1238,10 @@ void print_report(const Host& host, const WorldView& view_world,
     // resolved against what was drawn rather than being refused by name.
     if (view_world.loaded()) {
         std::fprintf(stdout,
-                     "%s: world     %llu node(s) presented, %llu overflowed the %u slots; "
+                     "%s: world     %llu node(s) presented, %llu overflowed; "
                      "%llu transaction(s), %llu field(s) applied, %llu created, %llu deleted\n",
                      kTag, static_cast<unsigned long long>(view_world.presented()),
-                     static_cast<unsigned long long>(view_world.overflowed()), kWorldCapacity,
+                     static_cast<unsigned long long>(view_world.overflowed()),
                      static_cast<unsigned long long>(host.transactions_applied),
                      static_cast<unsigned long long>(host.moves_applied),
                      static_cast<unsigned long long>(host.nodes_created),
@@ -1058,21 +1321,18 @@ int main(int argc, char** argv) {
         report("device", device.error());
         return 1;
     }
+    DeviceOwner device_owner{allocator, device.value()};
     std::fprintf(stdout, "%s: device   backend=%s\n", kTag,
                  selection.selected != nullptr ? selection.selected : "(none)");
 
-    // THE SCENE IS BUILT WITH CAPACITY when a world is to be loaded: one ground plane and enough
-    // box slots for the world's nodes, which `WorldView::present` writes into and blanks the rest
-    // of. Without `--world` it is M3's ring, unchanged, which is what a headless run and
-    // `cy-viewport-transport-probe` still see.
-    const bool authoring = options.world[0] != '\0';
+    // The first-light scene remains the no-world fixture and supplies a fallback camera.
+    // Authored worlds use FrameAssembly and do not borrow its fixed box slots.
     first_light::SceneDescription scene_description;
-    scene_description.box_count = authoring ? kWorldCapacity : 6;
+    scene_description.box_count = 6;
     scene_description.sun_shadows = true;
     first_light::Scene scene(allocator);
     if (Status built = scene.build(scene_description); !built) {
         report("scene", built.error());
-        rhi::destroy_device(allocator, device.value());
         return 1;
     }
 
@@ -1080,7 +1340,6 @@ int main(int argc, char** argv) {
     WorldView view_world(allocator);
     if (Status opened = open_world(options, registry, view_world); !opened) {
         report("world", opened.error());
-        rhi::destroy_device(allocator, device.value());
         return 1;
     }
 
@@ -1092,10 +1351,24 @@ int main(int argc, char** argv) {
     int exit_code = 0;
     {
         first_light::Renderer renderer(allocator, *device.value());
-        if (Status prepared = renderer.prepare(scene, renderer_options); !prepared) {
-            report("renderer", prepared.error());
-            rhi::destroy_device(allocator, device.value());
-            return 1;
+        if (!view_world.loaded()) {
+            if (Status prepared = renderer.prepare(scene, renderer_options); !prepared) {
+                report("renderer", prepared.error());
+                return 1;
+            }
+        }
+        AuthoredFrame authored_frame(allocator, *device.value());
+        if (view_world.loaded()) {
+            if (Status prepared =
+                    authored_frame.initialize(options.width, options.height, options.project);
+                !prepared) {
+                report("authored frame", prepared.error());
+                return 1;
+            }
+            if (Status prepared = authored_frame.prepare_world(view_world.world()); !prepared) {
+                report("authored scene", prepared.error());
+                return 1;
+            }
         }
 
         viewport::PublisherOptions publisher_options;
@@ -1109,7 +1382,6 @@ int main(int argc, char** argv) {
             viewport::Publisher::create(publisher_options);
         if (!publisher) {
             report("publisher", publisher.error());
-            rhi::destroy_device(allocator, device.value());
             return 1;
         }
         if (const char* advisory = viewport::ring_advisory(options.buffers); advisory != nullptr) {
@@ -1124,7 +1396,6 @@ int main(int argc, char** argv) {
         if (options.host[0] != '\0') {
             if (Status listening = bridge.listen(options.host); !listening) {
                 report("bridge", listening.error());
-                rhi::destroy_device(allocator, device.value());
                 return 1;
             }
             std::fprintf(stdout, "%s: bridge   %s\n", kTag, options.host);
@@ -1156,11 +1427,18 @@ int main(int argc, char** argv) {
         }
 
         Host host;
+        ScriptRuntime scripts(allocator, options.project);
+        AuthoredMaterialPreview authored_preview(authored_frame);
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
         MetalMaterialRuntime material_runtime(allocator, renderer, view_world);
-        editor::MaterialService editor_service(allocator, &material_runtime);
+        // AuthoredFrame owns the visible scene pipeline. The first-light preview runtime
+        // cannot bind a material to its authored mesh identities; compilation remains available.
+        editor::MaterialService editor_service(allocator,
+                                               view_world.loaded() ? nullptr : &material_runtime,
+                                               view_world.loaded() ? &authored_preview : nullptr);
 #else
-        editor::MaterialService editor_service(allocator);
+        editor::MaterialService editor_service(allocator, nullptr,
+                                               view_world.loaded() ? &authored_preview : nullptr);
 #endif
         CyServiceSession service_session = nullptr;
         if (editor_service.open(&service_session) != CY_RESULT_OK) {
@@ -1168,9 +1446,11 @@ int main(int argc, char** argv) {
                                            "the material service session could not be created"});
         }
         host.options = options;
+        host.authored_frame = view_world.loaded() ? &authored_frame : nullptr;
         host.scene = &scene;
         host.view_world = &view_world;
         host.play = play.get();
+        host.scripts = &scripts;
         host.physics = physics_server;
         host.renderer = &renderer;
         host.publisher = publisher->get();
@@ -1220,12 +1500,12 @@ int main(int argc, char** argv) {
         // it deliberately does NOT stop play, because a destructor that wrote into the authored
         // world would put a restore on a path nobody asked for.
         if (play && play->state() != gameplay::PlayState::Editing) {
+            scripts.stop();
             (void)play->stop();
         }
         play.reset();
         destroy_physics(allocator, physics_server, physics_backend);
     }
 
-    rhi::destroy_device(allocator, device.value());
     return exit_code;
 }

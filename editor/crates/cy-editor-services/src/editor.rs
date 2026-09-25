@@ -17,8 +17,13 @@ use cy_editor_core::observe::Revision;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
+use cy_editor_protocol::RequestId;
 use cy_editor_protocol::message::Message;
 use cy_editor_sdk::HostingMode;
+use cy_editor_viewport::picking::{
+    DocumentFilter, Granularity, PickIntent, PickRequest, PickResolution, PickResponse,
+    SelectionMode,
+};
 use cy_editor_viewport::play::{PlayMode, PlayState};
 
 use crate::asset_catalogue::AssetCatalogueService;
@@ -28,7 +33,7 @@ use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
-use crate::primitives::{material_slots_of, mesh_of};
+use crate::picking;
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
@@ -39,7 +44,7 @@ use crate::source_language::SourceLanguageService;
 use crate::source_workspace::SourceWorkspaceService;
 use crate::viewports::ViewportService;
 use crate::workspace::Workspace;
-use crate::{BackendServices, MaterialOperation, MaterialPreviewTarget};
+use crate::{BackendServices, MaterialOperation, MaterialRequestState};
 
 /// Structured progress/result of the most recent script-module reload.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -58,6 +63,22 @@ pub struct ReloadReport {
     pub dropped: Vec<String>,
     /// Actionable failure, when the runtime refused the reload.
     pub diagnostic: Option<String>,
+}
+
+struct PendingPick {
+    document: DocumentId,
+    frame: cy_editor_protocol::FrameId,
+    intent: PickIntent,
+    mode: SelectionMode,
+    cycle: u32,
+}
+
+struct PendingGraphSave {
+    request: u64,
+    reference: String,
+    source: String,
+    document: DocumentId,
+    actor: Actor,
 }
 
 /// The editor's authoritative state.
@@ -125,6 +146,9 @@ pub struct Editor {
     /// of its arguments is a path.
     permitted: (String, Vec<String>),
     pending_reloads: std::collections::BTreeMap<u64, (String, u32)>,
+    pending_picks: std::collections::BTreeMap<u64, PendingPick>,
+    pending_graph_save: Option<PendingGraphSave>,
+    graph_save_status: String,
     reload_revision: Revision,
 }
 
@@ -173,6 +197,9 @@ impl Editor {
             actor,
             permitted: unrestricted(),
             pending_reloads: std::collections::BTreeMap::new(),
+            pending_picks: std::collections::BTreeMap::new(),
+            pending_graph_save: None,
+            graph_save_status: "idle".into(),
             reload_revision: Revision::INITIAL,
         }
     }
@@ -248,34 +275,99 @@ impl Editor {
         canvas: Vec<u8>,
     ) -> Result<cy_editor_protocol::RequestId> {
         if operation == MaterialOperation::Compile {
-            let mut targets = Vec::new();
-            if let Some(document_id) = self.workspace.active()
-                && let Some(document) = self.documents.get(document_id)
-            {
-                for node in self.selection.get().nodes() {
-                    if mesh_of(document, node).is_none() {
-                        continue;
-                    }
-                    let slot_count = material_slots_of(document, node).len().max(1);
-                    for slot in 0..slot_count {
-                        targets.push(MaterialPreviewTarget {
-                            entity: node.as_u128(),
-                            slot: u32::try_from(slot).unwrap_or(u32::MAX),
-                        });
-                    }
-                }
-            }
-            if !targets.is_empty() {
-                self.backend.set_material_preview_targets(targets)?;
-            }
+            // Authored meshes belong to AuthoredFrame, not the first-light preview renderer.
+            self.backend.clear_material_preview_targets();
         }
         self.backend
             .request_material(&self.runtime, operation, canvas)
     }
 
+    /// Apply an unsaved canvas to the hosted authored scene without writing the graph asset.
+    pub fn preview_material_graph(
+        &mut self,
+        reference: &str,
+        canvas: &str,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        let mut payload = cy_editor_core::codec::Writer::new();
+        payload.text(reference);
+        payload.text(canvas);
+        self.request_material(MaterialOperation::Preview, payload.finish())
+    }
+
     /// Cooperatively cancel the currently pending material operation.
     pub fn cancel_material_request(&self) -> Result<()> {
         self.backend.cancel_material(&self.runtime)
+    }
+
+    fn finish_graph_save(&mut self) {
+        let Some(pending) = self.pending_graph_save.as_ref() else {
+            return;
+        };
+        let request = pending.request;
+        let result = match self.backend.material_request_state() {
+            MaterialRequestState::Authored {
+                request: done,
+                graph,
+            } if done.as_u64() == request => Some(Ok(graph.clone())),
+            MaterialRequestState::Failed {
+                request: Some(done),
+                diagnostics,
+            } if done.as_u64() == request => Some(Err(format!(
+                "{} diagnostic(s): {}",
+                diagnostics.len(),
+                diagnostics
+                    .first()
+                    .map_or("engine rejected graph", |item| item.message.as_str())
+            ))),
+            MaterialRequestState::Cancelled { request: done } if done.as_u64() == request => {
+                Some(Err("request cancelled".into()))
+            }
+            _ => None,
+        };
+        let Some(result) = result else { return };
+        let pending = self.pending_graph_save.take().expect("pending graph save");
+        let reference = pending.reference;
+        let source = pending.source;
+        let prior = crate::material_graph::read(self.project.root(), &reference).ok();
+        let prior_graph = crate::material_graph::paths(self.project.root(), &reference)
+            .ok()
+            .and_then(|(path, _)| std::fs::read_to_string(path).ok());
+        let outcome = result.and_then(|graph| {
+            if self.documents.get(pending.document).is_none() {
+                return Err("the scene document closed before the graph save completed".to_owned());
+            }
+            crate::material_graph::save(self.project.root(), &reference, &source, &graph)
+                .map_err(|problem| problem.because)?;
+            let document = self
+                .documents
+                .get_mut(pending.document)
+                .expect("checked above");
+            document.begin(format!("Save material graph {reference}"), pending.actor);
+            document
+                .record(cy_editor_documents::operation::Operation::Domain {
+                    node: None,
+                    kind: format!(
+                        "{}{}",
+                        crate::material_graph::GRAPH_DOMAIN_PREFIX,
+                        reference
+                    ),
+                    before: crate::material_graph::encode_pair(
+                        prior_graph.as_deref(),
+                        prior.as_deref(),
+                    ),
+                    after: crate::material_graph::encode_pair(Some(&graph), Some(&source)),
+                })
+                .map_err(|problem| problem.to_string())?;
+            document.commit().map_err(|problem| problem.to_string())?;
+            Ok(())
+        });
+        self.graph_save_status = match outcome {
+            Ok(()) => match crate::material_parameters::sync(self, &reference, prior.as_deref()) {
+                Ok(_) => format!("saved: {reference}"),
+                Err(problem) => format!("saved: {reference}; property sync failed: {problem}"),
+            },
+            Err(problem) => format!("failed: {problem}"),
+        };
     }
 
     /// Open a document, offering recovery when its journal holds anything.
@@ -354,6 +446,84 @@ impl Editor {
         outcome
     }
 
+    /// Send a viewport pick to the runtime and retain the click intent until its answer arrives.
+    pub fn request_pick(&mut self, pick: PickRequest, mode: SelectionMode) -> Result<RequestId> {
+        let document = self.workspace.active().ok_or_else(|| {
+            Problem::new("pick a scene actor", "no world is open")
+                .with_remedy("open a world before selecting an actor")
+        })?;
+        let request = self.runtime.pick(pick.frame, pick.encode())?;
+        let cycle = match pick.intent {
+            PickIntent::Click { x, y } => self.viewports.focused_mut().click(x, y),
+            _ => 0,
+        };
+        if self.pending_picks.len() >= 128 {
+            self.pending_picks.pop_first();
+        }
+        self.pending_picks.insert(
+            request.as_u64(),
+            PendingPick {
+                document,
+                frame: pick.frame,
+                intent: pick.intent,
+                mode,
+                cycle,
+            },
+        );
+        Ok(request)
+    }
+
+    fn accept_pick_message(&mut self, message: &Message) {
+        let Message::Picked {
+            request,
+            candidates,
+        } = message
+        else {
+            return;
+        };
+        let Some(pending) = self.pending_picks.remove(&request.as_u64()) else {
+            return;
+        };
+        if self.workspace.active() != Some(pending.document) {
+            return;
+        }
+        let Ok(response) = PickResponse::decode(candidates) else {
+            self.notifications.post(Notification::warning(
+                "The runtime returned an unreadable pick answer",
+            ));
+            return;
+        };
+        if response.frame != pending.frame {
+            return;
+        }
+        let Some(document) = self.documents.get(pending.document) else {
+            return;
+        };
+        let identities = picking::identity_map(document);
+        let filter = DocumentFilter::default();
+        let resolution = PickResolution {
+            identities: &identities,
+            document,
+            filter: &filter,
+            granularity: Granularity::Instance,
+        };
+        let mut selection = self.selection.get().clone();
+        match picking::resolve(
+            candidates,
+            &resolution,
+            &pending.intent,
+            pending.cycle,
+            &mut selection,
+            pending.mode,
+        ) {
+            Ok(_) => self.selection.set(selection),
+            Err(problem) => self.notifications.post(Notification::error(
+                "The runtime pick could not be applied",
+                problem,
+            )),
+        }
+    }
+
     /// One frame of the editor's own housekeeping.
     ///
     /// Everything here is bounded and non-blocking: drain what the runtime sent, forget settled
@@ -371,6 +541,7 @@ impl Editor {
         }
         if !self.runtime.is_connected() {
             self.set_local_play_state(PlayState::Editing);
+            self.pending_picks.clear();
         }
         // THE GIZMO ARRIVES HERE. `RuntimeMirror` takes a published layout, refuses one that
         // belongs to a frame the viewport is not showing, and hands what survives to the viewport
@@ -378,6 +549,22 @@ impl Editor {
         // engine's (`editor-viewport-and-gizmos`). Every other message is drained rather than
         // queued, which is what keeps the channel bounded in a build with no viewport.
         for message in &messages {
+            self.accept_pick_message(message);
+            if let Message::Playing { state, detail, .. } = message {
+                let confirmed = match state.as_str() {
+                    "playing" => Some(PlayState::Playing),
+                    "paused" => Some(PlayState::Paused),
+                    "editing" => Some(PlayState::Editing),
+                    _ => None,
+                };
+                if let Some(confirmed) = confirmed {
+                    self.set_local_play_state(confirmed);
+                }
+                if detail.contains("unavailable") {
+                    self.notifications
+                        .post(Notification::warning(detail.clone()));
+                }
+            }
             if let Some(problem) = self.backend.accept(message) {
                 self.notifications.post(Notification::error(
                     "The material backend request failed",
@@ -393,6 +580,7 @@ impl Editor {
                 problem,
             ));
         }
+        self.finish_graph_save();
         if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
             let pending = std::mem::take(&mut self.pending_reloads);
             if let Some((request, (module, generation))) = pending.into_iter().next_back() {
@@ -1036,6 +1224,94 @@ impl cy_editor_commands::ProjectHost for Editor {
     fn play_mode(&self) -> String {
         self.play_mode.name().to_string()
     }
+
+    fn material_graph_read(&self, reference: &str) -> Result<String> {
+        crate::material_graph::read(self.project.root(), reference)
+    }
+
+    fn material_graph_preview(&mut self, reference: &str, source: &str) -> Result<u64> {
+        crate::material_graph::paths(self.project.root(), reference)?;
+        if !source.starts_with("cymatcanvas 1\n") {
+            return Err(Problem::new(
+                "preview a material graph",
+                "expected cymatcanvas 1 source",
+            ));
+        }
+        self.preview_material_graph(reference, source)
+            .map(cy_editor_protocol::RequestId::as_u64)
+    }
+
+    fn material_graph_save(&mut self, reference: &str, source: &str) -> Result<u64> {
+        crate::material_graph::paths(self.project.root(), reference)?;
+        if !source.starts_with("cymatcanvas 1\n") {
+            return Err(Problem::new(
+                "save a material graph",
+                "expected cymatcanvas 1 source",
+            ));
+        }
+        if self.pending_graph_save.is_some() {
+            return Err(Problem::new(
+                "save a material graph",
+                "another graph save is pending",
+            ));
+        }
+        let document = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a material graph",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let request =
+            self.request_material(MaterialOperation::Author, source.as_bytes().to_vec())?;
+        let id = request.as_u64();
+        self.pending_graph_save = Some(PendingGraphSave {
+            request: id,
+            reference: reference.to_owned(),
+            source: source.to_owned(),
+            document,
+            actor: self.actor.clone(),
+        });
+        self.graph_save_status = format!("pending: {id}");
+        Ok(id)
+    }
+
+    fn material_graph_status(&self) -> String {
+        let request = match self.backend.material_request_state() {
+            MaterialRequestState::Idle => "idle".to_owned(),
+            MaterialRequestState::Pending { request, operation } => {
+                format!("pending {} {operation:?}", request.as_u64())
+            }
+            MaterialRequestState::Validated { request } => {
+                format!("validated {}", request.as_u64())
+            }
+            MaterialRequestState::Authored { request, .. } => {
+                format!("authored {}", request.as_u64())
+            }
+            MaterialRequestState::Previewed { request } => {
+                format!("previewed {}", request.as_u64())
+            }
+            MaterialRequestState::Compiled { request, .. } => {
+                format!("compiled {}", request.as_u64())
+            }
+            MaterialRequestState::Failed {
+                request,
+                diagnostics,
+            } => format!(
+                "failed {:?}: {} diagnostic(s)",
+                request.map(cy_editor_protocol::RequestId::as_u64),
+                diagnostics.len()
+            ),
+            MaterialRequestState::Cancelled { request } => {
+                format!("cancelled {}", request.as_u64())
+            }
+        };
+        format!(
+            "save: {}; request: {}; preview: {:?}",
+            self.graph_save_status,
+            request,
+            self.backend.material_preview_state()
+        )
+    }
 }
 
 impl Editor {
@@ -1044,6 +1320,11 @@ impl Editor {
         // viewports showing different play states would describe two runtimes.
         for viewport in self.viewports.all_mut().iter_mut() {
             viewport.play = state;
+            match state {
+                PlayState::Playing => viewport.attach_to_game_camera(0),
+                PlayState::Editing => viewport.detach_camera(),
+                PlayState::Paused => {}
+            }
         }
     }
 }
@@ -1051,6 +1332,8 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_protocol::FrameId;
+    use cy_editor_viewport::picking::PickCandidate;
 
     #[test]
     fn an_editor_with_no_runtime_still_opens_and_edits_documents() {
@@ -1105,6 +1388,65 @@ mod tests {
             revision,
             "an idle editor costs nothing"
         );
+    }
+
+    #[test]
+    fn play_selects_the_game_camera_and_stop_restores_the_editor_view() {
+        let mut editor = Editor::default();
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), None);
+
+        editor.set_local_play_state(PlayState::Playing);
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), Some(0));
+        assert_eq!(editor.viewports.focused().play, PlayState::Playing);
+
+        editor.set_local_play_state(PlayState::Paused);
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), Some(0));
+
+        editor.set_local_play_state(PlayState::Editing);
+        assert_eq!(editor.viewports.focused().attachment.game_camera(), None);
+        assert_eq!(editor.viewports.focused().play, PlayState::Editing);
+    }
+
+    #[test]
+    fn a_runtime_pick_selects_the_camera_from_the_document_identity() {
+        let mut editor = Editor::default();
+        let document_id = editor.open_document("worlds/pick.cyworld").unwrap();
+        let node = editor
+            .documents
+            .get_mut(document_id)
+            .unwrap()
+            .with_transaction("Create Camera", Actor::human("designer"), |document| {
+                document.create_node(None)
+            })
+            .unwrap();
+        let frame = FrameId::from_raw(42);
+        editor.pending_picks.insert(
+            7,
+            PendingPick {
+                document: document_id,
+                frame,
+                intent: PickIntent::Click { x: 50.0, y: 30.0 },
+                mode: SelectionMode::Replace,
+                cycle: 0,
+            },
+        );
+        editor.accept_pick_message(&Message::Picked {
+            request: RequestId::from_raw(7),
+            candidates: PickResponse {
+                frame,
+                candidates: vec![PickCandidate {
+                    identity: engine_identity(node),
+                    distance: 1.0,
+                    transparent: false,
+                }],
+            }
+            .encode(),
+        });
+        assert_eq!(
+            editor.selection.get().nodes().collect::<Vec<_>>(),
+            vec![node]
+        );
+        assert!(editor.pending_picks.is_empty());
     }
 
     #[test]

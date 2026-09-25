@@ -186,6 +186,8 @@ struct GizmoIntent {
     f32 camera_rotation[4] = {0.0F, 0.0F, 0.0F, 1.0F};
     f32 fov_y_radians = 0.0F;
     f32 near_plane = 0.0F;
+    /// UINT64_MAX selects the editor camera; zero selects the first enabled scene camera.
+    u64 game_camera = ~u64{0};
 };
 
 /// Read what the editor sent.

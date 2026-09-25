@@ -285,6 +285,34 @@ mod macos {
     }
 
     impl ViewportLink {
+        /// Encode the current hosted Metal frame for a requested MCP viewport read.
+        pub fn capture_png(&self) -> cy_editor_core::problem::Result<Vec<u8>> {
+            use image::ImageEncoder as _;
+            let session = self.session.as_ref().ok_or_else(|| {
+                cy_editor_core::problem::Problem::new(
+                    "capture a viewport frame",
+                    "the runtime viewport is disconnected",
+                )
+            })?;
+            let (_, slot, _) = self.registered.ok_or_else(|| {
+                cy_editor_core::problem::Problem::new(
+                    "capture a viewport frame",
+                    "no runtime frame is registered",
+                )
+            })?;
+            let (width, height, rgba) = session.capture_rgba(slot)?;
+            let mut png = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(&rgba, width, height, image::ExtendedColorType::Rgba8)
+                .map_err(|error| {
+                    cy_editor_core::problem::Problem::new(
+                        "encode a viewport frame",
+                        error.to_string(),
+                    )
+                })?;
+            Ok(png)
+        }
+
         /// Create a disconnected link that will attach from the first render frame.
         #[must_use]
         pub fn idle() -> Self {

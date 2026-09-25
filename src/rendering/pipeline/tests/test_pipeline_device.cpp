@@ -45,6 +45,8 @@
 #    include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #endif
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/pipeline/material_textures.h>
+#include <cy/servers/render/server.h>
 #include <cy/test/test.h>
 
 #include <cmath>
@@ -168,6 +170,75 @@ void save(const char* name, Span<const u32> texels) noexcept {
 
 }  // namespace
 
+#if defined(CY_TEST_PIPELINE_METAL)
+CY_TEST_CASE("Metal forward frame samples the material texture selected by its slot") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+
+    Allocator& gpu = system_allocator(MemoryDomain::Gpu);
+    render::RenderServer server(gpu);
+    render::RenderServerConfig config;
+    config.debug_primitive_capacity = 16;
+    config.debug_label_capacity = 4;
+    CY_REQUIRE(server.configure(config).has_value());
+    CY_REQUIRE(server.initialize().has_value());
+
+    render::TextureRecord description;
+    description.format = render::TextureFormat::Rgba8Unorm;
+    description.usage_class = render::TextureUsageClass::Data;
+    description.width = 1;
+    description.height = 1;
+    description.mip_levels = 1;
+    description.name = Name::intern("metal material red");
+    const auto red = server.create_texture(description);
+    CY_REQUIRE(red.has_value());
+    description.name = Name::intern("metal material blue");
+    const auto blue = server.create_texture(description);
+    CY_REQUIRE(blue.has_value());
+
+    rendering::pipeline::MaterialTextureTable textures;
+    rhi::SamplerDescription sampler;
+    sampler.name = "metal material test sampler";
+    CY_REQUIRE(textures.initialize(fixture.device(), gpu, sampler).has_value());
+    const u8 red_pixel[4] = {255, 0, 0, 255};
+    const u8 blue_pixel[4] = {0, 0, 255, 255};
+    const rendering::pipeline::TextureUpload uploads[2] = {
+        {*red, {red_pixel, 4}},
+        {*blue, {blue_pixel, 4}},
+    };
+    CY_REQUIRE(textures.upload(server, {uploads, 2}).has_value());
+    rendering::pipeline::MaterialTextureSlot resident[2];
+    CY_REQUIRE_EQ(textures.slots({resident, 2}), usize{2});
+
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    scene.set_read_back(true);
+    rendering::assembly::AssemblyReport report;
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    Array<u32> constant_frame(allocator());
+    CY_REQUIRE(constant_frame.append(scene.pixels()).has_value());
+    CY_REQUIRE(scene.bind_material_texture(textures.slot_of(*red), {resident, 2}));
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    Array<u32> red_frame(allocator());
+    CY_REQUIRE(red_frame.append(scene.pixels()).has_value());
+    CY_REQUIRE(scene.bind_material_texture(textures.slot_of(*blue), {resident, 2}));
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+
+    usize changed = 0;
+    usize differs_from_constant = 0;
+    for (usize pixel = 0; pixel < red_frame.size(); ++pixel) {
+        changed += static_cast<usize>(red_frame[pixel] != scene.pixels()[pixel]);
+        differs_from_constant += static_cast<usize>(red_frame[pixel] != constant_frame[pixel]);
+    }
+    CY_CHECK(changed > 1000);
+    CY_CHECK(differs_from_constant > 1000);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+#endif
+
 CY_TEST_CASE("the frame is CAPTURED: the layer's callbacks put shaded texels on the device") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
@@ -197,13 +268,7 @@ CY_TEST_CASE("the frame is CAPTURED: the layer's callbacks put shaded texels on 
     // Twelve cubes in front of the camera cover a real fraction of a 480x270 frame. The bound is
     // deliberately far from what the scene produces: it is a check that ANYTHING was drawn, and the
     // case that follows is what makes it a check that the RIGHT thing was.
-#if defined(CY_TEST_PIPELINE_METAL)
-    // The native Metal frame currently exposes command execution while its existing geometry
-    // capture remains black; the temporal regression is the executed pass and zero validation.
-    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
-#else
     CY_CHECK_GT(shaded, 2000U);
-#endif
     save("pipeline-frame-with-callbacks.png", scene.pixels());
 }
 
@@ -228,6 +293,7 @@ CY_TEST_CASE("the identical frame WITHOUT the callbacks is blank, and that diffe
     for (usize index = 0; index < before.size(); ++index) {
         before[index] = scene.pixels()[index];
     }
+    CY_CHECK_EQ(scene.differing_texels(before.span()), 0U);
     const u32 blank_shaded = shaded_texels(before.span());
     save("pipeline-frame-without-callbacks.png", before.span());
 
@@ -244,12 +310,8 @@ CY_TEST_CASE("the identical frame WITHOUT the callbacks is blank, and that diffe
     CY_CHECK_EQ(recorded.draws, blank.draws);
     CY_CHECK_EQ(recorded.passes_declared, blank.passes_declared);
     // And the pictures are different. Remove the callbacks and this number is zero.
-#if defined(CY_TEST_PIPELINE_METAL)
-    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
-#else
     CY_CHECK_GT(differing, 2000U);
     CY_CHECK_GT(shaded, blank_shaded);
-#endif
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
@@ -283,11 +345,7 @@ CY_TEST_CASE("the particle renderer draws through the layer, and the picture say
     // The effect is composited into the frame's own colour target through a pipeline whose layout
     // is compatible with the frame's. If the set layouts had diverged, the sets the recorder bound
     // would have been invalidated and this number would be zero — with validation errors beside it.
-#if defined(CY_TEST_PIPELINE_METAL)
-    CY_CHECK_EQ(scene.recorded().temporal_resolves, 1U);
-#else
     CY_CHECK_GT(differing, 500U);
-#endif
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
     save("pipeline-frame-particles.png", scene.pixels());
 }

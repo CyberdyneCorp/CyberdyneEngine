@@ -109,3 +109,12 @@ superseded, or was rejected.
 #### Scenario: Runtime data changes without compilation
 - **WHEN** a runtime-classified material parameter receives a compatible value
 - **THEN** the acknowledgement SHALL report `Applied` and no compilation request SHALL be created
+
+### Requirement: Canonical material authoring result
+The material service SHALL validate an editable canvas and return canonical `.cygraph` text
+through the same asynchronous, request-correlated envelope. A failed authoring request SHALL
+return diagnostics and SHALL NOT return graph text.
+
+#### Scenario: Invalid canvas does not publish a graph
+- **WHEN** a canvas has an invalid node or link
+- **THEN** `material.author` SHALL fail without a canonical graph payload

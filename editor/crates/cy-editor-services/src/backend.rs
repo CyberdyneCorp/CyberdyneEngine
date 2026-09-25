@@ -15,6 +15,8 @@ use crate::runtime::RuntimeSession;
 const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
+const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
+const MATERIAL_PREVIEW_OPERATION: &str = "material.preview.set";
 const PREVIEW_CREATE_OPERATION: &str = "preview.create";
 const PREVIEW_RELOAD_OPERATION: &str = "preview.reload";
 const PREVIEW_DESTROY_OPERATION: &str = "preview.destroy";
@@ -42,6 +44,10 @@ pub enum MaterialOperation {
     Validate,
     /// Compile and return a stable artefact identity.
     Compile,
+    /// Validate and obtain engine-canonical graph text for saving.
+    Author,
+    /// Apply an unsaved graph to the authored scene.
+    Preview,
 }
 
 /// One renderer material slot which shall receive a compiled artefact.
@@ -128,6 +134,18 @@ pub enum MaterialRequestState {
     },
     /// The submitted graph passed backend validation.
     Validated {
+        /// Request which produced the result.
+        request: RequestId,
+    },
+    /// Engine-canonical graph bytes, ready for an atomic project write.
+    Authored {
+        /// Request which produced the graph.
+        request: RequestId,
+        /// Canonical `.cygraph` text.
+        graph: String,
+    },
+    /// The authored scene accepted the unsaved graph.
+    Previewed {
         /// Request which produced the result.
         request: RequestId,
     },
@@ -369,6 +387,8 @@ impl BackendServices {
         let operation_name = match operation {
             MaterialOperation::Validate => MATERIAL_VALIDATE_OPERATION,
             MaterialOperation::Compile => MATERIAL_COMPILE_OPERATION,
+            MaterialOperation::Author => MATERIAL_AUTHOR_OPERATION,
+            MaterialOperation::Preview => MATERIAL_PREVIEW_OPERATION,
         };
         let request = runtime.service_request(SERVICE_SCHEMA_VERSION, operation_name, payload)?;
         self.material_request = Some((request, operation));
@@ -421,6 +441,7 @@ impl BackendServices {
                         self.material_state = result.with_request(request);
                         if let MaterialRequestState::Compiled { artefact, .. } =
                             &self.material_state
+                            && !self.preview_targets.is_empty()
                         {
                             self.preview_pending_artefact = Some(*artefact);
                         }
@@ -496,6 +517,13 @@ impl BackendServices {
         }
         self.preview_targets = targets;
         Ok(())
+    }
+
+    /// Keep compilation independent of the first-light preview for authored scenes.
+    pub fn clear_material_preview_targets(&mut self) {
+        self.preview_targets.clear();
+        self.preview_pending_artefact = None;
+        self.preview_state = MaterialPreviewState::Idle;
     }
 
     /// Apply a typed value to the currently acknowledged artefact generation.
@@ -753,6 +781,8 @@ fn read_u64_payload(payload: &[u8], offset: usize) -> cy_editor_core::problem::R
 
 enum DecodedMaterialResult {
     Validated,
+    Authored(String),
+    Previewed,
     Compiled {
         artefact: u64,
         graph: u64,
@@ -765,6 +795,8 @@ impl DecodedMaterialResult {
     fn with_request(self, request: RequestId) -> MaterialRequestState {
         match self {
             Self::Validated => MaterialRequestState::Validated { request },
+            Self::Authored(graph) => MaterialRequestState::Authored { request, graph },
+            Self::Previewed => MaterialRequestState::Previewed { request },
             Self::Compiled {
                 artefact,
                 graph,
@@ -802,6 +834,8 @@ fn decode_material_result(
     }
     let result = match operation {
         MaterialOperation::Validate => DecodedMaterialResult::Validated,
+        MaterialOperation::Author => DecodedMaterialResult::Authored(reader.text()?),
+        MaterialOperation::Preview => DecodedMaterialResult::Previewed,
         MaterialOperation::Compile => {
             let artefact = reader.u64()?;
             let graph = reader.u64()?;
@@ -943,6 +977,19 @@ mod tests {
 
     use super::*;
     use crate::notifications::NotificationService;
+
+    #[test]
+    fn authored_material_result_contains_only_canonical_text() {
+        let mut payload = Writer::new();
+        payload.u32(2);
+        payload.u8(1);
+        payload.text("cygraph 1\ngraph \"paint\" version 1\n");
+        let result = decode_material_result(MaterialOperation::Author, &payload.finish(), 1)
+            .expect("valid author result");
+        assert!(
+            matches!(result, DecodedMaterialResult::Authored(text) if text.starts_with("cygraph 1"))
+        );
+    }
 
     #[test]
     fn a_runtime_catalogue_is_requested_asynchronously_and_survives_disconnect() {

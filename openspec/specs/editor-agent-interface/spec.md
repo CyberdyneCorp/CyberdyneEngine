@@ -139,6 +139,12 @@ colour image.
 - **THEN** it SHALL receive the engine-rendered result, and the image SHALL state whether overlays
   were included
 
+#### Scenario: An MCP client edits a material without computer use
+- **WHEN** an agent reads a graph canvas, previews a changed value, and reads `viewport:` from a hosted desktop session
+- **THEN** the resource SHALL contain PNG pixels from the current engine viewport and `material.graph.status` SHALL identify the preview request result
+- **WHEN** the agent saves the graph and enters or leaves Play
+- **THEN** the canonical graph and editable canvas SHALL be persisted after engine authoring, and `play:` SHALL report the resulting simulation state
+
 #### Scenario: A capture is honest about overlays
 - **WHEN** an agent requests an image representing the shipping frame
 - **THEN** gizmos, selection outlines and overlays SHALL be excluded

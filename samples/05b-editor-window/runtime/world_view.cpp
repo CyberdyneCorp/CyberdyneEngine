@@ -111,6 +111,24 @@ Status WorldView::apply(Span<const u8> bytes, ser::TransactionReport& out) noexc
     return ser::apply_transaction(world_, bytes, out);
 }
 
+Status WorldView::sync(std::string_view text) noexcept {
+    ser::World replacement(*allocator_);
+    const Expected<ser::WorldReadReport, Error> read =
+        ser::read_world(text, world_.path(), replacement);
+    if (!read) {
+        return make_unexpected(read.error());
+    }
+    if (replacement.document() != world_.document()) {
+        return fail(ErrorCode::InvalidArgument, "the editor snapshot names another world");
+    }
+    if (Expected<u32, Error> resolved = ser::resolve_against(replacement, schema_); !resolved) {
+        return make_unexpected(resolved.error());
+    }
+    world_ = std::move(replacement);
+    placed_.clear();
+    return ok();
+}
+
 u32 WorldView::present(first_light::Scene& scene) noexcept {
     placed_.clear();
     overflowed_ = 0;
@@ -154,6 +172,21 @@ u32 WorldView::present(first_light::Scene& scene) noexcept {
     // the world grows and shrinks.
     for (usize spare = slot; spare < objects.size(); ++spare) {
         objects[spare].index_count = 0;
+    }
+    return static_cast<u32>(placed_.size());
+}
+
+u32 WorldView::present_authored() noexcept {
+    placed_.clear();
+    overflowed_ = 0;
+    for (const ser::WorldNode& node : world_.nodes()) {
+        if (!node.live) {
+            continue;
+        }
+        const u32 index = static_cast<u32>(placed_.size());
+        if (Status pushed = placed_.push_back(Placed{node.identity, index}); !pushed) {
+            break;
+        }
     }
     return static_cast<u32>(placed_.size());
 }

@@ -1,0 +1,6 @@
+cyprim 1
+shape plane
+name Plane
+origin centre
+extent 1 1
+subdivisions 1 1
