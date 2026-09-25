@@ -343,6 +343,26 @@ CY_TEST_CASE("a semantic diff names entities created, destroyed and reverted, an
     CY_CHECK(text_of(text).find("diff total=6") != std::string_view::npos);
 }
 
+CY_TEST_CASE("a semantic diff reports fields in one-sided components") {
+    Overlay before(test_allocator());
+    Overlay after(test_allocator());
+    Health health;
+    health.revives = 3;
+    Structure structure;
+    structure.material = 4;
+    structure.integrity = 80;
+    CY_REQUIRE(
+        before.record_component(kFixtureVillage, entity(2), health_type(), &health, 1).has_value());
+    CY_REQUIRE(after.record_component(kFixtureVillage, entity(2), structure_type(), &structure, 1)
+                   .has_value());
+
+    SaveDiff diff(test_allocator());
+    CY_REQUIRE(diff_overlays(before, after, diff).has_value());
+    CY_CHECK(has_item(diff, DiffKind::FieldRemoved, entity(2), kHealthTypeId, kHealthRevives));
+    CY_CHECK(
+        has_item(diff, DiffKind::FieldAdded, entity(2), kStructureTypeId, kStructureIntegrity));
+}
+
 CY_TEST_CASE("a semantic diff of equal state is empty whatever the bytes") {
     Campaign campaign;
     SaveInspection same(test_allocator());

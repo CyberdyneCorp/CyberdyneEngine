@@ -154,9 +154,13 @@ Status diff_components(const Entry* before, const Entry* after, Address at,
         [&](const ComponentDelta* left, const ComponentDelta* right,
             const ComponentDelta& present) noexcept {
             at.type = present.type;
-            return diff_records(left != nullptr ? &left->record : nullptr,
-                                right != nullptr ? &right->record : nullptr, at, kEntityFields,
-                                out);
+            if (left == nullptr) {
+                return diff_records(nullptr, &present.record, at, kEntityFields, out);
+            }
+            if (right == nullptr) {
+                return diff_records(&present.record, nullptr, at, kEntityFields, out);
+            }
+            return diff_records(&left->record, &right->record, at, kEntityFields, out);
         });
 }
 
