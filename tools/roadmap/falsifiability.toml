@@ -374,34 +374,34 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): audio: r
 [[proof]]
 ledger = "m11a"
 criterion = "save-benchmark"
-digest = "c4722c452c33e394"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+digest = "7f1be0b2a6ba0d97"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'entry.dirty = false;' in src/world/src/overlay.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/save (exit 1: 1 benchmark(s) outside their threshold.), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
 criterion = "save-forbidden-patterns-checked"
-digest = "7ec57a945b64ce2a"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): no tools/save/check_forbidden.py — not one of the ten forbidden save patterns is checked by anything"
+digest = "7b226ab9282d5b24"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'a failed load restores nothing' in src/save/src/archive.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/save (exit 1: 9 of 10 forbidden save patterns checked clean), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
 criterion = "save-has-an-engine-consumer"
-digest = "c76b49833f1b1f77"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): 0 engine module(s) above src/save/ link cy::save:"
+digest = "a6ba34ad26d3235d"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'std::memcpy(data_, bytes.data(), bytes.size());' in src/world/persistence/src/save_translation.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/save (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
 criterion = "save-inspector"
-digest = "6a3c8cc007dc70c6"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 | 0 passed | 0 failed | 45 skipped"
+digest = "b5814caaaa38000a"
+verdict = "proven against a built tree"
+mutation = "delete-lines '++usage.modified;' in src/save/src/inspect.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/save (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
