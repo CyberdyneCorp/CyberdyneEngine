@@ -185,6 +185,12 @@ mod linux {
             viewport: &mut cy_editor_viewport::viewport::Viewport,
         ) -> Option<egui::TextureId> {
             let session = self.session.as_mut()?;
+            // POLLED BEFORE LIVENESS IS READ, EVERY FRAME. `poll` is the only thing that turns a
+            // wedged session live again, and until M11.c it ran only inside `acquire`, which the
+            // arm below skips — so one half-second gap in the runtime's heartbeat froze the viewport
+            // for good while the runtime went on publishing. `smoke.editor_window` failed two runs
+            // in twenty-five that way, and its `act_runtime_pause` makes the gap happen every run.
+            session.poll();
             match session.liveness() {
                 Liveness::Live => {
                     self.live = true;

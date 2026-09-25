@@ -159,6 +159,7 @@ exactly the property M5's artefact could not have.
 |---|---|---|
 | 1 · open | the window maps and the transport connects | the viewport's pixels are **saturated**, which the editor's own charcoal chrome never is — so those pixels came out of another process's GPU allocation. The outliner draws the three entities `project/worlds/city.cyworld` declares. The journal is empty. |
 | 2 · author | `Ctrl+Shift+N` three times, then a click on an outliner row | three journal records, three more outliner rows, and a selection |
+| 2b · pause | the runtime is stopped by `SIGSTOP` for 1.5 s, then resumed | the viewport says the runtime has stopped producing frames while it is stopped, and is **live again** once it resumes — the band over the image goes away |
 | 3 · manipulate | the toolbar's **Move**, then a pointer drag **from the handle the engine published** | the engine answered with a layout; the X arrow it *drew* is within a handful of pixels of where the layout *says* it is; the drag commits exactly one transaction; the object **moves in the engine's world**, read out of the engine's own next answer; and the undo puts it back to within a pixel |
 | 4 · undo | `Ctrl+Z`, `Ctrl+Shift+Z`, then `Ctrl+P`, typing, `Escape` | the outliner loses a row and gets it back; the journal stays at three records, which is what an append-only record of *commits* should do; the palette **covers the viewport** — a charcoal surface over another process's saturated frame, which is a colour question with an unambiguous answer — and `Escape` uncovers it |
 | 5 · save | `Ctrl+S` | the journal goes from three records to zero — `file.save` discards it only after the write. Then a **second, headless editor** opens the same document over the same journal and is offered no recovery. |
@@ -264,6 +265,22 @@ Two more defects stood behind that one, and the corrected mapping exposed both:
   The heartbeat stopped, the editor declared the runtime wedged, and no frame with a gizmo in it
   reached the window. `runtime/layout_file.{h,cpp}` now writes only when the geometry changed, and
   `integration.editor_window_layout_file` holds it.
+
+### Why a wedged runtime stayed wedged, found at M11.c's eleventh close
+
+That fix removed one cause of a heartbeat gap and left the editor unable to recover from any of
+them. `smoke.editor_window` still failed two runs in twenty-five on a quiet host, in act 3, with
+"nothing is drawn in the X arrow's colour"; the capture showed a viewport captioned "the runtime
+is running but has stopped producing frames" over an image taken before the selection, while the
+runtime's own report said it had gone on publishing at its usual rate to the end.
+
+The Linux `ViewportLink::begin_frame` read `liveness()` first and, on `Wedged`, returned the
+retained image without calling into the session. But `ViewportSession::poll` — reached only
+through `acquire` — is the one thing that sees the heartbeat move and turns the link live again,
+so after one gap of `HEARTBEAT_PATIENCE` (500 ms) the viewport never looked at the runtime again.
+`begin_frame` now polls before it reads liveness, every frame. Act 2b is the regression: it stops
+the runtime for longer than that patience, requires the viewport to say so, and requires it to be
+live again after the runtime resumes. Without the fix it fails every run.
 
 ## The keyboard, and what M6 concluded about it
 

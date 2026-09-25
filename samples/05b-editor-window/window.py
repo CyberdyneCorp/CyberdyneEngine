@@ -65,6 +65,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -1001,6 +1002,73 @@ def _moved_from(layout: dict | None, resting: tuple) -> bool:
     return abs(centre[0] - resting[0]) > 1.5 or abs(centre[1] - resting[1]) > 1.5
 
 
+#: The editor's colour for `Semantic::Warning` in the dark theme (`cy_editor_visual::colour`), which
+#: is what the viewport's "the runtime has stopped producing frames" band is written in.
+WARNING_INK = (0xF0, 0x91, 0x3A)
+
+#: How long the runtime is stopped for. Well past `HEARTBEAT_PATIENCE` (500 ms), so the editor
+#: must call it wedged; short enough that nothing else in the session times out.
+RUNTIME_PAUSE = 1.5
+
+
+def stalled_band(session) -> int:
+    """How many pixels of the viewport's top band are in the warning colour.
+
+    The band is drawn over the retained image only while the link is not live, so a count of zero
+    is "the editor believes the runtime is delivering frames". The strip is the middle of the
+    viewport's width: the view label on the left and the orientation gizmo on the right are
+    neither of them this colour, and are left out rather than trusted not to be.
+    """
+    left, top, right, _bottom = viewport_rect(session.width, session.height)
+    width = right - left
+    patch = session.region(left + width // 4, top, width // 2, 26)
+    return sum(1 for pixel in patch.getdata() if _is_ink(pixel, WARNING_INK))
+
+
+def act_runtime_pause(session: Session, runtime, report: Report) -> None:
+    """The runtime stops producing frames for a while, and the viewport comes back when it resumes.
+
+    THE REGRESSION FOR `smoke.editor_window`'s INTERMITTENT RED at M11.c's eleventh close. Once the
+    heartbeat stood still for `HEARTBEAT_PATIENCE`, the Linux `ViewportLink::begin_frame` returned
+    early on `Liveness::Wedged` WITHOUT POLLING THE SESSION — and polling is the only thing that
+    turns a wedged link live again. So a single half-second gap in the runtime's frames (a loaded
+    host, or a ring the editor had not yet released a slot of) froze the viewport for the rest of
+    the session while the runtime went on publishing, and act 3 then looked for a gizmo on an image
+    taken before anything was selected. Stopping the runtime by signal makes that gap happen every
+    run instead of two runs in twenty-five.
+    """
+    if runtime is None:
+        report.not_evaluated(
+            "the viewport recovers after the runtime pauses",
+            "there is no runtime process to pause",
+        )
+        return
+    expect(stalled_band(session) == 0,
+           "the viewport already says the runtime has stopped before it was paused")
+    os.kill(runtime.pid, signal.SIGSTOP)
+    try:
+        noticed = until(lambda: stalled_band(session) > 0, seconds=RUNTIME_PAUSE, poll=0.1)
+        time.sleep(max(0.0, RUNTIME_PAUSE - 0.2))
+    finally:
+        os.kill(runtime.pid, signal.SIGCONT)
+    expect(
+        noticed,
+        f"the runtime was stopped for {RUNTIME_PAUSE} s and the viewport never said so; the pause "
+        "did not reach the editor, so this act proves nothing about recovering from one",
+    )
+    resumed = time.monotonic()
+    expect(
+        until(lambda: stalled_band(session) == 0, seconds=10.0, poll=0.1),
+        "the runtime resumed and the viewport went on saying it had stopped producing frames: the "
+        "editor stopped polling the transport once it called the runtime wedged",
+    )
+    report.did(
+        "the viewport recovers after the runtime pauses",
+        f"stopped the runtime for {RUNTIME_PAUSE} s, the viewport said so, and it was live again "
+        f"{time.monotonic() - resumed:.1f} s after the runtime resumed",
+    )
+
+
 def act_undo(
     session: Session, journal: Path, shots: Path, rows: int, committed: int, keyboard: bool,
     report: Report
@@ -1498,6 +1566,7 @@ def main() -> int:
         print("--- act 2: a person authors, keyboard first ---")
         rows = act_author(session, journal, shots, keyboard, report)
         act_select(session, journal, report)
+        act_runtime_pause(session, runtime, report)
         print("--- act 3: a gizmo drag, and the undo that takes it back ---")
         committed = act_drag(session, journal, shots, rows, layout_file, keyboard,
                              report)
