@@ -983,6 +983,19 @@ def test_ctest_property_syntax(root: Path) -> None:
           properties.get("unit.new") == {"LABELS": "unit", "TIMEOUT": "60"})
 
 
+def test_benchmark_registrations(root: Path) -> None:
+    """The benchmark leg reads every registration macro the harness offers, not only the first."""
+    del root
+    source = ('CY_BENCHMARK("micro/a", "a nanosecond body") {}\n'
+              'CY_BENCHMARK_STARTING_AT(\n    "save/b",\n    "a millisecond body",\n    1) {}\n'
+              '#define CY_BENCHMARK_IMPL(name, description, first, fn, reg)\n')
+    names = row_evidence_module.registered_benchmarks(source)
+    check("a benchmark registered with CY_BENCHMARK is read", "micro/a" in names, str(names))
+    check("and one registered with CY_BENCHMARK_STARTING_AT is read too, across lines",
+          "save/b" in names, str(names))
+    check("while a macro definition registers nothing", names == {"micro/a", "save/b"}, str(names))
+
+
 def test_plan_checks_can_fail(root: Path) -> None:
     """The negative fixtures. A check that cannot fail is a check that has stopped working."""
     del root
@@ -2712,6 +2725,7 @@ def main() -> int:
         test_gates(_area(root, "gates"))
         test_plan_documents(_area(root, "plan"))
         test_ctest_property_syntax(_area(root, "ctest-syntax"))
+        test_benchmark_registrations(_area(root, "benchmark-registrations"))
         test_plan_checks_can_fail(_area(root, "plan-negative"))
         test_just_arguments(_area(root, "just-arguments"))
         test_quiet_host_bodies(_area(root, "quiet-host"))
