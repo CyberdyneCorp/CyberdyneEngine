@@ -22,6 +22,7 @@
 - [x] 3.2 Make Play switch to Game and Stop restore Editor and the authored world; verify physics advances in Play, pauses in Pause, and resets on Stop.
 - [x] 3.3a Connect built project Swift behaviours to hosted Play; execute fixed updates, pause them, restore transforms on Stop, report missing modules, and verify execution with a compiled Swift regression.
 - [x] 3.3c Answer script-module reload requests in the hosted runtime and apply built Swift generations during Play; expose status and color Swift source in the workspace.
+- [x] 3.3d Exclude SwiftPM dependency checkouts from project source discovery and let the code editor fill its dock panel while retaining diagnostics.
 - [ ] 3.3b Connect project audio services to hosted Play where available and verify execution/status regressions.
 
 ## 4. Delivery

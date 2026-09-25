@@ -290,11 +290,14 @@ impl SourceWorkspaceService {
             }
             let path = entry.path();
             if file_type.is_dir() {
-                if path == self.root.join("build") {
+                if excluded_source_directory(&entry.file_name().to_string_lossy()) {
                     continue;
                 }
                 self.walk(&path, found)?;
             } else if path.extension().and_then(std::ffi::OsStr::to_str) == Some("swift") {
+                if path == self.root.join("Package.swift") {
+                    continue;
+                }
                 let relative = path.strip_prefix(&self.root).map_err(|_| {
                     Problem::new(
                         format!("discover {}", path.display()),
@@ -352,6 +355,10 @@ impl SourceWorkspaceService {
         }
         Ok(full)
     }
+}
+
+fn excluded_source_directory(name: &str) -> bool {
+    matches!(name, ".build" | ".git" | ".cy" | "build" | "target")
 }
 
 fn require_swift(path: &str) -> Result<()> {

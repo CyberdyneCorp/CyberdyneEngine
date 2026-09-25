@@ -81,6 +81,8 @@ The workspace colors Swift syntax and the sample's `Package.swift` gives SourceK
 build automatically reloads the running Play session. **Reload Module** can also reapply the latest
 successful build explicitly. The reload status reports success or a reason for refusal. Stop and
 Play again also loads the newest successful build.
+The Swift source list shows project scripts and hides SwiftPM's `.build` checkout and generated
+package files. The code area grows with the Swift Workspace panel while keeping diagnostics below it.
 The runtime refuses Play with a specific message if the scene names a script but no built module
 exists. Audio remains unavailable in this sample host.
 Stop older sample runtimes when switching projects: each active host continues rendering even

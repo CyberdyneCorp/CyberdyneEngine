@@ -33,6 +33,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             ui.label(secondary(panels.shell, "Swift Sources"));
             egui::ScrollArea::vertical()
                 .id_salt("swift-files")
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for path in panels.source_workspace.files() {
                         let name = path.rsplit('/').next().unwrap_or(path);
@@ -146,8 +147,17 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     if let Some(conflict) = conflict {
         conflict_controls(panels, ui, &conflict);
     }
+    let diagnostic_height = if diagnostics.is_empty() {
+        0.0
+    } else {
+        panels.metrics().hit_target() * diagnostics.len().min(4) as f32
+    };
+    let code_height = (ui.available_height() - diagnostic_height).max(160.0);
+    let rows = (code_height / ui.text_style_height(&egui::TextStyle::Monospace)) as usize;
     let response = egui::ScrollArea::both()
         .id_salt("swift-editor")
+        .auto_shrink([false, false])
+        .max_height(code_height)
         .show(ui, |ui| {
             let id = egui::Id::new(("swift-editor-text", &path));
             prepare_cursor(ui, id, &text, cursor_request);
@@ -161,7 +171,7 @@ fn editor(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 .code_editor()
                 .layouter(&mut layouter)
                 .desired_width(f32::INFINITY)
-                .desired_rows(24)
+                .desired_rows(rows.max(24))
                 .hint_text("// Swift source")
                 .show(ui)
         })

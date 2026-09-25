@@ -20,3 +20,7 @@ Entering Play SHALL switch the visible scene to Game view, run the fixed-step ph
 #### Scenario: Edit a running Swift behaviour
 - **WHEN** an author saves and builds a changed Swift source during Play
 - **THEN** the editor requests a reload, the hosted runtime applies the new generation while preserving compatible live behaviour state, and the Swift Workspace reports success or a specific refusal
+
+#### Scenario: Browse project Swift sources
+- **WHEN** SwiftPM resolves dependencies under `.build` and an author opens the Swift Workspace
+- **THEN** the source list shows project scripts without generated dependency checkouts, and the editor fills the available panel area while diagnostics remain visible
