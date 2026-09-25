@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cy/vfx/authoring_capabilities.h>
 
+#include <cy/vfx/interfaces.h>
 #include <cy/vfx/renderers.h>
 
 #include <string_view>
@@ -65,7 +66,7 @@ Status put_target(Array<u8>& out, SimulationPath path,
 Status encode_authoring_capabilities(Array<u8>& out,
                                      const DeviceCapability* device) noexcept {
     out.clear();
-    if (Status value = put_u32(out, 1); !value) {
+    if (Status value = put_u32(out, 2); !value) {
         return value;
     }
     if (Status value = put_u32(out, kRendererKindCount); !value) {
@@ -81,6 +82,24 @@ Status encode_authoring_capabilities(Array<u8>& out,
     }
     for (SimulationPath path : {SimulationPath::GpuPreferred, SimulationPath::CpuRequired}) {
         if (Status value = put_target(out, path, device); !value) {
+            return value;
+        }
+    }
+    DataInterfaceRegistry interfaces(out.allocator());
+    if (Status registered = register_builtin_interfaces(interfaces); !registered) {
+        return registered;
+    }
+    if (Status value = put_u32(out, static_cast<u32>(interfaces.size())); !value) {
+        return value;
+    }
+    for (const DataInterface& interface : interfaces.all()) {
+        if (Status value = put_text(out, interface.name().text()); !value) {
+            return value;
+        }
+        if (Status value = out.push_back(interface.cpu_available() ? 1U : 0U); !value) {
+            return value;
+        }
+        if (Status value = out.push_back(interface.gpu_available() ? 1U : 0U); !value) {
             return value;
         }
     }

@@ -6,7 +6,7 @@
 
 namespace cy::vfx {
 
-/// Publish renderer compositing and simulation-target availability for editor authoring.
+/// Publish renderer, simulation-target, and registered interface availability for editor authoring.
 /// The device is null until an editor preview device has been attached.
 [[nodiscard]] Status encode_authoring_capabilities(Array<u8>& out,
                                                    const DeviceCapability* device) noexcept;

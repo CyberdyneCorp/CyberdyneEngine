@@ -34,6 +34,17 @@ pub struct TargetCapability {
     pub explanation: String,
 }
 
+/// One data interface registered with the VFX compiler.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct InterfaceCapability {
+    /// Engine-owned binding name.
+    pub name: String,
+    /// Whether CPU emitters may bind it.
+    pub cpu_available: bool,
+    /// Whether GPU emitters may bind it.
+    pub gpu_available: bool,
+}
+
 /// A single backend snapshot of renderer and target options.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct VfxAuthoringCapabilities {
@@ -41,13 +52,16 @@ pub struct VfxAuthoringCapabilities {
     pub renderers: Vec<RendererCapability>,
     /// Simulation paths in engine order.
     pub targets: Vec<TargetCapability>,
+    /// Data interfaces in engine registry order.
+    pub interfaces: Vec<InterfaceCapability>,
 }
 
 impl VfxAuthoringCapabilities {
     /// Decode the engine-owned schema, refusing partial and duplicate records.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut input = Reader::new(bytes);
-        if input.u32()? != 1 {
+        let version = input.u32()?;
+        if version != 1 && version != 2 {
             return Err(invalid("unsupported VFX capability schema"));
         }
         let renderer_count = input.u32()?;
@@ -96,10 +110,39 @@ impl VfxAuthoringCapabilities {
             }
             targets.push(target);
         }
+        let interfaces = if version == 2 {
+            let count = input.u32()?;
+            if count > 256 {
+                return Err(invalid("invalid VFX interface count"));
+            }
+            let mut entries = Vec::new();
+            for _ in 0..count {
+                let entry = InterfaceCapability {
+                    name: input.text()?,
+                    cpu_available: read_bool(&mut input)?,
+                    gpu_available: read_bool(&mut input)?,
+                };
+                if entry.name.is_empty()
+                    || entries
+                        .iter()
+                        .any(|prior: &InterfaceCapability| prior.name == entry.name)
+                {
+                    return Err(invalid("invalid VFX interface entry"));
+                }
+                entries.push(entry);
+            }
+            entries
+        } else {
+            Vec::new()
+        };
         if input.remaining() != 0 {
             return Err(invalid("trailing VFX capability data"));
         }
-        Ok(Self { renderers, targets })
+        Ok(Self {
+            renderers,
+            targets,
+            interfaces,
+        })
     }
 }
 
@@ -168,5 +211,50 @@ mod tests {
             writer.text("reason");
         }
         assert!(VfxAuthoringCapabilities::decode(&writer.finish()).is_err());
+    }
+
+    #[test]
+    fn capability_schema_decodes_engine_interface_paths_and_refuses_duplicates() {
+        let mut writer = Writer::new();
+        writer.u32(2);
+        writer.u32(1);
+        writer.u8(0);
+        writer.text("Sprite");
+        writer.u8(1);
+        writer.text("");
+        writer.u32(2);
+        for path in 0..2 {
+            writer.u8(path);
+            writer.text("target");
+            writer.u8(1);
+            writer.u8(1);
+            writer.text("");
+            writer.text("");
+        }
+        writer.u32(1);
+        writer.text("physics_query");
+        writer.u8(1);
+        writer.u8(0);
+        let bytes = writer.finish();
+        let decoded = VfxAuthoringCapabilities::decode(&bytes).unwrap();
+        assert_eq!(decoded.interfaces[0].name, "physics_query");
+        assert!(decoded.interfaces[0].cpu_available);
+        assert!(!decoded.interfaces[0].gpu_available);
+
+        let entry = encoded_interface("physics_query", true, false);
+        let count_offset = bytes.len() - 4 - entry.len();
+        let mut duplicate = bytes;
+        duplicate.extend_from_slice(&entry);
+        // Replace the one-entry count with two while preserving the valid header.
+        duplicate[count_offset..count_offset + 4].copy_from_slice(&2_u32.to_le_bytes());
+        assert!(VfxAuthoringCapabilities::decode(&duplicate).is_err());
+    }
+
+    fn encoded_interface(name: &str, cpu: bool, gpu: bool) -> Vec<u8> {
+        let mut writer = Writer::new();
+        writer.text(name);
+        writer.u8(u8::from(cpu));
+        writer.u8(u8::from(gpu));
+        writer.finish()
     }
 }

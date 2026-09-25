@@ -198,6 +198,9 @@ fn declaration_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 ui.collapsing("Particle attributes", |ui| {
                     attribute_controls(panels, ui, emitter);
                 });
+                ui.collapsing("Data interfaces", |ui| {
+                    interface_controls(panels, ui, emitter);
+                });
             }
         });
 }
@@ -667,6 +670,62 @@ fn stage_tabs(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             }
         });
     });
+}
+
+fn interface_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter_index: usize) {
+    let Some(capabilities) = panels.editor.backend.vfx_authoring_capabilities().cloned() else {
+        ui.label("Engine interface catalogue is loading.");
+        return;
+    };
+    let emitter = panels.specialised.vfx_document().unwrap().emitters[emitter_index].clone();
+    for (index, name) in emitter.interfaces.iter().enumerate() {
+        ui.push_id(index, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(name);
+                if ui.button("Remove").clicked() {
+                    let result = panels.specialised.edit_vfx_metadata(|document| {
+                        document.emitters[emitter_index].interfaces.remove(index);
+                        Ok(())
+                    });
+                    panels.inputs.vfx_document_problem =
+                        result.err().map(|error| error.to_string());
+                }
+            });
+        });
+    }
+    let mut selected = None;
+    egui::ComboBox::from_id_salt(("vfx-interface", emitter_index))
+        .selected_text("Bind interface")
+        .show_ui(ui, |ui| {
+            for interface in &capabilities.interfaces {
+                let supported = if emitter.path == SimulationPath::CpuRequired {
+                    interface.cpu_available
+                } else {
+                    interface.gpu_available
+                };
+                let enabled = supported && !emitter.interfaces.contains(&interface.name);
+                ui.add_enabled_ui(enabled, |ui| {
+                    if ui
+                        .selectable_label(false, &interface.name)
+                        .on_hover_text(if supported {
+                            "Available for this emitter"
+                        } else {
+                            "Unavailable for this emitter's simulation target"
+                        })
+                        .clicked()
+                    {
+                        selected = Some(interface.name.clone());
+                    }
+                });
+            }
+        });
+    if let Some(name) = selected {
+        let result = panels.specialised.edit_vfx_metadata(|document| {
+            document.emitters[emitter_index].interfaces.push(name);
+            Ok(())
+        });
+        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+    }
 }
 
 fn current_emitter_settings(panels: &mut Panels<'_>, ui: &mut egui::Ui) {

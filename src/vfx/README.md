@@ -416,6 +416,9 @@ older authored graphs.
 
 `vfx.authoring-capabilities.get` publishes renderer availability from `renderer_availability`
 in the renderer module and CPU/GPU execution prerequisites from `target_availability` in the
-runtime. Sprite, Mesh, Ribbon, Beam and Trail have draw paths. Decal, Light and Volume remain
+runtime. Schema 2 also publishes binding names and CPU/GPU availability from the registered
+built-in data interfaces. The editor offers those names for emitter bindings and disables
+interfaces that cannot run on the selected simulation path; compilation still validates every
+binding. Sprite, Mesh, Ribbon, Beam and Trail have draw paths. Decal, Light and Volume remain
 unavailable with specific missing-pass reasons. Without an attached preview device the GPU target
 can still be authored and compiled, but runtime availability reports `NoDeviceInThisWorld`.

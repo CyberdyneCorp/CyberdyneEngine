@@ -463,7 +463,7 @@ CY_TEST_CASE("editor_backend: VFX renderer and target availability comes from ru
     const CyServiceEvent event = submit_and_poll(*api, host, session, request);
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 8U);
-    CY_CHECK_EQ(read_u32(event.payload), 1U);
+    CY_CHECK_EQ(read_u32(event.payload), 2U);
     CY_REQUIRE_EQ(read_u32(event.payload + 4), cy::vfx::kRendererKindCount);
     cy::usize cursor = 8;
     for (cy::u32 index = 0; index < cy::vfx::kRendererKindCount; ++index) {
@@ -497,6 +497,17 @@ CY_TEST_CASE("editor_backend: VFX renderer and target availability comes from ru
                     std::string_view(cy::vfx::fallback_reason_name(owned.reason)));
         CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
                     std::string_view(owned.explanation));
+    }
+    cy::vfx::DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(cy::vfx::register_builtin_interfaces(interfaces).has_value());
+    CY_REQUIRE(cursor + 4 <= event.payload_size);
+    CY_CHECK_EQ(read_u32(event.payload + cursor), interfaces.size());
+    cursor += 4;
+    for (const cy::vfx::DataInterface& interface : interfaces.all()) {
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), interface.name().text());
+        CY_REQUIRE(cursor + 2 <= event.payload_size);
+        CY_CHECK_EQ(event.payload[cursor++] != 0, interface.cpu_available());
+        CY_CHECK_EQ(event.payload[cursor++] != 0, interface.gpu_available());
     }
     CY_CHECK_EQ(cursor, event.payload_size);
     api->service_close(&host, session);

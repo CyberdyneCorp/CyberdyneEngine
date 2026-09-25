@@ -18,8 +18,10 @@ The first vertical slice supports:
   Runtime preview is subsequent issue #15 work tracked in
   `openspec/changes/implement-issue-15-graph-authoring/`;
 - `vfx.authoring-capabilities.get` (when `CY_VFX` is enabled) — renderer kinds and named
-  compositing refusals from the VFX renderer, plus CPU/GPU target compile and runtime availability
-  from the VFX runtime. Its schema-1 payload reports no GPU preview device until one is attached;
+  compositing refusals from the VFX renderer, CPU/GPU target compile and runtime availability
+  from the VFX runtime, and registered built-in interface names with supported simulation paths.
+  Its schema-2 payload reports no GPU preview device until one is attached; the editor reader
+  also accepts schema 1;
 - `vfx.compile` (when `CY_VFX` is enabled) — reads an editable `.cyvfxdoc` through the engine,
   resolves the compiler node registry, and compiles the system. Schema 1 returns the cook key,
   kernel counts, per-emitter memory and cost reports, derived attribute layouts, and generated
