@@ -398,7 +398,10 @@ payload versions 1 and 2 into `VfxSystemAsset` and reads each `cyvfxcanvas` stag
 The compiler then resolves the registered node types and runs `compile_system`. The runtime target
 does not parse graphs. The editor service's `vfx.compile` operation publishes the resulting cook
 identity, memory layout, generated Slang, and graph diagnostics. Module asset references are
-refused until a module resolver is available; compilation currently does not start a preview.
+refused until a module resolver is available. Interface bindings are retained in the engine asset,
+checked against the registered data interfaces and the emitter's CPU/GPU path, and included in the
+cook identity. An unknown interface or one without the required execution path fails the cook.
+Compilation currently does not start a preview.
 
 ## Editor catalogue
 

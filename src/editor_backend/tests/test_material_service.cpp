@@ -6,13 +6,16 @@
 #include <cy/graph/cybergraph.h>
 #include <cy/test/test.h>
 #if defined(CY_EDITOR_HAS_VFX)
-#    include <cy/vfx/authoring.h>
 #    include <cy/vfx/asset.h>
+#    include <cy/vfx/authoring.h>
+#    include <cy/vfx/compile.h>
 #    include <cy/vfx/interfaces.h>
 #    include <cy/vfx/renderers.h>
 #endif
 
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -148,7 +151,8 @@ void append_text(std::vector<cy::u8>& bytes, std::string_view value) {
     bytes.insert(bytes.end(), value.begin(), value.end());
 }
 
-std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 version = 2) {
+std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 version = 2,
+                         std::string_view interface_binding = {}) {
     std::vector<cy::u8> bytes;
     append_u32(bytes, version);
     append_text(bytes, "sparks");
@@ -165,7 +169,10 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
                                    "link 1 out 2 value\n";
         append_text(bytes, canvas);
         append_u32(bytes, 0);     // modules
-        append_u32(bytes, 0);     // interfaces
+        append_u32(bytes, interface_binding.empty() ? 0U : 1U);
+        if (!interface_binding.empty()) {
+            append_text(bytes, interface_binding);
+        }
         if (version >= 2) {
             append_u32(bytes, 2048);  // capacity
             append_u32(bytes, 1);     // attributes
@@ -260,6 +267,77 @@ CY_TEST_CASE("editor_backend: engine reader upgrades old drafts and refuses corr
     std::string corrupt = vfx_document();
     corrupt.back() = 'z';
     CY_CHECK_FALSE(cy::vfx::read_authoring_document(corrupt, allocator()).has_value());
+}
+
+CY_TEST_CASE("editor_backend: authored interface bindings survive reading and gate engine cooks") {
+    cy::graph::NodeRegistry nodes(allocator());
+    cy::vfx::DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(cy::vfx::register_vfx_nodes(nodes).has_value());
+    CY_REQUIRE(cy::vfx::register_builtin_interfaces(interfaces).has_value());
+
+    auto cook = [&](std::string_view binding, cy::graph::DiagnosticSink& diagnostics,
+                    cy::vfx::CompileReport& report) {
+        auto asset =
+            cy::vfx::read_authoring_document(vfx_document("vfx.constant", 2, binding), allocator());
+        CY_REQUIRE(asset.has_value());
+        CY_REQUIRE_EQ(asset->emitters()[0].interfaces().size(), binding.empty() ? 0U : 1U);
+        if (!binding.empty()) {
+            CY_CHECK_EQ(asset->emitters()[0].interfaces()[0].text(), binding);
+        }
+        asset->resolve(nodes);
+        return cy::vfx::compile_system(*asset, nodes, interfaces, cy::vfx::CompileOptions{},
+                                       diagnostics, report);
+    };
+
+    cy::graph::DiagnosticSink plain_diagnostics(allocator());
+    cy::vfx::CompileReport plain_report(allocator());
+    auto plain = cook({}, plain_diagnostics, plain_report);
+    CY_REQUIRE(plain.has_value());
+
+    cy::graph::DiagnosticSink bound_diagnostics(allocator());
+    cy::vfx::CompileReport bound_report(allocator());
+    auto bound = cook("texture", bound_diagnostics, bound_report);
+    CY_REQUIRE(bound.has_value());
+    CY_CHECK_NE(plain->cook_key(), bound->cook_key());
+
+    cy::graph::DiagnosticSink missing_diagnostics(allocator());
+    cy::vfx::CompileReport missing_report(allocator());
+    auto missing = cook("unknown_interface", missing_diagnostics, missing_report);
+    CY_REQUIRE(!missing.has_value());
+    CY_CHECK_EQ(missing.error().code, cy::ErrorCode::InvalidArgument);
+
+    cy::graph::DiagnosticSink cpu_diagnostics(allocator());
+    cy::vfx::CompileReport cpu_report(allocator());
+    auto cpu = cook("scene_depth", cpu_diagnostics, cpu_report);
+    CY_REQUIRE(!cpu.has_value());
+    CY_CHECK_EQ(cpu.error().code, cy::ErrorCode::Unsupported);
+}
+
+CY_TEST_CASE("editor_backend: the two-emitter editor sample compiles in the engine") {
+    const std::string path =
+        std::string(CY_SOURCE_DIR) +
+        "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
+    std::ifstream input(path);
+    CY_REQUIRE(input.good());
+    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    auto asset = cy::vfx::read_authoring_document(source, allocator());
+    CY_REQUIRE(asset.has_value());
+    CY_REQUIRE_EQ(asset->emitters().size(), 2U);
+    CY_CHECK_EQ(asset->emitters()[0].path(), cy::vfx::SimulationPath::CpuRequired);
+    CY_CHECK_EQ(asset->emitters()[1].path(), cy::vfx::SimulationPath::GpuPreferred);
+    cy::graph::NodeRegistry nodes(allocator());
+    cy::vfx::DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(cy::vfx::register_vfx_nodes(nodes).has_value());
+    CY_REQUIRE(cy::vfx::register_builtin_interfaces(interfaces).has_value());
+    asset->resolve(nodes);
+    cy::graph::DiagnosticSink diagnostics(allocator());
+    cy::vfx::CompileReport report(allocator());
+    auto compiled = cy::vfx::compile_system(*asset, nodes, interfaces, cy::vfx::CompileOptions{},
+                                            diagnostics, report);
+    CY_REQUIRE(compiled.has_value());
+    CY_CHECK_EQ(compiled->emitters().size(), 2U);
+    CY_CHECK_GT(report.kernels, 0U);
+    CY_CHECK_NE(compiled->cook_key(), 0U);
 }
 
 CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") {

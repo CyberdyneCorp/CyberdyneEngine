@@ -1119,6 +1119,9 @@ struct KernelPlan {
     emitter_report.generated_source_bytes = static_cast<u32>(compiled.source_bytes());
 
     u64 digest = hash_u64(kHashSeed, layout.digest());
+    for (Name interface_name : emitter.interfaces()) {
+        digest = hash_text(digest, interface_name.text());
+    }
     for (const VfxKernel& kernel : compiled.kernels()) {
         digest = hash_u64(digest, kernel.digest());
     }
@@ -1178,6 +1181,21 @@ Expected<CompiledSystem, Error> compile_system(const VfxSystemAsset& asset,
 
     u64 cook_key = declaration_key(asset, interfaces, options);
     for (const Emitter& emitter : asset.emitters()) {
+        for (Name interface_name : emitter.interfaces()) {
+            const DataInterface* binding = interfaces.find(interface_name);
+            if (binding == nullptr) {
+                return make_unexpected(Error{ErrorCode::InvalidArgument,
+                                             "vfx: bound data interface is not registered", 0});
+            }
+            if (emitter.path() == SimulationPath::CpuRequired && !binding->cpu_available()) {
+                return make_unexpected(
+                    Error{ErrorCode::Unsupported, "vfx: bound data interface has no CPU path", 0});
+            }
+            if (emitter.path() == SimulationPath::GpuPreferred && !binding->gpu_available()) {
+                return make_unexpected(
+                    Error{ErrorCode::Unsupported, "vfx: bound data interface has no GPU path", 0});
+            }
+        }
         // EVERY STAGE GRAPH IS VALIDATED BEFORE IT IS LOWERED, so a wire whose types do not convert
         // is a node- and pin-precise diagnostic from the authoring layer rather than a type error
         // from the builder with no node in it.

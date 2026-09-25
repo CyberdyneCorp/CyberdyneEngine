@@ -101,7 +101,7 @@ u32 precision_bytes(Precision precision) noexcept {
 // --- Emitter -------------------------------------------------------------------------------------
 
 Emitter::Emitter(Allocator& allocator, Name emitter_name) noexcept
-    : name_(emitter_name), stages_(allocator), attributes_(allocator) {}
+    : name_(emitter_name), stages_(allocator), attributes_(allocator), interfaces_(allocator) {}
 
 Status Emitter::set_stage(Stage which, Graph&& graph) noexcept {
     if (which == Stage::Count) {
@@ -152,6 +152,18 @@ const AttributeDecl* Emitter::find_attribute(Name attribute) const noexcept {
         }
     }
     return nullptr;
+}
+
+Status Emitter::bind_interface(Name interface_name) noexcept {
+    if (interface_name.is_empty()) {
+        return fail(ErrorCode::InvalidArgument, "vfx: an interface binding needs a name");
+    }
+    for (Name existing : interfaces_) {
+        if (existing == interface_name) {
+            return fail(ErrorCode::InvalidArgument, "vfx: duplicate interface binding");
+        }
+    }
+    return interfaces_.push_back(interface_name);
 }
 
 // --- VfxSystemAsset ------------------------------------------------------------------------------

@@ -434,6 +434,11 @@ impl VfxDocument {
             for name in emitter.modules.iter().chain(&emitter.interfaces) {
                 identifier(name)?;
             }
+            for (index, name) in emitter.interfaces.iter().enumerate() {
+                if emitter.interfaces[..index].contains(name) {
+                    return Err(invalid("duplicate VFX interface binding"));
+                }
+            }
             for (attribute_index, attribute) in emitter.attributes.iter().enumerate() {
                 identifier(&attribute.name)?;
                 if emitter.attributes[..attribute_index]
@@ -666,6 +671,9 @@ mod tests {
         });
         assert!(document.encode().is_err());
         document.emitters[0].stages.pop();
+        document.emitters[0].interfaces = vec!["texture".into(), "texture".into()];
+        assert!(document.encode().is_err());
+        document.emitters[0].interfaces.clear();
         let mut bytes = document.encode().unwrap();
         bytes.push(0);
         assert!(VfxDocument::decode(&bytes).is_err());

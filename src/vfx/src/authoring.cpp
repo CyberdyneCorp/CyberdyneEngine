@@ -358,8 +358,12 @@ private:
         return make_unexpected(interfaces.error());
     }
     for (u32 index = 0; index < *interfaces; ++index) {
-        if (!reader.name()) {
-            return make_unexpected(malformed("invalid VFX interface binding"));
+        auto binding = reader.name();
+        if (!binding) {
+            return make_unexpected(binding.error());
+        }
+        if (Status bound = emitter.bind_interface(*binding); !bound) {
+            return bound;
         }
     }
     if (version >= 2) {

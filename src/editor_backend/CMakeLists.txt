@@ -38,7 +38,8 @@ if(CY_BUILD_TESTS)
             SOURCES "${tests_dir}/test_material_service.cpp"
             DEPENDENCIES ${editor_backend_test_dependencies})
         if(CY_VFX)
-            target_compile_definitions(cy_test_unit_editor_backend PRIVATE CY_EDITOR_HAS_VFX=1)
+            target_compile_definitions(cy_test_unit_editor_backend PRIVATE
+                CY_EDITOR_HAS_VFX=1 CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         endif()
         cy_add_test(
             NAME editor_backend_compile

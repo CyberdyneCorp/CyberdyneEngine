@@ -101,6 +101,23 @@ shows the graph-colored Cube and its shadow on the Plane. The
 [node capture](../../docs/design/images/editor-material-graph-nodes-metal.png) shows the
 reopened four-node source and a successful engine compile.
 
+## VFX graph draft
+
+`project/effects/issue15_two_emitters.cyvfxdoc` is an editable VFX draft with separate CPU and GPU
+emitters, Spawn-stage graph layouts, a typed system parameter, a bounded event channel, particle
+attribute declarations, and a `texture` data-interface binding on each emitter. The draft was
+saved, read, undone, and redone through the editor's MCP commands. The engine reader and compiler
+load this exact file in `unit.editor_backend`; they validate both execution paths and produce a
+two-emitter cook. The draft is not installed as a running effect yet, so the viewport does not draw
+its particles.
+
+For a visible scene while inspecting the VFX Graph tab, launch the editor with
+`just run-editor-live --project samples/05b-editor-window/project --world worlds/spinning-cube.cyworld`.
+The default `worlds/city.cyworld` is an authoring fixture with transforms but no mesh assets, so its
+viewport appears black. The MCP `viewport:` resource captures the engine's rendered scene image;
+it does not capture the graph panel. `--agent-scope operator` is needed for MCP writes under
+`effects/`, because the narrower `author` scope permits writes only under `game/`.
+
 ## Swift cube during Play
 
 Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and

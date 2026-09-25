@@ -189,6 +189,10 @@ public:
     }
     [[nodiscard]] const AttributeDecl* find_attribute(Name attribute) const noexcept;
 
+    /// Interfaces explicitly bound by this emitter's authored document.
+    [[nodiscard]] Status bind_interface(Name interface_name) noexcept;
+    [[nodiscard]] Span<const Name> interfaces() const noexcept { return interfaces_.span(); }
+
     [[nodiscard]] SimulationPath path() const noexcept { return path_; }
     void set_path(SimulationPath path) noexcept { path_ = path; }
 
@@ -219,6 +223,7 @@ private:
     Name name_;
     Array<StageEntry> stages_;
     Array<AttributeDecl> attributes_;
+    Array<Name> interfaces_;
     SimulationPath path_ = SimulationPath::GpuPreferred;
     /// `RendererKind::Sprite`. See `set_renderer`.
     u8 renderer_ = 0;
