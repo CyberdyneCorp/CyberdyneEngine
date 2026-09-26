@@ -724,6 +724,56 @@ fn reusable_vfx_module_edits_and_attachment_round_trip_over_mcp() {
 }
 
 #[test]
+fn reusable_vfx_module_stage_change_round_trips_with_history_over_mcp() {
+    use cy_editor_interface::specialised::vfx::Stage;
+    use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+    let sandbox = Sandbox::new("vfx-module-stage");
+    let reference = "game/shared_drag.cyvfxmodule";
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let read_stage = || {
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+            .stage
+    };
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_drag","stage":"update"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.stage.set","arguments":{"reference":"game/shared_drag.cyvfxmodule","stage":"spawn"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.module.stage.set","arguments":{"reference":"game/shared_drag.cyvfxmodule","stage":"unknown"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 3).get("isError"), &Json::Bool(true));
+    assert_eq!(read_stage(), Stage::Spawn);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_stage(), Stage::Update);
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_stage(), Stage::Spawn);
+}
+
+#[test]
 fn vfx_module_declarations_can_be_removed_and_undone_over_mcp() {
     use cy_editor_interface::specialised::vfx::Stage;
     use cy_editor_interface::specialised::vfx_module::{ModuleInput, VfxModule};

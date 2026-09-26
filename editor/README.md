@@ -562,6 +562,8 @@ draft is compiled; the desktop pickers only offer entries reported by the attach
 Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and
 `vfx.module.dependency.add`, then linked to an emitter with `vfx.module.attach`. Each command saves
 one undoable change; creating a module refuses to replace an existing source at that path.
+`vfx.module.stage.set` changes a saved module's compatible stage through the same undo history;
+an unknown stage is refused without changing the file.
 `vfx.module.input.remove` and `vfx.module.dependency.remove` remove named declarations through
 the same history.
 The module graph also supports `vfx.module.node.add`, `vfx.module.node.connect`,

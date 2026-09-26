@@ -34,6 +34,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(set_channel())?;
     registry.register(remove_channel())?;
     registry.register(create_module())?;
+    registry.register(set_module_stage())?;
     registry.register(add_module_input())?;
     registry.register(remove_module_input())?;
     registry.register(add_module_dependency())?;
@@ -1113,6 +1114,33 @@ fn create_module() -> Command {
             }
             project.vfx_module_save(reference, &module.encode_text()?)?;
             Ok(Outcome::new(format!("Created VFX module {name}")))
+        },
+    )
+}
+
+fn set_module_stage() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.stage.set",
+            "Set VFX Module Stage",
+            "Changes the compatible stage of a saved reusable module with undo history.",
+        )
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Engine stage in which the module may run.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let selected = stage(arguments)?;
+            edit_module(context, reference, |module| {
+                module.stage = selected;
+                Ok(Outcome::new(format!(
+                    "Set VFX module {} stage to {}",
+                    module.name,
+                    selected.label()
+                )))
+            })
         },
     )
 }
