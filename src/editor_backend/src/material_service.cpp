@@ -733,6 +733,19 @@ CyResult compile_graph(CyServiceSession_T& session,
         return author_graph_result(session, graph.value(), canonical);
     }
     if (!compile) {
+        cy::rendering::material::CompileOptions options;
+        auto checked =
+            cy::rendering::material::compile_material(module.value(), options, allocator);
+        if (!checked) {
+            return failed_material(session, "material.compile", checked.error().message);
+        }
+        for (const cy::rendering::material::CompileDiagnostic& diagnostic :
+             checked.value().diagnostics()) {
+            if (diagnostic.severity == cy::rendering::material::DiagnosticSeverity::Error) {
+                return failed_material(session, diagnostic.code, diagnostic.detail,
+                                       diagnostic.subject.text());
+            }
+        }
         return CY_RESULT_OK;
     }
     return compile_material_result(session, graph.value(), module.value(), preview_runtime,

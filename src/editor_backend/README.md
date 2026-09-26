@@ -28,7 +28,8 @@ The first vertical slice supports:
   Slang. Failed requests use diagnostic schema 2 with node, pin, emitter index, and stage identity;
   the reader also accepts unscoped schema 1 diagnostics. A `cyvfxbundle 1` request may include
   explicit project module sources, which the engine validates and composes before cooking;
-- `material.validate` — parses and lowers canonical CyberGraph input;
+- `material.validate` — parses and lowers canonical CyberGraph input, then runs compiler checks
+  and returns stable diagnostic codes for rejected material programs;
 - `material.author` — validates a canvas and returns engine-canonical `.cygraph` text;
 - `material.preview.set` — validates an unsaved canvas and applies its canonical graph to a
   runtime-owned authored scene. Its schema-1 payload is two little-endian, length-prefixed UTF-8
