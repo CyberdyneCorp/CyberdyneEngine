@@ -435,6 +435,7 @@ SkyLighting compose_sky_lighting(const SkyCompositionInputs& inputs, u32 samples
     Vec3 clear_sun = inputs.tables != nullptr && inputs.tables->built()
                          ? sun_illuminance_tabulated(atmosphere, *inputs.tables, position, sun)
                          : sun_illuminance(atmosphere, position, sun);
+    lighting.clear_sun_illuminance = clear_sun;
 
     if (inputs.clouds == nullptr || inputs.tables == nullptr || !inputs.tables->built()) {
         lighting.sun_illuminance = clear_sun;
