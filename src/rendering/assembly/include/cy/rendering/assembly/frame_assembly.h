@@ -217,6 +217,10 @@ struct AssemblyView {
     ResourceId output = kInvalidResource;
     ResourceId shadow_color = kInvalidResource;
     ResourceId shadow_depth = kInvalidResource;
+    /// The ambient occlusion term's storage, imported by its producer
+    /// (`occlusion::AmbientOcclusionPass::import_target`). Read only when the post chain enables
+    /// ambient occlusion; absent, the frame declares its own transient.
+    ResourceId ambient_occlusion = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport
     /// both invalidate history and neither is a camera that moved fast.
     bool cut = false;
@@ -238,6 +242,10 @@ struct FrameSinks {
     /// A record callback per stage, exactly `ForwardFrame`'s. A stage with none is declared and
     /// records nothing, which is a legitimate frame and what a structural test wants.
     FramePassCallback passes[kFramePassKindCount] = {};
+    /// The producer that declares the ambient occlusion stage as its own passes — the horizon
+    /// search and the filter cascade that follows it. Null keeps the stage one pass recorded by
+    /// `passes[AmbientOcclusion]`.
+    FrameStageDeclaration ambient_occlusion;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than

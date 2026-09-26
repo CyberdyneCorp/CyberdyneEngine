@@ -19,7 +19,9 @@
 //               src_access = write_access ONLY — a write-after-read needs an execution dependency,
 //               not a memory one, so the read side contributes no access bits.
 //   * a read:   src_stage = write_stage, src_access = write_access (read-after-write).
-//               Read-after-read emits nothing unless the layout differs.
+//               Read-after-read emits nothing unless the layout differs — and when it does, the
+//               transition is a WRITE to the image, so the earlier reads' stages join src_stage
+//               exactly as they do for any other write-after-read.
 //   * a differing layout, or a differing owning queue family, forces a barrier regardless of
 //   hazard.
 //   * after a write, the write state is overwritten and the read state is ZEROED; after a read, the
@@ -1085,6 +1087,14 @@ struct Compiler {
         // D3D12 — and this comparison is the only reason the engine keeps an image-use vocabulary
         // at all. Metal gap 3: the values are the ENGINE's; what they become is the backend's.
         const bool use_changes = info.is_texture && cell.use != access.use;
+        // THE TRANSITION ITSELF WRITES, so a read that changes the layout waits for the reads
+        // before it. Without their stages the barrier's first scope is the last write alone, and
+        // synchronisation validation reports SYNC-HAZARD-WRITE-AFTER-READ: a depth buffer sampled
+        // by a compute pass and then bound read-only as an attachment, or a target copied to the
+        // host and then sampled, is transitioned while the earlier read may still be running.
+        if (use_changes && !access.is_write) {
+            source_stage = source_stage | cell.read_stage;
+        }
         // METAL GAP 4. A device that needs no ownership transfers turns this term off entirely,
         // rather than each backend answering with an index that happens to compare equal.
         const bool owner_changes = options.queue_ownership_transfers && cell.owner.owned &&

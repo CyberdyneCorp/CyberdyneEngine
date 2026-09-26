@@ -57,6 +57,12 @@ sky seed 0x5EEDB107
 # curve's shoulder, which is where a photographer puts a sunlit stone wall.
 exposure-stops -11.45
 
+# The ambient occlusion term's horizon search, read only when a run passes
+# `--ambient-occlusion on`: the radius in metres and the power. The published M11.c frame is the
+# setting off.
+ambient-occlusion radius 1.5
+ambient-occlusion power 1.5
+
 # --- The materials ----------------------------------------------------------------------------
 #
 # `graph` names the AUTHORED file — the `.cygraph` the editor's canvas produced — and the three

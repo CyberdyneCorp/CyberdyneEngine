@@ -60,12 +60,14 @@
 
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/handles.h>
+#include <cy/backends/rhi/pipeline.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/import/mesh.h>
 #include <cy/rendering/assembly/capture_manifest.h>
+#include <cy/rendering/occlusion/gtao.h>
 
 #include <string>
 #include <string_view>
@@ -161,6 +163,12 @@ struct Shot {
 
     f32 exposure_stops = 12.0F;
 
+    /// The ambient occlusion term's horizon search, when a run switches it on: the radius in
+    /// metres and the power. CONTENT, because both are properties of the scene's scale — a column
+    /// is half a metre across — rather than of the renderer.
+    f32 occlusion_radius = 0.75F;
+    f32 occlusion_power = 1.0F;
+
     std::vector<ShotMaterial> materials;
     std::vector<std::pair<std::string, std::string>> meshes;
     std::vector<Instance> instances;
@@ -245,6 +253,16 @@ public:
     /// pictures were byte-identical, because the material read level 0 whatever lay beneath it.
     void limit_albedo_levels(u32 levels) noexcept { albedo_level_limit_ = levels; }
 
+    /// THE AMBIENT OCCLUSION SETTING, before `stage_shot`. Off — the default, and the published
+    /// M11.c frame — draws exactly the frame this program always drew. On adds the frame's depth
+    /// and normal prepass, switches the post chain's `ambient_occlusion` stage on, and shades the
+    /// sky term through `sceneFragmentOccluded`. The sun is not touched either way.
+    void set_ambient_occlusion(bool enabled,
+                               const rendering::occlusion::GtaoSettings& settings) noexcept {
+        ambient_occlusion_ = enabled;
+        occlusion_settings_ = settings;
+    }
+
     /// Draw ONE frame and write BOTH images out of it.
     ///
     /// `png_path` is the tonemapped 8-bit image the resolve wrote; `linear_path` is the linear HDR
@@ -272,6 +290,11 @@ public:
 private:
     [[nodiscard]] Status create_pipelines(const Shot& shot) noexcept;
     [[nodiscard]] Status create_frame() noexcept;
+    [[nodiscard]] Status create_occlusion() noexcept;
+    [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
+                                                    const rhi::GraphicsPipelineDescription& scene,
+                                                    rhi::GraphicsPipelineHandle& occluded,
+                                                    rhi::GraphicsPipelineHandle& prepass) noexcept;
     [[nodiscard]] Status cook_textures(Shot& shot, ShotReport& report) noexcept;
     [[nodiscard]] Status build_geometry(const Shot& shot, ShotReport& report) noexcept;
     [[nodiscard]] Status prepare_shadow() noexcept;
@@ -289,6 +312,8 @@ private:
     u32 height_ = 0;
     u32 supersample_ = 1;
     u32 albedo_level_limit_ = 0;
+    bool ambient_occlusion_ = false;
+    rendering::occlusion::GtaoSettings occlusion_settings_{};
     bool available_ = false;
     Array<u32> pixels_;
 };

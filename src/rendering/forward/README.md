@@ -47,6 +47,17 @@ not the other way round. Its callback draws indirectly and pulls vertices out of
 READING intent, and the graph derives the dependency from it. `unit.render_forward` asserts the
 stage's place, its targets, a declared read producing a dependency, and the MSAA refusal.
 
+## A stage whose producer declares its own passes: ambient occlusion
+
+`FrameStageDeclaration` is the seam. A screen-space stage that needs more than one pass — ambient
+occlusion is a horizon search and a three-pass filter cascade, and a barrier between two dispatches
+can only come from the graph — is handed to its producer at the stage's own position in the order,
+with the depth, the normal target and the stage's target (`ScreenSpaceStageInputs`). The producer
+declares its passes and returns the first; a producer that refuses fails the build rather than
+leaving the stage out. `FrameDescription::ambient_occlusion_target` lets the producer own the
+target, because the forward pass samples it through a texture-table slot. Without a producer the
+stage is the one pass it always was. `src/rendering/occlusion/` is the producer.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in

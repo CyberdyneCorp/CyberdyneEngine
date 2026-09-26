@@ -82,7 +82,10 @@ GPU.
 
 The gathers, the blurs, the downsample and upsample chains, the histogram compute pass and the
 froxel volume itself are shaders, and they belong with the frame's passes in
-`src/rendering/forward/`.
+`src/rendering/forward/`. The first of them to exist is ambient occlusion's, in
+`src/rendering/occlusion/`: it reads `AmbientOcclusionSettings`' radius and power, and
+`occlusion::write_occlusion_control` carries `apply_to_direct` into the frame's
+`FrameViewData::occlusion_control`.
 
 Two stages of this chain are consumers of `src/rendering/temporal/` rather than implementations:
 `rendering-post-processing` says TAA "SHALL consume the temporal framework… It SHALL NOT implement

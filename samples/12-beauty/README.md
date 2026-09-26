@@ -7,6 +7,7 @@
 > just capture-beauty-shot --video                  # ... and the turntable
 > just capture-beauty-shot --regenerate-textures    # ... regenerating the source images first
 > just measure-beauty-mip-chain                     # does the shot read its cooked mip chain?
+> just capture-ambient-occlusion                    # the shot with ambient occlusion off and on
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -73,11 +74,28 @@ image rather than an obvious one:
    made the ambient π times too strong, the sun invisible against it, and every shadow in the frame a
    shade of the same grey.
 
+## Ambient occlusion, off and on
+
+`--ambient-occlusion on|off` is the setting, off by default. On, the program records the frame's
+own `DepthPrepass` stage from its own buffers (`record_prepass`, drawing `sceneVertex` with
+`scenePrepassFragment`, which writes the geometric normal octahedrally), switches
+`PostChainConfig::ambient_occlusion` on, hands the stage to `occlusion::AmbientOcclusionPass`, and
+shades with `sceneFragmentOccluded` against the prepass depth — tested, not written. The term
+multiplies the sky term only; `sceneFragment`, the entry point the published frame is drawn with, is
+unchanged in what it computes. The radius (1.5 m) and power (1.5) are content, in `shot.cyshot`.
+
+![Off, on, and the difference amplified eight times](../../docs/design/images/ambient-occlusion-detail.png)
+
+`just capture-ambient-occlusion` writes `docs/design/images/ambient-occlusion-{off,on,detail}.png`
+and `ambient-occlusion-on.manifest`, and `tools/docs/compare_ambient_occlusion.py` fails it unless
+the off picture is `m11c-beauty-shot.png`'s pixels exactly and no pixel got brighter.
+
 ## What it does not claim
 
 The full list is in the provenance, and the short version is: no anti-aliasing stage (the frame is
 supersampled and the manifest says three post stages, none of them temporal), no global illumination
-pass, no ambient occlusion pass, procedural geometry, and a normal map and an occlusion
+pass, no ambient occlusion pass in the published frame (it is `--ambient-occlusion on`, below),
+procedural geometry, and a normal map and an occlusion
 channel sampled by the FRAME because the compiled-material closure vocabulary has no term for either.
 
 **The air is the one thing in this frame that is not content.** Three ember emitters are authored in

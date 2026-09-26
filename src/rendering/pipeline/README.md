@@ -100,6 +100,16 @@ push constant to buffer 3. The captured geometry is committed as
 `docs/design/images/pipeline-frame-metal-recorded.png`. Metal still shades material constants: its
 bounded material texture argument buffer remains separate work.
 
+## The ambient occlusion term — `FrameViewData::occlusion_control`
+
+Appended to the view block, defaulted to "none", so every caller that predates it uploads the frame
+it always uploaded. A caller that runs `occlusion::AmbientOcclusionPass` names its target at a slot
+of set 0's texture table (`FrameBindings::set_material_textures`) and writes the slot into `.x`;
+`cy/frame.slang`'s forward fragment then multiplies the AMBIENT term by the visibility and leaves the
+direct sum alone unless `.y` asks for the non-physical option. The six `frame.slang` entry points
+were regenerated for the longer block; the fullscreen resolve and temporal entries are unchanged.
+`render.ambient_occlusion` renders this module's scene with the stage on.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same

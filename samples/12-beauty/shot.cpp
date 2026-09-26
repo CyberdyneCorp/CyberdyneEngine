@@ -94,6 +94,14 @@ void read_sky(Shot& shot, std::string_view field, std::string_view& rest) {
     }
 }
 
+void read_occlusion(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "radius") {
+        shot.occlusion_radius = to_float(take(rest));
+    } else if (field == "power") {
+        shot.occlusion_power = to_float(take(rest));
+    }
+}
+
 void read_material(Shot& shot, std::string_view& rest) {
     const std::string_view key = take(rest);
     const std::string_view field = take(rest);
@@ -210,6 +218,9 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             read_sun(shot, take(line), line);
         } else if (keyword == "sky") {
             read_sky(shot, take(line), line);
+        } else if (keyword == "ambient-occlusion") {
+            const std::string_view field = take(line);
+            read_occlusion(shot, field, line);
         } else if (keyword == "exposure-stops") {
             shot.exposure_stops = to_float(take(line));
         } else if (keyword == "material") {
