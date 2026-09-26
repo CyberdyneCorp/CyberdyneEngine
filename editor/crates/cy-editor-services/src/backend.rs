@@ -171,6 +171,8 @@ pub enum MaterialRequestState {
         programs: u32,
         /// Stable asset identities read by the compiled material.
         dependencies: Vec<String>,
+        /// Named geometry sources for which the compiler produced variants.
+        geometry_sources: Vec<String>,
     },
     /// Terminal backend refusal or service loss.
     Failed {
@@ -1238,6 +1240,7 @@ enum DecodedMaterialResult {
         graph: u64,
         programs: u32,
         dependencies: Vec<String>,
+        geometry_sources: Vec<String>,
     },
 }
 
@@ -1252,12 +1255,14 @@ impl DecodedMaterialResult {
                 graph,
                 programs,
                 dependencies,
+                geometry_sources,
             } => MaterialRequestState::Compiled {
                 request,
                 artefact,
                 graph,
                 programs,
                 dependencies,
+                geometry_sources,
             },
         }
     }
@@ -1276,7 +1281,7 @@ fn decode_material_result(
     }
     let mut reader = Reader::new(payload);
     let payload_schema = reader.u32()?;
-    if !matches!(payload_schema, 1 | 2) || reader.u8()? != 1 {
+    if !matches!(payload_schema, 1..=3) || reader.u8()? != 1 {
         return Err(Problem::new(
             "decode a material result",
             "the result did not report success",
@@ -1298,11 +1303,20 @@ fn decode_material_result(
             } else {
                 Vec::new()
             };
+            let geometry_sources = if payload_schema >= 3 {
+                let count = reader.u32()?;
+                (0..count)
+                    .map(|_| reader.text())
+                    .collect::<cy_editor_core::problem::Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
             DecodedMaterialResult::Compiled {
                 artefact,
                 graph,
                 programs,
                 dependencies,
+                geometry_sources,
             }
         }
     };
@@ -1692,8 +1706,32 @@ mod tests {
                 graph: 0xBEEF,
                 programs: 3,
                 dependencies: vec!["0123456789abcdef0123456789abcdef".into()],
+                geometry_sources: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn a_compile_result_reports_named_geometry_variants() {
+        let mut payload = Writer::new();
+        payload.u32(3);
+        payload.u8(1);
+        payload.u64(0xCAFE);
+        payload.u64(0xBEEF);
+        payload.u32(3);
+        payload.u32(0); // dependencies
+        payload.u32(2);
+        payload.text("StaticMesh");
+        payload.text("SkinnedMesh");
+        let result =
+            decode_material_result(MaterialOperation::Compile, &payload.finish(), 1).unwrap();
+        let DecodedMaterialResult::Compiled {
+            geometry_sources, ..
+        } = result
+        else {
+            panic!("compile result must keep the geometry report");
+        };
+        assert_eq!(geometry_sources, ["StaticMesh", "SkinnedMesh"]);
     }
 
     #[test]

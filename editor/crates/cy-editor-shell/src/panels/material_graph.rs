@@ -15,7 +15,7 @@ use cy_editor_interface::specialised::graph::{
 use cy_editor_interface::specialised::material::{
     SURFACE_STAGE, VERTEX_STAGE, canvas_interchange, load_canvas_interchange,
 };
-use cy_editor_services::primitives::material_of;
+use cy_editor_services::primitives::{material_of, mesh_of};
 use cy_editor_services::{
     AssetCatalogueService, Editor, MaterialCatalogueState, MaterialDiagnosticSeverity,
     MaterialOperation, MaterialPreviewState, MaterialRequestState,
@@ -33,6 +33,10 @@ const PIN_ROW: f32 = 18.0;
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let selected_graph = selected_material_graph(panels.editor);
+    let geometry = selected_material_geometry(
+        panels.editor,
+        panels.inputs.material_open_reference.as_deref(),
+    );
     let project_root = panels.editor.project.root().to_path_buf();
     let state = panels.editor.backend.material_catalogue_state();
     let request_state = panels.editor.backend.material_request_state().clone();
@@ -114,7 +118,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         });
     });
     let had_action = action.is_some();
-    handle_palette_action(panels.editor, panels.inputs, canvas, action);
+    handle_palette_action(panels.editor, panels.inputs, canvas, action, geometry);
     if !had_action
         && panels.editor.runtime.is_connected()
         && state == MaterialCatalogueState::Ready
@@ -129,6 +133,7 @@ fn handle_palette_action(
     inputs: &mut super::Inputs,
     canvas: &GraphCanvas,
     action: Option<PaletteAction>,
+    geometry: Option<&str>,
 ) {
     match action {
         Some(PaletteAction::Save) => {
@@ -154,9 +159,10 @@ fn handle_palette_action(
             }
         }
         Some(PaletteAction::Request(operation)) => {
-            match canvas_interchange(&inputs.material_name, canvas)
-                .and_then(|payload| editor.request_material(operation, payload.into_bytes()))
-            {
+            let sources: Vec<&str> = geometry.into_iter().collect();
+            match canvas_interchange(&inputs.material_name, canvas).and_then(|payload| {
+                editor.request_material_for_geometry(operation, payload.into_bytes(), &sources)
+            }) {
                 Ok(_) => {}
                 Err(problem) => {
                     editor
@@ -210,6 +216,18 @@ fn selected_material_graph(editor: &Editor) -> Option<String> {
         return None;
     }
     material_of(document, node).filter(|path| path.ends_with(".cygraph"))
+}
+
+fn selected_material_geometry(editor: &Editor, reference: Option<&str>) -> Option<&'static str> {
+    let reference = reference?;
+    let document = editor.documents.get(editor.workspace.active()?)?;
+    let mut selected = editor.selection.get().nodes();
+    let node = selected.next()?;
+    if selected.next().is_some() || material_of(document, node).as_deref() != Some(reference) {
+        return None;
+    }
+    // The authored scene renderer currently loads MeshRenderer assets as static meshes.
+    mesh_of(document, node).map(|_| "StaticMesh")
 }
 
 fn open_selected_graph(
@@ -725,11 +743,17 @@ fn material_request_status(
             graph,
             programs,
             dependencies,
+            geometry_sources,
         } => (
             Semantic::Live,
             format!(
-                "Compiled {artefact:016x}\ngraph {graph:016x} · {programs} programs · {} dependencies\nrequest #{}",
+                "Compiled {artefact:016x}\ngraph {graph:016x} · {programs} programs · {} dependencies · geometry {}\nrequest #{}",
                 dependencies.len(),
+                if geometry_sources.is_empty() {
+                    "unspecified".to_owned()
+                } else {
+                    geometry_sources.join(", ")
+                },
                 request.as_u64()
             ),
         ),
@@ -1454,6 +1478,53 @@ mod tests {
     use cy_editor_interface::specialised::material::VERTEX_STAGE;
 
     use super::*;
+
+    #[test]
+    fn selected_authored_mesh_supplies_its_static_geometry_assignment() {
+        use cy_editor_core::Actor;
+        use cy_editor_documents::operation::Operation;
+        use cy_editor_documents::selection::Selection;
+        use cy_editor_services::primitives::{MaterialBinding, create_mesh_instance};
+        use cy_editor_viewport::gizmo::Transform3;
+
+        let mut editor = Editor::default();
+        let document_id = editor.open_document("worlds/city.cyworld").unwrap();
+        let node = editor
+            .documents
+            .get_mut(document_id)
+            .unwrap()
+            .with_transaction("Assign material", Actor::human("designer"), |document| {
+                let node = create_mesh_instance(
+                    document,
+                    None,
+                    "meshes/box.cyprim",
+                    Transform3::default(),
+                )?;
+                let binding = MaterialBinding::of_schema(document.schema()).unwrap();
+                document.record(Operation::SetAssetReference {
+                    node,
+                    component: binding.component,
+                    field: binding.material,
+                    before: String::new(),
+                    after: "materials/sway.cygraph".into(),
+                })?;
+                Ok(node)
+            })
+            .unwrap();
+        let mut selection = Selection::new();
+        selection.set_nodes([node]);
+        editor.selection.set(selection);
+
+        assert_eq!(
+            selected_material_geometry(&editor, Some("materials/sway.cygraph")),
+            Some("StaticMesh")
+        );
+        assert_eq!(
+            selected_material_geometry(&editor, Some("materials/other.cygraph")),
+            None
+        );
+        assert_eq!(selected_material_geometry(&editor, None), None);
+    }
 
     #[test]
     fn graph_save_writes_both_formats_and_rejects_paths_outside_project() {

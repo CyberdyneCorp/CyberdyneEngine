@@ -62,6 +62,12 @@ The material build producer now accepts an explicit comma-separated `geometry` o
 its source set to the compiler; a virtual-geometry assignment with a vertex offset fails without
 an artefact. Propagating geometry assignments from the scene into editor validation and project
 build descriptions remains part of task 3.2.
+The editor backend now accepts a versioned material request envelope listing named geometry
+sources and passes those paths to the same compiler options used by cooking. Validate and Compile
+return the compiler's `vertex-geometry-unsupported` code for a vertex graph assigned to
+`VirtualGeometry`; the desktop sends `StaticMesh` for a selected authored mesh using the opened
+graph. Compile results return those named sources to the editor for the variant report. Discovering other scene geometry sources and feeding their assignments into both editor
+validation and the build description remains open.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 

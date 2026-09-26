@@ -81,6 +81,24 @@ struct PendingGraphSave {
     actor: Actor,
 }
 
+fn material_geometry_payload(mut canvas: Vec<u8>, geometry: &[&str]) -> Result<Vec<u8>> {
+    if geometry.is_empty() {
+        return Ok(canvas);
+    }
+    if geometry
+        .iter()
+        .any(|name| name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+    {
+        return Err(Problem::new(
+            "submit a material geometry request",
+            "geometry source names must be nonempty identifiers",
+        ));
+    }
+    let mut request = format!("cymatrequest 1\ngeometry {}\n", geometry.join(",")).into_bytes();
+    request.append(&mut canvas);
+    Ok(request)
+}
+
 /// The editor's authoritative state.
 pub struct Editor {
     /// Open documents.
@@ -280,6 +298,29 @@ impl Editor {
         }
         self.backend
             .request_material(&self.runtime, operation, canvas)
+    }
+
+    /// Submit a material graph with its assigned geometry sources. The engine compiler owns the
+    /// source names and the unsupported-path diagnostic; this envelope only carries the selection.
+    pub fn request_material_for_geometry(
+        &mut self,
+        operation: MaterialOperation,
+        canvas: Vec<u8>,
+        geometry: &[&str],
+    ) -> Result<cy_editor_protocol::RequestId> {
+        if geometry.is_empty() {
+            return self.request_material(operation, canvas);
+        }
+        if !matches!(
+            operation,
+            MaterialOperation::Validate | MaterialOperation::Compile
+        ) {
+            return Err(Problem::new(
+                "submit a material geometry request",
+                "geometry sources apply only to validation and compilation",
+            ));
+        }
+        self.request_material(operation, material_geometry_payload(canvas, geometry)?)
     }
 
     /// Ask the engine to compile an editable VFX document.
@@ -1590,6 +1631,29 @@ mod tests {
     use super::*;
     use cy_editor_protocol::FrameId;
     use cy_editor_viewport::picking::PickCandidate;
+
+    #[test]
+    fn material_geometry_request_preserves_the_canvas_and_rejects_bad_names() {
+        let canvas = b"cymatcanvas 1\nmaterial sway\n".to_vec();
+        let payload =
+            material_geometry_payload(canvas.clone(), &["StaticMesh", "VirtualGeometry"]).unwrap();
+        assert_eq!(
+            payload,
+            [
+                b"cymatrequest 1\ngeometry StaticMesh,VirtualGeometry\n".as_slice(),
+                canvas.as_slice()
+            ]
+            .concat()
+        );
+        assert_eq!(
+            material_geometry_payload(canvas.clone(), &[]).unwrap(),
+            canvas
+        );
+        assert!(
+            material_geometry_payload(canvas.clone(), &["StaticMesh\nmaterial forged"]).is_err()
+        );
+        assert!(material_geometry_payload(canvas, &[""]).is_err());
+    }
 
     #[test]
     fn an_editor_with_no_runtime_still_opens_and_edits_documents() {

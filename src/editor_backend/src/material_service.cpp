@@ -632,9 +632,9 @@ Status put_material_dependencies(Array<u8>& out, const cy::graph::Graph& graph,
 
 CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::Graph& graph,
                                  const cy::rendering::material::Module& module,
+                                 const cy::rendering::material::CompileOptions& options,
                                  cy::editor::MaterialPreviewRuntime* preview_runtime,
                                  cy::Allocator& allocator) noexcept {
-    cy::rendering::material::CompileOptions options;
     auto compiled = cy::rendering::material::compile_material(module, options, allocator);
     if (!compiled) {
         return failed_material(session, "material.compile", compiled.error().message);
@@ -663,7 +663,72 @@ CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::G
         !encoded) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
+    if (!put_u32(session.event_payload,
+                 static_cast<u32>(compiled.value().geometry_paths().size()))) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    for (const auto source : compiled.value().geometry_paths()) {
+        if (!put_text(session.event_payload,
+                      cy::rendering::material::geometry_source_kind_name(source))) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+    }
     return CY_RESULT_OK;
+}
+
+cy::Expected<cy::rendering::material::GeometrySourceKind, cy::Error> geometry_source_named(
+    std::string_view name) noexcept {
+    for (u8 index = 0; index < static_cast<u8>(cy::rendering::material::GeometrySourceKind::Count);
+         ++index) {
+        const auto source = static_cast<cy::rendering::material::GeometrySourceKind>(index);
+        if (name == cy::rendering::material::geometry_source_kind_name(source)) {
+            return source;
+        }
+    }
+    return cy::fail(cy::ErrorCode::InvalidArgument,
+                    "material geometry request names an unknown source");
+}
+
+Status read_geometry_request(std::string_view& text,
+                             Array<cy::rendering::material::GeometrySourceKind>& sources) noexcept {
+    constexpr std::string_view header = "cymatrequest 1\ngeometry ";
+    if (!text.starts_with("cymatrequest ")) {
+        return cy::ok();
+    }
+    if (!text.starts_with(header)) {
+        return cy::fail(cy::ErrorCode::InvalidArgument,
+                        "material geometry request has an unsupported version or shape");
+    }
+    const usize end = text.find('\n', header.size());
+    if (end == std::string_view::npos || end == header.size()) {
+        return cy::fail(cy::ErrorCode::InvalidArgument,
+                        "material geometry request has no source names");
+    }
+    std::string_view names = text.substr(header.size(), end - header.size());
+    while (!names.empty()) {
+        const usize comma = names.find(',');
+        const std::string_view name = names.substr(0, comma);
+        auto source = geometry_source_named(name);
+        if (!source) {
+            return cy::make_unexpected(source.error());
+        }
+        if (!sources.push_back(*source)) {
+            return cy::fail(cy::ErrorCode::OutOfMemory,
+                            "material geometry sources could not be retained");
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        if (comma + 1 == names.size()) {
+            return cy::fail(cy::ErrorCode::InvalidArgument,
+                            "material geometry request ends with an empty source name");
+        }
+        names.remove_prefix(comma + 1);
+    }
+    text.remove_prefix(end + 1);
+    return text.empty()
+               ? cy::fail(cy::ErrorCode::InvalidArgument, "material geometry request has no graph")
+               : cy::ok();
 }
 
 CyResult author_graph_result(CyServiceSession_T& session, const cy::graph::Graph& graph,
@@ -693,6 +758,12 @@ CyResult compile_graph(CyServiceSession_T& session,
             ? std::string_view(reinterpret_cast<const char*>(session.request_payload.data()),
                                session.request_payload.size())
             : input;
+    Array<cy::rendering::material::GeometrySourceKind> geometry_sources(allocator);
+    if (Status parsed = read_geometry_request(text, geometry_sources); !parsed) {
+        return failed_material(session, "material.geometry.request", parsed.error().message);
+    }
+    cy::rendering::material::CompileOptions options;
+    options.geometry_paths = geometry_sources.span();
     Array<char> canonical(allocator);
     if (text.starts_with("cymatcanvas ")) {
         cy::graph::Graph authored(allocator, cy::Name::intern("editor_material"));
@@ -727,14 +798,13 @@ CyResult compile_graph(CyServiceSession_T& session,
     }
 
     session.event_payload.clear();
-    if (!put_u32(session.event_payload, 2) || !put_u8(session.event_payload, 1)) {
+    if (!put_u32(session.event_payload, compile ? 3 : 2) || !put_u8(session.event_payload, 1)) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     if (author) {
         return author_graph_result(session, graph.value(), canonical);
     }
     if (!compile) {
-        cy::rendering::material::CompileOptions options;
         auto checked =
             cy::rendering::material::compile_material(module.value(), options, allocator);
         if (!checked) {
@@ -749,7 +819,7 @@ CyResult compile_graph(CyServiceSession_T& session,
         }
         return CY_RESULT_OK;
     }
-    return compile_material_result(session, graph.value(), module.value(), preview_runtime,
+    return compile_material_result(session, graph.value(), module.value(), options, preview_runtime,
                                    allocator);
 }
 

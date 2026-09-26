@@ -469,6 +469,12 @@ Its generated mesh assigns a different colour to each face axis for a visible pr
 The `displacement` pin accepts a scalar distance in metres; the engine combines it with any
 connected `offset` as `offset + normal * displacement` for visible and shadow vertex programs.
 The actual `environment-fields` wind binding and custom interpolants are tracked by issue #15.
+When an opened graph belongs to the selected authored mesh, Validate and Compile send that
+`StaticMesh` assignment to the Engine material compiler. The editor backend also accepts named
+geometry-source requests and reports the compiler's `vertex-geometry-unsupported` diagnostic for a
+vertex graph assigned to `VirtualGeometry`. A successful Compile result lists the named geometry
+sources whose variants were produced. Propagating non-static assignments from scene assets
+and build descriptions remains part of issue #15.
 The authored scene frame currently accepts only its standard
 constant-colour graph subset; a graph with `material.vertex_output` reports the missing
 vertex-offset pass explicitly instead of being presented as a generic graph mismatch.
