@@ -72,6 +72,10 @@ pub struct VfxCompileDiagnostic {
     pub node: u64,
     /// Optional input or output pin name.
     pub pin: String,
+    /// Emitter index in the submitted document, when the engine can identify it.
+    pub emitter: Option<u32>,
+    /// Engine stage identity, in authoring order, when the engine can identify it.
+    pub stage: Option<u8>,
 }
 
 /// Terminal compiler refusal, including node diagnostics where available.
@@ -179,21 +183,36 @@ impl VfxCompileFailure {
     /// Decode a failed `vfx.compile` service result.
     pub fn decode(payload: &[u8]) -> Result<Self> {
         let mut input = Reader::new(payload);
-        if input.u32()? != 1 {
+        let schema = input.u32()?;
+        if schema != 1 && schema != 2 {
             return Err(invalid("unsupported VFX compiler diagnostic schema"));
         }
         let code = input.text()?;
         let message = input.text()?;
         let mut diagnostics = Vec::new();
         for _ in 0..count(&mut input)? {
-            let diagnostic = VfxCompileDiagnostic {
+            let mut diagnostic = VfxCompileDiagnostic {
                 severity: input.u8()?,
                 code: input.text()?,
                 message: input.text()?,
                 detail: input.text()?,
                 node: input.u64()?,
                 pin: input.text()?,
+                emitter: None,
+                stage: None,
             };
+            if schema == 2 {
+                let emitter = input.u32()?;
+                let stage = input.u8()?;
+                if emitter == u32::MAX && stage == 6 {
+                    // Parse and pre-compile failures have no authored graph location.
+                } else if emitter == u32::MAX || stage >= 6 {
+                    return Err(invalid("invalid VFX compiler diagnostic scope"));
+                } else {
+                    diagnostic.emitter = Some(emitter);
+                    diagnostic.stage = Some(stage);
+                }
+            }
             if diagnostic.severity > 2 || diagnostic.code.is_empty() {
                 return Err(invalid("invalid VFX compiler diagnostic"));
             }
@@ -245,7 +264,7 @@ mod tests {
     #[test]
     fn node_and_pin_diagnostics_survive_the_service_wire() {
         let mut out = Writer::new();
-        out.u32(1);
+        out.u32(2);
         out.text("vfx.compile");
         out.text("invalid link");
         out.u32(1);
@@ -255,8 +274,30 @@ mod tests {
         out.text("float3");
         out.u64(7);
         out.text("value");
+        out.u32(1);
+        out.u8(2);
         let failure = VfxCompileFailure::decode(&out.finish()).unwrap();
         assert_eq!(failure.diagnostics[0].node, 7);
         assert_eq!(failure.diagnostics[0].pin, "value");
+        assert_eq!(failure.diagnostics[0].emitter, Some(1));
+        assert_eq!(failure.diagnostics[0].stage, Some(2));
+    }
+
+    #[test]
+    fn legacy_vfx_diagnostics_remain_unscoped() {
+        let mut out = Writer::new();
+        out.u32(1);
+        out.text("vfx.compile");
+        out.text("invalid node");
+        out.u32(1);
+        out.u8(2);
+        out.text("graph.invalid-node");
+        out.text("unknown node type");
+        out.text("");
+        out.u64(1);
+        out.text("");
+        let failure = VfxCompileFailure::decode(&out.finish()).unwrap();
+        assert_eq!(failure.diagnostics[0].emitter, None);
+        assert_eq!(failure.diagnostics[0].stage, None);
     }
 }

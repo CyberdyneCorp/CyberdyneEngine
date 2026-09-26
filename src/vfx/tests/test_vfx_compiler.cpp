@@ -594,6 +594,10 @@ CY_TEST_CASE("a CPU-path effect using a GPU-only interface fails to cook, naming
     auto system = compile_system(asset, registry, interfaces, options, sink, report);
     CY_CHECK_FALSE(system.has_value());
     CY_REQUIRE(sink.entries().size() > 0U);
+    CY_REQUIRE_EQ(report.diagnostic_scopes.size(), sink.entries().size());
+    CY_CHECK_EQ(report.diagnostic_scopes[0].diagnostic_index, 0U);
+    CY_CHECK_EQ(report.diagnostic_scopes[0].emitter_index, 0U);
+    CY_CHECK_EQ(report.diagnostic_scopes[0].stage, Stage::Update);
     bool named = false;
     for (const graph::Diagnostic& diagnostic : sink.entries()) {
         named = named || diagnostic.detail == Name::intern("scene_sdf");

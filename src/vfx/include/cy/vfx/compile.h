@@ -119,9 +119,17 @@ struct EmitterReport {
     SimulationPath path = SimulationPath::GpuPreferred;
 };
 
+/// The authored graph that produced one entry in the shared diagnostic sink.
+struct DiagnosticScope {
+    usize diagnostic_index = 0;
+    u32 emitter_index = 0;
+    Stage stage = Stage::Count;
+};
+
 /// What cooking one system produced.
 struct CompileReport {
-    explicit CompileReport(Allocator& allocator) noexcept : emitters(allocator) {}
+    explicit CompileReport(Allocator& allocator) noexcept
+        : emitters(allocator), diagnostic_scopes(allocator) {}
 
     CompileReport(const CompileReport&) = delete;
     CompileReport& operator=(const CompileReport&) = delete;
@@ -129,6 +137,8 @@ struct CompileReport {
     CompileReport& operator=(CompileReport&&) noexcept = default;
 
     Array<EmitterReport> emitters;
+    /// Locations for diagnostics emitted while validating or lowering stage graphs.
+    Array<DiagnosticScope> diagnostic_scopes;
     u32 kernels = 0;
     u32 total_bytes_per_particle = 0;
     /// True when any `PassSwitches` member is off: this is NOT the shipping program.

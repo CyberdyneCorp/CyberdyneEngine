@@ -25,8 +25,8 @@ The first vertical slice supports:
 - `vfx.compile` (when `CY_VFX` is enabled) — reads an editable `.cyvfxdoc` through the engine,
   resolves the compiler node registry, and compiles the system. Schema 1 returns the cook key,
   kernel counts, per-emitter memory and cost reports, derived attribute layouts, and generated
-  Slang. Failed requests return engine node and pin diagnostics. Module asset resolution and
-  runtime preview are still pending;
+  Slang. Failed requests use diagnostic schema 2 with node, pin, emitter index, and stage identity;
+  the reader also accepts unscoped schema 1 diagnostics. Module asset resolution remains pending;
 - `material.validate` — parses and lowers canonical CyberGraph input;
 - `material.author` — validates a canvas and returns engine-canonical `.cygraph` text;
 - `material.preview.set` — validates an unsaved canvas and applies its canonical graph to a

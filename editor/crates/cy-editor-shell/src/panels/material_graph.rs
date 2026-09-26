@@ -105,8 +105,10 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 state,
                 "Empty material graph\nChoose a node from the engine catalogue",
                 &mut panels.inputs.material_link_source,
-                &mut panels.inputs.material_link_problem,
-                &[],
+                &mut CanvasFeedback {
+                    link_problem: &mut panels.inputs.material_link_problem,
+                    node_alerts: &[],
+                },
             );
         });
     });
@@ -727,6 +729,11 @@ fn select_backend_location(canvas: &mut GraphCanvas, node: u64) {
     }
 }
 
+pub(super) struct CanvasFeedback<'a> {
+    pub link_problem: &'a mut Option<String>,
+    pub node_alerts: &'a [(u64, String)],
+}
+
 pub(super) fn draw_canvas(
     ui: &mut egui::Ui,
     shell: &cy_editor_interface::shell::Shell,
@@ -734,8 +741,7 @@ pub(super) fn draw_canvas(
     state: MaterialCatalogueState,
     empty_message: &str,
     pending_source: &mut Option<(u64, u32, String, String)>,
-    link_problem: &mut Option<String>,
-    node_alerts: &[(u64, String)],
+    feedback: &mut CanvasFeedback<'_>,
 ) {
     let rect = ui.available_rect_before_wrap();
     let background = ui.allocate_rect(rect, egui::Sense::click());
@@ -787,22 +793,11 @@ pub(super) fn draw_canvas(
             selected.contains(&card.key),
             response.hovered(),
         );
-        if let Some((_, message)) = node_alerts
-            .iter()
-            .find(|(node, _)| *node == card.key.ordinal())
-        {
-            painter.rect_stroke(
-                card.rect,
-                egui::CornerRadius::same(5),
-                egui::Stroke::new(2.0, theme::role(shell.theme, Semantic::Error)),
-                egui::StrokeKind::Outside,
-            );
-            response.on_hover_text(message);
-        }
+        draw_node_alert(&painter, shell, card, response, feedback.node_alerts);
     }
     let pin_action = interact_with_pins(ui, shell, &cards, pending_source.as_ref());
     if let Some(pin) = pin_action {
-        apply_pin_action(canvas, pending_source, link_problem, pin);
+        apply_pin_action(canvas, pending_source, feedback.link_problem, pin);
     } else if background.clicked() {
         *pending_source = None;
     }
@@ -826,6 +821,25 @@ pub(super) fn draw_canvas(
             theme::role(shell.theme, Semantic::SecondaryText),
         );
     }
+    draw_catalogue_status(&painter, shell, rect, state);
+    if let Some(key) = draw_diagnostics(
+        ui,
+        &painter,
+        shell,
+        canvas,
+        rect,
+        feedback.link_problem.as_deref(),
+    ) {
+        let _ = canvas.select([key]);
+    }
+}
+
+fn draw_catalogue_status(
+    painter: &egui::Painter,
+    shell: &cy_editor_interface::shell::Shell,
+    rect: egui::Rect,
+    state: MaterialCatalogueState,
+) {
     let service = match state {
         MaterialCatalogueState::Ready => "ENGINE CATALOGUE · LIVE",
         _ => "ENGINE CATALOGUE · OFFLINE SNAPSHOT",
@@ -844,9 +858,23 @@ pub(super) fn draw_canvas(
             },
         ),
     );
-    if let Some(key) = draw_diagnostics(ui, &painter, shell, canvas, rect, link_problem.as_deref())
-    {
-        let _ = canvas.select([key]);
+}
+
+fn draw_node_alert(
+    painter: &egui::Painter,
+    shell: &cy_editor_interface::shell::Shell,
+    card: &NodeCard,
+    response: egui::Response,
+    alerts: &[(u64, String)],
+) {
+    if let Some((_, message)) = alerts.iter().find(|(node, _)| *node == card.key.ordinal()) {
+        painter.rect_stroke(
+            card.rect,
+            egui::CornerRadius::same(5),
+            egui::Stroke::new(2.0, theme::role(shell.theme, Semantic::Error)),
+            egui::StrokeKind::Outside,
+        );
+        response.on_hover_text(message);
     }
 }
 

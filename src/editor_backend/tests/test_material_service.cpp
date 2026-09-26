@@ -152,7 +152,8 @@ void append_text(std::vector<cy::u8>& bytes, std::string_view value) {
 }
 
 std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 version = 2,
-                         std::string_view interface_binding = {}) {
+                         std::string_view interface_binding = {},
+                         std::string_view invalid_emitter = {}) {
     std::vector<cy::u8> bytes;
     append_u32(bytes, version);
     append_text(bytes, "sparks");
@@ -163,8 +164,10 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
         append_text(bytes, "Sprite");
         append_u32(bytes, 1);
         bytes.push_back(0);  // Spawn
+        const std::string_view selected_type =
+            invalid_emitter.empty() || invalid_emitter == name ? node_type : "vfx.constant";
         const std::string canvas = std::string("cyvfxcanvas 1\nemitter ") + name + "\nnode 1 " +
-                                   std::string(node_type) +
+                                   std::string(selected_type) +
                                    "\n# layout 1 12 34\nprop 1 value 3\nnode 2 vfx.spawn_count\n"
                                    "link 1 out 2 value\n";
         append_text(bytes, canvas);
@@ -341,7 +344,7 @@ CY_TEST_CASE("editor_backend: the two-emitter editor sample compiles in the engi
 }
 
 CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") {
-    const std::string source = vfx_document("vfx.unknown");
+    const std::string source = vfx_document("vfx.unknown", 2, {}, "gpu");
     cy::abi::Host host(allocator());
     cy::editor::MaterialService service(allocator());
     host.bind_editor_service(&service);
@@ -354,7 +357,7 @@ CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") 
     const CyServiceEvent event = submit_and_poll(*api, host, session, request);
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
     cy::usize cursor = 0;
-    CY_REQUIRE_EQ(read_u32(event.payload + cursor), 1U);
+    CY_REQUIRE_EQ(read_u32(event.payload + cursor), 2U);
     cursor += 4;
     CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), "vfx.compile");
     (void)read_text(event.payload, event.payload_size, cursor);
@@ -365,6 +368,11 @@ CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") 
     (void)read_text(event.payload, event.payload_size, cursor);
     (void)read_text(event.payload, event.payload_size, cursor);
     CY_CHECK_EQ(read_u64(event.payload + cursor), 1U);
+    cursor += 8;
+    (void)read_text(event.payload, event.payload_size, cursor);  // pin
+    CY_CHECK_EQ(read_u32(event.payload + cursor), 1U);           // gpu emitter
+    cursor += 4;
+    CY_CHECK_EQ(event.payload[cursor], 0U);  // Spawn stage
     api->service_close(&host, session);
 }
 

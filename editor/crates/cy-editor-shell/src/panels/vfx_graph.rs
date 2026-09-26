@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 //! VFX node editing uses the same graph canvas and backend catalogue as material authoring.
 
-use std::collections::BTreeMap;
-
 use cy_editor_commands::Arguments;
 use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
-use cy_editor_interface::specialised::graph::{GraphCanvas, Layout};
+use cy_editor_interface::specialised::SpecialisedEditors;
+use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey};
 use cy_editor_interface::specialised::vfx::{
     Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument,
 };
@@ -61,7 +60,6 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         .specialised
         .active_vfx_stage()
         .expect("checked above");
-    let document = panels.specialised.vfx_document_snapshot().ok().flatten();
     let failed_diagnostics = match panels.editor.backend.vfx_compile_state() {
         VfxCompileState::Failed(_, failure) => failure.diagnostics.clone(),
         _ => Vec::new(),
@@ -79,15 +77,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         }
     };
     let canvas = session.graph.expect("VFX uses the shared graph canvas");
-    let node_alerts = if failed_diagnostics.is_empty() {
-        Vec::new()
-    } else {
-        document
-            .as_ref()
-            .and_then(|document| stage_node_locations(document, canvas).ok())
-            .map(|locations| active_node_alerts(&locations, active_stage, &failed_diagnostics))
-            .unwrap_or_default()
-    };
+    let node_alerts = active_node_alerts(active_stage, &failed_diagnostics);
     ui.label(secondary(
         panels.shell,
         "Editable stage draft · engine simulation preview · viewport particles",
@@ -116,45 +106,25 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 state,
                 "Empty VFX stage graph\nChoose a node from the engine catalogue",
                 &mut panels.inputs.vfx_link_source,
-                &mut panels.inputs.vfx_link_problem,
-                &node_alerts,
+                &mut material_graph::CanvasFeedback {
+                    link_problem: &mut panels.inputs.vfx_link_problem,
+                    node_alerts: &node_alerts,
+                },
             );
         });
     });
     auto_compile(panels);
 }
 
-fn stage_node_locations(
-    document: &VfxDocument,
-    template: &GraphCanvas,
-) -> cy_editor_core::problem::Result<BTreeMap<u64, Vec<(usize, Stage)>>> {
-    let mut locations: BTreeMap<u64, Vec<(usize, Stage)>> = BTreeMap::new();
-    for (emitter_index, emitter) in document.emitters.iter().enumerate() {
-        for stage in &emitter.stages {
-            let mut canvas = template.clone();
-            document.open_stage(emitter_index, stage.stage, &mut canvas)?;
-            for node in canvas.nodes() {
-                locations
-                    .entry(node.key.ordinal())
-                    .or_default()
-                    .push((emitter_index, stage.stage));
-            }
-        }
-    }
-    Ok(locations)
-}
-
 fn active_node_alerts(
-    locations: &BTreeMap<u64, Vec<(usize, Stage)>>,
     active_stage: (usize, Stage),
     diagnostics: &[VfxCompileDiagnostic],
 ) -> Vec<(u64, String)> {
     diagnostics
         .iter()
         .filter(|diagnostic| {
-            locations
-                .get(&diagnostic.node)
-                .is_some_and(|stages| stages.as_slice() == [active_stage])
+            diagnostic.emitter == u32::try_from(active_stage.0).ok()
+                && diagnostic.stage == Some(active_stage.1 as u8)
         })
         .map(|diagnostic| {
             let pin = if diagnostic.pin.is_empty() {
@@ -746,8 +716,9 @@ fn attribute_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize
     });
 }
 
-fn compile_report(panels: &Panels<'_>, ui: &mut egui::Ui) {
-    match panels.editor.backend.vfx_compile_state() {
+fn compile_report(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let compile_state = panels.editor.backend.vfx_compile_state().clone();
+    match compile_state {
         VfxCompileState::Idle => {}
         VfxCompileState::Pending(_) => {
             ui.label(secondary(
@@ -789,30 +760,83 @@ fn compile_report(panels: &Panels<'_>, ui: &mut egui::Ui) {
             }
         }
         VfxCompileState::Failed(_, failure) => {
+            let document = panels.specialised.vfx_document_snapshot().ok().flatten();
             ui.colored_label(
                 egui::Color32::RED,
                 format!("{}: {}", failure.code, failure.message),
             );
             for diagnostic in &failure.diagnostics {
-                ui.colored_label(
-                    egui::Color32::RED,
-                    format!(
-                        "{} · node {}{}: {}",
-                        diagnostic.code,
-                        diagnostic.node,
-                        if diagnostic.pin.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" · {}", diagnostic.pin)
-                        },
-                        diagnostic.message
-                    ),
+                let target = diagnostic_target(document.as_ref(), diagnostic);
+                let location = target.map_or_else(
+                    || format!("node {}", diagnostic.node),
+                    |(emitter, stage)| {
+                        let name =
+                            &document.as_ref().expect("target has document").emitters[emitter].name;
+                        format!("{name} / {} / node {}", stage.label(), diagnostic.node)
+                    },
                 );
+                let pin = if diagnostic.pin.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {}", diagnostic.pin)
+                };
+                let label = format!(
+                    "{} · {}{}: {}",
+                    diagnostic.code, location, pin, diagnostic.message
+                );
+                if ui
+                    .add_enabled(
+                        target.is_some(),
+                        egui::Button::new(egui::RichText::new(label).color(egui::Color32::RED))
+                            .frame(false),
+                    )
+                    .clicked()
+                    && let Some((emitter, stage)) = target
+                {
+                    navigate_to_diagnostic(panels.specialised, emitter, stage, diagnostic.node);
+                }
             }
         }
         VfxCompileState::Cancelled(_) => {
             ui.label(secondary(panels.shell, "Engine VFX compilation cancelled."));
         }
+    }
+}
+
+fn diagnostic_target(
+    document: Option<&VfxDocument>,
+    diagnostic: &VfxCompileDiagnostic,
+) -> Option<(usize, Stage)> {
+    let document = document?;
+    let emitter = usize::try_from(diagnostic.emitter?).ok()?;
+    let stage = *Stage::ALL.get(usize::from(diagnostic.stage?))?;
+    if document
+        .emitters
+        .get(emitter)?
+        .stages
+        .iter()
+        .any(|entry| entry.stage == stage)
+    {
+        Some((emitter, stage))
+    } else {
+        None
+    }
+}
+
+fn navigate_to_diagnostic(
+    editors: &mut SpecialisedEditors,
+    emitter: usize,
+    stage: Stage,
+    node: u64,
+) {
+    if editors.select_vfx_stage(emitter, stage).is_err() {
+        return;
+    }
+    if let Ok(session) = editors.open(Domain::VfxGraph)
+        && let (Some(canvas), Ok(key)) = (session.graph, NodeKey::new(node))
+        && canvas.node(key).is_some()
+    {
+        let _ = canvas.select([key]);
     }
 }
 
@@ -1117,11 +1141,88 @@ fn palette(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_core::codec::Writer;
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
     use cy_editor_interface::specialised::vfx::StageGraph;
 
     #[test]
-    fn compiler_alerts_only_mark_nodes_with_an_unambiguous_stage() {
+    fn compiler_alerts_use_emitter_and_stage_even_when_node_keys_repeat() {
+        let diagnostic = |emitter, stage| VfxCompileDiagnostic {
+            severity: 2,
+            code: "graph.invalid-node".into(),
+            message: "unknown node type".into(),
+            detail: String::new(),
+            node: 1,
+            pin: String::new(),
+            emitter: Some(emitter),
+            stage: Some(stage),
+        };
+        let diagnostics = [diagnostic(0, 0), diagnostic(1, 2)];
+        let alerts = active_node_alerts((1, Stage::Update), &diagnostics);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].0, 1);
+        assert!(alerts[0].1.contains("unknown node type"));
+    }
+
+    #[test]
+    fn diagnostic_target_keeps_the_engine_emitter_and_stage() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        for name in ["smoke", "embers"] {
+            document.emitters.push(Emitter {
+                name: name.into(),
+                path: SimulationPath::GpuPreferred,
+                renderer: "Sprite".into(),
+                stages: vec![StageGraph {
+                    stage: Stage::Update,
+                    canvas: format!("cyvfxcanvas 1\nemitter {name}\nnode 1 vfx.constant\n"),
+                }],
+                modules: Vec::new(),
+                interfaces: Vec::new(),
+                capacity: 1024,
+                attributes: Vec::new(),
+            });
+        }
+        let diagnostic = VfxCompileDiagnostic {
+            severity: 2,
+            code: "graph.invalid-node".into(),
+            message: "unknown node type".into(),
+            detail: String::new(),
+            node: 1,
+            pin: String::new(),
+            emitter: Some(1),
+            stage: Some(Stage::Update as u8),
+        };
+        assert_eq!(
+            diagnostic_target(Some(&document), &diagnostic),
+            Some((1, Stage::Update))
+        );
+    }
+
+    #[test]
+    fn diagnostic_navigation_opens_the_scoped_stage_and_selects_its_node() {
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.constant");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        let mut editors = SpecialisedEditors::new().unwrap();
+        editors.install_vfx_catalogue(&catalogue.finish()).unwrap();
+
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(
+            Catalogue::new(vec![NodeType::identified(
+                42,
+                1,
+                "vfx.constant".into(),
+                Vec::new(),
+            )])
+            .unwrap(),
+        );
+        let node = canvas.add("vfx.constant", Layout::default()).unwrap();
         let mut document = VfxDocument::new("sparks").unwrap();
         for name in ["smoke", "embers"] {
             document.emitters.push(Emitter {
@@ -1135,37 +1236,22 @@ mod tests {
                 attributes: Vec::new(),
             });
         }
-        let mut canvas = GraphCanvas::new(1);
-        canvas.load(Catalogue::new(vec![NodeType::new("vfx.constant", Vec::new())]).unwrap());
-        let shared = canvas.add("vfx.constant", Layout::default()).unwrap();
-        let unique = canvas.add("vfx.constant", Layout::default()).unwrap();
-        document.capture_stage(0, Stage::Spawn, &canvas).unwrap();
-        canvas.remove(unique).unwrap();
+        document.capture_stage(0, Stage::Update, &canvas).unwrap();
         document.capture_stage(1, Stage::Update, &canvas).unwrap();
+        editors.start_vfx_document(document).unwrap();
+        editors.select_vfx_stage(0, Stage::Update).unwrap();
 
-        let locations = stage_node_locations(&document, &canvas).unwrap();
-        let diagnostic = |node| VfxCompileDiagnostic {
-            severity: 2,
-            code: "graph.invalid-node".into(),
-            message: "unknown node type".into(),
-            detail: String::new(),
-            node,
-            pin: String::new(),
-        };
-        let alerts = active_node_alerts(
-            &locations,
-            (0, Stage::Spawn),
-            &[diagnostic(shared.ordinal()), diagnostic(unique.ordinal())],
-        );
-        assert_eq!(alerts.len(), 1);
-        assert_eq!(alerts[0].0, unique.ordinal());
-        assert!(
-            active_node_alerts(
-                &locations,
-                (1, Stage::Update),
-                &[diagnostic(unique.ordinal())]
-            )
-            .is_empty()
+        navigate_to_diagnostic(&mut editors, 1, Stage::Update, node.ordinal());
+
+        assert_eq!(editors.active_vfx_stage(), Some((1, Stage::Update)));
+        assert_eq!(
+            editors
+                .open(Domain::VfxGraph)
+                .unwrap()
+                .graph
+                .unwrap()
+                .selection(),
+            vec![node]
         );
     }
 

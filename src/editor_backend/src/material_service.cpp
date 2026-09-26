@@ -15,6 +15,7 @@
 #endif
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -210,21 +211,34 @@ CyResult failed(CyServiceSession_T& session, const char* code, const char* detai
 
 #if defined(CY_EDITOR_HAS_VFX)
 CyResult failed_vfx(CyServiceSession_T& session, const char* code, const char* message,
-                    const cy::graph::DiagnosticSink& diagnostics) noexcept {
+                    const cy::graph::DiagnosticSink& diagnostics,
+                    const cy::vfx::CompileReport& report) noexcept {
     session.failed_event = true;
     session.event_payload.clear();
-    if (!put_u32(session.event_payload, 1) || !put_text(session.event_payload, code) ||
+    if (!put_u32(session.event_payload, 2) || !put_text(session.event_payload, code) ||
         !put_text(session.event_payload, message) ||
         !put_u32(session.event_payload, static_cast<u32>(diagnostics.entries().size()))) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
-    for (const cy::graph::Diagnostic& diagnostic : diagnostics.entries()) {
+    for (usize index = 0; index < diagnostics.entries().size(); ++index) {
+        const cy::graph::Diagnostic& diagnostic = diagnostics.entries()[index];
+        u32 emitter_index = UINT32_MAX;
+        u8 stage = static_cast<u8>(cy::vfx::Stage::Count);
+        for (const cy::vfx::DiagnosticScope& scope : report.diagnostic_scopes) {
+            if (scope.diagnostic_index == index) {
+                emitter_index = scope.emitter_index;
+                stage = static_cast<u8>(scope.stage);
+                break;
+            }
+        }
         if (!put_u8(session.event_payload, static_cast<u8>(diagnostic.severity)) ||
             !put_text(session.event_payload, diagnostic.code) ||
             !put_text(session.event_payload, diagnostic.message) ||
             !put_text(session.event_payload, diagnostic.detail.text()) ||
             !put_u64(session.event_payload, diagnostic.node) ||
-            !put_text(session.event_payload, diagnostic.pin.text())) {
+            !put_text(session.event_payload, diagnostic.pin.text()) ||
+            !put_u32(session.event_payload, emitter_index) ||
+            !put_u8(session.event_payload, stage)) {
             return CY_RESULT_OUT_OF_MEMORY;
         }
     }
@@ -263,7 +277,7 @@ CyResult compile_vfx(CyServiceSession_T& session, cy::Allocator& allocator) noex
     const char* stage = nullptr;
     auto compiled = cook_vfx_document(source, allocator, diagnostics, report, stage);
     if (!compiled) {
-        return failed_vfx(session, stage, compiled.error().message, diagnostics);
+        return failed_vfx(session, stage, compiled.error().message, diagnostics, report);
     }
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 1) ||
@@ -428,7 +442,7 @@ CyResult preview_load(CyServiceSession_T& session, cy::Allocator& allocator) noe
     const char* stage = nullptr;
     auto compiled = cook_vfx_document(source, allocator, diagnostics, report, stage);
     if (!compiled) {
-        return failed_vfx(session, stage, compiled.error().message, diagnostics);
+        return failed_vfx(session, stage, compiled.error().message, diagnostics, report);
     }
     if (Status loaded = session.vfx_preview.load(std::move(*compiled)); !loaded) {
         return failed(session, "vfx.preview.load", loaded.error().message);
