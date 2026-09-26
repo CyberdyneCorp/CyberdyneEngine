@@ -479,7 +479,6 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
             }
             key = hash_u64(key, program.value().source.digest);
             key = hash_u64(key, program.value().vertex_source.digest);
-            key = hash_u64(key, program.value().vertex_source.digest);
             // THE FLAG IS ONLY MEANINGFUL WHERE ALBEDO IS SUPPOSED TO SURVIVE. A far-field program
             // replaces every texture with its declared average by design and a shadow program has
             // no surface at all; warning about either would be warning about the specification.
