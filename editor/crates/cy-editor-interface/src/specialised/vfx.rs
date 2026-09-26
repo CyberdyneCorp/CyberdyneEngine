@@ -566,6 +566,25 @@ fn read_names(input: &mut Reader<'_>) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_two_emitter_sample_reopens_without_losing_stage_graphs() {
+        let source = include_str!(
+            "../../../../../samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc"
+        );
+        let document = VfxDocument::decode_text(source).unwrap();
+        assert_eq!(document.emitters.len(), 2);
+        assert_eq!(document.emitters[0].path, SimulationPath::CpuRequired);
+        assert_eq!(document.emitters[1].path, SimulationPath::GpuPreferred);
+        assert!(
+            document
+                .emitters
+                .iter()
+                .all(|emitter| !emitter.stages.is_empty())
+        );
+        let reopened = VfxDocument::decode_text(&document.encode_text().unwrap()).unwrap();
+        assert_eq!(reopened, document);
+    }
     use crate::specialised::graph::{Catalogue, Layout, NodeType};
 
     fn canvas() -> GraphCanvas {

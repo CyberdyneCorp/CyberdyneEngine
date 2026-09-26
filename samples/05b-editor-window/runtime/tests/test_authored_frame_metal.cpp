@@ -11,7 +11,12 @@
 #include <cy_reflect_generated_scene.h>
 
 #include "authored_frame.h"
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include "golden.h"
+#endif
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -545,6 +550,39 @@ CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
             changed += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
         }
         CY_CHECK_GT(changed, 20U);
+        render_test::Image captured(allocator());
+        CY_REQUIRE(render_test::adopt(captured, frame.pixels(), 640, 360).has_value());
+        const std::string reference_path =
+            std::string(CY_TEST_PROJECT) +
+            "/samples/05b-editor-window/runtime/tests/references/issue15_two_emitters_metal.png";
+        const char* update = std::getenv("CY_RENDER_UPDATE_GOLDEN");
+        if (update != nullptr && update[0] != '\0' && update[0] != '0') {
+            CY_REQUIRE(render_test::write_png(reference_path.c_str(), captured).has_value());
+            std::fprintf(stderr, "Updated %s; inspect and commit the image.\n",
+                         reference_path.c_str());
+            CY_CHECK_FALSE(update != nullptr);  // A reference update cannot pass the test.
+        } else {
+            render_test::Image reference(allocator());
+            const Status read = render_test::read_png(reference_path.c_str(), reference);
+            if (!read) {
+                std::fprintf(stderr, "VFX reference %s: %s\n", reference_path.c_str(),
+                             read.error().message);
+            }
+            CY_REQUIRE(read.has_value());
+            const render_test::Comparison comparison = render_test::compare(reference, captured);
+            CY_REQUIRE(comparison.comparable);
+            if (comparison.differing != 0) {
+                (void)render_test::write_difference("issue15-two-emitters-metal-difference.png",
+                                                    reference, captured);
+                std::fprintf(stderr,
+                             "VFX image: %u differing texels, %u away from edges; worst channel "
+                             "delta %u at (%u, %u).\n",
+                             comparison.differing, comparison.differing_off_edge,
+                             comparison.max_channel_delta, comparison.worst_x, comparison.worst_y);
+            }
+            CY_CHECK_EQ(comparison.differing_off_edge, 0U);
+            CY_CHECK_LE(comparison.differing, comparison.edge_texels);
+        }
         CY_REQUIRE(frame.render(empty, view, false));
         CY_CHECK_EQ(frame.vfx_particle_report().particles, 0U);
         CY_CHECK_EQ(frame.vfx_particle_report().draws, 0U);

@@ -124,6 +124,10 @@ effect after a graph change.
 The hosted runtime also publishes the simulation's sprite particles through the engine's
 transparent frame pass. The authored Metal viewport test compares the same empty world before and
 after loading and stepping this exact draft, and checks that the VFX renderer draws live particles.
+It also compares the resulting 640×360 frame with the committed
+[Metal reference](runtime/tests/references/issue15_two_emitters_metal.png). Regenerate that image
+through `CY_RENDER_UPDATE_GOLDEN=1 ctest --test-dir build/dev -R '^smoke\.editor_authored_frame_metal$'`;
+the regeneration run fails by design so the new image must be inspected and committed separately.
 The same preview can be driven through MCP: call `vfx.preview.load` with the `.cyvfxdoc` source,
 wait for `vfx.preview.status` to report `pending = false`, call `vfx.preview.control` with
 `action = play`, then call `vfx.preview.step` with `seconds = 0.033333333` for each frame. The

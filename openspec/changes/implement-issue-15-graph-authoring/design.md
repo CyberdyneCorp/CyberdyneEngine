@@ -10,6 +10,8 @@ The authored hierarchy is system → emitters → spawn/update/event/render stag
 
 The editable draft is a versioned `.cyvfxdoc` project source. `vfx.document.save` journals its prior and new contents in the active scene document so undo/redo restores the file; `vfx.document.read` reopens it through the same command registry. The engine service will produce canonical cook input from this document after stage validation and compilation are connected. The draft format is not itself a cooked effect.
 
+Reusable modules need a separate asset contract. A `.cyvfxmodule` will identify its compatible stage, typed graph interface, and shared-canvas graph. System drafts will keep project asset references rather than copying module nodes. The editor's project asset layer will resolve those references and send the referenced sources with compile/preview requests; the engine will validate stage and interface compatibility, reject missing assets and cycles with named diagnostics, compose the graphs, and include each dependency's semantic digest in the cook key. `read_authoring_document` currently rejects every nonempty module list, so module references remain unavailable until this entire path is implemented (tracked by #19). The service must not infer a module file from an unqualified name or silently omit one.
+
 ## Preview and inspection
 
 An isolated engine preview instance drives play, pause, restart, scrub, and time scale. The viewport displays the runtime result. Debug snapshots expose bounded per-emitter counts, budget state, event traffic, and one-particle attribute readback. Unsupported renderer kinds or target capabilities return named refusals.
