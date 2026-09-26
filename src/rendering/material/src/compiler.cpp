@@ -249,6 +249,19 @@ struct Build {
     const Lowered lowered = match_shading_model(closure_set(program.module));
     program.model = lowered.model;
     program.generic_evaluator = lowered.generic_evaluator;
+    EmitOptions emit;
+    emit.kind = kind;
+    emit.tier = tier;
+    emit.shading_model = render::shading_model_name(lowered.model);
+    emit.canonical_order = options.passes.canonical_emission_order;
+    emit.hoist_uniform = options.passes.uniform_varying;
+    if (program.module.vertex_offset() != kInvalidNode) {
+        auto vertex = emit_vertex_offset(program.module, emit);
+        if (!vertex) {
+            return make_unexpected(vertex.error());
+        }
+        program.vertex_source = std::move(vertex.value());
+    }
     if (program.absent) {
         return program;
     }
@@ -263,12 +276,6 @@ struct Build {
     }
     program.inputs = std::move(inputs.value());
 
-    EmitOptions emit;
-    emit.kind = kind;
-    emit.tier = tier;
-    emit.shading_model = render::shading_model_name(lowered.model);
-    emit.canonical_order = options.passes.canonical_emission_order;
-    emit.hoist_uniform = options.passes.uniform_varying;
     auto source = emit_program(program.module, emit);
     if (!source) {
         return make_unexpected(source.error());
@@ -406,6 +413,7 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
                 return make_unexpected(program.error());
             }
             key = hash_u64(key, program.value().source.digest);
+            key = hash_u64(key, program.value().vertex_source.digest);
             // THE FLAG IS ONLY MEANINGFUL WHERE ALBEDO IS SUPPOSED TO SURVIVE. A far-field program
             // replaces every texture with its declared average by design and a shadow program has
             // no surface at all; warning about either would be warning about the specification.

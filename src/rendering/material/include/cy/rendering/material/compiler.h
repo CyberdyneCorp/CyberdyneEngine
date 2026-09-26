@@ -70,7 +70,11 @@ struct CompileDiagnostic {
 /// One compiled program of the family.
 struct CompiledProgram {
     explicit CompiledProgram(Allocator& allocator) noexcept
-        : module(allocator), source(allocator), cost(allocator), inputs(allocator) {}
+        : module(allocator),
+          source(allocator),
+          vertex_source(allocator),
+          cost(allocator),
+          inputs(allocator) {}
 
     CompiledProgram(const CompiledProgram&) = delete;
     CompiledProgram& operator=(const CompiledProgram&) = delete;
@@ -83,6 +87,8 @@ struct CompiledProgram {
     /// the editor's "show me the IR" both need it, and re-deriving it would be a second answer.
     Module module;
     GeneratedSource source;
+    /// The vertex-stage offset function, empty when this material does not move geometry.
+    GeneratedSource vertex_source;
     CostReport cost;
     ShadingModel model = ShadingModel::Lit;
     bool generic_evaluator = false;

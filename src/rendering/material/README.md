@@ -88,7 +88,10 @@ derivation retain it for visible and shadow programs. Graph lowering and the tex
 (`vertex_offset = ...;`) require a float3 expression. Vertex shader emission, stage-aware canvas
 output, geometry-source validation, and displaced rendering remain under issue #15.
 The engine material catalogue assigns `material.vertex_output` a stable identity and marks it as a
-vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
+vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment. Each
+compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
+its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
+the smoke suite. The frame renderer still needs to call it for visible, shadow, and motion passes.
 
 ### The one decision everything else follows from
 

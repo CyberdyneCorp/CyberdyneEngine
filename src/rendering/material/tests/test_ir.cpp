@@ -5,6 +5,7 @@
 // cases are that layer, and each one is a decision from §1.2 stated as a check.
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/material/compiler.h>
 #include <cy/rendering/material/emit.h>
 #include <cy/rendering/material/ir.h>
 #include <cy/rendering/material/lowering.h>
@@ -113,12 +114,44 @@ CY_TEST_CASE("material_ir: vertex offset is typed, hashed, serialised and kept f
     auto optimised = optimise(reopened.value(), PassSwitches{}, report);
     CY_REQUIRE(optimised.has_value());
     CY_CHECK_NE(optimised.value().vertex_offset(), kInvalidNode);
+    auto vertex = emit_vertex_offset(optimised.value(), EmitOptions{});
+    CY_REQUIRE(vertex.has_value());
+    CY_CHECK(vertex.value().view().find(
+                 "float3 cy_material_vertex_offset_case_primary_high_vertex_offset") !=
+             std::string_view::npos);
+    CY_CHECK(vertex.value().view().find("return ctx.attributes.position") !=
+             std::string_view::npos);
     DerivationOptions shadow;
     shadow.kind = ProgramKind::Shadow;
     auto derived = derive_program(optimised.value(), shadow);
     CY_REQUIRE(derived.has_value());
     CY_CHECK_EQ(derived.value().surface(), kInvalidNode);
     CY_CHECK_NE(derived.value().vertex_offset(), kInvalidNode);
+    auto shadow_vertex = emit_vertex_offset(derived.value(), EmitOptions{});
+    CY_REQUIRE(shadow_vertex.has_value());
+    CY_CHECK(shadow_vertex.value().view().find("return ctx.attributes.position") !=
+             std::string_view::npos);
+
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto compiled = compile_material(authored.value(), options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const CompiledProgram* primary = compiled.value().find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    CY_CHECK_NE(primary->vertex_source.digest, 0U);
+    auto plain_compiled = compile_material(without_offset.value(), options, allocator());
+    CY_REQUIRE(plain_compiled.has_value());
+    CY_CHECK_NE(compiled.value().cook_key(), plain_compiled.value().cook_key());
+
+    options.derive_family = true;
+    auto family = compile_material(authored.value(), options, allocator());
+    CY_REQUIRE(family.has_value());
+    const CompiledProgram* shadow_program =
+        family.value().find(ProgramKind::Shadow, QualityTier::High);
+    CY_REQUIRE(shadow_program != nullptr);
+    CY_CHECK(shadow_program->absent);
+    CY_CHECK_NE(shadow_program->vertex_source.digest, 0U);
 }
 
 CY_TEST_CASE("material_ir: the program does not depend on node ids") {

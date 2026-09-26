@@ -23,7 +23,10 @@ The existing material graph gains an explicit vertex stage and typed outputs for
 The material IR first carries a typed `float3` world-space vertex offset root beside its surface
 and opacity roots. Graph and text authoring lower to that same root; its content enters the module
 digest and versioned encoding. Optimisation and shadow derivation retain it so later vertex shader
-emission reads one expression across visible, shadow, and previous-frame positions.
+emission reads one expression across visible, shadow, and previous-frame positions. Each compiled
+variant carries a separate generated vertex function from this root, using the same SSA expression
+writer as the surface function. The vertex function is compiled against the engine Slang library as
+a vertex-stage probe before frame integration.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 
