@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Editable VFX system hierarchy. Stage sources are snapshots of the shared graph canvas;
 //! compilation and canonical graph writing belong to the engine service.
 

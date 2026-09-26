@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Editable source for a reusable VFX stage graph. Cooking and dependency resolution belong to
 //! the engine; this model only preserves the authored module and its typed interface.
 
