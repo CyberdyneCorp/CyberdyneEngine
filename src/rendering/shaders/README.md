@@ -30,6 +30,7 @@ may not appear above the backends.
 | `cy/globals.slang` | the global parameter block at set 0, binding 0 |
 | `cy/view.slang` | the per-view constants at set 1, in camera-relative space |
 | `cy/fullscreen.slang` | the full-screen triangle and a tonemapping resolve over it |
+| `cy/bloom.slang` | bloom's prefilter (soft knee, Karis average), 13-tap downsample, tent upsample and energy-redistributing composite |
 | `cy/field.slang` | an environment field, sampled from the buffer layout `cy/environment/gpu.h` fixes, through the GPU scene's bindless table at set 0, binding 3 |
 | `cy/terrain_shade.slang` | the four substrate samples a terrain vertex takes, and the colour they produce |
 | `cy/cloud_shadow.slang` | the cloud shadow field read as an attenuation of direct sunlight |

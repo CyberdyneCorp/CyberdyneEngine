@@ -66,6 +66,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/import/mesh.h>
 #include <cy/rendering/assembly/capture_manifest.h>
+#include <cy/rendering/post/effects.h>
 
 #include <string>
 #include <string_view>
@@ -161,6 +162,16 @@ struct Shot {
 
     f32 exposure_stops = 12.0F;
 
+    /// The bloom grade, read from the shot and applied only to a capture that asks for bloom
+    /// (`--bloom`): the published M11.c still is the frame without it. The threshold is written in
+    /// STOPS ABOVE THE WHITE THE EXPOSURE MAPS TO 1.0, and `bloom_threshold_for_exposure` turns it
+    /// into the scene-referred luminance the chain compares against.
+    f32 bloom_threshold_stops = 1.0F;
+    f32 bloom_knee = 0.5F;
+    f32 bloom_intensity = 0.04F;
+    f32 bloom_scatter = 0.7F;
+    u32 bloom_levels = 6;
+
     std::vector<ShotMaterial> materials;
     std::vector<std::pair<std::string, std::string>> meshes;
     std::vector<Instance> instances;
@@ -245,6 +256,10 @@ public:
     /// pictures were byte-identical, because the material read level 0 whatever lay beneath it.
     void limit_albedo_levels(u32 levels) noexcept { albedo_level_limit_ = levels; }
 
+    /// Put bloom into the frame's post chain, with the shot's bloom grade. Call it before
+    /// `stage_shot`. Off by default, and off is the frame M11.c published.
+    void enable_bloom(const Shot& shot) noexcept;
+
     /// Draw ONE frame and write BOTH images out of it.
     ///
     /// `png_path` is the tonemapped 8-bit image the resolve wrote; `linear_path` is the linear HDR
@@ -289,6 +304,8 @@ private:
     u32 height_ = 0;
     u32 supersample_ = 1;
     u32 albedo_level_limit_ = 0;
+    rendering::BloomSettings bloom_{};
+    bool bloom_enabled_ = false;
     bool available_ = false;
     Array<u32> pixels_;
 };

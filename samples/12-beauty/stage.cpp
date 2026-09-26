@@ -19,6 +19,7 @@
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/particles/strip_renderer.h>
+#include <cy/rendering/pipeline/bloom_renderer.h>
 #include <cy/rendering/pipeline/frame_bindings.h>
 #include <cy/rendering/pipeline/frame_pipelines.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
@@ -59,6 +60,7 @@ using cy::rendering::assembly::FrameAssembly;
 using cy::rendering::assembly::FrameSinks;
 using cy::rendering::particles::ParticleRenderer;
 using cy::rendering::particles::StripRenderer;
+using cy::rendering::pipeline::BloomRenderer;
 using cy::rendering::pipeline::FrameBindings;
 using cy::rendering::pipeline::FramePipelineKind;
 using cy::rendering::pipeline::FramePipelines;
@@ -181,6 +183,8 @@ struct Stage::Device {
     FrameAssembly assembly;
     FramePipelines pipelines;
     FrameBindings bindings;
+    /// Bloom's recorder, initialised only when the capture asked for bloom.
+    BloomRenderer bloom;
 
     // THE AIR. `field` owns the cooked system and the simulation world; `air` owns the sprite
     // pipeline and the ring the frame draws from. Both are members rather than locals because the
@@ -243,6 +247,7 @@ Stage::~Stage() {
             device_->air.shutdown();
             device_->trails.shutdown();
             device_->bindings.shutdown();
+            device_->bloom.shutdown();
             device_->pipelines.shutdown();
         }
         delete device_;
@@ -259,6 +264,17 @@ const char* Stage::absence() const noexcept {
                ? reason
                : "no backend reported a reason, which on this platform usually means the Vulkan "
                  "loader found no driver";
+}
+
+void Stage::enable_bloom(const Shot& shot) noexcept {
+    bloom_ = rendering::BloomSettings{};
+    bloom_.threshold =
+        rendering::bloom_threshold_for_exposure(shot.exposure_stops, shot.bloom_threshold_stops);
+    bloom_.knee = shot.bloom_knee;
+    bloom_.intensity = shot.bloom_intensity;
+    bloom_.scatter = shot.bloom_scatter;
+    bloom_.mip_count = shot.bloom_levels;
+    bloom_enabled_ = true;
 }
 
 Status Stage::open(u32 width, u32 height, u32 supersample) noexcept {
@@ -1847,6 +1863,10 @@ Status Stage::create_frame() noexcept {
     description.sky = cy::rendering::sky::SkyTableQuality::Low;
     // PINNED, because a capture has to be reproducible.
     description.pin_jitter = true;
+    // BLOOM, ONLY WHEN ASKED FOR. The post chain puts it at step 9 and the frame declares its
+    // passes; off, neither the passes nor their targets exist and the frame is M11.c's.
+    description.post.bloom = bloom_enabled_;
+    description.bloom = bloom_;
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -1861,6 +1881,12 @@ Status Stage::create_frame() noexcept {
     setup.transparency = false;
     if (Status made = device_->pipelines.initialize(device, setup); !made) {
         return made;
+    }
+    if (bloom_enabled_) {
+        if (Status made = device_->bloom.initialize(device, device_->pipelines); !made) {
+            return made;
+        }
+        device_->bloom.set_settings(bloom_);
     }
 
     Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
@@ -2077,6 +2103,10 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         cy::rendering::FramePassCallback{&record_air, &air};
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
+    if (bloom_enabled_) {
+        sinks.passes[static_cast<usize>(FramePassKind::Bloom)] =
+            device_->bloom.sink(device_->assembly.frame().bloom());
+    }
 
     cy::rendering::SpatialIndex index(*allocator_);
     AssemblyReport assembly_report;
@@ -2093,7 +2123,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     scene.depth = resources.depth;
     air.color = resources.color;
     air.depth = resources.depth;
-    resolve.scene = resources.color;
+    // What the post chain left for exposure: the scene colour, or the bloomed one.
+    resolve.scene = resources.post_source;
     resolve.output = resources.output;
 
     // THE EXPOSURE IS CONTENT. `content/beauty/shot.cyshot` carries it and the resolve divides by

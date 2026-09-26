@@ -32,6 +32,7 @@ function(cy_render_forward_declare_tests)
         NAME render_forward
         KIND unit
         SOURCES
+            "${cy_forward_tests_dir}/test_bloom_chain.cpp"
             "${cy_forward_tests_dir}/test_cluster.cpp"
             "${cy_forward_tests_dir}/test_draw_list.cpp"
             "${cy_forward_tests_dir}/test_frame.cpp"

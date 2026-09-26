@@ -94,6 +94,20 @@ void read_sky(Shot& shot, std::string_view field, std::string_view& rest) {
     }
 }
 
+void read_bloom(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "threshold-stops") {
+        shot.bloom_threshold_stops = to_float(take(rest));
+    } else if (field == "knee") {
+        shot.bloom_knee = to_float(take(rest));
+    } else if (field == "intensity") {
+        shot.bloom_intensity = to_float(take(rest));
+    } else if (field == "scatter") {
+        shot.bloom_scatter = to_float(take(rest));
+    } else if (field == "levels") {
+        shot.bloom_levels = static_cast<u32>(to_unsigned(take(rest)));
+    }
+}
+
 void read_material(Shot& shot, std::string_view& rest) {
     const std::string_view key = take(rest);
     const std::string_view field = take(rest);
@@ -212,6 +226,8 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             read_sky(shot, take(line), line);
         } else if (keyword == "exposure-stops") {
             shot.exposure_stops = to_float(take(line));
+        } else if (keyword == "bloom") {
+            read_bloom(shot, take(line), line);
         } else if (keyword == "material") {
             read_material(shot, line);
         } else if (keyword == "mesh") {

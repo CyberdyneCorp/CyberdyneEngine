@@ -22,6 +22,7 @@
 //                  against the cluster's light list and the GPU material table.
 //   Transparent    The transparent layer, back to front as the sort produced it, alpha blended,
 //                  depth tested and not written.
+//   Bloom          `BloomRenderer`'s chain, when one is attached with `set_bloom`.
 //   PostProcess    `cy/fullscreen.slang`'s own resolve: exposure, tonemap, straight into the
 //                  frame's output. That is the pass that makes the frame's colour visible, and it
 //                  is the standard library's own entry point rather than a copy of it.
@@ -97,6 +98,7 @@ struct GeometrySource {
     }
 };
 
+class BloomRenderer;
 class FrameRecorder;
 
 /// What an extension's callback is handed: the graph's own context, plus everything the layer had
@@ -173,6 +175,12 @@ public:
     [[nodiscard]] u32 shadow_extent() const noexcept { return shadow_extent_; }
     [[nodiscard]] const GeometrySource& geometry() const noexcept { return geometry_; }
 
+    /// Attach the recorder for `FramePassKind::Bloom`. Required when the frame's post chain has
+    /// bloom in it — `bind()` refuses the frame otherwise — and handed the assembly's
+    /// `AssemblyDescription::bloom` settings at every `bind()`. Null detaches it.
+    void set_bloom(BloomRenderer* bloom) noexcept { bloom_ = bloom; }
+    [[nodiscard]] BloomRenderer* bloom() const noexcept { return bloom_; }
+
     /// Attach a consumer to a stage. Refuses a stage the layer records itself only for `Prepare` —
     /// everything else composes, because a particle renderer drawing after the transparent draws is
     /// exactly the arrangement `vfx-system` wants.
@@ -209,6 +217,7 @@ private:
     FramePipelines* pipelines_ = nullptr;
     FrameBindings* bindings_ = nullptr;
     GeometrySource geometry_;
+    BloomRenderer* bloom_ = nullptr;
     ResourceId shadow_color_ = kInvalidResource;
     ResourceId shadow_depth_ = kInvalidResource;
     u32 shadow_extent_ = 0;

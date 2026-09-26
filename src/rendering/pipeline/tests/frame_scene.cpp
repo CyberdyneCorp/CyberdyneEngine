@@ -282,7 +282,7 @@ Status FrameScene::fill_particles() noexcept {
     return ok();
 }
 
-Status FrameScene::build(rhi::Device& device) noexcept {
+Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexcept {
     device_ = &device;
 
     AssemblyDescription description;
@@ -298,6 +298,10 @@ Status FrameScene::build(rhi::Device& device) noexcept {
     // suite is about what is RECORDED rather than about where the cull ran.
     description.gpu_culling = false;
     description.post.temporal_antialiasing = true;
+    if (bloom != nullptr) {
+        description.post.bloom = true;
+        description.bloom = *bloom;
+    }
     if (Status made = assembly_.initialize(description); !made) {
         return made;
     }
@@ -327,6 +331,12 @@ Status FrameScene::build(rhi::Device& device) noexcept {
     }
     if (Status made = recorder_.initialize(pipelines_, bindings_); !made) {
         return made;
+    }
+    if (bloom != nullptr) {
+        if (Status made = bloom_.initialize(device, pipelines_); !made) {
+            return made;
+        }
+        recorder_.set_bloom(&bloom_);
     }
     if (Status made = effect_.initialize(device, pipelines_, kParticleCount); !made) {
         return made;
@@ -592,6 +602,7 @@ void FrameScene::release() noexcept {
     (void)device_->wait_idle();
     effect_.shutdown();
     bindings_.shutdown();
+    bloom_.shutdown();
     pipelines_.shutdown();
     if (!output_.is_null()) {
         device_->destroy_texture(output_);

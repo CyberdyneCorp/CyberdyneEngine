@@ -103,6 +103,7 @@
 #include <cy/rendering/lighting/lights.h>
 #include <cy/rendering/material/material.h>
 #include <cy/rendering/post/chain.h>
+#include <cy/rendering/post/effects.h>
 #include <cy/rendering/shadows/cache.h>
 #include <cy/rendering/shadows/fallback.h>
 #include <cy/rendering/shadows/invalidation.h>
@@ -127,6 +128,10 @@ struct AssemblyDescription {
     f32 far_plane = 1000.0F;
     ClusterGridConfig clusters;
     PostChainConfig post;
+    /// What bloom does when `post.bloom` puts it in the chain. `mip_count` sizes the declared
+    /// chain; the rest is read by whoever records it — `pipeline::FrameRecorder` hands it to its
+    /// `BloomRenderer`.
+    BloomSettings bloom;
     ShadowCacheConfig shadows;
     sky::SkyTableQuality sky = sky::SkyTableQuality::Medium;
     TemporalConfig temporal;

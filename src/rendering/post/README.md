@@ -12,7 +12,7 @@ The post-process chain, in its defined order, with the colour space each stage o
 | `exposure.h` | manual, camera and automatic exposure; the histogram percentile; adaptation with two speeds |
 | `tonemap.h` | the six operators, AgX by default, and the output transfer functions |
 | `grading.h` | every grading control, the log encoding, and the bake into one 3D LUT |
-| `effects.h` | the derivations: AO, froxel fog, circle of confusion, motion blur, bloom |
+| `effects.h` | the derivations: AO, froxel fog, circle of confusion, motion blur, bloom — the soft knee, the Karis weight, the level weights and the redistributing composite |
 | `volumes.h` | the post-process volume stack, blended **per parameter** by normalised weight |
 | `quality.h` | five levels per stage, each with a declared cost, and the fit against a frame budget |
 | `temporal_binding.h` | the seam: the chain's temporal stage asks `TemporalFramework` for its history and never allocates one |
@@ -72,6 +72,40 @@ choosing blind. The declared numbers are the engine's defaults at a stated refer
 1920 × 1080 — **they are declarations, not measurements of this machine**, because there is no device
 in this module. A project that measures its own replaces the table.
 
+## Bloom, from the setting to the pixel
+
+Bloom is the first stage of this chain with a device pass behind it. The arithmetic stays here and
+the passes live beside the frame's own, so the split is the same as for every other stage:
+
+| Where | What |
+|---|---|
+| `PostChainConfig::bloom`, `AssemblyDescription::bloom` | the setting and its `BloomSettings`; off by default |
+| `effects.h` | `bloom_prefilter` (the soft knee), `karis_weight`, `bloom_level_weight`, `bloom_composite`, `bloom_threshold_for_exposure` |
+| `src/rendering/forward/…/bloom_chain.h` | the graph passes: prefilter, downsamples, upsamples, composite — `FramePassKind::Bloom`, between the temporal stage and the post-process |
+| `src/rendering/shaders/cy/bloom.slang` | the four fragment entry points, each the device twin of a function in `effects.h` |
+| `src/rendering/pipeline/…/bloom_renderer.h` | the recorder: pipelines, the pass set, one push block per step; `FrameRecorder::set_bloom` attaches it |
+
+**It moves energy; it does not add it.** The composite is `scene + intensity × (bloom −
+prefilter(scene))`: each texel gives up `intensity` of its above-threshold part and receives
+`intensity` of the blurred one. The upsample blends each level over the one above it by `scatter`,
+so the level weights are `(1 − s)·sᵏ` and sum to one — the chain is a normalised blur of what the
+threshold took. A frame with nothing above the knee is returned bit for bit, and so is any frame at
+an intensity of zero, which is how `render.bloom` proves that turning bloom on at zero costs the
+picture nothing. The optional lens dirt is the one term that adds light, and it is zero by default.
+
+**The threshold is physical because the stage is before exposure.** A caller that thinks in display
+terms uses `bloom_threshold_for_exposure(stops, stops_above_white)`, which converts a camera setting
+into scene units; the beauty shot writes its threshold that way so the grade survives an exposure
+change.
+
+**The Karis weight is taken in thresholds.** The shader weights each of the 13-tap filter's five
+boxes by `1 / (1 + luma / threshold)` on the first downsample. Divided by the threshold, the same
+outlier is suppressed in a sun-lit scene measured in thousands as in a dim one measured in ones.
+
+**What D3D12 needs.** The four fragment entry points compile to HLSL. The vertex stage is the
+frame's own `fullscreenVertex`, which DXC refuses (`m11c:every-shader-reaches-every-target`, M11.d),
+and the backend would also need set 2 mapped to its register space.
+
 ## What is here and what is not
 
 No device and no shader. What is here is the arithmetic that decides what each effect *does*, which
@@ -80,9 +114,9 @@ distribution and its inverse, the metering percentile, the tone curves, the grad
 soft bloom threshold, the volume blend, the declared costs. Every one of them is checkable without a
 GPU.
 
-The gathers, the blurs, the downsample and upsample chains, the histogram compute pass and the
-froxel volume itself are shaders, and they belong with the frame's passes in
-`src/rendering/forward/`.
+The gathers, the blurs, the histogram compute pass and the froxel volume itself are shaders, and
+they belong with the frame's passes. Bloom's downsample and upsample chain is the first of them to
+exist — see the section above; the others do not yet.
 
 Two stages of this chain are consumers of `src/rendering/temporal/` rather than implementations:
 `rendering-post-processing` says TAA "SHALL consume the temporal framework… It SHALL NOT implement

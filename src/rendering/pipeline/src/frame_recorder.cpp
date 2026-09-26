@@ -2,6 +2,8 @@
 
 #include <cy/rendering/pipeline/frame_recorder.h>
 
+#include <cy/rendering/pipeline/bloom_renderer.h>
+
 #include <cy/core/math/matrix.h>
 
 namespace cy::rendering::pipeline {
@@ -377,9 +379,9 @@ void record_post_process(const PassContext& context, void* user) noexcept {
     // The scene colour is a transient the graph realised a moment ago, so its view cannot be named
     // before this point. That is why the pass set is written here and the view set is written in
     // `upload`.
-    const ResourceId source = assembly.frame().pass_of(FramePassKind::Temporal) != kInvalidPass
-                                  ? resources.temporal_history
-                                  : resources.color;
+    // Whichever scene-referred stage ran last — the shading target, the temporal history or the
+    // bloomed colour — which the frame threads through its post chain and publishes here.
+    const ResourceId source = resources.post_source;
     if (Status bound = bindings.bind_scene_color(context.executor->view(source)); !bound) {
         return;
     }
@@ -455,6 +457,16 @@ Status FrameRecorder::bind(FrameAssembly& assembly) noexcept {
                     "frame recorder: the depth pipeline attachments do not match the frame's "
                     "derived prepass mode");
     }
+    if (post.bloom && bloom_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument,
+                    "frame recorder: the post chain has bloom in it and no BloomRenderer is "
+                    "attached — its passes would be declared and the post-process would read a "
+                    "target nothing wrote");
+    }
+    if (bloom_ != nullptr) {
+        bloom_->set_settings(description.bloom);
+        bloom_->reset_report();
+    }
     if (pipelines_->setup().sample_count != 1) {
         return fail(ErrorCode::NotImplemented,
                     "frame recorder: multisampled frames are not recorded by this layer — the "
@@ -478,6 +490,10 @@ FrameSinks FrameRecorder::sinks() noexcept {
     attach(FramePassKind::Opaque, &record_opaque);
     attach(FramePassKind::Transparent, &record_transparent);
     attach(FramePassKind::Temporal, &record_temporal);
+    if (bloom_ != nullptr && assembly_ != nullptr) {
+        sinks.passes[static_cast<usize>(FramePassKind::Bloom)] =
+            bloom_->sink(assembly_->frame().bloom());
+    }
     attach(FramePassKind::PostProcess, &record_post_process);
     return sinks;
 }
