@@ -40,6 +40,11 @@ pub fn validate_reference(reference: &str) -> Result<()> {
     if path
         .extension()
         .is_none_or(|extension| extension != "cyvfxmodule")
+        || reference.contains('\\')
+        || reference.contains(':')
+        || reference
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
         || !path
             .components()
             .all(|component| matches!(component, Component::Normal(_)))

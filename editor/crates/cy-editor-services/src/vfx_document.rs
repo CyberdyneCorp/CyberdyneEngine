@@ -159,7 +159,7 @@ fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
 fn validate_payload(bytes: &[u8]) -> Result<()> {
     let mut input = Reader::new(bytes);
     let version = input.u32()?;
-    if version != 1 && version != 2 {
+    if !(1..=3).contains(&version) {
         return Err(malformed());
     }
     identifier(&mut input)?;
@@ -173,6 +173,26 @@ fn validate_payload(bytes: &[u8]) -> Result<()> {
         for _ in 0..read_count(&mut input)? {
             identifier(&mut input)?;
             if input.u32()? == 0 || input.u32()? == 0 || input.u8()? > 1 {
+                return Err(malformed());
+            }
+        }
+    }
+    if version >= 3 {
+        let mut names = std::collections::HashSet::new();
+        let mut paths = std::collections::HashSet::new();
+        for _ in 0..read_count(&mut input)? {
+            let name = input.text()?;
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                || !names.insert(name)
+            {
+                return Err(malformed());
+            }
+            let path = input.text()?;
+            crate::vfx_module::validate_reference(&path)?;
+            if !paths.insert(path) {
                 return Err(malformed());
             }
         }

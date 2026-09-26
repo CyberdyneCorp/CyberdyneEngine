@@ -3,11 +3,12 @@
 
 use cy_editor_core::codec::{Reader, Writer};
 use cy_editor_core::problem::{Problem, Result};
+use std::path::{Component, Path};
 
 use super::graph::GraphCanvas;
 use super::material::{graph_canvas_interchange, load_graph_canvas_interchange};
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const MAX_ITEMS: u32 = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,6 +137,15 @@ pub struct EventChannel {
     pub readback: bool,
 }
 
+/// An explicit project asset path for a reusable module identifier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModuleAssetReference {
+    /// Identifier used by emitters and module dependencies.
+    pub name: String,
+    /// Project-relative path of the separately saved source.
+    pub path: String,
+}
+
 /// A typed parameter exposed to gameplay or folded by the compiler.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
@@ -160,6 +170,8 @@ pub struct VfxDocument {
     pub parameters: Vec<Parameter>,
     /// System event channels.
     pub channels: Vec<EventChannel>,
+    /// Explicit paths for named reusable module assets.
+    pub module_assets: Vec<ModuleAssetReference>,
 }
 
 impl VfxDocument {
@@ -172,6 +184,7 @@ impl VfxDocument {
             emitters: Vec::new(),
             parameters: Vec::new(),
             channels: Vec::new(),
+            module_assets: Vec::new(),
         })
     }
 
@@ -275,6 +288,11 @@ impl VfxDocument {
             out.u32(channel.max_chain_depth);
             out.u8(u8::from(channel.readback));
         }
+        out.u32(count(self.module_assets.len())?);
+        for asset in &self.module_assets {
+            out.text(&asset.name);
+            out.text(&asset.path);
+        }
         Ok(out.finish())
     }
 
@@ -337,7 +355,7 @@ impl VfxDocument {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut input = Reader::new(bytes);
         let version = input.u32()?;
-        if version != 1 && version != VERSION {
+        if !(1..=VERSION).contains(&version) {
             return Err(invalid("unsupported VFX document version"));
         }
         let mut document = Self::new(input.text()?)?;
@@ -419,6 +437,14 @@ impl VfxDocument {
                 });
             }
         }
+        if version >= 3 {
+            for _ in 0..read_count(&mut input)? {
+                document.module_assets.push(ModuleAssetReference {
+                    name: input.text()?,
+                    path: input.text()?,
+                });
+            }
+        }
         if input.remaining() != 0 {
             return Err(invalid("trailing VFX document data"));
         }
@@ -431,6 +457,17 @@ impl VfxDocument {
         count(self.emitters.len())?;
         count(self.parameters.len())?;
         count(self.channels.len())?;
+        count(self.module_assets.len())?;
+        for (index, asset) in self.module_assets.iter().enumerate() {
+            identifier(&asset.name)?;
+            module_path(&asset.path)?;
+            if self.module_assets[..index]
+                .iter()
+                .any(|prior| prior.name == asset.name || prior.path == asset.path)
+            {
+                return Err(invalid("duplicate VFX module asset mapping"));
+            }
+        }
         for (emitter_index, emitter) in self.emitters.iter().enumerate() {
             identifier(&emitter.name)?;
             if self.emitters[..emitter_index]
@@ -528,6 +565,25 @@ fn identifier(value: &str) -> Result<()> {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     {
         return Err(invalid("expected an ASCII identifier"));
+    }
+    Ok(())
+}
+
+fn module_path(value: &str) -> Result<()> {
+    let path = Path::new(value);
+    if path
+        .extension()
+        .is_none_or(|extension| extension != "cyvfxmodule")
+        || value.contains('\\')
+        || value.contains(':')
+        || value
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+        || !path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err(invalid("expected a project-relative .cyvfxmodule path"));
     }
     Ok(())
 }
@@ -676,6 +732,10 @@ mod tests {
             max_chain_depth: 2,
             readback: false,
         });
+        document.module_assets.push(ModuleAssetReference {
+            name: "shared_drag".into(),
+            path: "effects/shared_drag.cyvfxmodule".into(),
+        });
         assert_eq!(
             VfxDocument::decode(&document.encode().unwrap()).unwrap(),
             document
@@ -686,6 +746,25 @@ mod tests {
         );
         cy_editor_services::vfx_document::validate_source(&document.encode_text().unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn module_asset_mapping_requires_explicit_project_path() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.module_assets.push(ModuleAssetReference {
+            name: "shared_drag".into(),
+            path: "effects/shared_drag.cyvfxmodule".into(),
+        });
+        let source = document.encode_text().unwrap();
+        assert_eq!(VfxDocument::decode_text(&source).unwrap(), document);
+        cy_editor_services::vfx_document::validate_source(&source).unwrap();
+        document.module_assets[0].path = "../outside.cyvfxmodule".into();
+        assert!(document.encode().is_err());
+        document.module_assets[0].path = "effects/shared_drag.cyvfxmodule".into();
+        document
+            .module_assets
+            .push(document.module_assets[0].clone());
+        assert!(document.encode().is_err());
     }
 
     #[test]

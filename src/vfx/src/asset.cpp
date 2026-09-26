@@ -169,7 +169,11 @@ Status Emitter::bind_interface(Name interface_name) noexcept {
 // --- VfxSystemAsset ------------------------------------------------------------------------------
 
 VfxSystemAsset::VfxSystemAsset(Allocator& allocator, Name asset_name) noexcept
-    : name_(asset_name), emitters_(allocator), parameters_(allocator), channels_(allocator) {}
+    : name_(asset_name),
+      emitters_(allocator),
+      parameters_(allocator),
+      channels_(allocator),
+      module_assets_(allocator) {}
 
 void VfxSystemAsset::resolve(const NodeRegistry& registry) noexcept {
     for (Emitter& emitter : emitters_) {
@@ -247,6 +251,27 @@ const EventChannelDecl* VfxSystemAsset::find_channel(Name channel) const noexcep
     for (const EventChannelDecl& decl : channels_) {
         if (decl.name == channel) {
             return &decl;
+        }
+    }
+    return nullptr;
+}
+
+Status VfxSystemAsset::declare_module_asset(const ModuleAssetRef& reference) noexcept {
+    if (reference.name.is_empty() || reference.path.is_empty()) {
+        return fail(ErrorCode::InvalidArgument, "vfx: a module asset needs a name and path");
+    }
+    for (const ModuleAssetRef& existing : module_assets_) {
+        if (existing.name == reference.name || existing.path == reference.path) {
+            return fail(ErrorCode::AlreadyExists, "vfx: duplicate module asset mapping");
+        }
+    }
+    return module_assets_.push_back(reference);
+}
+
+const ModuleAssetRef* VfxSystemAsset::find_module_asset(Name name) const noexcept {
+    for (const ModuleAssetRef& reference : module_assets_) {
+        if (reference.name == name) {
+            return &reference;
         }
     }
     return nullptr;

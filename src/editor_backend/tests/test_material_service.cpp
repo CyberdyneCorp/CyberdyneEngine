@@ -153,7 +153,8 @@ void append_text(std::vector<cy::u8>& bytes, std::string_view value) {
 
 std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 version = 2,
                          std::string_view interface_binding = {},
-                         std::string_view invalid_emitter = {}) {
+                         std::string_view invalid_emitter = {},
+                         std::string_view module_asset_path = "effects/shared_drag.cyvfxmodule") {
     std::vector<cy::u8> bytes;
     append_u32(bytes, version);
     append_text(bytes, "sparks");
@@ -194,6 +195,11 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
         append_u32(bytes, 128);
         append_u32(bytes, 2);
         bytes.push_back(0);
+    }
+    if (version >= 3) {
+        append_u32(bytes, 1);  // explicit module asset mapping
+        append_text(bytes, "shared_drag");
+        append_text(bytes, module_asset_path);
     }
     std::string source = "cyvfxdoc 1\n";
     constexpr char hex[] = "0123456789abcdef";
@@ -270,6 +276,17 @@ CY_TEST_CASE("editor_backend: engine reader upgrades old drafts and refuses corr
     std::string corrupt = vfx_document();
     corrupt.back() = 'z';
     CY_CHECK_FALSE(cy::vfx::read_authoring_document(corrupt, allocator()).has_value());
+}
+
+CY_TEST_CASE("editor_backend: VFX document preserves explicit module asset paths") {
+    auto mapped = cy::vfx::read_authoring_document(vfx_document("vfx.constant", 3), allocator());
+    CY_REQUIRE(mapped.has_value());
+    CY_REQUIRE_EQ(mapped->module_assets().size(), 1U);
+    CY_CHECK_EQ(mapped->module_assets()[0].name.text(), "shared_drag");
+    CY_CHECK_EQ(mapped->module_assets()[0].path.text(), "effects/shared_drag.cyvfxmodule");
+
+    const std::string escaped = vfx_document("vfx.constant", 3, {}, {}, "../outside.cyvfxmodule");
+    CY_CHECK_FALSE(cy::vfx::read_authoring_document(escaped, allocator()).has_value());
 }
 
 CY_TEST_CASE("editor_backend: authored interface bindings survive reading and gate engine cooks") {

@@ -159,6 +159,12 @@ struct EventChannelDecl {
     bool readback = false;
 };
 
+/// Explicit project source for a reusable VFX module identifier.
+struct ModuleAssetRef {
+    Name name;
+    Name path;
+};
+
 /// One emitter: a name, six optional stage graphs, its attribute declarations, and the path it
 /// requires.
 class Emitter {
@@ -261,6 +267,12 @@ public:
     }
     [[nodiscard]] const EventChannelDecl* find_channel(Name channel) const noexcept;
 
+    [[nodiscard]] Status declare_module_asset(const ModuleAssetRef& reference) noexcept;
+    [[nodiscard]] Span<const ModuleAssetRef> module_assets() const noexcept {
+        return module_assets_.span();
+    }
+    [[nodiscard]] const ModuleAssetRef* find_module_asset(Name name) const noexcept;
+
     [[nodiscard]] ImportanceClass importance() const noexcept { return importance_; }
     void set_importance(ImportanceClass importance) noexcept { importance_ = importance; }
 
@@ -274,6 +286,7 @@ private:
     Array<Emitter> emitters_;
     Array<ParameterDecl> parameters_;
     Array<EventChannelDecl> channels_;
+    Array<ModuleAssetRef> module_assets_;
     ImportanceClass importance_ = ImportanceClass::Ambient;
     ScalabilityPolicy scalability_;
 };

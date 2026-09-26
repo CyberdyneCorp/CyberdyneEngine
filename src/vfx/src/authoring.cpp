@@ -36,6 +36,25 @@ constexpr u32 kMaxItems = 4096;
     return true;
 }
 
+[[nodiscard]] bool module_path(std::string_view value) noexcept {
+    if (!value.ends_with(".cyvfxmodule") || value.empty() || value.front() == '/' ||
+        value.find_first_of("\\:") != std::string_view::npos) {
+        return false;
+    }
+    while (!value.empty()) {
+        const usize separator = value.find('/');
+        const std::string_view component = value.substr(0, separator);
+        if (component.empty() || component == "." || component == "..") {
+            return false;
+        }
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        value.remove_prefix(separator + 1);
+    }
+    return true;
+}
+
 class Reader {
 public:
     explicit Reader(Span<const u8> bytes) noexcept : bytes_(bytes) {}
@@ -432,6 +451,24 @@ private:
     return ok();
 }
 
+[[nodiscard]] Status read_module_assets(Reader& reader, VfxSystemAsset& asset) noexcept {
+    auto count = reader.count();
+    if (!count) {
+        return make_unexpected(count.error());
+    }
+    for (u32 index = 0; index < *count; ++index) {
+        auto name = reader.name();
+        auto path = reader.text();
+        if (!name || !path || !module_path(*path)) {
+            return make_unexpected(malformed("invalid VFX module asset path"));
+        }
+        if (Status mapped = asset.declare_module_asset({*name, intern(*path)}); !mapped) {
+            return mapped;
+        }
+    }
+    return ok();
+}
+
 [[nodiscard]] Expected<Array<u8>, Error> decode_hex(std::string_view source,
                                                     std::string_view header,
                                                     Allocator& allocator) noexcept {
@@ -467,7 +504,7 @@ Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
     auto version = reader.word();
     auto name = reader.name();
     auto count = reader.count();
-    if (!version || (*version != 1 && *version != 2) || !name || !count) {
+    if (!version || (*version < 1 || *version > 3) || !name || !count) {
         return make_unexpected(malformed("unsupported VFX document payload"));
     }
     VfxSystemAsset asset(allocator, *name);
@@ -482,6 +519,11 @@ Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
     if (*version >= 2) {
         if (Status channels = read_channels(reader, asset); !channels) {
             return make_unexpected(channels.error());
+        }
+    }
+    if (*version >= 3) {
+        if (Status mapped = read_module_assets(reader, asset); !mapped) {
+            return make_unexpected(mapped.error());
         }
     }
     if (!reader.done()) {

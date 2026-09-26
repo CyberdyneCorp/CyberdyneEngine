@@ -526,7 +526,8 @@ authoring data; engine canonicalisation, runtime cooking, and runtime preview ar
 The current draft payload records emitter capacity, typed particle attributes with range,
 tolerance, and precision, plus bounded system event channels. Existing version 1 draft payloads
 open with engine defaults (capacity 1024 and no attribute or channel declarations) and save as
-version 2 payloads. The `.cyvfxdoc` text envelope remains version 1.
+version 3 payloads. Version 2 drafts also reopen. Version 3 maps module names to explicit
+project-relative `.cyvfxmodule` paths. The `.cyvfxdoc` text envelope remains version 1.
 The VFX panel exposes those declarations in collapsible sections: typed system parameters with
 runtime exposure, per-emitter capacity and particle attributes with precision controls, and event
 channels with event/depth limits and optional CPU readback. Invalid metadata edits leave the open
@@ -539,7 +540,8 @@ records one compatible stage, named typed inputs, dependency names, and a shared
 active scene document and supports undo/redo. The sample project includes
 `effects/shared_drag.cyvfxmodule`. The editor model and engine reader both validate that asset,
 but the VFX panel does not yet edit it and the engine does not yet resolve emitter module references
-during compilation.
+during compilation. Each referenced module needs an explicit path in the system document; the
+engine does not guess a file from its name.
 **Compile VFX** submits the current stage snapshots to the engine's `vfx.compile` service. The
 engine reads the document into `VfxSystemAsset`, resolves its registered nodes, and runs
 `compile_system`; the panel shows the last cook identity, per-emitter kernel and memory counts,
