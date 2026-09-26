@@ -22,6 +22,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(bind_interface())?;
     registry.register(unbind_interface())?;
     registry.register(add_node())?;
+    registry.register(move_node())?;
     registry.register(connect_nodes())?;
     registry.register(disconnect_nodes())?;
     registry.register(remove_node())?;
@@ -40,6 +41,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(add_module_dependency())?;
     registry.register(remove_module_dependency())?;
     registry.register(add_module_node())?;
+    registry.register(move_module_node())?;
     registry.register(connect_module_nodes())?;
     registry.register(disconnect_module_nodes())?;
     registry.register(remove_module_node())?;
@@ -174,6 +176,24 @@ fn node_key(arguments: &Arguments, name: &str) -> Result<NodeKey> {
         .and_then(Value::as_int)
         .unwrap_or_default();
     NodeKey::new(u64::try_from(value).unwrap_or_default())
+}
+
+fn node_layout(arguments: &Arguments) -> Result<Layout> {
+    let x = arguments
+        .get("x")
+        .and_then(Value::as_float)
+        .unwrap_or_default();
+    let y = arguments
+        .get("y")
+        .and_then(Value::as_float)
+        .unwrap_or_default();
+    if !x.is_finite() || !y.is_finite() {
+        return Err(Problem::new(
+            "move a VFX node",
+            "canvas position must be finite",
+        ));
+    }
+    Ok(Layout { x, y })
 }
 
 fn positive_u32(arguments: &Arguments, name: &str) -> Result<u32> {
@@ -519,6 +539,60 @@ fn add_node() -> Command {
                             "node",
                             Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
                         ))
+                    },
+                )
+            })
+        },
+    )
+}
+
+fn move_node() -> Command {
+    Command::new(
+        metadata(
+            "vfx.node.move",
+            "Move VFX Node",
+            "Moves a node on one saved emitter stage without changing its connections.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose stage contains the node.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Stage containing the node to move.",
+        ))
+        .with(ParameterSpec::required(
+            "node",
+            ValueKind::Int,
+            "Stable key of the node to move.",
+        ))
+        .with(ParameterSpec::required(
+            "x",
+            ValueKind::Float,
+            "Horizontal canvas position.",
+        ))
+        .with(ParameterSpec::required(
+            "y",
+            ValueKind::Float,
+            "Vertical canvas position.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let stage = stage(arguments)?;
+            let node = node_key(arguments, "node")?;
+            let at = node_layout(arguments)?;
+            edit_document(context, reference, |document, project| {
+                edit_canvas(
+                    document,
+                    &catalogue(project)?,
+                    emitter_name,
+                    stage,
+                    |canvas| {
+                        canvas.move_to(node, at)?;
+                        Ok(Outcome::new(format!("Moved VFX node {}", node.ordinal())))
                     },
                 )
             })
@@ -1315,6 +1389,43 @@ fn add_module_node() -> Command {
                         Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
                     ),
                 )
+            })
+        },
+    )
+}
+
+fn move_module_node() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.node.move",
+            "Move VFX Module Node",
+            "Moves a node on a saved reusable module graph without changing its connections.",
+        )
+        .with(ParameterSpec::required(
+            "node",
+            ValueKind::Int,
+            "Stable key of the module node to move.",
+        ))
+        .with(ParameterSpec::required(
+            "x",
+            ValueKind::Float,
+            "Horizontal canvas position.",
+        ))
+        .with(ParameterSpec::required(
+            "y",
+            ValueKind::Float,
+            "Vertical canvas position.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let node = node_key(arguments, "node")?;
+            let at = node_layout(arguments)?;
+            edit_module_canvas(context, reference, |canvas| {
+                canvas.move_to(node, at)?;
+                Ok(Outcome::new(format!(
+                    "Moved VFX module node {}",
+                    node.ordinal()
+                )))
             })
         },
     )

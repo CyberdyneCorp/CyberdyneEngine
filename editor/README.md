@@ -547,7 +547,8 @@ authoring data; engine canonicalisation, runtime cooking, and runtime preview ar
 `openspec/changes/implement-issue-15-graph-authoring/`.
 The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.emitter.remove`,
 `vfx.emitter.configure`, `vfx.interface.bind`, `vfx.interface.unbind`, `vfx.node.add`,
-`vfx.node.connect`, `vfx.node.disconnect`, `vfx.node.remove`, `vfx.node.property.set`, and
+`vfx.node.move`, `vfx.node.connect`, `vfx.node.disconnect`, `vfx.node.remove`,
+`vfx.node.property.set`, and
 `vfx.parameter.set`. Each reads the saved system,
 applies one edit, and saves through the same undoable document transaction. Node placement,
 connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
@@ -568,10 +569,11 @@ one undoable change; creating a module refuses to replace an existing source at 
 an unknown stage is refused without changing the file.
 `vfx.module.input.remove` and `vfx.module.dependency.remove` remove named declarations through
 the same history.
-The module graph also supports `vfx.module.node.add`, `vfx.module.node.connect`,
+The module graph also supports `vfx.module.node.add`, `vfx.module.node.move`, `vfx.module.node.connect`,
 `vfx.module.node.disconnect`, `vfx.module.node.remove`, and
 `vfx.module.node.property.set`. These commands use the live engine catalogue and save each
-canvas edit as an undoable module transaction.
+canvas edit as an undoable module transaction. MCP wire tests save and reopen connected stage
+and module nodes, then exercise move, disconnect, remove, undo, and redo through this registry.
 Use `vfx.document.read` to inspect the saved source and `edit.undo` / `edit.redo` to reverse or
 reapply an edit. An open scene document is required for these transactions.
 The current draft payload records emitter capacity, typed particle attributes with range,
