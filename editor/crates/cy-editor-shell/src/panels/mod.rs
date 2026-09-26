@@ -217,6 +217,9 @@ pub struct Inputs {
     pub vfx_preview_time_scale: f32,
     /// Latest exposed parameter edit waiting for the engine preview request slot.
     pub vfx_live_parameters: std::collections::VecDeque<(String, [f32; 4], usize)>,
+    /// Compiler-relevant bytes last submitted to the engine. Live parameter values and canvas
+    /// layout are excluded so those edits do not trigger a new cook.
+    pub vfx_compile_signature: Option<Vec<u8>>,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -317,6 +320,7 @@ impl Default for Inputs {
             vfx_preview_scrub_seconds: 0.0,
             vfx_preview_time_scale: 1.0,
             vfx_live_parameters: std::collections::VecDeque::new(),
+            vfx_compile_signature: None,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),

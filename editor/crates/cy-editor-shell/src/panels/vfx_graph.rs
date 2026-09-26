@@ -18,6 +18,9 @@ use super::{Intent, Panels, material_graph, nothing_here, secondary};
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let state = panels.editor.backend.vfx_catalogue_state();
     if !panels.specialised.can_open(Domain::VfxGraph) {
+        if !panels.editor.runtime.is_connected() {
+            panels.inputs.vfx_compile_signature = None;
+        }
         let (message, remedy) = match state {
             MaterialCatalogueState::Loading => (
                 "Loading the engine VFX catalogue…",
@@ -41,6 +44,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     preview_controls(panels, ui);
     compile_report(panels, ui);
     if panels.specialised.active_vfx_stage().is_none() {
+        auto_compile(panels);
         ui.heading("Engine catalogue");
         nothing_here(
             ui,
@@ -95,6 +99,55 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             );
         });
     });
+    auto_compile(panels);
+}
+
+fn submit_compile(
+    document: &VfxDocument,
+    last: &mut Option<Vec<u8>>,
+    force: bool,
+    mut submit: impl FnMut(String) -> cy_editor_core::problem::Result<()>,
+) -> cy_editor_core::problem::Result<bool> {
+    let signature = document.compile_signature()?;
+    if !force && last.as_ref() == Some(&signature) {
+        return Ok(false);
+    }
+    submit(document.encode_text()?)?;
+    *last = Some(signature);
+    Ok(true)
+}
+
+fn auto_compile(panels: &mut Panels<'_>) {
+    if !panels.editor.runtime.is_connected() {
+        panels.inputs.vfx_compile_signature = None;
+        return;
+    }
+    if matches!(
+        panels.editor.backend.vfx_compile_state(),
+        VfxCompileState::Pending(_)
+    ) {
+        return;
+    }
+    let document = match panels.specialised.vfx_document_snapshot() {
+        Ok(Some(document)) => document,
+        Ok(None) => return,
+        Err(problem) => {
+            panels.inputs.vfx_document_problem = Some(problem.to_string());
+            return;
+        }
+    };
+    if document.emitters.is_empty() {
+        return;
+    }
+    let result = submit_compile(
+        &document,
+        &mut panels.inputs.vfx_compile_signature,
+        false,
+        |source| panels.editor.request_vfx_compile(source).map(|_| ()),
+    );
+    if let Err(problem) = result {
+        panels.inputs.vfx_document_problem = Some(problem.to_string());
+    }
 }
 
 fn preview_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -279,16 +332,19 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 .specialised
                 .vfx_document_snapshot()
                 .and_then(|document| {
-                    document
-                        .ok_or_else(|| {
-                            cy_editor_core::problem::Problem::new(
-                                "compile a VFX system",
-                                "no VFX document is open",
-                            )
-                        })?
-                        .encode_text()
-                })
-                .and_then(|source| panels.editor.request_vfx_compile(source).map(|_| ()));
+                    let document = document.ok_or_else(|| {
+                        cy_editor_core::problem::Problem::new(
+                            "compile a VFX system",
+                            "no VFX document is open",
+                        )
+                    })?;
+                    submit_compile(
+                        &document,
+                        &mut panels.inputs.vfx_compile_signature,
+                        true,
+                        |source| panels.editor.request_vfx_compile(source).map(|_| ()),
+                    )
+                });
             panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
@@ -988,4 +1044,80 @@ fn palette(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cy_editor_interface::specialised::vfx::StageGraph;
+
+    #[test]
+    fn graph_edits_submit_a_new_cook_but_live_values_do_not() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "smoke".into(),
+            path: SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: vec![StageGraph {
+                stage: Stage::Spawn,
+                canvas: "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.constant\n".into(),
+            }],
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        document.parameters.push(Parameter {
+            name: "speed".into(),
+            kind: "float".into(),
+            value: [2.0, 0.0, 0.0, 0.0],
+            exposed: true,
+        });
+        let mut last = None;
+        let mut submitted = Vec::new();
+        {
+            let mut submit = |source: String| {
+                submitted.push(source);
+                Ok(())
+            };
+            assert!(submit_compile(&document, &mut last, false, &mut submit).unwrap());
+            document.parameters[0].value[0] = 4.0;
+            assert!(!submit_compile(&document, &mut last, false, &mut submit).unwrap());
+            document.emitters[0].stages[0].canvas =
+                "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.random\n".into();
+            assert!(submit_compile(&document, &mut last, false, &mut submit).unwrap());
+            assert!(submit_compile(&document, &mut last, true, &mut submit).unwrap());
+        }
+        assert_eq!(submitted.len(), 3);
+        assert!(
+            VfxDocument::decode_text(&submitted[1]).unwrap().emitters[0].stages[0]
+                .canvas
+                .contains("node 1 vfx.random")
+        );
+    }
+
+    #[test]
+    fn refused_compile_request_keeps_the_document_eligible_for_retry() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "smoke".into(),
+            path: SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        let mut last = None;
+        let refusal = submit_compile(&document, &mut last, false, |_| {
+            Err(cy_editor_core::problem::Problem::new(
+                "compile",
+                "runtime unavailable",
+            ))
+        });
+        assert!(refusal.is_err());
+        assert!(last.is_none());
+        assert!(submit_compile(&document, &mut last, false, |_| Ok(())).unwrap());
+    }
 }

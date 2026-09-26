@@ -291,6 +291,28 @@ impl VfxDocument {
         Ok(source)
     }
 
+    /// Compiler-relevant authoring bytes. Canvas layout and live-exposed parameter values do not
+    /// change the cooked graph; folded parameter values and every structural edit do.
+    pub fn compile_signature(&self) -> Result<Vec<u8>> {
+        let mut semantic = self.clone();
+        for emitter in &mut semantic.emitters {
+            for stage in &mut emitter.stages {
+                stage.canvas = stage
+                    .canvas
+                    .lines()
+                    .filter(|line| !line.starts_with("# layout "))
+                    .flat_map(|line| [line, "\n"])
+                    .collect();
+            }
+        }
+        for parameter in &mut semantic.parameters {
+            if parameter.exposed {
+                parameter.value = [0.0; 4];
+            }
+        }
+        semantic.encode()
+    }
+
     /// Reopen a project document without trusting its envelope or payload.
     pub fn decode_text(source: &str) -> Result<Self> {
         let payload = source
@@ -722,5 +744,46 @@ mod tests {
         });
         document.channels.push(document.channels[0].clone());
         assert!(document.encode().is_err());
+    }
+
+    #[test]
+    fn compile_signature_ignores_layout_and_live_values_but_tracks_graph_edits() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "smoke".into(),
+            path: SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: vec![StageGraph {
+                stage: Stage::Spawn,
+                canvas: "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.constant\n# layout 1 0 0\n"
+                    .into(),
+            }],
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        document.parameters.push(Parameter {
+            name: "speed".into(),
+            kind: "float".into(),
+            value: [2.0, 0.0, 0.0, 0.0],
+            exposed: true,
+        });
+        let initial = document.compile_signature().unwrap();
+        document.emitters[0].stages[0].canvas =
+            "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.constant\n# layout 1 50 80\n".into();
+        document.parameters[0].value[0] = 4.0;
+        assert_eq!(document.compile_signature().unwrap(), initial);
+
+        document.emitters[0].stages[0].canvas =
+            "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.random\n# layout 1 50 80\n".into();
+        assert_ne!(document.compile_signature().unwrap(), initial);
+        document.emitters[0].stages[0].canvas =
+            "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.constant\n".into();
+        document.parameters[0].exposed = false;
+        assert_ne!(document.compile_signature().unwrap(), initial);
+        let folded = document.compile_signature().unwrap();
+        document.parameters[0].value[0] = 5.0;
+        assert_ne!(document.compile_signature().unwrap(), folded);
     }
 }
