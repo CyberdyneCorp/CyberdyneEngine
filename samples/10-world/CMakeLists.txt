@@ -64,6 +64,7 @@ cy_add_module(
         main.cpp
         world.cpp
         stage.cpp
+        water_surface.cpp
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
         cy::environment
