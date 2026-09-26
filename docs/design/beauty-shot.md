@@ -257,13 +257,24 @@ cy_sample_beauty     TextureImporter                  →  BC7/BC5 + mips
 form to M11.e and gives the reason — *"a second writer of a canonical format is a second format the
 day the two disagree about a float"* — so the editor writes an interchange and the engine writes the
 file, which `cy_material author` then parses back and compares by semantic digest before it is kept.
-The same arrangement M8.a chose for `.cyprim`.
+The same arrangement M8.a chose for `.cyprim`. The interchange also records where each node sits on
+the canvas, one `# layout` comment line per node, so a reopened graph keeps its arrangement; the
+engine's reader skips comment lines, so a node's position never reaches the `.cygraph`, the
+generated program or the picture.
 
-**What is honestly missing from "authored through the editor".** The materials are placed and wired
-on the editor's authoring MODEL by a program, not by a person at a window: the editor's command
-registry has no `material.*` commands, so this cannot yet be driven over the control socket the way
-`samples/08a-authoring` drives a scene. `m11c:the-shot-does-not-overclaim-the-editor` checks that sentence against the tree: the day a
-`material.*` command is registered it goes red and this caption is owed an update. What IS true, and was not true before this rung, is that
-`SpecialisedEditors::open(Domain::Materials)` succeeds at all: M11.c's spike measured it refusing
-with *"this build declares no authoring vocabulary for materials — `material-compiler` owes it"*, and
-that was junction 1 of six.
+**What is honestly missing from "authored through the editor".** The shot's materials were placed
+and wired on the editor's authoring MODEL by a program, `cy-author-material`, not by a person at a
+window and not over the control socket. The editor's command registry now carries four material
+commands, `material.graph.read`, `material.graph.preview`, `material.graph.save` and
+`material.graph.status` (`19a3f07`), so a material graph CAN be edited over the control socket: a
+client reads a project graph's `cymatcanvas 1` text, changes it, previews it in the hosted viewport
+and asks the engine to author and save it. What they exchange is a WHOLE canvas as text:
+none of them places a node or wires a pin, so a socket client edits a canvas the way it would edit
+a file, not node by node the way `samples/08a-authoring` drives a scene, and none of the three committed
+canvases went through them. `m11c:the-shot-does-not-overclaim-the-editor` checks these sentences
+against the editor's own registry: the day a `material.*` command outside `material.graph.*` is
+registered, or the registry and this paragraph disagree about which `material.graph.*` commands
+exist, it goes red and this caption is owed an update. What IS true, and was not true before this
+rung, is that `SpecialisedEditors::open(Domain::Materials)` succeeds at all: M11.c's spike measured
+it refusing with *"this build declares no authoring vocabulary for materials — `material-compiler`
+owes it"*, and that was junction 1 of six.

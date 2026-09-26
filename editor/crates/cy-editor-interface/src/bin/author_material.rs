@@ -16,11 +16,12 @@
 //!
 //! **What this is NOT is a person at a window.** The editor's window, its command registry and its
 //! agent surface are not driven here: this is the editor's authoring MODEL, exercised by a program.
-//! `docs/design/beauty-shot.md` says so in the artefact's own provenance, and `m11c.toml` declares the
-//! remaining half — `material.*` commands on the editor's registry, so the same three materials can
-//! be authored over the control socket the way `samples/08a-authoring` drives a scene — as a gap with
-//! the rung that owes it. A claim of "authored in the editor's window" would be one nobody could
-//! check; this one is exactly as strong as what it did.
+//! `docs/design/beauty-shot.md` says so in the artefact's own provenance. The registry has since
+//! gained `material.graph.{read,preview,save,status}`, which carry a WHOLE canvas as text over the
+//! control socket; none of them places a node or wires a pin, so the node-by-node authoring this
+//! program does is still not something a socket client can do, and the provenance says that too. A
+//! claim of "authored in the editor's window" would be one nobody could check; this one is exactly as
+//! strong as what it did.
 //!
 //! --- WHAT IT WRITES --------------------------------------------------------------------------------
 //!
@@ -373,4 +374,34 @@ fn main() -> std::process::ExitCode {
         }
     }
     std::process::ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RECIPES, SpecialisedEditors, author};
+
+    /// The committed canvases are this program's output, byte for byte, checked in the editor's own
+    /// suite. `m11c:shot-authored-through-the-editor` checks the same bytes, but only in the milestone
+    /// job; `ec73658` added a `# layout` line per node to the interchange and the committed canvases
+    /// went stale unnoticed until the next ledger. Here a change to what the canvas writes fails the
+    /// pull request that makes it.
+    #[test]
+    fn the_committed_beauty_canvases_are_what_the_editor_writes() {
+        let committed = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../content/beauty/materials");
+        let mut editors = SpecialisedEditors::with_legacy_material_catalogue()
+            .expect("the legacy material catalogue builds");
+        for recipe in &RECIPES {
+            let written = author(recipe, &mut editors).expect("the recipe authors on the canvas");
+            let path = committed.join(format!("{}.cymatcanvas", recipe.name));
+            let on_disk = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert!(
+                written == on_disk,
+                "{} is not what the editor's canvas writes; regenerate it with \
+                 `cy-author-material content/beauty/materials`",
+                path.display()
+            );
+        }
+    }
 }

@@ -1549,7 +1549,7 @@ note = "The caption stops saying what the frame is doing on the material's behal
 
 [[criterion]]
 id = "the-shot-does-not-overclaim-the-editor"
-describe = "the artefact says exactly how much of the editor it went through, and the check ASKS THE EDITOR. `cyberdyne-editor --list-commands` prints the registry a control socket can drive; M11.c made `SpecialisedEditors::open(Domain::Materials)` succeed and authored the shot's materials on the editor's authoring MODEL from a program, and registered no `material.*` command — so the materials cannot be authored the way `samples/08a-authoring` authors a scene, and the provenance says that. The day a command appears in that listing this goes red and the caption is owed an update"
+describe = "the artefact says exactly how much of the editor it went through, and the check ASKS THE EDITOR. `cyberdyne-editor --list-commands` prints the registry a control socket can drive. M11.c made `SpecialisedEditors::open(Domain::Materials)` succeed and authored the shot's materials on the editor's authoring MODEL from a program, and registered no `material.*` command; `19a3f07` then registered `material.graph.{read,preview,save,status}`, which carry a whole canvas as text and place no node. So a material can be edited over the control socket as text but not authored node by node the way `samples/08a-authoring` authors a scene, and the provenance says that, naming exactly the `material.graph.*` commands the registry holds. The day the registry gains a `material.*` command outside `material.graph.*`, or it and the provenance disagree about which `material.graph.*` commands exist, this goes red and the caption is owed an update"
 source = "tasks 6.1a and 7.3, editor-architecture, editor-agent-interface, design.md section 7"
 kind = "command"
 run = '''
@@ -1564,13 +1564,28 @@ trap 'rm -f "$listing"' EXIT
 total=$(grep -c '^[a-z][a-z.-]*(' "$listing" || true)
 test "${total:-0}" -ge 20 || { echo "the registry listed ${total:-0} command(s); this is not the listing this check reads"; exit 1; }
 echo "the editor's registry lists $total command(s)"
-if grep -q '^material\.' "$listing"; then
-    grep '^material\.' "$listing" | head -5
-    echo "the editor now registers material.* commands, so the shot CAN be authored over the control"
-    echo "socket and docs/design/beauty-shot.md's statement that it cannot is out of date."
+commands=$(grep -oE '^material\.[a-z._-]+' "$listing" | sort -u || true)
+beyond=$(printf '%s\n' "$commands" | grep -v '^material\.graph\.' | grep . || true)
+if [ -n "$beyond" ]; then
+    printf '%s\n' "$beyond" | head -5
+    echo "the editor registers material command(s) outside material.graph.*, so a material may now be"
+    echo "authored node by node over the control socket and docs/design/beauty-shot.md's statement that"
+    echo "the socket carries only a whole canvas as text is out of date."
     exit 1
 fi
-echo "none of them is material.*: a material cannot be authored over the control socket"
+named=$(grep -oE '`material\.graph\.[a-z_-]+`' docs/design/beauty-shot.md | tr -d '`' | sort -u || true)
+if [ "$commands" != "$named" ]; then
+    echo "the editor registers: ${commands:-no material command}" | tr '\n' ' '; echo
+    echo "the provenance names: ${named:-no material.graph.* command}" | tr '\n' ' '; echo
+    echo "docs/design/beauty-shot.md and the editor's registry disagree about the material commands"
+    exit 1
+fi
+if [ -n "$commands" ]; then
+    echo "the only material commands are the whole-canvas ones the provenance names:" $commands
+    grep -q 'none of them places a node' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer says the material commands cannot place a node"; exit 1; }
+else
+    echo "none of them is material.*: a material cannot be authored over the control socket"
+fi
 grep -q 'honestly missing' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer states what is missing from \"authored through the editor\""; exit 1; }
 grep -q 'control socket' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer names the surface the materials cannot be authored over"; exit 1; }
 echo "and the provenance says so, in the section that says what the artefact is not"
