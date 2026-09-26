@@ -46,7 +46,6 @@
 
 #include <cstdio>
 #include <fstream>
-#include <iterator>
 #include <string>
 
 using namespace cy;
@@ -165,7 +164,13 @@ CY_TEST_CASE("the editor's two-emitter VFX sample changes the rendered image") {
         "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
     std::ifstream input(path);
     CY_REQUIRE(input.good());
-    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    std::string source;
+    char byte = '\0';
+    while (input.get(byte)) {
+        source.push_back(byte);
+    }
+    CY_REQUIRE(input.eof());
+    CY_REQUIRE(!source.empty());
     auto asset = read_authoring_document(source, allocator());
     CY_REQUIRE(asset.has_value());
     graph::NodeRegistry nodes(allocator());
