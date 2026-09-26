@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 310 proven, 377 not yet shown able to fail.
+# 311 proven, 377 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1182,18 +1182,26 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11d-packaging-
 [[proof]]
 ledger = "m11d"
 criterion = "core-rows-at-complete-grade"
-digest = "c0bbe416d88044a7"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction … 12 of 71 requirement(s) across 6 row(s) map to a test, a gate or a recorded exemption"
+digest = "08fff010be918eca"
+verdict = "proven"
+mutation = "rename-token 'a stale entity id is not alive and its components read as null' in src/ecs/tests/test_entities.cpp (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d"
+criterion = "core-rows-move-to-m11e"
+digest = "71ca7b3cc7d48849"
+verdict = "proven"
+mutation = "delete-lines 'core-platform-abstraction = \"complete\"' in tools/roadmap/milestones/m11e.toml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
 criterion = "developer-workflow-recipes"
 digest = "6e34bb5f1682a123"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): maintenance.just:22: refuses naming task '2.1.5', which is no rung on the ladder … 1 recipe line(s) name a milestone the ladder does not carry, or refuse naming no rung"
+verdict = "proven"
+mutation = "delete-lines '\"m11e\",' in tools/roadmap/record.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
@@ -1342,10 +1350,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (e
 [[proof]]
 ledger = "m11d"
 criterion = "roadmap-tiers"
-digest = "a3ec71f3734cf25f"
+digest = "3525ebf59d1a6c2a"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): core-assets-and-io: recorded 'working', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): developer-workflow-and-just: recorded 'seed', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11d"
@@ -1574,7 +1582,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 1
 [[proof]]
 ledger = "m11e"
 criterion = "roadmap-tiers"
-digest = "f988198aac40f74f"
+digest = "0075bc53a73ced31"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
