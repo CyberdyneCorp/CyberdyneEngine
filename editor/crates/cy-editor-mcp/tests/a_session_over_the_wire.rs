@@ -376,6 +376,29 @@ fn vfx_hierarchy_and_parameter_edits_use_the_same_undo_history_over_mcp() {
 }
 
 #[test]
+fn vfx_canvas_removal_commands_are_projected_over_mcp() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        ],
+        &mut editor,
+    );
+    let Json::Array(tools) = result(&replies, 1).get("tools") else {
+        panic!("tools/list must contain VFX canvas commands");
+    };
+    for command in ["vfx.node.disconnect", "vfx.node.remove"] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} must be available over MCP"
+        );
+    }
+}
+
+#[test]
 fn vfx_renderer_target_and_interface_edits_round_trip_over_mcp() {
     use cy_editor_interface::specialised::vfx::{SimulationPath, VfxDocument};
 

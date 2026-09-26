@@ -758,6 +758,38 @@ impl GraphCanvas {
         self.links.iter()
     }
 
+    /// Remove one exact wire while keeping its endpoint nodes and other wires intact.
+    pub fn disconnect(
+        &mut self,
+        from: NodeKey,
+        from_pin: &str,
+        to: NodeKey,
+        to_pin: &str,
+    ) -> Result<()> {
+        let link = self
+            .links
+            .iter()
+            .find(|link| {
+                link.from == from
+                    && link.from_pin == from_pin
+                    && link.to == to
+                    && link.to_pin == to_pin
+            })
+            .cloned()
+            .ok_or_else(|| {
+                Problem::new(
+                    "disconnect graph nodes",
+                    format!(
+                        "no wire connects node {} {from_pin} to node {} {to_pin}",
+                        from.ordinal(),
+                        to.ordinal()
+                    ),
+                )
+            })?;
+        self.links.remove(&link);
+        Ok(())
+    }
+
     /// Remove a node and every wire that touched it.
     pub fn remove(&mut self, key: NodeKey) -> Result<()> {
         if self.nodes.remove(&key).is_none() {

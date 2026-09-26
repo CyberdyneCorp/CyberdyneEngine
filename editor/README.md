@@ -545,7 +545,8 @@ authoring data; engine canonicalisation, runtime cooking, and runtime preview ar
 `openspec/changes/implement-issue-15-graph-authoring/`.
 The command palette, scripts, and MCP also expose `vfx.emitter.add`,
 `vfx.emitter.configure`, `vfx.interface.bind`, `vfx.interface.unbind`, `vfx.node.add`,
-`vfx.node.connect`, `vfx.node.property.set`, and `vfx.parameter.set`. Each reads the saved system,
+`vfx.node.connect`, `vfx.node.disconnect`, `vfx.node.remove`, `vfx.node.property.set`, and
+`vfx.parameter.set`. Each reads the saved system,
 applies one edit, and saves through the same undoable document transaction. Node placement,
 connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
 or unknown node, pin, or property is refused by name.

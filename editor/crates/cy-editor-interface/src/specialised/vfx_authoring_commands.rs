@@ -22,6 +22,8 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(unbind_interface())?;
     registry.register(add_node())?;
     registry.register(connect_nodes())?;
+    registry.register(disconnect_nodes())?;
+    registry.register(remove_node())?;
     registry.register(set_node_property())?;
     registry.register(set_parameter())?;
     registry.register(create_module())?;
@@ -105,6 +107,14 @@ fn stage(arguments: &Arguments) -> Result<Stage> {
             ),
         )),
     }
+}
+
+fn node_key(arguments: &Arguments, name: &str) -> Result<NodeKey> {
+    let value = arguments
+        .get(name)
+        .and_then(Value::as_int)
+        .unwrap_or_default();
+    NodeKey::new(u64::try_from(value).unwrap_or_default())
 }
 
 fn stage_canvas(
@@ -463,15 +473,8 @@ fn connect_nodes() -> Command {
             let reference = text(arguments, "reference");
             let emitter_name = text(arguments, "emitter");
             let stage = stage(arguments)?;
-            let key = |name| -> Result<NodeKey> {
-                let value = arguments
-                    .get(name)
-                    .and_then(Value::as_int)
-                    .unwrap_or_default();
-                NodeKey::new(u64::try_from(value).unwrap_or_default())
-            };
-            let from = key("from")?;
-            let to = key("to")?;
+            let from = node_key(arguments, "from")?;
+            let to = node_key(arguments, "to")?;
             let from_pin = text(arguments, "from_pin");
             let to_pin = text(arguments, "to_pin");
             edit_document(context, reference, |document, project| {
@@ -487,6 +490,114 @@ fn connect_nodes() -> Command {
                             from.ordinal(),
                             to.ordinal()
                         )))
+                    },
+                )
+            })
+        },
+    )
+}
+
+fn disconnect_nodes() -> Command {
+    Command::new(
+        metadata(
+            "vfx.node.disconnect",
+            "Disconnect VFX Nodes",
+            "Removes one wire from a saved emitter stage in an undoable edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose stage contains this wire.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Stage of that emitter containing this wire.",
+        ))
+        .with(ParameterSpec::required(
+            "from",
+            ValueKind::Int,
+            "Stable key of the node providing the wire's value.",
+        ))
+        .with(ParameterSpec::required(
+            "from_pin",
+            ValueKind::Text,
+            "Engine-declared output pin connected by the wire.",
+        ))
+        .with(ParameterSpec::required(
+            "to",
+            ValueKind::Int,
+            "Stable key of the node receiving the wire's value.",
+        ))
+        .with(ParameterSpec::required(
+            "to_pin",
+            ValueKind::Text,
+            "Engine-declared input pin connected by the wire.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let stage = stage(arguments)?;
+            let from = node_key(arguments, "from")?;
+            let to = node_key(arguments, "to")?;
+            let from_pin = text(arguments, "from_pin");
+            let to_pin = text(arguments, "to_pin");
+            edit_document(context, reference, |document, project| {
+                edit_canvas(
+                    document,
+                    &catalogue(project)?,
+                    emitter_name,
+                    stage,
+                    |canvas| {
+                        canvas.disconnect(from, from_pin, to, to_pin)?;
+                        Ok(Outcome::new(format!(
+                            "Disconnected VFX nodes {} and {}",
+                            from.ordinal(),
+                            to.ordinal()
+                        )))
+                    },
+                )
+            })
+        },
+    )
+}
+
+fn remove_node() -> Command {
+    Command::new(
+        metadata(
+            "vfx.node.remove",
+            "Remove VFX Node",
+            "Removes one node and its wires from a saved emitter stage in an undoable edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose stage contains this node.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Stage of that emitter containing this node.",
+        ))
+        .with(ParameterSpec::required(
+            "node",
+            ValueKind::Int,
+            "Stable key of the node and attached wires to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let stage = stage(arguments)?;
+            let node = node_key(arguments, "node")?;
+            edit_document(context, reference, |document, project| {
+                edit_canvas(
+                    document,
+                    &catalogue(project)?,
+                    emitter_name,
+                    stage,
+                    |canvas| {
+                        canvas.remove(node)?;
+                        Ok(Outcome::new(format!("Removed VFX node {}", node.ordinal())))
                     },
                 )
             })
@@ -530,11 +641,7 @@ fn set_node_property() -> Command {
             let reference = text(arguments, "reference");
             let emitter_name = text(arguments, "emitter");
             let stage = stage(arguments)?;
-            let ordinal = arguments
-                .get("node")
-                .and_then(Value::as_int)
-                .unwrap_or_default();
-            let key = NodeKey::new(u64::try_from(ordinal).unwrap_or_default())?;
+            let key = node_key(arguments, "node")?;
             let property = text(arguments, "property");
             let value = text(arguments, "value");
             edit_document(context, reference, |document, project| {
@@ -842,6 +949,61 @@ mod tests {
                 .to_bits(),
             10.0_f32.to_bits()
         );
+    }
+
+    #[test]
+    fn stage_wire_and_node_removal_preserve_other_saved_nodes() {
+        let catalogue = engine_catalogue();
+        let mut document = document();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                let from = canvas.add("vfx.constant", Layout::default())?;
+                let to = canvas.add("vfx.spawn_count", Layout::default())?;
+                canvas.connect(from, "out", to, "value")?;
+                Ok(Outcome::new("connected"))
+            },
+        )
+        .unwrap();
+        let from = NodeKey::new(1).unwrap();
+        let to = NodeKey::new(2).unwrap();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                canvas.disconnect(from, "out", to, "value")?;
+                assert!(canvas.disconnect(from, "out", to, "value").is_err());
+                Ok(Outcome::new("disconnected"))
+            },
+        )
+        .unwrap();
+        let reopened = VfxDocument::decode_text(&document.encode_text().unwrap()).unwrap();
+        let canvas = stage_canvas(&catalogue, &reopened, 0, Stage::Spawn).unwrap();
+        assert_eq!(canvas.nodes().count(), 2);
+        assert_eq!(canvas.links().count(), 0);
+
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                canvas.connect(from, "out", to, "value")?;
+                canvas.remove(from)?;
+                Ok(Outcome::new("removed"))
+            },
+        )
+        .unwrap();
+        let reopened = VfxDocument::decode_text(&document.encode_text().unwrap()).unwrap();
+        let canvas = stage_canvas(&catalogue, &reopened, 0, Stage::Spawn).unwrap();
+        assert_eq!(canvas.nodes().count(), 1);
+        assert_eq!(canvas.links().count(), 0);
+        assert!(canvas.node(to).is_some());
     }
 
     #[test]
