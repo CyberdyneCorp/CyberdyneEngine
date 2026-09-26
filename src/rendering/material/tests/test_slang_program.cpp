@@ -266,13 +266,14 @@ CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standar
     std::printf("worn_metal primary/high compiled to %u SPIR-V words\n", words);
 }
 
-CY_TEST_CASE("sine noise and wind compile in a generated vertex offset") {
+CY_TEST_CASE("sine noise wind and colour compile in a generated vertex offset") {
     CY_REQUIRE(shader::slang::slang_available());
     ParseDiagnostic sink(current_allocator());
     auto module = parse_material(
         "material wind_sway { attribute time_seconds : float; attribute position : float3; "
+        "attribute color0 : float3; "
         "vertex_offset = position * sin(time_seconds) + "
-        "(0.0, noise(position), 0.0) + wind(position, time_seconds); }",
+        "(0.0, noise(position), 0.0) + wind(position, time_seconds) + color0 * 0.1; }",
         current_allocator(), sink);
     CY_REQUIRE(module.has_value());
     auto generated = emit_vertex_offset(*module, EmitOptions{});
@@ -295,12 +296,13 @@ void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
 }
 struct CyVertexProbeOutput { float4 position : SV_Position; };
 [shader("vertex")]
-CyVertexProbeOutput cyVertexProbe(float3 position : POSITION)
+CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COLOR0)
 {
     CyMaterialContext ctx;
     ctx.params = cyMaterialParameters;
     ctx.attributes = cyZeroAttributes();
     ctx.attributes.position = position;
+    ctx.attributes.color0 = color.rgb;
     let offset = cy_material_wind_sway_primary_high_vertex_offset(ctx);
     CyVertexProbeOutput output;
     output.position = float4(position + offset, 1.0);

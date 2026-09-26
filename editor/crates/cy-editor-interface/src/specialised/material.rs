@@ -106,6 +106,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.transmission", &["colour", "weight"], true),
     ("material.uv0", &[], false),
     ("material.vertex_output", &["offset"], false),
+    ("material.vertex_color", &[], false),
     ("material.world_position", &[], false),
     ("material.wind", &["position", "time"], false),
 ];

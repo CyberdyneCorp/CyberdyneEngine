@@ -72,6 +72,7 @@ constexpr NodeSpec kPalette[] = {
     {32, "material.time", GraphOp::Time, {}, 0, false},
     {33, "material.noise", GraphOp::Noise, {"position"}, 1, false},
     {34, "material.wind", GraphOp::Wind, {"position", "time"}, 2, false},
+    {35, "material.vertex_color", GraphOp::VertexColor, {}, 0, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
@@ -298,6 +299,8 @@ private:
         type = MaterialValueType::Vec2;
     } else if (spec.op == GraphOp::Time) {
         type = MaterialValueType::Float;
+    } else if (spec.op == GraphOp::VertexColor) {
+        type = MaterialValueType::Vec3;
     }
     const MaterialImmediate value =
         immediate_of(graph.property(node.key, Name::intern("value")), {});

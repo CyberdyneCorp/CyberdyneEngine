@@ -99,6 +99,10 @@ and `noise(position)` text form lower to the same IR operation and engine Slang 
 `material.wind` accepts a float3 coordinate and elapsed seconds, returning a smooth float3 vector
 with components in `[-1, 1]`. The node and `wind(position, time_seconds)` text form share that IR
 operation; authors scale the vector to control displacement amplitude.
+`material.vertex_color` lowers to the typed `color0` RGB attribute. The first-light compiled-material
+mesh supplies per-vertex linear RGBA data; the generated sample assigns distinct RGB colours by
+face, and a vertex without authored colour defaults to white. RGB reaches vertex and fragment
+evaluation.
 Each compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
 its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
 the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including

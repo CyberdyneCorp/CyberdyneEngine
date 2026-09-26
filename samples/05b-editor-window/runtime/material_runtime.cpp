@@ -132,8 +132,10 @@ struct StandardLibrary {
             writer.text(".uv;\n");
         } else if (node.symbol == Name::intern("tangent") && node.type == ValueType::Vec4) {
             writer.text(" = float4(1.0, 0.0, 0.0, 1.0);\n");
-        } else if (node.symbol == Name::intern("color0") && node.type == ValueType::Vec4) {
-            writer.text(" = object.baseColor;\n");
+        } else if (node.symbol == Name::intern("color0") && node.type == ValueType::Vec3) {
+            writer.text(" = ");
+            writer.text(source);
+            writer.text(".color.rgb;\n");
         } else {
             return fail(
                 ErrorCode::Unsupported,
@@ -211,6 +213,7 @@ struct EditorVertexInput
     [[vk::location(0)]] float3 position : POSITION;
     [[vk::location(1)]] float3 normal : NORMAL;
     [[vk::location(2)]] float2 uv : TEXCOORD0;
+    [[vk::location(3)]] float4 color : COLOR0;
 };
 struct EditorVertexOutput
 {
@@ -219,6 +222,7 @@ struct EditorVertexOutput
     [[vk::location(1)]] float3 normal : TEXCOORD2;
     [[vk::location(2)]] float2 uv : TEXCOORD3;
     [[vk::location(3)]] float3 objectPosition : TEXCOORD4;
+    [[vk::location(4)]] float4 color : COLOR1;
 };
 float3 editorPosition(float3 position)
 {
@@ -235,6 +239,7 @@ EditorVertexOutput editorMaterialVertexBase(EditorVertexInput input)
                                      dot(object.modelRow1.xyz, input.normal),
                                      dot(object.modelRow2.xyz, input.normal)));
     output.uv = input.uv;
+    output.color = input.color;
 )");
     if (program.module.vertex_offset() != rendering::material::kInvalidNode) {
         writer.text(

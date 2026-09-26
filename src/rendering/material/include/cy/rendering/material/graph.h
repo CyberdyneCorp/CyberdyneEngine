@@ -87,6 +87,8 @@ enum class GraphOp : u16 {
     Noise,
     /// Time-varying wind vector sampled at a three-dimensional position.
     Wind,
+    /// Linear RGB colour from the current mesh vertex.
+    VertexColor,
     Count,
 };
 

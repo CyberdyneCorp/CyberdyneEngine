@@ -130,6 +130,50 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
     CY_CHECK_FALSE(images_differ(offset_image.span(), renderer.color_texels()));
 }
 
+CY_TEST_CASE("a compiled vertex colour shades the hosted Metal material mesh") {
+    Device device;
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    scene_description.box_count = kWorldCapacity;
+    CY_REQUIRE(scene.build(scene_description));
+
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    WorldView world(allocator());
+    CY_REQUIRE(world.open(CY_SAMPLE_PROJECT, "worlds/city.cyworld", types));
+    CY_REQUIRE_EQ(world.present(scene), 3U);
+
+    first_light::Renderer renderer(allocator(), *device.handle);
+    first_light::RendererOptions options;
+    options.width = 160;
+    options.height = 90;
+    options.readback = true;
+    CY_REQUIRE(renderer.prepare(scene, options));
+
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto plain =
+        compile_material("material dyed { surface = diffuse((1.0, 1.0, 1.0)); opacity = 1.0; }");
+    auto coloured = compile_material(
+        "material dyed { attribute color0 : float3; surface = diffuse(color0); opacity = 1.0; }");
+    CY_REQUIRE(runtime.publish(plain.cook_key(), plain));
+    CY_REQUIRE(runtime.publish(coloured.cook_key(), coloured));
+    constexpr u64 preview = 2;
+    CY_REQUIRE(runtime.create(preview));
+    const u64 entity = world.identity_of(1);
+    CY_REQUIRE_NE(entity, 0U);
+    editor::MaterialPreviewTarget target;
+    std::memcpy(target.entity, &entity, sizeof(entity));
+    target.material_slot = 0;
+    const first_light::Camera camera = world.framing(scene);
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    Array<u32> plain_image = copy_image(renderer.color_texels());
+
+    CY_REQUIRE(runtime.reload(preview, coloured.cook_key(), {&target, 1}));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    CY_CHECK(images_differ(plain_image.span(), renderer.color_texels()));
+}
+
 bool images_differ(Span<const u32> left, Span<const u32> right) {
     if (left.size() != right.size()) {
         return true;
@@ -189,6 +233,24 @@ CY_TEST_CASE("the hosted material shader binds object position before vertex eva
              std::string_view::npos);
     CY_CHECK(shader.find("ctx.attributes.object_position = input.objectPosition") !=
              std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader binds mesh vertex colour in both stages") {
+    constexpr std::string_view source =
+        "material dyed { attribute color0 : float3; surface = diffuse(color0); "
+        "vertex_offset = color0 * 0.1; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("[[vk::location(3)]] float4 color : COLOR0") != std::string_view::npos);
+    CY_CHECK(shader.find("output.color = input.color") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.color0 = output.color.rgb") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.color0 = input.color.rgb") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.color0 = object.baseColor") == std::string_view::npos);
 }
 
 CY_TEST_CASE("the hosted material shader binds camera-relative world position") {

@@ -894,10 +894,11 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     }
 
     const rhi::VertexBinding vertex_binding{0, sizeof(Vertex), rhi::VertexInputRate::PerVertex};
-    const rhi::VertexAttribute attributes[3] = {
+    const rhi::VertexAttribute attributes[4] = {
         {0, 0, rhi::Format::Rgb32Sfloat, 0},
         {1, 0, rhi::Format::Rgb32Sfloat, 12},
         {2, 0, rhi::Format::Rg32Sfloat, 24},
+        {3, 0, rhi::Format::Rgba32Sfloat, 32},
     };
     const rhi::ColorAttachmentState color{rhi::Format::Rgba8Unorm};
     rhi::GraphicsPipelineDescription pipeline;

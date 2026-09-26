@@ -58,7 +58,10 @@ The engine material IR now includes a typed three-dimensional value-noise operat
 both the graph palette and `noise(position)` text syntax. Slang compiles it in a vertex expression;
 the node rejects non-float3 coordinates. A typed wind operation samples three decorrelated noise
 channels at an animated coordinate and returns a float3 vector; both graph and text front ends
-lower to the same IR operation. Vertex colour, custom interpolants, and displacement
+lower to the same IR operation. The typed RGB vertex-colour node reads `color0` from an added RGBA
+mesh stream in the first-light compiled-material preview, including shadow vertex evaluation;
+the generated sample colours faces by normal axis, while uncoloured vertices default to white.
+Custom interpolants and displacement
 remain in task 3.1.
 The authored scene frame still uses the standard material path. It now rejects a vertex graph
 with a named missing-pass error before that path can flatten it to a diffuse colour; the

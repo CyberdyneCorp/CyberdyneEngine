@@ -265,6 +265,7 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
     (void)canvas.add("material.normal");
     (void)canvas.add("material.uv0");
     (void)canvas.add("material.time");
+    (void)canvas.add("material.vertex_color");
     const NodeKey noise = canvas.add("material.noise");
     canvas.wire(world, noise, "position");
     const NodeKey output = canvas.add("material.vertex_output");
@@ -284,6 +285,7 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
     bool uv0 = false;
     bool world_position = false;
     bool time = false;
+    bool vertex_color = false;
     bool coherent_noise = false;
     for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
         const auto& node = ir.value().node(id);
@@ -293,6 +295,8 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
         uv0 = uv0 || (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2);
         time =
             time || (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float);
+        vertex_color =
+            vertex_color || (node.symbol == Name::intern("color0") && node.type == ValueType::Vec3);
         coherent_noise = coherent_noise ||
                          (node.op == cy::rendering::material::Op::Noise &&
                           node.type == ValueType::Float && ir.value().operands(id).size() == 1);
@@ -301,6 +305,7 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
     CY_CHECK(normal);
     CY_CHECK(uv0);
     CY_CHECK(time);
+    CY_CHECK(vertex_color);
     CY_CHECK(coherent_noise);
 }
 
@@ -315,6 +320,21 @@ CY_TEST_CASE("graph_material: spatial noise refuses a scalar coordinate") {
     MaterialGraph lowered(allocator(), Name::intern("invalid_noise"));
     CY_REQUIRE(lower_material(canvas.graph(), lowered));
     CY_CHECK_FALSE(cy::rendering::material::lower_graph(lowered, allocator()).has_value());
+}
+
+CY_TEST_CASE("graph_material: vertex colour directly drives a typed offset") {
+    Canvas canvas("vertex_colour_offset");
+    const NodeKey colour = canvas.add("material.vertex_color");
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(colour, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("vertex_colour_offset"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    CY_CHECK(ir->vertex_offset() != cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir->node(ir->vertex_offset()).type, ValueType::Vec3);
 }
 
 CY_TEST_CASE("graph_material: wind requires position and scalar time") {
