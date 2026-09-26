@@ -34,6 +34,12 @@ content-addressed artefact store, precise invalidation and the shared cache tier
 identical bytes, a second build is a cache hit, editing one material leaves the other alone, and a
 material with a cook-time error produces no artefact at all.
 
+For a material assigned to geometry, set the build node's `geometry` option to renderer source
+names separated by commas (for example, `StaticMesh,VirtualGeometry`). The producer passes these
+paths to the material compiler. A vertex offset assigned to `VirtualGeometry` fails with
+`vertex-geometry-unsupported` and emits no bundle; an unknown source fails with
+`material-geometry-source-invalid`. Omitting the option preserves an unassigned material cook.
+
 **The producer's version is the compiler's version.** `kMaterialProducerVersion` is *defined as*
 `cy::rendering::material::kCompilerVersion`, so "WHEN the material compiler version increases THEN
 compiled programs SHALL be recooked and the authored material assets SHALL be untouched" is a fact

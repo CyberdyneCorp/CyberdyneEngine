@@ -43,7 +43,10 @@ before task 3.3 is complete.
 The compiler now walks the vertex offset expression and reports `vertex-stage-unsupported` if a
 texture sample or custom Slang node reaches it. Editor validation and material cooking consume the
 same compiler diagnostic and refuse the asset, while surface-only texture sampling stays valid.
-Assignment-aware geometry selection in editor and project cooking remains part of task 3.2.
+The material build producer now accepts an explicit comma-separated `geometry` option and passes
+its source set to the compiler; a virtual-geometry assignment with a vertex offset fails without
+an artefact. Propagating geometry assignments from the scene into editor validation and project
+build descriptions remains part of task 3.2.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 

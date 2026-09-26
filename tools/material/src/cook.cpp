@@ -239,6 +239,36 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
     return status;
 }
 
+[[nodiscard]] Status read_geometry_sources(std::string_view names,
+                                           Array<GeometrySourceKind>& sources) noexcept {
+    while (!names.empty()) {
+        const usize comma = names.find(',');
+        const std::string_view name = names.substr(0, comma);
+        bool found = false;
+        for (u8 index = 0; index < static_cast<u8>(GeometrySourceKind::Count); ++index) {
+            const auto source = static_cast<GeometrySourceKind>(index);
+            if (name == geometry_source_kind_name(source)) {
+                if (Status added = sources.push_back(source); !added) {
+                    return added;
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return fail(ErrorCode::InvalidArgument, "unknown material geometry source");
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        names.remove_prefix(comma + 1);
+        if (names.empty()) {
+            return fail(ErrorCode::InvalidArgument, "empty material geometry source");
+        }
+    }
+    return ok();
+}
+
 /// `material` — one text material definition in, one cooked bundle out.
 [[nodiscard]] Status produce_material(build::NodeContext& context) {
     const build::NodeDesc& node = context.node();
@@ -264,6 +294,14 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
     options.profile = profile.value();
     options.derive_family = node.option("family", "true") == "true";
     options.derive_tiers = node.option("tiers", "true") == "true";
+    Array<GeometrySourceKind> geometry_sources(allocator);
+    if (Status parsed = read_geometry_sources(node.option("geometry", ""), geometry_sources);
+        !parsed) {
+        context.diagnose(build::Severity::Error, "material-geometry-source-invalid",
+                         parsed.error().message, node.sources.front());
+        return parsed;
+    }
+    options.geometry_paths = geometry_sources.span();
 
     Array<u8> bundle(allocator);
     Array<char> report(allocator);

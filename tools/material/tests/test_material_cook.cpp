@@ -72,7 +72,7 @@ public:
         declare("materials/second.cymat");
     }
 
-    void declare(const std::string& source) {
+    void declare(const std::string& source, std::string_view geometry = {}) {
         NodeDesc node;
         node.kind = NodeKind::Shader;
         node.name = "material:" + source;
@@ -81,6 +81,9 @@ public:
         node.sources.push_back(source);
         node.outputs.push_back(source + ".cymatbin");
         node.options.push_back(NodeOption{"profile", "desktop"});
+        if (!geometry.empty()) {
+            node.options.push_back(NodeOption{"geometry", std::string(geometry)});
+        }
         CY_REQUIRE(graph_.add(std::move(node)).has_value());
     }
 
@@ -337,6 +340,41 @@ CY_TEST_CASE("material_cook: virtual geometry refuses a vertex offset without an
     const std::string_view message(report.data(), report.size());
     CY_CHECK(message.find("vertex-geometry-unsupported (VirtualGeometry)") !=
              std::string_view::npos);
+}
+
+CY_TEST_CASE("material_cook: build producer passes assigned geometry paths to the compiler") {
+    Project project;
+    constexpr std::string_view source =
+        "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }";
+    project.write("materials/moving_stone.cymat", source);
+    project.declare("materials/moving_stone.cymat", "StaticMesh,VirtualGeometry");
+    project.write("materials/moving_stone_static.cymat", source);
+    project.declare("materials/moving_stone_static.cymat", "StaticMesh");
+
+    BuildService service;
+    CY_REQUIRE(service.configure(project.config(project.path("artefacts"), project.path("cache")))
+                   .has_value());
+    auto report = service.build();
+    CY_REQUIRE(report.has_value());
+    CY_CHECK_EQ(report->failed, 1U);
+    const NodeResult* node = result_for(*report, "material:materials/moving_stone.cymat");
+    CY_REQUIRE(node != nullptr);
+    CY_CHECK_EQ(node->outcome, NodeOutcome::Failed);
+    CY_CHECK(node->outputs.empty());
+    bool named_geometry = false;
+    for (const Diagnostic& diagnostic : node->diagnostics) {
+        if (diagnostic.code == "material-cook-failed" &&
+            diagnostic.message.find("vertex-geometry-unsupported (VirtualGeometry)") !=
+                std::string::npos) {
+            named_geometry = true;
+        }
+    }
+    CY_CHECK(named_geometry);
+    const NodeResult* supported =
+        result_for(*report, "material:materials/moving_stone_static.cymat");
+    CY_REQUIRE(supported != nullptr);
+    CY_CHECK_EQ(supported->outcome, NodeOutcome::Ran);
+    CY_CHECK_EQ(supported->outputs.size(), 1U);
 }
 
 CY_TEST_CASE("material_cook: fragment sampling in a vertex graph leaves no artefact") {
