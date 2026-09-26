@@ -502,7 +502,7 @@ Status Parser::parse_statement() noexcept {
     if (keyword.text == "let") {
         return parse_let();
     }
-    if (keyword.text == "surface" || keyword.text == "opacity") {
+    if (keyword.text == "surface" || keyword.text == "opacity" || keyword.text == "vertex_offset") {
         if (Status expected = expect_symbol('=', "an output is assigned"); !expected) {
             return expected;
         }
@@ -511,11 +511,15 @@ Status Parser::parse_statement() noexcept {
             return make_unexpected(value.error());
         }
         const bool surface = keyword.text == "surface";
-        Status set =
-            surface ? builder_->set_surface(value.value()) : builder_->set_opacity(value.value());
+        const bool vertex_offset = keyword.text == "vertex_offset";
+        const Status set = surface         ? builder_->set_surface(value.value())
+                           : vertex_offset ? builder_->set_vertex_offset(value.value())
+                                           : builder_->set_opacity(value.value());
         if (!set) {
             return make_unexpected(report(keyword, surface ? "the surface output must be a closure"
-                                                           : "the opacity output must be a float"));
+                                                   : vertex_offset
+                                                       ? "the vertex offset output must be a float3"
+                                                       : "the opacity output must be a float"));
         }
         return expect_symbol(';', "a statement ends with a semicolon");
     }

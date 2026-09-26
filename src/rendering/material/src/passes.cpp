@@ -306,13 +306,13 @@ struct PassState {
         }
     }
 
-    const NodeId roots[] = {source.surface(), source.opacity()};
+    const NodeId roots[] = {source.surface(), source.opacity(), source.vertex_offset()};
     const auto visit = [&state](const Module& module, NodeId id, Span<const NodeId> operands,
                                 Builder& out) noexcept {
         return rewrite(module, id, operands, out, state);
     };
     if (Status rebuilt =
-            detail::rebuild_module(source, Span<const NodeId>(roots, 2), builder, mapping, visit);
+            detail::rebuild_module(source, Span<const NodeId>(roots, 3), builder, mapping, visit);
         !rebuilt) {
         return make_unexpected(rebuilt.error());
     }
@@ -351,6 +351,11 @@ struct PassState {
     }
     if (source.opacity() != kInvalidNode && mapping[source.opacity()] != kInvalidNode) {
         if (Status set = builder.set_opacity(mapping[source.opacity()]); !set) {
+            return make_unexpected(set.error());
+        }
+    }
+    if (source.vertex_offset() != kInvalidNode && mapping[source.vertex_offset()] != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(mapping[source.vertex_offset()]); !set) {
             return make_unexpected(set.error());
         }
     }

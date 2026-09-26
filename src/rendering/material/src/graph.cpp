@@ -327,6 +327,14 @@ Status MaterialGraph::set_opacity_output(u32 node) noexcept {
     return ok();
 }
 
+Status MaterialGraph::set_vertex_offset_output(u32 node) noexcept {
+    if (node >= nodes_.size()) {
+        return make_unexpected(Error{ErrorCode::InvalidArgument, "no such node", 0});
+    }
+    vertex_offset_ = node;
+    return ok();
+}
+
 u32 MaterialGraph::input(u32 node, u8 port) const noexcept {
     if (node >= nodes_.size() || port >= kMaxPorts) {
         return kInvalidNode;
@@ -383,6 +391,11 @@ Expected<Module, Error> lower_graph(const MaterialGraph& graph, Allocator& alloc
     }
     if (graph.opacity_output() != kInvalidNode) {
         if (Status set = builder.set_opacity(mapped[graph.opacity_output()]); !set) {
+            return make_unexpected(set.error());
+        }
+    }
+    if (graph.vertex_offset_output() != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(mapped[graph.vertex_offset_output()]); !set) {
             return make_unexpected(set.error());
         }
     }

@@ -20,6 +20,11 @@ An isolated engine preview instance drives play, pause, restart, scrub, and time
 
 The existing material graph gains an explicit vertex stage and typed outputs for world-position offset, custom interpolants, and displacement. Stage-aware nodes use the same canvas and backend catalogue. Compilation reports variants by geometry source. Unsupported paths, including virtual geometry where offset evaluation is unavailable, fail in both editor validation and cook. The same vertex expression drives the main, shadow, and previous-frame positions so motion vectors follow displacement.
 
+The material IR first carries a typed `float3` world-space vertex offset root beside its surface
+and opacity roots. Graph and text authoring lower to that same root; its content enters the module
+digest and versioned encoding. Optimisation and shadow derivation retain it so later vertex shader
+emission reads one expression across visible, shadow, and previous-frame positions.
+
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 
 Material catalogue schema 3 publishes a stage mask per node from the engine vocabulary: surface only for closures, texture samples, custom Slang, and the surface output; shared for typed numeric inputs and math. The editor reads older schemas with an unrestricted mask and filters its surface palette using the engine value. Vertex-only nodes and the vertex canvas will use the same mask rather than a second Rust vocabulary.

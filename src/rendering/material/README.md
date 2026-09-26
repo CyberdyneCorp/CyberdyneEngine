@@ -82,6 +82,12 @@ is untouched.
 | `binning.h` | material classification and binning, as the CPU reference a GPU pass is checked against |
 | `compiler.h` | the join, parameter classification, and the cook key |
 
+The material IR also carries an optional, typed `float3` world-space vertex offset root. Its
+content enters the material digest and versioned module encoding; optimisation and family
+derivation retain it for visible and shadow programs. Graph lowering and the text front end
+(`vertex_offset = ...;`) require a float3 expression. Vertex shader emission, stage-aware canvas
+output, geometry-source validation, and displaced rendering remain under issue #15.
+
 ### The one decision everything else follows from
 
 **A material's identity is a content hash over a canonicalised DAG.** It closes over the op, the

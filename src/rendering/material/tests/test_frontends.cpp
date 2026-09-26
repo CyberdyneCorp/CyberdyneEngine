@@ -177,6 +177,34 @@ CY_TEST_CASE("material_frontends: sine node and text call emit the same shader o
     CY_CHECK_EQ(vector_graph_ir.value().digest(), vector_text_ir.value().digest());
 }
 
+CY_TEST_CASE("material_frontends: a graph vertex root lowers as a typed offset") {
+    MaterialGraph graph(allocator(), Name::intern("moving_stone"));
+    auto displacement = graph.add(GraphOp::Constant, Name{}, ValueType::Vec3,
+                                  Immediate{0.0F, 0.25F, 0.0F, 0.0F, 0});
+    CY_REQUIRE(displacement.has_value());
+    CY_REQUIRE(graph.set_vertex_offset_output(displacement.value()));
+    auto module = lower_graph(graph, allocator());
+    CY_REQUIRE(module.has_value());
+    CY_CHECK_NE(module.value().vertex_offset(), kInvalidNode);
+    CY_CHECK_EQ(module.value().node(module.value().vertex_offset()).type, ValueType::Vec3);
+    ParseDiagnostic diagnostic(allocator());
+    auto from_text = parse_material("material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }",
+                                    allocator(), diagnostic);
+    CY_REQUIRE(from_text.has_value());
+    CY_CHECK_EQ(module.value().digest(), from_text.value().digest());
+
+    MaterialGraph invalid(allocator(), Name::intern("bad_offset"));
+    auto scalar =
+        invalid.add(GraphOp::Constant, Name{}, ValueType::Float, Immediate::scalar(0.25F));
+    CY_REQUIRE(scalar.has_value());
+    CY_REQUIRE(invalid.set_vertex_offset_output(scalar.value()));
+    CY_CHECK_FALSE(lower_graph(invalid, allocator()).has_value());
+    ParseDiagnostic invalid_diagnostic(allocator());
+    CY_CHECK_FALSE(parse_material("material bad_offset { vertex_offset = 0.25; }", allocator(),
+                                  invalid_diagnostic)
+                       .has_value());
+}
+
 CY_TEST_CASE("material_frontends: provenance does not change the program") {
     // design.md §1.2 decision 4. The graph carries an origin on every value and the text carries
     // none, and the two programs are byte-identical — so attribution is genuinely a side table.

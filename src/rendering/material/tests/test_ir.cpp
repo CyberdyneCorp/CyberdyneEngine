@@ -7,6 +7,8 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/material/emit.h>
 #include <cy/rendering/material/ir.h>
+#include <cy/rendering/material/lowering.h>
+#include <cy/rendering/material/passes.h>
 #include <cy/test/test.h>
 
 #include <utility>
@@ -79,6 +81,44 @@ CY_TEST_CASE("material_ir: a commutative operand list is ordered by content, not
     CY_REQUIRE(wired_the_other.has_value());
     CY_CHECK_EQ(wired_one_way.value().digest(), wired_the_other.value().digest());
     CY_CHECK_EQ(wired_one_way.value().size(), wired_the_other.value().size());
+}
+
+CY_TEST_CASE("material_ir: vertex offset is typed, hashed, serialised and kept for shadows") {
+    Builder displaced(allocator(), Name::intern("vertex_offset_case"));
+    auto position = displaced.attribute(Name::intern("position"), ValueType::Vec3);
+    auto scalar = displaced.constant_float(1.0F);
+    CY_REQUIRE(position.has_value());
+    CY_REQUIRE(scalar.has_value());
+    CY_CHECK_FALSE(displaced.set_vertex_offset(scalar.value()).has_value());
+    CY_REQUIRE(displaced.set_vertex_offset(position.value()));
+    auto authored = displaced.finish();
+    CY_REQUIRE(authored.has_value());
+    CY_CHECK_NE(authored.value().vertex_offset(), kInvalidNode);
+
+    Builder plain(allocator(), Name::intern("vertex_offset_case"));
+    auto plain_position = plain.attribute(Name::intern("position"), ValueType::Vec3);
+    CY_REQUIRE(plain_position.has_value());
+    auto without_offset = plain.finish();
+    CY_REQUIRE(without_offset.has_value());
+    CY_CHECK_NE(authored.value().digest(), without_offset.value().digest());
+
+    Array<u8> bytes(allocator());
+    CY_REQUIRE(encode_module(authored.value(), bytes));
+    auto reopened = decode_module(bytes.span(), allocator());
+    CY_REQUIRE(reopened.has_value());
+    CY_CHECK_EQ(reopened.value().digest(), authored.value().digest());
+    CY_CHECK_NE(reopened.value().vertex_offset(), kInvalidNode);
+
+    OptimiseReport report(allocator());
+    auto optimised = optimise(reopened.value(), PassSwitches{}, report);
+    CY_REQUIRE(optimised.has_value());
+    CY_CHECK_NE(optimised.value().vertex_offset(), kInvalidNode);
+    DerivationOptions shadow;
+    shadow.kind = ProgramKind::Shadow;
+    auto derived = derive_program(optimised.value(), shadow);
+    CY_REQUIRE(derived.has_value());
+    CY_CHECK_EQ(derived.value().surface(), kInvalidNode);
+    CY_CHECK_NE(derived.value().vertex_offset(), kInvalidNode);
 }
 
 CY_TEST_CASE("material_ir: the program does not depend on node ids") {

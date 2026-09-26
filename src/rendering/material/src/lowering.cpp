@@ -225,11 +225,11 @@ Expected<Module, Error> derive_program(const Module& primary,
     state.tier = options.tier;
     state.dropped = dropped_leaves(options.kind, options.tier);
 
-    // The shadow program's ONLY root is opacity. Not "the surface root with the closures removed":
-    // a surface root that survived would carry every texture the material samples into a pass that
-    // exists to answer a silhouette question.
+    // The shadow program retains opacity and vertex offset, but no surface closure. The offset is
+    // required to place its silhouette on the same geometry as the visible pass.
     const bool shadow = options.kind == ProgramKind::Shadow;
-    const NodeId roots[] = {shadow ? kInvalidNode : primary.surface(), primary.opacity()};
+    const NodeId roots[] = {shadow ? kInvalidNode : primary.surface(), primary.opacity(),
+                            primary.vertex_offset()};
 
     Array<NodeId> mapping(primary.allocator());
     const auto visit = [&state](const Module& module, NodeId id, Span<const NodeId> operands,
@@ -237,7 +237,7 @@ Expected<Module, Error> derive_program(const Module& primary,
         return derive_node(module, id, operands, out, state);
     };
     if (Status rebuilt =
-            detail::rebuild_module(primary, Span<const NodeId>(roots, 2), builder, mapping, visit);
+            detail::rebuild_module(primary, Span<const NodeId>(roots, 3), builder, mapping, visit);
         !rebuilt) {
         return make_unexpected(rebuilt.error());
     }
@@ -257,6 +257,12 @@ Expected<Module, Error> derive_program(const Module& primary,
             if (Status set = builder.set_opacity(mapping[primary.opacity()]); !set) {
                 return make_unexpected(set.error());
             }
+        }
+    }
+    if (primary.vertex_offset() != kInvalidNode &&
+        mapping[primary.vertex_offset()] != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(mapping[primary.vertex_offset()]); !set) {
+            return make_unexpected(set.error());
         }
     }
     return builder.finish();
