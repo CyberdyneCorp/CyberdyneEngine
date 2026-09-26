@@ -460,7 +460,9 @@ uses the renderer's camera-relative world coordinates; object position uses the 
 coordinates. The hosted viewport binds both positions for visible and shadow vertex evaluation.
 `material.time` reads elapsed engine seconds from the first-light hosted preview frame in both stages, so a
 `material.sin` chain can animate an offset without a parameter edit or recompile. The remaining
-outputs are tracked by issue #15.
+outputs are tracked by issue #15. The authored scene frame currently accepts only its standard
+constant-colour graph subset; a graph with `material.vertex_output` reports the missing
+vertex-offset pass explicitly instead of being presented as a generic graph mismatch.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 

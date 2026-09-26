@@ -38,6 +38,13 @@ namespace first_light = cy::sample::first_light;
 namespace {
 
 constexpr std::string_view kEmpty = "cyworld 1\n";
+constexpr std::string_view kVertexGraph = R"(cygraph 1
+graph "offset" version 1
+capability
+deterministic true
+node 1 "material.vertex_output" v1 {
+}
+)";
 constexpr std::string_view kSphere = R"(cyworld 1
 type 1 runtime "Transform"
   field 1 quat "rotation" ""
@@ -252,6 +259,21 @@ usize darkened_pixels(Span<const u32> shadowed, Span<const u32> lit) noexcept {
 }
 
 }  // namespace
+
+CY_TEST_CASE("authored scene material path names its unsupported vertex output") {
+    std::ifstream source(CY_TEST_PROJECT
+                         "/samples/05b-editor-window/project/materials/copper_clay.cygraph");
+    CY_REQUIRE(source.good());
+    const std::string surface(std::istreambuf_iterator<char>{source}, {});
+    auto accepted = graph_diffuse_colour(surface, allocator());
+    CY_REQUIRE(accepted.has_value());
+
+    auto rejected = graph_diffuse_colour(kVertexGraph, allocator());
+    CY_REQUIRE_FALSE(rejected.has_value());
+    CY_CHECK_EQ(rejected.error().code, ErrorCode::Unsupported);
+    CY_CHECK(std::string_view(rejected.error().message).find("vertex-offset material pass") !=
+             std::string_view::npos);
+}
 
 CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed bounds") {
     register_backend();

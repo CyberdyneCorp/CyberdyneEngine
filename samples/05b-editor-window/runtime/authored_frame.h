@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace cy::vfx {
@@ -28,6 +29,16 @@ class SimulationWorld;
 }
 
 namespace cy::sample::editor_window {
+
+/// The subset of a compiled material the authored frame's standard-material path can represent.
+struct GraphColour {
+    Vec4 value;
+    std::string parameter;
+};
+
+/// Extract the supported surface colour, refusing vertex graphs the authored frame cannot draw.
+[[nodiscard]] Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
+                                                                Allocator& allocator) noexcept;
 
 struct LightMarker {
     u64 identity = 0;

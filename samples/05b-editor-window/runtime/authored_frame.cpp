@@ -38,10 +38,7 @@ constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
 
-struct GraphColour {
-    Vec4 value;
-    std::string parameter;
-};
+}  // namespace
 
 Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
                                                   Allocator& allocator) noexcept {
@@ -58,6 +55,12 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
         return fail(ErrorCode::InvalidArgument, "authored frame: material graph has unknown nodes");
     }
     const graph::Graph& authored = *parsed;
+    for (const graph::GraphNode& node : authored.nodes()) {
+        if (node.type.text() == "material.vertex_output") {
+            return fail(ErrorCode::Unsupported,
+                        "authored scene renderer has no vertex-offset material pass");
+        }
+    }
     if (authored.nodes().size() != 4 || authored.links().size() != 4) {
         return fail(ErrorCode::Unsupported,
                     "authored frame: only constant-colour diffuse graphs are supported here");
@@ -118,6 +121,8 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
     return GraphColour{Vec4{value->value.x, value->value.y, value->value.z, 1.0F},
                        parameter && symbol != nullptr ? std::string(symbol->text.text()) : ""};
 }
+
+namespace {
 
 u32 read_u32(const u8* bytes) noexcept {
     return static_cast<u32>(bytes[0]) | (static_cast<u32>(bytes[1]) << 8U) |
