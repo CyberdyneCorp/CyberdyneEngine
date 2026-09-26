@@ -330,6 +330,47 @@ CY_TEST_CASE("material_lowering: the vertex-stage variant count is reported rath
     CY_CHECK_EQ(primary->cost.permutation_count, 12U);
 }
 
+CY_TEST_CASE("material_lowering: named geometry variants reject unsupported vertex paths") {
+    auto module = from_text("material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }");
+    CY_REQUIRE(module.has_value());
+    const GeometrySourceKind supported[] = {GeometrySourceKind::StaticMesh,
+                                            GeometrySourceKind::SkinnedMesh};
+    CompileOptions options;
+    options.profile = mobile_profile();
+    options.derive_family = false;
+    options.derive_tiers = false;
+    options.geometry_paths = {supported, 2};
+    auto compiled = compile_material(module.value(), options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    CY_CHECK_FALSE(compiled.value().failed());
+    CY_CHECK_EQ(compiled.value().geometry_paths().size(), 2U);
+    CY_CHECK_EQ(compiled.value().geometry_paths()[1], GeometrySourceKind::SkinnedMesh);
+    CY_CHECK_EQ(compiled.value().programs()[0].cost.geometry_variants, 2U);
+
+    const GeometrySourceKind virtual_path[] = {GeometrySourceKind::VirtualGeometry};
+    options.geometry_paths = {virtual_path, 1};
+    auto rejected = compile_material(module.value(), options, allocator());
+    CY_REQUIRE(rejected.has_value());
+    CY_CHECK(rejected.value().failed());
+    CY_CHECK(has_diagnostic(rejected.value(), "vertex-geometry-unsupported"));
+    CY_CHECK_NE(rejected.value().cook_key(), compiled.value().cook_key());
+    bool named_path = false;
+    for (const CompileDiagnostic& diagnostic : rejected.value().diagnostics()) {
+        named_path = named_path || diagnostic.subject == Name::intern("VirtualGeometry");
+    }
+    CY_CHECK(named_path);
+
+    auto surface = from_text(reference_text());
+    CY_REQUIRE(surface.has_value());
+    auto static_surface = compile_material(surface.value(), options, allocator());
+    CY_REQUIRE(static_surface.has_value());
+    CY_CHECK_FALSE(static_surface.value().failed());
+
+    const GeometrySourceKind invalid_path[] = {static_cast<GeometrySourceKind>(255)};
+    options.geometry_paths = {invalid_path, 1};
+    CY_CHECK_FALSE(compile_material(module.value(), options, allocator()).has_value());
+}
+
 CY_TEST_CASE("material_lowering: cost is attributed to the authoring nodes that caused it") {
     MaterialGraph graph(allocator(), Name::intern("worn_metal"));
     GraphIds ids;

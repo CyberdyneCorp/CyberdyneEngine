@@ -194,6 +194,37 @@ struct Build {
     return ok();
 }
 
+[[nodiscard]] Status check_geometry_paths(const Module& primary,
+                                          Span<const GeometrySourceKind> paths,
+                                          Array<GeometrySourceKind>& report,
+                                          Array<CompileDiagnostic>& diagnostics) noexcept {
+    for (const GeometrySourceKind path : paths) {
+        if (static_cast<u8>(path) >= static_cast<u8>(GeometrySourceKind::Count)) {
+            return fail(ErrorCode::InvalidArgument, "unknown material geometry source");
+        }
+        for (const GeometrySourceKind recorded : report) {
+            if (recorded == path) {
+                return fail(ErrorCode::InvalidArgument, "duplicate material geometry source");
+            }
+        }
+        if (Status added = report.push_back(path); !added) {
+            return added;
+        }
+        if (primary.vertex_offset() == kInvalidNode ||
+            path != GeometrySourceKind::VirtualGeometry) {
+            continue;
+        }
+        if (Status said = say(diagnostics, DiagnosticSeverity::Error, "vertex-geometry-unsupported",
+                              "virtual geometry has no vertex-offset evaluation in the visibility "
+                              "and shadow paths",
+                              Name::intern(geometry_source_kind_name(path)));
+            !said) {
+            return said;
+        }
+    }
+    return ok();
+}
+
 /// Translate M3's material report into the compiler's diagnostics, so there is one validator rather
 /// than two answers to "is this material well formed".
 [[nodiscard]] Status carry_validation(const MaterialProgram& layout,
@@ -304,8 +335,32 @@ const char* diagnostic_severity_name(DiagnosticSeverity severity) noexcept {
     return "?";
 }
 
+const char* geometry_source_kind_name(GeometrySourceKind source) noexcept {
+    switch (source) {
+        case GeometrySourceKind::StaticMesh:
+            return "StaticMesh";
+        case GeometrySourceKind::SkinnedMesh:
+            return "SkinnedMesh";
+        case GeometrySourceKind::VirtualGeometry:
+            return "VirtualGeometry";
+        case GeometrySourceKind::Terrain:
+            return "Terrain";
+        case GeometrySourceKind::MeshParticles:
+            return "MeshParticles";
+        case GeometrySourceKind::Procedural:
+            return "Procedural";
+        case GeometrySourceKind::Count:
+            return "Count";
+    }
+    return "Unknown";
+}
+
 CompiledMaterial::CompiledMaterial(Allocator& allocator) noexcept
-    : programs_(allocator), diagnostics_(allocator), layout_(allocator), optimisation_(allocator) {}
+    : programs_(allocator),
+      diagnostics_(allocator),
+      layout_(allocator),
+      optimisation_(allocator),
+      geometry_paths_(allocator) {}
 
 const CompiledProgram* CompiledMaterial::find(ProgramKind kind, QualityTier tier) const noexcept {
     for (const CompiledProgram& program : programs_) {
@@ -377,6 +432,11 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
     if (Status checked = check_fields(primary, options, material.diagnostics_); !checked) {
         return make_unexpected(checked.error());
     }
+    if (Status checked = check_geometry_paths(primary, options.geometry_paths,
+                                              material.geometry_paths_, material.diagnostics_);
+        !checked) {
+        return make_unexpected(checked.error());
+    }
     if (Status carried = carry_validation(material.layout_, material.diagnostics_, allocator);
         !carried) {
         return make_unexpected(carried.error());
@@ -403,6 +463,11 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
     key = hash_u64(key, primary.digest());
     key = hash_text(key, options.profile.name);
     key = hash_u64(key, options.passes.all_enabled() ? 1ULL : 0ULL);
+    key = hash_u64(key, options.geometry_paths.empty() ? options.geometry_sources
+                                                       : options.geometry_paths.size());
+    for (const GeometrySourceKind path : material.geometry_paths_) {
+        key = hash_u64(key, static_cast<u64>(path));
+    }
 
     for (u32 kind = 0; kind < kind_count; ++kind) {
         for (u32 tier = 0; tier < tier_count; ++tier) {
@@ -439,8 +504,10 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
 
     const u32 static_bools = material.layout_.static_bool_count();
     for (CompiledProgram& program : material.programs_) {
-        count_permutations(static_bools, kind_count, options.profile, options.geometry_sources,
-                           program.cost);
+        const u32 sources = material.geometry_paths_.empty()
+                                ? options.geometry_sources
+                                : static_cast<u32>(material.geometry_paths_.size());
+        count_permutations(static_bools, kind_count, options.profile, sources, program.cost);
     }
     material.cook_key_ = key;
     return material;

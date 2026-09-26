@@ -553,7 +553,7 @@ Status put_graph_location(Array<u8>& out, const cy::graph::Graph& graph,
 }
 
 CyResult failed_material(CyServiceSession_T& session, const char* code, const char* message,
-                         const char* detail = "") noexcept {
+                         std::string_view detail = {}) noexcept {
     session.failed_event = true;
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 2) || !put_u32(session.event_payload, 1) ||
@@ -637,6 +637,15 @@ CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::G
     auto compiled = cy::rendering::material::compile_material(module, options, allocator);
     if (!compiled) {
         return failed_material(session, "material.compile", compiled.error().message);
+    }
+    if (compiled.value().failed()) {
+        for (const cy::rendering::material::CompileDiagnostic& diagnostic :
+             compiled.value().diagnostics()) {
+            if (diagnostic.severity == cy::rendering::material::DiagnosticSeverity::Error) {
+                return failed_material(session, diagnostic.code, diagnostic.detail,
+                                       diagnostic.subject.text());
+            }
+        }
     }
     const u64 artefact = compiled.value().cook_key();
     if (preview_runtime != nullptr) {

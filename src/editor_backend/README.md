@@ -34,7 +34,8 @@ The first vertical slice supports:
   runtime-owned authored scene. Its schema-1 payload is two little-endian, length-prefixed UTF-8
   strings: project-relative `.cygraph` reference followed by `cymatcanvas` source;
 - `material.compile` — compiles the material family and returns its cook identity, source graph
-  dependency identity, program count, and stable texture-asset dependency identities;
+  dependency identity, program count, and stable texture-asset dependency identities. Compiler
+  error diagnostics refuse publication and return their stable code and named subject;
 - `preview.create`, `preview.destroy`, `preview.parameter.update`, and `preview.reload` — isolated
   generational handles, idempotent destruction, stale-handle diagnostics, exact entity/material-slot
   target acknowledgements, and typed bool/integer/float/vector/texture parameter updates bound to an

@@ -253,6 +253,34 @@ CY_TEST_CASE("editor_backend: vertex canvas reaches engine authoring and compila
     api->service_close(&host, session);
 }
 
+CY_TEST_CASE("editor_backend: compiler refusals reach the material editor") {
+    constexpr std::string_view canvas =
+        "cymatcanvas 1\nmaterial invalid_static\n"
+        "node 1 material.parameter\nprop 1 symbol sway\nprop 1 type float3\n"
+        "prop 1 default 0 0 0 0\nprop 1 static true\n"
+        "node 2 material.vertex_output\nlink 1 out 2 offset\n";
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   54,
+                                   "material.compile",
+                                   reinterpret_cast<const cy::u8*>(canvas.data()),
+                                   canvas.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    CY_REQUIRE(event.payload_size > 13U);
+    const cy::u32 code_size = read_u32(event.payload + 9);
+    CY_REQUIRE(event.payload_size >= 13U + code_size);
+    const std::string_view code(reinterpret_cast<const char*>(event.payload + 13), code_size);
+    CY_CHECK_EQ(code, "static-annotation-refused");
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: live graph preview validates before updating the authored scene") {
     cy::abi::Host host(allocator());
     AuthoringRuntime runtime;

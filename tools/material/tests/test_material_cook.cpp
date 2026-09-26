@@ -321,6 +321,23 @@ CY_TEST_CASE("material_cook: the bundle carries the IR, the programs and their c
     }
 }
 
+CY_TEST_CASE("material_cook: virtual geometry refuses a vertex offset without an artefact") {
+    constexpr std::string_view source =
+        "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }";
+    const rendering::material::GeometrySourceKind geometry[] = {
+        rendering::material::GeometrySourceKind::VirtualGeometry};
+    material::CompileOptions options;
+    options.geometry_paths = {geometry, 1};
+    Array<u8> bundle(allocator());
+    Array<char> report(allocator());
+    CY_CHECK_FALSE(
+        material::cook_material(source, options, allocator(), bundle, report).has_value());
+    CY_CHECK(bundle.empty());
+    const std::string_view message(report.data(), report.size());
+    CY_CHECK(message.find("vertex-geometry-unsupported (VirtualGeometry)") !=
+             std::string_view::npos);
+}
+
 // ================================================================================================
 // M11.c TASK 1.3: THE COMMAND LINE AND A SECOND CALLER SHOW THE SAME STAGES
 // ================================================================================================
