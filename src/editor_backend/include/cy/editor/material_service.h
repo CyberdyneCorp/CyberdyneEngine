@@ -6,6 +6,10 @@
 #include <cy/rendering/material/compiler.h>
 #include <string_view>
 
+namespace cy::vfx {
+class SimulationWorld;
+}
+
 namespace cy::editor {
 
 /// One exact renderer binding named by a preview reload request.
@@ -66,6 +70,10 @@ public:
     [[nodiscard]] CyResult cancel(CyServiceSession session, u64 request_id) noexcept override;
     [[nodiscard]] CyResult poll(CyServiceSession session, CyServiceEvent& out_event,
                                 bool& out_has_event) noexcept override;
+
+    /// The effect currently simulated by this session, for the host's engine frame renderer.
+    [[nodiscard]] static const vfx::SimulationWorld* vfx_preview_world(
+        CyServiceSession session) noexcept;
 
 private:
     Allocator* allocator_;

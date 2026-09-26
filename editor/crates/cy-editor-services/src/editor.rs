@@ -282,6 +282,52 @@ impl Editor {
             .request_material(&self.runtime, operation, canvas)
     }
 
+    /// Ask the engine to compile an editable VFX document.
+    pub fn request_vfx_compile(&mut self, source: String) -> Result<cy_editor_protocol::RequestId> {
+        let bundled =
+            crate::vfx_document::bundle_source(source, |path| self.project.read_source(path))?;
+        self.backend.request_vfx_compile(&self.runtime, bundled)
+    }
+
+    /// Load an unsaved VFX document into the engine's isolated preview world.
+    pub fn request_vfx_preview_load(
+        &mut self,
+        source: String,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        let bundled =
+            crate::vfx_document::bundle_source(source, |path| self.project.read_source(path))?;
+        self.backend
+            .request_vfx_preview_load(&self.runtime, bundled)
+    }
+
+    /// Control the engine VFX preview.
+    pub fn request_vfx_preview_action(
+        &mut self,
+        action: crate::vfx_preview::VfxPreviewAction,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_action(&self.runtime, action)
+    }
+
+    /// Advance the running VFX preview by one frame interval.
+    pub fn request_vfx_preview_step(
+        &mut self,
+        seconds: f32,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_step(&self.runtime, seconds)
+    }
+
+    /// Change one exposed parameter in the engine instance without compiling.
+    pub fn request_vfx_preview_parameter(
+        &mut self,
+        name: &str,
+        values: &[f32],
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_parameter(&self.runtime, name, values)
+    }
+
     /// Apply an unsaved canvas to the hosted authored scene without writing the graph asset.
     pub fn preview_material_graph(
         &mut self,
@@ -1311,6 +1357,216 @@ impl cy_editor_commands::ProjectHost for Editor {
             request,
             self.backend.material_preview_state()
         )
+    }
+
+    fn vfx_document_read(&self, reference: &str) -> Result<String> {
+        crate::vfx_document::validate_reference(reference)?;
+        self.project.read_source(reference)
+    }
+
+    fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::vfx_document::validate_reference(reference)?;
+        crate::vfx_document::validate_source(source)?;
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a VFX document",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        self.project.put_source(reference, Some(source))?;
+        let document = self.documents.get_mut(document_id).ok_or_else(|| {
+            Problem::new("save a VFX document", "the active scene document closed")
+        })?;
+        document.begin(format!("Save VFX document {reference}"), self.actor.clone());
+        document.record(cy_editor_documents::operation::Operation::Domain {
+            node: None,
+            kind: format!("{}{}", crate::vfx_document::DOMAIN_PREFIX, reference),
+            before: crate::project::encode_source(prior.as_deref()),
+            after: crate::project::encode_source(Some(source)),
+        })?;
+        document.commit()?;
+        Ok(())
+    }
+
+    fn vfx_catalogue(&self) -> Option<Vec<u8>> {
+        self.backend.vfx_catalogue().map(<[u8]>::to_vec)
+    }
+
+    fn vfx_module_read(&self, reference: &str) -> Result<String> {
+        crate::vfx_module::validate_reference(reference)?;
+        self.project.read_source(reference)
+    }
+
+    fn vfx_module_exists(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
+    fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::vfx_module::validate_reference(reference)?;
+        crate::vfx_module::validate_source(source)?;
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a VFX module",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        self.project.put_source(reference, Some(source))?;
+        let document = self
+            .documents
+            .get_mut(document_id)
+            .ok_or_else(|| Problem::new("save a VFX module", "the active scene document closed"))?;
+        document.begin(format!("Save VFX module {reference}"), self.actor.clone());
+        document.record(cy_editor_documents::operation::Operation::Domain {
+            node: None,
+            kind: format!("{}{}", crate::vfx_module::DOMAIN_PREFIX, reference),
+            before: crate::project::encode_source(prior.as_deref()),
+            after: crate::project::encode_source(Some(source)),
+        })?;
+        document.commit()?;
+        Ok(())
+    }
+
+    fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {
+        crate::vfx_document::validate_source(source)?;
+        self.request_vfx_preview_load(source.to_owned())
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_control(&mut self, action: &str, value: f32) -> Result<u64> {
+        let action = match action {
+            "play" => crate::vfx_preview::VfxPreviewAction::Play,
+            "pause" => crate::vfx_preview::VfxPreviewAction::Pause,
+            "restart" => crate::vfx_preview::VfxPreviewAction::Restart,
+            "scrub" => crate::vfx_preview::VfxPreviewAction::Scrub(value),
+            "time-scale" => crate::vfx_preview::VfxPreviewAction::TimeScale(value),
+            _ => {
+                return Err(Problem::new(
+                    "control VFX preview",
+                    "action must be play, pause, restart, scrub, or time-scale",
+                ));
+            }
+        };
+        self.request_vfx_preview_action(action)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_step(&mut self, seconds: f32) -> Result<u64> {
+        self.request_vfx_preview_step(seconds)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_parameter(&mut self, name: &str, values: &[f32]) -> Result<u64> {
+        self.request_vfx_preview_parameter(name, values)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_status(&self) -> Outcome {
+        use cy_editor_core::value::Value;
+
+        let mut result = Outcome::new("Engine VFX preview state")
+            .with("pending", Value::Bool(self.backend.vfx_preview_pending()));
+        if let Some(problem) = self.backend.vfx_preview_problem() {
+            result = result.with("problem", Value::Text(problem.to_owned()));
+        }
+        if let Some(state) = self.backend.vfx_preview_snapshot() {
+            result = result
+                .with("cook_key", Value::Text(state.cook_key.to_string()))
+                .with("playing", Value::Bool(state.playing))
+                .with("time_seconds", Value::Float(state.time_seconds))
+                .with("time_scale", Value::Float(state.time_scale))
+                .with(
+                    "live_particles",
+                    Value::Int(i64::from(state.live_particles)),
+                )
+                .with("spawned", Value::Int(i64::from(state.spawned)))
+                .with("killed", Value::Int(i64::from(state.killed)))
+                .with("cpu_fallbacks", Value::Int(i64::from(state.cpu_fallbacks)))
+                .with(
+                    "pool_used_bytes",
+                    Value::Text(state.pool_used_bytes.to_string()),
+                )
+                .with(
+                    "pool_total_bytes",
+                    Value::Text(state.pool_total_bytes.to_string()),
+                )
+                .with(
+                    "pool_shortfall_particles",
+                    Value::Int(i64::from(state.pool_shortfall_particles)),
+                )
+                .with(
+                    "pool_reduced_requests",
+                    Value::Int(i64::from(state.pool_reduced_requests)),
+                )
+                .with("events_raised", Value::Int(i64::from(state.events_raised)))
+                .with(
+                    "events_delivered",
+                    Value::Int(i64::from(state.events_delivered)),
+                )
+                .with(
+                    "events_dropped",
+                    Value::Int(i64::from(state.events_dropped)),
+                )
+                .with(
+                    "events_truncated",
+                    Value::Int(i64::from(state.events_truncated)),
+                )
+                .with(
+                    "readback_deferred",
+                    Value::Int(i64::from(state.readback_deferred)),
+                )
+                .with(
+                    "emitter_count",
+                    Value::Int(i64::try_from(state.emitters.len()).unwrap_or(i64::MAX)),
+                );
+            for (index, emitter) in state.emitters.iter().enumerate() {
+                result = result
+                    .with(
+                        format!("emitter_{index}_name"),
+                        Value::Text(emitter.name.clone()),
+                    )
+                    .with(
+                        format!("emitter_{index}_live"),
+                        Value::Int(i64::from(emitter.live)),
+                    );
+            }
+            if let Some(sample) = &state.sample {
+                result = result
+                    .with("sample_emitter", Value::Int(i64::from(sample.emitter)))
+                    .with("sample_slot", Value::Int(i64::from(sample.slot)))
+                    .with(
+                        "sample_attribute_count",
+                        Value::Int(i64::try_from(sample.attributes.len()).unwrap_or(i64::MAX)),
+                    );
+                for (index, attribute) in sample.attributes.iter().enumerate() {
+                    let mut lanes = [0.0; 4];
+                    lanes[..attribute.values.len()].copy_from_slice(&attribute.values);
+                    result = result
+                        .with(
+                            format!("sample_attribute_{index}_name"),
+                            Value::Text(attribute.name.clone()),
+                        )
+                        .with(
+                            format!("sample_attribute_{index}_lanes"),
+                            Value::Int(i64::try_from(attribute.values.len()).unwrap_or(i64::MAX)),
+                        )
+                        .with(
+                            format!("sample_attribute_{index}_values"),
+                            Value::Vec4(lanes),
+                        );
+                }
+            }
+        }
+        result
     }
 }
 

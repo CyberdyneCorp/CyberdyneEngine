@@ -33,6 +33,9 @@
 // `+` between two closures is a closure sum and `*` between a closure and a float is a closure
 // weight, so the notation an author reaches for is the notation the closure model wants. Everything
 // else is ordinary arithmetic.
+// A material that moves geometry may also assign `vertex_offset = float3(...);`; the expression
+// must be a float3 in world space and is the same IR root used by the graph front-end.
+// `vertex_displacement = float;` adds a distance in metres along the mesh normal to that root.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>

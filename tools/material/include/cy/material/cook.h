@@ -48,7 +48,7 @@ using rendering::material::CompileOptions;
 inline constexpr u32 kMaterialProducerVersion = rendering::material::kCompilerVersion;
 
 /// The cooked bundle's own framing version.
-inline constexpr u32 kBundleVersion = 1;
+inline constexpr u32 kBundleVersion = 2;
 
 /// What one cooked material carries, read back out of a bundle.
 struct CookedProgram {
@@ -63,6 +63,11 @@ struct CookedProgram {
     f32 full_screen_ms = 0.0F;
     /// The generated Slang, as a view into the bundle the caller decoded.
     std::string_view source;
+    /// The vertex-stage Slang generated from the same material IR, when an offset is authored.
+    /// Empty for legacy version 1 bundles and programs without a vertex offset.
+    std::string_view vertex_source;
+    /// Digest of the generated vertex source, or zero when no vertex function was emitted.
+    u64 vertex_digest = 0;
 };
 
 /// A decoded bundle. Views point into the bytes the caller passed in and are valid for as long as

@@ -10,14 +10,26 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include <cy/editor/material_service.h>
+#endif
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/test/test.h>
 #include <cy_reflect_generated_scene.h>
 
 #include "authored_frame.h"
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include "golden.h"
+#endif
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace cy;
 using namespace cy::sample::editor_window;
@@ -27,6 +39,13 @@ namespace first_light = cy::sample::first_light;
 namespace {
 
 constexpr std::string_view kEmpty = "cyworld 1\n";
+constexpr std::string_view kVertexGraph = R"(cygraph 1
+graph "offset" version 1
+capability
+deterministic true
+node 1 "material.vertex_output" v1 {
+}
+)";
 constexpr std::string_view kSphere = R"(cyworld 1
 type 1 runtime "Transform"
   field 1 quat "rotation" ""
@@ -462,6 +481,23 @@ void check_graph_material(AuthoredFrame& frame, const first_light::Camera& view)
 
 }  // namespace
 
+CY_TEST_CASE("authored scene material path names its unsupported vertex output") {
+    std::ifstream source(CY_TEST_PROJECT
+                         "/samples/05b-editor-window/project/materials/copper_clay.cygraph");
+    CY_REQUIRE(source.good());
+    std::ostringstream contents;
+    contents << source.rdbuf();
+    const std::string surface = contents.str();
+    auto accepted = graph_diffuse_colour(surface, allocator());
+    CY_REQUIRE(accepted.has_value());
+
+    auto rejected = graph_diffuse_colour(kVertexGraph, allocator());
+    CY_REQUIRE_FALSE(rejected.has_value());
+    CY_CHECK_EQ(rejected.error().code, ErrorCode::Unsupported);
+    CY_CHECK(std::string_view(rejected.error().message).find("vertex-offset material pass") !=
+             std::string_view::npos);
+}
+
 // One device and one frame for every stage: the stages run in this order against the same frame,
 // so each one also shows the frame carries nothing over from the scene before it.
 CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed bounds") {
@@ -498,3 +534,117 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
     }
     rhi::destroy_device(allocator(), *device);
 }
+
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
+    (void)rhi::metal::register_metal_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "smoke.editor_vfx_preview_metal";
+    rhi::BackendSelection selection;
+    auto device =
+        rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(640, 360, CY_TEST_PROJECT, false));
+        ser::World empty(allocator());
+        CY_REQUIRE(ser::read_world(kEmpty, "worlds/test.cyworld", empty).has_value());
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(empty, view, false));
+        Array<u32> baseline(allocator());
+        CY_REQUIRE(baseline.append(frame.pixels()));
+
+        const std::string path =
+            std::string(CY_TEST_PROJECT) +
+            "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
+        std::ifstream file(path);
+        CY_REQUIRE(file.good());
+        const std::string source(std::istreambuf_iterator<char>{file}, {});
+        editor::MaterialService service(allocator());
+        CyServiceSession session = nullptr;
+        CY_REQUIRE_EQ(service.open(&session), CY_RESULT_OK);
+        u64 request_id = 1;
+        const auto call = [&](const char* operation, const std::vector<u8>& payload) {
+            const CyServiceRequest request{sizeof(CyServiceRequest),
+                                           1,
+                                           request_id++,
+                                           operation,
+                                           payload.data(),
+                                           payload.size()};
+            CY_REQUIRE_EQ(service.submit(session, request), CY_RESULT_OK);
+            CyServiceEvent event{};
+            bool present = false;
+            CY_REQUIRE_EQ(service.poll(session, event, present), CY_RESULT_OK);
+            CY_REQUIRE(present);
+            CY_REQUIRE_EQ(event.kind, static_cast<u32>(CY_SERVICE_EVENT_COMPLETED));
+        };
+        call("vfx.preview.load", {source.begin(), source.end()});
+        call("vfx.preview.control", {0});
+        f32 seconds = 1.0F / 30.0F;
+        u32 bits = 0;
+        std::memcpy(&bits, &seconds, sizeof(bits));
+        std::vector<u8> interval{static_cast<u8>(bits), static_cast<u8>(bits >> 8U),
+                                 static_cast<u8>(bits >> 16U), static_cast<u8>(bits >> 24U)};
+        for (u32 frame_index = 0; frame_index < 15; ++frame_index) {
+            call("vfx.preview.step", interval);
+        }
+        const vfx::SimulationWorld* preview = service.vfx_preview_world(session);
+        CY_REQUIRE(preview != nullptr);
+        CY_REQUIRE(frame.render(empty, view, false, preview));
+        CY_CHECK_GT(frame.vfx_particle_report().particles, 0U);
+        CY_CHECK_EQ(frame.vfx_particle_report().draws, 1U);
+        const auto records = frame.vfx_records();
+        CY_REQUIRE(!records.empty());
+        CY_CHECK_EQ(records[0].size, 0.22F);
+        CY_CHECK_GT(records[0].color[3], 0.0F);
+        usize changed = 0;
+        for (usize pixel = 0; pixel < baseline.size(); ++pixel) {
+            changed += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK_GT(changed, 20U);
+        render_test::Image captured(allocator());
+        CY_REQUIRE(render_test::adopt(captured, frame.pixels(), 640, 360).has_value());
+        const std::string reference_path =
+            std::string(CY_TEST_PROJECT) +
+            "/samples/05b-editor-window/runtime/tests/references/issue15_two_emitters_metal.png";
+        const char* update = std::getenv("CY_RENDER_UPDATE_GOLDEN");
+        if (update != nullptr && update[0] != '\0' && update[0] != '0') {
+            CY_REQUIRE(render_test::write_png(reference_path.c_str(), captured).has_value());
+            std::fprintf(stderr, "Updated %s; inspect and commit the image.\n",
+                         reference_path.c_str());
+            CY_CHECK_FALSE(update != nullptr);  // A reference update cannot pass the test.
+        } else {
+            render_test::Image reference(allocator());
+            const Status read = render_test::read_png(reference_path.c_str(), reference);
+            if (!read) {
+                std::fprintf(stderr, "VFX reference %s: %s\n", reference_path.c_str(),
+                             read.error().message);
+            }
+            CY_REQUIRE(read.has_value());
+            const render_test::Comparison comparison = render_test::compare(reference, captured);
+            CY_REQUIRE(comparison.comparable);
+            if (comparison.differing != 0) {
+                (void)render_test::write_difference("issue15-two-emitters-metal-difference.png",
+                                                    reference, captured);
+                std::fprintf(stderr,
+                             "VFX image: %u differing texels, %u away from edges; worst channel "
+                             "delta %u at (%u, %u).\n",
+                             comparison.differing, comparison.differing_off_edge,
+                             comparison.max_channel_delta, comparison.worst_x, comparison.worst_y);
+            }
+            CY_CHECK_EQ(comparison.differing_off_edge, 0U);
+            CY_CHECK_LE(comparison.differing, comparison.edge_texels);
+        }
+        CY_REQUIRE(frame.render(empty, view, false));
+        CY_CHECK_EQ(frame.vfx_particle_report().particles, 0U);
+        CY_CHECK_EQ(frame.vfx_particle_report().draws, 0U);
+        usize residual = 0;
+        for (usize pixel = 0; pixel < baseline.size(); ++pixel) {
+            residual += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK_EQ(residual, 0U);
+        service.close(session);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif

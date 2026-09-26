@@ -48,6 +48,10 @@ use super::graph::{
 
 /// The interchange's own version, written on its first line.
 pub const INTERCHANGE_VERSION: u32 = 1;
+/// Engine material catalogue bit for surface graph nodes.
+pub const SURFACE_STAGE: u8 = 1;
+/// Engine material catalogue bit for vertex graph nodes.
+pub const VERTEX_STAGE: u8 = 2;
 
 /// The pin type a numeric material pin carries.
 ///
@@ -80,10 +84,14 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.layer_closures", &["top", "base"], true),
     ("material.lerp", &["a", "b", "t"], false),
     ("material.multiply", &["a", "b"], false),
+    ("material.noise", &["position"], false),
+    ("material.normal", &[], false),
     ("material.one_minus", &["value"], false),
+    ("material.object_position", &[], false),
     ("material.output", &["surface", "opacity"], false),
     ("material.parameter", &[], false),
     ("material.saturate", &["value"], false),
+    ("material.sin", &["value"], false),
     ("material.sheen", &["colour", "weight"], true),
     (
         "material.specular",
@@ -93,8 +101,14 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.subsurface", &["colour", "weight"], true),
     ("material.subtract", &["a", "b"], false),
     ("material.swizzle", &["value"], false),
+    ("material.time", &[], false),
     ("material.texture_sample", &["uv"], false),
     ("material.transmission", &["colour", "weight"], true),
+    ("material.uv0", &[], false),
+    ("material.vertex_output", &["offset"], false),
+    ("material.vertex_color", &[], false),
+    ("material.world_position", &[], false),
+    ("material.procedural_wind", &["position", "time"], false),
 ];
 
 /// Whether a closure node's INPUTS are closures too, which only the two combiners' are.
@@ -104,9 +118,7 @@ fn takes_closures(type_name: &str) -> bool {
 
 /// The catalogue the material editor opens with: the engine's node types, with their pins.
 ///
-/// `material.output` is the root and the one entry that is not a `GraphOp` — `MaterialGraph` has
-/// `set_surface_output` and `set_opacity_output` rather than an output node, and an author needs
-/// something to wire the final closure into.
+/// Surface and vertex output nodes represent the graph's typed roots and are not `GraphOp` values.
 #[must_use]
 pub fn material_catalogue() -> Vec<NodeType> {
     MATERIAL_PINS
@@ -129,14 +141,19 @@ pub fn material_catalogue() -> Vec<NodeType> {
                     Pin::new(*pin, PinDirection::Input, data_type)
                 })
                 .collect();
-            if *name != "material.output" {
+            if *name != "material.output" && *name != "material.vertex_output" {
                 pins.push(Pin::new(
                     "out",
                     PinDirection::Output,
                     if *closure { CLOSURE_PIN } else { VALUE_PIN },
                 ));
             }
-            NodeType::new(*name, pins)
+            let node = NodeType::new(*name, pins);
+            if *name == "material.vertex_output" {
+                node.with_stage_mask(VERTEX_STAGE)
+            } else {
+                node
+            }
         })
         .collect()
 }
@@ -292,10 +309,10 @@ fn decode_property(reader: &mut Reader<'_>, schema: u32) -> Result<Property> {
 pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
     let mut reader = Reader::new(bytes);
     let schema = reader.u32()?;
-    if !matches!(schema, 1 | 2) {
+    if !matches!(schema, 1..=3) {
         return Err(Problem::new(
             "read the material catalogue",
-            format!("schema {schema} is not supported; this editor supports schemas 1 and 2"),
+            format!("schema {schema} is not supported; this editor supports schemas 1 to 3"),
         ));
     }
     let _catalogue_version = reader.u32()?;
@@ -305,6 +322,16 @@ pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
         let identity = reader.u32()?;
         let node_schema = reader.u32()?;
         let name = reader.text()?;
+        let stage_mask = if schema >= 3 { reader.u8()? } else { 0 };
+        if schema >= 3
+            && name.starts_with("material.")
+            && (stage_mask == 0 || stage_mask & !(SURFACE_STAGE | VERTEX_STAGE) != 0)
+        {
+            return Err(Problem::new(
+                "read the material catalogue",
+                format!("node {name} has an invalid stage mask {stage_mask}"),
+            ));
+        }
         let pin_count = reader.u32()?;
         let pins = (0..pin_count)
             .map(|_| decode_pin(&mut reader))
@@ -314,7 +341,9 @@ pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
             .map(|_| decode_property(&mut reader, schema))
             .collect::<Result<Vec<_>>>()?;
         nodes.push(
-            NodeType::identified(identity, node_schema, name, pins).with_properties(properties),
+            NodeType::identified(identity, node_schema, name, pins)
+                .with_properties(properties)
+                .with_stage_mask(stage_mask),
         );
     }
     if !reader.is_empty() {
@@ -401,6 +430,16 @@ impl<'a> MaterialAuthoring<'a> {
 /// This is the same interchange used by [`MaterialAuthoring`]; it is not a canonical CyberGraph
 /// and contains no compiler implementation.
 pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
+    graph_canvas_interchange(name, canvas, "cymatcanvas", "material")
+}
+
+/// Serialize any domain's shared canvas as editable interchange facts.
+pub(crate) fn graph_canvas_interchange(
+    name: &str,
+    canvas: &GraphCanvas,
+    format: &str,
+    subject: &str,
+) -> Result<String> {
     if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
         return Err(Problem::new(
             "name a material",
@@ -408,8 +447,8 @@ pub fn canvas_interchange(name: &str, canvas: &GraphCanvas) -> Result<String> {
         ));
     }
     let mut out = String::new();
-    let _ = writeln!(out, "cymatcanvas {INTERCHANGE_VERSION}");
-    let _ = writeln!(out, "material {name}");
+    let _ = writeln!(out, "{format} {INTERCHANGE_VERSION}");
+    let _ = writeln!(out, "{subject} {name}");
     for node in canvas.nodes() {
         let _ = writeln!(out, "node {} {}", node.key.ordinal(), node.type_name);
         if let Some(at) = canvas.layout_of(node.key) {
@@ -478,8 +517,18 @@ fn load_canvas_nodes(
 /// Reopen an engine material canvas source using the active engine catalogue.
 /// The canonical `.cygraph` is produced by the engine's material authoring service.
 pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result<String> {
+    load_graph_canvas_interchange(source, canvas, "cymatcanvas", "material")
+}
+
+/// Restore any domain's shared canvas through its active backend catalogue.
+pub(crate) fn load_graph_canvas_interchange(
+    source: &str,
+    canvas: &mut GraphCanvas,
+    format: &str,
+    subject: &str,
+) -> Result<String> {
     let mut lines = source.lines();
-    if lines.next() != Some("cymatcanvas 1") {
+    if lines.next() != Some(format!("{format} {INTERCHANGE_VERSION}").as_str()) {
         return Err(Problem::new(
             "open a material graph",
             "unsupported canvas version",
@@ -487,7 +536,7 @@ pub fn load_canvas_interchange(source: &str, canvas: &mut GraphCanvas) -> Result
     }
     let name = lines
         .next()
-        .and_then(|line| line.strip_prefix("material "))
+        .and_then(|line| line.strip_prefix(&format!("{subject} ")))
         .ok_or_else(|| Problem::new("open a material graph", "missing material name"))?
         .to_owned();
     if name.is_empty()
@@ -740,6 +789,43 @@ mod tests {
         assert_eq!(property.stage, "fragment");
         assert_eq!(property.domain, "material");
         assert_eq!(property.required_capabilities, 1);
+        assert_eq!(decoded[0].stage_mask, 0);
+    }
+
+    #[test]
+    fn schema_three_preserves_engine_node_stage_compatibility() {
+        let mut bytes = Writer::new();
+        bytes.u32(3);
+        bytes.u32(5);
+        bytes.u32(2);
+        for (identity, name, stages) in [
+            (25, "material.output", SURFACE_STAGE),
+            (26, "material.sin", SURFACE_STAGE | VERTEX_STAGE),
+        ] {
+            bytes.u32(identity);
+            bytes.u32(1);
+            bytes.text(name);
+            bytes.u8(stages);
+            bytes.u32(0);
+            bytes.u32(0);
+        }
+        let decoded = catalogue_from_service(&bytes.finish()).expect("schema 3 decodes");
+        assert!(decoded[0].supports_stage(SURFACE_STAGE));
+        assert!(!decoded[0].supports_stage(VERTEX_STAGE));
+        assert!(decoded[1].supports_stage(SURFACE_STAGE));
+        assert!(decoded[1].supports_stage(VERTEX_STAGE));
+
+        let mut invalid = Writer::new();
+        invalid.u32(3);
+        invalid.u32(5);
+        invalid.u32(1);
+        invalid.u32(26);
+        invalid.u32(1);
+        invalid.text("material.sin");
+        invalid.u8(0);
+        invalid.u32(0);
+        invalid.u32(0);
+        assert!(catalogue_from_service(&invalid.finish()).is_err());
     }
 
     /// THE CROSS-LANGUAGE JOIN, AND IT IS READ RATHER THAN COPIED.
@@ -787,11 +873,10 @@ mod tests {
                 "{name}: the editor's pins and the engine's ports disagree"
             );
         }
-        // `material.output` is the one entry that is not a `GraphOp` and so is not in `kPalette`;
-        // everything else must be on both sides.
+        // The two output roots are not `GraphOp` values and so are not in `kPalette`.
         assert_eq!(
             MATERIAL_PINS.len(),
-            engine.len() + 1,
+            engine.len() + 2,
             "the editor offers a node type the engine cannot lower, or is missing one it can"
         );
     }

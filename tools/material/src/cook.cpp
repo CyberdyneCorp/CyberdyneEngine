@@ -230,8 +230,43 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
                   Span<const u8>(reinterpret_cast<const u8*>(program.source.text.data()),
                                  program.source.text.size()),
                   status);
+        put_u64(out, program.vertex_source.digest, status);
+        put_bytes(out,
+                  Span<const u8>(reinterpret_cast<const u8*>(program.vertex_source.text.data()),
+                                 program.vertex_source.text.size()),
+                  status);
     }
     return status;
+}
+
+[[nodiscard]] Status read_geometry_sources(std::string_view names,
+                                           Array<GeometrySourceKind>& sources) noexcept {
+    while (!names.empty()) {
+        const usize comma = names.find(',');
+        const std::string_view name = names.substr(0, comma);
+        bool found = false;
+        for (u8 index = 0; index < static_cast<u8>(GeometrySourceKind::Count); ++index) {
+            const auto source = static_cast<GeometrySourceKind>(index);
+            if (name == geometry_source_kind_name(source)) {
+                if (Status added = sources.push_back(source); !added) {
+                    return added;
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return fail(ErrorCode::InvalidArgument, "unknown material geometry source");
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        names.remove_prefix(comma + 1);
+        if (names.empty()) {
+            return fail(ErrorCode::InvalidArgument, "empty material geometry source");
+        }
+    }
+    return ok();
 }
 
 /// `material` — one text material definition in, one cooked bundle out.
@@ -259,6 +294,14 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
     options.profile = profile.value();
     options.derive_family = node.option("family", "true") == "true";
     options.derive_tiers = node.option("tiers", "true") == "true";
+    Array<GeometrySourceKind> geometry_sources(allocator);
+    if (Status parsed = read_geometry_sources(node.option("geometry", ""), geometry_sources);
+        !parsed) {
+        context.diagnose(build::Severity::Error, "material-geometry-source-invalid",
+                         parsed.error().message, node.sources.front());
+        return parsed;
+    }
+    options.geometry_paths = geometry_sources.span();
 
     Array<u8> bundle(allocator);
     Array<char> report(allocator);
@@ -360,7 +403,7 @@ Expected<CookedBundle, Error> decode_bundle(Span<const u8> bytes, Allocator& all
         return make_unexpected(
             Error{ErrorCode::InvalidArgument, "not a cooked material bundle", 0});
     }
-    if (version != kBundleVersion) {
+    if (version != 1 && version != kBundleVersion) {
         return make_unexpected(Error{ErrorCode::Unsupported,
                                      "this bundle was written by a different cooker version", 0});
     }
@@ -384,6 +427,12 @@ Expected<CookedBundle, Error> decode_bundle(Span<const u8> bytes, Allocator& all
         const Span<const u8> source = reader.read_bytes();
         program.source =
             std::string_view(reinterpret_cast<const char*>(source.data()), source.size());
+        if (version >= 2) {
+            program.vertex_digest = reader.read_u64();
+            const Span<const u8> vertex = reader.read_bytes();
+            program.vertex_source =
+                std::string_view(reinterpret_cast<const char*>(vertex.data()), vertex.size());
+        }
         if (!reader.ok()) {
             break;
         }

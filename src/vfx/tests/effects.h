@@ -45,6 +45,8 @@ public:
     [[nodiscard]] NodeKey random() noexcept;
     [[nodiscard]] NodeKey sample(const char* interface_name, const char* field,
                                  NodeKey argument) noexcept;
+    [[nodiscard]] NodeKey sample_field(const char* interface_name, const char* field,
+                                       NodeKey argument) noexcept;
     [[nodiscard]] NodeKey unary(const char* type, NodeKey x) noexcept;
     [[nodiscard]] NodeKey binary(const char* type, NodeKey a, NodeKey b) noexcept;
     [[nodiscard]] NodeKey ternary(const char* type, NodeKey a, NodeKey b, NodeKey c) noexcept;

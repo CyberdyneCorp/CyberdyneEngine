@@ -31,14 +31,14 @@ using namespace rendering::pipeline;
 Vec3 point(const Mat4& matrix, Vec3 model) noexcept;
 
 constexpr u32 kCapacity = 4096;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+constexpr u32 kVfxCapacity = 4096;
+#endif
 constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
 
-struct GraphColour {
-    Vec4 value;
-    std::string parameter;
-};
+}  // namespace
 
 Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
                                                   Allocator& allocator) noexcept {
@@ -55,6 +55,12 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
         return fail(ErrorCode::InvalidArgument, "authored frame: material graph has unknown nodes");
     }
     const graph::Graph& authored = *parsed;
+    for (const graph::GraphNode& node : authored.nodes()) {
+        if (node.type.text() == "material.vertex_output") {
+            return fail(ErrorCode::Unsupported,
+                        "authored scene renderer has no vertex-offset material pass");
+        }
+    }
     if (authored.nodes().size() != 4 || authored.links().size() != 4) {
         return fail(ErrorCode::Unsupported,
                     "authored frame: only constant-colour diffuse graphs are supported here");
@@ -115,6 +121,8 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
     return GraphColour{Vec4{value->value.x, value->value.y, value->value.z, 1.0F},
                        parameter && symbol != nullptr ? std::string(symbol->text.text()) : ""};
 }
+
+namespace {
 
 u32 read_u32(const u8* bytes) noexcept {
     return static_cast<u32>(bytes[0]) | (static_cast<u32>(bytes[1]) << 8U) |
@@ -320,10 +328,14 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
       index_(allocator),
       graph_(allocator),
       material_program_(allocator),
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+      vfx_records_(allocator),
+#endif
       texture_server_(allocator),
       transforms_(allocator),
       lights_(allocator),
-      pixels_(allocator) {}
+      pixels_(allocator) {
+}
 
 Status AuthoredFrame::preview(std::string_view reference,
                               std::string_view canonical_graph) noexcept {
@@ -337,6 +349,9 @@ Status AuthoredFrame::preview(std::string_view reference,
 
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    vfx_renderer_.shutdown();
+#endif
     if (!shadow_view_.is_null()) {
         device_->destroy_texture_view(shadow_view_);
     }
@@ -359,7 +374,8 @@ AuthoredFrame::~AuthoredFrame() {
     pipelines_.shutdown();
 }
 
-Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noexcept {
+Status AuthoredFrame::initialize(u32 width, u32 height, const char* project,
+                                 bool temporal) noexcept {
     if (initialized_ || width == 0 || height == 0 || project == nullptr) {
         return fail(ErrorCode::InvalidArgument, "authored frame: invalid initialization");
     }
@@ -377,7 +393,7 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     description.max_draws = kCapacity * 16U;
     description.max_instances = kCapacity;
     description.gpu_culling = false;
-    description.post.temporal_antialiasing = true;
+    description.post.temporal_antialiasing = temporal;
     if (Status status = assembly_.initialize(description); !status) {
         return status;
     }
@@ -389,8 +405,8 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     setup.color_format = description.color_format;
     setup.depth_format = description.depth_format;
     setup.output_format = kOutputFormat;
-    setup.prepass_normal = true;
-    setup.prepass_velocity = true;
+    setup.prepass_normal = temporal;
+    setup.prepass_velocity = temporal;
     if (Status status = pipelines_.initialize(*device_, setup); !status) {
         return status;
     }
@@ -407,6 +423,11 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     if (Status status = recorder_.initialize(pipelines_, bindings_); !status) {
         return status;
     }
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    if (Status status = vfx_renderer_.initialize(*device_, pipelines_, kVfxCapacity); !status) {
+        return status;
+    }
+#endif
     if (Status status = create_materials(); !status) {
         return status;
     }
@@ -1055,7 +1076,7 @@ void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
 }
 
 Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera,
-                             bool editor_lighting) noexcept {
+                             bool editor_lighting, const vfx::SimulationWorld* preview) noexcept {
     if (!initialized_) {
         return fail(ErrorCode::Unavailable, "authored frame: not initialized");
     }
@@ -1093,12 +1114,40 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (!begun) {
         return make_unexpected(begun.error());
     }
+    recorder_.clear_extensions();
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    if (Status prepared = prepare_vfx(*begun, preview, eye); !prepared) {
+        (void)device_->end_frame();
+        return prepared;
+    }
+#else
+    (void)preview;
+#endif
     Status result = capture(*begun, camera, editor_lighting);
     if (Status ended = device_->end_frame(); !ended && result) {
         return ended;
     }
     return result;
 }
+
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+Status AuthoredFrame::prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
+                                  Vec3 eye) noexcept {
+    vfx_renderer_.reset_report();
+    if (preview == nullptr) {
+        return ok();
+    }
+    if (Status published =
+            vfx::publish_sprites(*preview, eye, kVfxCapacity, vfx_records_, vfx_published_);
+        !published) {
+        return published;
+    }
+    if (Status uploaded = vfx_renderer_.upload(slot, vfx_records_.span()); !uploaded) {
+        return uploaded;
+    }
+    return recorder_.add_extension(vfx_renderer_.extension());
+}
+#endif
 
 Status AuthoredFrame::publish(const first_light::Camera& camera,
                               Array<render::GpuInstance>& instances,

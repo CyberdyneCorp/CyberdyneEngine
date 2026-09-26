@@ -98,6 +98,9 @@ public:
     [[nodiscard]] Expected<FrameReport, Error> render(const Scene& scene,
                                                       const Camera& camera) noexcept;
 
+    /// Set the elapsed engine time sampled by authored material graphs in the next frame.
+    void set_time_seconds(f32 seconds) noexcept { time_seconds_ = seconds; }
+
     /// The colour target of the last frame, as Rgba8Unorm texels, row-major from the top-left —
     /// which is the layout an image copy produces and the layout a PNG or a PPM wants. Empty when
     /// `RendererOptions::readback` is off, and empty on a backend that executes nothing.
@@ -110,7 +113,8 @@ public:
     /// already crossed the engine shader compiler; this method only creates RHI objects.
     [[nodiscard]] Status retain_material(u64 artefact, Span<const u8> vertex_msl,
                                          const char* vertex_entry, Span<const u8> fragment_msl,
-                                         const char* fragment_entry,
+                                         const char* fragment_entry, Span<const u8> shadow_msl,
+                                         const char* shadow_entry,
                                          Span<const u8> parameters) noexcept;
     [[nodiscard]] Status update_material(u64 artefact, Span<const u8> parameters) noexcept;
     /// Bind the retained program to one exact scene object. This sample has one section per object,
@@ -179,6 +183,7 @@ private:
     struct MaterialState;
     MaterialState* materials_ = nullptr;
     u32 index_count_ = 0;
+    f32 time_seconds_ = 0.0F;
 };
 
 }  // namespace cy::sample::first_light

@@ -27,6 +27,7 @@
 #include <cy/test/test.h>
 
 #include <cstdio>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -146,15 +147,16 @@ void print_diagnostics(const shader::DiagnosticLog& log) {
 /// Compile one Slang unit as the probe entry point, and say whether it succeeded.
 [[nodiscard]] bool compiles(StandardLibrary& library, SlangHandle& slang, const char* module_name,
                             std::string_view text, shader::DiagnosticLog& diagnostics,
-                            u32& out_words) {
+                            u32& out_words, const char* entry = kMaterialProbeEntryPoint,
+                            rhi::ShaderStage stage = rhi::ShaderStage::Compute) {
     auto generated = library.registry.add_generated(Name::intern(module_name),
                                                     Name::intern("material-compiler"), text);
     CY_REQUIRE(generated.has_value());
 
     shader::CompileRequest request;
     request.source = *generated;
-    request.entry_point = Name::intern(kMaterialProbeEntryPoint);
-    request.stage = rhi::ShaderStage::Compute;
+    request.entry_point = Name::intern(entry);
+    request.stage = stage;
     request.resolver = library.resolver();
 
     auto compiled = slang.handle->compile(request, diagnostics);
@@ -262,6 +264,73 @@ CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standar
     CY_REQUIRE(ok);
     CY_CHECK_GT(words, 5U);
     std::printf("worn_metal primary/high compiled to %u SPIR-V words\n", words);
+}
+
+CY_TEST_CASE("sine noise wind and colour compile in a generated vertex offset") {
+    CY_REQUIRE(shader::slang::slang_available());
+    ParseDiagnostic sink(current_allocator());
+    auto module = parse_material(
+        "material wind_sway { attribute time_seconds : float; attribute position : float3; "
+        "attribute color0 : float3; "
+        "vertex_offset = position * sin(time_seconds) + "
+        "(0.0, noise(position), 0.0) + procedural_wind(position, time_seconds) + color0 * 0.1; }",
+        current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    auto generated = emit_vertex_offset(*module, EmitOptions{});
+    CY_REQUIRE(generated.has_value());
+    Array<char> prelude(current_allocator());
+    CY_REQUIRE(emit_prelude(*module, PreludeOptions{}, prelude).has_value());
+    std::string source(prelude.data(), prelude.size());
+    source.append(generated->view());
+    source += R"(
+[[vk::binding(1, 3)]] RWStructuredBuffer<float4> cyMaterialProbeOutput;
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    let offset = cy_material_wind_sway_primary_high_vertex_offset(ctx);
+    cyMaterialProbeOutput[id.x] = float4(offset, 1.0);
+}
+struct CyVertexProbeOutput { float4 position : SV_Position; };
+[shader("vertex")]
+CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COLOR0)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.position = position;
+    ctx.attributes.color0 = color.rgb;
+    let offset = cy_material_wind_sway_primary_high_vertex_offset(ctx);
+    CyVertexProbeOutput output;
+    output.position = float4(position + offset, 1.0);
+    return output;
+}
+)";
+
+    StandardLibrary library;
+    SlangHandle slang;
+    shader::DiagnosticLog diagnostics(current_allocator());
+    u32 words = 0;
+    const bool ok =
+        compiles(library, slang, "material.wind_sway_vertex", source, diagnostics, words);
+    if (!ok) {
+        print_diagnostics(diagnostics);
+    }
+    CY_CHECK(ok);
+    CY_CHECK_GT(words, 16U);
+    shader::DiagnosticLog vertex_diagnostics(current_allocator());
+    u32 vertex_words = 0;
+    const bool vertex_ok =
+        compiles(library, slang, "material.wind_sway_vertex_stage", source, vertex_diagnostics,
+                 vertex_words, "cyVertexProbe", rhi::ShaderStage::Vertex);
+    if (!vertex_ok) {
+        print_diagnostics(vertex_diagnostics);
+    }
+    CY_CHECK(vertex_ok);
+    CY_CHECK_GT(vertex_words, 16U);
 }
 
 CY_TEST_CASE("a material with no textures, no attributes and no parameters still compiles") {

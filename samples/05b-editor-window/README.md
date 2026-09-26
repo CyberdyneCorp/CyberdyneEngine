@@ -105,6 +105,10 @@ Editing a valid colour in the opened graph previews it on the Cube in the hosted
 without saving. A rejected or unsupported edit keeps the last valid viewport colour and shows a
 material diagnostic. Object colour overrides that differ from the saved graph default remain in
 control. **Save .cygraph** persists the graph and editable canvas; graph previews alone do not.
+The hosted Metal compiled-material path evaluates a graph's `vertex_offset` on the selected mesh
+and uses the same generated function for its shadow pass. The Metal image test compares a constant
+offset against moving the same mesh on the CPU. Motion vectors remain part of issue #15's
+acceptance work.
 
 The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
 override. Changing it updates that cube in the authored viewport and saves with the
@@ -122,6 +126,54 @@ The [live scene capture](../../docs/design/images/editor-material-graph-scene-me
 shows the graph-colored Cube and its shadow on the Plane. The
 [node capture](../../docs/design/images/editor-material-graph-nodes-metal.png) shows the
 reopened four-node source and a successful engine compile.
+
+## VFX graph draft
+
+`project/effects/issue15_two_emitters.cyvfxdoc` is an editable VFX draft with separate CPU and GPU
+emitters, Spawn and Initialise stage graph layouts, a typed system parameter, a bounded event
+channel, particle attributes for position, lifetime, size, colour and emission, and a `texture`
+data-interface binding on each emitter. The draft was
+saved, read, undone, and redone through the editor's MCP commands. The engine reader and compiler
+load this exact file in `unit.editor_backend`; they validate both execution paths and produce a
+two-emitter cook. `integration.vfx` also plays the exact cooked document and checks CPU execution,
+GPU-preferred fallback on a device-free world, and publication of both emitters' particles.
+In the VFX Graph panel, **Load preview** cooks the open draft and starts an isolated engine
+simulation. Play, Pause, Restart, Scrub, and Apply speed control that simulation. The panel reports
+live and per-emitter particle counts, recent spawn/kill counts, pool usage and shortfall, event
+traffic and overflow, CPU fallbacks, and up to 32 attributes from the first live particle. Editing
+the exposed `speed` parameter updates the running effect without cooking again.
+The graph panel now submits an engine compile when a stage node, connection, folded parameter, or
+other compiler-relevant declaration changes. Moving nodes on the canvas and changing the value of
+an exposed live parameter do not request another cook. **Compile VFX** remains available to retry
+or inspect the current graph explicitly; **Load preview** loads the edited draft into the running
+effect after a graph change.
+The hosted runtime also publishes the simulation's sprite particles through the engine's
+transparent frame pass. The authored Metal viewport test compares the same empty world before and
+after loading and stepping this exact draft, and checks that the VFX renderer draws live particles.
+It also compares the resulting 640×360 frame with the committed
+[Metal reference](runtime/tests/references/issue15_two_emitters_metal.png). Regenerate that image
+through `CY_RENDER_UPDATE_GOLDEN=1 ctest --test-dir build/dev -R '^smoke\.editor_authored_frame_metal$'`;
+the regeneration run fails by design so the new image must be inspected and committed separately.
+The same preview can be driven through MCP: call `vfx.preview.load` with the `.cyvfxdoc` source,
+wait for `vfx.preview.status` to report `pending = false`, call `vfx.preview.control` with
+`action = play`, then call `vfx.preview.step` with `seconds = 0.033333333` for each frame. The
+`viewport:` resource returns the rendered image. `vfx.preview.parameter.set` accepts a `Vec4`
+value and a lane count, and `vfx.preview.status` reports the engine's bounded counters and sampled
+attributes. The image below was captured from the live editor's MCP `viewport:` resource after
+15 steps of this draft in the spinning-cube world; the small orange sprite above the cube is the
+engine VFX preview.
+
+![Engine VFX preview captured through MCP](../../docs/design/images/issue15-vfx-mcp-preview.png)
+
+The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
+machine without a Vulkan device it reports a skip.
+
+For a visible scene while inspecting the VFX Graph tab, launch the editor with
+`just run-editor-live --project samples/05b-editor-window/project --world worlds/spinning-cube.cyworld`.
+The default `worlds/city.cyworld` is an authoring fixture with transforms but no mesh assets, so its
+viewport appears black. The MCP `viewport:` resource captures the engine's rendered scene image;
+it does not capture the graph panel. `--agent-scope operator` is needed for MCP writes under
+`effects/`, because the narrower `author` scope permits writes only under `game/`.
 
 ## Swift cube during Play
 

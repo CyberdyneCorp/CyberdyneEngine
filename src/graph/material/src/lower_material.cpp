@@ -37,6 +37,7 @@ struct NodeSpec {
 /// `set_opacity_output` — so this is the one palette entry that is not a `GraphOp`, and the
 /// lowering turns it into those two calls.
 constexpr std::string_view kOutputType = "material.output";
+constexpr std::string_view kVertexOutputType = "material.vertex_output";
 
 constexpr NodeSpec kPalette[] = {
     {1, "material.constant", GraphOp::Constant, {}, 0, false},
@@ -63,12 +64,24 @@ constexpr NodeSpec kPalette[] = {
     {22, "material.subsurface", GraphOp::Subsurface, {"colour", "weight"}, 2, true},
     {23, "material.add_closures", GraphOp::AddClosures, {"a", "b"}, 2, true},
     {24, "material.layer_closures", GraphOp::LayerClosures, {"top", "base"}, 2, true},
+    {26, "material.sin", GraphOp::Sin, {"value"}, 1, false},
+    {28, "material.object_position", GraphOp::ObjectPosition, {}, 0, false},
+    {29, "material.normal", GraphOp::Normal, {}, 0, false},
+    {30, "material.uv0", GraphOp::Uv0, {}, 0, false},
+    {31, "material.world_position", GraphOp::WorldPosition, {}, 0, false},
+    {32, "material.time", GraphOp::Time, {}, 0, false},
+    {33, "material.noise", GraphOp::Noise, {"position"}, 1, false},
+    {34, "material.procedural_wind", GraphOp::ProceduralWind, {"position", "time"}, 2, false},
+    {35, "material.vertex_color", GraphOp::VertexColor, {}, 0, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
+constexpr NodeTypeId kVertexOutputIdentity = 27;
 
 /// The root's two pins, which are the two setters.
 constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
+constexpr std::string_view kVertexOutputPin = "offset";
+constexpr std::string_view kVertexDisplacementPin = "displacement";
 
 /// The pin type names. Deliberately two and not a lattice: `cybergraph.h` decision 2 keeps pin
 /// types the domain's business, and this domain has exactly one distinction that matters — a
@@ -279,7 +292,15 @@ private:
                                  MaterialGraph& out, KeyMap& keys) noexcept {
     const Literal* symbol_property = graph.property(node.key, Name::intern("symbol"));
     const Name symbol = symbol_property != nullptr ? symbol_property->text : Name{};
-    const MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
+    MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
+    if (spec.op == GraphOp::ObjectPosition || spec.op == GraphOp::WorldPosition ||
+        spec.op == GraphOp::Normal || spec.op == GraphOp::VertexColor) {
+        type = MaterialValueType::Vec3;
+    } else if (spec.op == GraphOp::Uv0) {
+        type = MaterialValueType::Vec2;
+    } else if (spec.op == GraphOp::Time) {
+        type = MaterialValueType::Float;
+    }
     const MaterialImmediate value =
         immediate_of(graph.property(node.key, Name::intern("value")), {});
 
@@ -339,6 +360,16 @@ private:
         return fail(ErrorCode::InvalidArgument,
                     "a wire into `material.output` on a pin it does not have");
     }
+    if (type == kVertexOutputType) {
+        if (link.to_pin.text() == kVertexOutputPin) {
+            return out.set_vertex_offset_output(source);
+        }
+        if (link.to_pin.text() == kVertexDisplacementPin) {
+            return out.set_vertex_displacement_output(source);
+        }
+        return fail(ErrorCode::InvalidArgument,
+                    "a wire into `material.vertex_output` on a pin it does not have");
+    }
     const NodeSpec* spec = spec_for(type);
     const u32 destination = keys.find(link.to);
     if (spec == nullptr || destination == rendering::material::kInvalidNode) {
@@ -356,14 +387,15 @@ private:
 }  // namespace
 
 Span<const std::string_view> material_node_types() noexcept {
-    // Built once, in the palette's own order plus the root. `static` rather than a member of a
-    // registry because the list is a property of this build and not of a session.
-    static std::string_view names[std::size(kPalette) + 1];
+    // Built once, in the palette's own order plus both output roots. `static` rather than a member
+    // of a registry because the list is a property of this build and not of a session.
+    static std::string_view names[std::size(kPalette) + 2];
     static const bool built = [] {
         for (usize index = 0; index < std::size(kPalette); ++index) {
             names[index] = kPalette[index].type;
         }
         names[std::size(kPalette)] = kOutputType;
+        names[std::size(kPalette) + 1] = kVertexOutputType;
         return true;
     }();
     (void)built;
@@ -374,8 +406,30 @@ NodeTypeId material_node_type_id(std::string_view type) noexcept {
     if (type == kOutputType) {
         return kOutputIdentity;
     }
+    if (type == kVertexOutputType) {
+        return kVertexOutputIdentity;
+    }
     const NodeSpec* spec = spec_for(type);
     return spec != nullptr ? spec->identity : kInvalidNodeTypeId;
+}
+
+u8 material_node_stage_mask(std::string_view type) noexcept {
+    constexpr u8 surface = 1U;
+    constexpr u8 vertex = 2U;
+    if (type == kOutputType) {
+        return surface;
+    }
+    if (type == kVertexOutputType) {
+        return vertex;
+    }
+    const NodeSpec* spec = spec_for(type);
+    if (spec == nullptr) {
+        return 0;
+    }
+    if (spec->closure || spec->op == GraphOp::TextureSample || spec->op == GraphOp::Custom) {
+        return surface;
+    }
+    return surface | vertex;
 }
 
 Status encode_material_catalogue(Array<u8>& out) noexcept {
@@ -412,10 +466,10 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
     };
 
     out.clear();
-    if (Status status = u32_value(2); !status) {
+    if (Status status = u32_value(3); !status) {
         return status;  // schema
     }
-    if (Status status = u32_value(3); !status) {
+    if (Status status = u32_value(6); !status) {
         return status;  // catalogue version
     }
     const auto types = material_node_types();
@@ -430,6 +484,9 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
             return status;  // node schema version
         }
         if (Status status = text(type); !status) {
+            return status;
+        }
+        if (Status status = u8_value(material_node_stage_mask(type)); !status) {
             return status;
         }
         PinDesc storage[kMaxPins];
@@ -556,6 +613,11 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
         push(kOutputPins[1], kValuePin, PinDirection::Input);
         return {storage, count};
     }
+    if (type == kVertexOutputType) {
+        push(kVertexOutputPin, kValuePin, PinDirection::Input);
+        push(kVertexDisplacementPin, kValuePin, PinDirection::Input);
+        return {storage, count};
+    }
     const NodeSpec* spec = spec_for(type);
     if (spec == nullptr) {
         return {};
@@ -595,7 +657,7 @@ Status lower_material(const Graph& graph, MaterialGraph& out) noexcept {
     // PASS ONE: every node, in the authored order, including the disconnected and the muted ones.
     for (const GraphNode& node : graph.nodes()) {
         const std::string_view type = node.type.text();
-        if (type == kOutputType) {
+        if (type == kOutputType || type == kVertexOutputType) {
             continue;
         }
         const NodeSpec* spec = spec_for(type);

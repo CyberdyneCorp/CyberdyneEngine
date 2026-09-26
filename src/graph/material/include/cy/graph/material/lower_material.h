@@ -30,9 +30,8 @@
 // that derivation for every enumerator. An op added to `GraphOp` and not to this table is RED, in
 // the engine's own suite, before the editor is involved at all.
 //
-// One name is NOT an op: `material.output`. `MaterialGraph` has no output node — it has
-// `set_surface_output` and `set_opacity_output` — and an author needs something to wire the final
-// closure into. It is the graph's root, and its two input pins are the two setters.
+// Two names are NOT ops: `material.output` and `material.vertex_output`. `MaterialGraph` has no
+// output nodes — it has typed root setters — and an author needs pins for final expressions.
 //
 // ================================================================================================
 // A SEPARATE MODULE, AND NOT A FIFTH FILE IN `cy_graph`
@@ -63,6 +62,8 @@ namespace cy::graph::material {
 /// Manifest-assigned identities for the material catalogue. Zero means the name is not a material
 /// node in this schema. These values are persisted by authored graphs and never derived from names.
 [[nodiscard]] NodeTypeId material_node_type_id(std::string_view type) noexcept;
+/// Stage bits published with each node: surface=1, vertex=2. Zero means an unknown type.
+[[nodiscard]] u8 material_node_stage_mask(std::string_view type) noexcept;
 [[nodiscard]] PinId material_node_pin_id(std::string_view type, std::string_view pin,
                                          PinDirection direction) noexcept;
 

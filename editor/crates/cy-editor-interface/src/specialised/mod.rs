@@ -43,6 +43,9 @@ pub mod graph;
 pub mod material;
 pub mod painting;
 pub mod timeline;
+pub mod vfx;
+pub mod vfx_authoring_commands;
+pub mod vfx_module;
 
 use std::collections::BTreeMap;
 
@@ -324,7 +327,7 @@ const ABILITY_NODES: &[&str] = &[
 ///
 /// Every name below is `"material." + graph_op_name(op)` for one of the material compiler's own
 /// `GraphOp`s — which `graph.h` already describes as "the editor's palette, not the IR's opcodes" —
-/// plus `material.output`, the root that becomes `set_surface_output` and `set_opacity_output`.
+/// plus the surface and vertex output roots that become the material graph's typed outputs.
 /// `unit.graph_material` asserts that derivation on the engine's side; the contract gate compares
 /// this list against those literals.
 const MATERIAL_NODES: &[&str] = &[
@@ -342,17 +345,27 @@ const MATERIAL_NODES: &[&str] = &[
     "material.layer_closures",
     "material.lerp",
     "material.multiply",
+    "material.noise",
+    "material.normal",
+    "material.object_position",
     "material.one_minus",
     "material.output",
     "material.parameter",
+    "material.procedural_wind",
     "material.saturate",
     "material.sheen",
+    "material.sin",
     "material.specular",
     "material.subsurface",
     "material.subtract",
     "material.swizzle",
     "material.texture_sample",
+    "material.time",
     "material.transmission",
+    "material.uv0",
+    "material.vertex_color",
+    "material.vertex_output",
+    "material.world_position",
 ];
 
 /// `pose.*`: the vocabulary `lower_pose.cpp` and `locomotion.cpp` register.
@@ -389,6 +402,11 @@ pub struct Session<'a> {
 #[derive(Debug)]
 pub struct SpecialisedEditors {
     canvas: GraphCanvas,
+    graph_drafts: BTreeMap<Domain, GraphCanvas>,
+    vfx_document: Option<vfx::VfxDocument>,
+    vfx_stage: Option<(usize, vfx::Stage)>,
+    vfx_module: Option<vfx_module::VfxModule>,
+    vfx_module_active: bool,
     timeline: TimelineSurface,
     painting: PaintingSurface,
     active: Option<Domain>,
@@ -431,6 +449,11 @@ impl SpecialisedEditors {
         }
         Ok(Self {
             canvas: GraphCanvas::new(1),
+            graph_drafts: BTreeMap::new(),
+            vfx_document: None,
+            vfx_stage: None,
+            vfx_module: None,
+            vfx_module_active: false,
             timeline: TimelineSurface::new(1, 30.0)?,
             painting: PaintingSurface::new(1),
             active: None,
@@ -460,6 +483,267 @@ impl SpecialisedEditors {
         if self.active == Some(Domain::Materials) {
             self.canvas.replace_catalogue(catalogue);
         }
+        Ok(())
+    }
+
+    /// Install VFX node definitions supplied by the engine registry through the backend service.
+    /// An empty or incompatible catalogue leaves the VFX editor unavailable.
+    pub fn install_vfx_catalogue(&mut self, payload: &[u8]) -> Result<()> {
+        let nodes = material::catalogue_from_service(payload)?;
+        if nodes.is_empty() || nodes.iter().any(|node| !node.name.starts_with("vfx.")) {
+            return Err(Problem::new(
+                "load the VFX node catalogue",
+                "the backend supplied no VFX nodes or a node outside the VFX domain",
+            ));
+        }
+        let catalogue = Catalogue::new(nodes)?;
+        self.catalogues.insert(Domain::VfxGraph, catalogue.clone());
+        if self.active == Some(Domain::VfxGraph) {
+            self.canvas.replace_catalogue(catalogue);
+        }
+        Ok(())
+    }
+
+    /// Begin editing one VFX system on the existing shared graph canvas.
+    pub fn start_vfx_document(&mut self, document: vfx::VfxDocument) -> Result<()> {
+        document.encode()?;
+        let catalogue = self.catalogues.get(&Domain::VfxGraph).ok_or_else(|| {
+            Problem::new(
+                "open a VFX document",
+                "the engine VFX catalogue is unavailable",
+            )
+        })?;
+        let mut probe = GraphCanvas::new(1);
+        probe.load(catalogue.clone());
+        for (emitter_index, emitter) in document.emitters.iter().enumerate() {
+            for stage in &emitter.stages {
+                document.open_stage(emitter_index, stage.stage, &mut probe)?;
+            }
+        }
+        self.open(Domain::VfxGraph)?;
+        if self.vfx_module_active {
+            self.vfx_module
+                .as_mut()
+                .expect("active module is open")
+                .capture(&self.canvas)?;
+        }
+        self.vfx_document = Some(document);
+        self.vfx_stage = None;
+        self.vfx_module_active = false;
+        self.canvas.load(self.canvas.catalogue().clone());
+        Ok(())
+    }
+
+    /// Close the opened VFX draft after its project asset is removed by undo.
+    pub fn close_vfx_document(&mut self) {
+        self.vfx_document = None;
+        self.vfx_stage = None;
+        if !self.vfx_module_active {
+            self.graph_drafts.remove(&Domain::VfxGraph);
+        }
+        if self.active == Some(Domain::VfxGraph) && !self.vfx_module_active {
+            self.canvas.load(self.canvas.catalogue().clone());
+        }
+    }
+
+    /// Select one emitter stage, preserving the previously visible stage first.
+    pub fn select_vfx_stage(&mut self, emitter: usize, stage: vfx::Stage) -> Result<()> {
+        if self.active != Some(Domain::VfxGraph) {
+            self.open(Domain::VfxGraph)?;
+        }
+        let document = self
+            .vfx_document
+            .as_ref()
+            .ok_or_else(|| Problem::new("select a VFX stage", "no VFX document is open"))?;
+        let mut next_canvas = self.canvas.clone();
+        document.open_stage(emitter, stage, &mut next_canvas)?;
+        if let Some((previous_emitter, previous_stage)) = self.vfx_stage {
+            self.vfx_document
+                .as_mut()
+                .expect("checked above")
+                .capture_stage(previous_emitter, previous_stage, &self.canvas)?;
+        } else if self.vfx_module_active {
+            self.vfx_module
+                .as_mut()
+                .expect("active module is open")
+                .capture(&self.canvas)?;
+        }
+        self.canvas = next_canvas;
+        self.vfx_stage = Some((emitter, stage));
+        self.vfx_module_active = false;
+        Ok(())
+    }
+
+    /// Open a reusable module on the VFX shared canvas, preserving the current stage first.
+    pub fn start_vfx_module(&mut self, module: vfx_module::VfxModule) -> Result<()> {
+        module.encode()?;
+        let catalogue = self.catalogues.get(&Domain::VfxGraph).ok_or_else(|| {
+            Problem::new(
+                "open a VFX module",
+                "the engine VFX catalogue is unavailable",
+            )
+        })?;
+        let mut next_canvas = GraphCanvas::new(1);
+        next_canvas.load(catalogue.clone());
+        module.open(&mut next_canvas)?;
+        self.open(Domain::VfxGraph)?;
+        if let Some((emitter, stage)) = self.vfx_stage {
+            self.vfx_document
+                .as_mut()
+                .expect("selected stage has a document")
+                .capture_stage(emitter, stage, &self.canvas)?;
+        } else if self.vfx_module_active {
+            self.vfx_module
+                .as_mut()
+                .expect("active module is open")
+                .capture(&self.canvas)?;
+        }
+        self.canvas = next_canvas;
+        self.vfx_stage = None;
+        self.vfx_module = Some(module);
+        self.vfx_module_active = true;
+        Ok(())
+    }
+
+    /// Snapshot the open module's graph from the shared canvas.
+    pub fn vfx_module_snapshot(&self) -> Result<Option<vfx_module::VfxModule>> {
+        let Some(mut module) = self.vfx_module.clone() else {
+            return Ok(None);
+        };
+        if self.vfx_module_active {
+            let canvas = if self.active == Some(Domain::VfxGraph) {
+                &self.canvas
+            } else {
+                self.graph_drafts
+                    .get(&Domain::VfxGraph)
+                    .ok_or_else(|| Problem::new("save a VFX module", "module canvas is missing"))?
+            };
+            module.capture(canvas)?;
+        }
+        Ok(Some(module))
+    }
+
+    /// Module currently displayed on the VFX canvas, if any.
+    pub fn active_vfx_module(&self) -> Option<&vfx_module::VfxModule> {
+        self.vfx_module_active
+            .then_some(self.vfx_module.as_ref())
+            .flatten()
+    }
+
+    /// Close the module editor after its saved asset is removed by undo.
+    pub fn close_vfx_module(&mut self) {
+        self.vfx_module = None;
+        if self.vfx_module_active {
+            self.vfx_module_active = false;
+            self.graph_drafts.remove(&Domain::VfxGraph);
+            if self.active == Some(Domain::VfxGraph) {
+                self.canvas.load(self.canvas.catalogue().clone());
+            }
+        }
+    }
+
+    /// Update typed inputs or dependencies atomically while retaining canvas edits.
+    pub fn edit_vfx_module_metadata(
+        &mut self,
+        edit: impl FnOnce(&mut vfx_module::VfxModule) -> Result<()>,
+    ) -> Result<()> {
+        let mut module = self
+            .vfx_module
+            .as_ref()
+            .ok_or_else(|| Problem::new("edit a VFX module", "no module is open"))?
+            .clone();
+        edit(&mut module)?;
+        module.encode()?;
+        self.vfx_module = Some(module);
+        Ok(())
+    }
+
+    /// Snapshot the current stage into an editable document without changing the canvas.
+    pub fn vfx_document_snapshot(&self) -> Result<Option<vfx::VfxDocument>> {
+        let Some(mut document) = self.vfx_document.clone() else {
+            return Ok(None);
+        };
+        if let Some((emitter, stage)) = self.vfx_stage {
+            let canvas = if self.active == Some(Domain::VfxGraph) {
+                &self.canvas
+            } else {
+                self.graph_drafts
+                    .get(&Domain::VfxGraph)
+                    .ok_or_else(|| Problem::new("save a VFX document", "stage canvas is missing"))?
+            };
+            document.capture_stage(emitter, stage, canvas)?;
+        }
+        Ok(Some(document))
+    }
+
+    /// Current VFX system metadata, if one has been opened.
+    pub fn vfx_document(&self) -> Option<&vfx::VfxDocument> {
+        self.vfx_document.as_ref()
+    }
+
+    /// The emitter and stage currently displayed on the shared canvas.
+    pub fn active_vfx_stage(&self) -> Option<(usize, vfx::Stage)> {
+        self.vfx_stage
+    }
+
+    /// Append one emitter to the open system after validating its authoring metadata.
+    pub fn add_vfx_emitter(&mut self, emitter: vfx::Emitter) -> Result<usize> {
+        let document = self
+            .vfx_document
+            .as_mut()
+            .ok_or_else(|| Problem::new("add a VFX emitter", "no VFX document is open"))?;
+        let index = document.emitters.len();
+        document.emitters.push(emitter);
+        if let Err(problem) = document.encode() {
+            document.emitters.pop();
+            return Err(problem);
+        }
+        Ok(index)
+    }
+
+    /// Update one emitter's renderer and simulation target without touching its stage graphs.
+    pub fn set_vfx_emitter_settings(
+        &mut self,
+        index: usize,
+        path: vfx::SimulationPath,
+        renderer: String,
+    ) -> Result<()> {
+        let document = self
+            .vfx_document
+            .as_mut()
+            .ok_or_else(|| Problem::new("configure a VFX emitter", "no VFX document is open"))?;
+        let emitter = document
+            .emitters
+            .get_mut(index)
+            .ok_or_else(|| Problem::new("configure a VFX emitter", "unknown emitter"))?;
+        let previous = (
+            emitter.path,
+            std::mem::replace(&mut emitter.renderer, renderer),
+        );
+        emitter.path = path;
+        if let Err(problem) = document.encode() {
+            let emitter = &mut document.emitters[index];
+            emitter.path = previous.0;
+            emitter.renderer = previous.1;
+            return Err(problem);
+        }
+        Ok(())
+    }
+
+    /// Apply a metadata edit atomically. Stage graphs remain on the shared canvas; the edited
+    /// document is installed only after the full versioned payload passes validation.
+    pub fn edit_vfx_metadata(
+        &mut self,
+        edit: impl FnOnce(&mut vfx::VfxDocument) -> Result<()>,
+    ) -> Result<()> {
+        let mut document = self
+            .vfx_document
+            .as_ref()
+            .ok_or_else(|| Problem::new("edit VFX metadata", "no VFX document is open"))?
+            .clone();
+        edit(&mut document)?;
+        document.encode()?;
+        self.vfx_document = Some(document);
         Ok(())
     }
 
@@ -519,10 +803,21 @@ impl SpecialisedEditors {
             )));
         }
         let changed_domain = self.active != Some(domain);
+        if changed_domain
+            && let Some(previous) = self.active
+            && previous.surfaces().contains(&Surface::Graph)
+        {
+            self.graph_drafts.insert(previous, self.canvas.clone());
+        }
         self.active = Some(domain);
         let surfaces = domain.surfaces();
         if changed_domain && let Some(catalogue) = self.catalogues.get(&domain) {
-            self.canvas.load(catalogue.clone());
+            if let Some(mut draft) = self.graph_drafts.remove(&domain) {
+                draft.replace_catalogue(catalogue.clone());
+                self.canvas = draft;
+            } else {
+                self.canvas.load(catalogue.clone());
+            }
         }
         if changed_domain && surfaces.contains(&Surface::Timeline) {
             // The surface is emptied and NOT populated. `domain.track_kinds()` is what the
@@ -681,6 +976,298 @@ mod tests {
             1,
             "drawing another frame reset the authored material graph"
         );
+    }
+
+    #[test]
+    fn vfx_editor_opens_on_the_shared_canvas_from_backend_nodes() {
+        let mut host = host();
+        assert!(host.open(Domain::VfxGraph).is_err());
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(1);
+        catalogue.u32(9);
+        catalogue.u8(1);
+        catalogue.text("out");
+        catalogue.text("float");
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish())
+            .expect("backend VFX catalogue installs");
+
+        let session = host.open(Domain::VfxGraph).expect("VFX editor opens");
+        let canvas = session.graph.expect("VFX uses the shared graph canvas");
+        canvas
+            .add("vfx.backend_only", graph::Layout { x: 20.0, y: 30.0 })
+            .expect("backend-only node is available");
+        assert_eq!(canvas.nodes().count(), 1);
+        let vfx_canvas = canvas.id();
+        let ability_canvas = host
+            .open(Domain::AbilitiesAndEffects)
+            .expect("ability editor opens")
+            .graph
+            .expect("ability uses the shared graph canvas")
+            .id();
+        assert_eq!(vfx_canvas, ability_canvas);
+        let restored = host.open(Domain::VfxGraph).expect("VFX draft reopens");
+        assert_eq!(
+            restored.graph.expect("shared graph").nodes().count(),
+            1,
+            "switching graph domains must preserve unsaved VFX nodes"
+        );
+    }
+
+    #[test]
+    fn vfx_stage_selection_preserves_edits_across_domains_and_document_snapshots() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish()).unwrap();
+
+        let mut document = vfx::VfxDocument::new("sparks").unwrap();
+        document.emitters.push(vfx::Emitter {
+            name: "smoke".into(),
+            path: vfx::SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        host.start_vfx_document(document).unwrap();
+        host.select_vfx_stage(0, vfx::Stage::Spawn).unwrap();
+        host.open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.backend_only", graph::Layout { x: 20.0, y: 30.0 })
+            .unwrap();
+        host.open(Domain::AbilitiesAndEffects).unwrap();
+        let snapshot = host.vfx_document_snapshot().unwrap().unwrap();
+        assert!(
+            snapshot.emitters[0].stages[0]
+                .canvas
+                .contains("node 1 vfx.backend_only")
+        );
+        host.select_vfx_stage(0, vfx::Stage::Update).unwrap();
+        assert_eq!(
+            host.open(Domain::VfxGraph)
+                .unwrap()
+                .graph
+                .unwrap()
+                .nodes()
+                .count(),
+            0
+        );
+        host.select_vfx_stage(0, vfx::Stage::Spawn).unwrap();
+        assert_eq!(
+            host.open(Domain::VfxGraph)
+                .unwrap()
+                .graph
+                .unwrap()
+                .nodes()
+                .count(),
+            1
+        );
+        host.set_vfx_emitter_settings(0, vfx::SimulationPath::CpuRequired, "Mesh".into())
+            .unwrap();
+        let saved = host.vfx_document_snapshot().unwrap().unwrap();
+        let reopened = vfx::VfxDocument::decode_text(&saved.encode_text().unwrap()).unwrap();
+        assert_eq!(reopened.emitters[0].path, vfx::SimulationPath::CpuRequired);
+        assert_eq!(reopened.emitters[0].renderer, "Mesh");
+    }
+
+    #[test]
+    fn reusable_module_and_emitter_stage_share_one_canvas_without_losing_edits() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish()).unwrap();
+        let mut document = vfx::VfxDocument::new("sparks").unwrap();
+        document.emitters.push(vfx::Emitter {
+            name: "smoke".into(),
+            path: vfx::SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        host.start_vfx_document(document).unwrap();
+        host.select_vfx_stage(0, vfx::Stage::Update).unwrap();
+        host.open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.backend_only", graph::Layout { x: 10.0, y: 20.0 })
+            .unwrap();
+
+        host.start_vfx_module(
+            vfx_module::VfxModule::new("shared_drag", vfx::Stage::Update).unwrap(),
+        )
+        .unwrap();
+        assert!(host.active_vfx_stage().is_none());
+        assert_eq!(
+            host.vfx_document_snapshot().unwrap().unwrap().emitters[0]
+                .stages
+                .len(),
+            1
+        );
+        host.open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.backend_only", graph::Layout { x: 30.0, y: 40.0 })
+            .unwrap();
+        host.open(Domain::AbilitiesAndEffects).unwrap();
+        let module = host.vfx_module_snapshot().unwrap().unwrap();
+        assert!(module.canvas.contains("# layout 1 30 40"));
+
+        host.select_vfx_stage(0, vfx::Stage::Update).unwrap();
+        let document = host.vfx_document_snapshot().unwrap().unwrap();
+        assert!(
+            document.emitters[0].stages[0]
+                .canvas
+                .contains("# layout 1 10 20")
+        );
+        assert_eq!(
+            host.open(Domain::VfxGraph)
+                .unwrap()
+                .graph
+                .unwrap()
+                .nodes()
+                .count(),
+            1
+        );
+        assert!(host.active_vfx_module().is_none());
+    }
+
+    #[test]
+    fn vfx_metadata_edit_keeps_stage_draft_and_rejects_invalid_changes_atomically() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish()).unwrap();
+        let mut document = vfx::VfxDocument::new("sparks").unwrap();
+        document.emitters.push(vfx::Emitter {
+            name: "smoke".into(),
+            path: vfx::SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        host.start_vfx_document(document).unwrap();
+        host.select_vfx_stage(0, vfx::Stage::Spawn).unwrap();
+        host.open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.backend_only", graph::Layout { x: 5.0, y: 6.0 })
+            .unwrap();
+        host.edit_vfx_metadata(|draft| {
+            draft.emitters[0].capacity = 2048;
+            draft.parameters.push(vfx::Parameter {
+                name: "speed".into(),
+                kind: "float".into(),
+                value: [1.0, 0.0, 0.0, 0.0],
+                exposed: true,
+            });
+            Ok(())
+        })
+        .unwrap();
+        let snapshot = host.vfx_document_snapshot().unwrap().unwrap();
+        assert_eq!(snapshot.emitters[0].capacity, 2048);
+        assert!(
+            snapshot.emitters[0].stages[0]
+                .canvas
+                .contains("node 1 vfx.backend_only")
+        );
+        assert!(
+            host.edit_vfx_metadata(|draft| {
+                draft.emitters[0].capacity = 0;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert_eq!(host.vfx_document().unwrap().emitters[0].capacity, 2048);
+    }
+
+    #[test]
+    fn invalid_saved_vfx_stage_does_not_replace_the_open_document() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.backend_only");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        host.install_vfx_catalogue(&catalogue.finish()).unwrap();
+        host.start_vfx_document(vfx::VfxDocument::new("current").unwrap())
+            .unwrap();
+        let mut invalid = vfx::VfxDocument::new("invalid").unwrap();
+        invalid.emitters.push(vfx::Emitter {
+            name: "smoke".into(),
+            path: vfx::SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: vec![vfx::StageGraph {
+                stage: vfx::Stage::Spawn,
+                canvas: "not a canvas".into(),
+            }],
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        assert!(host.start_vfx_document(invalid).is_err());
+        assert_eq!(host.vfx_document().unwrap().name, "current");
+    }
+
+    #[test]
+    fn invalid_vfx_catalogue_does_not_open_the_editor() {
+        let mut host = host();
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("material.diffuse");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        assert!(host.install_vfx_catalogue(&catalogue.finish()).is_err());
+        assert!(host.open(Domain::VfxGraph).is_err());
     }
 
     #[test]

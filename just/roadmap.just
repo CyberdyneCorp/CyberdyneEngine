@@ -60,6 +60,10 @@ roadmap-gates *args:
 roadmap-test *args:
     @cd "{{root}}" && python3 tools/roadmap/selftest.py {{args}}
 
+# The falsifiability ladder replays a historical proof. CI must retain that commit in its checkout.
+roadmap-history-check:
+    @cd "{{root}}" && git cat-file -e 'ebdf8d5^{commit}'
+
 # Show which criteria have been shown able to FAIL. --record writes tools/roadmap/falsifiability.toml.
 #
 # A criterion nobody has shown can fail is not a check, and this repository has now found seven of

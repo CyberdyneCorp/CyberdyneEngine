@@ -13,10 +13,14 @@ use cy_editor_commands::metadata::EffectClass;
 use cy_editor_commands::registry::Registry;
 use cy_editor_commands::scope::{DocumentScope, Scope};
 use cy_editor_core::Actor;
+use cy_editor_core::codec::Writer;
 use cy_editor_mcp::json::{Json, parse};
 use cy_editor_mcp::{McpServer, PROTOCOL_VERSION, serve};
+use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
 use cy_editor_services::editor::Editor;
+use cy_editor_services::notifications::NotificationService;
 use cy_editor_services::project::ProjectService;
+use cy_editor_services::runtime::RuntimeSession;
 use cy_editor_viewport::state::ViewState;
 use cy_editor_viewport::transport::{
     FrameImage, Mailbox, MailboxTransport, PresentedFrame, TransportKind,
@@ -80,6 +84,8 @@ fn registry() -> Registry {
     let mut registry = Registry::new();
     cy_editor_services::builtin::register(&mut registry)
         .expect("the built-in commands satisfy their own metadata");
+    cy_editor_interface::specialised::vfx_authoring_commands::register(&mut registry)
+        .expect("VFX graph commands satisfy their metadata");
     registry
 }
 
@@ -116,6 +122,90 @@ fn converse(lines: &[&str], editor: &mut Editor) -> Vec<Json> {
     )
     .expect("the conversation runs to the end of the input");
     sink.replies()
+}
+
+/// Give the editor a catalogue through the same backend request/response path as the engine.
+fn install_vfx_stage_catalogue(editor: &mut Editor) {
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+
+    let mut material = Writer::new();
+    material.u32(1);
+    material.u32(1);
+    material.u32(0);
+    let mut vfx = Writer::new();
+    vfx.u32(1);
+    vfx.u32(1);
+    vfx.u32(2);
+    for (identity, name, pin, direction) in [
+        (1001, "vfx.constant", "out", 1),
+        (1002, "vfx.spawn_count", "value", 0),
+    ] {
+        vfx.u32(identity);
+        vfx.u32(1);
+        vfx.text(name);
+        vfx.u32(1);
+        vfx.u32(1);
+        vfx.u8(direction);
+        vfx.text(pin);
+        vfx.text("value");
+        if direction == 1 {
+            vfx.u32(1);
+            vfx.u32(1);
+            vfx.u8(2);
+            vfx.text("value");
+            vfx.text("0");
+            vfx.text("");
+            vfx.text("Constant value");
+        } else {
+            vfx.u32(0);
+        }
+    }
+    for (operation, payload) in [
+        ("material.catalogue.get", material.finish()),
+        ("vfx.catalogue.get", vfx.finish()),
+    ] {
+        assert!(editor.backend.maintain(&editor.runtime).is_none());
+        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request,
+            operation: actual,
+            ..
+        } = request
+        else {
+            panic!("catalogue discovery must use a service request");
+        };
+        assert_eq!(actual, operation);
+        write_frame(
+            &mut runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload,
+            }
+            .encode(),
+        )
+        .unwrap();
+        let mut notifications = NotificationService::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let received = |editor: &Editor| {
+            if operation == "material.catalogue.get" {
+                editor.backend.material_catalogue().is_some()
+            } else {
+                editor.backend.vfx_catalogue().is_some()
+            }
+        };
+        while !received(editor) && std::time::Instant::now() < deadline {
+            for event in editor.runtime.pump(&mut notifications) {
+                assert!(editor.backend.accept(&event).is_none());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(received(editor), "{operation} must arrive from the runtime");
+    }
+    assert!(editor.backend.vfx_catalogue().is_some());
 }
 
 /// The `result` of the nth reply.
@@ -238,6 +328,798 @@ fn the_tool_list_is_the_registry_and_carries_every_effect_class() {
             "{command} is projected from the same registry onto MCP"
         );
     }
+}
+
+#[test]
+fn vfx_preview_controls_and_status_are_projected_over_mcp() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.preview.status","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.preview.control","arguments":{"action":"invalid"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.preview.load","arguments":{"source":"invalid"}}}"#,
+        ],
+        &mut editor,
+    );
+    let Json::Array(tools) = result(&replies, 1).get("tools") else {
+        panic!("tools/list must contain the registry projection");
+    };
+    for command in [
+        "vfx.preview.load",
+        "vfx.preview.control",
+        "vfx.preview.step",
+        "vfx.preview.parameter.set",
+        "vfx.preview.status",
+    ] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} must be available over MCP"
+        );
+    }
+    let status = result(&replies, 2).get("content");
+    let Json::Array(content) = status else {
+        panic!("status must be tool content");
+    };
+    assert!(
+        content[0]
+            .get("text")
+            .as_text()
+            .unwrap()
+            .contains("pending = false")
+    );
+    for (index, diagnostic) in [(3, "action must be"), (4, "expected cyvfxdoc 1")] {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(true));
+        let Json::Array(content) = result(&replies, index).get("content") else {
+            panic!("refusal must be tool content");
+        };
+        assert!(
+            content[0]
+                .get("text")
+                .as_text()
+                .unwrap()
+                .contains(diagnostic)
+        );
+    }
+}
+
+#[test]
+fn vfx_hierarchy_and_parameter_edits_use_the_same_undo_history_over_mcp() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let sandbox = Sandbox::new("vfx-authoring");
+    let reference = "game/sparks.cyvfxdoc";
+    let original = VfxDocument::new("sparks").unwrap().encode_text().unwrap();
+    std::fs::write(sandbox.0.join(reference), &original).unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.parameter.set","arguments":{"reference":"game/sparks.cyvfxdoc","name":"speed","kind":"float","values":[2,0,0,0],"exposed":true}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.node.add","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","node_type":"vfx.constant","x":12,"y":30}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in [1, 2] {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    assert_eq!(result(&replies, 3).get("isError"), &Json::Bool(true));
+    let Json::Array(content) = result(&replies, 3).get("content") else {
+        panic!("a missing catalogue must explain the refusal");
+    };
+    assert!(
+        content[0]
+            .get("text")
+            .as_text()
+            .unwrap()
+            .contains("engine VFX node catalogue is unavailable")
+    );
+    let saved =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap();
+    assert_eq!(saved.emitters[0].name, "embers");
+    assert_eq!(saved.parameters[0].value[0].to_bits(), 2.0_f32.to_bits());
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let after_undo =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap();
+    assert_eq!(after_undo.emitters[0].name, "embers");
+    assert!(after_undo.parameters.is_empty());
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join(reference)).unwrap(),
+        saved.encode_text().unwrap()
+    );
+    assert_eq!(
+        editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap()
+            .history()
+            .entries()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn vfx_stage_wire_and_property_round_trip_over_mcp() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let sandbox = Sandbox::new("vfx-stage-wire");
+    let reference = "game/sparks.cyvfxdoc";
+    std::fs::write(
+        sandbox.0.join(reference),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    install_vfx_stage_catalogue(&mut editor);
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.node.add","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","node_type":"vfx.constant","x":12,"y":30}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.node.add","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","node_type":"vfx.spawn_count","x":90,"y":30}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.node.property.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","node":1,"property":"value","value":"3"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.node.connect","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","from":1,"from_pin":"out","to":2,"to_pin":"value"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=5 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let read = || {
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    let connected = read();
+    let canvas = &connected.emitters[0].stages[0].canvas;
+    assert!(canvas.contains("node 1 vfx.constant"));
+    assert!(canvas.contains("node 2 vfx.spawn_count"));
+    assert!(canvas.contains("link 1 out 2 value"));
+    assert!(canvas.contains("prop 1 value 3"));
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(
+        !read().emitters[0].stages[0]
+            .canvas
+            .contains("link 1 out 2 value")
+    );
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read(), connected);
+
+    exercise_vfx_stage_moves(&mut editor, &sandbox, &connected);
+}
+
+fn exercise_vfx_stage_moves(
+    editor: &mut Editor,
+    sandbox: &Sandbox,
+    connected: &cy_editor_interface::specialised::vfx::VfxDocument,
+) {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let read = || {
+        VfxDocument::decode_text(
+            &std::fs::read_to_string(sandbox.0.join("game/sparks.cyvfxdoc")).unwrap(),
+        )
+        .unwrap()
+    };
+
+    let moved = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"vfx.node.move","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","node":1,"x":40,"y":50}}}"#,
+        ],
+        editor,
+    );
+    assert_eq!(result(&moved, 1).get("isError"), &Json::Bool(false));
+    assert!(
+        read().emitters[0].stages[0]
+            .canvas
+            .contains("# layout 1 40 50")
+    );
+    let undo_move = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        editor,
+    );
+    assert_eq!(result(&undo_move, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(&read(), connected);
+
+    let disconnected = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"vfx.node.disconnect","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","from":1,"from_pin":"out","to":2,"to_pin":"value"}}}"#,
+        ],
+        editor,
+    );
+    assert_eq!(result(&disconnected, 1).get("isError"), &Json::Bool(false));
+    assert!(
+        !read().emitters[0].stages[0]
+            .canvas
+            .contains("link 1 out 2 value")
+    );
+    let removed = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"vfx.node.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","stage":"spawn","node":1}}}"#,
+        ],
+        editor,
+    );
+    assert_eq!(result(&removed, 1).get("isError"), &Json::Bool(false));
+    assert!(
+        !read().emitters[0].stages[0]
+            .canvas
+            .contains("node 1 vfx.constant")
+    );
+    for expected in ["node 1 vfx.constant", "link 1 out 2 value"] {
+        let replies = converse(
+            &[
+                INITIALIZE,
+                r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+            ],
+            editor,
+        );
+        assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+        assert!(read().emitters[0].stages[0].canvas.contains(expected));
+    }
+    assert_eq!(&read(), connected);
+}
+
+#[test]
+fn vfx_module_canvas_round_trips_over_mcp() {
+    use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+    let sandbox = Sandbox::new("vfx-module-canvas");
+    let reference = "game/shared_spawn.cyvfxmodule";
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    install_vfx_stage_catalogue(&mut editor);
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_spawn.cyvfxmodule","name":"shared_spawn","stage":"spawn"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.node.add","arguments":{"reference":"game/shared_spawn.cyvfxmodule","node_type":"vfx.constant","x":12,"y":30}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.module.node.add","arguments":{"reference":"game/shared_spawn.cyvfxmodule","node_type":"vfx.spawn_count","x":90,"y":30}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.module.node.property.set","arguments":{"reference":"game/shared_spawn.cyvfxmodule","node":1,"property":"value","value":"5"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.module.node.connect","arguments":{"reference":"game/shared_spawn.cyvfxmodule","from":1,"from_pin":"out","to":2,"to_pin":"value"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=5 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let read = || {
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    let connected = read();
+    assert!(connected.canvas.contains("prop 1 value 5"));
+    assert!(connected.canvas.contains("link 1 out 2 value"));
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(!read().canvas.contains("link 1 out 2 value"));
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read(), connected);
+
+    let moved = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"vfx.module.node.move","arguments":{"reference":"game/shared_spawn.cyvfxmodule","node":1,"x":40,"y":50}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&moved, 1).get("isError"), &Json::Bool(false));
+    assert!(read().canvas.contains("# layout 1 40 50"));
+    let undo_move = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undo_move, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read(), connected);
+}
+
+#[test]
+fn vfx_capacity_attributes_and_channels_round_trip_with_mcp_undo() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let sandbox = Sandbox::new("vfx-metadata-authoring");
+    let reference = "game/sparks.cyvfxdoc";
+    std::fs::write(
+        sandbox.0.join(reference),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.emitter.capacity.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","capacity":2048}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.attribute.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","name":"velocity","kind":"vec3","minimum":-8,"maximum":8,"tolerance":0.01,"precision":"Float16"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.channel.set","arguments":{"reference":"game/sparks.cyvfxdoc","name":"impact","max_events_per_frame":32,"max_chain_depth":3,"readback":true}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=4 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let read = || {
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    assert_eq!(read().emitters[0].capacity, 2048);
+    assert_eq!(read().emitters[0].attributes[0].precision, "Float16");
+    assert_eq!(read().channels[0].name, "impact");
+
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.emitter.capacity.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","capacity":0}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&refused, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(read().emitters[0].capacity, 2048);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(read().channels.is_empty());
+    assert_eq!(read().emitters[0].attributes[0].name, "velocity");
+
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read().channels[0].name, "impact");
+
+    let removed = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"vfx.attribute.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","name":"velocity"}}}"#,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"vfx.channel.remove","arguments":{"reference":"game/sparks.cyvfxdoc","name":"impact"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&removed, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&removed, 2).get("isError"), &Json::Bool(false));
+    assert!(read().emitters[0].attributes.is_empty());
+    assert!(read().channels.is_empty());
+
+    let parameter = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"vfx.parameter.set","arguments":{"reference":"game/sparks.cyvfxdoc","name":"speed","kind":"float","values":[2,0,0,0],"exposed":true}}}"#,
+            r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"vfx.parameter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","name":"speed"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&parameter, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&parameter, 2).get("isError"), &Json::Bool(false));
+    assert!(read().parameters.is_empty());
+}
+
+#[test]
+fn vfx_canvas_removal_commands_are_projected_over_mcp() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        ],
+        &mut editor,
+    );
+    let Json::Array(tools) = result(&replies, 1).get("tools") else {
+        panic!("tools/list must contain VFX canvas commands");
+    };
+    for command in [
+        "vfx.node.disconnect",
+        "vfx.node.remove",
+        "vfx.module.node.add",
+        "vfx.module.node.connect",
+        "vfx.module.node.disconnect",
+        "vfx.module.node.remove",
+        "vfx.module.node.property.set",
+    ] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} must be available over MCP"
+        );
+    }
+}
+
+#[test]
+fn vfx_renderer_target_and_interface_edits_round_trip_over_mcp() {
+    use cy_editor_interface::specialised::vfx::{SimulationPath, VfxDocument};
+
+    let sandbox = Sandbox::new("vfx-emitter-settings");
+    let reference = "game/sparks.cyvfxdoc";
+    std::fs::write(
+        sandbox.0.join(reference),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"gpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.emitter.configure","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","target":"cpu","renderer":"Mesh"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.interface.bind","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","interface":"texture"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=3 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let read_document = || {
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    let saved = read_document();
+    assert_eq!(saved.emitters[0].path, SimulationPath::CpuRequired);
+    assert_eq!(saved.emitters[0].renderer, "Mesh");
+    assert_eq!(saved.emitters[0].interfaces, ["texture"]);
+
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"vfx.interface.bind","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","interface":"texture"}}}"#,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"vfx.emitter.configure","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","target":"automatic","renderer":"Mesh"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=2 {
+        assert_eq!(result(&refused, index).get("isError"), &Json::Bool(true));
+    }
+    assert_eq!(read_document(), saved);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(read_document().emitters[0].interfaces.is_empty());
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_document(), saved);
+
+    let removed = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.interface.unbind","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","interface":"texture"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&removed, 1).get("isError"), &Json::Bool(false));
+    assert!(read_document().emitters[0].interfaces.is_empty());
+}
+
+#[test]
+fn vfx_emitter_removal_preserves_other_emitters_and_undoes_over_mcp() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let sandbox = Sandbox::new("vfx-emitter-removal");
+    let reference = "game/sparks.cyvfxdoc";
+    std::fs::write(
+        sandbox.0.join(reference),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"smoke","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"gpu","renderer":"Mesh"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.emitter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"smoke"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=3 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let read_document = || {
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    let removed = read_document();
+    assert_eq!(removed.emitters.len(), 1);
+    assert_eq!(removed.emitters[0].name, "embers");
+    assert_eq!(removed.emitters[0].renderer, "Mesh");
+
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.emitter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"missing"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&refused, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(read_document(), removed);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_document().emitters.len(), 2);
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_document(), removed);
+}
+
+#[test]
+fn reusable_vfx_module_edits_and_attachment_round_trip_over_mcp() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+    use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+    let sandbox = Sandbox::new("vfx-module-authoring");
+    let system = "game/sparks.cyvfxdoc";
+    let module = "game/shared_drag.cyvfxmodule";
+    std::fs::write(
+        sandbox.0.join(system),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_drag","stage":"update"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.module.input.add","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"velocity","kind":"vec3"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.module.dependency.add","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_noise"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.module.attach","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","module_reference":"game/shared_drag.cyvfxmodule"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=5 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let saved_module =
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(module)).unwrap()).unwrap();
+    assert_eq!(saved_module.inputs[0].kind, "vec3");
+    assert_eq!(saved_module.dependencies, ["shared_noise"]);
+    let saved_system =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(system)).unwrap())
+            .unwrap();
+    assert_eq!(saved_system.emitters[0].modules, ["shared_drag"]);
+    assert_eq!(saved_system.module_assets[0].path, module);
+
+    let duplicate = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"replacement","stage":"spawn"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&duplicate, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(module)).unwrap()).unwrap(),
+        saved_module
+    );
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let after_undo =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(system)).unwrap())
+            .unwrap();
+    assert!(after_undo.emitters[0].modules.is_empty());
+    assert!(after_undo.module_assets.is_empty());
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(system)).unwrap())
+            .unwrap(),
+        saved_system
+    );
+}
+
+#[test]
+fn reusable_vfx_module_stage_change_round_trips_with_history_over_mcp() {
+    use cy_editor_interface::specialised::vfx::Stage;
+    use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+    let sandbox = Sandbox::new("vfx-module-stage");
+    let reference = "game/shared_drag.cyvfxmodule";
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let read_stage = || {
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+            .stage
+    };
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_drag","stage":"update"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.stage.set","arguments":{"reference":"game/shared_drag.cyvfxmodule","stage":"spawn"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.module.stage.set","arguments":{"reference":"game/shared_drag.cyvfxmodule","stage":"unknown"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 3).get("isError"), &Json::Bool(true));
+    assert_eq!(read_stage(), Stage::Spawn);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_stage(), Stage::Update);
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read_stage(), Stage::Spawn);
+}
+
+#[test]
+fn vfx_module_declarations_can_be_removed_and_undone_over_mcp() {
+    use cy_editor_interface::specialised::vfx::Stage;
+    use cy_editor_interface::specialised::vfx_module::{ModuleInput, VfxModule};
+
+    let sandbox = Sandbox::new("vfx-module-removal");
+    let reference = "game/shared_drag.cyvfxmodule";
+    let mut module = VfxModule::new("shared_drag", Stage::Update).unwrap();
+    module.inputs.push(ModuleInput {
+        name: "velocity".into(),
+        kind: "vec3".into(),
+    });
+    module.dependencies.push("shared_noise".into());
+    std::fs::write(sandbox.0.join(reference), module.encode_text().unwrap()).unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.module.input.remove","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"velocity"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.dependency.remove","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_noise"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(false));
+    let read = || {
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    assert!(read().inputs.is_empty());
+    assert!(read().dependencies.is_empty());
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(read().inputs.is_empty());
+    assert_eq!(read().dependencies, ["shared_noise"]);
 }
 
 #[test]

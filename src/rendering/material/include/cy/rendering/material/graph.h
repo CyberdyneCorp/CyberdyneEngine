@@ -71,6 +71,24 @@ enum class GraphOp : u16 {
     /// Two closures in, one out. An author adds a third closure with a second one of these.
     AddClosures,
     LayerClosures,
+    /// Sine of a scalar or vector, in radians.
+    Sin,
+    /// Fixed geometry inputs for authored vertex expressions.
+    ObjectPosition,
+    /// World-space position relative to the render camera, matching the frame's large-world
+    /// convention.
+    WorldPosition,
+    Normal,
+    Uv0,
+    /// Seconds elapsed in the engine preview, supplied each frame rather than cooked into a
+    /// parameter.
+    Time,
+    /// Smooth scalar noise sampled at a three-dimensional position.
+    Noise,
+    /// Time-varying procedural vector sampled at a three-dimensional position.
+    ProceduralWind,
+    /// Linear RGB colour from the current mesh vertex.
+    VertexColor,
     Count,
 };
 
@@ -115,6 +133,10 @@ public:
 
     [[nodiscard]] Status set_surface_output(u32 node) noexcept;
     [[nodiscard]] Status set_opacity_output(u32 node) noexcept;
+    /// Select the authored float3 expression that moves vertices in world space.
+    [[nodiscard]] Status set_vertex_offset_output(u32 node) noexcept;
+    /// Select a scalar displacement in metres along the mesh normal.
+    [[nodiscard]] Status set_vertex_displacement_output(u32 node) noexcept;
 
     [[nodiscard]] Name name() const noexcept { return name_; }
     [[nodiscard]] Span<const GraphNode> nodes() const noexcept { return nodes_.span(); }
@@ -126,6 +148,8 @@ public:
     [[nodiscard]] u32 input(u32 node, u8 port) const noexcept;
     [[nodiscard]] u32 surface_output() const noexcept { return surface_; }
     [[nodiscard]] u32 opacity_output() const noexcept { return opacity_; }
+    [[nodiscard]] u32 vertex_offset_output() const noexcept { return vertex_offset_; }
+    [[nodiscard]] u32 vertex_displacement_output() const noexcept { return vertex_displacement_; }
     [[nodiscard]] Allocator& allocator() const noexcept { return nodes_.allocator(); }
 
     /// The most inputs any node has: two operands plus a weight.
@@ -139,6 +163,8 @@ private:
     Array<TextureDecl> textures_;
     u32 surface_ = kInvalidNode;
     u32 opacity_ = kInvalidNode;
+    u32 vertex_offset_ = kInvalidNode;
+    u32 vertex_displacement_ = kInvalidNode;
 };
 
 /// Lower an authored graph to the IR. Every node is lowered, including the disconnected ones: the

@@ -194,6 +194,83 @@ struct Build {
     return ok();
 }
 
+[[nodiscard]] Status check_geometry_paths(const Module& primary,
+                                          Span<const GeometrySourceKind> paths,
+                                          Array<GeometrySourceKind>& report,
+                                          Array<CompileDiagnostic>& diagnostics) noexcept {
+    for (const GeometrySourceKind path : paths) {
+        if (static_cast<u8>(path) >= static_cast<u8>(GeometrySourceKind::Count)) {
+            return fail(ErrorCode::InvalidArgument, "unknown material geometry source");
+        }
+        for (const GeometrySourceKind recorded : report) {
+            if (recorded == path) {
+                return fail(ErrorCode::InvalidArgument, "duplicate material geometry source");
+            }
+        }
+        if (Status added = report.push_back(path); !added) {
+            return added;
+        }
+        if (primary.vertex_offset() == kInvalidNode ||
+            path != GeometrySourceKind::VirtualGeometry) {
+            continue;
+        }
+        if (Status said = say(diagnostics, DiagnosticSeverity::Error, "vertex-geometry-unsupported",
+                              "virtual geometry has no vertex-offset evaluation in the visibility "
+                              "and shadow paths",
+                              Name::intern(geometry_source_kind_name(path)));
+            !said) {
+            return said;
+        }
+    }
+    return ok();
+}
+
+[[nodiscard]] Status check_vertex_operations(const Module& primary,
+                                             Array<CompileDiagnostic>& diagnostics,
+                                             Allocator& allocator) noexcept {
+    if (primary.vertex_offset() == kInvalidNode) {
+        return ok();
+    }
+    Array<u8> visited(allocator);
+    if (Status sized = visited.resize(primary.size()); !sized) {
+        return sized;
+    }
+    std::ranges::fill(visited, 0);
+    Array<NodeId> pending(allocator);
+    if (Status added = pending.push_back(primary.vertex_offset()); !added) {
+        return added;
+    }
+    while (!pending.empty()) {
+        const NodeId id = pending.back();
+        pending.pop_back();
+        if (visited[id] != 0) {
+            continue;
+        }
+        visited[id] = 1;
+        const Node& node = primary.node(id);
+        if (node.op == Op::TextureSample || node.op == Op::Custom) {
+            CompileDiagnostic diagnostic;
+            diagnostic.severity = DiagnosticSeverity::Error;
+            diagnostic.code = "vertex-stage-unsupported";
+            diagnostic.detail = node.op == Op::TextureSample
+                                    ? "texture sampling has no vertex-stage material binding"
+                                    : "custom Slang is unavailable in authored vertex graphs";
+            diagnostic.subject = node.symbol;
+            const Span<const u32> origins = primary.origins(id);
+            diagnostic.origin = origins.empty() ? kUnattributed : origins[0];
+            if (Status said = diagnostics.push_back(diagnostic); !said) {
+                return said;
+            }
+        }
+        for (const NodeId input : primary.operands(id)) {
+            if (Status added = pending.push_back(input); !added) {
+                return added;
+            }
+        }
+    }
+    return ok();
+}
+
 /// Translate M3's material report into the compiler's diagnostics, so there is one validator rather
 /// than two answers to "is this material well formed".
 [[nodiscard]] Status carry_validation(const MaterialProgram& layout,
@@ -249,6 +326,19 @@ struct Build {
     const Lowered lowered = match_shading_model(closure_set(program.module));
     program.model = lowered.model;
     program.generic_evaluator = lowered.generic_evaluator;
+    EmitOptions emit;
+    emit.kind = kind;
+    emit.tier = tier;
+    emit.shading_model = render::shading_model_name(lowered.model);
+    emit.canonical_order = options.passes.canonical_emission_order;
+    emit.hoist_uniform = options.passes.uniform_varying;
+    if (program.module.vertex_offset() != kInvalidNode) {
+        auto vertex = emit_vertex_offset(program.module, emit);
+        if (!vertex) {
+            return make_unexpected(vertex.error());
+        }
+        program.vertex_source = std::move(vertex.value());
+    }
     if (program.absent) {
         return program;
     }
@@ -263,12 +353,6 @@ struct Build {
     }
     program.inputs = std::move(inputs.value());
 
-    EmitOptions emit;
-    emit.kind = kind;
-    emit.tier = tier;
-    emit.shading_model = render::shading_model_name(lowered.model);
-    emit.canonical_order = options.passes.canonical_emission_order;
-    emit.hoist_uniform = options.passes.uniform_varying;
     auto source = emit_program(program.module, emit);
     if (!source) {
         return make_unexpected(source.error());
@@ -297,8 +381,32 @@ const char* diagnostic_severity_name(DiagnosticSeverity severity) noexcept {
     return "?";
 }
 
+const char* geometry_source_kind_name(GeometrySourceKind source) noexcept {
+    switch (source) {
+        case GeometrySourceKind::StaticMesh:
+            return "StaticMesh";
+        case GeometrySourceKind::SkinnedMesh:
+            return "SkinnedMesh";
+        case GeometrySourceKind::VirtualGeometry:
+            return "VirtualGeometry";
+        case GeometrySourceKind::Terrain:
+            return "Terrain";
+        case GeometrySourceKind::MeshParticles:
+            return "MeshParticles";
+        case GeometrySourceKind::Procedural:
+            return "Procedural";
+        case GeometrySourceKind::Count:
+            return "Count";
+    }
+    return "Unknown";
+}
+
 CompiledMaterial::CompiledMaterial(Allocator& allocator) noexcept
-    : programs_(allocator), diagnostics_(allocator), layout_(allocator), optimisation_(allocator) {}
+    : programs_(allocator),
+      diagnostics_(allocator),
+      layout_(allocator),
+      optimisation_(allocator),
+      geometry_paths_(allocator) {}
 
 const CompiledProgram* CompiledMaterial::find(ProgramKind kind, QualityTier tier) const noexcept {
     for (const CompiledProgram& program : programs_) {
@@ -370,6 +478,15 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
     if (Status checked = check_fields(primary, options, material.diagnostics_); !checked) {
         return make_unexpected(checked.error());
     }
+    if (Status checked = check_geometry_paths(primary, options.geometry_paths,
+                                              material.geometry_paths_, material.diagnostics_);
+        !checked) {
+        return make_unexpected(checked.error());
+    }
+    if (Status checked = check_vertex_operations(primary, material.diagnostics_, allocator);
+        !checked) {
+        return make_unexpected(checked.error());
+    }
     if (Status carried = carry_validation(material.layout_, material.diagnostics_, allocator);
         !carried) {
         return make_unexpected(carried.error());
@@ -396,6 +513,11 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
     key = hash_u64(key, primary.digest());
     key = hash_text(key, options.profile.name);
     key = hash_u64(key, options.passes.all_enabled() ? 1ULL : 0ULL);
+    key = hash_u64(key, options.geometry_paths.empty() ? options.geometry_sources
+                                                       : options.geometry_paths.size());
+    for (const GeometrySourceKind path : material.geometry_paths_) {
+        key = hash_u64(key, static_cast<u64>(path));
+    }
 
     for (u32 kind = 0; kind < kind_count; ++kind) {
         for (u32 tier = 0; tier < tier_count; ++tier) {
@@ -406,6 +528,7 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
                 return make_unexpected(program.error());
             }
             key = hash_u64(key, program.value().source.digest);
+            key = hash_u64(key, program.value().vertex_source.digest);
             // THE FLAG IS ONLY MEANINGFUL WHERE ALBEDO IS SUPPOSED TO SURVIVE. A far-field program
             // replaces every texture with its declared average by design and a shadow program has
             // no surface at all; warning about either would be warning about the specification.
@@ -431,8 +554,10 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
 
     const u32 static_bools = material.layout_.static_bool_count();
     for (CompiledProgram& program : material.programs_) {
-        count_permutations(static_bools, kind_count, options.profile, options.geometry_sources,
-                           program.cost);
+        const u32 sources = material.geometry_paths_.empty()
+                                ? options.geometry_sources
+                                : static_cast<u32>(material.geometry_paths_.size());
+        count_permutations(static_bools, kind_count, options.profile, sources, program.cost);
     }
     material.cook_key_ = key;
     return material;

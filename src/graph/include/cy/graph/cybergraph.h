@@ -228,6 +228,8 @@ public:
     [[nodiscard]] bool converts(Name from, Name to) const noexcept;
 
     [[nodiscard]] usize size() const noexcept { return types_.size(); }
+    /// Registered definitions in registration order, for compiler-owned editor catalogues.
+    [[nodiscard]] Span<const NodeType> types() const noexcept { return types_.span(); }
     [[nodiscard]] Allocator& allocator() const noexcept { return types_.allocator(); }
 
 private:

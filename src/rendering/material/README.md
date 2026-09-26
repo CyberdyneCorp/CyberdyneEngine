@@ -82,6 +82,52 @@ is untouched.
 | `binning.h` | material classification and binning, as the CPU reference a GPU pass is checked against |
 | `compiler.h` | the join, parameter classification, and the cook key |
 
+The material IR also carries an optional, typed `float3` world-space vertex offset root. Its
+content enters the material digest and versioned module encoding; optimisation and family
+derivation retain it for visible and shadow programs. Graph lowering and the text front end
+(`vertex_offset = ...;`) require a float3 expression. Displaced frame rendering remains under
+issue #15.
+The engine material catalogue assigns `material.vertex_output` a stable identity and marks it as a
+vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
+Its `displacement` pin accepts a scalar distance along the `normal` attribute. Graph lowering
+combines both pins into the single world-space offset root, so visible and shadow variants evaluate
+the same expression. The text front end accepts `vertex_displacement = <scalar>;` and produces
+the same cook identity even when that assignment precedes `vertex_offset`. A vector displacement
+is rejected before compilation.
+`material.world_position` lowers to the engine's `position` attribute, in camera-relative world
+coordinates; `material.object_position` retains mesh-local coordinates. Both are float3 inputs.
+`material.time` is a scalar engine input. The first-light hosted renderer writes elapsed seconds into the
+frame uniform before drawing each preview frame, and the material shader binds it for vertex and
+fragment expressions. Its value changes without a material recompile.
+`material.noise` accepts a float3 coordinate and returns smooth value noise in `[0, 1]`. The node
+and `noise(position)` text form lower to the same IR operation and engine Slang function.
+`material.procedural_wind` accepts a float3 coordinate and elapsed seconds, returning a smooth
+float3 vector with components in `[-1, 1]`. The node and
+`procedural_wind(position, time_seconds)` text form share that IR operation; authors scale the
+vector to control displacement amplitude. It does not read the engine's `environment-fields` wind;
+that binding remains an issue #15 requirement.
+`material.vertex_color` lowers to the typed `color0` RGB attribute. The first-light compiled-material
+mesh supplies per-vertex linear RGBA data; the generated sample assigns distinct RGB colours by
+face, and a vertex without authored colour defaults to white. RGB reaches vertex and fragment
+evaluation.
+Each compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
+its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
+the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including
+opaque shadow variants without fragment work. The hosted editor viewport evaluates the same
+offset for its visible and shadow passes; the main frame's motion pass still needs integration. A
+vertex expression that reaches `TextureSample` or handwritten `Custom` Slang reports
+`vertex-stage-unsupported` in the compiler, editor validation, and cook; those nodes have no
+supported authored vertex binding. Texture samples used only by the surface stage remain valid.
+`material.object_position`, `material.normal`, and `material.uv0` are fixed typed geometry inputs
+in the engine catalogue. The hosted viewport passes mesh object coordinates to the generated
+vertex function before projection; these nodes lower to the same IR attributes as text-authored
+geometry reads.
+`CompileOptions::geometry_paths` records named geometry sources for the variant report and cook
+identity. A vertex graph targeting `VirtualGeometry` reports `vertex-geometry-unsupported` with
+the source name: its visibility and shadow paths cannot evaluate the offset. Callers that do not
+know their geometry assignments may continue using the older anonymous `geometry_sources` count;
+the editor and project cooker still need assignment-aware requests to enforce the named refusal.
+
 ### The one decision everything else follows from
 
 **A material's identity is a content hash over a canonicalised DAG.** It closes over the op, the

@@ -10,6 +10,10 @@
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/pipeline/material_textures.h>
 #include <cy/servers/render/server.h>
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include <cy/rendering/particles/particle_renderer.h>
+#    include <cy/vfx/runtime.h>
+#endif
 
 #include "scene.h"
 #include "world_view.h"
@@ -17,9 +21,24 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+namespace cy::vfx {
+class SimulationWorld;
+}
+
 namespace cy::sample::editor_window {
+
+/// The subset of a compiled material the authored frame's standard-material path can represent.
+struct GraphColour {
+    Vec4 value;
+    std::string parameter;
+};
+
+/// Extract the supported surface colour, refusing vertex graphs the authored frame cannot draw.
+[[nodiscard]] Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
+                                                                Allocator& allocator) noexcept;
 
 struct LightMarker {
     u64 identity = 0;
@@ -42,13 +61,22 @@ public:
     AuthoredFrame(const AuthoredFrame&) = delete;
     AuthoredFrame& operator=(const AuthoredFrame&) = delete;
 
-    [[nodiscard]] Status initialize(u32 width, u32 height, const char* project) noexcept;
+    [[nodiscard]] Status initialize(u32 width, u32 height, const char* project,
+                                    bool temporal = true) noexcept;
     [[nodiscard]] Status prepare_world(const scene::serialization::World& world) noexcept;
     [[nodiscard]] Status preview(std::string_view reference,
                                  std::string_view canonical_graph) noexcept;
     [[nodiscard]] Status render(const scene::serialization::World& world,
-                                const first_light::Camera& camera,
-                                bool editor_lighting = true) noexcept;
+                                const first_light::Camera& camera, bool editor_lighting = true,
+                                const vfx::SimulationWorld* preview = nullptr) noexcept;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    [[nodiscard]] const rendering::particles::ParticleReport& vfx_particle_report() const noexcept {
+        return vfx_renderer_.report();
+    }
+    [[nodiscard]] Span<const rendering::particles::ParticleInstance> vfx_records() const noexcept {
+        return vfx_records_.span();
+    }
+#endif
     [[nodiscard]] Span<const u32> pixels() const noexcept { return pixels_.span(); }
     [[nodiscard]] Status publish(const first_light::Camera& camera,
                                  Array<render::GpuInstance>& instances,
@@ -88,6 +116,10 @@ private:
                                          const Mat4& matrix, Vec3 eye) noexcept;
     [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera,
                                  bool editor_lighting) noexcept;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    [[nodiscard]] Status prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
+                                     Vec3 eye) noexcept;
+#endif
     void release_geometry() noexcept;
 
     static Span<const rendering::DrawSurface> surfaces(const rendering::VisibleInstance& instance,
@@ -110,6 +142,11 @@ private:
     rendering::pipeline::FramePipelines pipelines_;
     rendering::pipeline::FrameBindings bindings_;
     rendering::pipeline::FrameRecorder recorder_;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    rendering::particles::ParticleRenderer vfx_renderer_;
+    Array<rendering::particles::ParticleInstance> vfx_records_;
+    vfx::PublishReport vfx_published_;
+#endif
     render::RenderServer texture_server_;
     rendering::pipeline::MaterialTextureTable texture_table_;
     Array<rendering::pipeline::InstanceTransform> transforms_;

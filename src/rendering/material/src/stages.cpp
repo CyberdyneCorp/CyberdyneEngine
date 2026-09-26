@@ -137,6 +137,8 @@ Status dump_graph(const MaterialGraph& graph, Array<char>& out) noexcept {
     put_node_id(out, graph.surface_output());
     put(out, "\n  opacity <- ");
     put_node_id(out, graph.opacity_output());
+    put(out, "\n  vertex_offset <- ");
+    put_node_id(out, graph.vertex_offset_output());
     put(out, "\n");
 
     for (const GraphNode& node : graph.nodes()) {
@@ -201,11 +203,13 @@ Status dump_module(const Module& module, Array<char>& out) noexcept {
     put_node_id(out, module.surface());
     put(out, "\n  opacity <- ");
     put_node_id(out, module.opacity());
+    put(out, "\n  vertex_offset <- ");
+    put_node_id(out, module.vertex_offset());
     put(out, "\n");
 
-    const NodeId roots[] = {module.surface(), module.opacity()};
+    const NodeId roots[] = {module.surface(), module.opacity(), module.vertex_offset()};
     Array<NodeId> order(module.allocator());
-    if (Status walked = canonical_order(module, Span<const NodeId>(roots, 2), order); !walked) {
+    if (Status walked = canonical_order(module, Span<const NodeId>(roots, 3), order); !walked) {
         return walked;
     }
     for (const NodeId id : order) {

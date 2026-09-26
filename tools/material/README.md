@@ -34,6 +34,12 @@ content-addressed artefact store, precise invalidation and the shared cache tier
 identical bytes, a second build is a cache hit, editing one material leaves the other alone, and a
 material with a cook-time error produces no artefact at all.
 
+For a material assigned to geometry, set the build node's `geometry` option to renderer source
+names separated by commas (for example, `StaticMesh,VirtualGeometry`). The producer passes these
+paths to the material compiler. A vertex offset assigned to `VirtualGeometry` fails with
+`vertex-geometry-unsupported` and emits no bundle; an unknown source fails with
+`material-geometry-source-invalid`. Omitting the option preserves an unassigned material cook.
+
 **The producer's version is the compiler's version.** `kMaterialProducerVersion` is *defined as*
 `cy::rendering::material::kCompilerVersion`, so "WHEN the material compiler version increases THEN
 compiled programs SHALL be recooked and the authored material assets SHALL be untouched" is a fact
@@ -81,6 +87,10 @@ reflection data, the cost report, and pipeline state metadata" — with one thin
 plainly: **nothing here invokes the Slang compiler.** The bundle carries source, and `shader-system`
 owns turning it into SPIR-V through the one shader pipeline the specification permits. Wiring that
 join is not this task's, and a bundle that claimed to hold compiled programs would be lying about it.
+Bundle version 2 also stores each program's vertex-offset Slang and digest. An opaque shadow
+program can have no fragment source while still carrying the vertex source needed to displace its
+silhouette. The reader accepts version 1 bundles with an empty vertex source; the compiler version
+increment makes the build graph recook current materials before they are shipped.
 
 ## The failure a reader should know about
 

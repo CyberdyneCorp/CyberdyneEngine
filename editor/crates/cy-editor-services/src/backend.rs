@@ -5,14 +5,24 @@
 //! knows.  Keeping the bytes here (below presentation) lets a runtime disappear without taking an
 //! authored graph or the last compatible catalogue snapshot with it.
 
-use cy_editor_core::codec::Reader;
+use cy_editor_core::codec::{Reader, Writer};
 use cy_editor_core::observe::{Revision, Versioned};
 use cy_editor_core::problem::Problem;
 use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 
 use crate::runtime::RuntimeSession;
+use crate::vfx_capabilities::VfxAuthoringCapabilities;
+use crate::vfx_compile::{VfxCompileFailure, VfxCompileReport};
+use crate::vfx_preview::{VfxPreviewAction, VfxPreviewSnapshot, parameter_update};
 
 const MATERIAL_CATALOGUE_OPERATION: &str = "material.catalogue.get";
+const VFX_CATALOGUE_OPERATION: &str = "vfx.catalogue.get";
+const VFX_CAPABILITIES_OPERATION: &str = "vfx.authoring-capabilities.get";
+const VFX_COMPILE_OPERATION: &str = "vfx.compile";
+const VFX_PREVIEW_LOAD_OPERATION: &str = "vfx.preview.load";
+const VFX_PREVIEW_CONTROL_OPERATION: &str = "vfx.preview.control";
+const VFX_PREVIEW_STEP_OPERATION: &str = "vfx.preview.step";
+const VFX_PREVIEW_PARAMETER_OPERATION: &str = "vfx.preview.parameter.update";
 const MATERIAL_VALIDATE_OPERATION: &str = "material.validate";
 const MATERIAL_COMPILE_OPERATION: &str = "material.compile";
 const MATERIAL_AUTHOR_OPERATION: &str = "material.author";
@@ -203,6 +213,22 @@ pub enum MaterialPreviewState {
     },
 }
 
+/// Request-correlated result of compiling a VFX system in the engine.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum VfxCompileState {
+    /// No draft has been compiled.
+    #[default]
+    Idle,
+    /// The engine is compiling the submitted draft.
+    Pending(RequestId),
+    /// The engine produced a cooked system and report.
+    Compiled(RequestId, VfxCompileReport),
+    /// The engine refused the draft with structured diagnostics.
+    Failed(Option<RequestId>, VfxCompileFailure),
+    /// The engine acknowledged cancellation.
+    Cancelled(RequestId),
+}
+
 #[derive(Clone, Copy)]
 enum PreviewOperation {
     Create,
@@ -215,6 +241,19 @@ pub struct BackendServices {
     material_catalogue: Versioned<Option<Vec<u8>>>,
     catalogue_state: MaterialCatalogueState,
     catalogue_request: Option<RequestId>,
+    vfx_catalogue: Versioned<Option<Vec<u8>>>,
+    vfx_catalogue_state: MaterialCatalogueState,
+    vfx_catalogue_request: Option<RequestId>,
+    vfx_catalogue_requested: bool,
+    vfx_capabilities: Versioned<Option<VfxAuthoringCapabilities>>,
+    vfx_capabilities_state: MaterialCatalogueState,
+    vfx_capabilities_request: Option<RequestId>,
+    vfx_capabilities_requested: bool,
+    vfx_compile_request: Option<RequestId>,
+    vfx_compile_state: VfxCompileState,
+    vfx_preview_request: Option<RequestId>,
+    vfx_preview_snapshot: Option<VfxPreviewSnapshot>,
+    vfx_preview_problem: Option<String>,
     material_request: Option<(RequestId, MaterialOperation)>,
     material_state: MaterialRequestState,
     preview_handle: Option<u64>,
@@ -232,6 +271,19 @@ impl Default for BackendServices {
             material_catalogue: Versioned::new(None),
             catalogue_state: MaterialCatalogueState::Unavailable,
             catalogue_request: None,
+            vfx_catalogue: Versioned::new(None),
+            vfx_catalogue_state: MaterialCatalogueState::Unavailable,
+            vfx_catalogue_request: None,
+            vfx_catalogue_requested: false,
+            vfx_capabilities: Versioned::new(None),
+            vfx_capabilities_state: MaterialCatalogueState::Unavailable,
+            vfx_capabilities_request: None,
+            vfx_capabilities_requested: false,
+            vfx_compile_request: None,
+            vfx_compile_state: VfxCompileState::Idle,
+            vfx_preview_request: None,
+            vfx_preview_snapshot: None,
+            vfx_preview_problem: None,
             material_request: None,
             material_state: MaterialRequestState::Idle,
             preview_handle: None,
@@ -255,26 +307,46 @@ impl BackendServices {
     /// Submit discovery work once per runtime connection.
     pub fn maintain(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
         if !runtime.is_connected() {
-            self.connected = false;
-            self.catalogue_request = None;
-            if self.catalogue_state == MaterialCatalogueState::Loading {
-                self.catalogue_state = MaterialCatalogueState::Failed;
-            }
-            if let Some((request, _)) = self.material_request.take() {
-                self.material_state = MaterialRequestState::Failed {
-                    request: Some(request),
-                    diagnostics: vec![local_diagnostic(
-                        "service-disconnected",
-                        "the runtime disconnected before publishing a terminal event",
-                    )],
-                };
-            }
-            self.preview_handle = None;
-            self.preview_request = None;
-            self.preview_pending_artefact = self.preview_applied_artefact;
+            self.disconnect();
             return None;
         }
         if self.connected {
+            if self.catalogue_request.is_none() && !self.vfx_catalogue_requested {
+                self.vfx_catalogue_requested = true;
+                match runtime.service_request(
+                    SERVICE_SCHEMA_VERSION,
+                    VFX_CATALOGUE_OPERATION,
+                    Vec::new(),
+                ) {
+                    Ok(request) => {
+                        self.vfx_catalogue_request = Some(request);
+                        self.vfx_catalogue_state = MaterialCatalogueState::Loading;
+                    }
+                    Err(problem) => {
+                        self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                        return Some(problem);
+                    }
+                }
+            } else if self.vfx_catalogue_requested
+                && self.vfx_catalogue_request.is_none()
+                && !self.vfx_capabilities_requested
+            {
+                self.vfx_capabilities_requested = true;
+                match runtime.service_request(
+                    SERVICE_SCHEMA_VERSION,
+                    VFX_CAPABILITIES_OPERATION,
+                    Vec::new(),
+                ) {
+                    Ok(request) => {
+                        self.vfx_capabilities_request = Some(request);
+                        self.vfx_capabilities_state = MaterialCatalogueState::Loading;
+                    }
+                    Err(problem) => {
+                        self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                        return Some(problem);
+                    }
+                }
+            }
             return self.advance_preview(runtime);
         }
 
@@ -297,6 +369,49 @@ impl BackendServices {
         }
     }
 
+    fn disconnect(&mut self) {
+        self.connected = false;
+        self.catalogue_request = None;
+        self.vfx_catalogue_request = None;
+        self.vfx_catalogue_requested = false;
+        self.vfx_capabilities_request = None;
+        self.vfx_capabilities_requested = false;
+        if self.catalogue_state == MaterialCatalogueState::Loading {
+            self.catalogue_state = MaterialCatalogueState::Failed;
+        }
+        if self.vfx_catalogue_state == MaterialCatalogueState::Loading {
+            self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+        }
+        if self.vfx_capabilities_state == MaterialCatalogueState::Loading {
+            self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+        }
+        if let Some((request, _)) = self.material_request.take() {
+            self.material_state = MaterialRequestState::Failed {
+                request: Some(request),
+                diagnostics: vec![local_diagnostic(
+                    "service-disconnected",
+                    "the runtime disconnected before publishing a terminal event",
+                )],
+            };
+        }
+        if let Some(request) = self.vfx_compile_request.take() {
+            self.vfx_compile_state = VfxCompileState::Failed(
+                Some(request),
+                VfxCompileFailure {
+                    code: "service-disconnected".into(),
+                    message: "the runtime disconnected before compilation completed".into(),
+                    diagnostics: Vec::new(),
+                },
+            );
+        }
+        if self.vfx_preview_request.take().is_some() || self.vfx_preview_snapshot.take().is_some() {
+            self.vfx_preview_problem = Some("the runtime disconnected from the VFX preview".into());
+        }
+        self.preview_handle = None;
+        self.preview_request = None;
+        self.preview_pending_artefact = self.preview_applied_artefact;
+    }
+
     /// Reconcile service events drained by the editor's ordinary frame pump.
     pub fn accept(&mut self, message: &Message) -> Option<Problem> {
         let Message::ServiceEvent {
@@ -311,8 +426,20 @@ impl BackendServices {
         if Some(*request) == self.catalogue_request {
             return self.accept_catalogue(*kind, *schema_version, payload);
         }
+        if Some(*request) == self.vfx_catalogue_request {
+            return self.accept_vfx_catalogue(*kind, *schema_version, payload);
+        }
+        if Some(*request) == self.vfx_capabilities_request {
+            return self.accept_vfx_capabilities(*kind, *schema_version, payload);
+        }
         if self.material_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_material(*request, *kind, *schema_version, payload);
+        }
+        if self.vfx_compile_request == Some(*request) {
+            return self.accept_vfx_compile(*request, *kind, *schema_version, payload);
+        }
+        if self.vfx_preview_request == Some(*request) {
+            return self.accept_vfx_preview(*kind, *schema_version, payload);
         }
         if self.preview_request.map(|pending| pending.0) == Some(*request) {
             return self.accept_preview(*request, *kind, *schema_version, payload);
@@ -361,6 +488,299 @@ impl BackendServices {
                 )
             }
         }
+    }
+
+    fn accept_vfx_catalogue(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        match kind {
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => None,
+            ServiceEventKind::Completed => {
+                self.vfx_catalogue_request = None;
+                if schema_version != SERVICE_SCHEMA_VERSION {
+                    self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                    return Some(Problem::new(
+                        "load the VFX node catalogue",
+                        format!("the runtime returned unsupported schema {schema_version}"),
+                    ));
+                }
+                self.vfx_catalogue.set(Some(payload.to_vec()));
+                self.vfx_catalogue_state = MaterialCatalogueState::Ready;
+                None
+            }
+            ServiceEventKind::Failed | ServiceEventKind::Cancelled => {
+                self.vfx_catalogue_request = None;
+                self.vfx_catalogue_state = MaterialCatalogueState::Failed;
+                Some(Problem::new(
+                    "load the VFX node catalogue",
+                    "the runtime did not provide a compatible VFX catalogue",
+                ))
+            }
+        }
+    }
+
+    fn accept_vfx_capabilities(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        match kind {
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => None,
+            ServiceEventKind::Completed => {
+                self.vfx_capabilities_request = None;
+                if schema_version != SERVICE_SCHEMA_VERSION {
+                    self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                    return Some(Problem::new(
+                        "load VFX authoring capabilities",
+                        format!("the runtime returned unsupported schema {schema_version}"),
+                    ));
+                }
+                match VfxAuthoringCapabilities::decode(payload) {
+                    Ok(capabilities) => {
+                        self.vfx_capabilities.set(Some(capabilities));
+                        self.vfx_capabilities_state = MaterialCatalogueState::Ready;
+                        None
+                    }
+                    Err(problem) => {
+                        self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                        Some(problem)
+                    }
+                }
+            }
+            ServiceEventKind::Failed | ServiceEventKind::Cancelled => {
+                self.vfx_capabilities_request = None;
+                self.vfx_capabilities_state = MaterialCatalogueState::Failed;
+                Some(Problem::new(
+                    "load VFX authoring capabilities",
+                    "the runtime did not provide renderer and target options",
+                ))
+            }
+        }
+    }
+
+    /// Submit a complete authoring document to the engine VFX compiler.
+    pub fn request_vfx_compile(
+        &mut self,
+        runtime: &RuntimeSession,
+        source: String,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if self.vfx_compile_request.is_some() {
+            return Err(Problem::new(
+                "compile a VFX system",
+                "a VFX compile is already pending",
+            ));
+        }
+        let request = runtime.service_request(
+            SERVICE_SCHEMA_VERSION,
+            VFX_COMPILE_OPERATION,
+            source.into_bytes(),
+        )?;
+        self.vfx_compile_request = Some(request);
+        self.vfx_compile_state = VfxCompileState::Pending(request);
+        Ok(request)
+    }
+
+    /// Latest engine VFX compiler result.
+    #[must_use]
+    pub const fn vfx_compile_state(&self) -> &VfxCompileState {
+        &self.vfx_compile_state
+    }
+
+    /// Start an isolated engine preview from the current unsaved VFX document.
+    pub fn request_vfx_preview_load(
+        &mut self,
+        runtime: &RuntimeSession,
+        source: String,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        self.submit_vfx_preview(runtime, VFX_PREVIEW_LOAD_OPERATION, source.into_bytes())
+    }
+
+    /// Send one play, pause, restart, scrub, or time-scale action to the engine.
+    pub fn request_vfx_preview_action(
+        &mut self,
+        runtime: &RuntimeSession,
+        action: VfxPreviewAction,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        self.submit_vfx_preview(runtime, VFX_PREVIEW_CONTROL_OPERATION, action.encode()?)
+    }
+
+    /// Advance an already playing engine preview by one bounded frame interval.
+    pub fn request_vfx_preview_step(
+        &mut self,
+        runtime: &RuntimeSession,
+        seconds: f32,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if !seconds.is_finite() || !(0.0..=0.25).contains(&seconds) {
+            return Err(Problem::new(
+                "advance VFX preview",
+                "invalid frame interval",
+            ));
+        }
+        let mut payload = Writer::new();
+        payload.f32(seconds);
+        self.submit_vfx_preview(runtime, VFX_PREVIEW_STEP_OPERATION, payload.finish())
+    }
+
+    /// Update one exposed parameter in the running engine instance without recompiling.
+    pub fn request_vfx_preview_parameter(
+        &mut self,
+        runtime: &RuntimeSession,
+        name: &str,
+        values: &[f32],
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        self.submit_vfx_preview(
+            runtime,
+            VFX_PREVIEW_PARAMETER_OPERATION,
+            parameter_update(name, values)?,
+        )
+    }
+
+    fn submit_vfx_preview(
+        &mut self,
+        runtime: &RuntimeSession,
+        operation: &str,
+        payload: Vec<u8>,
+    ) -> cy_editor_core::problem::Result<RequestId> {
+        if self.vfx_preview_request.is_some() {
+            return Err(Problem::new(
+                "use VFX preview",
+                "a preview request is already pending",
+            ));
+        }
+        let request = runtime.service_request(SERVICE_SCHEMA_VERSION, operation, payload)?;
+        self.vfx_preview_request = Some(request);
+        self.vfx_preview_problem = None;
+        Ok(request)
+    }
+
+    /// Latest engine preview state, including bounded debug counts.
+    #[must_use]
+    pub fn vfx_preview_snapshot(&self) -> Option<&VfxPreviewSnapshot> {
+        self.vfx_preview_snapshot.as_ref()
+    }
+
+    /// Whether a preview command is still running in the hosted engine.
+    #[must_use]
+    pub const fn vfx_preview_pending(&self) -> bool {
+        self.vfx_preview_request.is_some()
+    }
+
+    /// Last preview refusal, if any.
+    #[must_use]
+    pub fn vfx_preview_problem(&self) -> Option<&str> {
+        self.vfx_preview_problem.as_deref()
+    }
+
+    fn accept_vfx_preview(
+        &mut self,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
+            return None;
+        }
+        self.vfx_preview_request = None;
+        let result = if schema_version == SERVICE_SCHEMA_VERSION {
+            match kind {
+                ServiceEventKind::Completed => VfxPreviewSnapshot::decode(payload),
+                ServiceEventKind::Failed => Err(decode_failure(payload)),
+                ServiceEventKind::Cancelled => Err(Problem::new(
+                    "use VFX preview",
+                    "the engine cancelled the preview request",
+                )),
+                ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
+            }
+        } else {
+            Err(Problem::new(
+                "use VFX preview",
+                "incompatible engine preview schema",
+            ))
+        };
+        match result {
+            Ok(snapshot) => {
+                self.vfx_preview_snapshot = Some(snapshot);
+                self.vfx_preview_problem = None;
+                None
+            }
+            Err(problem) => {
+                self.vfx_preview_problem = Some(problem.to_string());
+                Some(problem)
+            }
+        }
+    }
+
+    fn accept_vfx_compile(
+        &mut self,
+        request: RequestId,
+        kind: ServiceEventKind,
+        schema_version: u32,
+        payload: &[u8],
+    ) -> Option<Problem> {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
+            return None;
+        }
+        self.vfx_compile_request = None;
+        if schema_version != SERVICE_SCHEMA_VERSION {
+            return Some(self.fail_vfx_compile(
+                request,
+                "schema-unsupported",
+                "incompatible VFX service schema",
+            ));
+        }
+        match kind {
+            ServiceEventKind::Completed => match VfxCompileReport::decode(payload) {
+                Ok(report) => self.vfx_compile_state = VfxCompileState::Compiled(request, report),
+                Err(problem) => {
+                    return Some(self.fail_vfx_compile(
+                        request,
+                        "result-unreadable",
+                        &problem.because,
+                    ));
+                }
+            },
+            ServiceEventKind::Failed => match VfxCompileFailure::decode(payload) {
+                Ok(failure) => {
+                    let summary = format!("{}: {}", failure.code, failure.message);
+                    self.vfx_compile_state = VfxCompileState::Failed(Some(request), failure);
+                    return Some(Problem::new("compile a VFX system", summary));
+                }
+                Err(problem) => {
+                    return Some(self.fail_vfx_compile(
+                        request,
+                        "diagnostic-unreadable",
+                        &problem.because,
+                    ));
+                }
+            },
+            ServiceEventKind::Cancelled => {
+                self.vfx_compile_state = VfxCompileState::Cancelled(request);
+            }
+            ServiceEventKind::Accepted | ServiceEventKind::Progress => unreachable!(),
+        }
+        None
+    }
+
+    fn fail_vfx_compile(&mut self, request: RequestId, code: &str, message: &str) -> Problem {
+        self.vfx_compile_state = VfxCompileState::Failed(
+            Some(request),
+            VfxCompileFailure {
+                code: code.into(),
+                message: message.into(),
+                diagnostics: Vec::new(),
+            },
+        );
+        Problem::new("compile a VFX system", message)
     }
 
     /// Submit validation or compilation for the current transient material canvas.
@@ -484,6 +904,36 @@ impl BackendServices {
     #[must_use]
     pub fn material_catalogue(&self) -> Option<&[u8]> {
         self.material_catalogue.get().as_deref()
+    }
+
+    /// Latest engine VFX catalogue snapshot, retained across disconnects.
+    #[must_use]
+    pub fn vfx_catalogue(&self) -> Option<&[u8]> {
+        self.vfx_catalogue.get().as_deref()
+    }
+
+    /// Revision for installing a new VFX palette in the shared canvas.
+    #[must_use]
+    pub const fn vfx_catalogue_revision(&self) -> Revision {
+        self.vfx_catalogue.revision()
+    }
+
+    /// Current request state for the engine VFX definitions.
+    #[must_use]
+    pub const fn vfx_catalogue_state(&self) -> MaterialCatalogueState {
+        self.vfx_catalogue_state
+    }
+
+    /// Last validated engine renderer and target options, retained across disconnects.
+    #[must_use]
+    pub fn vfx_authoring_capabilities(&self) -> Option<&VfxAuthoringCapabilities> {
+        self.vfx_capabilities.get().as_ref()
+    }
+
+    /// State of the renderer and target query.
+    #[must_use]
+    pub const fn vfx_authoring_capabilities_state(&self) -> MaterialCatalogueState {
+        self.vfx_capabilities_state
     }
 
     /// Revision used by presentation to install a snapshot only once.
@@ -991,6 +1441,63 @@ mod tests {
         );
     }
 
+    fn reply_to_service_request(
+        reader: &mut impl std::io::Read,
+        writer: &mut impl std::io::Write,
+        expected_operation: &str,
+        response: Vec<u8>,
+    ) {
+        let message = Message::decode(&read_frame(reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request,
+            schema_version,
+            operation,
+            payload,
+        } = message
+        else {
+            panic!("the backend message was not a service request")
+        };
+        assert_ne!(request.as_u64(), 0);
+        assert_eq!(schema_version, 1);
+        assert_eq!(operation, expected_operation);
+        assert!(payload.is_empty());
+        write_frame(
+            writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: response,
+            }
+            .encode(),
+        )
+        .unwrap();
+    }
+
+    fn test_vfx_capabilities_payload() -> Vec<u8> {
+        let mut capabilities = Writer::new();
+        capabilities.u32(1);
+        capabilities.u32(1);
+        capabilities.u8(5);
+        capabilities.text("Decal");
+        capabilities.u8(0);
+        capabilities.text("No projection pass");
+        capabilities.u32(2);
+        for (path, name, ready) in [(0, "GpuPreferred", false), (1, "CpuRequired", true)] {
+            capabilities.u8(path);
+            capabilities.text(name);
+            capabilities.u8(1);
+            capabilities.u8(u8::from(ready));
+            capabilities.text(if ready {
+                "EffectRequiresCpu"
+            } else {
+                "NoDeviceInThisWorld"
+            });
+            capabilities.text("reason");
+        }
+        capabilities.finish()
+    }
+
     #[test]
     fn a_runtime_catalogue_is_requested_asynchronously_and_survives_disconnect() {
         let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
@@ -1003,37 +1510,17 @@ mod tests {
             backend.material_catalogue_state(),
             MaterialCatalogueState::Loading
         );
-        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
-        let Message::ServiceRequest {
-            request,
-            schema_version,
-            operation,
-            payload,
-        } = request
-        else {
-            panic!("the first backend message was not a service request")
-        };
-        assert_ne!(request.as_u64(), 0);
-        assert_eq!(schema_version, 1);
-        assert_eq!(operation, MATERIAL_CATALOGUE_OPERATION);
-        assert!(payload.is_empty());
-
         let mut catalogue = Writer::new();
         catalogue.u32(1);
         catalogue.u32(7);
         catalogue.u32(0);
         let catalogue = catalogue.finish();
-        write_frame(
+        reply_to_service_request(
+            &mut runtime_reader,
             &mut runtime_writer,
-            &Message::ServiceEvent {
-                request,
-                kind: ServiceEventKind::Completed,
-                schema_version: 1,
-                payload: catalogue.clone(),
-            }
-            .encode(),
-        )
-        .unwrap();
+            MATERIAL_CATALOGUE_OPERATION,
+            catalogue.clone(),
+        );
 
         let mut notifications = NotificationService::new();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1049,6 +1536,46 @@ mod tests {
             MaterialCatalogueState::Ready
         );
 
+        assert!(backend.maintain(&runtime).is_none());
+        let mut vfx_catalogue = Writer::new();
+        vfx_catalogue.u32(1);
+        vfx_catalogue.u32(1);
+        vfx_catalogue.u32(0);
+        let vfx_catalogue = vfx_catalogue.finish();
+        reply_to_service_request(
+            &mut runtime_reader,
+            &mut runtime_writer,
+            VFX_CATALOGUE_OPERATION,
+            vfx_catalogue.clone(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.vfx_catalogue().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
+
+        assert!(backend.maintain(&runtime).is_none());
+        reply_to_service_request(
+            &mut runtime_reader,
+            &mut runtime_writer,
+            VFX_CAPABILITIES_OPERATION,
+            test_vfx_capabilities_payload(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.vfx_authoring_capabilities().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            backend.vfx_authoring_capabilities().unwrap().renderers[0].reason,
+            "No projection pass"
+        );
+
         drop(runtime_writer);
         let deadline = Instant::now() + Duration::from_secs(5);
         while runtime.is_connected() && Instant::now() < deadline {
@@ -1061,6 +1588,8 @@ mod tests {
             Some(catalogue.as_slice()),
             "runtime loss must not discard the catalogue a live authored graph uses"
         );
+        assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
+        assert!(backend.vfx_authoring_capabilities().is_some());
     }
 
     #[test]
@@ -1165,6 +1694,79 @@ mod tests {
                 dependencies: vec!["0123456789abcdef0123456789abcdef".into()],
             }
         );
+    }
+
+    #[test]
+    fn vfx_compile_result_is_request_correlated_and_keeps_engine_diagnostics() {
+        let request = cy_editor_protocol::RequestId::from_raw(91);
+        let mut backend = BackendServices::new();
+        backend.vfx_compile_request = Some(request);
+        backend.vfx_compile_state = VfxCompileState::Pending(request);
+
+        let mut output = Writer::new();
+        output.u32(1);
+        output.u64(0xCAFE);
+        output.u32(0);
+        output.u32(0);
+        output.u32(0);
+        let output = output.finish();
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request: cy_editor_protocol::RequestId::from_raw(90),
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: output.clone(),
+                })
+                .is_none()
+        );
+        assert_eq!(
+            backend.vfx_compile_state(),
+            &VfxCompileState::Pending(request)
+        );
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request,
+                    kind: ServiceEventKind::Completed,
+                    schema_version: 1,
+                    payload: output,
+                })
+                .is_none()
+        );
+        assert!(matches!(
+            backend.vfx_compile_state(),
+            VfxCompileState::Compiled(id, report) if *id == request && report.cook_key == 0xCAFE
+        ));
+
+        backend.vfx_compile_request = Some(request);
+        let mut failure = Writer::new();
+        failure.u32(1);
+        failure.text("vfx.compile");
+        failure.text("invalid pin");
+        failure.u32(1);
+        failure.u8(2);
+        failure.text("graph.pin-type");
+        failure.text("type mismatch");
+        failure.text("float3");
+        failure.u64(7);
+        failure.text("value");
+        assert!(
+            backend
+                .accept(&Message::ServiceEvent {
+                    request,
+                    kind: ServiceEventKind::Failed,
+                    schema_version: 1,
+                    payload: failure.finish(),
+                })
+                .is_some()
+        );
+        assert!(matches!(
+            backend.vfx_compile_state(),
+            VfxCompileState::Failed(Some(id), failure)
+                if *id == request && failure.diagnostics[0].node == 7
+                    && failure.diagnostics[0].pin == "value"
+        ));
     }
 
     #[test]

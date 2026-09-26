@@ -445,6 +445,71 @@ pub trait ProjectHost {
 
     /// Report the latest engine material request and transient preview state.
     fn material_graph_status(&self) -> String;
+
+    /// Read a project VFX authoring document, without compiling or changing it.
+    fn vfx_document_read(&self, reference: &str) -> Result<String>;
+
+    /// Save a versioned VFX authoring document in one undoable project transaction.
+    fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()>;
+
+    /// Current engine-owned VFX node catalogue, when the runtime has supplied it.
+    /// Graph-edit commands use this rather than keeping another node table.
+    fn vfx_catalogue(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Read a separately saved reusable VFX module.
+    fn vfx_module_read(&self, reference: &str) -> Result<String>;
+
+    /// Whether a reusable VFX module source already occupies this project path.
+    fn vfx_module_exists(&self, reference: &str) -> bool {
+        let _ = reference;
+        false
+    }
+
+    /// Save a reusable VFX module in one undoable project transaction.
+    fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()>;
+
+    /// Load a draft into the engine's transient VFX preview.
+    fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {
+        let _ = source;
+        Err(cy_editor_core::problem::Problem::new(
+            "load VFX preview",
+            "this host has no VFX preview service",
+        ))
+    }
+
+    /// Play, pause, restart, scrub, or change the engine preview's time scale.
+    fn vfx_preview_control(&mut self, action: &str, value: f32) -> Result<u64> {
+        let _ = (action, value);
+        Err(cy_editor_core::problem::Problem::new(
+            "control VFX preview",
+            "this host has no VFX preview service",
+        ))
+    }
+
+    /// Advance the engine preview by one bounded interval.
+    fn vfx_preview_step(&mut self, seconds: f32) -> Result<u64> {
+        let _ = seconds;
+        Err(cy_editor_core::problem::Problem::new(
+            "step VFX preview",
+            "this host has no VFX preview service",
+        ))
+    }
+
+    /// Set one exposed parameter without recompiling the preview.
+    fn vfx_preview_parameter(&mut self, name: &str, values: &[f32]) -> Result<u64> {
+        let _ = (name, values);
+        Err(cy_editor_core::problem::Problem::new(
+            "set VFX preview parameter",
+            "this host has no VFX preview service",
+        ))
+    }
+
+    /// Return the latest engine snapshot and pending or error state.
+    fn vfx_preview_status(&self) -> Outcome {
+        Outcome::new("VFX preview unavailable")
+    }
 }
 
 /// Result of a fingerprint-guarded source write.

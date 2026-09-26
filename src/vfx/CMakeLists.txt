@@ -57,6 +57,8 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/asset.cpp
+        src/authoring.cpp
+        src/catalogue.cpp
         src/compile.cpp
         src/emit_slang.cpp
         src/gpu_layout.cpp
@@ -77,6 +79,7 @@ cy_add_module(
     ALIAS cy::vfx
     TYPE STATIC
     SOURCES
+        src/authoring_capabilities.cpp
         src/budget.cpp
         src/events.cpp
         src/renderers.cpp

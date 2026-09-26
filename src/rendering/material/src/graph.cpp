@@ -20,10 +20,18 @@ struct PortSpec {
         case GraphOp::Parameter:
         case GraphOp::Attribute:
         case GraphOp::Field:
+        case GraphOp::ObjectPosition:
+        case GraphOp::WorldPosition:
+        case GraphOp::Normal:
+        case GraphOp::Uv0:
+        case GraphOp::Time:
+        case GraphOp::VertexColor:
             return {0, false};
         case GraphOp::TextureSample:
         case GraphOp::OneMinus:
         case GraphOp::Saturate:
+        case GraphOp::Sin:
+        case GraphOp::Noise:
         case GraphOp::Swizzle:
             return {1, false};
         case GraphOp::Multiply:
@@ -34,6 +42,7 @@ struct PortSpec {
         case GraphOp::AddClosures:
         case GraphOp::LayerClosures:
         case GraphOp::Custom:
+        case GraphOp::ProceduralWind:
             return {2, false};
         case GraphOp::Lerp:
             return {3, false};
@@ -66,6 +75,12 @@ struct PortSpec {
             return Op::OneMinus;
         case GraphOp::Saturate:
             return Op::Saturate;
+        case GraphOp::Sin:
+            return Op::Sin;
+        case GraphOp::Noise:
+            return Op::Noise;
+        case GraphOp::ProceduralWind:
+            return Op::ProceduralWind;
         case GraphOp::Lerp:
             return Op::Lerp;
         case GraphOp::Swizzle:
@@ -120,6 +135,18 @@ struct Lowering {
             return builder.parameter(node.symbol);
         case GraphOp::Attribute:
             return builder.attribute(node.symbol, node.type);
+        case GraphOp::ObjectPosition:
+            return builder.attribute(Name::intern("object_position"), ValueType::Vec3);
+        case GraphOp::WorldPosition:
+            return builder.attribute(Name::intern("position"), ValueType::Vec3);
+        case GraphOp::Normal:
+            return builder.attribute(Name::intern("normal"), ValueType::Vec3);
+        case GraphOp::Uv0:
+            return builder.attribute(Name::intern("uv0"), ValueType::Vec2);
+        case GraphOp::Time:
+            return builder.attribute(Name::intern("time_seconds"), ValueType::Float);
+        case GraphOp::VertexColor:
+            return builder.attribute(Name::intern("color0"), ValueType::Vec3);
         case GraphOp::Field:
             return builder.field(node.symbol, node.type);
         case GraphOp::TextureSample:
@@ -157,7 +184,11 @@ struct Lowering {
         return lower_leaf(node, builder, Span<const NodeId>(operands, ports.inputs));
     }
 
-    auto made = builder.make(ir_op(node.op), node.type, node.symbol, node.value,
+    const ValueType hint =
+        (node.op == GraphOp::Sin || node.op == GraphOp::Noise || node.op == GraphOp::ProceduralWind)
+            ? ValueType::Count
+            : node.type;
+    auto made = builder.make(ir_op(node.op), hint, node.symbol, node.value,
                              Span<const NodeId>(operands, ports.inputs));
     if (!made || !ports.weighted) {
         return made;
@@ -183,6 +214,34 @@ struct Lowering {
                         Span<const NodeId>(scaled, 2));
 }
 
+[[nodiscard]] Expected<NodeId, Error> lower_vertex_output(const MaterialGraph& graph,
+                                                          Span<const NodeId> mapped,
+                                                          Builder& builder) noexcept {
+    NodeId offset = graph.vertex_offset_output() == kInvalidNode
+                        ? kInvalidNode
+                        : mapped[graph.vertex_offset_output()];
+    if (graph.vertex_displacement_output() == kInvalidNode) {
+        return offset;
+    }
+    const NodeId amount = mapped[graph.vertex_displacement_output()];
+    if (amount == kInvalidNode) {
+        return fail(ErrorCode::InvalidArgument, "vertex displacement source is unavailable");
+    }
+    auto displaced = builder.normal_displacement(amount);
+    if (!displaced) {
+        return make_unexpected(displaced.error());
+    }
+    if (Status origin = builder.add_origin(*displaced, graph.vertex_displacement_output());
+        !origin) {
+        return make_unexpected(origin.error());
+    }
+    if (offset == kInvalidNode) {
+        return *displaced;
+    }
+    const NodeId combined[] = {offset, *displaced};
+    return builder.make(Op::Add, {combined, 2});
+}
+
 }  // namespace
 
 const char* graph_op_name(GraphOp op) noexcept {
@@ -193,6 +252,18 @@ const char* graph_op_name(GraphOp op) noexcept {
             return "parameter";
         case GraphOp::Attribute:
             return "attribute";
+        case GraphOp::ObjectPosition:
+            return "object_position";
+        case GraphOp::WorldPosition:
+            return "world_position";
+        case GraphOp::Normal:
+            return "normal";
+        case GraphOp::Uv0:
+            return "uv0";
+        case GraphOp::Time:
+            return "time";
+        case GraphOp::VertexColor:
+            return "vertex_color";
         case GraphOp::Field:
             return "field";
         case GraphOp::TextureSample:
@@ -209,6 +280,12 @@ const char* graph_op_name(GraphOp op) noexcept {
             return "one_minus";
         case GraphOp::Saturate:
             return "saturate";
+        case GraphOp::Sin:
+            return "sin";
+        case GraphOp::Noise:
+            return "noise";
+        case GraphOp::ProceduralWind:
+            return "procedural_wind";
         case GraphOp::Lerp:
             return "lerp";
         case GraphOp::Swizzle:
@@ -321,6 +398,22 @@ Status MaterialGraph::set_opacity_output(u32 node) noexcept {
     return ok();
 }
 
+Status MaterialGraph::set_vertex_offset_output(u32 node) noexcept {
+    if (node >= nodes_.size()) {
+        return make_unexpected(Error{ErrorCode::InvalidArgument, "no such node", 0});
+    }
+    vertex_offset_ = node;
+    return ok();
+}
+
+Status MaterialGraph::set_vertex_displacement_output(u32 node) noexcept {
+    if (node >= nodes_.size()) {
+        return make_unexpected(Error{ErrorCode::InvalidArgument, "no such node", 0});
+    }
+    vertex_displacement_ = node;
+    return ok();
+}
+
 u32 MaterialGraph::input(u32 node, u8 port) const noexcept {
     if (node >= nodes_.size() || port >= kMaxPorts) {
         return kInvalidNode;
@@ -377,6 +470,15 @@ Expected<Module, Error> lower_graph(const MaterialGraph& graph, Allocator& alloc
     }
     if (graph.opacity_output() != kInvalidNode) {
         if (Status set = builder.set_opacity(mapped[graph.opacity_output()]); !set) {
+            return make_unexpected(set.error());
+        }
+    }
+    auto vertex_offset = lower_vertex_output(graph, mapped.span(), builder);
+    if (!vertex_offset) {
+        return make_unexpected(vertex_offset.error());
+    }
+    if (*vertex_offset != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(*vertex_offset); !set) {
             return make_unexpected(set.error());
         }
     }

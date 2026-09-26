@@ -67,7 +67,7 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
     for (const auto& type : types) {
         offered.emplace_back(type);
     }
-    CY_CHECK(offered.size() == static_cast<usize>(GraphOp::Count) + 1U);
+    CY_CHECK(offered.size() == static_cast<usize>(GraphOp::Count) + 2U);
     for (u32 index = 0; index < static_cast<u32>(GraphOp::Count); ++index) {
         const std::string expected =
             std::string("material.") +
@@ -75,6 +75,7 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
         CY_CHECK(std::ranges::find(offered, expected) != offered.end());
     }
     CY_CHECK(std::ranges::find(offered, std::string("material.output")) != offered.end());
+    CY_CHECK(std::ranges::find(offered, std::string("material.vertex_output")) != offered.end());
 }
 
 CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero identity") {
@@ -98,6 +99,18 @@ CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero 
     CY_CHECK_EQ(identities.size(), material_node_types().size());
 }
 
+CY_TEST_CASE("graph_material: stage compatibility comes from the engine palette") {
+    using cy::graph::material::material_node_stage_mask;
+    CY_CHECK_EQ(material_node_stage_mask("material.output"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.vertex_output"), 2U);
+    CY_CHECK_EQ(material_node_stage_mask("material.diffuse"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.texture_sample"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.custom"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.sin"), 3U);
+    CY_CHECK_EQ(material_node_stage_mask("material.attribute"), 3U);
+    CY_CHECK_EQ(material_node_stage_mask("material.unknown"), 0U);
+}
+
 CY_TEST_CASE("graph_material: the service catalogue is deterministic and versioned") {
     cy::Array<u8> first(allocator());
     cy::Array<u8> second(allocator());
@@ -111,8 +124,8 @@ CY_TEST_CASE("graph_material: the service catalogue is deterministic and version
                (static_cast<u32>(first[offset + 2]) << 16U) |
                (static_cast<u32>(first[offset + 3]) << 24U);
     };
-    CY_CHECK_EQ(read_u32(0), 2U);
-    CY_CHECK_EQ(read_u32(4), 3U);
+    CY_CHECK_EQ(read_u32(0), 3U);
+    CY_CHECK_EQ(read_u32(4), 6U);
     CY_CHECK_EQ(read_u32(8), material_node_types().size());
 }
 
@@ -164,7 +177,7 @@ CY_TEST_CASE("graph_material: the pin an author wires is the port the compiler r
     // entry, wire a constant into every input pin in turn and require it to land on the port index
     // `MaterialGraph::input` reports — which is the number `graph.h` fixes the meaning of.
     for (const auto& type : material_node_types()) {
-        if (type == "material.output") {
+        if (type == "material.output" || type == "material.vertex_output") {
             continue;
         }
         cy::graph::PinDesc storage[cy::graph::material::kMaxPins];
@@ -188,4 +201,221 @@ CY_TEST_CASE("graph_material: the pin an author wires is the port the compiler r
             ++port;
         }
     }
+}
+
+CY_TEST_CASE("graph_material: authored vector sine reaches the material IR") {
+    Canvas canvas("sway");
+    const NodeKey phase = canvas.add("material.parameter");
+    canvas.symbol(phase, "phase");
+    canvas.type_of(phase, ValueType::Vec3);
+    canvas.value(phase, "default", 0.5F, 0.25F, 0.0F, 0.0F, 0);
+    const NodeKey sine = canvas.add("material.sin");
+    canvas.wire(phase, sine, "value");
+    const NodeKey emission = canvas.add("material.emission");
+    canvas.wire(sine, emission, "colour");
+    const NodeKey output = canvas.add("material.output");
+    canvas.wire(emission, output, "surface");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("sway"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    bool found_sine = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
+        const auto& node = ir.value().node(id);
+        found_sine = found_sine ||
+                     (node.op == cy::rendering::material::Op::Sin && node.type == ValueType::Vec3);
+    }
+    CY_CHECK(found_sine);
+}
+
+CY_TEST_CASE("graph_material: the vertex output reaches the same typed IR root") {
+    Canvas canvas("wind_sway");
+    const NodeKey offset = canvas.add("material.constant");
+    canvas.type_of(offset, ValueType::Vec3);
+    canvas.value(offset, "value", 0.0F, 0.25F, 0.0F, 0.0F, 0);
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(offset, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("wind_sway"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    CY_CHECK_NE(ir.value().vertex_offset(), cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir.value().node(ir.value().vertex_offset()).type, ValueType::Vec3);
+
+    Canvas invalid("bad_sway");
+    const NodeKey scalar = invalid.add("material.constant");
+    invalid.type_of(scalar, ValueType::Float);
+    invalid.value(scalar, "value", 0.25F, 0.0F, 0.0F, 0.0F, 0);
+    const NodeKey invalid_output = invalid.add("material.vertex_output");
+    invalid.wire(scalar, invalid_output, "offset");
+    CY_REQUIRE(invalid.good());
+    MaterialGraph rejected(allocator(), Name::intern("bad_sway"));
+    CY_REQUIRE(lower_material(invalid.graph(), rejected));
+    CY_CHECK_FALSE(cy::rendering::material::lower_graph(rejected, allocator()).has_value());
+}
+
+CY_TEST_CASE("graph_material: scalar displacement follows the normal and combines with offset") {
+    Canvas canvas("normal_displacement");
+    const NodeKey amount = canvas.add("material.constant");
+    canvas.type_of(amount, ValueType::Float);
+    canvas.value(amount, "value", 0.25F, 0.0F, 0.0F, 0.0F, 0);
+    const NodeKey offset = canvas.add("material.constant");
+    canvas.type_of(offset, ValueType::Vec3);
+    canvas.value(offset, "value", 0.0F, 0.1F, 0.0F, 0.0F, 0);
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(amount, output, "displacement");
+    canvas.wire(offset, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("normal_displacement"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    const auto root = ir->vertex_offset();
+    CY_REQUIRE_NE(root, cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir->node(root).op, cy::rendering::material::Op::Add);
+    bool uses_normal = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir->size(); ++id) {
+        const auto& node = ir->node(id);
+        uses_normal =
+            uses_normal || (node.op == cy::rendering::material::Op::Attribute &&
+                            node.symbol == Name::intern("normal") && node.type == ValueType::Vec3);
+    }
+    CY_CHECK(uses_normal);
+
+    Canvas invalid("vector_displacement");
+    const NodeKey vector = invalid.add("material.constant");
+    invalid.type_of(vector, ValueType::Vec3);
+    const NodeKey invalid_output = invalid.add("material.vertex_output");
+    invalid.wire(vector, invalid_output, "displacement");
+    CY_REQUIRE(invalid.good());
+    MaterialGraph rejected(allocator(), Name::intern("vector_displacement"));
+    CY_REQUIRE(lower_material(invalid.graph(), rejected));
+    auto result = cy::rendering::material::lower_graph(rejected, allocator());
+    CY_CHECK_FALSE(result.has_value());
+    if (!result) {
+        CY_CHECK_EQ(std::string_view(result.error().message),
+                    "vertex displacement must be a scalar distance");
+    }
+}
+
+CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attributes") {
+    Canvas canvas("geometry_inputs");
+    const NodeKey position = canvas.add("material.object_position");
+    const NodeKey world = canvas.add("material.world_position");
+    (void)canvas.add("material.normal");
+    (void)canvas.add("material.uv0");
+    (void)canvas.add("material.time");
+    (void)canvas.add("material.vertex_color");
+    const NodeKey noise = canvas.add("material.noise");
+    canvas.wire(world, noise, "position");
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(position, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("geometry_inputs"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    const auto root = ir.value().vertex_offset();
+    CY_REQUIRE_NE(root, cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir.value().node(root).op, cy::rendering::material::Op::Attribute);
+    CY_CHECK_EQ(ir.value().node(root).symbol, Name::intern("object_position"));
+    CY_CHECK_EQ(ir.value().node(root).type, ValueType::Vec3);
+    bool normal = false;
+    bool uv0 = false;
+    bool world_position = false;
+    bool time = false;
+    bool vertex_color = false;
+    bool coherent_noise = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
+        const auto& node = ir.value().node(id);
+        world_position = world_position ||
+                         (node.symbol == Name::intern("position") && node.type == ValueType::Vec3);
+        normal = normal || (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3);
+        uv0 = uv0 || (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2);
+        time =
+            time || (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float);
+        vertex_color =
+            vertex_color || (node.symbol == Name::intern("color0") && node.type == ValueType::Vec3);
+        coherent_noise = coherent_noise ||
+                         (node.op == cy::rendering::material::Op::Noise &&
+                          node.type == ValueType::Float && ir.value().operands(id).size() == 1);
+    }
+    CY_CHECK(world_position);
+    CY_CHECK(normal);
+    CY_CHECK(uv0);
+    CY_CHECK(time);
+    CY_CHECK(vertex_color);
+    CY_CHECK(coherent_noise);
+}
+
+CY_TEST_CASE("graph_material: spatial noise refuses a scalar coordinate") {
+    Canvas canvas("invalid_noise");
+    const NodeKey scalar = canvas.add("material.constant");
+    canvas.type_of(scalar, ValueType::Float);
+    const NodeKey noise = canvas.add("material.noise");
+    canvas.wire(scalar, noise, "position");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("invalid_noise"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    CY_CHECK_FALSE(cy::rendering::material::lower_graph(lowered, allocator()).has_value());
+}
+
+CY_TEST_CASE("graph_material: vertex colour directly drives a typed offset") {
+    Canvas canvas("vertex_colour_offset");
+    const NodeKey colour = canvas.add("material.vertex_color");
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(colour, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("vertex_colour_offset"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    CY_CHECK(ir->vertex_offset() != cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir->node(ir->vertex_offset()).type, ValueType::Vec3);
+}
+
+CY_TEST_CASE("graph_material: procedural wind requires position and scalar time") {
+    CY_CHECK_EQ(material_node_type_id("material.wind"), cy::graph::kInvalidNodeTypeId);
+    CY_CHECK(material_node_type_id("material.procedural_wind") != cy::graph::kInvalidNodeTypeId);
+    Canvas canvas("wind");
+    const NodeKey position = canvas.add("material.world_position");
+    const NodeKey time = canvas.add("material.time");
+    const NodeKey wind = canvas.add("material.procedural_wind");
+    canvas.wire(position, wind, "position");
+    canvas.wire(time, wind, "time");
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(wind, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("wind"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    bool found = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir->size(); ++id) {
+        const auto& node = ir->node(id);
+        found = found || (node.op == cy::rendering::material::Op::ProceduralWind &&
+                          node.type == ValueType::Vec3 && ir->operands(id).size() == 2);
+    }
+    CY_CHECK(found);
+
+    Canvas invalid("invalid_wind");
+    const NodeKey scalar = invalid.add("material.constant");
+    invalid.type_of(scalar, ValueType::Float);
+    const NodeKey invalid_time = invalid.add("material.time");
+    const NodeKey invalid_wind = invalid.add("material.procedural_wind");
+    invalid.wire(scalar, invalid_wind, "position");
+    invalid.wire(invalid_time, invalid_wind, "time");
+    CY_REQUIRE(invalid.good());
+    MaterialGraph rejected(allocator(), Name::intern("invalid_wind"));
+    CY_REQUIRE(lower_material(invalid.graph(), rejected));
+    CY_CHECK_FALSE(cy::rendering::material::lower_graph(rejected, allocator()).has_value());
 }

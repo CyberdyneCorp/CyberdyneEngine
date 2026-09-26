@@ -47,6 +47,7 @@ agent-interface = ["dep:cy-editor-mcp"]
 cy-editor-agent = { path = "../cy-editor-agent" }
 cy-editor-commands = { path = "../cy-editor-commands" }
 cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-interface = { path = "../cy-editor-interface" }
 cy-editor-documents = { path = "../cy-editor-documents" }
 cy-editor-mcp = { path = "../cy-editor-mcp", optional = true }
 cy-editor-protocol = { path = "../cy-editor-protocol" }

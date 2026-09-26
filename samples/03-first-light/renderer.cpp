@@ -95,8 +95,10 @@ struct Renderer::MaterialState {
     struct Program {
         u64 artefact = 0;
         rhi::ShaderModuleHandle vertex;
+        rhi::ShaderModuleHandle shadow_vertex;
         rhi::ShaderModuleHandle fragment;
         rhi::GraphicsPipelineHandle pipeline;
+        rhi::GraphicsPipelineHandle shadow_pipeline;
         rhi::BufferHandle parameters;
         rhi::DescriptorSetHandle descriptor_set;
     };
@@ -123,24 +125,41 @@ struct Renderer::MaterialState {
 
 namespace {
 
-/// Bind everything both geometry passes bind, and draw every object. The two passes differ in their
-/// pipeline and their attachments and in nothing else, which is why this is one function: a shadow
-/// map that drew a different set of objects from the forward pass is the classic way to get a
-/// shadow with no caster.
-void draw_objects(const PassContext& context, Renderer::PassState& state,
-                  rhi::GraphicsPipelineHandle pipeline) noexcept {
-    context.commands->bind_graphics_pipeline(pipeline);
-    context.commands->bind_descriptor_sets(
-        state.layout, 0, Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
+/// Draw every caster with the same material vertex deformation as the visible pass.
+void draw_shadow_objects(const PassContext& context, Renderer::PassState& state) noexcept {
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
                                           Span<const u64>(&offset, 1));
     context.commands->bind_index_buffer(state.indices, 0, false);
 
+    rhi::PipelineLayoutHandle layout = state.layout;
+    const void* bound = nullptr;
+    bool any_bound = false;
     for (u32 index = 0; index < state.object_count; ++index) {
+        const u64 artefact = index < state.materials->object_artefacts.size()
+                                 ? state.materials->object_artefacts[index]
+                                 : 0;
+        const auto* material = state.materials->find(artefact);
+        if (!any_bound || material != bound) {
+            if (material == nullptr) {
+                context.commands->bind_graphics_pipeline(state.shadow_pipeline);
+                context.commands->bind_descriptor_sets(
+                    state.layout, 0,
+                    Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
+                layout = state.layout;
+            } else {
+                context.commands->bind_graphics_pipeline(material->shadow_pipeline);
+                const rhi::DescriptorSetHandle sets[] = {
+                    state.global_textures, material->descriptor_set, state.descriptor_set};
+                context.commands->bind_descriptor_sets(state.material_layout, 0, sets);
+                layout = state.material_layout;
+            }
+            bound = material;
+            any_bound = true;
+        }
         const ObjectPush& push = state.pushes[index];
         context.commands->push_constants(
-            state.layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+            layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
             Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(ObjectPush)));
         context.commands->draw_indexed(state.objects[index].index_count, 1,
                                        state.objects[index].first_index, 0, 0);
@@ -233,7 +252,7 @@ void record_shadow(const PassContext& context, void* user) noexcept {
     const auto extent = static_cast<f32>(kShadowMapExtent);
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, extent, extent, 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, kShadowMapExtent, kShadowMapExtent});
-    draw_objects(context, *state, state->shadow_pipeline);
+    draw_shadow_objects(context, *state);
     context.commands->end_rendering();
 }
 
@@ -348,11 +367,17 @@ void Renderer::destroy_material_runtime() noexcept {
         if (!program.pipeline.is_null()) {
             device_->destroy_graphics_pipeline(program.pipeline);
         }
+        if (!program.shadow_pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.shadow_pipeline);
+        }
         if (!program.fragment.is_null()) {
             device_->destroy_shader_module(program.fragment);
         }
         if (!program.vertex.is_null()) {
             device_->destroy_shader_module(program.vertex);
+        }
+        if (!program.shadow_vertex.is_null()) {
+            device_->destroy_shader_module(program.shadow_vertex);
         }
         if (!program.parameters.is_null()) {
             device_->destroy_buffer(program.parameters);
@@ -789,14 +814,17 @@ void Renderer::write_frame_constants(const Scene& scene, const Camera& camera) n
     constants.sun_color_and_ambient[3] = sun.ambient;
     constants.shadow_control[0] = scene.description().sun_shadows ? 1.0F : 0.0F;
     constants.shadow_control[1] = sun.shadow_normal_offset;
+    constants.shadow_control[2] = time_seconds_;
     *block = constants;
 }
 
 Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const char* vertex_entry,
                                  Span<const u8> fragment_msl, const char* fragment_entry,
+                                 Span<const u8> shadow_msl, const char* shadow_entry,
                                  Span<const u8> parameters) noexcept {
-    if (artefact == 0 || vertex_msl.empty() || fragment_msl.empty() || vertex_entry == nullptr ||
-        fragment_entry == nullptr || parameters.size() > rendering::kMaterialBlockBytes) {
+    if (artefact == 0 || vertex_msl.empty() || fragment_msl.empty() || shadow_msl.empty() ||
+        vertex_entry == nullptr || fragment_entry == nullptr || shadow_entry == nullptr ||
+        parameters.size() > rendering::kMaterialBlockBytes) {
         return fail(ErrorCode::InvalidArgument,
                     "first-light: a compiled material description is incomplete");
     }
@@ -815,6 +843,23 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
 
     MaterialState::Program program;
     program.artefact = artefact;
+    const auto discard = [&] {
+        if (!program.parameters.is_null()) {
+            device_->destroy_buffer(program.parameters);
+        }
+        if (!program.shadow_pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.shadow_pipeline);
+        }
+        if (!program.pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.pipeline);
+        }
+        for (const rhi::ShaderModuleHandle shader :
+             {program.shadow_vertex, program.fragment, program.vertex}) {
+            if (!shader.is_null()) {
+                device_->destroy_shader_module(shader);
+            }
+        }
+    };
     const auto create_shader = [&](const char* name, rhi::ShaderStage stage, Span<const u8> source,
                                    const char* entry, rhi::ShaderModuleHandle& out) -> Status {
         rhi::ShaderModuleDescription description;
@@ -838,15 +883,22 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     if (Status created = create_shader("editor material fragment", rhi::ShaderStage::Fragment,
                                        fragment_msl, fragment_entry, program.fragment);
         !created) {
-        device_->destroy_shader_module(program.vertex);
+        discard();
+        return created;
+    }
+    if (Status created = create_shader("editor material shadow vertex", rhi::ShaderStage::Vertex,
+                                       shadow_msl, shadow_entry, program.shadow_vertex);
+        !created) {
+        discard();
         return created;
     }
 
     const rhi::VertexBinding vertex_binding{0, sizeof(Vertex), rhi::VertexInputRate::PerVertex};
-    const rhi::VertexAttribute attributes[3] = {
+    const rhi::VertexAttribute attributes[4] = {
         {0, 0, rhi::Format::Rgb32Sfloat, 0},
         {1, 0, rhi::Format::Rgb32Sfloat, 12},
         {2, 0, rhi::Format::Rg32Sfloat, 24},
+        {3, 0, rhi::Format::Rgba32Sfloat, 32},
     };
     const rhi::ColorAttachmentState color{rhi::Format::Rgba8Unorm};
     rhi::GraphicsPipelineDescription pipeline;
@@ -863,11 +915,23 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     pipeline.depth_stencil.depth_write_enable = true;
     auto created_pipeline = device_->create_graphics_pipeline(pipeline);
     if (!created_pipeline.has_value()) {
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return make_unexpected(created_pipeline.error());
     }
     program.pipeline = *created_pipeline;
+
+    rhi::GraphicsPipelineDescription shadow = pipeline;
+    shadow.name = "editor compiled material shadow";
+    shadow.vertex_shader = program.shadow_vertex;
+    shadow.fragment_shader = {};
+    shadow.color_attachments = {};
+    shadow.rasterisation.cull_mode = rhi::CullMode::Front;
+    auto created_shadow = device_->create_graphics_pipeline(shadow);
+    if (!created_shadow.has_value()) {
+        discard();
+        return make_unexpected(created_shadow.error());
+    }
+    program.shadow_pipeline = *created_shadow;
 
     rhi::BufferDescription block;
     block.name = "editor material parameter block";
@@ -876,18 +940,13 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     block.memory = rhi::MemoryUse::Upload;
     auto created_buffer = device_->create_buffer(block);
     if (!created_buffer.has_value()) {
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return make_unexpected(created_buffer.error());
     }
     program.parameters = *created_buffer;
     auto created_set = device_->allocate_descriptor_set(material_set_layout_, false);
     if (!created_set.has_value()) {
-        device_->destroy_buffer(program.parameters);
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return make_unexpected(created_set.error());
     }
     program.descriptor_set = *created_set;
@@ -898,24 +957,22 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     write.buffer_range = rendering::kMaterialBlockBytes;
     if (Status updated = device_->update_descriptor_set(program.descriptor_set, {&write, 1});
         !updated) {
-        device_->destroy_buffer(program.parameters);
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return updated;
     }
     auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(program.parameters));
     if (mapped == nullptr) {
-        device_->destroy_buffer(program.parameters);
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return fail(ErrorCode::Internal,
                     "first-light: the material parameter buffer is not mapped");
     }
     std::memset(mapped, 0, rendering::kMaterialBlockBytes);
     std::memcpy(mapped, parameters.data(), parameters.size());
-    return materials_->programs.push_back(program);
+    if (Status retained = materials_->programs.push_back(program); !retained) {
+        discard();
+        return retained;
+    }
+    return ok();
 }
 
 Status Renderer::update_material(u64 artefact, Span<const u8> parameters) noexcept {

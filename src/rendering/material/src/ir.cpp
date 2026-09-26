@@ -54,6 +54,9 @@ constexpr OpInfo kOps[] = {
     {"closure_scale", 2, false, true, false},
     {"closure_add", kVariadic, true, true, false},
     {"closure_layer", 2, false, true, false},
+    {"sin", 1, false, false, false},
+    {"noise", 1, false, false, false},
+    {"procedural_wind", 2, false, false, false},
 };
 
 static_assert(sizeof(kOps) / sizeof(kOps[0]) == static_cast<usize>(Op::Count),
@@ -429,6 +432,18 @@ Expected<NodeId, Error> Builder::field(Name field_name, ValueType type) noexcept
     return make(Op::Field, type, field_name, Immediate{}, {});
 }
 
+Expected<NodeId, Error> Builder::normal_displacement(NodeId amount) noexcept {
+    if (amount >= module_.nodes_.size() || module_.nodes_[amount].type != ValueType::Float) {
+        return fail(ErrorCode::InvalidArgument, "vertex displacement must be a scalar distance");
+    }
+    auto normal = attribute(Name::intern("normal"), ValueType::Vec3);
+    if (!normal) {
+        return make_unexpected(normal.error());
+    }
+    const NodeId operands[] = {*normal, amount};
+    return make(Op::Mul, {operands, 2});
+}
+
 Expected<NodeId, Error> Builder::texture_sample(Name texture, NodeId uv) noexcept {
     if (module_.find_texture(texture) == nullptr) {
         return make_unexpected(
@@ -646,6 +661,14 @@ Status Builder::set_opacity(NodeId id) noexcept {
     return ok();
 }
 
+Status Builder::set_vertex_offset(NodeId id) noexcept {
+    if (id >= module_.nodes_.size() || module_.nodes_[id].type != ValueType::Vec3) {
+        return make_unexpected(invalid("the vertex offset root must be a float3"));
+    }
+    module_.vertex_offset_ = id;
+    return ok();
+}
+
 Expected<Module, Error> Builder::finish() noexcept {
     if (finished_) {
         return make_unexpected(invalid("a builder produces one module"));
@@ -700,6 +723,9 @@ Expected<Module, Error> Builder::finish() noexcept {
         digest, module_.surface_ == kInvalidNode ? 0ULL : module_.nodes_[module_.surface_].hash);
     digest = hash_u64(
         digest, module_.opacity_ == kInvalidNode ? 0ULL : module_.nodes_[module_.opacity_].hash);
+    digest = hash_u64(digest, module_.vertex_offset_ == kInvalidNode
+                                  ? 0ULL
+                                  : module_.nodes_[module_.vertex_offset_].hash);
     module_.digest_ = digest;
     return std::move(module_);
 }
@@ -754,11 +780,27 @@ namespace {
         case Op::Saturate:
         case Op::OneMinus:
         case Op::Normalize:
+        case Op::Sin:
             if (Status checked = require(is_numeric(types[0]), "this operand may not be a closure");
                 !checked) {
                 return make_unexpected(checked.error());
             }
             return types[0];
+        case Op::Noise:
+            if (Status checked = require(types[0] == ValueType::Vec3,
+                                         "three-dimensional noise requires a float3 position");
+                !checked) {
+                return make_unexpected(checked.error());
+            }
+            return ValueType::Float;
+        case Op::ProceduralWind:
+            if (Status checked =
+                    require(types[0] == ValueType::Vec3 && types[1] == ValueType::Float,
+                            "procedural wind requires a float3 position and float time");
+                !checked) {
+                return make_unexpected(checked.error());
+            }
+            return ValueType::Vec3;
         case Op::Lerp: {
             auto blended = combine_numeric(types[0], types[1]);
             if (!blended) {
@@ -989,6 +1031,7 @@ Status encode_module(const Module& module, Array<u8>& out) noexcept {
 
     put_u32(out, module.surface(), status);
     put_u32(out, module.opacity(), status);
+    put_u32(out, module.vertex_offset(), status);
     return status;
 }
 
@@ -1097,6 +1140,7 @@ Expected<Module, Error> decode_module(Span<const u8> bytes, Allocator& allocator
 
     const u32 surface = reader.u32_value();
     const u32 opacity = reader.u32_value();
+    const u32 vertex_offset = reader.u32_value();
     if (!reader.ok()) {
         return make_unexpected(Error{ErrorCode::InvalidArgument, "a truncated material IR", 0});
     }
@@ -1115,6 +1159,15 @@ Expected<Module, Error> decode_module(Span<const u8> bytes, Allocator& allocator
                 Error{ErrorCode::InvalidArgument, "the opacity root is not a node", 0});
         }
         if (Status set = builder.set_opacity(mapping[opacity]); !set) {
+            return make_unexpected(set.error());
+        }
+    }
+    if (vertex_offset != kInvalidNode) {
+        if (vertex_offset >= mapping.size()) {
+            return make_unexpected(
+                Error{ErrorCode::InvalidArgument, "the vertex offset root is not a node", 0});
+        }
+        if (Status set = builder.set_vertex_offset(mapping[vertex_offset]); !set) {
             return make_unexpected(set.error());
         }
     }

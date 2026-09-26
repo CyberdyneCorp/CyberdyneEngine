@@ -5,15 +5,125 @@
 #include <cy/graph/material/lower_material.h>
 #include <cy/graph/text.h>
 #include <cy/rendering/material/compiler.h>
+#if defined(CY_EDITOR_HAS_VFX)
+#    include <cy/vfx/authoring.h>
+#    include <cy/vfx/authoring_capabilities.h>
+#    include <cy/vfx/catalogue.h>
+#    include <cy/vfx/compile.h>
+#    include <cy/vfx/interfaces.h>
+#    include <cy/vfx/world.h>
+#endif
 
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iterator>
 #include <new>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <utility>
+
+#if defined(CY_EDITOR_HAS_VFX)
+struct VfxPreviewState {
+    explicit VfxPreviewState(cy::Allocator& allocator) noexcept : world(allocator) {}
+
+    [[nodiscard]] cy::Status restart() noexcept {
+        if (!system) {
+            return cy::fail(cy::ErrorCode::Unavailable, "no VFX preview effect is loaded");
+        }
+        world.shutdown();
+        cy::vfx::WorldDescription description;
+        description.pool_bytes = 8ULL * 1024ULL * 1024ULL;
+        description.max_instances = 1;
+        if (cy::Status ready = world.initialize(description); !ready) {
+            return ready;
+        }
+        cy::vfx::EffectSpawn spawn;
+        spawn.position = {0.0F, 0.0F, -5.0F};
+        auto started = world.play(*system, spawn);
+        if (!started) {
+            world.shutdown();
+            return cy::make_unexpected(started.error());
+        }
+        handle = *started;
+        time_seconds = 0.0F;
+        return cy::ok();
+    }
+
+    [[nodiscard]] cy::Status load(cy::vfx::CompiledSystem&& cooked) noexcept {
+        world.shutdown();
+        system.emplace(std::move(cooked));
+        playing = false;
+        time_scale = 1.0F;
+        return restart();
+    }
+
+    [[nodiscard]] cy::Status advance(cy::f32 dt) noexcept {
+        if (!system) {
+            return cy::fail(cy::ErrorCode::Unavailable, "no VFX preview effect is loaded");
+        }
+        if (!std::isfinite(dt) || dt < 0.0F || dt > 0.25F) {
+            return cy::fail(cy::ErrorCode::InvalidArgument, "invalid VFX preview frame interval");
+        }
+        if (!playing || dt == 0.0F) {
+            return cy::ok();
+        }
+        cy::vfx::StepReport report;
+        const cy::f32 scaled = dt * time_scale;
+        if (cy::Status stepped = world.step(scaled, report); !stepped) {
+            return stepped;
+        }
+        time_seconds += scaled;
+        return cy::ok();
+    }
+
+    [[nodiscard]] cy::Status seek(cy::f32 seconds) noexcept {
+        if (!std::isfinite(seconds) || seconds < 0.0F || seconds > 30.0F) {
+            return cy::fail(cy::ErrorCode::InvalidArgument,
+                            "VFX preview scrub time is out of range");
+        }
+        if (cy::Status reset = restart(); !reset) {
+            return reset;
+        }
+        constexpr cy::f32 kFrame = 1.0F / 60.0F;
+        cy::vfx::StepReport report;
+        while (time_seconds + kFrame <= seconds) {
+            if (cy::Status stepped = world.step(kFrame, report); !stepped) {
+                return stepped;
+            }
+            time_seconds += kFrame;
+        }
+        const cy::f32 remainder = seconds - time_seconds;
+        if (remainder > 0.00001F) {
+            if (cy::Status stepped = world.step(remainder, report); !stepped) {
+                return stepped;
+            }
+        }
+        time_seconds = seconds;
+        playing = false;
+        return cy::ok();
+    }
+
+    std::optional<cy::vfx::CompiledSystem> system;
+    cy::vfx::SimulationWorld world;
+    cy::vfx::EffectHandle handle = cy::vfx::kInvalidEffect;
+    cy::f32 time_seconds = 0.0F;
+    cy::f32 time_scale = 1.0F;
+    bool playing = false;
+};
+#endif
 
 struct CyServiceSession_T {
     explicit CyServiceSession_T(cy::Allocator& allocator) noexcept
-        : request_payload(allocator), event_payload(allocator) {}
+        : request_payload(allocator),
+          event_payload(allocator)
+#if defined(CY_EDITOR_HAS_VFX)
+          ,
+          vfx_preview(allocator)
+#endif
+    {
+    }
 
     cy::u64 request = 0;
     cy::u32 schema = 0;
@@ -28,6 +138,9 @@ struct CyServiceSession_T {
     cy::u64 preview_artefact[16] = {};
     cy::u32 preview_parameter_ids[16][32] = {};
     cy::u8 preview_parameter_types[16][32] = {};
+#if defined(CY_EDITOR_HAS_VFX)
+    VfxPreviewState vfx_preview;
+#endif
 };
 
 namespace {
@@ -96,6 +209,331 @@ CyResult failed(CyServiceSession_T& session, const char* code, const char* detai
     return CY_RESULT_OK;
 }
 
+#if defined(CY_EDITOR_HAS_VFX)
+CyResult failed_vfx(CyServiceSession_T& session, const char* code, const char* message,
+                    const cy::graph::DiagnosticSink& diagnostics,
+                    const cy::vfx::CompileReport& report) noexcept {
+    session.failed_event = true;
+    session.event_payload.clear();
+    if (!put_u32(session.event_payload, 2) || !put_text(session.event_payload, code) ||
+        !put_text(session.event_payload, message) ||
+        !put_u32(session.event_payload, static_cast<u32>(diagnostics.entries().size()))) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    for (usize index = 0; index < diagnostics.entries().size(); ++index) {
+        const cy::graph::Diagnostic& diagnostic = diagnostics.entries()[index];
+        u32 emitter_index = UINT32_MAX;
+        u8 stage = static_cast<u8>(cy::vfx::Stage::Count);
+        for (const cy::vfx::DiagnosticScope& scope : report.diagnostic_scopes) {
+            if (scope.diagnostic_index == index) {
+                emitter_index = scope.emitter_index;
+                stage = static_cast<u8>(scope.stage);
+                break;
+            }
+        }
+        if (!put_u8(session.event_payload, static_cast<u8>(diagnostic.severity)) ||
+            !put_text(session.event_payload, diagnostic.code) ||
+            !put_text(session.event_payload, diagnostic.message) ||
+            !put_text(session.event_payload, diagnostic.detail.text()) ||
+            !put_u64(session.event_payload, diagnostic.node) ||
+            !put_text(session.event_payload, diagnostic.pin.text()) ||
+            !put_u32(session.event_payload, emitter_index) ||
+            !put_u8(session.event_payload, stage)) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+    }
+    return CY_RESULT_OK;
+}
+
+cy::Expected<cy::vfx::CompiledSystem, cy::Error> cook_vfx_document(
+    std::string_view source, cy::Allocator& allocator, cy::graph::DiagnosticSink& diagnostics,
+    cy::vfx::CompileReport& report, const char*& stage) noexcept {
+    stage = "vfx.document.parse";
+    auto asset = cy::vfx::read_authoring_bundle(source, diagnostics, allocator);
+    if (!asset) {
+        return cy::make_unexpected(asset.error());
+    }
+    cy::graph::NodeRegistry registry(allocator);
+    cy::vfx::DataInterfaceRegistry interfaces(allocator);
+    stage = "vfx.catalogue";
+    if (Status registered = cy::vfx::register_vfx_nodes(registry); !registered) {
+        return cy::make_unexpected(registered.error());
+    }
+    stage = "vfx.interfaces";
+    if (Status registered = cy::vfx::register_builtin_interfaces(interfaces); !registered) {
+        return cy::make_unexpected(registered.error());
+    }
+    asset->resolve(registry);
+    stage = "vfx.compile";
+    return cy::vfx::compile_system(*asset, registry, interfaces, cy::vfx::CompileOptions{},
+                                   diagnostics, report);
+}
+
+CyResult compile_vfx(CyServiceSession_T& session, cy::Allocator& allocator) noexcept {
+    const std::string_view source(reinterpret_cast<const char*>(session.request_payload.data()),
+                                  session.request_payload.size());
+    cy::graph::DiagnosticSink diagnostics(allocator);
+    cy::vfx::CompileReport report(allocator);
+    const char* stage = nullptr;
+    auto compiled = cook_vfx_document(source, allocator, diagnostics, report, stage);
+    if (!compiled) {
+        return failed_vfx(session, stage, compiled.error().message, diagnostics, report);
+    }
+    session.event_payload.clear();
+    if (!put_u32(session.event_payload, 1) ||
+        !put_u64(session.event_payload, compiled->cook_key()) ||
+        !put_u32(session.event_payload, report.kernels) ||
+        !put_u32(session.event_payload, report.total_bytes_per_particle) ||
+        !put_u32(session.event_payload, static_cast<u32>(compiled->emitters().size()))) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    for (usize index = 0; index < compiled->emitters().size(); ++index) {
+        const cy::vfx::CompiledEmitter& emitter = compiled->emitters()[index];
+        const cy::vfx::EmitterReport& details = report.emitters[index];
+        if (!put_text(session.event_payload, emitter.name().text()) ||
+            !put_u8(session.event_payload, static_cast<u8>(emitter.path())) ||
+            !put_u32(session.event_payload, details.kernels) ||
+            !put_u32(session.event_payload, details.bytes_per_particle) ||
+            !put_u32(session.event_payload, details.max_population) ||
+            !put_u64(session.event_payload, details.estimated_cost_units) ||
+            !put_u32(session.event_payload, details.folded_constants) ||
+            !put_u32(session.event_payload, static_cast<u32>(emitter.layout().slots().size()))) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+        for (const cy::vfx::AttributeSlot& slot : emitter.layout().slots()) {
+            if (!put_text(session.event_payload, slot.name.text()) ||
+                !put_text(session.event_payload, cy::vfx::vfx_type_name(slot.type)) ||
+                !put_u8(session.event_payload, static_cast<u8>(slot.precision)) ||
+                !put_u32(session.event_payload, slot.array_offset) ||
+                !put_u32(session.event_payload, slot.stride) ||
+                !put_u8(session.event_payload, slot.elided ? 1U : 0U)) {
+                return CY_RESULT_OUT_OF_MEMORY;
+            }
+        }
+        if (!put_u32(session.event_payload, static_cast<u32>(emitter.sources().size()))) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+        for (const cy::graph::GeneratedSource& generated : emitter.sources()) {
+            if (!put_text(session.event_payload, {generated.text.data(), generated.text.size()})) {
+                return CY_RESULT_OUT_OF_MEMORY;
+            }
+        }
+    }
+    return CY_RESULT_OK;
+}
+
+Status put_f32(Array<u8>& out, cy::f32 value) noexcept {
+    u32 bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return put_u32(out, bits);
+}
+
+cy::f32 read_f32(const Array<u8>& bytes, usize offset) noexcept {
+    const u32 bits = read_u32(bytes, offset);
+    cy::f32 value = 0.0F;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+Status put_preview_sample(Array<u8>& out, const VfxPreviewState& preview,
+                          const cy::vfx::EffectInstance* instance) noexcept {
+    if (instance == nullptr || !preview.system.has_value()) {
+        return put_u8(out, 0);
+    }
+    for (u32 emitter = 0; emitter < preview.system->emitters().size(); ++emitter) {
+        const auto flags = preview.world.alive_flags(instance->first_block + emitter);
+        for (u32 particle = 0; particle < flags.size(); ++particle) {
+            if (flags[particle] == 0) {
+                continue;
+            }
+            const auto slots = preview.system->emitters()[emitter].layout().slots();
+            u32 count = 0;
+            for (const cy::vfx::AttributeSlot& slot : slots) {
+                count += !slot.elided && count < 32U ? 1U : 0U;
+            }
+            if (!put_u8(out, 1) || !put_u32(out, emitter) || !put_u32(out, particle) ||
+                !put_u32(out, count)) {
+                return cy::fail(cy::ErrorCode::OutOfMemory, "VFX preview sample encoding failed");
+            }
+            for (const cy::vfx::AttributeSlot& slot : slots) {
+                if (slot.elided || count == 0) {
+                    continue;
+                }
+                if (!put_text(out, slot.name.text()) ||
+                    !put_u8(out, static_cast<u8>(slot.components))) {
+                    return cy::fail(cy::ErrorCode::OutOfMemory,
+                                    "VFX preview attribute encoding failed");
+                }
+                for (u32 component = 0; component < slot.components; ++component) {
+                    if (!put_f32(out, preview.world.read_attribute(*instance, emitter, particle,
+                                                                   slot.name, component))) {
+                        return cy::fail(cy::ErrorCode::OutOfMemory,
+                                        "VFX preview attribute encoding failed");
+                    }
+                }
+                --count;
+            }
+            return cy::ok();
+        }
+    }
+    return put_u8(out, 0);
+}
+
+CyResult preview_snapshot(CyServiceSession_T& session) noexcept {
+    const VfxPreviewState& preview = session.vfx_preview;
+    if (!preview.system) {
+        return failed(session, "vfx.preview.empty", "no VFX preview effect is loaded");
+    }
+    const cy::vfx::StepReport& step = preview.world.last_step();
+    const cy::vfx::PoolReport& pool = preview.world.pool().report();
+    session.event_payload.clear();
+    if (!put_u32(session.event_payload, 2) ||
+        !put_u64(session.event_payload, preview.system->cook_key()) ||
+        !put_u8(session.event_payload, preview.playing ? 1U : 0U) ||
+        !put_f32(session.event_payload, preview.time_seconds) ||
+        !put_f32(session.event_payload, preview.time_scale) ||
+        !put_u32(session.event_payload, step.live_particles) ||
+        !put_u32(session.event_payload, step.spawned) ||
+        !put_u32(session.event_payload, step.killed) ||
+        !put_u32(session.event_payload, step.cpu_fallbacks) ||
+        !put_u64(session.event_payload, pool.used_bytes) ||
+        !put_u64(session.event_payload, pool.total_bytes) ||
+        !put_u32(session.event_payload, preview.world.events().total_dropped()) ||
+        !put_u32(session.event_payload, preview.world.events().total_truncated()) ||
+        !put_u32(session.event_payload, static_cast<u32>(preview.system->emitters().size()))) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    const auto instances = preview.world.instances();
+    const cy::vfx::EffectInstance* instance = instances.empty() ? nullptr : instances.data();
+    for (usize index = 0; index < preview.system->emitters().size(); ++index) {
+        u32 live = 0;
+        if (instance != nullptr) {
+            for (u8 flag :
+                 preview.world.alive_flags(instance->first_block + static_cast<u32>(index))) {
+                live += flag != 0 ? 1U : 0U;
+            }
+        }
+        if (!put_text(session.event_payload, preview.system->emitters()[index].name().text()) ||
+            !put_u32(session.event_payload, live)) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+    }
+    u32 raised = 0;
+    u32 delivered = 0;
+    for (const cy::vfx::ChannelReport& channel : preview.world.events().reports()) {
+        raised += channel.raised;
+        delivered += channel.delivered;
+    }
+    if (!put_u32(session.event_payload, pool.shortfall_particles) ||
+        !put_u32(session.event_payload, pool.reduced_requests) ||
+        !put_u32(session.event_payload, raised) || !put_u32(session.event_payload, delivered) ||
+        !put_u32(session.event_payload, preview.world.readback().report().deferred) ||
+        !put_preview_sample(session.event_payload, preview, instance)) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+    return CY_RESULT_OK;
+}
+
+CyResult preview_load(CyServiceSession_T& session, cy::Allocator& allocator) noexcept {
+    const std::string_view source(reinterpret_cast<const char*>(session.request_payload.data()),
+                                  session.request_payload.size());
+    cy::graph::DiagnosticSink diagnostics(allocator);
+    cy::vfx::CompileReport report(allocator);
+    const char* stage = nullptr;
+    auto compiled = cook_vfx_document(source, allocator, diagnostics, report, stage);
+    if (!compiled) {
+        return failed_vfx(session, stage, compiled.error().message, diagnostics, report);
+    }
+    if (Status loaded = session.vfx_preview.load(std::move(*compiled)); !loaded) {
+        return failed(session, "vfx.preview.load", loaded.error().message);
+    }
+    return preview_snapshot(session);
+}
+
+CyResult preview_step(CyServiceSession_T& session) noexcept {
+    if (session.request_payload.size() != 4) {
+        return failed(session, "vfx.preview.step", "a frame interval is four bytes");
+    }
+    if (Status advanced = session.vfx_preview.advance(read_f32(session.request_payload, 0));
+        !advanced) {
+        return failed(session, "vfx.preview.step", advanced.error().message);
+    }
+    return preview_snapshot(session);
+}
+
+CyResult preview_control(CyServiceSession_T& session) noexcept {
+    const auto& payload = session.request_payload;
+    if (payload.empty()) {
+        return failed(session, "vfx.preview.control", "a control action is required");
+    }
+    VfxPreviewState& preview = session.vfx_preview;
+    if (!preview.system) {
+        return failed(session, "vfx.preview.empty", "no VFX preview effect is loaded");
+    }
+    const u8 action = payload[0];
+    if (action <= 2 && payload.size() != 1) {
+        return failed(session, "vfx.preview.control", "unexpected control data");
+    }
+    if (action >= 3 && payload.size() != 5) {
+        return failed(session, "vfx.preview.control", "a control value is four bytes");
+    }
+    if (action == 0) {
+        preview.playing = true;
+    } else if (action == 1) {
+        preview.playing = false;
+    } else if (action == 2) {
+        if (Status restarted = preview.restart(); !restarted) {
+            return failed(session, "vfx.preview.restart", restarted.error().message);
+        }
+        preview.playing = false;
+    } else if (action == 3) {
+        if (Status scrubbed = preview.seek(read_f32(payload, 1)); !scrubbed) {
+            return failed(session, "vfx.preview.scrub", scrubbed.error().message);
+        }
+    } else if (action == 4) {
+        const cy::f32 scale = read_f32(payload, 1);
+        if (!std::isfinite(scale) || scale < 0.1F || scale > 4.0F) {
+            return failed(session, "vfx.preview.scale", "time scale must be between 0.1 and 4");
+        }
+        preview.time_scale = scale;
+    } else {
+        return failed(session, "vfx.preview.control", "unknown VFX preview action");
+    }
+    return preview_snapshot(session);
+}
+
+CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
+    const auto& payload = session.request_payload;
+    if (payload.size() < 10) {
+        return failed(session, "vfx.preview.parameter", "parameter name and value are required");
+    }
+    const u32 length = read_u32(payload, 0);
+    if (length == 0 || length > 128 || length + 5U >= payload.size()) {
+        return failed(session, "vfx.preview.parameter", "invalid parameter name length");
+    }
+    const usize count_offset = 4U + length;
+    const u8 count = payload[count_offset];
+    if (count == 0 || count > 4 ||
+        payload.size() != count_offset + 1U + (static_cast<usize>(count) * 4U)) {
+        return failed(session, "vfx.preview.parameter", "invalid parameter component count");
+    }
+    cy::f32 values[4] = {};
+    for (u8 index = 0; index < count; ++index) {
+        values[index] = read_f32(payload, count_offset + 1U + (static_cast<usize>(index) * 4U));
+        if (!std::isfinite(values[index])) {
+            return failed(session, "vfx.preview.parameter", "parameter values must be finite");
+        }
+    }
+    const std::string name(reinterpret_cast<const char*>(payload.data() + 4), length);
+    if (Status updated = session.vfx_preview.world.set_parameter(
+            session.vfx_preview.handle, cy::Name::intern(name), {values, count});
+        !updated) {
+        return failed(session, "vfx.preview.parameter", updated.error().message);
+    }
+    return preview_snapshot(session);
+}
+#endif
+
 Status put_graph_location(Array<u8>& out, const cy::graph::Graph& graph,
                           cy::graph::NodeKey node_key, cy::Name pin_name) noexcept {
     const cy::graph::GraphNode* node = graph.find_node(node_key);
@@ -116,7 +554,7 @@ Status put_graph_location(Array<u8>& out, const cy::graph::Graph& graph,
 }
 
 CyResult failed_material(CyServiceSession_T& session, const char* code, const char* message,
-                         const char* detail = "") noexcept {
+                         std::string_view detail = {}) noexcept {
     session.failed_event = true;
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 2) || !put_u32(session.event_payload, 1) ||
@@ -200,6 +638,15 @@ CyResult compile_material_result(CyServiceSession_T& session, const cy::graph::G
     auto compiled = cy::rendering::material::compile_material(module, options, allocator);
     if (!compiled) {
         return failed_material(session, "material.compile", compiled.error().message);
+    }
+    if (compiled.value().failed()) {
+        for (const cy::rendering::material::CompileDiagnostic& diagnostic :
+             compiled.value().diagnostics()) {
+            if (diagnostic.severity == cy::rendering::material::DiagnosticSeverity::Error) {
+                return failed_material(session, diagnostic.code, diagnostic.detail,
+                                       diagnostic.subject.text());
+            }
+        }
     }
     const u64 artefact = compiled.value().cook_key();
     if (preview_runtime != nullptr) {
@@ -287,6 +734,19 @@ CyResult compile_graph(CyServiceSession_T& session,
         return author_graph_result(session, graph.value(), canonical);
     }
     if (!compile) {
+        cy::rendering::material::CompileOptions options;
+        auto checked =
+            cy::rendering::material::compile_material(module.value(), options, allocator);
+        if (!checked) {
+            return failed_material(session, "material.compile", checked.error().message);
+        }
+        for (const cy::rendering::material::CompileDiagnostic& diagnostic :
+             checked.value().diagnostics()) {
+            if (diagnostic.severity == cy::rendering::material::DiagnosticSeverity::Error) {
+                return failed_material(session, diagnostic.code, diagnostic.detail,
+                                       diagnostic.subject.text());
+            }
+        }
         return CY_RESULT_OK;
     }
     return compile_material_result(session, graph.value(), module.value(), preview_runtime,
@@ -543,10 +1003,16 @@ CyResult capabilities(CyServiceSession_T& session,
         "material.compile", "material.author",          "preview.create",
         "preview.destroy",  "preview.parameter.update", "preview.reload",
     };
+#if defined(CY_EDITOR_HAS_VFX)
+    constexpr u32 vfx_operations = 8;
+#else
+    constexpr u32 vfx_operations = 0;
+#endif
     session.event_payload.clear();
     if (!put_u32(session.event_payload, 1) ||
-        !put_u32(session.event_payload, static_cast<u32>(std::size(operations) +
-                                                         (authoring_runtime != nullptr ? 1 : 0)))) {
+        !put_u32(session.event_payload,
+                 static_cast<u32>(std::size(operations) + (authoring_runtime != nullptr ? 1 : 0) +
+                                  vfx_operations))) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     for (const char* operation : operations) {
@@ -554,6 +1020,18 @@ CyResult capabilities(CyServiceSession_T& session,
             return CY_RESULT_OUT_OF_MEMORY;
         }
     }
+#if defined(CY_EDITOR_HAS_VFX)
+    if (!put_text(session.event_payload, "vfx.catalogue.get") ||
+        !put_text(session.event_payload, "vfx.authoring-capabilities.get") ||
+        !put_text(session.event_payload, "vfx.compile") ||
+        !put_text(session.event_payload, "vfx.preview.load") ||
+        !put_text(session.event_payload, "vfx.preview.state") ||
+        !put_text(session.event_payload, "vfx.preview.control") ||
+        !put_text(session.event_payload, "vfx.preview.step") ||
+        !put_text(session.event_payload, "vfx.preview.parameter.update")) {
+        return CY_RESULT_OUT_OF_MEMORY;
+    }
+#endif
     if (authoring_runtime != nullptr && !put_text(session.event_payload, "material.preview.set")) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
@@ -566,6 +1044,18 @@ CyResult capabilities(CyServiceSession_T& session,
 }  // namespace
 
 namespace cy::editor {
+
+const vfx::SimulationWorld* MaterialService::vfx_preview_world(CyServiceSession session) noexcept {
+#if defined(CY_EDITOR_HAS_VFX)
+    if (session != nullptr && session->vfx_preview.system &&
+        session->vfx_preview.world.find(session->vfx_preview.handle) != nullptr) {
+        return &session->vfx_preview.world;
+    }
+#else
+    (void)session;
+#endif
+    return nullptr;
+}
 
 CyResult MaterialService::open(CyServiceSession* out_session) noexcept {
     void* memory = allocator_->allocate(sizeof(CyServiceSession_T), alignof(CyServiceSession_T));
@@ -590,6 +1080,9 @@ void MaterialService::close(CyServiceSession session) noexcept {
             (void)preview_runtime_->destroy(handle);
         }
     }
+#if defined(CY_EDITOR_HAS_VFX)
+    session->vfx_preview.world.shutdown();
+#endif
     session->~CyServiceSession_T();
     allocator_->deallocate(session, sizeof(CyServiceSession_T), alignof(CyServiceSession_T));
 }
@@ -652,6 +1145,29 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
             !encoded) {
             result = CY_RESULT_OUT_OF_MEMORY;
         }
+#if defined(CY_EDITOR_HAS_VFX)
+    } else if (!session->cancelled && operation == "vfx.catalogue.get") {
+        if (Status encoded = vfx::encode_vfx_catalogue(session->event_payload); !encoded) {
+            result = CY_RESULT_OUT_OF_MEMORY;
+        }
+    } else if (!session->cancelled && operation == "vfx.authoring-capabilities.get") {
+        if (Status encoded = vfx::encode_authoring_capabilities(session->event_payload, nullptr);
+            !encoded) {
+            result = CY_RESULT_OUT_OF_MEMORY;
+        }
+    } else if (!session->cancelled && operation == "vfx.compile") {
+        result = compile_vfx(*session, *allocator_);
+    } else if (!session->cancelled && operation == "vfx.preview.load") {
+        result = preview_load(*session, *allocator_);
+    } else if (!session->cancelled && operation == "vfx.preview.state") {
+        result = preview_snapshot(*session);
+    } else if (!session->cancelled && operation == "vfx.preview.control") {
+        result = preview_control(*session);
+    } else if (!session->cancelled && operation == "vfx.preview.step") {
+        result = preview_step(*session);
+    } else if (!session->cancelled && operation == "vfx.preview.parameter.update") {
+        result = preview_parameter_update(*session);
+#endif
     } else if (!session->cancelled && operation == "material.validate") {
         result = compile_graph(*session, preview_runtime_, *allocator_, false);
     } else if (!session->cancelled && operation == "material.compile") {

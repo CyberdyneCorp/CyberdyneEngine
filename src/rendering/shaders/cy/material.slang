@@ -24,6 +24,39 @@ module material;
 import cy.brdf;
 import cy.light;
 
+float cyMaterialNoiseHash(float3 cell)
+{
+    return frac(sin(dot(cell, float3(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+/// Smooth value noise in [0, 1] from a three-dimensional material coordinate.
+public float cyMaterialNoise(float3 position)
+{
+    let cell = floor(position);
+    let fraction = frac(position);
+    let blend = fraction * fraction * (3.0 - 2.0 * fraction);
+    let z0 = lerp(
+        lerp(cyMaterialNoiseHash(cell), cyMaterialNoiseHash(cell + float3(1, 0, 0)), blend.x),
+        lerp(cyMaterialNoiseHash(cell + float3(0, 1, 0)),
+             cyMaterialNoiseHash(cell + float3(1, 1, 0)), blend.x), blend.y);
+    let z1 = lerp(
+        lerp(cyMaterialNoiseHash(cell + float3(0, 0, 1)),
+             cyMaterialNoiseHash(cell + float3(1, 0, 1)), blend.x),
+        lerp(cyMaterialNoiseHash(cell + float3(0, 1, 1)),
+             cyMaterialNoiseHash(cell + float3(1, 1, 1)), blend.x), blend.y);
+    return lerp(z0, z1, blend.z);
+}
+
+/// Smooth, time-varying wind direction in [-1, 1] for each axis.
+public float3 cyMaterialProceduralWind(float3 position, float timeSeconds)
+{
+    let drift = position + timeSeconds * float3(0.17, 0.11, 0.13);
+    return 2.0 * float3(
+        cyMaterialNoise(drift),
+        cyMaterialNoise(drift + float3(17.0, 43.0, 11.0)),
+        cyMaterialNoise(drift + float3(31.0, 7.0, 59.0))) - 1.0;
+}
+
 /// What the engine's vertex processing hands a surface function.
 ///
 /// Camera-relative (design.md §3): `positionRelativeToCamera` is never world space.

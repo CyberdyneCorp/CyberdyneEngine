@@ -77,7 +77,7 @@ inline constexpr NodeId kInvalidNode = 0xFFFFFFFFU;
 /// The IR's own version. Part of every module digest, so a change to the representation invalidates
 /// derived data without touching an authored material — `material-compiler`'s "a compiler change
 /// invalidates derived shader data without invalidating the material asset itself".
-inline constexpr u32 kIrVersion = 1;
+inline constexpr u32 kIrVersion = 2;
 
 /// What a value is. Semantic role is carried by the op and the symbol, not by a second enumeration:
 /// a `Vec3` that is a colour is a `Vec3` reaching a closure's colour operand, and that is exactly
@@ -151,6 +151,15 @@ enum class Op : u16 {
     ClosureAdd,
     /// (top, base): the top attenuates the base. Not commutative — that is the whole content.
     ClosureLayer,
+
+    /// Sine of a numeric value, in radians. Appended to preserve existing operation identities.
+    Sin,
+
+    /// Smooth three-dimensional value noise from a float3 position, returning one float.
+    Noise,
+
+    /// Smooth procedural vector from a float3 position and elapsed seconds.
+    ProceduralWind,
 
     Count,
 };
@@ -275,6 +284,9 @@ public:
     /// Opacity. A SECOND ROOT, deliberately: it must survive dead-node elimination and enter the
     /// identity, or the shadow program is built from something the digest did not cover.
     [[nodiscard]] NodeId opacity() const noexcept { return opacity_; }
+    /// World-space displacement evaluated at the vertex stage. A float3 root is retained across
+    /// optimisation and derivation, including shadow programs with no fragment work.
+    [[nodiscard]] NodeId vertex_offset() const noexcept { return vertex_offset_; }
 
     /// The module's identity: `kIrVersion`, the material's name, and the roots' content hashes.
     [[nodiscard]] u64 digest() const noexcept { return digest_; }
@@ -314,6 +326,7 @@ private:
     Array<u32> origin_pool_;
     NodeId surface_ = kInvalidNode;
     NodeId opacity_ = kInvalidNode;
+    NodeId vertex_offset_ = kInvalidNode;
     u64 digest_ = 0;
     u32 merged_values_ = 0;
     u32 merged_samples_ = 0;
@@ -370,6 +383,8 @@ public:
     [[nodiscard]] Expected<NodeId, Error> parameter(Name name) noexcept;
     [[nodiscard]] Expected<NodeId, Error> attribute(Name semantic, ValueType type) noexcept;
     [[nodiscard]] Expected<NodeId, Error> field(Name field_name, ValueType type) noexcept;
+    /// Convert a scalar distance in metres to a world-space offset along the mesh normal.
+    [[nodiscard]] Expected<NodeId, Error> normal_displacement(NodeId amount) noexcept;
     [[nodiscard]] Expected<NodeId, Error> texture_sample(Name texture, NodeId uv) noexcept;
 
     // --- The general constructor ------------------------------------------------------------
@@ -401,6 +416,8 @@ public:
 
     [[nodiscard]] Status set_surface(NodeId id) noexcept;
     [[nodiscard]] Status set_opacity(NodeId id) noexcept;
+    /// Refuse non-float3 values before a vertex expression enters the material IR.
+    [[nodiscard]] Status set_vertex_offset(NodeId id) noexcept;
 
     /// Finish. The builder is empty afterwards and must not be reused.
     ///
@@ -440,7 +457,7 @@ private:
 
 /// The wire format's magic and version. Bumping `kModuleFormatVersion` invalidates cooked material
 /// data and no authored asset.
-inline constexpr u32 kModuleFormatVersion = 1;
+inline constexpr u32 kModuleFormatVersion = 2;
 
 /// Encode a module. Deterministic: two encodes of one module produce identical bytes, which is what
 /// lets the cook key be a digest over these bytes.

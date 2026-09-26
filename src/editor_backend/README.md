@@ -7,17 +7,36 @@ material compiler, renderer, Metal, or VFX implementation.
 The first vertical slice supports:
 
 - `capabilities.get` — operation discovery and first-slice target feature bits;
-- `material.catalogue.get` — deterministic schema-2 envelope/catalogue-version-3 node, pin and
+- `material.catalogue.get` — deterministic schema-3 envelope/catalogue-version-5 node, pin and
   typed-property catalogue with manifest identities, typed constraints, enum choices, asset-kind
-  filters, semantic/stage/domain metadata and required target-capability bits. Schema 1 remains
-  readable by the editor for compatibility;
-- `material.validate` — parses and lowers canonical CyberGraph input;
+  filters, semantic/stage/domain metadata, required target-capability bits, and engine-owned node
+  stage masks (`surface`, `vertex`, or both). Schemas 1 and 2 remain readable by the editor;
+- `vfx.catalogue.get` (when `CY_VFX` is enabled) — schema-2 catalogue generated from the VFX
+  compiler's registered node types, typed pins, property descriptors, and registered data-interface
+  names for sample controls. The editor requests it after the material
+  catalogue and opens the VFX shared canvas only when a compatible nonempty catalogue arrives.
+  Runtime preview is subsequent issue #15 work tracked in
+  `openspec/changes/implement-issue-15-graph-authoring/`;
+- `vfx.authoring-capabilities.get` (when `CY_VFX` is enabled) — renderer kinds and named
+  compositing refusals from the VFX renderer, CPU/GPU target compile and runtime availability
+  from the VFX runtime, and registered built-in interface names with supported simulation paths.
+  Its schema-2 payload reports no GPU preview device until one is attached; the editor reader
+  also accepts schema 1;
+- `vfx.compile` (when `CY_VFX` is enabled) — reads an editable `.cyvfxdoc` through the engine,
+  resolves the compiler node registry, and compiles the system. Schema 1 returns the cook key,
+  kernel counts, per-emitter memory and cost reports, derived attribute layouts, and generated
+  Slang. Failed requests use diagnostic schema 2 with node, pin, emitter index, and stage identity;
+  the reader also accepts unscoped schema 1 diagnostics. A `cyvfxbundle 1` request may include
+  explicit project module sources, which the engine validates and composes before cooking;
+- `material.validate` — parses and lowers canonical CyberGraph input, then runs compiler checks
+  and returns stable diagnostic codes for rejected material programs;
 - `material.author` — validates a canvas and returns engine-canonical `.cygraph` text;
 - `material.preview.set` — validates an unsaved canvas and applies its canonical graph to a
   runtime-owned authored scene. Its schema-1 payload is two little-endian, length-prefixed UTF-8
   strings: project-relative `.cygraph` reference followed by `cymatcanvas` source;
 - `material.compile` — compiles the material family and returns its cook identity, source graph
-  dependency identity, program count, and stable texture-asset dependency identities;
+  dependency identity, program count, and stable texture-asset dependency identities. Compiler
+  error diagnostics refuse publication and return their stable code and named subject;
 - `preview.create`, `preview.destroy`, `preview.parameter.update`, and `preview.reload` — isolated
   generational handles, idempotent destruction, stale-handle diagnostics, exact entity/material-slot
   target acknowledgements, and typed bool/integer/float/vector/texture parameter updates bound to an
