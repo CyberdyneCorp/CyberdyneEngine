@@ -115,6 +115,10 @@ struct StandardLibrary {
             writer.text(" = ");
             writer.text(source);
             writer.text(".positionRelativeToCamera;\n");
+        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
+            writer.text(" = ");
+            writer.text(source);
+            writer.text(".objectPosition;\n");
         } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
             writer.text(" = ");
             writer.text(source);
@@ -212,6 +216,7 @@ struct EditorVertexOutput
     [[vk::location(0)]] float3 positionRelativeToCamera : TEXCOORD1;
     [[vk::location(1)]] float3 normal : TEXCOORD2;
     [[vk::location(2)]] float2 uv : TEXCOORD3;
+    [[vk::location(3)]] float3 objectPosition : TEXCOORD4;
 };
 float3 editorPosition(float3 position)
 {
@@ -223,6 +228,7 @@ EditorVertexOutput editorMaterialVertexBase(EditorVertexInput input)
 {
     EditorVertexOutput output;
     output.positionRelativeToCamera = editorPosition(input.position);
+    output.objectPosition = input.position;
     output.normal = normalize(float3(dot(object.modelRow0.xyz, input.normal),
                                      dot(object.modelRow1.xyz, input.normal),
                                      dot(object.modelRow2.xyz, input.normal)));

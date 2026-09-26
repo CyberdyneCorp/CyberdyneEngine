@@ -97,6 +97,10 @@ offset for its visible and shadow passes; the main frame's motion pass still nee
 vertex expression that reaches `TextureSample` or handwritten `Custom` Slang reports
 `vertex-stage-unsupported` in the compiler, editor validation, and cook; those nodes have no
 supported authored vertex binding. Texture samples used only by the surface stage remain valid.
+`material.object_position`, `material.normal`, and `material.uv0` are fixed typed geometry inputs
+in the engine catalogue. The hosted viewport passes mesh object coordinates to the generated
+vertex function before projection; these nodes lower to the same IR attributes as text-authored
+geometry reads.
 `CompileOptions::geometry_paths` records named geometry sources for the variant report and cook
 identity. A vertex graph targeting `VirtualGeometry` reports `vertex-geometry-unsupported` with
 the source name: its visibility and shadow paths cannot evaluate the offset. Callers that do not

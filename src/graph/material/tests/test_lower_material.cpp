@@ -257,3 +257,32 @@ CY_TEST_CASE("graph_material: the vertex output reaches the same typed IR root")
     CY_REQUIRE(lower_material(invalid.graph(), rejected));
     CY_CHECK_FALSE(cy::rendering::material::lower_graph(rejected, allocator()).has_value());
 }
+
+CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attributes") {
+    Canvas canvas("geometry_inputs");
+    const NodeKey position = canvas.add("material.object_position");
+    (void)canvas.add("material.normal");
+    (void)canvas.add("material.uv0");
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(position, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("geometry_inputs"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    const auto root = ir.value().vertex_offset();
+    CY_REQUIRE_NE(root, cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir.value().node(root).op, cy::rendering::material::Op::Attribute);
+    CY_CHECK_EQ(ir.value().node(root).symbol, Name::intern("object_position"));
+    CY_CHECK_EQ(ir.value().node(root).type, ValueType::Vec3);
+    bool normal = false;
+    bool uv0 = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
+        const auto& node = ir.value().node(id);
+        normal = normal || (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3);
+        uv0 = uv0 || (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2);
+    }
+    CY_CHECK(normal);
+    CY_CHECK(uv0);
+}

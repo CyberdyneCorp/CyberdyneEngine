@@ -73,6 +73,10 @@ enum class GraphOp : u16 {
     LayerClosures,
     /// Sine of a scalar or vector, in radians.
     Sin,
+    /// Fixed geometry inputs for authored vertex expressions.
+    ObjectPosition,
+    Normal,
+    Uv0,
     Count,
 };
 

@@ -65,6 +65,9 @@ constexpr NodeSpec kPalette[] = {
     {23, "material.add_closures", GraphOp::AddClosures, {"a", "b"}, 2, true},
     {24, "material.layer_closures", GraphOp::LayerClosures, {"top", "base"}, 2, true},
     {26, "material.sin", GraphOp::Sin, {"value"}, 1, false},
+    {28, "material.object_position", GraphOp::ObjectPosition, {}, 0, false},
+    {29, "material.normal", GraphOp::Normal, {}, 0, false},
+    {30, "material.uv0", GraphOp::Uv0, {}, 0, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
@@ -283,7 +286,12 @@ private:
                                  MaterialGraph& out, KeyMap& keys) noexcept {
     const Literal* symbol_property = graph.property(node.key, Name::intern("symbol"));
     const Name symbol = symbol_property != nullptr ? symbol_property->text : Name{};
-    const MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
+    MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
+    if (spec.op == GraphOp::ObjectPosition || spec.op == GraphOp::Normal) {
+        type = MaterialValueType::Vec3;
+    } else if (spec.op == GraphOp::Uv0) {
+        type = MaterialValueType::Vec2;
+    }
     const MaterialImmediate value =
         immediate_of(graph.property(node.key, Name::intern("value")), {});
 

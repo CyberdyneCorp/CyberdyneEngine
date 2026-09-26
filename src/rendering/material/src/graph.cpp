@@ -20,6 +20,9 @@ struct PortSpec {
         case GraphOp::Parameter:
         case GraphOp::Attribute:
         case GraphOp::Field:
+        case GraphOp::ObjectPosition:
+        case GraphOp::Normal:
+        case GraphOp::Uv0:
             return {0, false};
         case GraphOp::TextureSample:
         case GraphOp::OneMinus:
@@ -123,6 +126,12 @@ struct Lowering {
             return builder.parameter(node.symbol);
         case GraphOp::Attribute:
             return builder.attribute(node.symbol, node.type);
+        case GraphOp::ObjectPosition:
+            return builder.attribute(Name::intern("object_position"), ValueType::Vec3);
+        case GraphOp::Normal:
+            return builder.attribute(Name::intern("normal"), ValueType::Vec3);
+        case GraphOp::Uv0:
+            return builder.attribute(Name::intern("uv0"), ValueType::Vec2);
         case GraphOp::Field:
             return builder.field(node.symbol, node.type);
         case GraphOp::TextureSample:
@@ -197,6 +206,12 @@ const char* graph_op_name(GraphOp op) noexcept {
             return "parameter";
         case GraphOp::Attribute:
             return "attribute";
+        case GraphOp::ObjectPosition:
+            return "object_position";
+        case GraphOp::Normal:
+            return "normal";
+        case GraphOp::Uv0:
+            return "uv0";
         case GraphOp::Field:
             return "field";
         case GraphOp::TextureSample:

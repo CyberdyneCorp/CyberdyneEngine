@@ -173,6 +173,24 @@ CY_TEST_CASE("the hosted material shader calls the compiled vertex offset") {
         std::string_view::npos);
 }
 
+CY_TEST_CASE("the hosted material shader binds object position before vertex evaluation") {
+    constexpr std::string_view source =
+        "material object_sway { attribute object_position : float3; "
+        "vertex_offset = object_position * 0.1; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("output.objectPosition = input.position") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.object_position = output.objectPosition") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.object_position = input.objectPosition") !=
+             std::string_view::npos);
+}
+
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
     first_light::Scene scene(allocator());

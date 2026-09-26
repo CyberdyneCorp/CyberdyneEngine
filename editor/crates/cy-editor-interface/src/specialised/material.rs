@@ -84,7 +84,9 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.layer_closures", &["top", "base"], true),
     ("material.lerp", &["a", "b", "t"], false),
     ("material.multiply", &["a", "b"], false),
+    ("material.normal", &[], false),
     ("material.one_minus", &["value"], false),
+    ("material.object_position", &[], false),
     ("material.output", &["surface", "opacity"], false),
     ("material.parameter", &[], false),
     ("material.saturate", &["value"], false),
@@ -100,6 +102,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.swizzle", &["value"], false),
     ("material.texture_sample", &["uv"], false),
     ("material.transmission", &["colour", "weight"], true),
+    ("material.uv0", &[], false),
     ("material.vertex_output", &["offset"], false),
 ];
 
