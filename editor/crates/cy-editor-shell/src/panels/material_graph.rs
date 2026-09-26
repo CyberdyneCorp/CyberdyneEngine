@@ -106,6 +106,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 "Empty material graph\nChoose a node from the engine catalogue",
                 &mut panels.inputs.material_link_source,
                 &mut panels.inputs.material_link_problem,
+                &[],
             );
         });
     });
@@ -734,6 +735,7 @@ pub(super) fn draw_canvas(
     empty_message: &str,
     pending_source: &mut Option<(u64, u32, String, String)>,
     link_problem: &mut Option<String>,
+    node_alerts: &[(u64, String)],
 ) {
     let rect = ui.available_rect_before_wrap();
     let background = ui.allocate_rect(rect, egui::Sense::click());
@@ -785,6 +787,18 @@ pub(super) fn draw_canvas(
             selected.contains(&card.key),
             response.hovered(),
         );
+        if let Some((_, message)) = node_alerts
+            .iter()
+            .find(|(node, _)| *node == card.key.ordinal())
+        {
+            painter.rect_stroke(
+                card.rect,
+                egui::CornerRadius::same(5),
+                egui::Stroke::new(2.0, theme::role(shell.theme, Semantic::Error)),
+                egui::StrokeKind::Outside,
+            );
+            response.on_hover_text(message);
+        }
     }
     let pin_action = interact_with_pins(ui, shell, &cards, pending_source.as_ref());
     if let Some(pin) = pin_action {

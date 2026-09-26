@@ -540,3 +540,6 @@ engine reads the document into `VfxSystemAsset`, resolves its registered nodes, 
 derived layout, generated Slang, and node and pin diagnostics. Compilation does not install an
 effect in the preview world. Module asset references currently produce a compiler refusal until
 module resolution is implemented.
+When an engine diagnostic's node key occurs in exactly one emitter stage, the active stage canvas
+outlines that node in red and shows the compiler message on hover. A key reused by multiple stages
+remains in the diagnostic list because the current service payload does not identify its stage.
