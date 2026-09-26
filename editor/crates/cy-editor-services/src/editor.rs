@@ -1388,6 +1388,41 @@ impl cy_editor_commands::ProjectHost for Editor {
         Ok(())
     }
 
+    fn vfx_module_read(&self, reference: &str) -> Result<String> {
+        crate::vfx_module::validate_reference(reference)?;
+        self.project.read_source(reference)
+    }
+
+    fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::vfx_module::validate_reference(reference)?;
+        crate::vfx_module::validate_source(source)?;
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a VFX module",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        self.project.put_source(reference, Some(source))?;
+        let document = self
+            .documents
+            .get_mut(document_id)
+            .ok_or_else(|| Problem::new("save a VFX module", "the active scene document closed"))?;
+        document.begin(format!("Save VFX module {reference}"), self.actor.clone());
+        document.record(cy_editor_documents::operation::Operation::Domain {
+            node: None,
+            kind: format!("{}{}", crate::vfx_module::DOMAIN_PREFIX, reference),
+            before: crate::project::encode_source(prior.as_deref()),
+            after: crate::project::encode_source(Some(source)),
+        })?;
+        document.commit()?;
+        Ok(())
+    }
+
     fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {
         crate::vfx_document::validate_source(source)?;
         self.request_vfx_preview_load(source.to_owned())

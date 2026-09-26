@@ -343,6 +343,28 @@ CY_TEST_CASE("editor_backend: the two-emitter editor sample compiles in the engi
     CY_CHECK_NE(compiled->cook_key(), 0U);
 }
 
+CY_TEST_CASE("editor_backend: reusable VFX module source has the same engine interpretation") {
+    const std::string path = std::string(CY_SOURCE_DIR) +
+                             "/samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule";
+    std::ifstream input(path);
+    CY_REQUIRE(input.good());
+    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    auto module = cy::vfx::read_authoring_module(source, allocator());
+    CY_REQUIRE(module.has_value());
+    CY_CHECK_EQ(module->name.text(), std::string_view("shared_drag"));
+    CY_CHECK_EQ(module->stage, cy::vfx::Stage::Update);
+    CY_REQUIRE_EQ(module->inputs.size(), 1U);
+    CY_CHECK_EQ(module->inputs[0].name.text(), std::string_view("velocity"));
+    CY_CHECK_EQ(module->inputs[0].type.text(), std::string_view("vec3"));
+    CY_CHECK_EQ(module->graph.nodes().size(), 2U);
+
+    std::string wrong_type = source;
+    const std::size_t type_at = wrong_type.find("76656333");  // "vec3" in the hex payload
+    CY_REQUIRE_NE(type_at, std::string::npos);
+    wrong_type.replace(type_at, 8, "6e6f7065");  // "nope"
+    CY_CHECK_FALSE(cy::vfx::read_authoring_module(wrong_type, allocator()).has_value());
+}
+
 CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") {
     const std::string source = vfx_document("vfx.unknown", 2, {}, "gpu");
     cy::abi::Host host(allocator());

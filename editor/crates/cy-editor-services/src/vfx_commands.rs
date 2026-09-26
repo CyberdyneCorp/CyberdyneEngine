@@ -13,6 +13,8 @@ use crate::authoring::within_scope;
 pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(read())?;
     registry.register(save())?;
+    registry.register(module_read())?;
+    registry.register(module_save())?;
     registry.register(preview_load())?;
     registry.register(preview_control())?;
     registry.register(preview_step())?;
@@ -75,6 +77,58 @@ fn save() -> Command {
             let source = arguments.text("source").unwrap_or_default();
             host(context)?.vfx_document_save(reference, source)?;
             Ok(Outcome::new(format!("Saved VFX document {reference}")))
+        },
+    )
+}
+
+fn module_metadata(
+    id: &'static str,
+    label: &'static str,
+    description: &'static str,
+    effect: EffectClass,
+) -> Metadata {
+    Metadata::new(id, label, "VFX Graph", description, effect).with(ParameterSpec::required(
+        "reference",
+        ValueKind::Text,
+        "Project-relative .cyvfxmodule asset path.",
+    ))
+}
+
+fn module_read() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.read",
+            "Read VFX Module",
+            "Returns the editable source of a reusable VFX stage module.",
+            EffectClass::Read,
+        ),
+        |context, arguments| {
+            let reference = arguments.text("reference").unwrap_or_default();
+            let source = host(context)?.vfx_module_read(reference)?;
+            Ok(Outcome::new("Read VFX module").with("source", Value::Text(source)))
+        },
+    )
+}
+
+fn module_save() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.save",
+            "Save VFX Module",
+            "Saves a reusable stage graph and typed interface as one undoable project asset.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "source",
+            ValueKind::Text,
+            "Complete cyvfxmodule 1 authoring source.",
+        )),
+        |context, arguments| {
+            let reference = arguments.text("reference").unwrap_or_default();
+            within_scope(context, reference)?;
+            let source = arguments.text("source").unwrap_or_default();
+            host(context)?.vfx_module_save(reference, source)?;
+            Ok(Outcome::new(format!("Saved VFX module {reference}")))
         },
     )
 }

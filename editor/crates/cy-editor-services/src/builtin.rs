@@ -581,7 +581,8 @@ fn vfx_sources(
                 after,
                 ..
             } => Some((
-                kind.strip_prefix(crate::vfx_document::DOMAIN_PREFIX)?
+                kind.strip_prefix(crate::vfx_document::DOMAIN_PREFIX)
+                    .or_else(|| kind.strip_prefix(crate::vfx_module::DOMAIN_PREFIX))?
                     .to_owned(),
                 crate::project::decode_source(if forward { after } else { before }),
             )),
@@ -642,12 +643,12 @@ mod tests {
         // Terrain authoring adds create, add-layer, commit-stroke, enable, and reorder commands.
         // Scene actors add camera and light creation.
         // Material graphs add read, preview, save, and status commands; VFX drafts add read/save
-        // and five engine preview commands.
+        // and five engine preview commands; reusable modules add read/save.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4 + 7
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4 + 7 + 2
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();
@@ -773,6 +774,61 @@ mod tests {
                     &scope,
                     &Arguments::new()
                         .with("reference", Value::Text("../outside.cyvfxdoc".into()))
+                        .with("source", Value::Text(source.into())),
+                )
+                .is_err()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn vfx_module_commands_save_read_undo_and_redo_one_project_asset() {
+        let root = std::env::temp_dir().join(format!(
+            "cy-vfx-module-command-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut editor = Editor::default().with_project(crate::project::ProjectService::new(&root));
+        editor.open_document("worlds/city.cyworld").unwrap();
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        let reference = "effects/shared_drag.cyvfxmodule";
+        let source = include_str!(
+            "../../../../samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule"
+        );
+        let scope = Scope::unrestricted();
+        let save = Arguments::new()
+            .with("reference", Value::Text(reference.into()))
+            .with("source", Value::Text(source.into()));
+        editor
+            .invoke(&registry, "vfx.module.save", &scope, &save)
+            .unwrap();
+        let read = Arguments::new().with("reference", Value::Text(reference.into()));
+        let outcome = editor
+            .invoke(&registry, "vfx.module.read", &scope, &read)
+            .unwrap();
+        assert_eq!(
+            outcome.values.get("source"),
+            Some(&Value::Text(source.into()))
+        );
+
+        editor
+            .invoke(&registry, "edit.undo", &scope, &Arguments::new())
+            .unwrap();
+        assert!(!editor.project.source_exists(reference));
+        editor
+            .invoke(&registry, "edit.redo", &scope, &Arguments::new())
+            .unwrap();
+        assert_eq!(editor.project.read_source(reference).unwrap(), source);
+        assert!(
+            editor
+                .invoke(
+                    &registry,
+                    "vfx.module.save",
+                    &scope,
+                    &Arguments::new()
+                        .with("reference", Value::Text("../outside.cyvfxmodule".into()))
                         .with("source", Value::Text(source.into())),
                 )
                 .is_err()

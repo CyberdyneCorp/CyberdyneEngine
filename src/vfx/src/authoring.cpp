@@ -3,10 +3,11 @@
 
 #include <charconv>
 #include <cmath>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <iterator>
 #include <string>
+#include <utility>
 
 namespace cy::vfx {
 namespace {
@@ -233,22 +234,24 @@ private:
     return make_unexpected(malformed("unknown VFX canvas statement"));
 }
 
-[[nodiscard]] Expected<Graph, Error> read_stage_canvas(std::string_view source, Name emitter,
-                                                        Stage stage, Allocator& allocator) noexcept {
+[[nodiscard]] Expected<Graph, Error> read_stage_canvas(std::string_view source, Name owner,
+                                                       Stage stage, Allocator& allocator,
+                                                       std::string_view owner_kind) noexcept {
     Graph graph(allocator, Name::intern(stage_name(stage)));
     graph.grant(graph::Capability::ReadWorld | graph::Capability::Randomness);
     if (!source.starts_with("cyvfxcanvas 1\n")) {
         return make_unexpected(malformed("unsupported VFX stage canvas"));
     }
     source.remove_prefix(sizeof("cyvfxcanvas 1\n") - 1);
-    if (!source.starts_with("emitter ")) {
-        return make_unexpected(malformed("VFX stage canvas has no emitter"));
+    if (!source.starts_with(owner_kind) || source.size() <= owner_kind.size() ||
+        source[owner_kind.size()] != ' ') {
+        return make_unexpected(malformed("VFX stage canvas has no owner"));
     }
     const usize first_newline = source.find('\n');
     if (first_newline == std::string_view::npos ||
-        source.substr(sizeof("emitter ") - 1, first_newline - (sizeof("emitter ") - 1)) !=
-            emitter.text()) {
-        return make_unexpected(malformed("VFX stage canvas belongs to another emitter"));
+        source.substr(owner_kind.size() + 1, first_newline - (owner_kind.size() + 1)) !=
+            owner.text()) {
+        return make_unexpected(malformed("VFX stage canvas belongs to another asset"));
     }
     source.remove_prefix(first_newline + 1);
     while (!source.empty()) {
@@ -333,7 +336,7 @@ private:
             return make_unexpected(malformed("invalid or duplicate VFX stage"));
         }
         const Stage stage = static_cast<Stage>(*stage_id);
-        auto graph = read_stage_canvas(*canvas, *name, stage, allocator);
+        auto graph = read_stage_canvas(*canvas, *name, stage, allocator, "emitter");
         if (!graph) {
             return make_unexpected(graph.error());
         }
@@ -430,8 +433,8 @@ private:
 }
 
 [[nodiscard]] Expected<Array<u8>, Error> decode_hex(std::string_view source,
-                                                      Allocator& allocator) noexcept {
-    constexpr std::string_view header = "cyvfxdoc 1\n";
+                                                    std::string_view header,
+                                                    Allocator& allocator) noexcept {
     if (!source.starts_with(header) || source.size() <= header.size() ||
         (source.size() - header.size()) % 2 != 0) {
         return make_unexpected(malformed("unsupported VFX document envelope"));
@@ -456,7 +459,7 @@ private:
 
 Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
                                                           Allocator& allocator) noexcept {
-    auto bytes = decode_hex(source, allocator);
+    auto bytes = decode_hex(source, "cyvfxdoc 1\n", allocator);
     if (!bytes) {
         return make_unexpected(bytes.error());
     }
@@ -485,6 +488,76 @@ Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
         return make_unexpected(malformed("trailing VFX document bytes"));
     }
     return asset;
+}
+
+Expected<VfxModuleAsset, Error> read_authoring_module(std::string_view source,
+                                                      Allocator& allocator) noexcept {
+    auto bytes = decode_hex(source, "cyvfxmodule 1\n", allocator);
+    if (!bytes) {
+        return make_unexpected(bytes.error());
+    }
+    Reader reader(bytes->span());
+    auto version = reader.word();
+    auto name = reader.name();
+    auto stage_id = reader.byte();
+    auto input_count = reader.count();
+    if (!version || *version != 1 || !name || !stage_id ||
+        *stage_id >= static_cast<u8>(Stage::Count) || !input_count) {
+        return make_unexpected(malformed("invalid VFX module header"));
+    }
+    Array<ModuleInputDecl> inputs(allocator);
+    for (u32 index = 0; index < *input_count; ++index) {
+        auto input_name = reader.name();
+        auto type = reader.name();
+        if (!input_name || !type) {
+            return make_unexpected(malformed("invalid VFX module input"));
+        }
+        const std::string_view kind = type->text();
+        if (kind != "float" && kind != "vec2" && kind != "vec3" && kind != "vec4" &&
+            kind != "int" && kind != "bool") {
+            return make_unexpected(malformed("unsupported VFX module input type"));
+        }
+        for (const ModuleInputDecl& prior : inputs) {
+            if (prior.name == *input_name) {
+                return make_unexpected(malformed("duplicate VFX module input"));
+            }
+        }
+        if (Status pushed = inputs.push_back({*input_name, *type}); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+    }
+    auto dependency_count = reader.count();
+    if (!dependency_count) {
+        return make_unexpected(dependency_count.error());
+    }
+    Array<Name> dependencies(allocator);
+    for (u32 index = 0; index < *dependency_count; ++index) {
+        auto dependency = reader.name();
+        if (!dependency || *dependency == *name) {
+            return make_unexpected(malformed("invalid or self-referencing VFX module dependency"));
+        }
+        for (Name prior : dependencies) {
+            if (prior == *dependency) {
+                return make_unexpected(malformed("duplicate VFX module dependency"));
+            }
+        }
+        if (Status pushed = dependencies.push_back(*dependency); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+    }
+    auto canvas = reader.text();
+    if (!canvas || !reader.done()) {
+        return make_unexpected(malformed("invalid VFX module canvas or trailing bytes"));
+    }
+    const Stage stage = static_cast<Stage>(*stage_id);
+    auto graph = read_stage_canvas(*canvas, *name, stage, allocator, "module");
+    if (!graph) {
+        return make_unexpected(graph.error());
+    }
+    VfxModuleAsset module(allocator, *name, stage, std::move(*graph));
+    module.inputs = std::move(inputs);
+    module.dependencies = std::move(dependencies);
+    return module;
 }
 
 }  // namespace cy::vfx

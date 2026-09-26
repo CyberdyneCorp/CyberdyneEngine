@@ -452,6 +452,12 @@ pub trait ProjectHost {
     /// Save a versioned VFX authoring document in one undoable project transaction.
     fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()>;
 
+    /// Read a separately saved reusable VFX module.
+    fn vfx_module_read(&self, reference: &str) -> Result<String>;
+
+    /// Save a reusable VFX module in one undoable project transaction.
+    fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()>;
+
     /// Load a draft into the engine's transient VFX preview.
     fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {
         let _ = source;

@@ -533,7 +533,13 @@ channels with event/depth limits and optional CPU readback. Invalid metadata edi
 draft intact. **Save VFX draft** records the resulting document through the project transaction
 command. Undo and redo of that command now refresh the open VFX document and stage canvas as well
 as the project file; undoing its creation closes the open draft until redo restores it. Direct
-history for every unsaved edit and separately saved modules remain OpenSpec tasks.
+history for every unsaved edit remains an OpenSpec task. A separately saved `.cyvfxmodule`
+records one compatible stage, named typed inputs, dependency names, and a shared-canvas graph.
+`vfx.module.save` and `vfx.module.read` use the command registry shared with MCP; save requires an
+active scene document and supports undo/redo. The sample project includes
+`effects/shared_drag.cyvfxmodule`. The editor model and engine reader both validate that asset,
+but the VFX panel does not yet edit it and the engine does not yet resolve emitter module references
+during compilation.
 **Compile VFX** submits the current stage snapshots to the engine's `vfx.compile` service. The
 engine reads the document into `VfxSystemAsset`, resolves its registered nodes, and runs
 `compile_system`; the panel shows the last cook identity, per-emitter kernel and memory counts,
