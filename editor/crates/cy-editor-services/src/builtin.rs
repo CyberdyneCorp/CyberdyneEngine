@@ -641,12 +641,13 @@ mod tests {
         // and six asset-browser operations, including asynchronous external import.
         // Terrain authoring adds create, add-layer, commit-stroke, enable, and reorder commands.
         // Scene actors add camera and light creation.
-        // Material graphs add read, preview, save, and status commands; VFX drafts add read/save.
+        // Material graphs add read, preview, save, and status commands; VFX drafts add read/save
+        // and five engine preview commands.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4 + 2
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 4 + 7
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

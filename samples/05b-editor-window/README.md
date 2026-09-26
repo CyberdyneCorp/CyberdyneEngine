@@ -119,6 +119,16 @@ the exposed `speed` parameter updates the running effect without cooking again.
 The hosted runtime also publishes the simulation's sprite particles through the engine's
 transparent frame pass. The authored Metal viewport test compares the same empty world before and
 after loading and stepping this exact draft, and checks that the VFX renderer draws live particles.
+The same preview can be driven through MCP: call `vfx.preview.load` with the `.cyvfxdoc` source,
+wait for `vfx.preview.status` to report `pending = false`, call `vfx.preview.control` with
+`action = play`, then call `vfx.preview.step` with `seconds = 0.033333333` for each frame. The
+`viewport:` resource returns the rendered image. `vfx.preview.parameter.set` accepts a `Vec4`
+value and a lane count, and `vfx.preview.status` reports the engine's bounded counters and sampled
+attributes. The image below was captured from the live editor's MCP `viewport:` resource after
+15 steps of this draft in the spinning-cube world; the small orange sprite above the cube is the
+engine VFX preview.
+
+![Engine VFX preview captured through MCP](../../docs/design/images/issue15-vfx-mcp-preview.png)
 The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
 machine without a Vulkan device it reports a skip.
 

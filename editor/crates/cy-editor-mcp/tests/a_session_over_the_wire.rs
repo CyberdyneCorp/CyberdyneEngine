@@ -241,6 +241,62 @@ fn the_tool_list_is_the_registry_and_carries_every_effect_class() {
 }
 
 #[test]
+fn vfx_preview_controls_and_status_are_projected_over_mcp() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.preview.status","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.preview.control","arguments":{"action":"invalid"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.preview.load","arguments":{"source":"invalid"}}}"#,
+        ],
+        &mut editor,
+    );
+    let Json::Array(tools) = result(&replies, 1).get("tools") else {
+        panic!("tools/list must contain the registry projection");
+    };
+    for command in [
+        "vfx.preview.load",
+        "vfx.preview.control",
+        "vfx.preview.step",
+        "vfx.preview.parameter.set",
+        "vfx.preview.status",
+    ] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} must be available over MCP"
+        );
+    }
+    let status = result(&replies, 2).get("content");
+    let Json::Array(content) = status else {
+        panic!("status must be tool content");
+    };
+    assert!(
+        content[0]
+            .get("text")
+            .as_text()
+            .unwrap()
+            .contains("pending = false")
+    );
+    for (index, diagnostic) in [(3, "action must be"), (4, "expected cyvfxdoc 1")] {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(true));
+        let Json::Array(content) = result(&replies, index).get("content") else {
+            panic!("refusal must be tool content");
+        };
+        assert!(
+            content[0]
+                .get("text")
+                .as_text()
+                .unwrap()
+                .contains(diagnostic)
+        );
+    }
+}
+
+#[test]
 fn a_tool_call_produces_one_transaction_attributed_to_the_agent() {
     let mut editor = Editor::new(Actor::human("designer"));
     let document = editor

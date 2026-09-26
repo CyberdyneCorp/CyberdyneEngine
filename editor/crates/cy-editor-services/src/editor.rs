@@ -1387,6 +1387,139 @@ impl cy_editor_commands::ProjectHost for Editor {
         document.commit()?;
         Ok(())
     }
+
+    fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {
+        crate::vfx_document::validate_source(source)?;
+        self.request_vfx_preview_load(source.to_owned())
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_control(&mut self, action: &str, value: f32) -> Result<u64> {
+        let action = match action {
+            "play" => crate::vfx_preview::VfxPreviewAction::Play,
+            "pause" => crate::vfx_preview::VfxPreviewAction::Pause,
+            "restart" => crate::vfx_preview::VfxPreviewAction::Restart,
+            "scrub" => crate::vfx_preview::VfxPreviewAction::Scrub(value),
+            "time-scale" => crate::vfx_preview::VfxPreviewAction::TimeScale(value),
+            _ => {
+                return Err(Problem::new(
+                    "control VFX preview",
+                    "action must be play, pause, restart, scrub, or time-scale",
+                ));
+            }
+        };
+        self.request_vfx_preview_action(action)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_step(&mut self, seconds: f32) -> Result<u64> {
+        self.request_vfx_preview_step(seconds)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_parameter(&mut self, name: &str, values: &[f32]) -> Result<u64> {
+        self.request_vfx_preview_parameter(name, values)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_status(&self) -> Outcome {
+        use cy_editor_core::value::Value;
+
+        let mut result = Outcome::new("Engine VFX preview state")
+            .with("pending", Value::Bool(self.backend.vfx_preview_pending()));
+        if let Some(problem) = self.backend.vfx_preview_problem() {
+            result = result.with("problem", Value::Text(problem.to_owned()));
+        }
+        if let Some(state) = self.backend.vfx_preview_snapshot() {
+            result = result
+                .with("cook_key", Value::Text(state.cook_key.to_string()))
+                .with("playing", Value::Bool(state.playing))
+                .with("time_seconds", Value::Float(state.time_seconds))
+                .with("time_scale", Value::Float(state.time_scale))
+                .with(
+                    "live_particles",
+                    Value::Int(i64::from(state.live_particles)),
+                )
+                .with("spawned", Value::Int(i64::from(state.spawned)))
+                .with("killed", Value::Int(i64::from(state.killed)))
+                .with("cpu_fallbacks", Value::Int(i64::from(state.cpu_fallbacks)))
+                .with(
+                    "pool_used_bytes",
+                    Value::Text(state.pool_used_bytes.to_string()),
+                )
+                .with(
+                    "pool_total_bytes",
+                    Value::Text(state.pool_total_bytes.to_string()),
+                )
+                .with(
+                    "pool_shortfall_particles",
+                    Value::Int(i64::from(state.pool_shortfall_particles)),
+                )
+                .with(
+                    "pool_reduced_requests",
+                    Value::Int(i64::from(state.pool_reduced_requests)),
+                )
+                .with("events_raised", Value::Int(i64::from(state.events_raised)))
+                .with(
+                    "events_delivered",
+                    Value::Int(i64::from(state.events_delivered)),
+                )
+                .with(
+                    "events_dropped",
+                    Value::Int(i64::from(state.events_dropped)),
+                )
+                .with(
+                    "events_truncated",
+                    Value::Int(i64::from(state.events_truncated)),
+                )
+                .with(
+                    "readback_deferred",
+                    Value::Int(i64::from(state.readback_deferred)),
+                )
+                .with(
+                    "emitter_count",
+                    Value::Int(i64::try_from(state.emitters.len()).unwrap_or(i64::MAX)),
+                );
+            for (index, emitter) in state.emitters.iter().enumerate() {
+                result = result
+                    .with(
+                        format!("emitter_{index}_name"),
+                        Value::Text(emitter.name.clone()),
+                    )
+                    .with(
+                        format!("emitter_{index}_live"),
+                        Value::Int(i64::from(emitter.live)),
+                    );
+            }
+            if let Some(sample) = &state.sample {
+                result = result
+                    .with("sample_emitter", Value::Int(i64::from(sample.emitter)))
+                    .with("sample_slot", Value::Int(i64::from(sample.slot)))
+                    .with(
+                        "sample_attribute_count",
+                        Value::Int(i64::try_from(sample.attributes.len()).unwrap_or(i64::MAX)),
+                    );
+                for (index, attribute) in sample.attributes.iter().enumerate() {
+                    let mut lanes = [0.0; 4];
+                    lanes[..attribute.values.len()].copy_from_slice(&attribute.values);
+                    result = result
+                        .with(
+                            format!("sample_attribute_{index}_name"),
+                            Value::Text(attribute.name.clone()),
+                        )
+                        .with(
+                            format!("sample_attribute_{index}_lanes"),
+                            Value::Int(i64::try_from(attribute.values.len()).unwrap_or(i64::MAX)),
+                        )
+                        .with(
+                            format!("sample_attribute_{index}_values"),
+                            Value::Vec4(lanes),
+                        );
+                }
+            }
+        }
+        result
+    }
 }
 
 impl Editor {

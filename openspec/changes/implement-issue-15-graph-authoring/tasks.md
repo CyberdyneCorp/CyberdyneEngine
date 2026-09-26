@@ -16,7 +16,7 @@
 - [ ] 2.2 Validate and compile through `cy::vfx-compiler`; expose node-located `CompileReport` diagnostics, attribute layout, and generated source.
 - [ ] 2.3 Save, reopen, cook, and render a two-emitter CPU/GPU sample; add image comparison.
 - [ ] 2.4 Make parameter edits update a running effect without compilation and graph edits recompile; test the distinction.
-- [ ] 2.5 Add engine-backed preview controls and bounded particle, budget, event, and attribute inspection.
+- [x] 2.5 Add engine-backed preview controls and bounded particle, budget, event, and attribute inspection.
 - [ ] 2.6 Expose equivalent VFX editing through MCP and verify undo/redo and MCP parity.
 
 ## 3. Vertex-stage material graphs
