@@ -247,10 +247,25 @@ struct alignas(16) FrameViewData {
     /// APPENDED, for the reason `material_textures` gives: every field another committed module
     /// reads stays where it was.
     u32 occlusion_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// The irradiance volume. x: the set 0 texture slot holding the volume's packed probes
+    /// (`gi::IrradianceVolume::pack_texels`), or `kNoMaterialTexture` — the default, and the flat
+    /// ambient every caller that predates the field draws. yzw: probes along x, y and z.
+    /// `light_probes::write_probe_volume` fills this and the two fields after it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 probe_volume_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// xyz: probe (0, 0, 0), camera-relative. w: probe spacing in metres.
+    f32 probe_volume_origin[4] = {0.0F, 0.0F, 0.0F, 1.0F};
+    /// x: the stored coefficients' scale. y: a query's normal offset, z: the visibility slack, in
+    /// metres. w: reserved.
+    f32 probe_volume_params[4] = {1.0F, 0.0F, 1.0F, 0.0F};
 };
 
-static_assert(sizeof(FrameViewData) == 432, "CyFrameData's std140 block is 432 bytes");
+static_assert(sizeof(FrameViewData) == 480, "CyFrameData's std140 block is 480 bytes");
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);
+static_assert(offsetof(FrameViewData, probe_volume_control) == 432);
+static_assert(offsetof(FrameViewData, probe_volume_origin) == 448);
+static_assert(offsetof(FrameViewData, probe_volume_params) == 464);
 static_assert(offsetof(FrameViewData, material_textures) == 320);
 static_assert(offsetof(FrameViewData, shadow_to_clip) == 336);
 static_assert(offsetof(FrameViewData, shadow_control) == 400);

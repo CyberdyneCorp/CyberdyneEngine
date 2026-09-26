@@ -163,6 +163,11 @@ add_subdirectory(pipeline)
 # through `PassExtension` rather than through a second frame of its own. M8.c task 1b.4.
 add_subdirectory(particles)
 
+# IRRADIANCE VOLUMES IN THE FRAME. `gi::IrradianceVolume`'s probes as a texture the forward pass
+# samples in place of the flat ambient. It joins cy::rendering-gi and cy::rendering-pipeline, so it
+# is read after both.
+add_subdirectory(light_probes)
+
 # THE ARROW FROM A BONE MATRIX TO A MOVED VERTEX. M8.d. Before this module the engine could describe
 # a skin, bound it, store its blend shapes and publish its pose, and could not move one vertex:
 # there was no skinning shader in the tree and no CPU skinning either. It sits beside gpu_culling/ in

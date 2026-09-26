@@ -14,6 +14,8 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `lighting.h` | the three seams the subsystems reach each other through — `Occluder`, `IndirectSource`, `RadianceLookup` — plus `SceneTracer`, `SceneHit`, `GiLight` and the analytic `SkyTerm` |
 | `distance_field.h` | camera-centred sparse clipmaps of bricks, per-asset fields composited by transform, sphere tracing and sky visibility |
 | `surface_cache.h` | shaded radiance per surface card, the budgeted prioritised update, and the one line the multi-bounce approximation is |
+| `irradiance_volume.h` | a regular grid of SH L1 probes captured through the three seams, trilinear sampling weighted by validity, backface and a per-axis free-distance test, the update policy, and the texel layout `cy/frame.slang` reads |
+| `proxy_scene.h` | `BoxProxyScene`: axis-aligned proxy boxes as a `SceneTracer`, `Occluder` and `RadianceLookup`, so a volume can be captured from blockout geometry |
 | `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, and the scheduler that guarantees progress |
 | `tracing.h` | `ScreenTracer`, `SoftwareTracer`, `HardwareTracer`, `WorldTracer` and `TieredTracer` — one interface, cheapest sufficient tier, blended escalation |
 | `reflections.h` | the roughness strategy table, the lobe distribution, and `ReflectionProbeSet` with box projection and amortised realtime capture |
@@ -89,6 +91,19 @@ the only library in the tree that depends on both. What this module gained is `s
 installs a term without paying for `configure()`, and `InvalidationCause::SkyChanged`, which is the
 one cause `service_invalidations` does NOT hand to the distance field — a sun that rotated moved no
 geometry.
+
+## Irradiance volumes: the first slice that reaches a frame
+
+`IrradianceVolume` is what `lighting.h` has always said an `IndirectSource` could be — "a baked
+irradiance volume implements it too" — and what `exclusion_for()` and
+`SurfaceProperties::irradiance_volume_radiance` were written for. It is also the first thing in this
+module a frame shades with: `src/rendering/light_probes/` uploads its `pack_texels` and
+`cy/frame.slang`'s `probeVolumeAmbient` transcribes its `ambient()`. `integration.render_gi_volume`
+holds the capture to a CPU reference integration (worst 0.044 of the mean irradiance against the
+reference's own SH L1 projection at 256 rays; 0.249 against the exact cosine integral, which is L1's
+truncation and not sampling), colour bleeding near a red wall and not 14 m from it, the leak the
+visibility term stops, and the update policy. It is not dynamic GI: see `irradiance_volume.h` for
+what is not covered.
 
 ## What is here at Working, and what is not
 

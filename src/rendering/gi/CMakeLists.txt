@@ -27,6 +27,8 @@ cy_add_module(
         src/bake.cpp
         src/budget.cpp
         src/distance_field.cpp
+        src/irradiance_volume.cpp
+        src/proxy_scene.cpp
         src/radiance_cache.cpp
         src/reflections.cpp
         src/resolve.cpp

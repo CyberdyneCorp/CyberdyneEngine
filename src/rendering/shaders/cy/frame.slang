@@ -178,6 +178,16 @@ public struct CyFrameData
     /// the direct term too, the non-physical option `rendering-post-processing` requires to be off
     /// by default. z: that option's strength, as float bits.
     public uint4 occlusionControl;
+    /// The irradiance volume, appended for the reason `materialTextures` gives. x: the frame
+    /// texture slot of the volume's packed probes (`gi::IrradianceVolume::pack_texels`), or
+    /// `kCyNoMaterialTexture` — the default, which draws the flat ambient as it was. yzw: probes
+    /// along x, y and z.
+    public uint4 probeVolumeControl;
+    /// xyz: probe (0, 0, 0), CAMERA-RELATIVE like every position here. w: probe spacing in metres.
+    public float4 probeVolumeOrigin;
+    /// x: the scale the stored coefficients were divided by. y: the normal offset of a query, and
+    /// z: the visibility test's slack, both in metres. w: reserved.
+    public float4 probeVolumeParams;
 };
 
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
@@ -595,6 +605,98 @@ float occlusionVisibility(float2 fragmentCentre)
     return cyMaterialSampleTextureLevel(cyFrame.occlusionControl.x, uv, 0.0).a;
 }
 
+// --- The irradiance volume ----------------------------------------------------------------------
+//
+// A TRANSCRIPTION of `gi::IrradianceVolume::sample` and `ambient`, over the texels its
+// `pack_texels` writes: five per probe — the red, green and blue channels' SH L1 coefficients,
+// then (validity, +x, -x, +y) and (-y, +z, -z, 0) world distances. The host is the reference and
+// `render.light_probes` holds the two to the same pictures.
+
+static const uint kCyProbeTexels = 5u;
+
+float4 probeVolumeTexel(uint3 probe, uint texel)
+{
+    let counts = cyFrame.probeVolumeControl.yzw;
+    let coordinate =
+        float2(float(probe.x * kCyProbeTexels + texel), float(probe.y + counts.y * probe.z));
+    let size = float2(float(counts.x * kCyProbeTexels), float(counts.y * counts.z));
+    // Texel centres, so the table's filtering returns the texel.
+    return cyMaterialSampleTextureLevel(cyFrame.probeVolumeControl.x, (coordinate + 0.5) / size,
+                                        0.0);
+}
+
+/// Backface times distance visibility, `IrradianceVolume::visibility`.
+float probeVisibility(float4 distances0, float4 distances1, float3 probePosition,
+                      float3 position, float3 normal, float3 query)
+{
+    let towards = probePosition - position;
+    let towardsSquared = dot(towards, towards);
+    let toProbe = towardsSquared > 1.0e-12 ? towards * rsqrt(towardsSquared) : normal;
+    let facing = max(1.0e-4, (dot(toProbe, normal) + 1.0) * 0.5);
+    let backface = facing * facing + 0.2;
+
+    // The six distances bound a box of free space around the probe; outside it on any axis, the
+    // query is behind something.
+    let offset = query - probePosition;
+    let free = float3(offset.x >= 0.0 ? distances0.y : distances0.z,
+                      offset.y >= 0.0 ? distances0.w : distances1.x,
+                      offset.z >= 0.0 ? distances1.y : distances1.z);
+    let slack = cyFrame.probeVolumeParams.z;
+    let reach = saturate((free + slack - abs(offset)) / slack);
+    return backface * min(reach.x, min(reach.y, reach.z));
+}
+
+/// The ambient radiance at a surface with the volume attached: `flat` outside it, the volume's
+/// visibility-weighted trilinear blend inside, and a blend over one cell at its boundary.
+float3 probeVolumeAmbient(float3 position, float3 normal, float3 flat)
+{
+    let counts = cyFrame.probeVolumeControl.yzw;
+    let spacing = cyFrame.probeVolumeOrigin.w;
+    let query = position + normal * cyFrame.probeVolumeParams.y;
+    let grid = (query - cyFrame.probeVolumeOrigin.xyz) / spacing;
+    let last = float3(counts) - 1.0;
+    let outside = max(max(-grid, grid - last), 0.0);
+    let coverage = saturate(1.0 - max(outside.x, max(outside.y, outside.z)));
+    if (coverage <= 0.0)
+    {
+        return flat;
+    }
+    let clamped = clamp(grid, 0.0, last);
+    let base = min(uint3(floor(clamped)), uint3(max(int3(counts) - 2, int3(0))));
+    let fraction = clamped - float3(base);
+
+    // SH L1's cosine convolution, divided by pi: `decode_payload`'s basis, in its (y, z, x) order.
+    let basis = float4(0.282095, 0.488603 * (2.0 / 3.0) * normal.y,
+                       0.488603 * (2.0 / 3.0) * normal.z, 0.488603 * (2.0 / 3.0) * normal.x);
+    var total = float3(0.0);
+    var weightSum = 0.0;
+    for (uint corner = 0u; corner < 8u; ++corner)
+    {
+        let step = uint3(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
+        let probe = min(base + step, counts - 1u);
+        let pick = float3(step);
+        let t = pick * fraction + (1.0 - pick) * (1.0 - fraction);
+        let distances0 = probeVolumeTexel(probe, 3u);
+        let weight = t.x * t.y * t.z * distances0.x;
+        if (weight <= 0.0)
+        {
+            continue;
+        }
+        let distances1 = probeVolumeTexel(probe, 4u);
+        let probePosition = cyFrame.probeVolumeOrigin.xyz + float3(probe) * spacing;
+        let visible =
+            weight * probeVisibility(distances0, distances1, probePosition, position, normal, query);
+        let irradiance = float3(dot(probeVolumeTexel(probe, 0u), basis),
+                                dot(probeVolumeTexel(probe, 1u), basis),
+                                dot(probeVolumeTexel(probe, 2u), basis)) *
+                         cyFrame.probeVolumeParams.x;
+        total += max(irradiance, 0.0) * visible;
+        weightSum += visible;
+    }
+    let volume = weightSum > 1.0e-6 ? total / weightSum : flat;
+    return lerp(flat, volume, coverage);
+}
+
 [shader("fragment")]
 public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
@@ -614,7 +716,14 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     // "AO SHALL modulate indirect lighting only; applying it to direct light SHALL be an explicitly
     // non-physical artistic option, off by default." The direct sum above is untouched unless that
     // option is on, and with no occlusion slot the arithmetic below is the frame's as it was.
-    var ambient = surface.albedo * cyFrame.ambientAndOcclusion.rgb * surface.occlusion;
+    // THE IRRADIANCE VOLUME REPLACES THE FLAT AMBIENT, and AO still multiplies what it replaced
+    // with. With no volume slot the ambient is the frame's as it was.
+    var ambientRadiance = cyFrame.ambientAndOcclusion.rgb;
+    if (cyFrame.probeVolumeControl.x != kCyNoMaterialTexture)
+    {
+        ambientRadiance = probeVolumeAmbient(input.relativePosition, normal, ambientRadiance);
+    }
+    var ambient = surface.albedo * ambientRadiance * surface.occlusion;
     if (cyFrame.occlusionControl.x != kCyNoMaterialTexture)
     {
         let visibility = occlusionVisibility(input.position.xy);

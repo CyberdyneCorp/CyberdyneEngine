@@ -112,6 +112,17 @@ direct sum alone unless `.y` asks for the non-physical option. The six `frame.sl
 were regenerated for the longer block; the fullscreen resolve and temporal entries are unchanged.
 `render.ambient_occlusion` renders this module's scene with the stage on.
 
+## The irradiance volume — `FrameViewData::probe_volume_*`
+
+Three words appended after `occlusion_control` (the block is 480 bytes), defaulted to "none". A
+caller that runs `light_probes::ProbeVolumeTexture` names the texture at a slot of set 0's texture
+table and calls `light_probes::write_probe_volume`, which writes the slot and grid size, the volume's
+origin RELATIVE TO THE CAMERA and its spacing, and the coefficient scale, normal offset and
+visibility slack. `cy/frame.slang`'s forward fragment then takes the ambient radiance from
+`probeVolumeAmbient` in place of the flat sky term, and ambient occlusion multiplies it as before.
+The six `frame.slang` entries were regenerated for the longer block; the fullscreen resolve and
+temporal entries are unchanged. `render.light_probes` renders this module's scene with it.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
