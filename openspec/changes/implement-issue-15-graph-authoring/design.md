@@ -13,8 +13,17 @@ The editable draft is a versioned `.cyvfxdoc` project source. `vfx.document.save
 Reusable modules have a separate versioned `.cyvfxmodule` source contract: compatible stage, typed host inputs, dependency names, and shared-canvas graph. The editor can encode and reopen the asset, and the engine has an independent reader. `vfx.module.save`/`vfx.module.read` persist it with undo/redo through the shared command registry. System drafts keep module names rather than copying nodes. Version 3 of the binary `.cyvfxdoc` payload maps each name to an explicit project-relative `.cyvfxmodule` path; version 1 and 2 drafts still reopen. The project layer now loads the mapped sources for compile and preview, and the engine validates typed inputs, stage compatibility, missing assets, and dependency cycles before composing their graphs into emitter stages. Composed graph digests contribute to the cook key. The panel creates and opens modules on the shared canvas, edits their stage, typed host inputs and dependencies, and saves them through `vfx.module.save`. Attaching a saved module to an emitter records its explicit project path through `vfx.document.save`. Both saves participate in scene undo/redo. Opening or creating another module refuses to replace unsaved edits; the panel explicitly offers discard to reload the saved source or close an unsaved new module. Automatic compile signatures include saved module content while ignoring canvas layout. Saved module node insertion, connection, disconnection, removal, and property edits now use engine-catalogue commands shared with MCP and save through project undo history. The panel's unsaved canvas edits still need individual transactions, and full MCP parity remains task 2.6. The service must not infer a module file from an unqualified name or silently omit one.
 
 Saved module stage changes now use `vfx.module.stage.set` through that command registry, with MCP
-undo/redo and invalid-stage refusal coverage. The panel still stages its own unsaved module edits
-until the author saves, so per-edit transaction parity remains open.
+undo/redo and invalid-stage refusal coverage. A new module stages edits until its first Save
+chooses a project path; typed desktop-command parity remains open.
+
+After a system or module has its first saved project path, the desktop journals each changed UI
+frame through `vfx.document.save` or `vfx.module.save` before applying other frame intents. The
+saved source and open shared canvas reload together on undo/redo. An unchanged frame adds no
+transaction, and an explicit Save in the same frame suppresses the automatic duplicate. New
+drafts still need the initial Save to select a path. The panel and MCP now share undoable saved
+document semantics. A project source changed by MCP refreshes the open desktop canvas before the
+next frame can journal another edit. Matching each desktop gesture to its individual typed MCP
+command remains part of task 2.6.
 
 ## Preview and inspection
 

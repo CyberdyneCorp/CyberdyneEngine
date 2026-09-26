@@ -559,6 +559,12 @@ so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable
 authoring data; engine canonicalisation, runtime cooking, and runtime preview are tracked by
 `openspec/changes/implement-issue-15-graph-authoring/`.
+After the first save gives a draft its project path, each desktop frame that changes its VFX
+canvas or metadata saves one document transaction automatically. The same applies to a saved
+module. Undo and redo reload the open graph from the project source; an unchanged frame does not
+add history. Edits saved through MCP refresh the desktop graph before its next frame is drawn, so
+the next desktop transaction starts from the current project source. New drafts still use the Save
+action to choose their initial path.
 The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.emitter.remove`,
 `vfx.emitter.configure`, `vfx.interface.bind`, `vfx.interface.unbind`, `vfx.node.add`,
 `vfx.node.move`, `vfx.node.connect`, `vfx.node.disconnect`, `vfx.node.remove`,
@@ -567,8 +573,8 @@ The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.emitte
 applies one edit, and saves through the same undoable document transaction. Node placement,
 connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
 or unknown node, pin, or property is refused by name.
-The panel's **Remove emitter** control retains the other emitters' unsaved stage graphs and selects
-the next available emitter; saving then records that removal in document history.
+The panel's **Remove emitter** control retains the other emitters' stage graphs and selects
+the next available emitter; the edit is recorded in document history for a saved draft.
 `vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and
 `vfx.channel.set` / `vfx.channel.remove` provide the panel's particle storage and bounded event
 declarations through MCP with the same save and undo history. Invalid bounds or attribute types
