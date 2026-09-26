@@ -12,6 +12,7 @@
 //                    --manifest <path>              the provenance a machine can check
 //                    --frames <dir> --frames-count <n>   a turntable, for the video
 //                    [--width 1920] [--height 1080] [--supersample 2]
+//                    [--bloom]                      the shot's bloom grade in the post chain
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -206,6 +207,12 @@ int main(int argc, char** argv) {
     // A CONTROL, not a quality setting: `--albedo-levels 1` photographs the shot with level 0 of
     // every albedo map's cooked chain and nothing beneath it. See `Stage::limit_albedo_levels`.
     const u32 albedo_levels = option_number(argc, argv, "--albedo-levels", 0);
+    // Bloom is off unless asked for: the published M11.c still is the frame without it, and
+    // `just capture-beauty-bloom` photographs the same frame both ways.
+    bool bloom = false;
+    for (int index = 1; index < argc; ++index) {
+        bloom = bloom || std::strcmp(argv[index], "--bloom") == 0;
+    }
 
     std::string problem;
     auto parsed = Shot::read(shot_path.c_str(), problem);
@@ -260,6 +267,9 @@ int main(int argc, char** argv) {
 
     ShotReport report;
     stage.limit_albedo_levels(albedo_levels);
+    if (bloom) {
+        stage.enable_bloom(shot);
+    }
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
         return 1;

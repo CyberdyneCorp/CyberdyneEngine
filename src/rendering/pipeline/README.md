@@ -25,7 +25,8 @@ This module is the layer that was missing.
 |---|---|
 | `FramePipelines` | the pipeline state objects, the three descriptor set layouts on the engine's own set convention, the pipeline layout and the sampler. Created once, never inside a frame. |
 | `FrameBindings` | the ring of per-frame buffers and the descriptor sets that name them. |
-| `FrameRecorder` | `sinks()` — the `FrameSinks` `FrameAssembly` has been asking for, with six real record callbacks in it. |
+| `FrameRecorder` | `sinks()` — the `FrameSinks` `FrameAssembly` has been asking for, with six real record callbacks in it, and a seventh for bloom when a `BloomRenderer` is attached. |
+| `BloomRenderer` | bloom's four pipelines over the frame's full-screen vertex stage, its pass set (set 2), and the recording of every step `forward/bloom_chain.h` declares. `shaders/embed_bloom.py` regenerates its committed SPIR-V and MSL. |
 
 ## The six callbacks, and what each one closes
 
@@ -36,7 +37,8 @@ This module is the layer that was missing.
 | `Opaque` | the same draws with three streams, depth compared **Equal** and not written, shaded against the cluster's light list and the **GPU material table** |
 | `Transparent` | the transparent layer in the sort's own order, alpha blended, depth tested and not written. Also where `PassExtension` consumers compose — `src/rendering/particles/` is the first |
 | `Temporal` | reprojects the previous completed RGBA16F history, clamps it to the current 3x3 neighbourhood, and writes the other retained history image before tone mapping |
-| `PostProcess` | `cy/fullscreen.slang`'s **own** resolve entry points: exposure, tonemap, straight into the frame's output |
+| `Bloom` | with `set_bloom`: `cy/bloom.slang`'s prefilter, downsamples, upsamples and composite, one graph pass each; `bind()` refuses a frame whose chain has bloom and no renderer |
+| `PostProcess` | `cy/fullscreen.slang`'s **own** resolve entry points: exposure, tonemap, straight into the frame's output — reading `FrameResources::post_source`, which is the bloomed colour when bloom ran |
 
 ## The pictures
 
@@ -120,8 +122,9 @@ bounded material texture argument buffer remains separate work.
 
 | Suite | Kind | What it proves |
 |---|---|---|
-| `integration.render_pipeline` | integration | the sinks carry six callbacks, including temporal resolve; a frame with them records every draw while an empty `FrameSinks` records nothing; the history and upload rings turn over beyond the frames-in-flight count |
+| `integration.render_pipeline` | integration | the sinks carry six callbacks, including temporal resolve; a frame with them records every draw while an empty `FrameSinks` records nothing; the history and upload rings turn over beyond the frames-in-flight count; with bloom in the chain every step is recorded and the post-process reads the bloomed colour, and a chain with bloom and no renderer is refused |
 | `render.pipeline` / `render.pipeline_metal` | render | Vulkan and Metal compare captured pixels, including a shaded frame against the same frame with no record callbacks, and measure temporal accumulation and determinism. Mixed backend builds register both suites; a machine without a requested backend is reported as skipped by CTest. |
+| `render.bloom` | render | bloom on Vulkan, measured on the linear HDR the composite writes: a bright block's halo falls off and is centred on it; intensity zero and a scene below the knee return the input bit for bit; the frame never gains energy and the halo gives most of the threshold's energy back; the Karis average suppresses a single-texel firefly and holds it stable under a one-texel shift; anamorphic and lens dirt; the assembled `FrameScene` with bloom at zero is texel-identical to the frame without it; and with bloom off it matches `tests/references/frame_scene_before_bloom.png`, captured before bloom existed |
 | `render.forward_material_texture` | render | the same scene rendered three times on a Vulkan device — every texture slot unbound, a pattern bound as every material's base colour, and **that texture replaced by its declared average** — and the differences between the three pictures. Vulkan only, because the case needs a device with a global bindless table |
 
 Both go red when `FrameRecorder::sinks()` stops attaching callbacks — which was run, not assumed.

@@ -24,6 +24,7 @@ cy_add_module(
     ALIAS cy::rendering-forward
     TYPE STATIC
     SOURCES
+        src/bloom_chain.cpp
         src/cluster.cpp
         src/diagnostics.cpp
         src/draw_list.cpp

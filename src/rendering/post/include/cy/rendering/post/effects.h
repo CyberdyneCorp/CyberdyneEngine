@@ -129,17 +129,32 @@ struct DepthOfFieldSettings {
 
 struct BloomSettings {
     /// Luminance above which a pixel contributes. In scene-referred units, which is meaningful only
-    /// because bloom runs before exposure — see `chain.h`.
+    /// because bloom runs before exposure — see `chain.h`. `bloom_threshold_for_exposure()` derives
+    /// one from a camera's exposure for a caller that thinks in display terms.
     f32 threshold = 1.0F;
     /// Width of the soft knee around the threshold, as a fraction of it. Zero is a hard cut and
     /// produces a visible boundary crawling across a gradient.
     f32 knee = 0.5F;
-    /// How much of the scattered energy is redistributed. 0.04 is the physically motivated default:
-    /// a real lens scatters a few percent.
+    /// How much of the above-threshold energy is scattered. 0.04 is the physically motivated
+    /// default: a real lens scatters a few percent.
     f32 intensity = 0.04F;
+    /// Levels in the downsample chain, the first at half resolution. Clamped by the frame to what
+    /// its extent can hold and to `kMaxBloomLevels` (`forward/bloom_chain.h`).
     u32 mip_count = 6;
-    /// Horizontal stretch of the first mip. 1.0 is circular.
+    /// How much of each coarser level survives the upsample into the finer one. Higher is a wider
+    /// halo. The level weights `(1 - s) s^k` sum to one, which is what keeps the chain energy
+    /// neutral whatever this is set to.
+    f32 scatter = 0.7F;
+    /// Horizontal stretch of the upsample filter. 1.0 is circular; above one is the anamorphic
+    /// streak of a squeezed lens.
     f32 anamorphic = 1.0F;
+    /// How much the lens dirt mask adds where it is bright: the bloom is scaled by
+    /// `1 + dirt * lens_dirt_intensity`. Zero, the default, is a clean lens — and the energy rule
+    /// below is stated for the default, because dirt is light a real lens scatters in addition.
+    f32 lens_dirt_intensity = 0.0F;
+    /// The Karis average on the first downsample. On by default and a setting only so that a test
+    /// can measure what it suppresses; `rendering-post-processing` requires it.
+    bool firefly_suppression = true;
 };
 
 /// The soft-thresholded contribution of a colour: zero below the knee, ramping to the full excess
@@ -149,10 +164,29 @@ struct BloomSettings {
 /// The Karis average weight for a sample of this luminance: `1 / (1 + luma)`. It is what stops one
 /// very bright pixel producing a flickering star, and it is a weight rather than a clamp because a
 /// clamp also removes the energy.
+///
+/// The device chain passes the luminance DIVIDED BY THE THRESHOLD, so that the suppression is the
+/// same for a scene lit in thousands of physical units as for one lit in ones.
 [[nodiscard]] f32 karis_weight(f32 luminance) noexcept;
 
-/// Composite bloom back over the scene, conserving energy: the scene is scaled down by exactly the
-/// fraction the bloom adds, so total image energy is redistributed rather than increased.
+/// The weight level `level` of an `levels`-long chain carries in the final bloom: `(1 - s) s^k`,
+/// and `s^(n-1)` for the coarsest. They sum to one, so the chain is a normalised blur of the
+/// prefiltered energy — it moves energy, it does not make any.
+[[nodiscard]] f32 bloom_level_weight(u32 level, u32 levels, const BloomSettings& settings) noexcept;
+
+/// Composite bloom back over the scene by REDISTRIBUTING the prefiltered energy: the scene loses
+/// `intensity` of its above-threshold part and gains `intensity` of the blurred one,
+///
+///     scene + intensity * (bloom - prefilter(scene))
+///
+/// so a scene with nothing above the threshold is returned unchanged, and a blur that preserves
+/// its sum preserves the image's. "Total image energy SHALL be approximately preserved,
+/// redistributed rather than added." `cy/bloom.slang`'s composite is this expression.
 [[nodiscard]] Vec3 bloom_composite(Vec3 scene, Vec3 bloom, const BloomSettings& settings) noexcept;
+
+/// A threshold in scene units that lands `stops_above_white` stops above the luminance an exposure
+/// of `exposure_stops` maps to 1.0. The threshold stays physical — this only converts a camera
+/// setting into it — which is what lets a sun-lit scene and a candle-lit one share a grade.
+[[nodiscard]] f32 bloom_threshold_for_exposure(f32 exposure_stops, f32 stops_above_white) noexcept;
 
 }  // namespace cy::rendering

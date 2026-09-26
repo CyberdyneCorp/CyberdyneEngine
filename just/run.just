@@ -895,6 +895,49 @@ _beauty-programs build_dir work graphs:
             -o "{{work}}/${name}.spv"
     done
 
+# THE BEAUTY SHOT WITH AND WITHOUT BLOOM: the same scene, the same compiled programs and the same
+# settled embers, photographed once with bloom absent from the post chain and once with the shot's
+# bloom grade in it (`--bloom`). The published M11.c still is not touched — this writes its own
+# pair and the manifest of the bloomed frame, whose post-stage list names step 9. Needs a graphics
+# device, and says so and writes nothing without one.
+# Photograph the beauty shot with and without bloom. Usage: just capture-beauty-bloom [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-bloom *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-bloom: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    # The committed canvases, compiled into the build directory as `measure-beauty-mip-chain`
+    # does: nothing is re-authored into the tree, so the pair is of the published scene.
+    work="${build_dir}/beauty-bloom"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    echo "==> capture     without bloom"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+        --still docs/design/images/bloom-beauty-off.png ${rest}
+    echo "==> capture     with bloom"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" --bloom \
+        --still docs/design/images/bloom-beauty-on.png \
+        --manifest docs/design/images/bloom-beauty-on.manifest ${rest}
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/bloom-beauty-off.png \
+        docs/design/images/bloom-beauty-on.png
+
 # DOES THE SHOT READ ITS COOKED MIP CHAIN? M11.c task 3.8, measured on the artefact.
 #
 # The shot photographed three times from the same compiled programs: twice with every cooked chain

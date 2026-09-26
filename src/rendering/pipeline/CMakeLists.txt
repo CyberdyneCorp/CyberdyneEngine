@@ -31,6 +31,7 @@ cy_add_module(
     ALIAS cy::rendering-pipeline
     TYPE STATIC
     SOURCES
+        src/bloom_renderer.cpp
         src/frame_pipelines.cpp
         src/frame_bindings.cpp
         src/frame_recorder.cpp

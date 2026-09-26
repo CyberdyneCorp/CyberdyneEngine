@@ -56,6 +56,7 @@ function(cy_pipeline_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/frame_scene.cpp"
+            "${tests_dir}/test_bloom.cpp"
             "${tests_dir}/test_pipeline.cpp"
         DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null)
     target_include_directories(cy_test_integration_render_pipeline PRIVATE "${tests_dir}")
@@ -120,6 +121,26 @@ function(cy_pipeline_declare_tests)
     # applied to one "could not be told from what is already there".
     target_compile_definitions(cy_test_render_forward_material_texture
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+
+    # BLOOM, MEASURED ON THE LINEAR HDR IT WRITES. KIND render, Vulkan only, for the reason the
+    # `pipeline` suite gives. The chain is declared by `declare_bloom_chain` — the function
+    # `ForwardFrame` calls — and recorded by `BloomRenderer`, over images uploaded as half floats and
+    # read back the same way; its last case renders `FrameScene` with and without bloom.
+    cy_add_test(
+        NAME bloom
+        KIND render
+        SOURCES
+            "${tests_dir}/frame_scene.cpp"
+            "${tests_dir}/test_bloom_device.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_render_bloom PRIVATE "${tests_dir}"
+                                                            "${CMAKE_SOURCE_DIR}/tests/render")
+    # `references/frame_scene_before_bloom.png`: the scene as `render.pipeline` captured it before
+    # bloom existed, which the bloom-off case is compared against.
+    target_compile_definitions(cy_test_render_bloom PRIVATE CY_PIPELINE_TEST_DIR="${tests_dir}")
+    set_tests_properties(render.bloom PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_pipeline_declare_tests)

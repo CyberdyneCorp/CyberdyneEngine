@@ -278,6 +278,8 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
     features.motion_blur = config.motion_blur;
+    features.bloom = config.bloom;
+    features.bloom_levels = description_.bloom.mip_count;
     features.post_process = chain.count != 0;
     return ok();
 }
