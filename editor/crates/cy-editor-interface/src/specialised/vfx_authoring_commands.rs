@@ -11,7 +11,7 @@ use cy_editor_services::authoring::within_scope;
 
 use super::graph::{Catalogue, GraphCanvas, Layout, NodeKey};
 use super::material::catalogue_from_service;
-use super::vfx::{Emitter, Parameter, SimulationPath, Stage, VfxDocument};
+use super::vfx::{Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument};
 use super::vfx_module::{ModuleInput, VfxModule};
 
 /// Install the same VFX actions for the command palette, scripts, and MCP projection.
@@ -26,6 +26,11 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(remove_node())?;
     registry.register(set_node_property())?;
     registry.register(set_parameter())?;
+    registry.register(set_emitter_capacity())?;
+    registry.register(set_attribute())?;
+    registry.register(remove_attribute())?;
+    registry.register(set_channel())?;
+    registry.register(remove_channel())?;
     registry.register(create_module())?;
     registry.register(add_module_input())?;
     registry.register(add_module_dependency())?;
@@ -164,6 +169,17 @@ fn node_key(arguments: &Arguments, name: &str) -> Result<NodeKey> {
         .and_then(Value::as_int)
         .unwrap_or_default();
     NodeKey::new(u64::try_from(value).unwrap_or_default())
+}
+
+fn positive_u32(arguments: &Arguments, name: &str) -> Result<u32> {
+    let value = arguments
+        .get(name)
+        .and_then(Value::as_int)
+        .unwrap_or_default();
+    u32::try_from(value)
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| Problem::new("edit VFX metadata", format!("{name} must be positive")))
 }
 
 fn stage_canvas(
@@ -767,6 +783,242 @@ fn set_parameter() -> Command {
                     document.parameters.push(parameter);
                 }
                 Ok(Outcome::new(format!("Set VFX parameter {name}")))
+            })
+        },
+    )
+}
+
+fn set_emitter_capacity() -> Command {
+    Command::new(
+        metadata(
+            "vfx.emitter.capacity.set",
+            "Set VFX Emitter Capacity",
+            "Sets the maximum live particle count of one saved emitter.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose capacity will change.",
+        ))
+        .with(ParameterSpec::required(
+            "capacity",
+            ValueKind::Int,
+            "Positive maximum number of live particles at full quality.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter = text(arguments, "emitter");
+            let capacity = positive_u32(arguments, "capacity")?;
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, emitter)?;
+                document.emitters[index].capacity = capacity;
+                Ok(Outcome::new(format!(
+                    "Set {emitter} capacity to {capacity}"
+                )))
+            })
+        },
+    )
+}
+
+fn set_attribute() -> Command {
+    Command::new(
+        metadata(
+            "vfx.attribute.set",
+            "Set VFX Attribute",
+            "Creates or updates a typed particle attribute on one saved emitter.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter storing the particle attribute.",
+        ))
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Attribute identifier used by the emitter's graph nodes.",
+        ))
+        .with(ParameterSpec::required(
+            "kind",
+            ValueKind::Text,
+            "Engine numeric type of the particle attribute.",
+        ))
+        .with(ParameterSpec::required(
+            "minimum",
+            ValueKind::Float,
+            "Lower bound of the authored attribute range.",
+        ))
+        .with(ParameterSpec::required(
+            "maximum",
+            ValueKind::Float,
+            "Upper bound of the authored attribute range.",
+        ))
+        .with(ParameterSpec::required(
+            "tolerance",
+            ValueKind::Float,
+            "Maximum acceptable storage error for this attribute.",
+        ))
+        .with(ParameterSpec::required(
+            "precision",
+            ValueKind::Text,
+            "Storage policy: Auto, Float32, Float16, Unorm8, or Snorm16.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter = text(arguments, "emitter");
+            let name = text(arguments, "name");
+            let attribute = Attribute {
+                name: name.into(),
+                kind: text(arguments, "kind").into(),
+                minimum: arguments
+                    .get("minimum")
+                    .and_then(Value::as_float)
+                    .unwrap_or_default(),
+                maximum: arguments
+                    .get("maximum")
+                    .and_then(Value::as_float)
+                    .unwrap_or_default(),
+                tolerance: arguments
+                    .get("tolerance")
+                    .and_then(Value::as_float)
+                    .unwrap_or_default(),
+                precision: text(arguments, "precision").into(),
+            };
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, emitter)?;
+                let attributes = &mut document.emitters[index].attributes;
+                if let Some(existing) = attributes.iter_mut().find(|entry| entry.name == name) {
+                    *existing = attribute;
+                } else {
+                    attributes.push(attribute);
+                }
+                Ok(Outcome::new(format!("Set {name} on VFX emitter {emitter}")))
+            })
+        },
+    )
+}
+
+fn remove_attribute() -> Command {
+    Command::new(
+        metadata(
+            "vfx.attribute.remove",
+            "Remove VFX Attribute",
+            "Removes one particle attribute from a saved emitter.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter storing the particle attribute.",
+        ))
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Identifier of the particle attribute to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter = text(arguments, "emitter");
+            let name = text(arguments, "name");
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, emitter)?;
+                let attributes = &mut document.emitters[index].attributes;
+                let position = attributes
+                    .iter()
+                    .position(|entry| entry.name == name)
+                    .ok_or_else(|| {
+                        Problem::new(
+                            "remove a VFX attribute",
+                            format!("{name} does not exist on {emitter}"),
+                        )
+                    })?;
+                attributes.remove(position);
+                Ok(Outcome::new(format!(
+                    "Removed {name} from VFX emitter {emitter}"
+                )))
+            })
+        },
+    )
+}
+
+fn set_channel() -> Command {
+    Command::new(
+        metadata(
+            "vfx.channel.set",
+            "Set VFX Event Channel",
+            "Creates or updates a bounded system event channel.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Event channel identifier used by graph nodes.",
+        ))
+        .with(ParameterSpec::required(
+            "max_events_per_frame",
+            ValueKind::Int,
+            "Positive maximum number of events emitted in one frame.",
+        ))
+        .with(ParameterSpec::required(
+            "max_chain_depth",
+            ValueKind::Int,
+            "Positive maximum event propagation depth.",
+        ))
+        .with(ParameterSpec::required(
+            "readback",
+            ValueKind::Bool,
+            "Whether the channel may be read back on the CPU.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            let channel = EventChannel {
+                name: name.into(),
+                max_events_per_frame: positive_u32(arguments, "max_events_per_frame")?,
+                max_chain_depth: positive_u32(arguments, "max_chain_depth")?,
+                readback: matches!(arguments.get("readback"), Some(Value::Bool(true))),
+            };
+            edit_document(context, reference, |document, _| {
+                if let Some(existing) = document
+                    .channels
+                    .iter_mut()
+                    .find(|entry| entry.name == name)
+                {
+                    *existing = channel;
+                } else {
+                    document.channels.push(channel);
+                }
+                Ok(Outcome::new(format!("Set VFX event channel {name}")))
+            })
+        },
+    )
+}
+
+fn remove_channel() -> Command {
+    Command::new(
+        metadata(
+            "vfx.channel.remove",
+            "Remove VFX Event Channel",
+            "Removes one bounded event channel from a saved system.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Identifier of the event channel to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            edit_document(context, reference, |document, _| {
+                let position = document
+                    .channels
+                    .iter()
+                    .position(|entry| entry.name == name)
+                    .ok_or_else(|| {
+                        Problem::new(
+                            "remove a VFX event channel",
+                            format!("{name} does not exist"),
+                        )
+                    })?;
+                document.channels.remove(position);
+                Ok(Outcome::new(format!("Removed VFX event channel {name}")))
             })
         },
     )

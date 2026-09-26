@@ -550,6 +550,10 @@ The command palette, scripts, and MCP also expose `vfx.emitter.add`,
 applies one edit, and saves through the same undoable document transaction. Node placement,
 connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
 or unknown node, pin, or property is refused by name.
+`vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and
+`vfx.channel.set` / `vfx.channel.remove` provide the panel's particle storage and bounded event
+declarations through MCP with the same save and undo history. Invalid bounds or attribute types
+leave the saved document intact.
 Interface names and renderer choices in saved commands are checked against the engine when the
 draft is compiled; the desktop pickers only offer entries reported by the attached engine.
 Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and

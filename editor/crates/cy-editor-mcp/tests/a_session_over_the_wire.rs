@@ -376,6 +376,87 @@ fn vfx_hierarchy_and_parameter_edits_use_the_same_undo_history_over_mcp() {
 }
 
 #[test]
+fn vfx_capacity_attributes_and_channels_round_trip_with_mcp_undo() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let sandbox = Sandbox::new("vfx-metadata-authoring");
+    let reference = "game/sparks.cyvfxdoc";
+    std::fs::write(
+        sandbox.0.join(reference),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.emitter.capacity.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","capacity":2048}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.attribute.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","name":"velocity","kind":"vec3","minimum":-8,"maximum":8,"tolerance":0.01,"precision":"Float16"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.channel.set","arguments":{"reference":"game/sparks.cyvfxdoc","name":"impact","max_events_per_frame":32,"max_chain_depth":3,"readback":true}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=4 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let read = || {
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    assert_eq!(read().emitters[0].capacity, 2048);
+    assert_eq!(read().emitters[0].attributes[0].precision, "Float16");
+    assert_eq!(read().channels[0].name, "impact");
+
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.emitter.capacity.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","capacity":0}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&refused, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(read().emitters[0].capacity, 2048);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(read().channels.is_empty());
+    assert_eq!(read().emitters[0].attributes[0].name, "velocity");
+
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read().channels[0].name, "impact");
+
+    let removed = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"vfx.attribute.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","name":"velocity"}}}"#,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"vfx.channel.remove","arguments":{"reference":"game/sparks.cyvfxdoc","name":"impact"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&removed, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&removed, 2).get("isError"), &Json::Bool(false));
+    assert!(read().emitters[0].attributes.is_empty());
+    assert!(read().channels.is_empty());
+}
+
+#[test]
 fn vfx_canvas_removal_commands_are_projected_over_mcp() {
     let mut editor = Editor::new(Actor::human("designer"));
     let replies = converse(
