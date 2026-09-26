@@ -191,6 +191,26 @@ CY_TEST_CASE("the hosted material shader binds object position before vertex eva
              std::string_view::npos);
 }
 
+CY_TEST_CASE("the hosted material shader binds camera-relative world position") {
+    constexpr std::string_view source =
+        "material world_sway { attribute position : float3; "
+        "vertex_offset = position * 0.1; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    const usize binding = shader.find("ctx.attributes.position = output.positionRelativeToCamera");
+    const usize evaluation = shader.find("_vertex_offset(ctx)");
+    CY_REQUIRE_NE(binding, std::string_view::npos);
+    CY_REQUIRE_NE(evaluation, std::string_view::npos);
+    CY_CHECK_LT(binding, evaluation);
+    CY_CHECK(shader.find("ctx.attributes.position = input.positionRelativeToCamera") !=
+             std::string_view::npos);
+}
+
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
     first_light::Scene scene(allocator());

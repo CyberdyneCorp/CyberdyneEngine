@@ -455,9 +455,10 @@ so reconnecting an older runtime does not discard the graph being authored.
 The engine catalogue includes `material.sin`, a typed scalar/vector sine node shared with the
 text material front end. It is available for authored material arithmetic. The vertex palette offers
 `material.vertex_output` for an offset expression and typed `material.object_position`,
-`material.normal`, and `material.uv0` geometry inputs. The hosted viewport binds object position
-for visible and shadow vertex evaluation. Time-driven motion and the remaining outputs are tracked
-by issue #15.
+`material.world_position`, `material.normal`, and `material.uv0` geometry inputs. World position
+uses the renderer's camera-relative world coordinates; object position uses the mesh's local
+coordinates. The hosted viewport binds both positions for visible and shadow vertex evaluation.
+Time-driven motion and the remaining outputs are tracked by issue #15.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 

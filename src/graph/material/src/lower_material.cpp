@@ -68,6 +68,7 @@ constexpr NodeSpec kPalette[] = {
     {28, "material.object_position", GraphOp::ObjectPosition, {}, 0, false},
     {29, "material.normal", GraphOp::Normal, {}, 0, false},
     {30, "material.uv0", GraphOp::Uv0, {}, 0, false},
+    {31, "material.world_position", GraphOp::WorldPosition, {}, 0, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
@@ -287,7 +288,8 @@ private:
     const Literal* symbol_property = graph.property(node.key, Name::intern("symbol"));
     const Name symbol = symbol_property != nullptr ? symbol_property->text : Name{};
     MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
-    if (spec.op == GraphOp::ObjectPosition || spec.op == GraphOp::Normal) {
+    if (spec.op == GraphOp::ObjectPosition || spec.op == GraphOp::WorldPosition ||
+        spec.op == GraphOp::Normal) {
         type = MaterialValueType::Vec3;
     } else if (spec.op == GraphOp::Uv0) {
         type = MaterialValueType::Vec2;

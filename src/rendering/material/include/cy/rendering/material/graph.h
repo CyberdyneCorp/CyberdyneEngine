@@ -75,6 +75,9 @@ enum class GraphOp : u16 {
     Sin,
     /// Fixed geometry inputs for authored vertex expressions.
     ObjectPosition,
+    /// World-space position relative to the render camera, matching the frame's large-world
+    /// convention.
+    WorldPosition,
     Normal,
     Uv0,
     Count,

@@ -88,8 +88,10 @@ derivation retain it for visible and shadow programs. Graph lowering and the tex
 (`vertex_offset = ...;`) require a float3 expression. Displaced frame rendering remains under
 issue #15.
 The engine material catalogue assigns `material.vertex_output` a stable identity and marks it as a
-vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment. Each
-compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
+vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
+`material.world_position` lowers to the engine's `position` attribute, in camera-relative world
+coordinates; `material.object_position` retains mesh-local coordinates. Both are float3 inputs.
+Each compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
 its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
 the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including
 opaque shadow variants without fragment work. The hosted editor viewport evaluates the same

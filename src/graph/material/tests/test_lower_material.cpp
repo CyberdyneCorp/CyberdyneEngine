@@ -261,6 +261,7 @@ CY_TEST_CASE("graph_material: the vertex output reaches the same typed IR root")
 CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attributes") {
     Canvas canvas("geometry_inputs");
     const NodeKey position = canvas.add("material.object_position");
+    (void)canvas.add("material.world_position");
     (void)canvas.add("material.normal");
     (void)canvas.add("material.uv0");
     const NodeKey output = canvas.add("material.vertex_output");
@@ -278,11 +279,15 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
     CY_CHECK_EQ(ir.value().node(root).type, ValueType::Vec3);
     bool normal = false;
     bool uv0 = false;
+    bool world_position = false;
     for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
         const auto& node = ir.value().node(id);
+        world_position = world_position ||
+                         (node.symbol == Name::intern("position") && node.type == ValueType::Vec3);
         normal = normal || (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3);
         uv0 = uv0 || (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2);
     }
+    CY_CHECK(world_position);
     CY_CHECK(normal);
     CY_CHECK(uv0);
 }

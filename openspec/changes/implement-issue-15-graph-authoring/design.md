@@ -49,10 +49,11 @@ The sine sway example first needs numeric sine in the material vocabulary. `Sin`
 
 Material catalogue schema 3 publishes a stage mask per node from the engine vocabulary: surface only for closures, texture samples, custom Slang, and the surface output; shared for typed numeric inputs and math. The editor reads older schemas with an unrestricted mask and filters its surface palette using the engine value. Vertex-only nodes and the vertex canvas will use the same mask rather than a second Rust vocabulary.
 
-Named engine catalogue nodes for object position, normal, and UV0 now lower to fixed typed material
-attributes. The hosted viewport supplies object position to the vertex function and carries it to
-fragment evaluation; visible and shadow entry points use the same binding. Vertex colour, time,
-world position, noise, wind, custom interpolants, and displacement remain in task 3.1.
+Named engine catalogue nodes for object position, camera-relative world position, normal, and UV0
+now lower to fixed typed material attributes. The hosted viewport supplies both positions to the
+vertex function and carries them to fragment evaluation; visible and shadow entry points use the
+same binding. Vertex colour, time, noise, wind, custom interpolants, and displacement remain in
+task 3.1.
 
 ## Verification
 
