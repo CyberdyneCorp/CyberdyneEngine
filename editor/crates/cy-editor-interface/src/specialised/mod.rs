@@ -44,6 +44,7 @@ pub mod material;
 pub mod painting;
 pub mod timeline;
 pub mod vfx;
+pub mod vfx_authoring_commands;
 pub mod vfx_module;
 
 use std::collections::BTreeMap;

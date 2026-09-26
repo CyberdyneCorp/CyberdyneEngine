@@ -1393,6 +1393,10 @@ impl cy_editor_commands::ProjectHost for Editor {
         Ok(())
     }
 
+    fn vfx_catalogue(&self) -> Option<Vec<u8>> {
+        self.backend.vfx_catalogue().map(<[u8]>::to_vec)
+    }
+
     fn vfx_module_read(&self, reference: &str) -> Result<String> {
         crate::vfx_module::validate_reference(reference)?;
         self.project.read_source(reference)

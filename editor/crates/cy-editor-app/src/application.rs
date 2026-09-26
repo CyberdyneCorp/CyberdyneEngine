@@ -25,6 +25,7 @@ impl Application {
     pub fn new(actor: Actor) -> Result<Self> {
         let mut registry = Registry::new();
         cy_editor_services::builtin::register(&mut registry)?;
+        cy_editor_interface::specialised::vfx_authoring_commands::register(&mut registry)?;
         Ok(Self {
             editor: Editor::new(actor),
             registry,

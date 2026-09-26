@@ -452,6 +452,12 @@ pub trait ProjectHost {
     /// Save a versioned VFX authoring document in one undoable project transaction.
     fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()>;
 
+    /// Current engine-owned VFX node catalogue, when the runtime has supplied it.
+    /// Graph-edit commands use this rather than keeping another node table.
+    fn vfx_catalogue(&self) -> Option<Vec<u8>> {
+        None
+    }
+
     /// Read a separately saved reusable VFX module.
     fn vfx_module_read(&self, reference: &str) -> Result<String>;
 

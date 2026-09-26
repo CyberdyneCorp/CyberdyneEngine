@@ -540,6 +540,12 @@ so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable
 authoring data; engine canonicalisation, runtime cooking, and runtime preview are tracked by
 `openspec/changes/implement-issue-15-graph-authoring/`.
+The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.node.add`,
+`vfx.node.connect`, and `vfx.parameter.set`. Each reads the saved system, applies one edit, and
+saves through the same undoable document transaction. Node placement and connections require the
+live engine VFX catalogue; an unavailable catalogue or unknown node or pin is refused by name.
+Use `vfx.document.read` to inspect the saved source and `edit.undo` / `edit.redo` to reverse or
+reapply an edit. An open scene document is required for these transactions.
 The current draft payload records emitter capacity, typed particle attributes with range,
 tolerance, and precision, plus bounded system event channels. Existing version 1 draft payloads
 open with engine defaults (capacity 1024 and no attribute or channel declarations) and save as

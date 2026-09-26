@@ -1,0 +1,506 @@
+// SPDX-License-Identifier: MIT
+//! VFX hierarchy and canvas edits exposed through the editor's shared command registry.
+
+use cy_editor_commands::{
+    Arguments, Command, CommandContext, EffectClass, Metadata, Outcome, ParameterSpec, ProjectHost,
+    Registry,
+};
+use cy_editor_core::problem::{Problem, Result};
+use cy_editor_core::value::{Value, ValueKind};
+use cy_editor_services::authoring::within_scope;
+
+use super::graph::{Catalogue, GraphCanvas, Layout, NodeKey};
+use super::material::catalogue_from_service;
+use super::vfx::{Emitter, Parameter, SimulationPath, Stage, VfxDocument};
+
+/// Install the same VFX actions for the command palette, scripts, and MCP projection.
+pub fn register(registry: &mut Registry) -> Result<()> {
+    registry.register(add_emitter())?;
+    registry.register(add_node())?;
+    registry.register(connect_nodes())?;
+    registry.register(set_parameter())?;
+    Ok(())
+}
+
+fn metadata(id: &str, label: &str, description: &str) -> Metadata {
+    Metadata::new(
+        id,
+        label,
+        "VFX Graph",
+        description,
+        EffectClass::ReversibleMutation,
+    )
+    .with(ParameterSpec::required(
+        "reference",
+        ValueKind::Text,
+        "Project-relative .cyvfxdoc authoring document path.",
+    ))
+}
+
+fn text<'a>(arguments: &'a Arguments, name: &str) -> &'a str {
+    arguments.text(name).unwrap_or_default()
+}
+
+fn host(context: &mut dyn CommandContext) -> Result<&mut dyn ProjectHost> {
+    context
+        .project()
+        .ok_or_else(|| Problem::new("edit a VFX graph", "no project is open"))
+}
+
+fn edit_document(
+    context: &mut dyn CommandContext,
+    reference: &str,
+    edit: impl FnOnce(&mut VfxDocument, &mut dyn ProjectHost) -> Result<Outcome>,
+) -> Result<Outcome> {
+    within_scope(context, reference)?;
+    let project = host(context)?;
+    let mut document = VfxDocument::decode_text(&project.vfx_document_read(reference)?)?;
+    let outcome = edit(&mut document, project)?;
+    project.vfx_document_save(reference, &document.encode_text()?)?;
+    Ok(outcome)
+}
+
+fn emitter_index(document: &VfxDocument, name: &str) -> Result<usize> {
+    document
+        .emitters
+        .iter()
+        .position(|emitter| emitter.name == name)
+        .ok_or_else(|| Problem::new("edit a VFX stage", format!("emitter {name} does not exist")))
+}
+
+fn stage(arguments: &Arguments) -> Result<Stage> {
+    match text(arguments, "stage").to_ascii_lowercase().as_str() {
+        "spawn" => Ok(Stage::Spawn),
+        "initialise" => Ok(Stage::Initialise),
+        "update" => Ok(Stage::Update),
+        "event" => Ok(Stage::Event),
+        "render" => Ok(Stage::Render),
+        "compute" => Ok(Stage::Compute),
+        other => Err(Problem::new(
+            "edit a VFX stage",
+            format!(
+                "stage {other} is not one of spawn, initialise, update, event, render, compute"
+            ),
+        )),
+    }
+}
+
+fn stage_canvas(
+    payload: &[u8],
+    document: &VfxDocument,
+    emitter: usize,
+    stage: Stage,
+) -> Result<GraphCanvas> {
+    let nodes = catalogue_from_service(payload)?;
+    if nodes.is_empty() || nodes.iter().any(|node| !node.name.starts_with("vfx.")) {
+        return Err(Problem::new(
+            "edit a VFX stage",
+            "the engine supplied no usable VFX node catalogue",
+        ));
+    }
+    let mut canvas = GraphCanvas::new(1);
+    canvas.load(Catalogue::new(nodes)?);
+    document.open_stage(emitter, stage, &mut canvas)?;
+    Ok(canvas)
+}
+
+fn edit_canvas(
+    document: &mut VfxDocument,
+    payload: &[u8],
+    emitter_name: &str,
+    stage: Stage,
+    edit: impl FnOnce(&mut GraphCanvas) -> Result<Outcome>,
+) -> Result<Outcome> {
+    let emitter = emitter_index(document, emitter_name)?;
+    let mut canvas = stage_canvas(payload, document, emitter, stage)?;
+    let outcome = edit(&mut canvas)?;
+    document.capture_stage(emitter, stage, &canvas)?;
+    Ok(outcome)
+}
+
+fn catalogue(project: &dyn ProjectHost) -> Result<Vec<u8>> {
+    project.vfx_catalogue().ok_or_else(|| {
+        Problem::new(
+            "edit a VFX stage",
+            "the engine VFX node catalogue is unavailable",
+        )
+    })
+}
+
+fn add_emitter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.emitter.add",
+            "Add VFX Emitter",
+            "Adds an emitter to the saved system in one undoable document edit.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Unique name used to identify this emitter within the system.",
+        ))
+        .with(ParameterSpec::required(
+            "target",
+            ValueKind::Text,
+            "Simulation target: cpu or gpu.",
+        ))
+        .with(ParameterSpec::required(
+            "renderer",
+            ValueKind::Text,
+            "Engine renderer kind, such as Sprite or Mesh.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            let path = match text(arguments, "target") {
+                "cpu" => SimulationPath::CpuRequired,
+                "gpu" => SimulationPath::GpuPreferred,
+                other => {
+                    return Err(Problem::new(
+                        "add a VFX emitter",
+                        format!("target {other} must be cpu or gpu"),
+                    ));
+                }
+            };
+            let renderer = text(arguments, "renderer");
+            edit_document(context, reference, |document, _| {
+                document.emitters.push(Emitter {
+                    name: name.into(),
+                    path,
+                    renderer: renderer.into(),
+                    stages: Vec::new(),
+                    modules: Vec::new(),
+                    interfaces: Vec::new(),
+                    capacity: 1024,
+                    attributes: Vec::new(),
+                });
+                Ok(Outcome::new(format!("Added VFX emitter {name}")))
+            })
+        },
+    )
+}
+
+fn add_node() -> Command {
+    Command::new(
+        metadata(
+            "vfx.node.add",
+            "Add VFX Node",
+            "Places an engine-catalogue node on one saved emitter stage.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose stage graph will receive the node.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Stage of the named emitter that will receive the edit.",
+        ))
+        .with(ParameterSpec::required(
+            "node_type",
+            ValueKind::Text,
+            "Node type from the engine VFX catalogue.",
+        ))
+        .with(ParameterSpec::required(
+            "x",
+            ValueKind::Float,
+            "Horizontal position of the node on the shared canvas.",
+        ))
+        .with(ParameterSpec::required(
+            "y",
+            ValueKind::Float,
+            "Vertical position of the node on the shared canvas.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let stage = stage(arguments)?;
+            let node_type = text(arguments, "node_type");
+            let x = arguments
+                .get("x")
+                .and_then(Value::as_float)
+                .unwrap_or_default();
+            let y = arguments
+                .get("y")
+                .and_then(Value::as_float)
+                .unwrap_or_default();
+            if !x.is_finite() || !y.is_finite() {
+                return Err(Problem::new(
+                    "place a VFX node",
+                    "canvas position must be finite",
+                ));
+            }
+            edit_document(context, reference, |document, project| {
+                edit_canvas(
+                    document,
+                    &catalogue(project)?,
+                    emitter_name,
+                    stage,
+                    |canvas| {
+                        let node = canvas.add(node_type, Layout { x, y })?;
+                        Ok(Outcome::new(format!(
+                            "Added {node_type} to {emitter_name} {}",
+                            stage.label()
+                        ))
+                        .with(
+                            "node",
+                            Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
+                        ))
+                    },
+                )
+            })
+        },
+    )
+}
+
+fn connect_nodes() -> Command {
+    Command::new(
+        metadata(
+            "vfx.node.connect",
+            "Connect VFX Nodes",
+            "Connects two engine-typed pins on one saved emitter stage.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose stage graph owns both nodes.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Stage of the named emitter that owns both nodes.",
+        ))
+        .with(ParameterSpec::required(
+            "from",
+            ValueKind::Int,
+            "Stable key of the node providing the output value.",
+        ))
+        .with(ParameterSpec::required(
+            "from_pin",
+            ValueKind::Text,
+            "Name of the source node's engine-declared output pin.",
+        ))
+        .with(ParameterSpec::required(
+            "to",
+            ValueKind::Int,
+            "Stable key of the node receiving the input value.",
+        ))
+        .with(ParameterSpec::required(
+            "to_pin",
+            ValueKind::Text,
+            "Name of the destination node's engine-declared input pin.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let stage = stage(arguments)?;
+            let key = |name| -> Result<NodeKey> {
+                let value = arguments
+                    .get(name)
+                    .and_then(Value::as_int)
+                    .unwrap_or_default();
+                NodeKey::new(u64::try_from(value).unwrap_or_default())
+            };
+            let from = key("from")?;
+            let to = key("to")?;
+            let from_pin = text(arguments, "from_pin");
+            let to_pin = text(arguments, "to_pin");
+            edit_document(context, reference, |document, project| {
+                edit_canvas(
+                    document,
+                    &catalogue(project)?,
+                    emitter_name,
+                    stage,
+                    |canvas| {
+                        canvas.connect(from, from_pin, to, to_pin)?;
+                        Ok(Outcome::new(format!(
+                            "Connected VFX nodes {} and {}",
+                            from.ordinal(),
+                            to.ordinal()
+                        )))
+                    },
+                )
+            })
+        },
+    )
+}
+
+fn set_parameter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.parameter.set",
+            "Set VFX Parameter",
+            "Creates or updates a typed system parameter in one undoable document edit.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Name by which this system parameter is read and updated.",
+        ))
+        .with(ParameterSpec::required(
+            "kind",
+            ValueKind::Text,
+            "Numeric type the engine uses to validate the parameter value.",
+        ))
+        .with(ParameterSpec::required(
+            "values",
+            ValueKind::Vec4,
+            "Parameter components in engine order, with unused lanes zeroed.",
+        ))
+        .with(ParameterSpec::required(
+            "exposed",
+            ValueKind::Bool,
+            "Whether a running effect may change this value without recompilation.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            let kind = text(arguments, "kind");
+            let Some(Value::Vec4(value)) = arguments.get("values") else {
+                return Err(Problem::new(
+                    "set a VFX parameter",
+                    "four numeric lanes are required",
+                ));
+            };
+            let exposed = matches!(arguments.get("exposed"), Some(Value::Bool(true)));
+            edit_document(context, reference, |document, _| {
+                let parameter = Parameter {
+                    name: name.into(),
+                    kind: kind.into(),
+                    value: *value,
+                    exposed,
+                };
+                if let Some(existing) = document
+                    .parameters
+                    .iter_mut()
+                    .find(|entry| entry.name == name)
+                {
+                    *existing = parameter;
+                } else {
+                    document.parameters.push(parameter);
+                }
+                Ok(Outcome::new(format!("Set VFX parameter {name}")))
+            })
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cy_editor_core::codec::Writer;
+
+    fn engine_catalogue() -> Vec<u8> {
+        let mut out = Writer::new();
+        out.u32(1); // schema
+        out.u32(1); // engine catalogue version
+        out.u32(2);
+        for (identity, name, pin, direction) in [
+            (1, "vfx.constant", "out", 1),
+            (2, "vfx.spawn_count", "value", 0),
+        ] {
+            out.u32(identity);
+            out.u32(1); // node schema
+            out.text(name);
+            out.u32(1); // one pin
+            out.u32(1); // pin identity
+            out.u8(direction);
+            out.text(pin);
+            out.text("value");
+            out.u32(0); // properties
+        }
+        out.finish()
+    }
+
+    fn document() -> VfxDocument {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "embers".into(),
+            path: SimulationPath::CpuRequired,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        document
+    }
+
+    #[test]
+    fn catalogue_nodes_and_typed_links_survive_separate_stage_edits_and_reopen() {
+        let catalogue = engine_catalogue();
+        let mut document = document();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                canvas.add("vfx.constant", Layout { x: 10.0, y: 20.0 })?;
+                Ok(Outcome::new("constant placed"))
+            },
+        )
+        .unwrap();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                canvas.add("vfx.spawn_count", Layout { x: 80.0, y: 20.0 })?;
+                Ok(Outcome::new("spawn count placed"))
+            },
+        )
+        .unwrap();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                canvas.connect(NodeKey::new(1)?, "out", NodeKey::new(2)?, "value")?;
+                Ok(Outcome::new("nodes connected"))
+            },
+        )
+        .unwrap();
+
+        let reopened = VfxDocument::decode_text(&document.encode_text().unwrap()).unwrap();
+        let canvas = stage_canvas(&catalogue, &reopened, 0, Stage::Spawn).unwrap();
+        assert_eq!(canvas.nodes().count(), 2);
+        assert_eq!(canvas.links().count(), 1);
+        assert_eq!(
+            canvas
+                .layout_of(NodeKey::new(1).unwrap())
+                .unwrap()
+                .x
+                .to_bits(),
+            10.0_f32.to_bits()
+        );
+    }
+
+    #[test]
+    fn stage_edits_refuse_nodes_and_pins_absent_from_the_engine_catalogue() {
+        let catalogue = engine_catalogue();
+        let mut document = document();
+        assert!(
+            edit_canvas(
+                &mut document,
+                &catalogue,
+                "embers",
+                Stage::Spawn,
+                |canvas| {
+                    canvas.add("vfx.unknown", Layout::default())?;
+                    Ok(Outcome::new("unknown node"))
+                }
+            )
+            .is_err()
+        );
+        assert!(document.emitters[0].stages.is_empty());
+        let mut canvas = stage_canvas(&catalogue, &document, 0, Stage::Spawn).unwrap();
+        let from = canvas.add("vfx.constant", Layout::default()).unwrap();
+        let to = canvas.add("vfx.spawn_count", Layout::default()).unwrap();
+        assert!(canvas.connect(from, "wrong", to, "value").is_err());
+    }
+}

@@ -113,6 +113,7 @@ struct TargetAvailability {
     const char* explanation = "";
 };
 
+/// Report compilation and device runtime support before an emitter selects its execution path.
 [[nodiscard]] TargetAvailability target_availability(SimulationPath path,
                                                      const DeviceCapability* device) noexcept;
 

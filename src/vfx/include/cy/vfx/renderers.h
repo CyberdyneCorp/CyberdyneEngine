@@ -104,6 +104,7 @@ struct RendererAvailability {
     const char* reason = "Unknown renderer kind";
 };
 
+/// Let authoring tools refuse a renderer that this build cannot composite, with its reason.
 [[nodiscard]] RendererAvailability renderer_availability(RendererKind kind) noexcept;
 
 inline constexpr u32 kRendererKindCount = static_cast<u32>(RendererKind::Count);
