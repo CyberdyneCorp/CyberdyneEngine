@@ -784,7 +784,7 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       both halves: every forgery, including the renamed copy of `sh`, came back `not enforced`, and
       inside the real wrapper both the vfork stall and the spin failed with `enforced: inside
       cy_quiet_host`
-- [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
+- [ ] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
       [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
       new or edited since the base (its falsifiability digest moved, or it was not in the base's
       plan) or whose inputs a changed file belongs to, and the smoke set (`m0:build`, `m0:format`,
@@ -811,6 +811,21 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       so the prover judges it against a build rather than a source copy with no git history.
       `falsify prove --mutate-the-tree` against `build/m11d-incremental-close`: green, red under the
       declared mutation, green again once restored — *proven against a built tree*.
+      **REOPENED BY THE GATE — THE SELECTOR SKIPS A CHANGE A TEST LOADS.** `_built_inputs`
+      (`tools/roadmap/incremental.py`) takes a build-tree file a ninja edge produces as fully
+      described by `ninja -t inputs`. The SwiftPM custom commands break that:
+      `bindings/swift/CMakeLists.txt:137` and `samples/04-character/CMakeLists.txt:72` build
+      `libCyGame_g*.so` from a DEPENDS list that globs only `*.swift`, the driver and
+      `Package.swift`, while SwiftPM also compiles the `CyberdyneABI` C target
+      (`Sources/CyberdyneABI/shim.c`, `include/module.modulemap`, the `cy_abi.h` copy) and reads
+      `Package.resolved` — none of which is in the graph. Re-measured at the close on
+      `build/m11d-records`: `#error mutated` appended to `shim.c` (one modified path, restored and
+      md5-verified) → `--incremental --list --changed-since HEAD` selects **243 of 474 — the
+      no-change floor** — and SKIPS `m4:swift-reload` and `m4:sample-artefact` as *"inputs
+      unchanged"*, though a fresh build of that tree fails. The fix belongs in the graph (the
+      DEPENDS lists name every SwiftPM input) or in the selector (a SwiftPM edge is inputs
+      unknown), with a regression case proven red. The full ledger is unaffected; until this is
+      fixed an incremental close is not a close
 - [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
       change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
       from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
@@ -1227,3 +1242,82 @@ are unchecked** — sections 5 (MSAA and multi-view), 7.2, 7.4, 7.5, 7.6, all of
 10 — and `core-rows-at-complete-grade` at **0 of 71 requirements mapped** is the largest single
 piece of it. The three compile-and-test defects are minutes of work in files this phase may not
 touch; everything else on the list is a rung's work rather than a gate's.
+
+## The close phase's third verdict — THE FULL LEDGER ON `afaeb33`: 12 RED, M11.d DOES NOT CLOSE
+
+Task 10.1's ledger run, and nothing else changed. **No gate was flipped, no tier was written and
+`ci.yml`'s milestone step still names the rung below.** The run certified nothing, so it recorded no
+base for later incremental closes; 10.1 stays open.
+
+| | |
+|---|---|
+| command | `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11d`, alone, main clone detached at `afaeb33` |
+| window | 10:40 → 14:14 on 2026-09-26, **12 816 s** (3 h 34 min), exit 1 |
+| log | `/tmp/m11d-close-full-afaeb33.log` |
+| load | 1-min average 0.5–4 outside builds, 11–18 while `m1:four-profiles` and the sanitizer and feature-off trees compiled, ~1 by the end; no peer build, ctest or ledger ran |
+| ccache | 20 cacheable calls, **0 hits** — none of the ledger's trees uses a ccache launcher (`cy-launchers/` holds only the job-slot wrappers), so the cold matrix trees compiled from scratch |
+
+**`M11D is not closed: 12 of 469 evaluated criteria failed.`** 16 declared gaps still open (none now
+passing), 5 legitimately NOT EVALUATED. `m11d:roadmap-tiers` is the expected red. **The other 11 are
+real, except one**; each flake candidate was re-run alone twice (logs `/tmp/m11d-rerun-*.log`):
+
+1. **`m0:lint` — REAL, from #20.** `samples/05b-editor-window/runtime/tests/test_authored_frame.cpp:245`,
+   `cy_test_body_2`: `readability-function-size`, **1 164 statements against a threshold of 800**
+   (`b49bb5e`, *Open a drawable world in the Linux editor-window smoke*). Deterministic: clang-tidy on
+   that file alone reproduces it. The only clang-tidy error in the sweep.
+2. **`m0:test`, `m1:four-profiles`, `m8a:authoring-artefact`, `m8a:authoring-recipe` — ONE REAL
+   REGRESSION, four criteria.** `smoke.authoring` fails in the dev tree and the debug matrix row, and
+   `just run-authoring --no-window` fails, **every time: 2 of 2 re-runs of each**: *"the engine's
+   world never gained the two entities: 0 node(s) presented, 0 overflowed; 9 transaction(s), 28
+   field(s) applied, 1 created, 2 deleted"* (`samples/08a-authoring/authoring.py:483` expects `2
+   created`). The editor side of the session is green in all eleven steps; the runtime saw one
+   creation for the two primitives the editor made. M11.c's certified commit `6323b40` carried
+   these four criteria green, so the defect entered in `6323b40..afaeb33` — #14, #16 and #20 are
+   the editor-touching merges in that range. Not bisected here.
+3. **`m4:command-stream` — FLAKE.** `unit.gameplay_core`, *"gameplay: the registry holds the
+   strategy scenario's five thousand groups"* (`src/gameplay/tests/test_control.cpp:189`, added by
+   this rung's `11981fc`), spent **1.017 ms of CPU against the unit kind's 1 ms budget**. Green on
+   both criterion re-runs, and 40 of 40 runs of the case alone on a quiet host. Cause, as far as it
+   was taken: a case that builds 5 000 groups sits inside the unit kind's CPU budget with almost no
+   headroom, so a ledger neighbour's cache and frequency effects push it over. The owner decides
+   between making it cheaper and moving it to the integration kind; the budget is not loosened.
+4. **`m11c:shot-authored-through-the-editor` — REAL, from #14.** *"content/beauty/materials/
+   courtyard_gravel.cymatcanvas is not what the editor's canvas produces"*: the canvas output
+   changed under the committed beauty-shot materials. #14 landed after M11.c's certified commit and
+   its certification says it does not cover #14.
+5. **`m11c:the-shot-does-not-overclaim-the-editor` — REAL, from #14.** The editor now registers
+   `material.graph.{preview,read,save,status}` (`19a3f07`), so `docs/design/beauty-shot.md`'s
+   statement that the shot cannot be authored over the control socket is out of date. A record to
+   correct, and the criterion is right to go red over it.
+6. **`m11d:developer-workflow-recipes` — REAL, known.** `just/maintenance.just:22` refuses naming
+   task `2.1.5`, which is no rung on the ladder (M0's line, caught by 9.1's stricter check).
+7. **`m11d:core-rows-at-complete-grade` — REAL, known.** 12 of 71 requirements map: `ecs-core` 12
+   of 12; `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+   `engine-architecture` and `core-platform-abstraction` 0. 10.4 already says only `ecs-core` can
+   be Complete here.
+8. **`m11d:ship-sample-on-desktop` — REAL, 2 of 2 re-runs.** Both legs draw (30 frames on the RTX
+   5060, provenance read back) and both trip validation: 60 errors,
+   `SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ` and
+   `SYNC-HAZARD-PRESENT-AFTER-WRITE` — the render graph spells both swapchain-boundary barriers
+   with `Stage::None` on the presentation side (`samples/11-ship/README.md`). `--require-draw`
+   makes that GAP red, as 10.5 intended.
+
+**The gate's selector finding** is recorded under 9.8, which is reopened. It does not touch this
+verdict: this close ran the full ledger.
+
+### What the owner decides
+
+- **The six rows of `core-rows-at-complete-grade`.** Either write the 59 missing
+  `requirements-coverage.toml` entries (10.4 found partials in four of the five rows, so some need
+  `exempt:m11e`, which by M11.c task 3.5's rule keeps the row below Complete here), or move five
+  of the six Complete cells to M11.e the way 7.6 moved `build-and-packaging`: both ledgers, the
+  status record and design.md in one change. This is the one decision that is not a defect fix.
+- **The swapchain-boundary barriers.** Fix the graph's present-side stages in this rung, or move
+  `ship-sample-on-desktop`'s draw-clean claim with the RHI row to M11.d.5. The artefact does not
+  ship over validation errors.
+- **Who owns the regressions from #14 and #20** (lint, `smoke.authoring`, the two beauty-shot
+  criteria). They are in green gates below this rung, so they hold M11.c's own ledger red too.
+  Each needs a fix and a regression case, not a declaration.
+- `maintenance.just:22` names a rung or a real task, and `test_control.cpp:189` gets its headroom.
+
+Then one full `just roadmap-milestone m11d` on a quiet tree, which is 10.1.
