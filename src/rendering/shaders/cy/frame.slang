@@ -104,6 +104,7 @@ import cy.globals;
 import cy.light;
 import cy.material;
 import cy.packing;
+import cy.shadow;
 
 // --- The per-view block -------------------------------------------------------------------------
 
@@ -178,7 +179,22 @@ public struct CyFrameData
     /// the direct term too, the non-physical option `rendering-post-processing` requires to be off
     /// by default. z: that option's strength, as float bits.
     public uint4 occlusionControl;
+    /// Soft and contact shadows for the directional shadow above, appended for the reason
+    /// `materialTextures` gives. x: flags — `kCySoftShadowPcss` filters with a blocker search and a
+    /// penumbra from the light's angular radius, `kCySoftShadowContact` adds the contact term. y:
+    /// the frame texture slot of `contact::ContactShadowPass`'s target, or `kCyNoMaterialTexture`.
+    /// z: blocker search taps. w: filter taps. ZERO FLAGS, THE DEFAULT, IS THE 3x3 FILTER THE FRAME
+    /// ALWAYS HAD, arithmetic for arithmetic.
+    public uint4 softShadowControl;
+    /// `PcssShape` as floats: x penumbra UV per unit of light-space depth, y smallest kernel (UV),
+    /// z largest kernel (UV). w: unused.
+    public float4 softShadowShape;
 };
+
+/// `softShadowControl.x`'s bits. `cy::rendering::pipeline::kSoftShadowPcss` and
+/// `kSoftShadowContact` are the same numbers.
+public static const uint kCySoftShadowPcss = 1u;
+public static const uint kCySoftShadowContact = 2u;
 
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
 ///
@@ -491,13 +507,53 @@ public CyForwardVertex cyForwardVertex(float3 modelPosition : POSITION,
     return output;
 }
 
+/// The frame's shadow map, as `cy.shadow`'s soft filter reads it: through the texture table, the
+/// way the 3x3 filter below reads it.
+struct CyFrameShadowMap : IShadowDepthSource
+{
+    uint slot;
+    float storedDepth(float2 uv)
+    {
+        return cyMaterialSampleTextureLevel(slot, uv, 0.0).r;
+    }
+};
+
+/// Percentage-closer soft shadows over the frame's map: `cy.shadow`'s three steps with the shape
+/// `softShadowShape` carries. See `softShadowControl`.
+float softShadowVisibility(float2 uv, float reference, float2 pixel)
+{
+    CyFrameShadowMap map;
+    map.slot = cyFrame.shadowControl.x;
+    PcssShape shape;
+    shape.penumbraPerDepth = cyFrame.softShadowShape.x;
+    shape.minRadius = cyFrame.softShadowShape.y;
+    shape.maxRadius = cyFrame.softShadowShape.z;
+    shape.blockerTaps = int(max(cyFrame.softShadowControl.z, 1u));
+    shape.filterTaps = int(max(cyFrame.softShadowControl.w, 1u));
+    return pcssVisibility(map, uv, reference, shape, shadowDiscRotation(pixel));
+}
+
+/// The contact term at a pixel: `contact::ContactShadowPass`'s visibility, 1 where its screen-space
+/// trace found nothing. The target is the frame's own extent, so the fragment's centre is a
+/// texel's centre.
+float contactShadowVisibility(float2 fragmentCentre)
+{
+    if ((cyFrame.softShadowControl.x & kCySoftShadowContact) == 0u ||
+        cyFrame.softShadowControl.y == kCyNoMaterialTexture)
+    {
+        return 1.0;
+    }
+    let uv = fragmentCentre * cyFrame.extentAndInverse.zw;
+    return cyMaterialSampleTextureLevel(cyFrame.softShadowControl.y, uv, 0.0).r;
+}
+
 /// The light loop, over the cluster this pixel falls in.
 ///
 /// `counts.w` of zero means the frame declared no cluster grid — a view with no lights, or a grid
 /// configured to nothing — and the loop then walks every light. That is a DECLARED fallback rather
 /// than a silent one: it is slower and it is correct, and a frame that quietly shaded nothing
 /// because its grid was empty is the failure this branch exists to make impossible.
-float directionalShadowVisibility(float3 relativePosition, float3 normal)
+float directionalShadowVisibility(float3 relativePosition, float3 normal, float2 fragmentCentre)
 {
     if (cyFrame.shadowControl.w == 0 || cyFrame.shadowControl.x == kCyNoMaterialTexture)
     {
@@ -516,6 +572,10 @@ float directionalShadowVisibility(float3 relativePosition, float3 normal)
     }
     let radius = 1.0 / float(max(cyFrame.shadowControl.z, 1u));
     let reference = ndc.z + 0.0005;
+    if ((cyFrame.softShadowControl.x & kCySoftShadowPcss) != 0u)
+    {
+        return softShadowVisibility(uv, reference, fragmentCentre);
+    }
     float visible = 0.0;
     for (int y = -1; y <= 1; ++y)
     {
@@ -530,8 +590,9 @@ float directionalShadowVisibility(float3 relativePosition, float3 normal)
 }
 
 float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal, float3 viewDir,
-                        uint2 pixel, uint instanceFlags)
+                        float2 fragmentCentre, uint instanceFlags)
 {
+    let pixel = uint2(fragmentCentre);
     float3 lit = float3(0.0);
     let lightCount = cyFrame.counts.x;
 
@@ -549,8 +610,14 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
             continue;
         }
         let sunSample = evaluateLight(cyLights[global], relativePosition);
+        // THE CONTACT TERM IS AN ADDITION TO THE MAP'S, NOT A REPLACEMENT: `virtual-shadows`'
+        // "Contact and traced refinement". The darker of the two, so an occluder both see is not
+        // counted twice and one only the trace sees still darkens the contact.
         let visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
-                             ? directionalShadowVisibility(relativePosition, normal) : 1.0;
+                             ? min(directionalShadowVisibility(relativePosition, normal,
+                                                               fragmentCentre),
+                                   contactShadowVisibility(fragmentCentre))
+                             : 1.0;
         lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample) * visibility;
     }
 
@@ -598,7 +665,6 @@ float occlusionVisibility(float2 fragmentCentre)
 [shader("fragment")]
 public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
-    let pixel = uint2(input.position.xy);
     let draw = cyDrawInstances[input.drawIndex];
     let instance = cyInstances[draw.instanceSlot];
     let surface = surfaceOf(draw.material, instance.tint.rgb, input.uv);
@@ -608,8 +674,8 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     // position. There is nowhere in this file to put a world-space camera, which is the point.
     let viewDir = normalize(-input.relativePosition);
 
-    var color = accumulateLights(surface, input.relativePosition, normal, viewDir, pixel,
-                                 draw.flags);
+    var color = accumulateLights(surface, input.relativePosition, normal, viewDir,
+                                 input.position.xy, draw.flags);
     // AMBIENT OCCLUSION DARKENS THE AMBIENT TERM AND NOTHING ELSE. `rendering-post-processing`:
     // "AO SHALL modulate indirect lighting only; applying it to direct light SHALL be an explicitly
     // non-physical artistic option, off by default." The direct sum above is untouched unless that

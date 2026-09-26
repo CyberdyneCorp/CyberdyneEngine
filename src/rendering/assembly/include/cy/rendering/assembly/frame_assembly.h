@@ -177,6 +177,10 @@ struct AssemblyDescription {
     /// The frame REFUSES to turn it off under any screen-space or temporal feature, because those
     /// read the targets the prepass fills.
     bool depth_prepass = true;
+    /// Screen-space contact shadows for the directional shadow — `FramePassKind::ContactShadows`,
+    /// declared by `contact_shadows::ContactShadowPass` through `FrameSinks::contact_shadows`. Off
+    /// by default, and absent when off. Requires the depth prepass, whose depth it traces.
+    bool contact_shadows = false;
 };
 
 /// One view of one world, this frame.
@@ -226,6 +230,10 @@ struct AssemblyView {
     /// (`occlusion::AmbientOcclusionPass::import_target`). Read only when the post chain enables
     /// ambient occlusion; absent, the frame declares its own transient.
     ResourceId ambient_occlusion = kInvalidResource;
+    /// The contact shadow term's storage, imported by its producer
+    /// (`contact_shadows::ContactShadowPass::import_target`). Read only with
+    /// `AssemblyDescription::contact_shadows`.
+    ResourceId contact_shadows = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport
     /// both invalidate history and neither is a camera that moved fast.
     bool cut = false;
@@ -251,6 +259,9 @@ struct FrameSinks {
     /// search and the filter cascade that follows it. Null keeps the stage one pass recorded by
     /// `passes[AmbientOcclusion]`.
     FrameStageDeclaration ambient_occlusion;
+    /// The producer that declares the contact shadow stage. Required when the description asks
+    /// for contact shadows; the frame refuses to build without it.
+    FrameStageDeclaration contact_shadows;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than

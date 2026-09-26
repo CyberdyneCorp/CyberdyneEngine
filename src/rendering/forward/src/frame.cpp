@@ -113,6 +113,11 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
             request.extra_usage = rhi::TextureUsage::None;
         }
     }
+    if (description.features.contact_shadows) {
+        // Always the producer's: the opaque pass samples it through a texture-table slot, and a
+        // transient's view is recreated every frame.
+        resources.contact_shadows = description.contact_shadows_target;
+    }
     if (description.features.screen_space_gi) {
         request.name = "screen-space gi";
         request.format = description.color_format;
@@ -324,6 +329,9 @@ PassId declare_opaque(RenderGraph& graph, FrameState& state) noexcept {
     if (valid(resources.ambient_occlusion)) {
         builder.read(resources.ambient_occlusion, Access::FragmentSampledRead);
     }
+    if (valid(resources.contact_shadows)) {
+        builder.read(resources.contact_shadows, Access::FragmentSampledRead);
+    }
     if (valid(resources.screen_space_gi)) {
         builder.read(resources.screen_space_gi, Access::FragmentSampledRead);
     }
@@ -397,7 +405,7 @@ PrepassMode select_prepass_mode(const FrameFeatures& features) noexcept {
     if (features.temporal || features.motion_blur) {
         return PrepassMode::DepthNormalVelocity;
     }
-    if (features.ambient_occlusion || features.screen_space_gi ||
+    if (features.ambient_occlusion || features.contact_shadows || features.screen_space_gi ||
         features.screen_space_reflections) {
         return PrepassMode::DepthNormal;
     }
@@ -420,6 +428,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "cluster assignment";
         case FramePassKind::AmbientOcclusion:
             return "ambient occlusion";
+        case FramePassKind::ContactShadows:
+            return "contact shadows";
         case FramePassKind::ScreenSpaceGi:
             return "screen-space gi";
         case FramePassKind::Opaque:
@@ -545,6 +555,11 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
                                        resources_.ambient_occlusion,
                                        FramePassKind::AmbientOcclusion));
         }
+    }
+    if (features.contact_shadows) {
+        declare_produced_stage(graph, state, state.description->contact_shadows_stage,
+                               FramePassKind::ContactShadows, "contact shadows",
+                               resources_.contact_shadows);
     }
     if (features.screen_space_gi) {
         stage(FramePassKind::ScreenSpaceGi, "screen-space gi",
@@ -705,13 +720,20 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
     // specification's own scenario ("SSAO enabled ... the prepass SHALL run in DepthNormal mode")
     // assumes the prepass is there, so this is that assumption stated as a refusal.
     const FrameFeatures& features = description.features;
-    const bool needs_prepass = features.ambient_occlusion || features.screen_space_gi ||
-                               features.screen_space_reflections || features.temporal ||
-                               features.motion_blur;
+    const bool needs_prepass = features.ambient_occlusion || features.contact_shadows ||
+                               features.screen_space_gi || features.screen_space_reflections ||
+                               features.temporal || features.motion_blur;
     if (needs_prepass && !features.depth_prepass) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: screen-space and temporal features require the depth prepass "
                     "that produces the depth, normal and velocity targets they read");
+    }
+    // THE CONTACT TERM HAS NO SINGLE-PASS STAND-IN. Its producer owns the target the opaque pass
+    // samples, so a frame asked for contact shadows without one would read an image nothing wrote.
+    if (features.contact_shadows && (description.contact_shadows_stage.declare == nullptr ||
+                                     !valid(description.contact_shadows_target))) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: contact shadows need their producer's stage and target");
     }
     prepass_mode_ = select_prepass_mode(description.features);
     // A prepass mode that names targets nothing will fill is the failure the derivation exists to

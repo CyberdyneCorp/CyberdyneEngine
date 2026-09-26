@@ -888,6 +888,7 @@ _beauty-programs build_dir work graphs:
             -target spirv -profile spirv_1_5 \
             -entry sceneVertex -stage vertex -entry sceneFragment -stage fragment \
             -entry sceneFragmentOccluded -stage fragment \
+            -entry sceneFragmentSoft -stage fragment \
             -entry scenePrepassFragment -stage fragment \
             -entry shadowVertex -stage vertex \
             -entry skyVertex -stage vertex -entry skyFragment -stage fragment \
@@ -1058,6 +1059,70 @@ capture-ambient-occlusion *args:
     python3 tools/docs/collect_beauty_shot.py \
         "${images}/ambient-occlusion-off.png" "${images}/ambient-occlusion-on.png" \
         "${images}/ambient-occlusion-detail.png"
+
+# SOFT AND CONTACT SHADOWS, OFF AND ON, IN THE BEAUTY SHOT. `virtual-shadows` — "Filtering and
+# softness" and "Contact and traced refinement".
+#
+# The same compiled programs photographed twice by two runs of the same program, which differ in
+# `--soft-shadows` and in nothing else. Off is M11.c's published frame, and
+# tools/docs/compare_soft_shadows.py REQUIRES its pixels to be the ones
+# docs/design/images/m11c-beauty-shot.png holds. On filters the sun's map with the percentage-closer
+# soft filter — a penumbra sized by the sun's angular radius, so the far ends of the long shadows
+# soften and their feet stay sharp — and adds the contact term where the columns and the fallen
+# stone meet the floor.
+#
+#   docs/design/images/soft-shadows-beauty-off.png     the frame, the setting off
+#   docs/design/images/soft-shadows-beauty-on.png      the frame, the setting on
+#   docs/design/images/soft-shadows-beauty-detail.png  where the two differ most, off beside on, at 2x
+#   docs/design/images/soft-shadows-beauty-on.manifest what the frame with the setting says it did
+
+# Photograph the beauty shot with soft and contact shadows off and on. Usage: just capture-soft-shadows [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-soft-shadows *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-soft-shadows: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-soft-shadows"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    images=docs/design/images
+    for setting in off on; do
+        echo "==> capture     soft shadows ${setting}"
+        manifest=()
+        if [ "${setting}" = on ]; then
+            manifest=(--manifest "${images}/soft-shadows-beauty-on.manifest")
+        fi
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --soft-shadows "${setting}" \
+            --still "${images}/soft-shadows-beauty-${setting}.png" \
+            ${manifest[@]+"${manifest[@]}"} ${rest} | tee "${work}/${setting}.log"
+        if [ ! -f "${images}/soft-shadows-beauty-${setting}.png" ]; then
+            echo "capture-soft-shadows: no picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+    python3 tools/docs/compare_soft_shadows.py \
+        --off "${images}/soft-shadows-beauty-off.png" --on "${images}/soft-shadows-beauty-on.png" \
+        --reference "${images}/m11c-beauty-shot.png" \
+        --detail "${images}/soft-shadows-beauty-detail.png"
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/soft-shadows-beauty-off.png" "${images}/soft-shadows-beauty-on.png" \
+        "${images}/soft-shadows-beauty-detail.png"
 
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #

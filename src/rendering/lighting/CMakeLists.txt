@@ -50,6 +50,7 @@ cy_add_module(
         src/lights.cpp
         src/many_light.cpp
         src/shadow_atlas.cpp
+        src/soft_shadows.cpp
         src/units.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::environment and cy::rendering-sky ARE ILLUMINATION'S HALF OF THE CLOUD SHADOW, and they

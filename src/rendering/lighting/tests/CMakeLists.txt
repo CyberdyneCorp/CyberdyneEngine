@@ -10,6 +10,7 @@
 #                              camera rotates" is a property of two matrices, so it is asserted
 #                              numerically rather than photographed much later and much less
 #                              precisely.
+#   render_soft_shadows        integration: the PCSS filter's penumbra measured on the host.
 #   render_lighting_reference  integration, and it is the M7 pair that measures rather than asserts:
 #                              the LTC table against a Monte Carlo integration of the same GGX BRDF
 #                              (`area.h` says the fit here is the moment-matched initialisation and
@@ -60,6 +61,17 @@ function(cy_render_lighting_declare_tests)
         SOURCES
             "${cy_lighting_tests_dir}/test_reference.cpp"
             "${cy_lighting_tests_dir}/test_cookie_scroll.cpp"
+        DEPENDENCIES cy::rendering-lighting)
+
+    # PERCENTAGE-CLOSER SOFT SHADOWS, measured. `cy/shadow.slang`'s three steps over an analytic
+    # half-plane blocker: the penumbra's width against the blocker's height and the light's angular
+    # radius, an open plane lit exactly and an umbra dark exactly. Integration rather than a case in
+    # `render_lighting`: each width is a 320-texel profile averaged over 48 rows of rotated discs,
+    # which is tens of milliseconds and does not fit a unit budget.
+    cy_add_test(
+        NAME render_soft_shadows
+        KIND integration
+        SOURCES "${cy_lighting_tests_dir}/test_soft_shadows.cpp"
         DEPENDENCIES cy::rendering-lighting)
 
     # ILLUMINATION READING THE CLOUD SHADOW FIELD. M11.c task 5.2, and its own suite rather than a

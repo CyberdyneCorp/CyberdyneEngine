@@ -9,6 +9,7 @@
 > just capture-ambient-occlusion                    # the shot with ambient occlusion off and on
 > just measure-beauty-mip-chain                     # does the shot read its cooked mip chain?
 > just capture-beauty-bloom                         # the same shot with and without bloom
+> just capture-soft-shadows                         # the shot with soft and contact shadows off and on
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -124,3 +125,25 @@ unchanged in what it computes. The radius (1.5 m) and power (1.5) are content, i
 `just capture-ambient-occlusion` writes `docs/design/images/ambient-occlusion-{off,on,detail}.png`
 and `ambient-occlusion-on.manifest`, and `tools/docs/compare_ambient_occlusion.py` fails it unless
 the off picture is `m11c-beauty-shot.png`'s pixels exactly and no pixel got brighter.
+
+## Soft and contact shadows, off and on
+
+`--soft-shadows on|off` is the setting, off by default. On, the program records the depth and
+normal prepass, declares the frame's `ContactShadows` stage through
+`contact_shadows::ContactShadowPass`, and shades through `sceneFragmentSoft`: the sun's map
+filtered by `cy/shadow.slang`'s percentage-closer soft filter — a blocker search and a kernel whose
+radius is `(blocker - receiver) * tan(sun angular radius)`, so the far ends of the long shadows
+soften and their feet stay sharp — and darkened further by the contact term where the trace toward
+the sun found an occluder the 3.7 cm map texels and the 5 cm normal offset lose. The sun's angular
+radius (0.265 degrees) and the trace's reach are content, in `shot.cyshot`. Ambient occlusion
+composes with it.
+
+| Soft shadows off | Soft shadows on |
+|---|---|
+| ![](../../docs/design/images/soft-shadows-beauty-off.png) | ![](../../docs/design/images/soft-shadows-beauty-on.png) |
+
+![Off, on, and the difference amplified eight times](../../docs/design/images/soft-shadows-beauty-detail.png)
+
+`just capture-soft-shadows` writes `docs/design/images/soft-shadows-beauty-{off,on,detail}.png` and
+`soft-shadows-beauty-on.manifest`, and `tools/docs/compare_soft_shadows.py` fails it unless the off
+picture is `m11c-beauty-shot.png`'s pixels exactly.

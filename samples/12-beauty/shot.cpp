@@ -90,6 +90,16 @@ void read_occlusion(Shot& shot, std::string_view field, std::string_view& rest) 
     }
 }
 
+void read_soft_shadows(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "sun-angular-radius") {
+        shot.sun_angular_radius = to_float(take(rest));
+    } else if (field == "contact-length") {
+        shot.contact_length = to_float(take(rest));
+    } else if (field == "contact-thickness") {
+        shot.contact_thickness = to_float(take(rest));
+    }
+}
+
 void read_sky(Shot& shot, std::string_view field, std::string_view& rest) {
     if (field == "cloud-cover") {
         shot.cloud_cover = to_float(take(rest));
@@ -235,6 +245,9 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
         } else if (keyword == "ambient-occlusion") {
             const std::string_view field = take(line);
             read_occlusion(shot, field, line);
+        } else if (keyword == "soft-shadows") {
+            const std::string_view field = take(line);
+            read_soft_shadows(shot, field, line);
         } else if (keyword == "exposure-stops") {
             shot.exposure_stops = to_float(take(line));
         } else if (keyword == "bloom") {

@@ -73,6 +73,10 @@ enum class PrepassMode : u8 {
 struct FrameFeatures {
     bool depth_prepass = true;
     bool ambient_occlusion = false;
+    /// Screen-space contact shadows: a short trace toward the directional light through the
+    /// prepass depth, which the opaque pass reads as an addition to the shadow map's visibility.
+    /// `virtual-shadows` — "Contact and traced refinement". Off by default, and absent when off.
+    bool contact_shadows = false;
     bool screen_space_gi = false;
     bool screen_space_reflections = false;
     /// Temporal antialiasing or temporal upscaling. Either one needs motion vectors.
@@ -122,6 +126,11 @@ enum class FramePassKind : u8 {
     VirtualGeometry,
     ClusterAssignment,
     AmbientOcclusion,
+    /// Screen-space contact shadows — one of stage 4's screen-space passes, and declared by its
+    /// producer (`src/rendering/contact_shadows/`) through `FrameStageDeclaration` as ambient
+    /// occlusion is. NOT ONE OF THE SPECIFICATION'S THIRTEEN: `virtual-shadows` asks for the
+    /// refinement without placing it, and it reads what the other screen-space passes read.
+    ContactShadows,
     ScreenSpaceGi,
     Opaque,
     Sky,
@@ -216,6 +225,9 @@ struct FrameResources {
     ResourceId color_multisampled = kInvalidResource;
     ResourceId opaque_color_copy = kInvalidResource;
     ResourceId ambient_occlusion = kInvalidResource;
+    /// The contact shadow term, imported by its producer. Only with
+    /// `FrameFeatures::contact_shadows`.
+    ResourceId contact_shadows = kInvalidResource;
     ResourceId screen_space_gi = kInvalidResource;
     ResourceId reflections = kInvalidResource;
     ResourceId temporal_previous = kInvalidResource;
@@ -282,6 +294,11 @@ struct FrameDescription {
     /// The producer that declares the ambient occlusion stage's passes. See
     /// `FrameStageDeclaration`.
     FrameStageDeclaration ambient_occlusion_stage;
+    /// The contact shadow target and the producer that declares its pass. Unlike ambient
+    /// occlusion there is no single-pass fallback: with `features.contact_shadows` and no
+    /// producer, `build()` refuses rather than declaring a pass nothing records.
+    ResourceId contact_shadows_target = kInvalidResource;
+    FrameStageDeclaration contact_shadows_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;
