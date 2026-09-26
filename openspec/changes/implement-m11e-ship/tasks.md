@@ -329,7 +329,10 @@ re-reads this list against its own ledger run, deletes what it finished, and add
       third of the three stale refusals task 4.5 found; `build-shaders` and the four `release-*`
       recipes no longer refuse. `m11d:developer-workflow-recipes` now fails naming the line, so the
       row cannot be recorded Complete over it at M11.d; if M11.d closes without the one-line fix, 4.5's
-      check receives it
+      check receives it. **M11.d fixed the label**: the recipe now refuses naming **M11.e**, whose
+      sweep implements it, and `tools/ci/test_recipes.py`'s *"a refusing recipe names a rung that
+      exists and is open"* — which is 4.5's check, run on every pull request — fails on a refusal
+      naming no rung or a rung whose gate is green. Implementing `maintenance-clean` is still here
 - [ ] 5b.5 **The shipped frame's two swapchain-boundary hazards** (M11.d section 8):
       `SYNC-HAZARD-PRESENT-AFTER-WRITE`, one per frame, removed by giving `access.cpp`'s `Present` row
       `Stage::AllCommands` (measured, then reverted, because that row is the render graph's own

@@ -18,8 +18,12 @@
 # `maintenance-deps-check` is the merge gate over all of it.
 
 # Remove build output. Names what it will remove and confirms; --yes for CI.
+#
+# Refuses, naming M11.e, the rung whose sweep receives it (its tasks 4.5 and 5b.4). It named task
+# "2.1.5" — M0's task list, no rung — until M11.d's ledger went red on it; tools/ci/test_recipes.py
+# now requires every refusal to name a rung that exists and whose gate is still open.
 maintenance-clean *args:
-    @just _not-implemented maintenance-clean 2.1.5
+    @just _not-implemented maintenance-clean M11.e
 
 # Regenerate THIRD_PARTY.md from the three dependency records.
 maintenance-deps:
