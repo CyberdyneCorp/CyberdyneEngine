@@ -11,6 +11,10 @@
 #include <cy/import/importer.h>
 #include <cy/import/pipeline.h>
 
+#if defined(CY_BUILD_HAS_VFX)
+#    include "vfx_producer.h"
+#endif
+
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -326,8 +330,19 @@ Status add_content_producers(ProducerRegistry& registry, const ecs::World* world
     // NOT distributable. The cook emits blocks against the component registry of the world it was
     // handed, and a remote worker's binary may have registered a different set — which produces a
     // package the runtime rejects at the build-schema check, in a place nobody would look.
-    return registry.add(Producer{"cook", kCookProducerVersion, produce_cook,
-                                 /*distributable=*/false});
+    if (Status added = registry.add(Producer{"cook", kCookProducerVersion, produce_cook,
+                                             /*distributable=*/false});
+        !added) {
+        return added;
+    }
+#if defined(CY_BUILD_HAS_VFX)
+    // Distributable: a VFX cook reads nothing but its declared system and the modules it
+    // discovers, and names no registry a remote worker could disagree about.
+    return registry.add(Producer{"vfx", kVfxProducerVersion, produce_vfx,
+                                 /*distributable=*/true});
+#else
+    return ok();
+#endif
 }
 
 }  // namespace cy::build
