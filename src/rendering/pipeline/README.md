@@ -105,10 +105,14 @@ bounded material texture argument buffer remains separate work.
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
   octahedral pair as half floats rather than `render::PackedNormalTangent`'s 16-bit snorm form.
   `pack_normal_stream` is the bridge. Closing it means adding a format to `src/backends/rhi/`.
-* **`SV_VertexID` costs a device feature.** Slang lowers it to `gl_VertexIndex - gl_BaseVertex`,
-  which declares the SPIR-V `DrawParameters` capability, which a Vulkan device refuses without
-  `shaderDrawParameters` — a feature `src/backends/rhi/vulkan/` does not request. `cy/frame.slang`
-  and `cy/fullscreen.slang` use `SV_VulkanVertexID`; the alternative fix is in the backend.
+* **`SV_VertexID` costs a device feature, and the device carries it.** Slang lowers it to
+  `gl_VertexIndex - gl_BaseVertex`, which declares the SPIR-V `DrawParameters` capability, so
+  `src/backends/rhi/vulkan/` creates its device with `shaderDrawParameters` and refuses one without
+  it. Until M11.d `cy/fullscreen.slang` took `SV_VulkanVertexID` instead, which needs no feature and
+  which DXC rejects (`m11c:every-shader-reaches-every-target`). The subtraction is of zero because
+  every draw of the resolve and the temporal resolve is `draw(3, 1, 0, 0)` — the one base on which
+  SPIR-V and Metal agree about the index — and `integration.render_pipeline`'s *every procedural
+  draw starts at vertex and instance zero* holds every procedural draw of the frame to it.
 * **Multisampled frames are refused, not mis-drawn.** `bind()` fails naming the mismatch rather than
   letting a pipeline created for one sample count meet an attachment with another.
 

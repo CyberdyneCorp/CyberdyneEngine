@@ -1834,13 +1834,13 @@ struct pixelInput_0
 
 )cy_msl";
 
-/// ResolveVertex.metal, 1018 bytes.
+/// ResolveVertex.metal, 936 bytes.
 inline constexpr char kFrameResolveVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 49 "/Users/leonardo/trabalho/CyberdyneEngine/src/rendering/shaders/cy/fullscreen.slang"
+#line 49 "src/rendering/shaders/cy/fullscreen.slang"
 struct fullscreenVertex_Result_0
 {
     float4 position_0 [[position]];
@@ -1860,26 +1860,26 @@ struct FullscreenVertex_0
 [[vertex]] fullscreenVertex_Result_0 fullscreenVertex(uint vertexId_0 [[vertex_id]])
 {
 
-#line 66 "/Users/leonardo/trabalho/CyberdyneEngine/src/rendering/shaders/cy/fullscreen.slang"
+#line 72 "src/rendering/shaders/cy/fullscreen.slang"
     thread FullscreenVertex_0 output_0;
     float2 _S1 = float2(float((vertexId_0 << 1U) & 2U), float(vertexId_0 & 2U));
 
-#line 67
+#line 73
     (&output_0)->uv_1 = _S1;
 
 
     (&output_0)->position_1 = float4(_S1 * float2(2.0, -2.0) + float2(-1.0, 1.0), 1.0, 1.0);
 
-#line 70
+#line 76
     thread fullscreenVertex_Result_0 _S2;
 
-#line 70
+#line 76
     (&_S2)->position_0 = output_0.position_1;
 
-#line 70
+#line 76
     (&_S2)->uv_0 = output_0.uv_1;
 
-#line 70
+#line 76
     return _S2;
 }
 

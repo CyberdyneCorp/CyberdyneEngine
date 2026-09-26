@@ -564,8 +564,8 @@ rendering-forward-clustered = "complete"
 #   material-compiler                4 exempt — surface closures, geometry attribute interface,
 #                                      material API, portability across pipelines and profiles
 #   shader-system                    3 exempt — compilation pipeline, hot reload, the visual material
-#                                      editor; plus `m11c:every-shader-reaches-every-target`, a gap
-#                                      closing at M11.d (two vertex entry points DXC refuses)
+#                                      editor; `m11c:every-shader-reaches-every-target`, the gap
+#                                      declared beside them, was closed at M11.d
 #   virtual-geometry                 9 exempt — the forward frame does not SHADE it (the Forward+ half
 #                                      of `Visibility buffer and material resolve`), no per-cluster
 #                                      rasteriser selection, assemblies, tangents, budget controller,

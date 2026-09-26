@@ -266,6 +266,64 @@ target = "src/backends/shader/slang/src/slang_compiler.cpp"
 token  = "return \"sm_6_6\";"
 note   = "this criterion had no derivable mutation at all — its body is two greps over a recipe's output, and `derive` refuses to guess one from that — so it declares this one. The subject is the emission rather than the word in the table: a stub that printed \"d3d12-dxil=emitted\" without compiling anything would survive a mutation of the output file and does not survive this."
 
+# --- `m11c:every-shader-reaches-every-target`, closed here ------------------------------------------
+#
+# DECLARED AT M11.c, CLOSED BY THIS RUNG, AND ITS DECLARATION DELETED IN THE SAME CHANGE. The M11.c
+# criterion itself — `just build-shaders --strict src samples` reporting `target_refusals=0` — stays
+# in m11c.toml and is green now; this one carries what that one cannot see. Closing the gap took the
+# portable `SV_VertexID` (and `SV_InstanceID`) in the FOUR vertex stages that draw from the index
+# alone — the two M11.c measured, and `cyStripVertex` and `vgVisHwVertex`, which landed after the
+# measurement with the same semantic — and on SPIR-V that spelling is `VertexIndex - BaseVertex`,
+# which costs the `DrawParameters` capability. So the Vulkan device now asks for
+# `shaderDrawParameters` and refuses a device without it, and the three ways this can still go wrong
+# are three suites:
+#
+#   smoke.shader_targets          every entry point under src/rendering compiles for every target
+#                                 this build emits — on every smoke run, not only on a ledger run
+#   integration.render_pipeline   every procedural draw starts at vertex and instance zero, the one
+#                                 base on which SPIR-V's subtraction and Metal's `vertex_id` agree
+#   render.pipeline, render.vfx   the frames drawn through those stages, on the device, with
+#                                 validation on and its errors counted — a module declaring a
+#                                 capability the device was created without is an error by name
+#
+# The images were measured byte-identical before and after on this host (first_light, the four sky
+# references, the beauty shot and its air-only reference, the particle frame and the shaded
+# virtual-geometry frame; tasks.md 9.9 records it), and it is not repeated here
+# because a criterion that compared against a capture from before the change would be comparing
+# against a file nothing regenerates.
+[[criterion]]
+id = "vertex-id-is-portable"
+describe = "the vertex stages that draw from the vertex index alone take `SV_VertexID`, which all three targets accept, so every entry point under src/rendering reaches every target this build emits; the Vulkan device is created with the `shaderDrawParameters` feature that spelling costs on SPIR-V; and every draw feeding those stages starts at vertex and instance zero, the one base on which the targets agree about the index. Closes `m11c:every-shader-reaches-every-target`"
+source = "m11c:every-shader-reaches-every-target, shader-system, rhi-and-render-graph"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# ASKED FOR BY NAME BEFORE THEY RUN: `ctest -R` over a pattern that matches nothing exits zero.
+pattern='^(smoke.shader_targets|integration.render_pipeline|render.pipeline|render.vfx)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 4 suite(s) match $pattern"
+test "$registered" -ge 4 || { echo "a suite this criterion names is not registered — renamed, deleted, or this tree has no Vulkan renderer"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+requires = "gpu"
+reason = "two of the four suites draw on a Vulkan device and count its validation errors, which is the only place a module that declares `DrawParameters` meets a device created without `shaderDrawParameters`; `smoke.shader_targets` and `integration.render_pipeline` carry the compile and the draw-base halves on every machine"
+timeout_s = 3600
+ci_job = "milestone-m11d"
+
+# THE MUTATION TAKES THE FEATURE AWAY AND LEAVES THE SHADERS ALONE. With the one assignment gone the
+# device is created without `shaderDrawParameters`, the resolve's and the particles' modules still
+# declare `DrawParameters`, and validation names the mismatch when their pipelines are created — so
+# render.pipeline and render.vfx fail on their error count while the tree still configures, builds
+# and draws. The shader half is `m11c:every-shader-reaches-every-target`'s mutation, and the draw
+# base is `integration.render_pipeline`'s own case, proven red by giving the resolve a first vertex.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/vulkan/src/vulkan_instance.cpp"
+token  = "features11.shaderDrawParameters = VK_TRUE;"
+note   = "deleting the request leaves a device without shaderDrawParameters under modules that declare DrawParameters; validation reports it at pipeline creation and the render suites fail on their validation-error count"
+
 [[criterion]]
 id = "native-platform-backend"
 describe = "a native `Platform` AND a native `DisplayServer` exist for one desktop platform, are neither SDL3's nor anything that predates this rung, and are compiled — so SDL3 is not the only way this engine opens a window. SDL3 was both since M0, and nothing had proved the abstraction carries no SDL assumption"

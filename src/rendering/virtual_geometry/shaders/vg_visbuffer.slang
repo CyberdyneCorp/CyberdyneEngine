@@ -593,11 +593,12 @@ struct VgHwVaryings
 
 /// One vertex of one triangle slot of one visible cluster.
 ///
-/// `SV_VulkanVertexID` AND `SV_VulkanInstanceID`, not `SV_VertexID` and `SV_InstanceID`: Slang
-/// lowers the latter pair to `gl_*Index - gl_Base*`, which declares the `DrawParameters` capability,
-/// which the Vulkan backend does not request. `src/rendering/pipeline/README.md` measured the same
-/// thing for the forward frame's own shaders. The draw's first vertex and first instance are zero,
-/// so the two spellings name the same numbers.
+/// `SV_VertexID` AND `SV_InstanceID`, the spellings all three targets accept. Slang lowers them on
+/// SPIR-V to `gl_*Index - gl_Base*`, which declares the `DrawParameters` capability the Vulkan
+/// device is created with; until M11.d this took `SV_VulkanVertexID` and `SV_VulkanInstanceID`,
+/// which DXC rejects. The subtraction is of zero: `vgVisHwPrepare` writes the indirect draw's
+/// `vertexOffset` and `firstInstance` as 0, so the two spellings name the same numbers — the shaded
+/// and forward virtual-geometry frames were byte-identical before and after.
 ///
 /// A SLOT PAST THE CLUSTER'S LAST TRIANGLE IS DROPPED BY CLIPPING, not by a branch in the fragment
 /// shader: all three of its corners land at the same point outside the reversed-Z clip volume
@@ -612,7 +613,7 @@ struct VgHwVaryings
 /// winding flips with it, which is why the pipeline culls nothing, exactly as `vgVisRaster` tests
 /// both windings.
 [shader("vertex")]
-VgHwVaryings vgVisHwVertex(uint vertexId : SV_VulkanVertexID, uint instanceId : SV_VulkanInstanceID)
+VgHwVaryings vgVisHwVertex(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     VgHwVaryings output;
     output.position = float4(0.0f, 0.0f, -1.0f, 1.0f);

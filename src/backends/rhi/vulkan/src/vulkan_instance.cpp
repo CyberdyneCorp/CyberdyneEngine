@@ -438,6 +438,20 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
     vkGetPhysicalDeviceFeatures2(physical_, &supported);
     multiview_ = desc.request_multiview && supported11.multiview == VK_TRUE;
     features11.multiview = multiview_ ? VK_TRUE : VK_FALSE;
+
+    // DRAW PARAMETERS ARE REQUIRED, NOT ASKED FOR IN PASSING. `SV_VertexID` is the one vertex-index
+    // spelling SPIR-V, MSL and DXIL all accept, and Slang lowers it on SPIR-V to `VertexIndex -
+    // BaseVertex`, which declares the `DrawParameters` capability. Every stage that draws from the
+    // index alone uses it — the full-screen resolve, the particles, the strips and the hardware
+    // visibility raster — so a device without the feature cannot draw a frame, and it is refused
+    // here by name rather than by validation at the first pipeline. `cy/fullscreen.slang` records
+    // why every draw of those stages starts at vertex zero.
+    if (supported11.shaderDrawParameters != VK_TRUE) {
+        return fail(ErrorCode::Unsupported,
+                    "this device lacks shaderDrawParameters, which every vertex stage that draws "
+                    "from SV_VertexID declares");
+    }
+    features11.shaderDrawParameters = VK_TRUE;
     ray_tracing_.acceleration_structure_feature =
         supported_acceleration.accelerationStructure == VK_TRUE;
     ray_tracing_.ray_query_feature = supported_ray_query.rayQuery == VK_TRUE;

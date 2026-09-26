@@ -22,6 +22,9 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/test/test.h>
 
+#include <algorithm>
+#include <iterator>
+
 using namespace cy;
 using namespace cy::pipeline_test;
 
@@ -152,6 +155,50 @@ CY_TEST_CASE("the particle renderer reaches the frame through the layer's own se
     // The particles changed nothing about the frame the assembly built. `vfx-system`'s firewall is
     // section 1's subject; this is the rendering half of the same statement.
     CY_CHECK_EQ(with.draws, without.draws);
+}
+
+CY_TEST_CASE("every procedural draw starts at vertex and instance zero") {
+    // THE CONTRACT THAT MAKES `SV_VertexID` ONE NUMBER ON THREE TARGETS. `cy/fullscreen.slang` and
+    // `cy/particle.slang` derive every position from the vertex index, and the targets do not agree
+    // on what that index is once a draw has a base: Slang's SPIR-V is `VertexIndex - BaseVertex`,
+    // Metal's `vertex_id` counts from the draw's first vertex. Zero is the one base on which they
+    // agree, so every draw feeding those stages must pass zero — and this says so on a machine with
+    // no device, from the null backend's command log: the pipeline bound at each draw, and the
+    // draw's first vertex and first instance.
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    rhi::null::clear_command_log(fixture.device());
+    rendering::assembly::AssemblyReport report;
+    CY_REQUIRE(scene.render(RecordMode::CallbacksAndParticles, report).has_value());
+
+    // The frame's mesh pipelines read vertex streams and instance data. Everything else this frame
+    // binds draws its shape out of the vertex index alone.
+    const FramePipelines& pipelines = scene.pipelines();
+    const u64 mesh[] = {pipelines.pipeline(FramePipelineKind::Depth).bits(),
+                        pipelines.pipeline(FramePipelineKind::Opaque).bits(),
+                        pipelines.pipeline(FramePipelineKind::Transparent).bits(),
+                        pipelines.pipeline(FramePipelineKind::Shadow).bits()};
+    const auto is_mesh = [&mesh](u64 bits) {
+        return std::ranges::find(mesh, bits) != std::end(mesh);
+    };
+
+    u64 bound = 0;
+    u32 procedural = 0;
+    u32 offset = 0;
+    for (const rhi::null::RecordedCommand& command : rhi::null::command_log(fixture.device())) {
+        if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline) {
+            bound = command.handle_bits;
+        } else if (command.kind == rhi::null::CommandKind::Draw && !is_mesh(bound)) {
+            ++procedural;
+            offset += (command.c != 0 || command.d != 0) ? 1U : 0U;
+        }
+    }
+    // The resolve, the temporal resolve and the particles. Fewer would mean the walk above stopped
+    // seeing the stages it is about, not that they passed.
+    CY_CHECK_GE(procedural, 3U);
+    CY_CHECK_EQ(offset, 0U);
 }
 
 CY_TEST_CASE("the ring turns over many frames and tears down with the device still busy") {

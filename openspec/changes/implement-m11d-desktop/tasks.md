@@ -669,6 +669,73 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       dev/inode or resolved path, passed at configure time), or hand the child a secret over an
       inherited file descriptor — and add a copied/renamed-binary forgery case to
       `smoke.quiet_host_marker`, proven red on the current check
+- [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
+      change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
+      from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
+      `failures=2 target_refusals=3`, not two refusals. `cyStripVertex` and `vgVisHwVertex` had
+      landed after M11.c's measurement with the same `SV_VulkanVertexID` (the second with
+      `SV_VulkanInstanceID` too), and **`cy/particle.slang` compiled for no target at all**: it
+      named `cyFrame`, which `cy/frame.slang` turned into a `#define` when its view block became a
+      parameter block, and a macro does not cross an `import` — the checked-in `particle_spirv.h`,
+      compiled before that change, kept the renderer drawing and hid it. **Done**:
+      - the four stages take `SV_VertexID` (and `SV_InstanceID`); `particle.slang` names
+        `cyFrameView.frame`. The entry points keep their names and parameters, so a pass that binds
+        `fullscreenVertex` (bloom's, in flight) binds it unchanged;
+      - the Vulkan device requests `shaderDrawParameters` and refuses a device without it, by name
+        (`vulkan_instance.cpp`), because Slang's SPIR-V for the portable spelling is `VertexIndex -
+        BaseVertex` and declares `DrawParameters`. It is chained onto the
+        `VkPhysicalDeviceVulkan11Features` section 5's multi-view work introduced, not a second one;
+      - **the base vertex is handled by the draws**: every draw of those stages starts at vertex and
+        instance zero — the one base on which SPIR-V's subtraction and Metal's `vertex_id` agree
+        (`vgVisHwPrepare` writes the indirect draw's `vertexOffset` and `firstInstance` as 0) — and
+        `integration.render_pipeline`'s *every procedural draw starts at vertex and instance zero*
+        asserts it for the frame from the null backend's command log;
+      - regenerated with the pinned slangc 2026.9.2, which was first shown to reproduce the
+        checked-in resolve and visibility-raster modules byte for byte from the unchanged sources:
+        `frame_spirv.h`/`frame_msl.h` (the resolve vertex only, spliced, so a regeneration of the
+        forward entries elsewhere rebases), `particle_*.h` and `strip_*.h` (the fragments' SPIR-V
+        came out byte-identical, their MSL moved only in `#line`; the vertex modules now declare the
+        whole per-view block, shadow rows included), `vg_visbuffer_spirv.h` (the hardware vertex).
+        `ResolveVertex.spv` is 948 bytes, M11.c's measurement to the byte. **No DXIL is embedded
+        for any of them**: the tree embeds DXIL only for `samples/03-first-light`, which this does
+        not touch. Metal's modules are compiled and, as before, not run on this host.
+
+      **Evidence** — `build/m11d-shaders-every-target` (Development, `-O2`) and
+      `build/m11d-shaders-every-target-debug` (Debug; every changed C++ file compiled with its
+      flags, `integration.render_pipeline` green):
+      - `cy_shaderc build --strict src samples`: `entry_points=54 artefacts=162 comparisons=162
+        disagreements=0 failures=0 target_refusals=0`, exit 0.
+      - **Byte-identical on Vulkan, before and after**, every image each binary writes, captured
+        from binaries built from the tree before the change and after it (references written through
+        `CY_RENDER_UPDATE_GOLDEN` into a scratch copy, the committed files restored): `first_light`
+        and `first_light_no_shadows` (`render.golden`), the sample's own `--capture`, the four sky
+        references, `beauty_shot_air` (`render.vfx`), the full beauty shot and its linear still —
+        996 particles in one draw and 984 trails through `StripRenderer` — `render.pipeline`'s six
+        captures including `pipeline-frame-particles`, and `virtual_geometry_shaded`;
+        `render.virtual_geometry_forward` reported the same 2 529 pixels in agreement. Each of the
+        references `render.*` writes is also byte-equal to the committed one. Two runs of the same
+        binary were first shown byte-identical, so equality is a measurement and not noise.
+      - `smoke.shader_targets` (new, `tools/shaders/tests/`): the strict measurement over
+        `src/rendering/` on every smoke run — `entry_points=35 artefacts=105`, three targets
+        required when `CY_SHADER_DXIL` is on, so a build whose DXC did not load cannot pass on two.
+        **Red** with `SV_VulkanVertexID` put back in `fullscreenVertex` (`target_refusals=1`) and
+        with `cyFrame` put back in `particle.slang` (`failures=2`); green once each was restored,
+        md5-verified.
+      - `integration.render_pipeline`'s new case: **red** (`offset` 1 of 0) with the resolve's draw
+        given a first vertex (`draw(3, 1, 1, 0)` in `frame_recorder.cpp`), green once restored.
+      - **`m11d:vertex-id-is-portable`** (new): its four suites green, 4 of 4 registered; **red**
+        under its declared mutation — `features11.shaderDrawParameters = VK_TRUE;` deleted —
+        `render.pipeline` 6 of 6 cases and `render.vfx` 4 of 4 failing on
+        `VUID-VkShaderModuleCreateInfo-pCode-08740` (*"SPIR-V Capability DrawParameters was
+        declared, but…"*); green once restored.
+      - **`m11c:every-shader-reaches-every-target`**: `known_gap` and `known_gap_closes` deleted;
+        the recipe it runs is **red** with `SV_VulkanVertexID` reintroduced (`target_refusals=1`)
+        and under its new declared mutation, `SV_Target` renamed in `cy/fullscreen.slang`
+        (`target_refusals=2`, DXC: *invalid semantic … for ps 6.6*). `docs/roadmap/open-debts.md`
+        regenerated. **Not re-recorded**: `tools/roadmap/falsifiability.toml` still carries this
+        criterion's M11.c verdict and has no entry for `vertex-id-is-portable`, because
+        `--mutate-the-tree` refuses a tree other agents are writing to; the close phase's re-record
+        owes both.
 
 ## 10. The gate
 
