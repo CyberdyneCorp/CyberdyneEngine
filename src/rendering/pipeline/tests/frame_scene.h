@@ -95,6 +95,24 @@ struct CubeMesh {
     }
 };
 
+/// What a suite in another directory adds to this scene's frame without a scene of its own — the
+/// reason this header gives for there being one scene. `render.ambient_occlusion` is the first:
+/// it switches a stage on, imports its target and names it in the frame's texture table. Every
+/// hook is optional and a scene with none renders exactly the frame it always rendered.
+struct FrameSceneHooks {
+    void* user = nullptr;
+    /// Before the assembly is created, with every field this scene sets but temporal
+    /// anti-aliasing, which it always switches on.
+    void (*configure)(AssemblyDescription& description, void* user) noexcept = nullptr;
+    /// After the view is filled and the recorder's sinks are taken, before `assemble`.
+    Status (*before_assemble)(RenderGraph& graph, assembly::AssemblyView& view, FrameSinks& sinks,
+                              void* user) noexcept = nullptr;
+    /// After `upload_for`, before the upload is written.
+    Status (*before_upload)(FrameUpload& upload, void* user) noexcept = nullptr;
+    /// Move one box before it is placed. The floor slab is box 0 and is not offered.
+    void (*place_box)(u32 which, Vec3& centre, f32& half, void* user) noexcept = nullptr;
+};
+
 /// The whole thing: the scene, the assembly, the layer, and one render.
 class FrameScene {
 public:
@@ -107,7 +125,8 @@ public:
           instances_(allocator),
           particles_(allocator),
           lights_(allocator),
-          pixels_(allocator) {}
+          pixels_(allocator),
+          boxes_(allocator) {}
 
     ~FrameScene() { release(); }
 
@@ -119,6 +138,8 @@ public:
     /// scene always rendered.
     [[nodiscard]] Status build(rhi::Device& device, const BloomSettings* bloom = nullptr) noexcept;
     void release() noexcept;
+    /// Before `build`. See `FrameSceneHooks`.
+    void set_hooks(const FrameSceneHooks& hooks) noexcept { hooks_ = hooks; }
 
     [[nodiscard]] Status render(RecordMode mode, AssemblyReport& out) noexcept;
 
@@ -147,6 +168,14 @@ public:
     [[nodiscard]] const BloomRenderer& bloom() const noexcept { return bloom_; }
     [[nodiscard]] const FramePipelines& pipelines() const noexcept { return pipelines_; }
     [[nodiscard]] FrameAssembly& assembly() noexcept { return assembly_; }
+    /// The frame's set 0 texture table, for a hook that owns a texture the frame samples.
+    [[nodiscard]] Status set_frame_textures(Span<const MaterialTextureSlot> slots) noexcept {
+        return bindings_.set_material_textures(slots);
+    }
+    [[nodiscard]] const Mat4& projection() const noexcept { return projection_; }
+    [[nodiscard]] const Mat4& view() const noexcept { return view_; }
+    /// Each instance's box, camera-relative, in instance order: the floor slab first.
+    [[nodiscard]] Span<const Aabb> boxes() const noexcept { return boxes_.span(); }
     /// The last frame's output, Rgba8Unorm, row-major from the top-left. Empty until a device
     /// render with `read_back` on.
     [[nodiscard]] Span<const u32> pixels() const noexcept { return pixels_.span(); }
@@ -179,6 +208,8 @@ private:
     Array<particles::ParticleInstance> particles_;
     Array<render::LightDescription> lights_;
     Array<u32> pixels_;
+    Array<Aabb> boxes_;
+    FrameSceneHooks hooks_{};
 
     CubeMesh mesh_;
     rhi::BufferHandle positions_;

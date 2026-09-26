@@ -44,6 +44,12 @@ sky cloud-density 0.26
 sky cloud-steps 48
 sky seed 0x5EEDB107
 
+# The ambient occlusion term's horizon search, read only when a run passes
+# `--ambient-occlusion on`: the radius in metres and the power. The published M11.c frame is the
+# setting off.
+ambient-occlusion radius 1.5
+ambient-occlusion power 1.5
+
 # --- The grade --------------------------------------------------------------------------------
 #
 # Read by the resolve, not by this file's shading: `cy/fullscreen.slang`'s tonemapping resolve

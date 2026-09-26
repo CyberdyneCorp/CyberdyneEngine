@@ -204,6 +204,13 @@ int main(int argc, char** argv) {
     const u32 width = option_number(argc, argv, "--width", 1920);
     const u32 height = option_number(argc, argv, "--height", 1080);
     const u32 supersample = option_number(argc, argv, "--supersample", 2);
+    // THE AMBIENT OCCLUSION SETTING. Off by default, which is the published M11.c frame; `on` is
+    // what `just capture-ambient-occlusion` photographs beside it.
+    const std::string occlusion = option(argc, argv, "--ambient-occlusion", "off");
+    if (occlusion != "on" && occlusion != "off") {
+        std::fprintf(stderr, "cy_sample_beauty: --ambient-occlusion is `on` or `off`\n");
+        return 1;
+    }
     // A CONTROL, not a quality setting: `--albedo-levels 1` photographs the shot with level 0 of
     // every albedo map's cooked chain and nothing beneath it. See `Stage::limit_albedo_levels`.
     const u32 albedo_levels = option_number(argc, argv, "--albedo-levels", 0);
@@ -266,6 +273,10 @@ int main(int argc, char** argv) {
     }
 
     ShotReport report;
+    stage.set_ambient_occlusion(occlusion == "on", shot);
+    std::printf("occlusion     %s, radius %.2f m, power %.2f\n", occlusion.c_str(),
+                static_cast<double>(shot.occlusion_radius),
+                static_cast<double>(shot.occlusion_power));
     stage.limit_albedo_levels(albedo_levels);
     if (bloom) {
         stage.enable_bloom(shot);

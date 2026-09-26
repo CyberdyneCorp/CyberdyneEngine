@@ -60,6 +60,7 @@
 
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/handles.h>
+#include <cy/backends/rhi/pipeline.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
@@ -160,6 +161,12 @@ struct Shot {
     u32 cloud_steps = 48;
     u64 seed = 0x5EEDB107ULL;
 
+    /// The ambient occlusion term's horizon search, when a run switches it on: the radius in
+    /// metres and the power. CONTENT, because both are properties of the scene's scale — a column
+    /// is half a metre across — rather than of the renderer.
+    f32 occlusion_radius = 0.75F;
+    f32 occlusion_power = 1.0F;
+
     f32 exposure_stops = 12.0F;
 
     /// The bloom grade, read from the shot and applied only to a capture that asks for bloom
@@ -245,6 +252,17 @@ public:
     /// run and is what the manifest publishes.
     [[nodiscard]] Status stage_shot(Shot& shot, ShotReport& report) noexcept;
 
+    /// THE AMBIENT OCCLUSION SETTING, before `stage_shot`. Off — the default, and the published
+    /// M11.c frame — draws exactly the frame this program always drew. On adds the frame's depth
+    /// and normal prepass, switches the post chain's `ambient_occlusion` stage on, and shades the
+    /// sky term through `sceneFragmentOccluded`, with the shot's `occlusion_radius` and
+    /// `occlusion_power`. The sun is not touched either way.
+    void set_ambient_occlusion(bool enabled, const Shot& shot) noexcept {
+        ambient_occlusion_ = enabled;
+        occlusion_radius_ = shot.occlusion_radius;
+        occlusion_power_ = shot.occlusion_power;
+    }
+
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
     /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
@@ -287,6 +305,11 @@ public:
 private:
     [[nodiscard]] Status create_pipelines(const Shot& shot) noexcept;
     [[nodiscard]] Status create_frame() noexcept;
+    [[nodiscard]] Status create_occlusion() noexcept;
+    [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
+                                                    const rhi::GraphicsPipelineDescription& scene,
+                                                    rhi::GraphicsPipelineHandle& occluded,
+                                                    rhi::GraphicsPipelineHandle& prepass) noexcept;
     [[nodiscard]] Status cook_textures(Shot& shot, ShotReport& report) noexcept;
     [[nodiscard]] Status build_geometry(const Shot& shot, ShotReport& report) noexcept;
     [[nodiscard]] Status prepare_shadow() noexcept;
@@ -300,6 +323,9 @@ private:
     Vec3 sun_direction_{0.0F, 1.0F, 0.0F};
     Vec3 sun_illuminance_{0.0F, 0.0F, 0.0F};
     Vec3 sky_irradiance_{0.0F, 0.0F, 0.0F};
+    bool ambient_occlusion_ = false;
+    f32 occlusion_radius_ = 0.0F;
+    f32 occlusion_power_ = 1.0F;
     u32 width_ = 0;
     u32 height_ = 0;
     u32 supersample_ = 1;

@@ -238,9 +238,19 @@ struct alignas(16) FrameViewData {
     f32 shadow_to_clip[16] = {};
     /// x: sampled texture slot, y: light index, z: map extent, w: enabled.
     u32 shadow_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// The ambient occlusion term. x: the set 0 texture slot holding
+    /// `occlusion::AmbientOcclusionPass`'s target, or `kNoMaterialTexture` — the default, and the
+    /// frame every caller that predates the field uploads. y: 1 to occlude the DIRECT term as well,
+    /// `AmbientOcclusionSettings::apply_to_direct`, the non-physical option that is off by default.
+    /// z: that option's strength, as `f32` bits. w: reserved.
+    ///
+    /// APPENDED, for the reason `material_textures` gives: every field another committed module
+    /// reads stays where it was.
+    u32 occlusion_control[4] = {kNoMaterialTexture, 0, 0, 0};
 };
 
-static_assert(sizeof(FrameViewData) == 416, "CyFrameData's std140 block is 416 bytes");
+static_assert(sizeof(FrameViewData) == 432, "CyFrameData's std140 block is 432 bytes");
+static_assert(offsetof(FrameViewData, occlusion_control) == 416);
 static_assert(offsetof(FrameViewData, material_textures) == 320);
 static_assert(offsetof(FrameViewData, shadow_to_clip) == 336);
 static_assert(offsetof(FrameViewData, shadow_control) == 400);

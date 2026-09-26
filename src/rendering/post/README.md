@@ -131,3 +131,10 @@ them.
 The internal resolution an upscaler renders at arrives as a parameter and is never decided here:
 `rendering-post-processing` says it "SHALL be a budget allocation held by the renderer budget
 arbiter… not an independent controller measuring frame time".
+
+## Ambient occlusion on the device
+
+The ambient occlusion stage's passes are in `src/rendering/occlusion/`, not here: it reads
+`AmbientOcclusionSettings`' radius and power, and `occlusion::write_occlusion_control` carries
+`apply_to_direct` and `direct_strength` into the frame's `FrameViewData::occlusion_control`.
+`apply_ambient_occlusion` and `specular_occlusion` in `effects.h` remain the host arithmetic.
