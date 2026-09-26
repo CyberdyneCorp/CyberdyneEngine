@@ -499,8 +499,25 @@ not change**, which is a first-hand reading of them whether or not anybody calls
         the symbols, and requires that bundle's symbols to verify on their own. The launch now prints
         and the driver checks all seven provenance fields, the ENGINE revision separate from the
         PROJECT's (`git log -1 -- samples/11-ship/project`).
-      * **Not done, and not this rung's to do:** the CI upload of that bundle is a step in `ci.yml`,
-        which the close phase owns and M11.e's full matrix rewrites; and Mach-O (`dsymutil`) and
+      * **THE CI UPLOAD: WRITTEN, NOT YET OBSERVED ON A RUN.** `ci.yml`'s `test` job gained *"The
+        package's reproducibility bundle and its split symbols"* after `just test-all`, on the two
+        Linux legs: `actions/upload-artifact` of `build/dev/samples/11-ship/run/reproduce` as
+        `provenance-<label>`. The bundle already carries the split symbols (`symbols/.build-id/…`
+        and `symbols/builds/<build id>`), so the work directory's own store is not uploaded twice.
+        **`include-hidden-files: true` is load-bearing**: `.build-id/` is a dot-directory, and
+        upload-artifact drops hidden files by default, which would have archived the build-identity
+        index and not the symbols it points at. `if-no-files-found` is `error` when the job is green
+        and `warn` when it is red, so a passing suite that produced no bundle fails the job. Checked
+        here: the path is exactly what `smoke.ship` writes (run green on
+        `build/m11d-provenance-ci-and-quiet`: 6 bundle files plus the 2 symbol files, 26 MB, the
+        `.debug` under the dot-directory), `symbols.py locate` and `verify` answer from the bundle's
+        copy alone, `ship.py` clears `reproduce/` at the start of every run so a restored
+        `build/dev` cache cannot contribute a stale bundle, and `just ci-check` is unchanged against
+        `main`. **Why the box stays open**: no CI run has executed the step — recent `main` runs
+        were cancelled or failed before the `test` job — so an archived bundle has not been seen.
+        Tick it on the first run that shows a `provenance-linux-x86_64` artefact holding a
+        `.debug` file.
+      * **Not done, and not this rung's to do:** Mach-O (`dsymutil`) and
         PE/PDB are the same four checks with other spellings, which this Linux host cannot produce —
         a non-ELF input is refused by name, never treated as stripped. Both travel with the row to
         M11.e (7.6). Criterion: `m11d:provenance-and-symbols`
@@ -679,7 +696,18 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       exit 0 against `build/m11d-quiet-host-identity`. The criterion's impostor check grepped for
       text the source splits across two literals and was red unmutated; it now matches the call
       that runs the forgery. `m11d:quiet-host-marker-by-identity` is *proven against a built tree*
-      (red with `CY_QUIET_HOST_WRAPPER` renamed, green again once restored)
+      (red with `CY_QUIET_HOST_WRAPPER` renamed, green again once restored).
+      **Re-measured on a second, independent tree, quiet by the wrapper's own verdict rather than
+      by load average**: `build/m11d-provenance-ci-and-quiet` at `23ad643`, its compiled-in
+      `CY_QUIET_HOST_WRAPPER` naming that tree's own `cy_quiet_host`. Each attempt first ran that
+      wrapper around `true` as the gate, then the leg; a heavy I/O burst from peer builds (full
+      I/O pressure 60–95%) held the gate shut from 08:31 to 08:54, and three gated attempts
+      after it still came back exit 3 because the wrapper inside the leg judged the host busy (2.4
+      to 4.5 other cores). Attempt 5 (gate at 09:01:14: 1.05 other cores, CPU and I/O pressure
+      0.0%) gave `leg 6, the marker the harness trusts: held`, exit 0 at 09:01:28. That run covers
+      both halves: every forgery, including the renamed copy of `sh`, came back `not enforced`, and
+      inside the real wrapper both the vfork stall and the spin failed with `enforced: inside
+      cy_quiet_host`
 - [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
       [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
       new or edited since the base (its falsifiability digest moved, or it was not in the base's
