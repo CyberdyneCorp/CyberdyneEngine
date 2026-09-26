@@ -178,6 +178,9 @@ Status FrameScene::fill_index() noexcept {
     if (Status sized = instances_.resize(kInstanceCount); !sized) {
         return sized;
     }
+    if (Status sized = boxes_.resize(kInstanceCount); !sized) {
+        return sized;
+    }
     for (u32 which = 0; which < kInstanceCount; ++which) {
         // Eleven boxes on a ring the camera looks into, and one wide slab under them so the frame
         // has a floor for the point lights to fall on. A scene with nothing but floating boxes
@@ -185,14 +188,18 @@ Status FrameScene::fill_index() noexcept {
         const bool floor = which == 0;
         const f32 angle = static_cast<f32>(which) * 0.5711986643F;
         const f32 radius = 2.1F + (static_cast<f32>(which % 3U) * 0.55F);
-        const Vec3 centre =
+        Vec3 centre =
             floor ? Vec3{0.0F, -1.9F, -8.0F}
                   : Vec3{radius * std::cos(angle), -1.1F + (0.42F * static_cast<f32>(which % 4U)),
                          -6.4F - (radius * std::sin(angle) * 0.9F)};
-        const f32 half = floor ? 6.0F : 0.34F + (0.09F * static_cast<f32>(which % 5U));
+        f32 half = floor ? 6.0F : 0.34F + (0.09F * static_cast<f32>(which % 5U));
+        if (!floor && hooks_.place_box != nullptr) {
+            hooks_.place_box(which, centre, half, hooks_.user);
+        }
 
         SpatialEntry entry;
         entry.bounds = Aabb::from_center_extents(centre, Vec3{half, floor ? 0.125F : half, half});
+        boxes_[which] = entry.bounds;
         entry.stable_id = 900U + which;
         entry.gpu_slot = which;
         // The half-diagonal of a cube of this half-extent: sqrt(3), which is what bounds a box
@@ -297,6 +304,9 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     // The CPU cull path, deliberately: the device dispatch produces the same `CullResults` and this
     // suite is about what is RECORDED rather than about where the cull ran.
     description.gpu_culling = false;
+    if (hooks_.configure != nullptr) {
+        hooks_.configure(description, hooks_.user);
+    }
     description.post.temporal_antialiasing = true;
     if (bloom != nullptr) {
         description.post.bloom = true;
@@ -465,6 +475,11 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         sinks.surfaces = &query_surfaces;
         sinks.surfaces_user = &surface;
     }
+    if (hooks_.before_assemble != nullptr) {
+        if (Status hooked = hooks_.before_assemble(graph_, view, sinks, hooks_.user); !hooked) {
+            return hooked;
+        }
+    }
 
     if (Status assembled = assembly_.assemble(index_, view, sinks, graph_, out); !assembled) {
         return assembled;
@@ -503,6 +518,11 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
                          static_cast<double>(words[material_offsets_[1]]),
                          static_cast<double>(words[material_offsets_[2]]), material_offsets_[0],
                          material_offsets_[1], material_offsets_[2], material_offsets_[3]);
+        }
+        if (hooks_.before_upload != nullptr) {
+            if (Status hooked = hooks_.before_upload(upload, hooks_.user); !hooked) {
+                return hooked;
+            }
         }
         if (Status uploaded = bindings_.upload(slot, upload); !uploaded) {
             return uploaded;

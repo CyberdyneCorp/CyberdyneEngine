@@ -178,6 +178,32 @@ struct FramePassCallback {
     Span<const FrameResourceRead> reads;
 };
 
+/// What a stage that declares ITS OWN PASSES is handed: the prepass outputs it reads and the target
+/// the rest of the frame reads it through.
+struct ScreenSpaceStageInputs {
+    ResourceId depth = kInvalidResource;
+    ResourceId normal_roughness = kInvalidResource;
+    /// The stage's product. The frame's later passes declare their reads against this resource, so
+    /// the declarer's last pass must write it.
+    ResourceId target = kInvalidResource;
+    u32 width = 0;
+    u32 height = 0;
+};
+
+/// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
+/// refuse — which fails the frame's build rather than leaving the stage out.
+using DeclareStageFn = PassId (*)(RenderGraph& graph, const ScreenSpaceStageInputs& inputs,
+                                  void* user) noexcept;
+
+/// A stage whose producer needs more than one pass: ambient occlusion is a horizon search followed
+/// by a filter cascade, and a barrier between two dispatches can only come from the graph, so the
+/// producer declares the passes itself at the stage's position in the order. A null `declare` keeps
+/// the stage the single pass `ForwardFrame` declares, with the caller's record callback.
+struct FrameStageDeclaration {
+    DeclareStageFn declare = nullptr;
+    void* user = nullptr;
+};
+
 /// The resources one frame declares. `kInvalidResource` for anything the feature set left out —
 /// which is how "their targets unallocated" is observable rather than asserted.
 struct FrameResources {
@@ -249,6 +275,13 @@ struct FrameDescription {
     /// receive graph-owned stand-ins so the pass remains inspectable without a device.
     ResourceId temporal_previous = kInvalidResource;
     ResourceId temporal_current = kInvalidResource;
+    /// The ambient occlusion target, imported by its producer. Absent, the frame creates the
+    /// single-channel transient the stage has always declared. Read only with
+    /// `features.ambient_occlusion`.
+    ResourceId ambient_occlusion_target = kInvalidResource;
+    /// The producer that declares the ambient occlusion stage's passes. See
+    /// `FrameStageDeclaration`.
+    FrameStageDeclaration ambient_occlusion_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;
@@ -303,6 +336,10 @@ private:
     /// a no-op once a failure has been recorded, so a declaration sequence reads as a sequence
     /// rather than as fifteen error checks. `status_` is what `build()` returns.
     void stage(FramePassKind kind, const char* name, PassId pass) noexcept;
+    /// Hand a stage to the producer that declares its passes, and record the first of them.
+    void declare_produced_stage(RenderGraph& graph, const BuildState& state,
+                                const FrameStageDeclaration& producer, FramePassKind kind,
+                                const char* name, ResourceId target) noexcept;
 
     Array<FramePass> passes_;
     FrameResources resources_{};

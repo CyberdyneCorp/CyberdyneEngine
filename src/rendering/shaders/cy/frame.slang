@@ -172,6 +172,12 @@ public struct CyFrameData
     public float4 shadowToClipRow3;
     /// x: frame texture slot; y: light index; z: map extent; w: enabled.
     public uint4 shadowControl;
+    /// The ambient occlusion term, appended for the reason `materialTextures` gives. x: the frame
+    /// texture slot of `occlusion::AmbientOcclusionPass`'s target — visibility in `.a` — or
+    /// `kCyNoMaterialTexture`, which is the default and draws the frame as it was. y: 1 to occlude
+    /// the direct term too, the non-physical option `rendering-post-processing` requires to be off
+    /// by default. z: that option's strength, as float bits.
+    public uint4 occlusionControl;
 };
 
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
@@ -581,6 +587,14 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
     return lit;
 }
 
+/// The ambient occlusion term's visibility at a fragment. The target is the frame's own extent, so
+/// the fragment's centre is a texel's centre and the table's filtering returns that texel.
+float occlusionVisibility(float2 fragmentCentre)
+{
+    let uv = fragmentCentre * cyFrame.extentAndInverse.zw;
+    return cyMaterialSampleTextureLevel(cyFrame.occlusionControl.x, uv, 0.0).a;
+}
+
 [shader("fragment")]
 public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
@@ -596,7 +610,21 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 
     var color = accumulateLights(surface, input.relativePosition, normal, viewDir, pixel,
                                  draw.flags);
+    // AMBIENT OCCLUSION DARKENS THE AMBIENT TERM AND NOTHING ELSE. `rendering-post-processing`:
+    // "AO SHALL modulate indirect lighting only; applying it to direct light SHALL be an explicitly
+    // non-physical artistic option, off by default." The direct sum above is untouched unless that
+    // option is on, and with no occlusion slot the arithmetic below is the frame's as it was.
+    var ambient = surface.albedo * cyFrame.ambientAndOcclusion.rgb * surface.occlusion;
+    if (cyFrame.occlusionControl.x != kCyNoMaterialTexture)
+    {
+        let visibility = occlusionVisibility(input.position.xy);
+        ambient *= visibility;
+        if (cyFrame.occlusionControl.y != 0u)
+        {
+            color *= lerp(1.0, visibility, asfloat(cyFrame.occlusionControl.z));
+        }
+    }
     color += surface.emission;
-    color += surface.albedo * cyFrame.ambientAndOcclusion.rgb * surface.occlusion;
+    color += ambient;
     return float4(color, surface.opacity);
 }
