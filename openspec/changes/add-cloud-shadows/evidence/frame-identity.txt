@@ -1,0 +1,25 @@
+# samples/10-world, Development, Vulkan, NVIDIA RTX 5060, 960x540, default seed, --seconds 24 --fps 8
+# (192 frames, one simulated day). Linux Mint 22.1, host shared with other builds (load 20-30).
+
+before   origin/main 2614fb0 build of cy_sample_world, --frames
+off      this change, --no-cloud-shadows --frames
+on       this change, --frames
+
+frame-by-frame cmp, before vs off:    192 frames, 0 differ
+authoritative take digest:            before 0x3DE89D039348ECB5, off 0x3DE89D039348ECB5, on 0x3DE89D039348ECB5
+headless (--seconds 8 --fps 8):       before 0x16783AEE1BDB22A5, after 0x16783AEE1BDB22A5
+RHI validation errors:                0 (off), 0 (on)
+
+frames where on differs from off (more than 5/255 in luminance):
+  frame_0081  79 988 pixels darker, 0 brighter   a cloud's shadow on the western hills, viewer in sun
+  frame_0092  0 darker, 208 514 brighter        the viewer under a cloud: before, the whole world was
+                                                dimmed by the cloud over the camera; after, only
+                                                what lies under the cloud's shadow is
+
+published: docs/design/images/cloud-shadows-crossing-{on,off}.png            (frame 81)
+           docs/design/images/cloud-shadows-viewer-under-cloud-{on,off}.png  (frame 92)
+
+cost (sky_ms, daytime frames of a 64-frame take on the same loaded host):
+  off  3.51 ms mean, 5.32 ms max
+  on   4.83 ms mean, 5.00 ms max     (2 048 cells x 8 steps a frame; the 4 km / 12-step first
+                                      setting cost 8.62 ms mean and was rejected)
