@@ -189,6 +189,8 @@ struct CallForm {
             return {"saturate", nullptr};
         case Op::Sin:
             return {"sin", nullptr};
+        case Op::Noise:
+            return {"cyMaterialNoise", nullptr};
         case Op::Normalize:
             return {"normalize", nullptr};
         case Op::Lerp:

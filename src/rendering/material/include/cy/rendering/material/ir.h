@@ -155,6 +155,9 @@ enum class Op : u16 {
     /// Sine of a numeric value, in radians. Appended to preserve existing operation identities.
     Sin,
 
+    /// Smooth three-dimensional value noise from a float3 position, returning one float.
+    Noise,
+
     Count,
 };
 

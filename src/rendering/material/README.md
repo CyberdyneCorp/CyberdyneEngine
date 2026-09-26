@@ -94,6 +94,8 @@ coordinates; `material.object_position` retains mesh-local coordinates. Both are
 `material.time` is a scalar engine input. The first-light hosted renderer writes elapsed seconds into the
 frame uniform before drawing each preview frame, and the material shader binds it for vertex and
 fragment expressions. Its value changes without a material recompile.
+`material.noise` accepts a float3 coordinate and returns smooth value noise in `[0, 1]`. The node
+and `noise(position)` text form lower to the same IR operation and engine Slang function.
 Each compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
 its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
 the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including

@@ -54,7 +54,10 @@ now lower to fixed typed material attributes. The hosted viewport supplies both 
 vertex function and carries them to fragment evaluation; visible and shadow entry points use the
 same binding. A typed time node now reads monotonic elapsed seconds from the first-light hosted renderer's
 per-frame uniform for sine-driven offset expressions, without changing the material program.
-Vertex colour, noise, wind, custom interpolants, and displacement remain in task 3.1.
+The engine material IR now includes a typed three-dimensional value-noise operation, exposed by
+both the graph palette and `noise(position)` text syntax. Slang compiles it in a vertex expression;
+the node rejects non-float3 coordinates. Vertex colour, wind, custom interpolants, and displacement
+remain in task 3.1.
 The authored scene frame still uses the standard material path. It now rejects a vertex graph
 with a named missing-pass error before that path can flatten it to a diffuse colour; the
 first-light preview and authored scene frame will be unified under task 3.4.

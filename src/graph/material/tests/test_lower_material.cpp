@@ -261,10 +261,12 @@ CY_TEST_CASE("graph_material: the vertex output reaches the same typed IR root")
 CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attributes") {
     Canvas canvas("geometry_inputs");
     const NodeKey position = canvas.add("material.object_position");
-    (void)canvas.add("material.world_position");
+    const NodeKey world = canvas.add("material.world_position");
     (void)canvas.add("material.normal");
     (void)canvas.add("material.uv0");
     (void)canvas.add("material.time");
+    const NodeKey noise = canvas.add("material.noise");
+    canvas.wire(world, noise, "position");
     const NodeKey output = canvas.add("material.vertex_output");
     canvas.wire(position, output, "offset");
     CY_REQUIRE(canvas.good());
@@ -282,6 +284,7 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
     bool uv0 = false;
     bool world_position = false;
     bool time = false;
+    bool coherent_noise = false;
     for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
         const auto& node = ir.value().node(id);
         world_position = world_position ||
@@ -290,9 +293,26 @@ CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attribut
         uv0 = uv0 || (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2);
         time =
             time || (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float);
+        coherent_noise = coherent_noise ||
+                         (node.op == cy::rendering::material::Op::Noise &&
+                          node.type == ValueType::Float && ir.value().operands(id).size() == 1);
     }
     CY_CHECK(world_position);
     CY_CHECK(normal);
     CY_CHECK(uv0);
     CY_CHECK(time);
+    CY_CHECK(coherent_noise);
+}
+
+CY_TEST_CASE("graph_material: spatial noise refuses a scalar coordinate") {
+    Canvas canvas("invalid_noise");
+    const NodeKey scalar = canvas.add("material.constant");
+    canvas.type_of(scalar, ValueType::Float);
+    const NodeKey noise = canvas.add("material.noise");
+    canvas.wire(scalar, noise, "position");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("invalid_noise"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    CY_CHECK_FALSE(cy::rendering::material::lower_graph(lowered, allocator()).has_value());
 }

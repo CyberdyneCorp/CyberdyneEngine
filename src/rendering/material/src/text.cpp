@@ -218,6 +218,9 @@ struct Binding {
     if (text == "sin") {
         return Op::Sin;
     }
+    if (text == "noise") {
+        return Op::Noise;
+    }
     if (text == "normalize") {
         return Op::Normalize;
     }

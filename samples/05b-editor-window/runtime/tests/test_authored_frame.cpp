@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -264,7 +265,9 @@ CY_TEST_CASE("authored scene material path names its unsupported vertex output")
     std::ifstream source(CY_TEST_PROJECT
                          "/samples/05b-editor-window/project/materials/copper_clay.cygraph");
     CY_REQUIRE(source.good());
-    const std::string surface(std::istreambuf_iterator<char>{source}, {});
+    std::ostringstream contents;
+    contents << source.rdbuf();
+    const std::string surface = contents.str();
     auto accepted = graph_diffuse_colour(surface, allocator());
     CY_REQUIRE(accepted.has_value());
 

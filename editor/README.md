@@ -459,7 +459,9 @@ text material front end. It is available for authored material arithmetic. The v
 uses the renderer's camera-relative world coordinates; object position uses the mesh's local
 coordinates. The hosted viewport binds both positions for visible and shadow vertex evaluation.
 `material.time` reads elapsed engine seconds from the first-light hosted preview frame in both stages, so a
-`material.sin` chain can animate an offset without a parameter edit or recompile. The remaining
+`material.sin` chain can animate an offset without a parameter edit or recompile. The shared
+`material.noise` node samples smooth scalar noise from a float3 position, so a world-position
+input can vary vertex motion spatially. The remaining
 outputs are tracked by issue #15. The authored scene frame currently accepts only its standard
 constant-colour graph subset; a graph with `material.vertex_output` reports the missing
 vertex-offset pass explicitly instead of being presented as a generic graph mismatch.

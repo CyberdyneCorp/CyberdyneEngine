@@ -55,6 +55,7 @@ constexpr OpInfo kOps[] = {
     {"closure_add", kVariadic, true, true, false},
     {"closure_layer", 2, false, true, false},
     {"sin", 1, false, false, false},
+    {"noise", 1, false, false, false},
 };
 
 static_assert(sizeof(kOps) / sizeof(kOps[0]) == static_cast<usize>(Op::Count),
@@ -772,6 +773,13 @@ namespace {
                 return make_unexpected(checked.error());
             }
             return types[0];
+        case Op::Noise:
+            if (Status checked = require(types[0] == ValueType::Vec3,
+                                         "three-dimensional noise requires a float3 position");
+                !checked) {
+                return make_unexpected(checked.error());
+            }
+            return ValueType::Float;
         case Op::Lerp: {
             auto blended = combine_numeric(types[0], types[1]);
             if (!blended) {

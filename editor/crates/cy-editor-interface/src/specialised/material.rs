@@ -84,6 +84,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.layer_closures", &["top", "base"], true),
     ("material.lerp", &["a", "b", "t"], false),
     ("material.multiply", &["a", "b"], false),
+    ("material.noise", &["position"], false),
     ("material.normal", &[], false),
     ("material.one_minus", &["value"], false),
     ("material.object_position", &[], false),
