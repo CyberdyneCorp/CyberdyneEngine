@@ -230,6 +230,11 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
                   Span<const u8>(reinterpret_cast<const u8*>(program.source.text.data()),
                                  program.source.text.size()),
                   status);
+        put_u64(out, program.vertex_source.digest, status);
+        put_bytes(out,
+                  Span<const u8>(reinterpret_cast<const u8*>(program.vertex_source.text.data()),
+                                 program.vertex_source.text.size()),
+                  status);
     }
     return status;
 }
@@ -360,7 +365,7 @@ Expected<CookedBundle, Error> decode_bundle(Span<const u8> bytes, Allocator& all
         return make_unexpected(
             Error{ErrorCode::InvalidArgument, "not a cooked material bundle", 0});
     }
-    if (version != kBundleVersion) {
+    if (version != 1 && version != kBundleVersion) {
         return make_unexpected(Error{ErrorCode::Unsupported,
                                      "this bundle was written by a different cooker version", 0});
     }
@@ -384,6 +389,12 @@ Expected<CookedBundle, Error> decode_bundle(Span<const u8> bytes, Allocator& all
         const Span<const u8> source = reader.read_bytes();
         program.source =
             std::string_view(reinterpret_cast<const char*>(source.data()), source.size());
+        if (version >= 2) {
+            program.vertex_digest = reader.read_u64();
+            const Span<const u8> vertex = reader.read_bytes();
+            program.vertex_source =
+                std::string_view(reinterpret_cast<const char*>(vertex.data()), vertex.size());
+        }
         if (!reader.ok()) {
             break;
         }

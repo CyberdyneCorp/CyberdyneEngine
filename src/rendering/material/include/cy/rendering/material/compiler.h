@@ -48,7 +48,7 @@ namespace cy::rendering::material {
 /// The compiler's own version. Part of every cook key: "WHEN the material compiler version
 /// increases THEN compiled programs SHALL be recooked and the authored material assets SHALL be
 /// untouched."
-inline constexpr u32 kCompilerVersion = 2;
+inline constexpr u32 kCompilerVersion = 3;
 
 enum class DiagnosticSeverity : u8 { Info = 0, Warning = 1, Error = 2 };
 

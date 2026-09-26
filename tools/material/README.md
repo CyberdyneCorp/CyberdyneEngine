@@ -81,6 +81,10 @@ reflection data, the cost report, and pipeline state metadata" — with one thin
 plainly: **nothing here invokes the Slang compiler.** The bundle carries source, and `shader-system`
 owns turning it into SPIR-V through the one shader pipeline the specification permits. Wiring that
 join is not this task's, and a bundle that claimed to hold compiled programs would be lying about it.
+Bundle version 2 also stores each program's vertex-offset Slang and digest. An opaque shadow
+program can have no fragment source while still carrying the vertex source needed to displace its
+silhouette. The reader accepts version 1 bundles with an empty vertex source; the compiler version
+increment makes the build graph recook current materials before they are shipped.
 
 ## The failure a reader should know about
 

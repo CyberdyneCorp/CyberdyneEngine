@@ -91,7 +91,9 @@ The engine material catalogue assigns `material.vertex_output` a stable identity
 vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment. Each
 compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
 its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
-the smoke suite. The frame renderer still needs to call it for visible, shadow, and motion passes.
+the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including
+opaque shadow variants without fragment work. The frame renderer still needs to call it for visible,
+shadow, and motion passes.
 `CompileOptions::geometry_paths` records named geometry sources for the variant report and cook
 identity. A vertex graph targeting `VirtualGeometry` reports `vertex-geometry-unsupported` with
 the source name: its visibility and shadow paths cannot evaluate the offset. Callers that do not

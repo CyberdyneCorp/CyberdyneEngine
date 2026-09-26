@@ -27,6 +27,9 @@ emission reads one expression across visible, shadow, and previous-frame positio
 variant carries a separate generated vertex function from this root, using the same SSA expression
 writer as the surface function. The vertex function is compiled against the engine Slang library as
 a vertex-stage probe before frame integration.
+Cooked material bundle version 2 carries each variant's vertex source and digest beside its
+fragment source. Opaque shadow variants retain the vertex source despite having no fragment work;
+the reader continues to accept older version 1 bundles, and the compiler version forces recooking.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 

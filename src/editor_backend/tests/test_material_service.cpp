@@ -16,7 +16,6 @@
 #include <cstring>
 #include <fstream>
 #include <initializer_list>
-#include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -26,6 +25,18 @@ namespace {
 
 cy::Allocator& allocator() noexcept {
     return cy::system_allocator(cy::MemoryDomain::Scripting);
+}
+
+std::string read_source(std::ifstream& input) {
+    input.seekg(0, std::ios::end);
+    const std::streamoff length = input.tellg();
+    if (length <= 0) {
+        return {};
+    }
+    std::string source(static_cast<std::size_t>(length), '\0');
+    input.seekg(0, std::ios::beg);
+    return input.read(source.data(), static_cast<std::streamsize>(source.size())) ? source
+                                                                                  : std::string{};
 }
 
 cy::u32 read_u32(const cy::u8* bytes) noexcept {
@@ -136,8 +147,8 @@ CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 12U);
     CY_CHECK_EQ(read_u32(event.payload), 3U);
-    CY_CHECK_EQ(read_u32(event.payload + 4), 5U);
-    CY_CHECK_EQ(read_u32(event.payload + 8), 26U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 6U);
+    CY_CHECK_EQ(read_u32(event.payload + 8), 27U);
     api->service_close(&host, session);
 }
 
@@ -348,7 +359,8 @@ CY_TEST_CASE(
                              "/samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule";
     std::ifstream input(path);
     CY_REQUIRE(input.good());
-    const std::string module_source(std::istreambuf_iterator<char>{input}, {});
+    const std::string module_source = read_source(input);
+    CY_REQUIRE_FALSE(module_source.empty());
     const std::string source = vfx_document(
         "vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag", "velocity");
     auto asset = cy::vfx::read_authoring_document(source, allocator());
@@ -418,7 +430,8 @@ CY_TEST_CASE("editor_backend: bundled module compiles through the VFX service") 
                              "/samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule";
     std::ifstream input(path);
     CY_REQUIRE(input.good());
-    const std::string module_source(std::istreambuf_iterator<char>{input}, {});
+    const std::string module_source = read_source(input);
+    CY_REQUIRE_FALSE(module_source.empty());
     const std::string document = vfx_document(
         "vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag", "velocity");
     const std::string bundle = vfx_bundle(document, module_source);
@@ -582,7 +595,8 @@ CY_TEST_CASE("editor_backend: the two-emitter editor sample compiles in the engi
         "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
     std::ifstream input(path);
     CY_REQUIRE(input.good());
-    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    const std::string source = read_source(input);
+    CY_REQUIRE_FALSE(source.empty());
     auto asset = cy::vfx::read_authoring_document(source, allocator());
     CY_REQUIRE(asset.has_value());
     CY_REQUIRE_EQ(asset->emitters().size(), 2U);
@@ -608,7 +622,8 @@ CY_TEST_CASE("editor_backend: reusable VFX module source has the same engine int
                              "/samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule";
     std::ifstream input(path);
     CY_REQUIRE(input.good());
-    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    const std::string source = read_source(input);
+    CY_REQUIRE_FALSE(source.empty());
     auto module = cy::vfx::read_authoring_module(source, allocator());
     CY_REQUIRE(module.has_value());
     CY_CHECK_EQ(module->name.text(), std::string_view("shared_drag"));

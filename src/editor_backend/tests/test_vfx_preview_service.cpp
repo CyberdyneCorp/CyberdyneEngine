@@ -7,7 +7,6 @@
 
 #include <cstring>
 #include <fstream>
-#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,6 +15,18 @@ namespace {
 
 cy::Allocator& allocator() noexcept {
     return cy::system_allocator(cy::MemoryDomain::Scripting);
+}
+
+std::string read_source(std::ifstream& input) {
+    input.seekg(0, std::ios::end);
+    const std::streamoff length = input.tellg();
+    if (length <= 0) {
+        return {};
+    }
+    std::string source(static_cast<std::size_t>(length), '\0');
+    input.seekg(0, std::ios::beg);
+    return input.read(source.data(), static_cast<std::streamsize>(source.size())) ? source
+                                                                                  : std::string{};
 }
 
 cy::u32 read_u32(const cy::u8* bytes) noexcept {
@@ -154,7 +165,8 @@ CY_TEST_CASE("editor_backend: VFX preview controls and live parameters use the e
         "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
     std::ifstream input(path);
     CY_REQUIRE(input.good());
-    const std::string source(std::istreambuf_iterator<char>{input}, {});
+    const std::string source = read_source(input);
+    CY_REQUIRE_FALSE(source.empty());
     cy::abi::Host host(allocator());
     cy::editor::MaterialService service(allocator());
     host.bind_editor_service(&service);
