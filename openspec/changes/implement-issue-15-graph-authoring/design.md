@@ -62,6 +62,9 @@ The material build producer now accepts an explicit comma-separated `geometry` o
 its source set to the compiler; a virtual-geometry assignment with a vertex offset fails without
 an artefact. Propagating geometry assignments from the scene into editor validation and project
 build descriptions remains part of task 3.2.
+The `cy_material cook` front end now accepts a repeated material-to-geometry assignment, passes
+each source set to that producer, and refuses assignments for materials missing from the cook
+inputs. Generating those assignments from saved scene assets remains part of task 3.2.
 The editor backend now accepts a versioned material request envelope listing named geometry
 sources and passes those paths to the same compiler options used by cooking. Validate and Compile
 return the compiler's `vertex-geometry-unsupported` code for a vertex graph assigned to

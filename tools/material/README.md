@@ -39,6 +39,11 @@ names separated by commas (for example, `StaticMesh,VirtualGeometry`). The produ
 paths to the material compiler. A vertex offset assigned to `VirtualGeometry` fails with
 `vertex-geometry-unsupported` and emits no bundle; an unknown source fails with
 `material-geometry-source-invalid`. Omitting the option preserves an unassigned material cook.
+The `cy_material cook` front end accepts a repeated `--geometry <material>=<sources>` option, so
+each named material source receives only its own scene assignment. For example,
+`--geometry materials/foliage.cygraph=StaticMesh,VirtualGeometry` applies to
+`materials/foliage.cygraph` when that file is listed among the cook inputs. An assignment for a
+material absent from the cook inputs is refused.
 
 **The producer's version is the compiler's version.** `kMaterialProducerVersion` is *defined as*
 `cy::rendering::material::kCompilerVersion`, so "WHEN the material compiler version increases THEN

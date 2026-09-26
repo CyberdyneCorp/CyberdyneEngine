@@ -21,6 +21,7 @@
 #include <cy/test/test.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <memory>
@@ -375,6 +376,52 @@ CY_TEST_CASE("material_cook: build producer passes assigned geometry paths to th
     CY_REQUIRE(supported != nullptr);
     CY_CHECK_EQ(supported->outcome, NodeOutcome::Ran);
     CY_CHECK_EQ(supported->outputs.size(), 1U);
+}
+
+CY_TEST_CASE("material_cook: command line assigns geometry to the named material only") {
+    Project project;
+    project.write("materials/moving_stone.cymat",
+                  "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }");
+    const std::string log = project.path("cook.log");
+    const auto run = [&](std::string_view assignment, std::string_view output) {
+#if defined(_WIN32)
+        const std::string command = "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" +
+                                    project.sources() + "\" \"" +
+                                    project.path(std::string(output).c_str()) + "\" --geometry \"" +
+                                    std::string(assignment) +
+                                    "\" materials/moving_stone.cymat "
+                                    "materials/worn_metal.cymat >\"" +
+                                    log + "\" 2>&1\"";
+#else
+        const std::string command = "\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" +
+                                    project.sources() + "\" \"" +
+                                    project.path(std::string(output).c_str()) + "\" --geometry \"" +
+                                    std::string(assignment) +
+                                    "\" materials/moving_stone.cymat "
+                                    "materials/worn_metal.cymat >\"" +
+                                    log + "\" 2>&1";
+#endif
+        // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+        const int exit = std::system(command.c_str());
+        Array<u8> bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole(log.c_str(), bytes).has_value());
+        return std::pair{exit, std::string(bytes.begin(), bytes.end())};
+    };
+
+    const auto [refused, failure] =
+        run("materials/moving_stone.cymat=VirtualGeometry", "unsupported");
+    CY_CHECK_NE(refused, 0);
+    CY_CHECK(failure.find("vertex-geometry-unsupported (VirtualGeometry)") != std::string::npos);
+    CY_CHECK(failure.find("material:materials/worn_metal.cymat") != std::string::npos);
+
+    const auto [accepted, success] = run("materials/moving_stone.cymat=StaticMesh", "supported");
+    CY_CHECK_EQ(accepted, 0);
+    CY_CHECK(success.find("ran 2, cached 0, rebuilt 0, failed 0") != std::string::npos);
+
+    const auto [missing, message] = run("materials/absent.cymat=StaticMesh", "missing");
+    CY_CHECK_NE(missing, 0);
+    CY_CHECK(message.find("geometry assignment has no material materials/absent.cymat") !=
+             std::string::npos);
 }
 
 CY_TEST_CASE("material_cook: fragment sampling in a vertex graph leaves no artefact") {

@@ -46,7 +46,8 @@ int usage() {
                  "  cy_material author <canvas.cymatcanvas> --graph <out.cygraph>\n"
                  "                     [--module <out.slang>] [--info <out.cymatinfo>]\n"
                  "  cy_material cook <project-dir> <artefact-dir> [--profile desktop|mobile]\n"
-                 "                   [--cache <dir>] <material.cymat>...\n");
+                 "                   [--cache <dir>] [--geometry <material>=<sources>]...\n"
+                 "                   <material.cymat|material.cygraph>...\n");
     return 2;
 }
 
@@ -154,14 +155,72 @@ int compile_one(int argc, char** argv) {
     return 0;
 }
 
+struct GeometryAssignment {
+    std::string material;
+    std::string sources;
+    bool used = false;
+};
+
+struct CookInputs {
+    std::string cache;
+    std::string profile = "desktop";
+    std::vector<std::string> materials;
+    std::vector<GeometryAssignment> geometry;
+};
+
+[[nodiscard]] bool add_geometry_assignment(CookInputs& inputs, std::string_view assignment) {
+    const usize separator = assignment.find('=');
+    if (separator == 0 || separator == std::string_view::npos ||
+        separator + 1 == assignment.size()) {
+        std::fprintf(stderr, "cy_material: expected --geometry <material>=<sources>\n");
+        return false;
+    }
+    const std::string material(assignment.substr(0, separator));
+    for (const auto& recorded : inputs.geometry) {
+        if (recorded.material == material) {
+            std::fprintf(stderr, "cy_material: duplicate geometry assignment for %s\n",
+                         material.c_str());
+            return false;
+        }
+    }
+    inputs.geometry.push_back({material, std::string(assignment.substr(separator + 1)), false});
+    return true;
+}
+
+[[nodiscard]] bool parse_cook_inputs(int argc, char** argv, CookInputs& inputs) {
+    for (int index = 4; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--cache" || argument == "--profile") {
+            if (++index >= argc) {
+                return false;
+            }
+            (argument == "--cache" ? inputs.cache : inputs.profile) = argv[index];
+            continue;
+        }
+        if (argument == "--geometry") {
+            if (++index >= argc || !add_geometry_assignment(inputs, argv[index])) {
+                return false;
+            }
+            continue;
+        }
+        if (argument.starts_with("--")) {
+            return false;
+        }
+        inputs.materials.emplace_back(argument);
+    }
+    return !inputs.materials.empty();
+}
+
 int cook_project(int argc, char** argv) {
     if (argc < 5) {
         return usage();
     }
     const std::string project = argv[2];
     const std::string artefacts = argv[3];
-    const std::string cache = option_value(argc, argv, "--cache", "");
-    const std::string profile = option_value(argc, argv, "--profile", "desktop");
+    CookInputs inputs;
+    if (!parse_cook_inputs(argc, argv, inputs)) {
+        return usage();
+    }
 
     build::ProducerRegistry producers;
     if (Status added = material::add_material_producers(producers); !added) {
@@ -170,29 +229,33 @@ int cook_project(int argc, char** argv) {
     }
 
     build::BuildGraph graph;
-    u32 declared = 0;
-    for (int index = 4; index < argc; ++index) {
-        const std::string_view argument = argv[index];
-        if (argument.starts_with("--")) {
-            ++index;  // its value
-            continue;
-        }
+    for (const std::string& argument : inputs.materials) {
         build::NodeDesc node;
         node.kind = build::NodeKind::Shader;
-        node.name = "material:" + std::string(argument);
+        node.name = "material:" + argument;
         node.producer = "material";
         node.producer_version = material::kMaterialProducerVersion;
         node.sources.emplace_back(argument);
-        node.outputs.emplace_back(std::string(argument) + ".cymatbin");
-        node.options.push_back(build::NodeOption{"profile", profile});
+        node.outputs.emplace_back(argument + ".cymatbin");
+        node.options.push_back(build::NodeOption{"profile", inputs.profile});
+        for (auto& assignment : inputs.geometry) {
+            if (assignment.material == argument) {
+                node.options.push_back(build::NodeOption{"geometry", assignment.sources});
+                assignment.used = true;
+                break;
+            }
+        }
         if (auto added = graph.add(std::move(node)); !added) {
             std::fprintf(stderr, "cy_material: %s\n", added.error().message);
             return 1;
         }
-        ++declared;
     }
-    if (declared == 0) {
-        return usage();
+    for (const auto& assignment : inputs.geometry) {
+        if (!assignment.used) {
+            std::fprintf(stderr, "cy_material: geometry assignment has no material %s\n",
+                         assignment.material.c_str());
+            return 2;
+        }
     }
     if (Status finalized = graph.finalize(); !finalized) {
         std::fprintf(stderr, "cy_material: %s\n", finalized.error().message);
@@ -205,7 +268,7 @@ int cook_project(int argc, char** argv) {
     config.producers = &producers;
     config.sources = &sources;
     config.artefact_root = artefacts;
-    config.cache.local = cache.empty() ? "" : cache.c_str();
+    config.cache.local = inputs.cache.empty() ? "" : inputs.cache.c_str();
 
     build::BuildService service;
     if (Status configured = service.configure(std::move(config)); !configured) {
