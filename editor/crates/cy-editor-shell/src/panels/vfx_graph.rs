@@ -1315,11 +1315,18 @@ fn current_emitter_settings(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     };
     let mut renderer = emitter.renderer.clone();
     let mut path = u8::from(emitter.path == SimulationPath::CpuRequired);
+    let mut remove = false;
     ui.horizontal(|ui| {
         ui.label(format!("{} settings", emitter.name));
         renderer_picker(ui, &capabilities, &mut renderer);
         target_picker(ui, &capabilities, &mut path);
+        remove = ui.button("Remove emitter").clicked();
     });
+    if remove {
+        let result = remove_open_emitter(panels.specialised, index);
+        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        return;
+    }
     let target = if path == 1 {
         SimulationPath::CpuRequired
     } else {
@@ -1331,6 +1338,23 @@ fn current_emitter_settings(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             .set_vfx_emitter_settings(index, target, renderer);
         panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
     }
+}
+
+fn remove_open_emitter(specialised: &mut SpecialisedEditors, index: usize) -> Result<()> {
+    let mut document = specialised
+        .vfx_document_snapshot()?
+        .ok_or_else(|| Problem::new("remove a VFX emitter", "no VFX document is open"))?;
+    if index >= document.emitters.len() {
+        return Err(Problem::new("remove a VFX emitter", "unknown emitter"));
+    }
+    document.emitters.remove(index);
+    let next = index.min(document.emitters.len().saturating_sub(1));
+    let select_next = !document.emitters.is_empty();
+    specialised.start_vfx_document(document)?;
+    if select_next {
+        specialised.select_vfx_stage(next, Stage::Spawn)?;
+    }
+    Ok(())
 }
 
 fn renderer_picker(
@@ -1417,6 +1441,57 @@ mod tests {
     use cy_editor_core::codec::Writer;
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
     use cy_editor_interface::specialised::vfx::StageGraph;
+
+    #[test]
+    fn removing_an_open_emitter_preserves_the_other_stage_draft() {
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.constant");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        let mut editors = SpecialisedEditors::new().unwrap();
+        editors.install_vfx_catalogue(&catalogue.finish()).unwrap();
+
+        let mut document = VfxDocument::new("sparks").unwrap();
+        for name in ["smoke", "embers"] {
+            document.emitters.push(Emitter {
+                name: name.into(),
+                path: SimulationPath::CpuRequired,
+                renderer: "Sprite".into(),
+                stages: Vec::new(),
+                modules: Vec::new(),
+                interfaces: Vec::new(),
+                capacity: 1024,
+                attributes: Vec::new(),
+            });
+        }
+        editors.start_vfx_document(document).unwrap();
+        editors.select_vfx_stage(1, Stage::Update).unwrap();
+        editors
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.constant", Layout::default())
+            .unwrap();
+
+        remove_open_emitter(&mut editors, 0).unwrap();
+        assert_eq!(editors.active_vfx_stage(), Some((0, Stage::Spawn)));
+        let remaining = editors.vfx_document_snapshot().unwrap().unwrap();
+        assert_eq!(remaining.emitters.len(), 1);
+        assert_eq!(remaining.emitters[0].name, "embers");
+        assert!(remaining.emitters[0].stages.iter().any(|stage| {
+            stage.stage == Stage::Update && stage.canvas.contains("node 1 vfx.constant")
+        }));
+
+        remove_open_emitter(&mut editors, 0).unwrap();
+        assert_eq!(editors.active_vfx_stage(), None);
+        assert!(editors.vfx_document().unwrap().emitters.is_empty());
+    }
 
     #[test]
     fn compiler_alerts_use_emitter_and_stage_even_when_node_keys_repeat() {

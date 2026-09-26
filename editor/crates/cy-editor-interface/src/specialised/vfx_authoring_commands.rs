@@ -17,6 +17,7 @@ use super::vfx_module::{ModuleInput, VfxModule};
 /// Install the same VFX actions for the command palette, scripts, and MCP projection.
 pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(add_emitter())?;
+    registry.register(remove_emitter())?;
     registry.register(configure_emitter())?;
     registry.register(bind_interface())?;
     registry.register(unbind_interface())?;
@@ -312,6 +313,30 @@ fn simulation_path(value: &str) -> Result<SimulationPath> {
             format!("target {other} must be cpu or gpu"),
         )),
     }
+}
+
+fn remove_emitter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.emitter.remove",
+            "Remove VFX Emitter",
+            "Removes one named emitter and its stages in an undoable document edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter to remove from the system.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "emitter");
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, name)?;
+                document.emitters.remove(index);
+                Ok(Outcome::new(format!("Removed VFX emitter {name}")))
+            })
+        },
+    )
 }
 
 fn configure_emitter() -> Command {
