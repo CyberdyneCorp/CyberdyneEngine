@@ -112,6 +112,18 @@ direct sum alone unless `.y` asks for the non-physical option. The six `frame.sl
 were regenerated for the longer block; the fullscreen resolve and temporal entries are unchanged.
 `render.ambient_occlusion` renders this module's scene with the stage on.
 
+## Soft and contact shadows — `FrameViewData::soft_shadow_control` and `soft_shadow_shape`
+
+Appended after `occlusion_control`, for the same reason. `.x` of the control carries two flags:
+`kSoftShadowPcss` filters the directional shadow with `cy/shadow.slang`'s percentage-closer soft
+filter, whose shape — the penumbra per unit of light-space depth, and the smallest and largest
+kernel — is `soft_shadow_shape`, and `kSoftShadowContact` takes the darker of the map's visibility
+and the contact term named by the slot in `.y`. `lighting::write_soft_shadow_words` fills both from
+`make_pcss_shape`. ZERO FLAGS, THE DEFAULT, IS THE 3x3 FILTER UNCHANGED: `render.soft_shadows` pins
+the frame with the setting off to a reference rendered by the pre-change SPIR-V. The frame's modules
+were regenerated: the five `frame.slang` entry points that read the block changed, and the shadow
+fragment and the fullscreen resolve and temporal entries came out byte-identical.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
