@@ -96,9 +96,11 @@ frame uniform before drawing each preview frame, and the material shader binds i
 fragment expressions. Its value changes without a material recompile.
 `material.noise` accepts a float3 coordinate and returns smooth value noise in `[0, 1]`. The node
 and `noise(position)` text form lower to the same IR operation and engine Slang function.
-`material.wind` accepts a float3 coordinate and elapsed seconds, returning a smooth float3 vector
-with components in `[-1, 1]`. The node and `wind(position, time_seconds)` text form share that IR
-operation; authors scale the vector to control displacement amplitude.
+`material.procedural_wind` accepts a float3 coordinate and elapsed seconds, returning a smooth
+float3 vector with components in `[-1, 1]`. The node and
+`procedural_wind(position, time_seconds)` text form share that IR operation; authors scale the
+vector to control displacement amplitude. It does not read the engine's `environment-fields` wind;
+that binding remains an issue #15 requirement.
 `material.vertex_color` lowers to the typed `color0` RGB attribute. The first-light compiled-material
 mesh supplies per-vertex linear RGBA data; the generated sample assigns distinct RGB colours by
 face, and a vertex without authored colour defaults to white. RGB reaches vertex and fragment

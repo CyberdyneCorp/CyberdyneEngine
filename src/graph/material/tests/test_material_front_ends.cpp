@@ -97,11 +97,11 @@ CY_TEST_CASE("graph_material: spatial vertex noise has one graph and text cook i
     CY_CHECK_EQ(graph_program->cook_key(), text_program->cook_key());
 }
 
-CY_TEST_CASE("graph_material: animated wind has one graph and text cook identity") {
+CY_TEST_CASE("graph_material: animated procedural wind has one graph and text cook identity") {
     Canvas canvas("wind");
     const auto position = canvas.add("material.world_position");
     const auto time = canvas.add("material.time");
-    const auto wind = canvas.add("material.wind");
+    const auto wind = canvas.add("material.procedural_wind");
     canvas.wire(position, wind, "position");
     canvas.wire(time, wind, "time");
     const auto output = canvas.add("material.vertex_output");
@@ -116,7 +116,7 @@ CY_TEST_CASE("graph_material: animated wind has one graph and text cook identity
     cy::rendering::material::ParseDiagnostic diagnostic(allocator());
     auto from_text = cy::rendering::material::parse_material(
         "material wind { attribute position : float3; attribute time_seconds : float; "
-        "vertex_offset = wind(position, time_seconds); }",
+        "vertex_offset = procedural_wind(position, time_seconds); }",
         allocator(), diagnostic);
     CY_REQUIRE(from_text.has_value());
 

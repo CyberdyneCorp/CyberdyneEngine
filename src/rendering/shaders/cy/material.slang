@@ -48,7 +48,7 @@ public float cyMaterialNoise(float3 position)
 }
 
 /// Smooth, time-varying wind direction in [-1, 1] for each axis.
-public float3 cyMaterialWind(float3 position, float timeSeconds)
+public float3 cyMaterialProceduralWind(float3 position, float timeSeconds)
 {
     let drift = position + timeSeconds * float3(0.17, 0.11, 0.13);
     return 2.0 * float3(

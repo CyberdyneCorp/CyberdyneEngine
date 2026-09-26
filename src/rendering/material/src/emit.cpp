@@ -191,8 +191,8 @@ struct CallForm {
             return {"sin", nullptr};
         case Op::Noise:
             return {"cyMaterialNoise", nullptr};
-        case Op::Wind:
-            return {"cyMaterialWind", nullptr};
+        case Op::ProceduralWind:
+            return {"cyMaterialProceduralWind", nullptr};
         case Op::Normalize:
             return {"normalize", nullptr};
         case Op::Lerp:

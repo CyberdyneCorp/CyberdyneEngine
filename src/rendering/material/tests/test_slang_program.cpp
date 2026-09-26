@@ -273,7 +273,7 @@ CY_TEST_CASE("sine noise wind and colour compile in a generated vertex offset") 
         "material wind_sway { attribute time_seconds : float; attribute position : float3; "
         "attribute color0 : float3; "
         "vertex_offset = position * sin(time_seconds) + "
-        "(0.0, noise(position), 0.0) + wind(position, time_seconds) + color0 * 0.1; }",
+        "(0.0, noise(position), 0.0) + procedural_wind(position, time_seconds) + color0 * 0.1; }",
         current_allocator(), sink);
     CY_REQUIRE(module.has_value());
     auto generated = emit_vertex_offset(*module, EmitOptions{});

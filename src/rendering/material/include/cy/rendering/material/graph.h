@@ -85,8 +85,8 @@ enum class GraphOp : u16 {
     Time,
     /// Smooth scalar noise sampled at a three-dimensional position.
     Noise,
-    /// Time-varying wind vector sampled at a three-dimensional position.
-    Wind,
+    /// Time-varying procedural vector sampled at a three-dimensional position.
+    ProceduralWind,
     /// Linear RGB colour from the current mesh vertex.
     VertexColor,
     Count,

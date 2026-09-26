@@ -337,11 +337,13 @@ CY_TEST_CASE("graph_material: vertex colour directly drives a typed offset") {
     CY_CHECK_EQ(ir->node(ir->vertex_offset()).type, ValueType::Vec3);
 }
 
-CY_TEST_CASE("graph_material: wind requires position and scalar time") {
+CY_TEST_CASE("graph_material: procedural wind requires position and scalar time") {
+    CY_CHECK_EQ(material_node_type_id("material.wind"), cy::graph::kInvalidNodeTypeId);
+    CY_CHECK(material_node_type_id("material.procedural_wind") != cy::graph::kInvalidNodeTypeId);
     Canvas canvas("wind");
     const NodeKey position = canvas.add("material.world_position");
     const NodeKey time = canvas.add("material.time");
-    const NodeKey wind = canvas.add("material.wind");
+    const NodeKey wind = canvas.add("material.procedural_wind");
     canvas.wire(position, wind, "position");
     canvas.wire(time, wind, "time");
     const NodeKey output = canvas.add("material.vertex_output");
@@ -355,7 +357,7 @@ CY_TEST_CASE("graph_material: wind requires position and scalar time") {
     bool found = false;
     for (cy::rendering::material::NodeId id = 0; id < ir->size(); ++id) {
         const auto& node = ir->node(id);
-        found = found || (node.op == cy::rendering::material::Op::Wind &&
+        found = found || (node.op == cy::rendering::material::Op::ProceduralWind &&
                           node.type == ValueType::Vec3 && ir->operands(id).size() == 2);
     }
     CY_CHECK(found);
@@ -364,7 +366,7 @@ CY_TEST_CASE("graph_material: wind requires position and scalar time") {
     const NodeKey scalar = invalid.add("material.constant");
     invalid.type_of(scalar, ValueType::Float);
     const NodeKey invalid_time = invalid.add("material.time");
-    const NodeKey invalid_wind = invalid.add("material.wind");
+    const NodeKey invalid_wind = invalid.add("material.procedural_wind");
     invalid.wire(scalar, invalid_wind, "position");
     invalid.wire(invalid_time, invalid_wind, "time");
     CY_REQUIRE(invalid.good());

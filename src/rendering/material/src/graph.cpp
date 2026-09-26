@@ -42,7 +42,7 @@ struct PortSpec {
         case GraphOp::AddClosures:
         case GraphOp::LayerClosures:
         case GraphOp::Custom:
-        case GraphOp::Wind:
+        case GraphOp::ProceduralWind:
             return {2, false};
         case GraphOp::Lerp:
             return {3, false};
@@ -79,8 +79,8 @@ struct PortSpec {
             return Op::Sin;
         case GraphOp::Noise:
             return Op::Noise;
-        case GraphOp::Wind:
-            return Op::Wind;
+        case GraphOp::ProceduralWind:
+            return Op::ProceduralWind;
         case GraphOp::Lerp:
             return Op::Lerp;
         case GraphOp::Swizzle:
@@ -185,7 +185,7 @@ struct Lowering {
     }
 
     const ValueType hint =
-        (node.op == GraphOp::Sin || node.op == GraphOp::Noise || node.op == GraphOp::Wind)
+        (node.op == GraphOp::Sin || node.op == GraphOp::Noise || node.op == GraphOp::ProceduralWind)
             ? ValueType::Count
             : node.type;
     auto made = builder.make(ir_op(node.op), hint, node.symbol, node.value,
@@ -256,8 +256,8 @@ const char* graph_op_name(GraphOp op) noexcept {
             return "sin";
         case GraphOp::Noise:
             return "noise";
-        case GraphOp::Wind:
-            return "wind";
+        case GraphOp::ProceduralWind:
+            return "procedural_wind";
         case GraphOp::Lerp:
             return "lerp";
         case GraphOp::Swizzle:

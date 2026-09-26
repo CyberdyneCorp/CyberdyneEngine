@@ -461,13 +461,13 @@ coordinates. The hosted viewport binds both positions for visible and shadow ver
 `material.time` reads elapsed engine seconds from the first-light hosted preview frame in both stages, so a
 `material.sin` chain can animate an offset without a parameter edit or recompile. The shared
 `material.noise` node samples smooth scalar noise from a float3 position, so a world-position
-input can vary vertex motion spatially. `material.wind` samples a smooth animated float3 vector
-from world position and engine time; multiply it by a scalar or vector amplitude before connecting
+input can vary vertex motion spatially. `material.procedural_wind` samples a smooth animated float3
+vector from world position and engine time; multiply it by a scalar or vector amplitude before connecting
 it to the vertex offset. `material.vertex_color` reads the mesh vertex's linear RGB colour;
 the hosted compiled-material preview passes that attribute through to vertex and fragment graphs.
 Its generated mesh assigns a different colour to each face axis for a visible preview.
-The remaining
-outputs are tracked by issue #15. The authored scene frame currently accepts only its standard
+The actual `environment-fields` wind binding and the remaining outputs are tracked by issue #15.
+The authored scene frame currently accepts only its standard
 constant-colour graph subset; a graph with `material.vertex_output` reports the missing
 vertex-offset pass explicitly instead of being presented as a generic graph mismatch.
 

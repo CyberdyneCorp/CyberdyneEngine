@@ -158,8 +158,8 @@ enum class Op : u16 {
     /// Smooth three-dimensional value noise from a float3 position, returning one float.
     Noise,
 
-    /// Smooth wind vector from a float3 position and elapsed seconds.
-    Wind,
+    /// Smooth procedural vector from a float3 position and elapsed seconds.
+    ProceduralWind,
 
     Count,
 };
