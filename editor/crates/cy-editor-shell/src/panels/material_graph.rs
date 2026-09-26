@@ -13,7 +13,7 @@ use cy_editor_interface::specialised::graph::{
     Severity,
 };
 use cy_editor_interface::specialised::material::{
-    SURFACE_STAGE, canvas_interchange, load_canvas_interchange,
+    SURFACE_STAGE, VERTEX_STAGE, canvas_interchange, load_canvas_interchange,
 };
 use cy_editor_services::primitives::material_of;
 use cy_editor_services::{
@@ -87,14 +87,13 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     ui,
                     panels.shell,
                     canvas,
-                    &mut panels.inputs.material_filter,
+                    panels.inputs,
                     PaletteBackendState {
                         catalogue: state,
                         request: &request_state,
                         preview: &preview_state,
                     },
                     &panels.editor.asset_catalogue,
-                    &mut panels.inputs.material_property_problem,
                 );
             },
         );
@@ -359,10 +358,9 @@ fn palette(
     ui: &mut egui::Ui,
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
-    filter: &mut String,
+    inputs: &mut super::Inputs,
     backend: PaletteBackendState<'_>,
     assets: &AssetCatalogueService,
-    property_problem: &mut Option<String>,
 ) -> Option<PaletteAction> {
     let mut action = None;
     ui.heading("Engine catalogue");
@@ -398,17 +396,30 @@ fn palette(
     });
     material_request_status(ui, shell, canvas, backend.request);
     material_preview_status(ui, shell, backend.preview);
-    graph_properties(ui, canvas, assets, property_problem);
+    graph_properties(ui, canvas, assets, &mut inputs.material_property_problem);
+    ui.horizontal(|ui| {
+        ui.label("Stage");
+        egui::ComboBox::from_id_salt("material-palette-stage")
+            .selected_text(if inputs.material_stage == VERTEX_STAGE {
+                "Vertex"
+            } else {
+                "Surface"
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut inputs.material_stage, SURFACE_STAGE, "Surface");
+                ui.selectable_value(&mut inputs.material_stage, VERTEX_STAGE, "Vertex");
+            });
+    });
     ui.add_space(shell.metrics().gap() * 0.5);
     ui.add(
-        egui::TextEdit::singleline(filter)
+        egui::TextEdit::singleline(&mut inputs.material_filter)
             .hint_text("Search nodes")
             .desired_width(f32::INFINITY),
     );
     ui.add_space(shell.metrics().gap() * 0.5);
 
-    let query = filter.trim().to_ascii_lowercase();
-    let names = palette_names(canvas, &query, SURFACE_STAGE);
+    let query = inputs.material_filter.trim().to_ascii_lowercase();
+    let names = palette_names(canvas, &query, inputs.material_stage);
     egui::ScrollArea::vertical().show(ui, |ui| {
         for name in names {
             let Some(node_type) = canvas.catalogue().get(&name) else {

@@ -211,6 +211,48 @@ CY_TEST_CASE("editor_backend: author returns a canonical graph only for a valid 
     api->service_close(&host, session);
 }
 
+CY_TEST_CASE("editor_backend: vertex canvas reaches engine authoring and compilation") {
+    constexpr std::string_view canvas =
+        "cymatcanvas 1\nmaterial wind_sway\n"
+        "node 1 material.attribute\nprop 1 symbol position\nprop 1 type float3\n"
+        "node 2 material.attribute\nprop 2 symbol time\nprop 2 type float\n"
+        "node 3 material.sin\nnode 4 material.multiply\n"
+        "node 5 material.vertex_output\n"
+        "link 2 out 3 value\nlink 1 out 4 a\nlink 3 out 4 b\nlink 4 out 5 offset\n";
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+
+    const CyServiceRequest author{sizeof(CyServiceRequest),
+                                  1,
+                                  52,
+                                  "material.author",
+                                  reinterpret_cast<const cy::u8*>(canvas.data()),
+                                  canvas.size()};
+    const CyServiceEvent authored = submit_and_poll(*api, host, session, author);
+    CY_REQUIRE_EQ(authored.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(authored.payload_size > 9U);
+    const cy::u32 source_size = read_u32(authored.payload + 5);
+    CY_REQUIRE_EQ(authored.payload_size, 9U + source_size);
+    const std::string_view source(reinterpret_cast<const char*>(authored.payload + 9), source_size);
+    CY_CHECK(source.find("material.vertex_output") != std::string_view::npos);
+
+    const CyServiceRequest compile{sizeof(CyServiceRequest),
+                                   1,
+                                   53,
+                                   "material.compile",
+                                   reinterpret_cast<const cy::u8*>(canvas.data()),
+                                   canvas.size()};
+    const CyServiceEvent compiled = submit_and_poll(*api, host, session, compile);
+    CY_REQUIRE_EQ(compiled.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(compiled.payload_size >= 25U);
+    CY_CHECK_NE(read_u64(compiled.payload + 5), 0U);
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: live graph preview validates before updating the authored scene") {
     cy::abi::Host host(allocator());
     AuthoringRuntime runtime;

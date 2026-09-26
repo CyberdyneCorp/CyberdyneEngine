@@ -152,6 +152,8 @@ pub struct Inputs {
     pub browser_import_paths: String,
     /// Search text for the engine-owned material node palette.
     pub material_filter: String,
+    /// Stage whose engine-compatible nodes are offered in the material palette.
+    pub material_stage: u8,
     /// Output pin selected as the source of the next material connection.
     ///
     /// Node and pin identities are stored alongside readable metadata so a catalogue rename does
@@ -306,6 +308,7 @@ impl Default for Inputs {
             browser_import_open: false,
             browser_import_paths: String::new(),
             material_filter: String::new(),
+            material_stage: cy_editor_interface::specialised::material::SURFACE_STAGE,
             material_link_source: None,
             material_link_problem: None,
             material_property_problem: None,

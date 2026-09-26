@@ -442,7 +442,9 @@ The Material Graph does not identify node names to decide which widgets to draw.
 3 describes each property by stable identity, kind, typed default, numeric constraints, enum
 choices, required asset kind, semantic role, compiler/runtime stage, graph domain and target
 capabilities. It also carries each node's engine-owned surface/vertex stage mask; the surface
-palette hides vertex-only nodes. The shared graph canvas validates authored literals before
+palette hides vertex-only nodes. The Material Graph's Stage selector switches the palette between
+surface and vertex-compatible engine nodes. Both stages use the same saved canvas and its engine
+owned output roots. The shared graph canvas validates authored literals before
 mutation and retains values by node and property identity across compatible catalogue refreshes.
 Texture controls query the project asset catalogue for stable identities whose kind is `texture`;
 the compiled dependency list therefore contains asset identities rather than display paths.
@@ -451,8 +453,9 @@ Schema-1 and schema-2 catalogues remain readable. Schema 1's combined textual co
 migrated into the typed property shape, and older catalogues leave stage compatibility unrestricted,
 so reconnecting an older runtime does not discard the graph being authored.
 The engine catalogue includes `material.sin`, a typed scalar/vector sine node shared with the
-text material front end. It is available for authored material arithmetic; vertex-stage outputs
-and displaced rendering are still tracked by issue #15.
+text material front end. It is available for authored material arithmetic. The vertex palette offers
+`material.vertex_output` for an offset expression; displaced frame rendering remains tracked by
+issue #15.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 
