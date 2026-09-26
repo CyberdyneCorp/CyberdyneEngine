@@ -51,6 +51,7 @@
 
 import cy.material;
 import cy.brdf;
+import cy.packing;
 
 // THIS FILE IS A PIXEL STAGE, SO IT SAYS SO BEFORE THE MATERIAL IS INCLUDED. The generated prelude's
 // `cy_material_sample` takes the IMPLICIT level of detail only under `CY_MATERIAL_PIXEL_STAGE`, and
@@ -203,8 +204,14 @@ float sunVisibility(float3 relativePosition, float3 geometricNormal)
     return total / 9.0;
 }
 
-[shader("fragment")]
-float4 sceneFragment(SceneVarying input) : SV_Target
+/// THE AMBIENT OCCLUSION TERM, `occlusion::AmbientOcclusionPass`'s target: rgb the bent normal,
+/// a the visibility. Read only by `sceneFragmentOccluded`, so a frame with the setting off binds
+/// nothing here and draws with `sceneFragment` — the entry point the frame always had.
+[[vk::binding(2, 1)]] Texture2D<float4> ambientOcclusion;
+
+/// The surface's shading, with the ambient term's visibility supplied by the caller: 1 for
+/// `sceneFragment`, the ambient occlusion term for `sceneFragmentOccluded`.
+float4 shadeScene(SceneVarying input, float ambientVisibility)
 {
     // THE MATERIAL PROGRAM, CALLED. Everything above this line is the frame's; everything the
     // surface says is the authored graph's, lowered by `compile_material` and emitted by the
@@ -269,9 +276,36 @@ float4 sceneFragment(SceneVarying input) : SV_Target
     {
         occlusion *= cyMaterialSampleTexture(dataSlot, input.uv).y;
     }
-    lit += surface.albedo * frame.ambient.xyz * sky * occlusion;
+    // AMBIENT OCCLUSION DARKENS THE SKY TERM AND NOTHING ELSE: `lit` above is the sun, which
+    // `rendering-post-processing` requires AO to leave alone by default.
+    lit += surface.albedo * frame.ambient.xyz * sky * (occlusion * ambientVisibility);
     lit += surface.emission;
     return float4(lit, 1.0);
+}
+
+[shader("fragment")]
+float4 sceneFragment(SceneVarying input) : SV_Target
+{
+    return shadeScene(input, 1.0);
+}
+
+/// The same surface with the ambient occlusion term applied to its sky light. The target is the
+/// frame's own extent, so the fragment's pixel is the term's texel.
+[shader("fragment")]
+float4 sceneFragmentOccluded(SceneVarying input) : SV_Target
+{
+    let visibility = ambientOcclusion.Load(int3(int2(input.position.xy), 0)).a;
+    return shadeScene(input, visibility);
+}
+
+/// THE DEPTH AND NORMAL PREPASS the ambient occlusion stage reads, drawn with `sceneVertex` so its
+/// depth is the depth the scene pass then tests against. The GEOMETRIC normal, camera-relative and
+/// octahedral in `.xy` — `rendering-forward-clustered`'s `DepthNormal` layout, which is what the
+/// engine's own prepass writes; the normal map's detail is below the horizon search's scale.
+[shader("fragment")]
+float4 scenePrepassFragment(SceneVarying input) : SV_Target
+{
+    return float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
 }
 
 // --- The sky --------------------------------------------------------------------------------------

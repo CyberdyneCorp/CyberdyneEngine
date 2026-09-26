@@ -671,6 +671,8 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.output = view.output;
     description.shadow_color = view.shadow_color;
     description.shadow_depth = view.shadow_depth;
+    description.ambient_occlusion_target = view.ambient_occlusion;
+    description.ambient_occlusion_stage = sinks.ambient_occlusion;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =

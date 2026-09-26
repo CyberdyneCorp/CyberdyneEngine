@@ -101,11 +101,17 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         request.extra_usage = rhi::TextureUsage::None;
     }
     if (description.features.ambient_occlusion) {
-        request.name = "ambient occlusion";
-        request.format = rhi::Format::R8Unorm;
-        request.extra_usage = rhi::TextureUsage::Storage;
-        resources.ambient_occlusion = graph.create_texture(request);
-        request.extra_usage = rhi::TextureUsage::None;
+        if (valid(description.ambient_occlusion_target)) {
+            // The producer owns the term's storage: its consumers sample it through a slot that
+            // must outlive the graph, and a transient's view is recreated every frame.
+            resources.ambient_occlusion = description.ambient_occlusion_target;
+        } else {
+            request.name = "ambient occlusion";
+            request.format = rhi::Format::R8Unorm;
+            request.extra_usage = rhi::TextureUsage::Storage;
+            resources.ambient_occlusion = graph.create_texture(request);
+            request.extra_usage = rhi::TextureUsage::None;
+        }
     }
     if (description.features.screen_space_gi) {
         request.name = "screen-space gi";
@@ -464,6 +470,29 @@ void ForwardFrame::stage(FramePassKind kind, const char* name, PassId pass) noex
     status_ = passes_.push_back(FramePass{kind, name, pass});
 }
 
+void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& state,
+                                          const FrameStageDeclaration& producer, FramePassKind kind,
+                                          const char* name, ResourceId target) noexcept {
+    if (!status_) {
+        return;
+    }
+    ScreenSpaceStageInputs inputs;
+    inputs.depth = resources_.depth;
+    inputs.normal_roughness = resources_.normal_roughness;
+    inputs.target = target;
+    inputs.width = state.description->width;
+    inputs.height = state.description->height;
+    const PassId first = producer.declare(graph, inputs, producer.user);
+    if (first == kInvalidPass) {
+        // A producer that refused is a frame that cannot shade what it was configured to shade;
+        // leaving the stage out would draw the frame without the term and say nothing.
+        status_ = fail(ErrorCode::InvalidArgument,
+                       "forward frame: a stage's producer refused to declare its passes");
+        return;
+    }
+    stage(kind, name, first);
+}
+
 Status ForwardFrame::declare_resources(RenderGraph& graph,
                                        const FrameDescription& description) noexcept {
     BuildState state;
@@ -506,9 +535,16 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
 
     // 4. The screen-space passes that need depth and normals.
     if (features.ambient_occlusion) {
-        stage(FramePassKind::AmbientOcclusion, "ambient occlusion",
-              declare_screen_space(graph, state, "ambient occlusion", resources_.ambient_occlusion,
-                                   FramePassKind::AmbientOcclusion));
+        const FrameStageDeclaration& producer = state.description->ambient_occlusion_stage;
+        if (producer.declare != nullptr) {
+            declare_produced_stage(graph, state, producer, FramePassKind::AmbientOcclusion,
+                                   "ambient occlusion", resources_.ambient_occlusion);
+        } else {
+            stage(FramePassKind::AmbientOcclusion, "ambient occlusion",
+                  declare_screen_space(graph, state, "ambient occlusion",
+                                       resources_.ambient_occlusion,
+                                       FramePassKind::AmbientOcclusion));
+        }
     }
     if (features.screen_space_gi) {
         stage(FramePassKind::ScreenSpaceGi, "screen-space gi",

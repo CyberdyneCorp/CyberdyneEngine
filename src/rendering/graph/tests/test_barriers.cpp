@@ -118,6 +118,42 @@ CY_TEST_CASE("read-after-read emits nothing when the layout already agrees") {
     }
 }
 
+CY_TEST_CASE("a read that changes the layout waits for the reads before it") {
+    // THE LAYOUT TRANSITION IS A WRITE. A depth buffer sampled by a compute pass and then bound as
+    // a read-only attachment is two reads, and the barrier between them changes the layout; its
+    // first scope must name the compute stage or the transition races the sampling. This is what
+    // synchronisation validation reported as SYNC-HAZARD-WRITE-AFTER-READ the first time a frame
+    // recorded a screen-space pass between the prepass and the opaque pass.
+    RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
+    const ResourceId target = graph.import_texture(
+        colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
+    const ResourceId image = graph.import_texture(
+        storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1), ImageUse::SampledRead);
+
+    // A side effect, so a pass whose only access is a read is not culled.
+    graph.add_pass("sample it in compute", cy::rhi::QueueKind::Graphics)
+        .read(image, Access::ComputeSampledRead)
+        .side_effect();
+    graph.add_pass("copy it out", cy::rhi::QueueKind::Graphics)
+        .read(image, Access::TransferRead)
+        .write(target, Access::ColorAttachmentWrite);
+
+    cy::Expected<CompiledGraph, cy::Error> plan = graph.compile(single_queue_options());
+    CY_REQUIRE(plan.has_value());
+    const cy::rhi::ImageBarrier* found = nullptr;
+    for (const cy::rhi::ImageBarrier& barrier : plan->submits[0].passes[1].pre.images) {
+        if (barrier.resource == image) {
+            found = &barrier;
+        }
+    }
+    CY_REQUIRE(found != nullptr);
+    CY_CHECK_EQ(found->old_use, ImageUse::SampledRead);
+    CY_CHECK_EQ(found->new_use, ImageUse::TransferSource);
+    // The earlier read's stage, and none of its access bits: an execution dependency.
+    CY_CHECK_EQ(found->src_stage, Stage::ComputeShader);
+    CY_CHECK_EQ(found->src_access, AccessFlags::None);
+}
+
 CY_TEST_CASE("a transient's first use transitions from UNDEFINED, which is what discards it") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target = graph.import_texture(

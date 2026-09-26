@@ -1,0 +1,57 @@
+capture samples/12-beauty
+purpose publication
+resolution 3840x2160
+exposure-ev100 11.450
+tonemap AgX
+arbiter pinned
+prepass depth-normal
+velocity absent
+temporal-frame 1
+temporal-invalidated no
+jitter pinned
+jitter-index 0
+passes 10
+draws 0
+post-stages 4
+  1 step 1 AmbientOcclusion SceneReferred High
+  2 step 10 ExposureApply SceneReferred High
+  3 step 11 Tonemap SceneReferred High
+  4 step 15 OutputEncoding DisplayReferred High
+
+# content — what was authored and what the renderer produced
+scene The Colonnade
+instances 31
+triangles 4334
+materials 3  (all 3 are textured; none is constants)
+textures 9  source 899346 bytes  cooked 786852 bytes
+supersample 2x
+particles 996 in 1 draw(s), 0 dropped  (courtyard_embers: 3 emitters, authored in samples/12-beauty/embers.cpp, drawn in the frame's TRANSPARENT stage)
+trails 7692 vertices in 984 strip(s), 6708 segment(s), 1 draw(s), 0 dropped  (the same motes through vfx-system's Trail renderer, drawn by StripRenderer in the same stage)
+validation-errors 0
+sun-illuminance 102332.5 76288.4 47310.0
+sky-irradiance 4421.6 3714.5 3384.7
+build-ms 988.0  sky-ms 295.6  submit-ms 32.34
+
+material stone
+  authored content/beauty/materials/weathered_stone.cygraph
+  cook-key 0xd10b8e4404ad56c5  entry cy_material_weathered_stone_primary_high
+  albedo content/beauty/textures/stone_albedo.png  256x256  bc7  9 mips  slot 0  66526 -> 87428 bytes
+  normal content/beauty/textures/stone_normal.png  256x256  bc5  9 mips  slot 1  140717 -> 87428 bytes
+  data   content/beauty/textures/stone_data.png  256x256  bc7  9 mips  slot 2  101940 -> 87428 bytes
+  block-compressed yes  (the normal map is sampled by the FRAME, not by the material: CyClosure has no normal term)
+
+material copper
+  authored content/beauty/materials/oxidised_copper.cygraph
+  cook-key 0x08f3975a2338abc4  entry cy_material_oxidised_copper_primary_high
+  albedo content/beauty/textures/copper_albedo.png  256x256  bc7  9 mips  slot 3  76606 -> 87428 bytes
+  normal content/beauty/textures/copper_normal.png  256x256  bc5  9 mips  slot 4  98469 -> 87428 bytes
+  data   content/beauty/textures/copper_data.png  256x256  bc7  9 mips  slot 5  65796 -> 87428 bytes
+  block-compressed yes  (the normal map is sampled by the FRAME, not by the material: CyClosure has no normal term)
+
+material gravel
+  authored content/beauty/materials/courtyard_gravel.cygraph
+  cook-key 0x159982f6f14a706e  entry cy_material_courtyard_gravel_primary_high
+  albedo content/beauty/textures/gravel_albedo.png  256x256  bc7  9 mips  slot 6  72441 -> 87428 bytes
+  normal content/beauty/textures/gravel_normal.png  256x256  bc5  9 mips  slot 7  166864 -> 87428 bytes
+  data   content/beauty/textures/gravel_data.png  256x256  bc7  9 mips  slot 8  109987 -> 87428 bytes
+  block-compressed yes  (the normal map is sampled by the FRAME, not by the material: CyClosure has no normal term)

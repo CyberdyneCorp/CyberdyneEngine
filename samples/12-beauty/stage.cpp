@@ -17,6 +17,7 @@
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/occlusion/occlusion_pass.h>
 #include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/particles/strip_renderer.h>
 #include <cy/rendering/pipeline/bloom_renderer.h>
@@ -163,6 +164,10 @@ struct Stage::Batch {
     /// Which of the shot's materials shades it. Resolved to a pipeline and a set once those exist.
     u32 material = 0;
     rhi::GraphicsPipelineHandle pipeline;
+    /// With ambient occlusion on: the scene pass against the prepass's depth, tested and not
+    /// written, shading with `sceneFragmentOccluded`; and the prepass that wrote that depth.
+    rhi::GraphicsPipelineHandle occluded;
+    rhi::GraphicsPipelineHandle prepass;
     rhi::DescriptorSetHandle material_set;
     SurfacePush push;
 };
@@ -195,6 +200,10 @@ struct Stage::Device {
     /// The motes' trails, drawn by `vfx-system`'s strip renderer in the same stage as the motes.
     StripRenderer trails;
     bool air_settled = false;
+
+    /// Ambient occlusion, created only when the run asked for it. See
+    /// `Stage::set_ambient_occlusion`.
+    rendering::occlusion::AmbientOcclusionPass occlusion;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -246,6 +255,7 @@ Stage::~Stage() {
             // handles, which is the contract every device-owning object in this tree states.
             device_->air.shutdown();
             device_->trails.shutdown();
+            device_->occlusion.destroy();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->pipelines.shutdown();
@@ -1011,13 +1021,17 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     }
     device_->table_layout = *table_layout;
 
-    const rhi::DescriptorBinding shadow_bindings[2] = {
+    // Binding 2 is the ambient occlusion term. Declared whatever the run asked for, and written
+    // only when the term exists: the one entry point that reads it is the one a run with the
+    // setting on draws with, and a binding no bound pipeline uses needs no descriptor.
+    const rhi::DescriptorBinding shadow_bindings[3] = {
         {0, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {1, rhi::DescriptorKind::Sampler, 1, rhi::ShaderStage::Fragment, false},
+        {2, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
     };
     rhi::DescriptorSetLayoutDescription shadow;
     shadow.name = "beauty shadow";
-    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 2);
+    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 3);
     auto shadow_layout = device.create_descriptor_set_layout(shadow);
     if (!shadow_layout) {
         return make_unexpected(shadow_layout.error());
@@ -1237,6 +1251,14 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         if (!created) {
             return make_unexpected(created.error());
         }
+        rhi::GraphicsPipelineHandle occluded;
+        rhi::GraphicsPipelineHandle prepass;
+        if (ambient_occlusion_) {
+            if (Status made = create_occlusion_pipelines(entry, pipeline, occluded, prepass);
+                !made) {
+                return made;
+            }
+        }
 
         // The material's own parameter block. The DEFAULTS the authored graph declared are what the
         // frame uploads: a parameter this program set to something else would be a material the
@@ -1296,6 +1318,8 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         for (Batch& batch : device_->batches.span()) {
             if (batch.material == index) {
                 batch.pipeline = *created;
+                batch.occluded = occluded;
+                batch.prepass = prepass;
                 batch.material_set = *material_set;
             }
         }
@@ -1397,6 +1421,57 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     return ok();
 }
 
+Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
+                                         const rhi::GraphicsPipelineDescription& scene,
+                                         rhi::GraphicsPipelineHandle& occluded,
+                                         rhi::GraphicsPipelineHandle& prepass) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    const auto fragment = [&](const char* entry_point) noexcept {
+        rhi::ShaderModuleDescription module;
+        module.name = entry_point;
+        module.stage = rhi::ShaderStage::Fragment;
+        module.entry_point = entry_point;
+        module.spirv = Span<const u32>(entry.spirv.data(), entry.spirv.size());
+        return device.create_shader_module(module);
+    };
+
+    // THE SCENE PASS AGAINST THE PREPASS. The frame declares the opaque stage's depth as a READ
+    // once there is a prepass — `ForwardFrame` tests it and writes nothing — so this pipeline
+    // tests with the same comparison and does not write. Same vertex stage as the prepass, so the
+    // depth it compares is the depth it produces.
+    auto occluded_fragment = fragment("sceneFragmentOccluded");
+    if (!occluded_fragment) {
+        return make_unexpected(occluded_fragment.error());
+    }
+    rhi::GraphicsPipelineDescription description = scene;
+    description.name = "beauty scene occluded";
+    description.fragment_shader = *occluded_fragment;
+    description.depth_stencil.depth_write_enable = false;
+    auto made = device.create_graphics_pipeline(description);
+    if (!made) {
+        return make_unexpected(made.error());
+    }
+    occluded = *made;
+
+    // THE PREPASS: depth, and the geometric normal into the frame's `normal + roughness` target.
+    auto prepass_fragment = fragment("scenePrepassFragment");
+    if (!prepass_fragment) {
+        return make_unexpected(prepass_fragment.error());
+    }
+    rhi::ColorAttachmentState normal;
+    normal.format = cy::rendering::FrameDescription{}.normal_format;
+    description = scene;
+    description.name = "beauty depth and normal prepass";
+    description.fragment_shader = *prepass_fragment;
+    description.color_attachments = Span<const rhi::ColorAttachmentState>(&normal, 1);
+    made = device.create_graphics_pipeline(description);
+    if (!made) {
+        return make_unexpected(made.error());
+    }
+    prepass = *made;
+    return ok();
+}
+
 // ================================================================================================
 // THE FRAME
 // ================================================================================================
@@ -1419,6 +1494,10 @@ struct SceneState {
     u32 sky_index_count = 0;
     ResourceId color = kInvalidResource;
     ResourceId depth = kInvalidResource;
+    /// With ambient occlusion on: the prepass's normal target, and whether the depth the scene
+    /// pass tests is the prepass's rather than its own.
+    ResourceId normal = kInvalidResource;
+    bool prepass = false;
     u32 width = 0;
     u32 height = 0;
 };
@@ -1445,7 +1524,9 @@ void record_scene(const PassContext& context, void* user) noexcept {
     info.render_area = rhi::Rect2D{0, 0, state->width, state->height};
     info.color_attachments = Span<const rhi::RenderAttachment>(&colour, 1);
     info.depth_attachment.view = state->executor->view(state->depth);
-    info.depth_attachment.load = rhi::LoadOp::Clear;
+    // LOADED when the prepass wrote it: the scene pass then tests against that depth and writes
+    // none of its own, which is what the frame declared.
+    info.depth_attachment.load = state->prepass ? rhi::LoadOp::Load : rhi::LoadOp::Clear;
     info.depth_attachment.store = rhi::StoreOp::Store;
     info.depth_attachment.clear = rhi::reversed_z_depth_clear();
 
@@ -1458,7 +1539,46 @@ void record_scene(const PassContext& context, void* user) noexcept {
     const u64 offset = 0;
     for (usize index = 0; index < state->batch_count; ++index) {
         const Stage::Batch& batch = state->batches[index];
-        context.commands->bind_graphics_pipeline(batch.pipeline);
+        context.commands->bind_graphics_pipeline(state->prepass ? batch.occluded : batch.pipeline);
+        context.commands->bind_descriptor_sets(
+            state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
+        context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
+                                              Span<const u64>(&offset, 1));
+        context.commands->bind_index_buffer(state->indices, 0, true);
+        context.commands->push_constants(
+            state->layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+            Span<const u8>(reinterpret_cast<const u8*>(&batch.push), sizeof(SurfacePush)));
+        context.commands->draw_indexed(batch.index_count, 1, batch.first_index, 0, 0);
+    }
+    context.commands->end_rendering();
+}
+
+/// The depth and normal prepass, in the frame's own `DepthPrepass` stage — declared only when the
+/// ambient occlusion setting is on, because the horizon search is its one reader.
+void record_prepass(const PassContext& context, void* user) noexcept {
+    auto* state = static_cast<SceneState*>(user);
+    rhi::RenderAttachment normal;
+    normal.view = state->executor->view(state->normal);
+    normal.load = rhi::LoadOp::Clear;
+    normal.store = rhi::StoreOp::Store;
+
+    rhi::RenderingInfo info;
+    info.render_area = rhi::Rect2D{0, 0, state->width, state->height};
+    info.color_attachments = Span<const rhi::RenderAttachment>(&normal, 1);
+    info.depth_attachment.view = state->executor->view(state->depth);
+    info.depth_attachment.load = rhi::LoadOp::Clear;
+    info.depth_attachment.store = rhi::StoreOp::Store;
+    info.depth_attachment.clear = rhi::reversed_z_depth_clear();
+
+    context.commands->begin_rendering(info);
+    context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
+                                                 static_cast<f32>(state->height), 0.0F, 1.0F});
+    context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
+    bind_common(context, *state);
+    const u64 offset = 0;
+    for (usize index = 0; index < state->batch_count; ++index) {
+        const Stage::Batch& batch = state->batches[index];
+        context.commands->bind_graphics_pipeline(batch.prepass);
         context.commands->bind_descriptor_sets(
             state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
         context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
@@ -1860,6 +1980,14 @@ Status Stage::create_frame() noexcept {
     // the synchronisation validator reports. With the prepass off, `ForwardFrame` declares the
     // opaque pass as the depth writer, which is what this frame actually is.
     description.depth_prepass = false;
+    // WITH AMBIENT OCCLUSION ON, THERE IS ONE: this program records it itself, from its own
+    // buffers, in the frame's `DepthPrepass` stage — `record_prepass` — so the depth the opaque
+    // pass tests is written by the pass the frame declared as its writer. The post chain's own
+    // setting is what switches the stage on; nothing else in the frame changes.
+    if (ambient_occlusion_) {
+        description.depth_prepass = true;
+        description.post.ambient_occlusion = true;
+    }
     description.sky = cy::rendering::sky::SkyTableQuality::Low;
     // PINNED, because a capture has to be reproducible.
     description.pin_jitter = true;
@@ -1929,8 +2057,36 @@ Status Stage::create_frame() noexcept {
         return settled;
     }
     device_->air_settled = true;
+    if (ambient_occlusion_) {
+        if (Status made = create_occlusion(); !made) {
+            return made;
+        }
+    }
     device_->frame_ready = true;
     return ok();
+}
+
+Status Stage::create_occlusion() noexcept {
+    rhi::Device& device = *device_->handle.value();
+    rendering::occlusion::AmbientOcclusionPassDescription description;
+    description.width = width_;
+    description.height = height_;
+    if (Status made = device_->occlusion.create(*allocator_, device, description); !made) {
+        return made;
+    }
+    rendering::occlusion::GtaoSettings settings;
+    settings.shared.radius = occlusion_radius_;
+    settings.shared.power = occlusion_power_;
+    device_->occlusion.set_settings(settings);
+    // The term's view is the pass's own and outlives every frame, so the set that names it is
+    // written once — before any command buffer has bound it.
+    rhi::DescriptorWrite write;
+    write.binding = 2;
+    write.kind = rhi::DescriptorKind::SampledTexture;
+    write.texture_view = device_->occlusion.target_view();
+    write.use = rhi::ImageUse::SampledRead;
+    return device.update_descriptor_set(device_->shadow_set,
+                                        Span<const rhi::DescriptorWrite>(&write, 1));
 }
 
 Status Stage::advance_air(f32 dt) noexcept {
@@ -2095,6 +2251,21 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     air.height = height_;
 
     FrameSinks sinks;
+    if (ambient_occlusion_) {
+        rendering::occlusion::GtaoView occlusion_view;
+        occlusion_view.projection = projection;
+        occlusion_view.relative_to_view = camera;
+        occlusion_view.width = width_;
+        occlusion_view.height = height_;
+        if (Status set = device_->occlusion.set_view(occlusion_view); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        view.ambient_occlusion = device_->occlusion.import_target(graph);
+        sinks.ambient_occlusion = device_->occlusion.stage();
+        sinks.passes[static_cast<usize>(FramePassKind::DepthPrepass)] =
+            cy::rendering::FramePassCallback{&record_prepass, &scene};
+    }
     sinks.passes[static_cast<usize>(FramePassKind::Opaque)] =
         cy::rendering::FramePassCallback{&record_scene, &scene};
     sinks.passes[static_cast<usize>(FramePassKind::Sky)] =
@@ -2121,6 +2292,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     const cy::rendering::FrameResources& resources = device_->assembly.resources();
     scene.color = resources.color;
     scene.depth = resources.depth;
+    scene.normal = resources.normal_roughness;
+    scene.prepass = ambient_occlusion_;
     air.color = resources.color;
     air.depth = resources.depth;
     // What the post chain left for exposure: the scene colour, or the bloomed one.

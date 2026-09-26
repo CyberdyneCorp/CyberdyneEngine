@@ -52,6 +52,13 @@ against position 0, which is the field `design.md` §2.10 found the renderer bud
 order to price a step. Position 3 still denoises: a ladder whose last rung is "off" would make the
 budget's last step a visual discontinuity rather than a coarser frame.
 
+## The one producer on a device
+
+`src/rendering/occlusion/`'s filter is this module's spatial stage transcribed into a compute shader
+and configured from `default_config(SignalKind::AmbientOcclusion)` and `quality_ladder()[0]`;
+`render.ambient_occlusion` runs the device's raw term through `Denoiser::denoise` and compares the
+two. A change to the filter here is a change there, and that suite is what says so.
+
 ## What it does not depend on
 
 No device, no render graph, no shader, and no temporal module. `cy::core-jobs` is linked for one

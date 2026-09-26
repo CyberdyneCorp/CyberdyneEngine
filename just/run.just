@@ -887,6 +887,8 @@ _beauty-programs build_dir work graphs:
         "${slangc}" samples/12-beauty/shaders/beauty.slang \
             -target spirv -profile spirv_1_5 \
             -entry sceneVertex -stage vertex -entry sceneFragment -stage fragment \
+            -entry sceneFragmentOccluded -stage fragment \
+            -entry scenePrepassFragment -stage fragment \
             -entry shadowVertex -stage vertex \
             -entry skyVertex -stage vertex -entry skyFragment -stage fragment \
             -fvk-use-entrypoint-name \
@@ -992,6 +994,70 @@ measure-beauty-mip-chain *args:
     done
     python3 samples/12-beauty/measure_mip_chain.py \
         "${work}/chain.png" "${work}/repeat.png" "${work}/level-zero.png"
+
+# AMBIENT OCCLUSION, OFF AND ON, IN THE BEAUTY SHOT. `rendering-post-processing` — "Ambient
+# occlusion".
+#
+# The same compiled programs photographed twice by two runs of the same program, which differ in
+# `--ambient-occlusion` and in nothing else. Off is M11.c's published frame, and
+# tools/docs/compare_ambient_occlusion.py REQUIRES its pixels to be the ones
+# docs/design/images/m11c-beauty-shot.png holds: the setting off must leave the frame byte-identical
+# to the frame before the stage existed. On adds the prepass and the stage and darkens the sky term
+# where the columns meet the ground. The graphs are written into the work directory, so nothing in
+# content/ is touched.
+#
+#   docs/design/images/ambient-occlusion-off.png     the frame, the setting off
+#   docs/design/images/ambient-occlusion-on.png      the frame, the setting on
+#   docs/design/images/ambient-occlusion-detail.png  one contact, off beside on, at 2x
+#   docs/design/images/ambient-occlusion-on.manifest what the frame with the stage says it did
+
+# Photograph the beauty shot with ambient occlusion off and on. Usage: just capture-ambient-occlusion [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-ambient-occlusion *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-ambient-occlusion: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-occlusion"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    images=docs/design/images
+    for setting in off on; do
+        echo "==> capture     ambient occlusion ${setting}"
+        manifest=()
+        if [ "${setting}" = on ]; then
+            manifest=(--manifest "${images}/ambient-occlusion-on.manifest")
+        fi
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --ambient-occlusion "${setting}" \
+            --still "${images}/ambient-occlusion-${setting}.png" \
+            ${manifest[@]+"${manifest[@]}"} ${rest} | tee "${work}/${setting}.log"
+        if [ ! -f "${images}/ambient-occlusion-${setting}.png" ]; then
+            echo "capture-ambient-occlusion: no picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+    python3 tools/docs/compare_ambient_occlusion.py \
+        --off "${images}/ambient-occlusion-off.png" --on "${images}/ambient-occlusion-on.png" \
+        --reference "${images}/m11c-beauty-shot.png" \
+        --detail "${images}/ambient-occlusion-detail.png"
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/ambient-occlusion-off.png" "${images}/ambient-occlusion-on.png" \
+        "${images}/ambient-occlusion-detail.png"
 
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #

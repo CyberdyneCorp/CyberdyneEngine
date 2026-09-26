@@ -138,6 +138,12 @@ add_subdirectory(arbiter)
 # output encoding. Task 8.4. Last, because it consumes temporal/ and is the end of the frame.
 add_subdirectory(post)
 
+# GROUND-TRUTH AMBIENT OCCLUSION ON THE DEVICE. `rendering-post-processing`'s first stage: the
+# horizon search over the prepass depth and normals, filtered by the shared denoiser's cascade into a
+# target the forward pass samples. It names the forward frame's stage-declaration seam, the post
+# chain's settings and the denoiser's configuration, so it is read after all three.
+add_subdirectory(occlusion)
+
 # THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
 # this directory were linked by nothing but their own test binaries and nothing in the tree built a
 # frame out of them. This one does — it is the only module here that consumes another module's
