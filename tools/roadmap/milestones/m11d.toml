@@ -753,6 +753,88 @@ kind = "command"
 run = "just quality-requirements core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction"
 ci_job = "milestone-m11d"
 
+# --- Tasks 5.1 to 5.3: `rendering-forward-clustered`, the desktop half ---------------------------------
+#
+# MSAA and multi-view through the render graph, and the row's floor. Both claims are proved twice:
+# with no GPU (the graph's own suites — the twin, the resolve's placement, the refusals, the
+# capability-selected recording) and on the device (`render.msaa_multiview` — the pixels). The device
+# half REQUIRES A PRINTED MEASUREMENT for the reason `m11c:sky-as-an-image` gives: every suite in
+# tests/render/ skips loudly and exits zero with no device, and a criterion whose claim is a picture
+# must not pass on a run that took none.
+
+[[criterion]]
+id = "msaa-through-the-graph"
+describe = "MSAA through the render graph's attachment model: a pass declares a sample count and a resolve point, the graph allocates the multisampled twin and inserts the resolve there, a missing or misplaced resolve is REFUSED, a pass that cannot take MSAA (the virtual-geometry stage) refuses with its own named reason, and 1x compiles to the identical plan. On the device: 1x has no partially covered pixel, 4x has at least one edge's worth, both cover the same area, and 1x declared through the model is byte-identical to the pass declared the old way"
+source = "tasks 5.1, rendering-forward-clustered (MSAA and alpha coverage)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+for binary in "$d/cy_test_unit_render_graph" "$d/cy_test_unit_render_forward" "$d/tests/render/cy_test_render_msaa_multiview"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+filter='a multisampled pass renders*,a missing resolve*,a resolve declared before*,a resolve on a pass*,1x is the graph it was*,a pass that cannot take MSAA*,multisample() is refused*'
+out="$("$d/cy_test_unit_render_graph" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the graph's MSAA cases FAILED"; exit 1; }
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "unit.render_graph: the filter selected ${selected:-0} of the 7 MSAA cases it names"
+test "${selected:-0}" -ge 7 || { echo "the named MSAA cases are not in unit.render_graph any more"; exit 1; }
+out="$("$d/cy_test_unit_render_forward" 2>&1)" || { echo "$out" | tail -30; echo "unit.render_forward FAILED (the virtual-geometry refusal lives there)"; exit 1; }
+out="$("$d/tests/render/cy_test_render_msaa_multiview" '-tc=4x edges*,1x declared*' 2>&1)" || { echo "$out" | tail -40; echo "render.msaa_multiview FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -E '^1x: ' || { echo "$out" | tail -20; echo "no 1x/4x measurement was printed: the suite SKIPPED (no Vulkan device), and a picture nobody took is not evidence"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/graph/src/multisample.cpp"
+token  = "attachment.resolve_view = context.executor->view(target);"
+note   = "deleting the resolve view leaves the graph's resolve pass an empty rendering scope that loads the 4x twin and resolves nothing, so the single-sample target is never written: the 4x image reads back at its clear colour, with no partially covered pixel and none of the triangle's area, and render.msaa_multiview's first case goes red. Every unit case still passes — the plan is unchanged — which is exactly why the device half is part of this criterion"
+
+[[criterion]]
+id = "multiview-by-capability"
+describe = "multi-view is selected by `Capability::Multiview` and never by backend identity: a pass declaring two views is recorded ONCE with a two-bit view mask where the device reports the capability, and once PER VIEW into single-layer views where it does not — proved on the null backend with the capability present, requested absent and overridden absent, with an identical plan hash across all three — and on the Vulkan device a device created with multi-view and one created without it render byte-identical two-layer images with zero validation errors"
+source = "tasks 5.2, rendering-forward-clustered (Multi-view rendering), rhi-and-render-graph (capabilities)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+for binary in "$d/cy_test_integration_render_graph_scale" "$d/tests/render/cy_test_render_msaa_multiview"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+filter='multi-view is recorded once*,without the capability every view*,the capability changes the recording*,a multisampled pass is handed*'
+out="$("$d/cy_test_integration_render_graph_scale" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the null-backend multi-view cases FAILED"; exit 1; }
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "integration.render_graph_scale: the filter selected ${selected:-0} of the 4 cases it names"
+test "${selected:-0}" -ge 4 || { echo "the named multi-view cases are not in integration.render_graph_scale any more"; exit 1; }
+out="$("$d/tests/render/cy_test_render_msaa_multiview" '-tc=multi-view and its per-view baseline*' 2>&1)" || { echo "$out" | tail -40; echo "render.msaa_multiview's multi-view case FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -E '^multi-view: ' || { echo "$out" | tail -20; echo "no multi-view comparison was printed: the suite SKIPPED (no Vulkan device)"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/graph/src/executor.cpp"
+token  = "context.view_index = view;"
+note   = "deleting the per-view index leaves the baseline recording every view as view 0: each recording renders through layer 0's single-layer view, so the null case asserting two DIFFERENT attachment views goes red, and on the device layer 1 is never drawn and the baseline stops matching the multi-view image"
+
+# THE ROW'S FLOOR, AND WHY IT IS A FLOOR (task 5.3). `rendering-forward-clustered` has two halves:
+# MSAA and multi-view, which are this rung's and are above, and the mobile pipeline differences —
+# tile memory, memoryless attachments, the tonemapping subpass — which are M11.e's
+# (`m11e.toml` expects the row at `complete`). A row is not Complete on the half of its scope one rung
+# can reach, so this ledger records the tier the row must NOT fall below here, and says so in the
+# ledger rather than leaving the gate to discover that nothing expected Complete.
+[[criterion]]
+id = "forward-clustered-desktop-floor"
+describe = "`rendering-forward-clustered` is held at its floor of Working at this rung and deliberately NOT expected at Complete: its Complete cell is M11.e's, with the mobile pipeline differences, and this rung's MSAA and multi-view are the desktop half of that cell rather than a reason to claim it"
+source = "tasks 5.3, ROADMAP M11.d, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11d"
+
+[criterion.expect_tiers]
+rendering-forward-clustered = "working"
+
 # --- Section 5: the artefact --------------------------------------------------------------------------
 
 [[criterion]]

@@ -136,7 +136,11 @@ bool synthetic_memory_query(ResourceId resource, const ResourceInfo& info,
 // ----------------------------------------------------------------------------------
 
 RenderGraph::RenderGraph(Allocator& allocator) noexcept
-    : allocator_(&allocator), resources_(allocator), passes_(allocator), uses_(allocator) {}
+    : allocator_(&allocator),
+      resources_(allocator),
+      passes_(allocator),
+      uses_(allocator),
+      pending_resolves_(allocator) {}
 
 void RenderGraph::set_failure(ErrorCode code, const char* message) noexcept {
     // The FIRST failure is kept, not the last: the first one is the cause and everything after it
@@ -213,6 +217,8 @@ ResourceId RenderGraph::import_buffer(const BufferRequest& request, rhi::BufferH
 }
 
 PassBuilder RenderGraph::add_pass(const char* name, rhi::QueueKind queue) noexcept {
+    // The previous pass is complete now, so any resolve it declared goes directly after it.
+    flush_resolves();
     Pass pass;
     pass.name = name != nullptr ? name : "pass";
     pass.queue = queue;
@@ -251,6 +257,13 @@ void RenderGraph::add_use(PassId pass, ResourceId resource, rhi::Access access,
         set_failure(ErrorCode::InvalidArgument,
                     "uses must be declared against the pass being built; add_pass() again after "
                     "another pass has been declared is not the same pass");
+        return;
+    }
+
+    // A multisampled pass's attachment lands on the texture's twin. The identity for every other
+    // pass and every other access, so nothing below this line knows MSAA exists.
+    resource = attachment_target(pass, resource, access);
+    if (resource == kInvalidResource) {
         return;
     }
 
@@ -348,6 +361,7 @@ void RenderGraph::reset() noexcept {
     resources_.clear();
     passes_.clear();
     uses_.clear();
+    pending_resolves_.clear();
     status_ = ok();
 }
 
@@ -391,6 +405,26 @@ PassBuilder& PassBuilder::record(RecordFn function, void* user) noexcept {
 
 PassBuilder& PassBuilder::side_effect() noexcept {
     graph_->set_side_effect(pass_);
+    return *this;
+}
+
+PassBuilder& PassBuilder::multisample(u16 samples) noexcept {
+    graph_->set_samples(pass_, samples);
+    return *this;
+}
+
+PassBuilder& PassBuilder::resolve(ResourceId target) noexcept {
+    graph_->request_resolve(pass_, target);
+    return *this;
+}
+
+PassBuilder& PassBuilder::single_sample(const char* reason) noexcept {
+    graph_->set_single_sample(pass_, reason);
+    return *this;
+}
+
+PassBuilder& PassBuilder::views(u32 count) noexcept {
+    graph_->set_views(pass_, count);
     return *this;
 }
 

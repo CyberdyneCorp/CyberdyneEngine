@@ -29,7 +29,7 @@ import struct
 import sys
 
 HEADER = """#pragma once
-// Compiled SPIR-V for {source}. GENERATED — do not edit by hand.
+{licence}// Compiled SPIR-V for {source}. GENERATED — do not edit by hand.
 //
 // Produced by tests/render/shaders/embed_spirv.py from {source}; that file's header comment
 // carries the exact slangc invocation. Checked in rather than compiled by the build because the
@@ -41,6 +41,9 @@ HEADER = """#pragma once
 namespace cy::render_test {{
 
 """
+
+
+LICENCE = "SPDX-License-Identifier: MIT"
 
 
 def main(argv: list[str]) -> int:
@@ -61,7 +64,13 @@ def main(argv: list[str]) -> int:
         return 2
 
     out = pathlib.Path(arguments[0])
-    body = [HEADER.format(source=source)]
+    # THE SOURCE'S LICENCE LINE, CARRIED OVER. A generated header is as much a source file as the
+    # Slang it came from, and the licence gate reads both. Taken from the source rather than
+    # written unconditionally, so regenerating a header whose source predates the gate does not
+    # silently fix one entry of the gate's shrinking backlog in a change about something else.
+    source_path = pathlib.Path(__file__).resolve().parent / source
+    carries = source_path.is_file() and LICENCE in source_path.read_text(encoding="utf-8")[:512]
+    body = [HEADER.format(source=source, licence=f"// {LICENCE}\n" if carries else "")]
     for pair in arguments[1:]:
         name, _, path = pair.partition("=")
         data = pathlib.Path(path).read_bytes()

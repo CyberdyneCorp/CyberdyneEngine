@@ -171,6 +171,10 @@ struct DeviceDescription {
     /// Capability::AsyncCompute false and the graph folds those passes onto graphics.
     bool request_async_compute = true;
     bool request_transfer_queue = true;
+    /// Ask for multi-view rendering. A device created without it reports Capability::Multiview
+    /// false, and a pass declaring several views is recorded once per view instead — which is how a
+    /// device that HAS the feature can still run, and be compared against, the baseline path.
+    bool request_multiview = true;
     /// Bytes reserved for the render graph's transient pool. Grown on demand; a starting size stops
     /// the first frame from reallocating five times.
     u64 transient_pool_bytes = 64ULL * 1024 * 1024;

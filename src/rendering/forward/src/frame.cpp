@@ -21,6 +21,12 @@ using rhi::Access;
 using rhi::QueueKind;
 using FrameState = ForwardFrame::BuildState;
 
+/// Why the virtual-geometry stage cannot render multisampled, in one place: build() refuses a
+/// multisampled frame with it and the stage's declaration hands it to the graph.
+constexpr const char* kVirtualGeometrySingleSample =
+    "forward frame: virtual geometry's visibility target is single-sample, and this frame is "
+    "multisampled";
+
 [[nodiscard]] bool valid(ResourceId resource) noexcept {
     return resource != kInvalidResource;
 }
@@ -245,6 +251,9 @@ PassId declare_depth_resolve(RenderGraph& graph, FrameState& state) noexcept {
 PassId declare_virtual_geometry(RenderGraph& graph, FrameState& state) noexcept {
     const FrameResources& resources = *state.resources;
     PassBuilder builder = graph.add_pass("virtual geometry", QueueKind::Graphics);
+    // Stated to the graph as well as refused by build(): a pass that later asks this stage for a
+    // sample count gets the same reason from the graph, not a twin nothing can resolve.
+    builder.single_sample(kVirtualGeometrySingleSample);
     builder.write(resources.visibility, Access::ColorAttachmentWrite);
     builder.write(resources.depth, Access::DepthStencilAttachmentWrite);
     attach(builder, *state.description, FramePassKind::VirtualGeometry);
@@ -634,9 +643,7 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
     // a payload per sample and a resolve that shades them, and neither exists. Refused rather than
     // drawn into a single-sample target beside a multisampled depth, which would not validate.
     if (description.features.virtual_geometry && samples != 1) {
-        return fail(ErrorCode::Unsupported,
-                    "forward frame: virtual geometry's visibility target is single-sample, and "
-                    "this frame is multisampled");
+        return fail(ErrorCode::Unsupported, kVirtualGeometrySingleSample);
     }
     // EVERY SCREEN-SPACE AND TEMPORAL FEATURE READS THE PREPASS'S OUTPUT. Allowing one without a
     // prepass would declare a pass that samples a depth target nothing wrote — which compiles,

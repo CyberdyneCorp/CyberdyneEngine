@@ -210,6 +210,20 @@ function(cy_render_declare_tests)
     # library's own public include directory.
     target_include_directories(cy_test_render_virtual_geometry_shaded PRIVATE "${cy_render_tests_dir}")
 
+    # MSAA AND MULTI-VIEW THROUGH THE RENDER GRAPH, ON A DEVICE. M11.d tasks 5.1 and 5.2. The graph's
+    # own suites prove the twin, the resolve's placement, the refusals and the capability-selected
+    # recording without a GPU; what they cannot show is that a resolve resolved anything, or that
+    # the per-view baseline put each view in its own layer. This suite reads the pixels: 4x edges
+    # against 1x, 1x declared through the model against 1x declared the old way, and a device with
+    # multi-view against one created without it. KIND render because it needs a GPU.
+    cy_add_test(
+        NAME msaa_multiview
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_msaa_multiview.cpp"
+        DEPENDENCIES cy::rendering-graph cy::rhi cy::rhi-null cy::rhi-vulkan)
+    # For "device.h" and "shaders/view_probe_spirv.h", as the suites above.
+    target_include_directories(cy_test_render_msaa_multiview PRIVATE "${cy_render_tests_dir}")
+
     cy_add_test(
         NAME environment_field
         KIND render

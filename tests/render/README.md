@@ -206,6 +206,25 @@ drawn.
 A rendering milestone whose only gate is a photograph is a rendering milestone that is not gated on
 the machines that build it.
 
+## MSAA and multi-view on the device — `render.msaa_multiview`
+
+M11.d tasks 5.1 and 5.2. The render graph owns MSAA and multi-view now: a pass declares
+`multisample(n)` and `resolve(target)` and the graph allocates the multisampled twin and inserts the
+resolve; a pass declares `views(n)` and the executor records it once with a view mask where the
+device reports `Capability::Multiview`, and once per view into single-layer views where it does not.
+`unit.render_graph` and `integration.render_graph_scale` prove the structure with no GPU. This suite
+proves the pixels, with one triangle whose edges are all oblique (`shaders/view_probe.slang`):
+
+| Case | Asserts |
+|---|---|
+| 4x edges are smoother than 1x | 1x has **no** partially covered pixel; 4x has at least 64 along the edges; both cover the same area within 3%. A resolve the executor skipped leaves the target at its clear colour and fails all three |
+| 1x declared through the model is byte-identical | the same pass with `multisample(1)` declared and without it produce the same bytes |
+| multi-view and its baseline render the same layers | a device with multi-view and one created with `request_multiview = false` produce byte-identical two-layer images, each layer carrying only its own view's colour, with zero validation errors on both |
+
+The third case is also the regression test for a Vulkan defect M11.d found: `Capability::Multiview`
+was reported unconditionally while `VkPhysicalDeviceVulkan11Features::multiview` was never enabled,
+so every view-masked pipeline and rendering scope was invalid usage the driver happened to accept.
+
 ## What M3 did NOT wire here, from `testing-and-quality`
 
 Recorded rather than quietly dropped. The first two are done and the rest are not, and none of them

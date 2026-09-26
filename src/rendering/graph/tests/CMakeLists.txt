@@ -21,6 +21,8 @@
 #                       test_execution.cpp  every case builds a null device — fifteen handle pools
 #                                           and a format table — and two of them build one twice to
 #                                           compare runs.
+#                       test_multiview.cpp  the same, for multi-view with the capability present
+#                                           and forced absent, and for an MSAA twin and resolve.
 #
 # Shrinking either to fit a millisecond would be testing something else.
 set_property(GLOBAL PROPERTY CY_RENDER_GRAPH_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -52,6 +54,7 @@ function(cy_render_graph_declare_tests)
             "${cy_graph_tests_dir}/test_barriers.cpp"
             "${cy_graph_tests_dir}/test_culling.cpp"
             "${cy_graph_tests_dir}/test_declaration.cpp"
+            "${cy_graph_tests_dir}/test_multisample.cpp"
         DEPENDENCIES cy::rendering-graph cy::rhi-null)
 
     cy_add_test(
@@ -60,6 +63,7 @@ function(cy_render_graph_declare_tests)
         SOURCES
             "${cy_graph_tests_dir}/test_aliasing.cpp"
             "${cy_graph_tests_dir}/test_execution.cpp"
+            "${cy_graph_tests_dir}/test_multiview.cpp"
         DEPENDENCIES cy::rendering-graph cy::rhi-null)
 
     # The Vulkan suite exists only when the Vulkan backend does. `smoke`, because a case here

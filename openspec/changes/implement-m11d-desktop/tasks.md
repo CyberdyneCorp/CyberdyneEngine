@@ -237,12 +237,54 @@ with nothing to check.
 
 ## 5. `rendering-forward-clustered` — the desktop half only
 
-- [ ] 5.1 MSAA through the render graph's attachment model, resolved where the pass declares it
-- [ ] 5.2 Multi-view, selected by **capability query** rather than backend identity, with the
-      baseline path still correct where the capability is absent
-- [ ] 5.3 **The row does NOT reach Complete here, and the ledger says so rather than the gate
+- [x] 5.1 MSAA through the render graph's attachment model, resolved where the pass declares it.
+      **Done**: `PassBuilder::multisample(n)` (before the attachments), `resolve(target)` and
+      `single_sample(reason)` (`src/rendering/graph/src/multisample.cpp`). The graph creates the
+      multisampled twin of a texture the first time a multisampled pass names it as an attachment,
+      redirects that pass's attachment uses to it, and inserts a graph-owned resolve pass directly
+      after the declaring pass; `PassContext::attachment_view` hands the pass the twin's view.
+      compile() refuses a frame in which the texture is used while its twin holds rendering no
+      resolve has reached — a missing resolve, or one declared before the last multisampled write.
+      The virtual-geometry stage declares `single_sample` with the words `ForwardFrame::build`
+      refuses a multisampled frame with, so the graph refuses it by the same name. Colour only: the
+      RHI has no depth resolve mode, and a depth `resolve()` is refused by name. **Proved**:
+      `unit.render_graph` (7 cases: twin, placement, missing, misplaced, resolve on the wrong pass,
+      1x plan hash identical with `multisample(1)` declared, the named refusal); `render.msaa_multiview`
+      on the RTX 5060 — 1x: 1 250 full, 0 partial; 4x: 1 191 full, 120 partial, area 1 250.4 vs
+      1 250.0; 1x through the model byte-identical to the pass declared the old way; zero
+      validation errors. Mutations, each restored and md5-verified: deleting the resolve view →
+      4x reads back empty (0 full, 0 partial), red; deleting the twin's unresolved mark → the
+      missing/misplaced cases red. **Not done here, and said so in `src/rendering/forward/README.md`**:
+      `ForwardFrame` still declares its own `colour (msaa)` targets and caller-recorded `resolve`
+      stage, and `FrameRecorder` still refuses MSAA — moving the frame onto the graph's model edits
+      the shading and post-chain declarations PRs #21 and #22 are editing. Criterion
+      `m11d:msaa-through-the-graph`.
+- [x] 5.2 Multi-view, selected by **capability query** rather than backend identity, with the
+      baseline path still correct where the capability is absent. **Done**: `PassBuilder::views(n)`;
+      the executor records the pass once with an n-bit view mask where the device reports
+      `Capability::Multiview`, and once per view into single-layer views where it does not
+      (`PassContext::view_mask`, `view_index`). The plan does not depend on the choice.
+      `DeviceDescription::request_multiview` lets a device that has the feature run the baseline.
+      **A defect found and fixed on the way**: the Vulkan backend reported `Capability::Multiview`
+      unconditionally and never enabled `VkPhysicalDeviceVulkan11Features::multiview`, so every
+      view-masked pipeline and rendering scope was invalid usage. Now asked for, and the capability
+      follows the feature. Regression: `render.msaa_multiview`'s multi-view case — with the old
+      behaviour restored it reports `VUID-VkRenderingInfo-multiview-06127`,
+      `VUID-VkGraphicsPipelineCreateInfo-multiview-06577` and
+      `VUID-VkShaderModuleCreateInfo-pCode-08740`, red; restored and md5-verified. **Proved**:
+      `integration.render_graph_scale` on the null backend with the capability present, requested
+      absent and overridden absent — one recording with mask `0b11` versus two with view indices 0
+      and 1 through two different single-layer views, identical plan hash; on the device, a
+      multi-view device and one created without it produce byte-identical two-layer images, each
+      layer only its own view's colour, zero validation errors. Mutation: deleting the per-view index
+      → null case red and the device images DIFFER. Criterion `m11d:multiview-by-capability`.
+- [x] 5.3 **The row does NOT reach Complete here, and the ledger says so rather than the gate
       discovering it.** The mobile pipeline differences are M11.e's half of the same row, and a row
-      is not Complete on the half of its scope one rung can reach. This rung records a floor
+      is not Complete on the half of its scope one rung can reach. This rung records a floor.
+      **Done**: `m11d:forward-clustered-desktop-floor`, a `tiers` criterion expecting
+      `rendering-forward-clustered` at `working` and not `complete`; `m11e.toml` keeps the row's
+      `complete` expectation. The spec delta `specs/rendering-forward-clustered/spec.md` records the
+      MSAA and multi-view requirements as built, including the capability-absent scenario.
 
 ## 6. The core rows the port audits
 

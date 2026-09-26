@@ -1338,6 +1338,14 @@ Expected<CompiledGraph, Error> RenderGraph::compile(const CompileOptions& option
         // produce a plan with a hole in it, and the hole would surface as a missing barrier.
         return make_unexpected(status_.error());
     }
+    // The last pass's resolve, if it declared one, has had no later add_pass() to land it.
+    flush_resolves();
+    if (!status_) {
+        return make_unexpected(status_.error());
+    }
+    if (Status multisampling = validate_multisampling(); !multisampling) {
+        return make_unexpected(multisampling.error());
+    }
 
     Compiler compiler(*this, options);
     if (!compiler.init_cells() || !compiler.build_dependencies() || !compiler.cull() ||

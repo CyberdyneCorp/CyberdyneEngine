@@ -27,6 +27,7 @@ cy_add_module(
         src/compile.cpp
         src/executor.cpp
         src/graph.cpp
+        src/multisample.cpp
         src/visualise.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-jobs is what parallel command recording (task 2.2.5) runs on. It is a PUBLIC

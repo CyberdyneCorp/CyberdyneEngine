@@ -396,9 +396,15 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
     features13.dynamicRendering = VK_TRUE;
     features13.synchronization2 = VK_TRUE;
 
+    // Multi-view is a 1.1 feature, and a feature is not on because the version is: it is asked for
+    // below when the device has it and the caller wants it, and the capability follows from that.
+    VkPhysicalDeviceVulkan11Features features11{};
+    features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    features11.pNext = &features13;
+
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    features12.pNext = &features13;
+    features12.pNext = &features11;
     features12.timelineSemaphore = VK_TRUE;
     features12.bufferDeviceAddress = VK_TRUE;
 
@@ -422,10 +428,16 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
         supported_ray_query.pNext = supported12.pNext;
         supported12.pNext = &supported_ray_query;
     }
+    VkPhysicalDeviceVulkan11Features supported11{};
+    supported11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    supported11.pNext = supported12.pNext;
+    supported12.pNext = &supported11;
     VkPhysicalDeviceFeatures2 supported{};
     supported.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     supported.pNext = &supported12;
     vkGetPhysicalDeviceFeatures2(physical_, &supported);
+    multiview_ = desc.request_multiview && supported11.multiview == VK_TRUE;
+    features11.multiview = multiview_ ? VK_TRUE : VK_FALSE;
     ray_tracing_.acceleration_structure_feature =
         supported_acceleration.accelerationStructure == VK_TRUE;
     ray_tracing_.ray_query_feature = supported_ray_query.rayQuery == VK_TRUE;
@@ -616,7 +628,7 @@ void VulkanDevice::fill_capabilities() noexcept {
                       (subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0);
     capabilities_.set(Capability::SubgroupArithmetic,
                       (subgroup.supportedOperations & VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) != 0);
-    capabilities_.set(Capability::Multiview, true);
+    capabilities_.set(Capability::Multiview, multiview_);
     // THE SECOND OF THE TWO EDITS `ray-tracing-infrastructure`'s README named. The capability is
     // not set here: `set_ray_tracing_observation` sets it from what the device answered, so the
     // decision has exactly one implementation and it is one a test without a GPU can drive.

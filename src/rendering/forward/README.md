@@ -47,6 +47,23 @@ not the other way round. Its callback draws indirectly and pulls vertices out of
 READING intent, and the graph derives the dependency from it. `unit.render_forward` asserts the
 stage's place, its targets, a declared read producing a dependency, and the MSAA refusal.
 
+The refusal is stated to the graph too (M11.d task 5.1): the stage declares
+`PassBuilder::single_sample(reason)` with the same words `build()` refuses a multisampled frame with,
+so a pass author who asks the declared stage for a sample count is refused by the graph with that
+reason rather than handed a multisampled twin nothing could resolve.
+
+## MSAA: the graph's model, and what this frame still declares itself
+
+Since M11.d the render graph owns MSAA: a pass declares `multisample(n)` before its attachments and
+`resolve(target)` where its colour is final, and the graph creates the multisampled twin, redirects
+the pass's attachment uses to it, inserts the resolve pass and refuses a frame whose resolve is
+missing or misplaced (`src/rendering/graph/src/multisample.cpp`). **This frame does not use it yet**:
+`FrameFeatures::msaa_samples` still declares its own `colour (msaa)` and `depth (msaa)` targets and a
+`resolve` stage whose recording is the caller's, and `pipeline::FrameRecorder` still refuses a
+multisampled frame. Moving the frame onto the graph's model is a change to `frame.cpp`'s shading and
+post-chain declarations, and it is deliberately not made while other work edits those declarations;
+depth resolve also has no RHI resolve mode yet, and the graph refuses a depth `resolve()` by name.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in
