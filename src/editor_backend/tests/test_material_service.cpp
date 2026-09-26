@@ -15,9 +15,11 @@
 
 #include <cstring>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -154,7 +156,9 @@ void append_text(std::vector<cy::u8>& bytes, std::string_view value) {
 std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 version = 2,
                          std::string_view interface_binding = {},
                          std::string_view invalid_emitter = {},
-                         std::string_view module_asset_path = "effects/shared_drag.cyvfxmodule") {
+                         std::string_view module_asset_path = "effects/shared_drag.cyvfxmodule",
+                         std::string_view module_reference = {},
+                         std::string_view attribute_name = "position") {
     std::vector<cy::u8> bytes;
     append_u32(bytes, version);
     append_text(bytes, "sparks");
@@ -172,7 +176,10 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
                                    "\n# layout 1 12 34\nprop 1 value 3\nnode 2 vfx.spawn_count\n"
                                    "link 1 out 2 value\n";
         append_text(bytes, canvas);
-        append_u32(bytes, 0);     // modules
+        append_u32(bytes, module_reference.empty() ? 0U : 1U);
+        if (!module_reference.empty()) {
+            append_text(bytes, module_reference);
+        }
         append_u32(bytes, interface_binding.empty() ? 0U : 1U);
         if (!interface_binding.empty()) {
             append_text(bytes, interface_binding);
@@ -180,7 +187,7 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
         if (version >= 2) {
             append_u32(bytes, 2048);  // capacity
             append_u32(bytes, 1);     // attributes
-            append_text(bytes, "position");
+            append_text(bytes, attribute_name);
             append_text(bytes, "vec3");
             append_u32(bytes, 0);  // minimum
             append_u32(bytes, 0x42c80000U);  // maximum 100
@@ -202,6 +209,48 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
         append_text(bytes, module_asset_path);
     }
     std::string source = "cyvfxdoc 1\n";
+    constexpr char hex[] = "0123456789abcdef";
+    for (const cy::u8 byte : bytes) {
+        source.push_back(hex[byte >> 4U]);
+        source.push_back(hex[byte & 0x0fU]);
+    }
+    return source;
+}
+
+std::string vfx_bundle(std::string_view document, std::string_view module_source) {
+    std::vector<cy::u8> bytes;
+    append_u32(bytes, 1);
+    append_text(bytes, document);
+    append_u32(bytes, 1);
+    append_text(bytes, "shared_drag");
+    append_text(bytes, module_source);
+    std::string bundle = "cyvfxbundle 1\n";
+    constexpr char hex[] = "0123456789abcdef";
+    for (const cy::u8 byte : bytes) {
+        bundle.push_back(hex[byte >> 4U]);
+        bundle.push_back(hex[byte & 0x0fU]);
+    }
+    return bundle;
+}
+
+std::string vfx_module_source(std::string_view name, cy::u8 stage,
+                              std::initializer_list<std::string_view> dependencies,
+                              std::string_view canvas = {}) {
+    std::vector<cy::u8> bytes;
+    append_u32(bytes, 1);
+    append_text(bytes, name);
+    bytes.push_back(stage);
+    append_u32(bytes, 0);
+    append_u32(bytes, static_cast<cy::u32>(dependencies.size()));
+    for (std::string_view dependency : dependencies) {
+        append_text(bytes, dependency);
+    }
+    if (canvas.empty()) {
+        append_text(bytes, std::string("cyvfxcanvas 1\nmodule ") + std::string(name) + "\n");
+    } else {
+        append_text(bytes, canvas);
+    }
+    std::string source = "cyvfxmodule 1\n";
     constexpr char hex[] = "0123456789abcdef";
     for (const cy::u8 byte : bytes) {
         source.push_back(hex[byte >> 4U]);
@@ -287,6 +336,196 @@ CY_TEST_CASE("editor_backend: VFX document preserves explicit module asset paths
 
     const std::string escaped = vfx_document("vfx.constant", 3, {}, {}, "../outside.cyvfxmodule");
     CY_CHECK_FALSE(cy::vfx::read_authoring_document(escaped, allocator()).has_value());
+}
+
+CY_TEST_CASE(
+    "editor_backend: reusable module changes both emitter cooks through engine graph composition") {
+    const std::string path = std::string(CY_SOURCE_DIR) +
+                             "/samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule";
+    std::ifstream input(path);
+    CY_REQUIRE(input.good());
+    const std::string module_source(std::istreambuf_iterator<char>{input}, {});
+    const std::string source = vfx_document(
+        "vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag", "velocity");
+    auto asset = cy::vfx::read_authoring_document(source, allocator());
+    CY_REQUIRE(asset.has_value());
+    CY_REQUIRE_EQ(asset->emitters()[0].modules().size(), 1U);
+    cy::graph::NodeRegistry nodes(allocator());
+    cy::vfx::DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(cy::vfx::register_vfx_nodes(nodes).has_value());
+    CY_REQUIRE(cy::vfx::register_builtin_interfaces(interfaces).has_value());
+    asset->resolve(nodes);
+    cy::graph::DiagnosticSink diagnostics(allocator());
+    cy::vfx::CompileReport report(allocator());
+    CY_CHECK_FALSE(cy::vfx::compile_system(*asset, nodes, interfaces, cy::vfx::CompileOptions{},
+                                           diagnostics, report)
+                       .has_value());
+
+    const cy::vfx::ModuleSource supplied[]{
+        {cy::Name::intern("shared_drag"), module_source},
+    };
+    CY_REQUIRE(
+        cy::vfx::resolve_authoring_modules(*asset, supplied, diagnostics, allocator()).has_value());
+    CY_REQUIRE(asset->emitters()[0].stage(cy::vfx::Stage::Update) != nullptr);
+    CY_REQUIRE(asset->emitters()[1].stage(cy::vfx::Stage::Update) != nullptr);
+    CY_CHECK(asset->emitters()[0].modules().empty());
+    asset->resolve(nodes);
+    auto cooked = cy::vfx::compile_system(*asset, nodes, interfaces, cy::vfx::CompileOptions{},
+                                          diagnostics, report);
+    CY_REQUIRE(cooked.has_value());
+    CY_CHECK_EQ(cooked->emitters().size(), 2U);
+
+    auto plain = cy::vfx::read_authoring_document(
+        vfx_document("vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", {}, "velocity"),
+        allocator());
+    CY_REQUIRE(plain.has_value());
+    plain->resolve(nodes);
+    cy::graph::DiagnosticSink plain_diagnostics(allocator());
+    cy::vfx::CompileReport plain_report(allocator());
+    auto plain_cook = cy::vfx::compile_system(*plain, nodes, interfaces, cy::vfx::CompileOptions{},
+                                              plain_diagnostics, plain_report);
+    CY_REQUIRE(plain_cook.has_value());
+    CY_CHECK_NE(cooked->cook_key(), plain_cook->cook_key());
+
+    auto wrong_input = cy::vfx::read_authoring_document(
+        vfx_document("vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag",
+                     "position"),
+        allocator());
+    CY_REQUIRE(wrong_input.has_value());
+    cy::graph::DiagnosticSink wrong_diagnostics(allocator());
+    CY_CHECK_FALSE(
+        cy::vfx::resolve_authoring_modules(*wrong_input, supplied, wrong_diagnostics, allocator())
+            .has_value());
+    CY_REQUIRE_FALSE(wrong_diagnostics.entries().empty());
+    CY_CHECK_EQ(std::string_view(wrong_diagnostics.entries()[0].code), "vfx.module.input");
+
+    auto missing = cy::vfx::read_authoring_document(source, allocator());
+    CY_REQUIRE(missing.has_value());
+    cy::graph::DiagnosticSink missing_diagnostics(allocator());
+    CY_CHECK_FALSE(
+        cy::vfx::resolve_authoring_modules(*missing, {}, missing_diagnostics, allocator())
+            .has_value());
+    CY_REQUIRE_FALSE(missing_diagnostics.entries().empty());
+    CY_CHECK_EQ(missing_diagnostics.entries()[0].detail.text(), "shared_drag");
+}
+
+CY_TEST_CASE("editor_backend: bundled module compiles through the VFX service") {
+    const std::string path = std::string(CY_SOURCE_DIR) +
+                             "/samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule";
+    std::ifstream input(path);
+    CY_REQUIRE(input.good());
+    const std::string module_source(std::istreambuf_iterator<char>{input}, {});
+    const std::string document = vfx_document(
+        "vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag", "velocity");
+    const std::string bundle = vfx_bundle(document, module_source);
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CY_REQUIRE(api != nullptr);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   71,
+                                   "vfx.compile",
+                                   reinterpret_cast<const cy::u8*>(bundle.data()),
+                                   bundle.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    api->service_close(&host, session);
+}
+
+CY_TEST_CASE("editor_backend: VFX module dependencies refuse cycles and stage mismatches") {
+    auto system = [] {
+        cy::vfx::VfxSystemAsset asset(allocator(), cy::Name::intern("sparks"));
+        cy::vfx::Emitter emitter(allocator(), cy::Name::intern("smoke"));
+        CY_REQUIRE(emitter.reference_module(cy::Name::intern("first")).has_value());
+        CY_REQUIRE(asset.add_emitter(std::move(emitter)).has_value());
+        CY_REQUIRE(asset
+                       .declare_module_asset({cy::Name::intern("first"),
+                                              cy::Name::intern("effects/first.cyvfxmodule")})
+                       .has_value());
+        CY_REQUIRE(asset
+                       .declare_module_asset({cy::Name::intern("second"),
+                                              cy::Name::intern("effects/second.cyvfxmodule")})
+                       .has_value());
+        return asset;
+    };
+    const std::string first = vfx_module_source("first", 2, {"second"});
+    const std::string second_cycle = vfx_module_source("second", 2, {"first"});
+    const cy::vfx::ModuleSource cyclic_sources[] = {
+        {cy::Name::intern("first"), first},
+        {cy::Name::intern("second"), second_cycle},
+    };
+    auto cyclic = system();
+    cy::graph::DiagnosticSink cycle_diagnostics(allocator());
+    CY_CHECK_FALSE(
+        cy::vfx::resolve_authoring_modules(cyclic, cyclic_sources, cycle_diagnostics, allocator())
+            .has_value());
+    CY_REQUIRE_FALSE(cycle_diagnostics.entries().empty());
+    CY_CHECK_EQ(std::string_view(cycle_diagnostics.entries()[0].code), "vfx.module.cycle");
+    CY_CHECK_EQ(cycle_diagnostics.entries()[0].detail.text(), "first");
+
+    const std::string second_wrong_stage = vfx_module_source("second", 0, {});
+    const cy::vfx::ModuleSource mismatched_sources[] = {
+        {cy::Name::intern("first"), first},
+        {cy::Name::intern("second"), second_wrong_stage},
+    };
+    auto mismatched = system();
+    cy::graph::DiagnosticSink stage_diagnostics(allocator());
+    CY_CHECK_FALSE(cy::vfx::resolve_authoring_modules(mismatched, mismatched_sources,
+                                                      stage_diagnostics, allocator())
+                       .has_value());
+    CY_REQUIRE_FALSE(stage_diagnostics.entries().empty());
+    CY_CHECK_EQ(std::string_view(stage_diagnostics.entries()[0].code), "vfx.module.stage");
+    CY_CHECK_EQ(stage_diagnostics.entries()[0].detail.text(), "second");
+}
+
+CY_TEST_CASE("editor_backend: module nodes remap keys when composed into an existing stage") {
+    const std::string module =
+        vfx_module_source("shared_drag", 0, {},
+                          "cyvfxcanvas 1\nmodule shared_drag\nnode 1 vfx.constant\nprop 1 value 2\n"
+                          "node 2 vfx.spawn_count\nlink 1 out 2 value\n");
+    auto asset = cy::vfx::read_authoring_document(
+        vfx_document("vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag"),
+        allocator());
+    CY_REQUIRE(asset.has_value());
+    const cy::vfx::ModuleSource supplied[]{{cy::Name::intern("shared_drag"), module}};
+    cy::graph::DiagnosticSink diagnostics(allocator());
+    CY_REQUIRE(
+        cy::vfx::resolve_authoring_modules(*asset, supplied, diagnostics, allocator()).has_value());
+    const cy::graph::Graph* spawn = asset->emitters()[0].stage(cy::vfx::Stage::Spawn);
+    CY_REQUIRE(spawn != nullptr);
+    CY_REQUIRE_EQ(spawn->nodes().size(), 4U);
+    CY_CHECK_NE(spawn->nodes()[0].key, spawn->nodes()[2].key);
+    CY_CHECK_NE(spawn->nodes()[1].key, spawn->nodes()[3].key);
+    cy::graph::NodeRegistry nodes(allocator());
+    cy::vfx::DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(cy::vfx::register_vfx_nodes(nodes).has_value());
+    CY_REQUIRE(cy::vfx::register_builtin_interfaces(interfaces).has_value());
+    asset->resolve(nodes);
+    cy::vfx::CompileReport report(allocator());
+    auto cooked = cy::vfx::compile_system(*asset, nodes, interfaces, cy::vfx::CompileOptions{},
+                                          diagnostics, report);
+    CY_REQUIRE(cooked.has_value());
+}
+
+CY_TEST_CASE("editor_backend: module cannot read an undeclared host attribute") {
+    const std::string module =
+        vfx_module_source("shared_drag", 2, {},
+                          "cyvfxcanvas 1\nmodule shared_drag\nnode 1 vfx.attribute\n"
+                          "prop 1 attribute position\n");
+    auto asset = cy::vfx::read_authoring_document(
+        vfx_document("vfx.constant", 3, {}, {}, "effects/shared_drag.cyvfxmodule", "shared_drag"),
+        allocator());
+    CY_REQUIRE(asset.has_value());
+    const cy::vfx::ModuleSource supplied[]{{cy::Name::intern("shared_drag"), module}};
+    cy::graph::DiagnosticSink diagnostics(allocator());
+    CY_CHECK_FALSE(
+        cy::vfx::resolve_authoring_modules(*asset, supplied, diagnostics, allocator()).has_value());
+    CY_REQUIRE_FALSE(diagnostics.entries().empty());
+    CY_CHECK_EQ(std::string_view(diagnostics.entries()[0].code), "vfx.module.interface");
 }
 
 CY_TEST_CASE("editor_backend: authored interface bindings survive reading and gate engine cooks") {

@@ -7,6 +7,7 @@ use std::path::{Component, Path};
 
 use super::graph::GraphCanvas;
 use super::material::{graph_canvas_interchange, load_graph_canvas_interchange};
+use super::vfx_module::VfxModule;
 
 const VERSION: u32 = 3;
 const MAX_ITEMS: u32 = 4096;
@@ -315,12 +316,7 @@ impl VfxDocument {
         let mut semantic = self.clone();
         for emitter in &mut semantic.emitters {
             for stage in &mut emitter.stages {
-                stage.canvas = stage
-                    .canvas
-                    .lines()
-                    .filter(|line| !line.starts_with("# layout "))
-                    .flat_map(|line| [line, "\n"])
-                    .collect();
+                stage.canvas = without_layout(&stage.canvas);
             }
         }
         for parameter in &mut semantic.parameters {
@@ -329,6 +325,23 @@ impl VfxDocument {
             }
         }
         semantic.encode()
+    }
+
+    /// Extend the cook signature with each saved module's semantic authoring content.
+    pub fn compile_signature_with_modules(
+        &self,
+        mut read: impl FnMut(&str) -> Result<String>,
+    ) -> Result<Vec<u8>> {
+        let mut signature = self.compile_signature()?;
+        for reference in &self.module_assets {
+            let mut module = VfxModule::decode_text(&read(&reference.path)?)?;
+            if module.name != reference.name {
+                return Err(invalid("module asset name does not match its mapping"));
+            }
+            module.canvas = without_layout(&module.canvas);
+            signature.extend(module.encode()?);
+        }
+        Ok(signature)
     }
 
     /// Reopen a project document without trusting its envelope or payload.
@@ -558,6 +571,14 @@ fn invalid(reason: &str) -> Problem {
     Problem::new("read or write a VFX document", reason)
 }
 
+fn without_layout(canvas: &str) -> String {
+    canvas
+        .lines()
+        .filter(|line| !line.starts_with("# layout "))
+        .flat_map(|line| [line, "\n"])
+        .collect()
+}
+
 fn identifier(value: &str) -> Result<()> {
     if value.is_empty()
         || !value
@@ -765,6 +786,37 @@ mod tests {
             .module_assets
             .push(document.module_assets[0].clone());
         assert!(document.encode().is_err());
+    }
+
+    #[test]
+    fn module_graph_edits_change_cook_signature_but_layout_does_not() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.module_assets.push(ModuleAssetReference {
+            name: "shared_drag".into(),
+            path: "effects/shared_drag.cyvfxmodule".into(),
+        });
+        let source = include_str!(
+            "../../../../../samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule"
+        );
+        let initial = document
+            .compile_signature_with_modules(|_| Ok(source.into()))
+            .unwrap();
+        let mut module = VfxModule::decode_text(source).unwrap();
+        module.canvas.push_str("# layout 1 90 90\n");
+        let layout_only = module.encode_text().unwrap();
+        assert_eq!(
+            document
+                .compile_signature_with_modules(|_| Ok(layout_only.clone()))
+                .unwrap(),
+            initial
+        );
+        module.inputs[0].kind = "vec4".into();
+        assert_ne!(
+            document
+                .compile_signature_with_modules(|_| module.encode_text())
+                .unwrap(),
+            initial
+        );
     }
 
     #[test]

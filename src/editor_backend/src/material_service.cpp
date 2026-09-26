@@ -249,7 +249,7 @@ cy::Expected<cy::vfx::CompiledSystem, cy::Error> cook_vfx_document(
     std::string_view source, cy::Allocator& allocator, cy::graph::DiagnosticSink& diagnostics,
     cy::vfx::CompileReport& report, const char*& stage) noexcept {
     stage = "vfx.document.parse";
-    auto asset = cy::vfx::read_authoring_document(source, allocator);
+    auto asset = cy::vfx::read_authoring_bundle(source, diagnostics, allocator);
     if (!asset) {
         return cy::make_unexpected(asset.error());
     }

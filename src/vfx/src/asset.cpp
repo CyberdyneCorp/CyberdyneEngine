@@ -101,7 +101,11 @@ u32 precision_bytes(Precision precision) noexcept {
 // --- Emitter -------------------------------------------------------------------------------------
 
 Emitter::Emitter(Allocator& allocator, Name emitter_name) noexcept
-    : name_(emitter_name), stages_(allocator), attributes_(allocator), interfaces_(allocator) {}
+    : name_(emitter_name),
+      stages_(allocator),
+      attributes_(allocator),
+      interfaces_(allocator),
+      modules_(allocator) {}
 
 Status Emitter::set_stage(Stage which, Graph&& graph) noexcept {
     if (which == Stage::Count) {
@@ -119,6 +123,15 @@ Status Emitter::set_stage(Stage which, Graph&& graph) noexcept {
 
 const Graph* Emitter::stage(Stage which) const noexcept {
     for (const StageEntry& entry : stages_) {
+        if (entry.stage == which) {
+            return &entry.graph;
+        }
+    }
+    return nullptr;
+}
+
+Graph* Emitter::stage(Stage which) noexcept {
+    for (StageEntry& entry : stages_) {
         if (entry.stage == which) {
             return &entry.graph;
         }
@@ -164,6 +177,18 @@ Status Emitter::bind_interface(Name interface_name) noexcept {
         }
     }
     return interfaces_.push_back(interface_name);
+}
+
+Status Emitter::reference_module(Name module_name) noexcept {
+    if (module_name.is_empty()) {
+        return fail(ErrorCode::InvalidArgument, "vfx: a module reference needs a name");
+    }
+    for (Name existing : modules_) {
+        if (existing == module_name) {
+            return fail(ErrorCode::AlreadyExists, "vfx: duplicate module reference");
+        }
+    }
+    return modules_.push_back(module_name);
 }
 
 // --- VfxSystemAsset ------------------------------------------------------------------------------

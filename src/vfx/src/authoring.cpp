@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cy/vfx/authoring.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -372,8 +373,9 @@ private:
         if (!module) {
             return make_unexpected(module.error());
         }
-        return make_unexpected(Error{ErrorCode::Unsupported,
-                                     "VFX module asset resolution is not available", 0});
+        if (Status referenced = emitter.reference_module(*module); !referenced) {
+            return referenced;
+        }
     }
     auto interfaces = reader.count();
     if (!interfaces) {
@@ -600,6 +602,268 @@ Expected<VfxModuleAsset, Error> read_authoring_module(std::string_view source,
     module.inputs = std::move(inputs);
     module.dependencies = std::move(dependencies);
     return module;
+}
+
+namespace {
+
+void module_diagnostic(graph::DiagnosticSink& diagnostics, const char* code, const char* message,
+                       Name module) noexcept {
+    graph::Diagnostic diagnostic;
+    diagnostic.code = code;
+    diagnostic.message = message;
+    diagnostic.detail = module;
+    diagnostics.report(diagnostic);
+}
+
+[[nodiscard]] graph::NodeKey remapped_key(
+    const Array<std::pair<graph::NodeKey, graph::NodeKey>>& keys,
+    graph::NodeKey original) noexcept {
+    for (const auto& pair : keys) {
+        if (pair.first == original) {
+            return pair.second;
+        }
+    }
+    return graph::kInvalidNodeKey;
+}
+
+[[nodiscard]] Status append_module_graph(Graph& target, const Graph& source,
+                                         Allocator& allocator) noexcept {
+    Array<std::pair<graph::NodeKey, graph::NodeKey>> keys(allocator);
+    for (const graph::GraphNode& node : source.nodes()) {
+        const graph::NodeKey key = target.allocate_key();
+        if (Status added = target.add_node(key, node.type, node.version); !added) {
+            return added;
+        }
+        graph::GraphNode* copied = target.find_node(key);
+        copied->plugin = node.plugin;
+        if (node.muted) {
+            if (Status muted = target.mute(key, true); !muted) {
+                return muted;
+            }
+        }
+        if (!node.subgraph.is_empty()) {
+            if (Status subgraph = target.set_subgraph(key, node.subgraph); !subgraph) {
+                return subgraph;
+            }
+        }
+        if (source.is_opaque(node.key)) {
+            if (Status opaque = target.set_opaque_body(key, source.opaque_body(node.key));
+                !opaque) {
+                return opaque;
+            }
+        }
+        for (const graph::Property& property : source.properties(node.key)) {
+            if (Status set = target.set_property(key, property.name, property.value); !set) {
+                return set;
+            }
+        }
+        if (const graph::NodeLayout* layout = source.layout(node.key); layout != nullptr) {
+            graph::NodeLayout copied_layout = *layout;
+            copied_layout.key = key;
+            if (Status set = target.set_layout(copied_layout); !set) {
+                return set;
+            }
+        }
+        if (Status mapped = keys.push_back({node.key, key}); !mapped) {
+            return mapped;
+        }
+    }
+    for (const graph::Link& link : source.links()) {
+        if (Status connected = target.connect(remapped_key(keys, link.from), link.from_pin,
+                                              remapped_key(keys, link.to), link.to_pin);
+            !connected) {
+            return connected;
+        }
+    }
+    return ok();
+}
+
+[[nodiscard]] const VfxModuleAsset* find_module(const Array<VfxModuleAsset>& modules,
+                                                Name name) noexcept {
+    for (const VfxModuleAsset& module : modules) {
+        if (module.name == name) {
+            return &module;
+        }
+    }
+    return nullptr;
+}
+
+struct ModuleResolution {
+    const VfxSystemAsset& asset;
+    const Array<VfxModuleAsset>& modules;
+    Emitter& emitter;
+    graph::DiagnosticSink& diagnostics;
+    Array<Name> visiting;
+    Array<Name> applied;
+    Allocator& allocator;
+
+    ModuleResolution(const VfxSystemAsset& system, const Array<VfxModuleAsset>& sources,
+                     Emitter& host, graph::DiagnosticSink& sink, Allocator& memory) noexcept
+        : asset(system),
+          modules(sources),
+          emitter(host),
+          diagnostics(sink),
+          visiting(memory),
+          applied(memory),
+          allocator(memory) {}
+
+    [[nodiscard]] Status validate_inputs(const VfxModuleAsset& module) noexcept {
+        for (const ModuleInputDecl& input : module.inputs) {
+            const AttributeDecl* bound = emitter.find_attribute(input.name);
+            if (bound == nullptr || bound->type != input.type) {
+                module_diagnostic(diagnostics, "vfx.module.input",
+                                  "VFX module input is missing or has the wrong type", module.name);
+                return fail(ErrorCode::InvalidArgument,
+                            "vfx: module input does not match emitter attribute");
+            }
+        }
+        for (const graph::GraphNode& node : module.graph.nodes()) {
+            if (node.type != Name::intern("vfx.attribute")) {
+                continue;
+            }
+            const graph::Literal* attribute =
+                module.graph.property(node.key, Name::intern(prop::kAttribute));
+            if (attribute == nullptr || std::find_if(module.inputs.begin(), module.inputs.end(),
+                                                     [attribute](const ModuleInputDecl& input) {
+                                                         return input.name == attribute->text;
+                                                     }) == module.inputs.end()) {
+                module_diagnostic(diagnostics, "vfx.module.interface",
+                                  "VFX module reads an undeclared host attribute", module.name);
+                return fail(ErrorCode::InvalidArgument,
+                            "vfx: module reads an undeclared host attribute");
+            }
+        }
+        return ok();
+    }
+
+    [[nodiscard]] Status apply(Name name, Stage required_stage = Stage::Count) noexcept {
+        if (std::find(visiting.begin(), visiting.end(), name) != visiting.end()) {
+            module_diagnostic(diagnostics, "vfx.module.cycle", "VFX module dependency cycle", name);
+            return fail(ErrorCode::InvalidArgument, "vfx: module dependency cycle");
+        }
+        if (std::find(applied.begin(), applied.end(), name) != applied.end()) {
+            return ok();
+        }
+        if (asset.find_module_asset(name) == nullptr) {
+            module_diagnostic(diagnostics, "vfx.module.mapping", "VFX module has no asset path",
+                              name);
+            return fail(ErrorCode::NotFound, "vfx: module has no asset mapping");
+        }
+        const VfxModuleAsset* module = find_module(modules, name);
+        if (module == nullptr) {
+            module_diagnostic(diagnostics, "vfx.module.missing",
+                              "VFX module asset was not supplied", name);
+            return fail(ErrorCode::NotFound, "vfx: module asset was not supplied");
+        }
+        if (required_stage != Stage::Count && module->stage != required_stage) {
+            module_diagnostic(diagnostics, "vfx.module.stage",
+                              "VFX module dependency has an incompatible stage", name);
+            return fail(ErrorCode::InvalidArgument, "vfx: incompatible module dependency stage");
+        }
+        if (Status inputs = validate_inputs(*module); !inputs) {
+            return inputs;
+        }
+        if (Status pushed = visiting.push_back(name); !pushed) {
+            return pushed;
+        }
+        for (Name dependency : module->dependencies) {
+            if (Status resolved = apply(dependency, module->stage); !resolved) {
+                return resolved;
+            }
+        }
+        visiting.pop_back();
+        Graph* stage = emitter.stage(module->stage);
+        if (stage == nullptr) {
+            auto cloned = module->graph.clone(allocator);
+            if (!cloned) {
+                return make_unexpected(cloned.error());
+            }
+            if (Status set = emitter.set_stage(module->stage, std::move(*cloned)); !set) {
+                return set;
+            }
+        } else if (Status appended = append_module_graph(*stage, module->graph, allocator);
+                   !appended) {
+            return appended;
+        }
+        return applied.push_back(name);
+    }
+};
+
+}  // namespace
+
+Status resolve_authoring_modules(VfxSystemAsset& asset, Span<const ModuleSource> sources,
+                                 graph::DiagnosticSink& diagnostics,
+                                 Allocator& allocator) noexcept {
+    Array<VfxModuleAsset> modules(allocator);
+    for (const ModuleSource& source : sources) {
+        if (asset.find_module_asset(source.name) == nullptr ||
+            find_module(modules, source.name) != nullptr) {
+            return fail(ErrorCode::InvalidArgument, "vfx: unexpected or duplicate module source");
+        }
+        auto parsed = read_authoring_module(source.source, allocator);
+        if (!parsed) {
+            return make_unexpected(parsed.error());
+        }
+        if (parsed->name != source.name) {
+            return fail(ErrorCode::InvalidArgument,
+                        "vfx: module source name does not match mapping");
+        }
+        if (Status pushed = modules.push_back(std::move(*parsed)); !pushed) {
+            return pushed;
+        }
+    }
+    for (Emitter& emitter : asset.edit_emitters()) {
+        ModuleResolution resolution(asset, modules, emitter, diagnostics, allocator);
+        for (Name name : emitter.modules()) {
+            if (Status applied = resolution.apply(name); !applied) {
+                return applied;
+            }
+        }
+        emitter.clear_module_references();
+    }
+    return ok();
+}
+
+Expected<VfxSystemAsset, Error> read_authoring_bundle(std::string_view source,
+                                                      graph::DiagnosticSink& diagnostics,
+                                                      Allocator& allocator) noexcept {
+    if (source.starts_with("cyvfxdoc 1\n")) {
+        return read_authoring_document(source, allocator);
+    }
+    auto bytes = decode_hex(source, "cyvfxbundle 1\n", allocator);
+    if (!bytes) {
+        return make_unexpected(bytes.error());
+    }
+    Reader reader(bytes->span());
+    auto version = reader.word();
+    auto document_source = reader.text();
+    auto count = reader.count();
+    if (!version || *version != 1 || !document_source || !count) {
+        return make_unexpected(malformed("invalid VFX source bundle header"));
+    }
+    auto asset = read_authoring_document(*document_source, allocator);
+    if (!asset) {
+        return make_unexpected(asset.error());
+    }
+    Array<ModuleSource> modules(allocator);
+    for (u32 index = 0; index < *count; ++index) {
+        auto name = reader.name();
+        auto module_source = reader.text();
+        if (!name || !module_source) {
+            return make_unexpected(malformed("invalid VFX bundled module source"));
+        }
+        if (Status pushed = modules.push_back({*name, *module_source}); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+    }
+    if (!reader.done()) {
+        return make_unexpected(malformed("trailing VFX source bundle bytes"));
+    }
+    if (Status resolved = resolve_authoring_modules(*asset, modules.span(), diagnostics, allocator);
+        !resolved) {
+        return make_unexpected(resolved.error());
+    }
+    return asset;
 }
 
 }  // namespace cy::vfx

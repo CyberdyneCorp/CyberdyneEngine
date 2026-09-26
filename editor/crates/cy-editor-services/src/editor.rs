@@ -284,7 +284,9 @@ impl Editor {
 
     /// Ask the engine to compile an editable VFX document.
     pub fn request_vfx_compile(&mut self, source: String) -> Result<cy_editor_protocol::RequestId> {
-        self.backend.request_vfx_compile(&self.runtime, source)
+        let bundled =
+            crate::vfx_document::bundle_source(source, |path| self.project.read_source(path))?;
+        self.backend.request_vfx_compile(&self.runtime, bundled)
     }
 
     /// Load an unsaved VFX document into the engine's isolated preview world.
@@ -292,7 +294,10 @@ impl Editor {
         &mut self,
         source: String,
     ) -> Result<cy_editor_protocol::RequestId> {
-        self.backend.request_vfx_preview_load(&self.runtime, source)
+        let bundled =
+            crate::vfx_document::bundle_source(source, |path| self.project.read_source(path))?;
+        self.backend
+            .request_vfx_preview_load(&self.runtime, bundled)
     }
 
     /// Control the engine VFX preview.

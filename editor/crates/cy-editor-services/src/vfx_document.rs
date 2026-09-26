@@ -3,10 +3,15 @@
 
 use std::path::{Component, Path};
 
-use cy_editor_core::codec::Reader;
+use cy_editor_core::codec::{Reader, Writer};
 use cy_editor_core::problem::{Problem, Result};
 
 const MAX_ITEMS: u32 = 4096;
+
+struct ModulePlan {
+    roots: Vec<String>,
+    mappings: Vec<(String, String)>,
+}
 
 /// Transaction kind prefix for a saved VFX authoring document.
 pub const DOMAIN_PREFIX: &str = "vfx_document:";
@@ -31,6 +36,11 @@ pub fn validate_reference(reference: &str) -> Result<()> {
 
 /// Check the versioned ASCII envelope before writing it to a project.
 pub fn validate_source(source: &str) -> Result<()> {
+    parse_payload(&decode_source(source)?)?;
+    Ok(())
+}
+
+fn decode_source(source: &str) -> Result<Vec<u8>> {
     let payload = source
         .strip_prefix("cyvfxdoc 1\n")
         .ok_or_else(|| Problem::new("save a VFX document", "expected cyvfxdoc 1 source"))?;
@@ -48,7 +58,67 @@ pub fn validate_source(source: &str) -> Result<()> {
         let digits = std::str::from_utf8(pair).map_err(|_| malformed())?;
         bytes.push(u8::from_str_radix(digits, 16).map_err(|_| malformed())?);
     }
-    validate_payload(&bytes)
+    Ok(bytes)
+}
+
+/// Bundle explicit project module sources for the engine compile and preview services.
+pub fn bundle_source(source: String, read: impl FnMut(&str) -> Result<String>) -> Result<String> {
+    use std::fmt::Write as _;
+
+    let plan = parse_payload(&decode_source(&source)?)?;
+    if plan.roots.is_empty() || plan.mappings.is_empty() {
+        return Ok(source);
+    }
+    let sources = resolve_module_sources(plan, read)?;
+    let mut out = Writer::new();
+    out.u32(1);
+    out.text(&source);
+    out.u32(u32::try_from(sources.len()).map_err(|_| malformed())?);
+    for (name, module_source) in sources {
+        out.text(&name);
+        out.text(&module_source);
+    }
+    let mut bundled = String::from("cyvfxbundle 1\n");
+    for byte in out.finish() {
+        let _ = write!(bundled, "{byte:02x}");
+    }
+    Ok(bundled)
+}
+
+fn resolve_module_sources(
+    plan: ModulePlan,
+    mut read: impl FnMut(&str) -> Result<String>,
+) -> Result<Vec<(String, String)>> {
+    let mappings: std::collections::HashMap<_, _> = plan.mappings.into_iter().collect();
+    let mut queue = plan.roots;
+    let mut queued: std::collections::HashSet<String> = queue.iter().cloned().collect();
+    let mut sources = Vec::new();
+    let mut cursor = 0;
+    while cursor < queue.len() {
+        let name = queue[cursor].clone();
+        cursor += 1;
+        let path = mappings.get(&name).ok_or_else(|| {
+            Problem::new(
+                "compile a VFX system",
+                format!("module {name} has no asset path"),
+            )
+        })?;
+        let module_source = read(path)?;
+        let metadata = crate::vfx_module::inspect_source(&module_source)?;
+        if metadata.name != *name {
+            return Err(Problem::new(
+                "compile a VFX system",
+                format!("module {name} source declares {}", metadata.name),
+            ));
+        }
+        for dependency in metadata.dependencies {
+            if queued.insert(dependency.clone()) {
+                queue.push(dependency);
+            }
+        }
+        sources.push((name, module_source));
+    }
+    Ok(sources)
 }
 
 fn malformed() -> Problem {
@@ -63,8 +133,7 @@ fn read_count(input: &mut Reader<'_>) -> Result<u32> {
     Ok(count)
 }
 
-fn identifier(input: &mut Reader<'_>) -> Result<()> {
-    let name = input.text()?;
+fn identifier_text(name: &str) -> Result<()> {
     if name.is_empty()
         || !name
             .bytes()
@@ -75,14 +144,21 @@ fn identifier(input: &mut Reader<'_>) -> Result<()> {
     Ok(())
 }
 
-fn names(input: &mut Reader<'_>) -> Result<()> {
-    for _ in 0..read_count(input)? {
-        identifier(input)?;
-    }
-    Ok(())
+fn identifier(input: &mut Reader<'_>) -> Result<()> {
+    identifier_text(&input.text()?)
 }
 
-fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<()> {
+fn names(input: &mut Reader<'_>) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for _ in 0..read_count(input)? {
+        let name = input.text()?;
+        identifier_text(&name)?;
+        names.push(name);
+    }
+    Ok(names)
+}
+
+fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<Vec<String>> {
     identifier(input)?;
     if input.u8()? > 1 {
         return Err(malformed());
@@ -99,7 +175,7 @@ fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<()> {
             return Err(malformed());
         }
     }
-    names(input)?;
+    let modules = names(input)?;
     names(input)?;
     if version >= 2 {
         if input.u32()? == 0 {
@@ -133,7 +209,7 @@ fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<()> {
             }
         }
     }
-    Ok(())
+    Ok(modules)
 }
 
 fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
@@ -156,15 +232,20 @@ fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
     Ok(())
 }
 
-fn validate_payload(bytes: &[u8]) -> Result<()> {
+fn parse_payload(bytes: &[u8]) -> Result<ModulePlan> {
     let mut input = Reader::new(bytes);
     let version = input.u32()?;
     if !(1..=3).contains(&version) {
         return Err(malformed());
     }
     identifier(&mut input)?;
+    let mut module_names = Vec::new();
     for _ in 0..read_count(&mut input)? {
-        validate_emitter(&mut input, version)?;
+        for name in validate_emitter(&mut input, version)? {
+            if !module_names.contains(&name) {
+                module_names.push(name);
+            }
+        }
     }
     for _ in 0..read_count(&mut input)? {
         validate_parameter(&mut input)?;
@@ -177,30 +258,40 @@ fn validate_payload(bytes: &[u8]) -> Result<()> {
             }
         }
     }
+    let mut mappings = Vec::new();
     if version >= 3 {
         let mut names = std::collections::HashSet::new();
         let mut paths = std::collections::HashSet::new();
         for _ in 0..read_count(&mut input)? {
             let name = input.text()?;
-            if name.is_empty()
-                || !name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-                || !names.insert(name)
-            {
+            identifier_text(&name)?;
+            if !names.insert(name.clone()) {
                 return Err(malformed());
             }
             let path = input.text()?;
             crate::vfx_module::validate_reference(&path)?;
-            if !paths.insert(path) {
+            if !paths.insert(path.clone()) {
                 return Err(malformed());
             }
+            mappings.push((name, path));
+        }
+        if module_names
+            .iter()
+            .any(|name| !mappings.iter().any(|(mapped, _)| mapped == name))
+        {
+            return Err(Problem::new(
+                "save a VFX document",
+                "a referenced module has no asset path",
+            ));
         }
     }
     if input.remaining() != 0 {
         return Err(malformed());
     }
-    Ok(())
+    Ok(ModulePlan {
+        roots: module_names,
+        mappings,
+    })
 }
 
 #[cfg(test)]
@@ -266,5 +357,47 @@ mod tests {
         assert!(validate_source(&source(&bytes)).is_ok());
         *bytes.last_mut().unwrap() = 2;
         assert!(validate_source(&source(&bytes)).is_err());
+    }
+
+    #[test]
+    fn mapped_module_source_is_bundled_for_engine_requests() {
+        let mut out = Writer::new();
+        out.u32(3);
+        out.text("sparks");
+        out.u32(1);
+        out.text("smoke");
+        out.u8(0);
+        out.text("Sprite");
+        out.u32(0);
+        out.u32(1);
+        out.text("shared_drag");
+        out.u32(0);
+        out.u32(1024);
+        out.u32(1);
+        out.text("velocity");
+        out.text("vec3");
+        out.u32(0.0_f32.to_bits());
+        out.u32(100.0_f32.to_bits());
+        out.u32(0.0_f32.to_bits());
+        out.text("Auto");
+        out.u32(0);
+        out.u32(0);
+        out.u32(2);
+        out.text("shared_drag");
+        out.text("effects/shared_drag.cyvfxmodule");
+        out.text("unused");
+        out.text("effects/missing.cyvfxmodule");
+        let document = source(&out.finish());
+        let fixture = include_str!(
+            "../../../../samples/05b-editor-window/project/effects/shared_drag.cyvfxmodule"
+        );
+        let bundled = bundle_source(document.clone(), |path| {
+            assert_eq!(path, "effects/shared_drag.cyvfxmodule");
+            Ok(fixture.into())
+        })
+        .unwrap();
+        assert!(bundled.starts_with("cyvfxbundle 1\n"));
+        assert!(bundled.len() > document.len());
+        assert!(bundle_source(document, |_| Err(malformed())).is_err());
     }
 }

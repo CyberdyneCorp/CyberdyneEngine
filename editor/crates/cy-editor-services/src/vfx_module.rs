@@ -11,6 +11,14 @@ const MAX_ITEMS: u32 = 4096;
 /// Transaction kind prefix for a saved module.
 pub const DOMAIN_PREFIX: &str = "vfx_module:";
 
+/// Validated identity and direct dependencies of a saved module source.
+pub struct ModuleMetadata {
+    /// Identifier declared by the source.
+    pub name: String,
+    /// Other module identifiers required by this source.
+    pub dependencies: Vec<String>,
+}
+
 fn invalid(reason: &str) -> Problem {
     Problem::new("save a VFX module", reason)
 }
@@ -56,6 +64,12 @@ pub fn validate_reference(reference: &str) -> Result<()> {
 
 /// Validate the versioned module envelope before saving.
 pub fn validate_source(source: &str) -> Result<()> {
+    inspect_source(source)?;
+    Ok(())
+}
+
+/// Read the module identity and dependency names while validating its authoring envelope.
+pub fn inspect_source(source: &str) -> Result<ModuleMetadata> {
     let payload = source
         .strip_prefix("cyvfxmodule 1\n")
         .ok_or_else(|| invalid("expected cyvfxmodule 1 source"))?;
@@ -96,13 +110,14 @@ pub fn validate_source(source: &str) -> Result<()> {
             return Err(invalid("invalid module input type"));
         }
     }
-    let mut dependencies = std::collections::HashSet::new();
+    let mut dependencies = Vec::new();
     for _ in 0..count(&mut input)? {
         let dependency = input.text()?;
         identifier(&dependency)?;
-        if dependency == name || !dependencies.insert(dependency) {
+        if dependency == name || dependencies.contains(&dependency) {
             return Err(invalid("self or duplicate module dependency"));
         }
+        dependencies.push(dependency);
     }
     if !input
         .text()?
@@ -111,5 +126,5 @@ pub fn validate_source(source: &str) -> Result<()> {
     {
         return Err(invalid("invalid module canvas or trailing data"));
     }
-    Ok(())
+    Ok(ModuleMetadata { name, dependencies })
 }

@@ -142,11 +142,11 @@ fn active_node_alerts(
 
 fn submit_compile(
     document: &VfxDocument,
+    signature: Vec<u8>,
     last: &mut Option<Vec<u8>>,
     force: bool,
     mut submit: impl FnMut(String) -> cy_editor_core::problem::Result<()>,
 ) -> cy_editor_core::problem::Result<bool> {
-    let signature = document.compile_signature()?;
     if !force && last.as_ref() == Some(&signature) {
         return Ok(false);
     }
@@ -177,12 +177,17 @@ fn auto_compile(panels: &mut Panels<'_>) {
     if document.emitters.is_empty() {
         return;
     }
-    let result = submit_compile(
-        &document,
-        &mut panels.inputs.vfx_compile_signature,
-        false,
-        |source| panels.editor.request_vfx_compile(source).map(|_| ()),
-    );
+    let signature =
+        document.compile_signature_with_modules(|path| panels.editor.project.read_source(path));
+    let result = signature.and_then(|signature| {
+        submit_compile(
+            &document,
+            signature,
+            &mut panels.inputs.vfx_compile_signature,
+            false,
+            |source| panels.editor.request_vfx_compile(source).map(|_| ()),
+        )
+    });
     if let Err(problem) = result {
         panels.inputs.vfx_document_problem = Some(problem.to_string());
     }
@@ -376,8 +381,12 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                             "no VFX document is open",
                         )
                     })?;
+                    let signature = document.compile_signature_with_modules(|path| {
+                        panels.editor.project.read_source(path)
+                    })?;
                     submit_compile(
                         &document,
+                        signature,
                         &mut panels.inputs.vfx_compile_signature,
                         true,
                         |source| panels.editor.request_vfx_compile(source).map(|_| ()),
@@ -1284,13 +1293,49 @@ mod tests {
                 submitted.push(source);
                 Ok(())
             };
-            assert!(submit_compile(&document, &mut last, false, &mut submit).unwrap());
+            assert!(
+                submit_compile(
+                    &document,
+                    document.compile_signature().unwrap(),
+                    &mut last,
+                    false,
+                    &mut submit
+                )
+                .unwrap()
+            );
             document.parameters[0].value[0] = 4.0;
-            assert!(!submit_compile(&document, &mut last, false, &mut submit).unwrap());
+            assert!(
+                !submit_compile(
+                    &document,
+                    document.compile_signature().unwrap(),
+                    &mut last,
+                    false,
+                    &mut submit
+                )
+                .unwrap()
+            );
             document.emitters[0].stages[0].canvas =
                 "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.random\n".into();
-            assert!(submit_compile(&document, &mut last, false, &mut submit).unwrap());
-            assert!(submit_compile(&document, &mut last, true, &mut submit).unwrap());
+            assert!(
+                submit_compile(
+                    &document,
+                    document.compile_signature().unwrap(),
+                    &mut last,
+                    false,
+                    &mut submit
+                )
+                .unwrap()
+            );
+            assert!(
+                submit_compile(
+                    &document,
+                    document.compile_signature().unwrap(),
+                    &mut last,
+                    true,
+                    &mut submit
+                )
+                .unwrap()
+            );
         }
         assert_eq!(submitted.len(), 3);
         assert!(
@@ -1314,14 +1359,29 @@ mod tests {
             attributes: Vec::new(),
         });
         let mut last = None;
-        let refusal = submit_compile(&document, &mut last, false, |_| {
-            Err(cy_editor_core::problem::Problem::new(
-                "compile",
-                "runtime unavailable",
-            ))
-        });
+        let refusal = submit_compile(
+            &document,
+            document.compile_signature().unwrap(),
+            &mut last,
+            false,
+            |_| {
+                Err(cy_editor_core::problem::Problem::new(
+                    "compile",
+                    "runtime unavailable",
+                ))
+            },
+        );
         assert!(refusal.is_err());
         assert!(last.is_none());
-        assert!(submit_compile(&document, &mut last, false, |_| Ok(())).unwrap());
+        assert!(
+            submit_compile(
+                &document,
+                document.compile_signature().unwrap(),
+                &mut last,
+                false,
+                |_| Ok(())
+            )
+            .unwrap()
+        );
     }
 }

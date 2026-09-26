@@ -539,15 +539,18 @@ records one compatible stage, named typed inputs, dependency names, and a shared
 `vfx.module.save` and `vfx.module.read` use the command registry shared with MCP; save requires an
 active scene document and supports undo/redo. The sample project includes
 `effects/shared_drag.cyvfxmodule`. The editor model and engine reader both validate that asset,
-but the VFX panel does not yet edit it and the engine does not yet resolve emitter module references
-during compilation. Each referenced module needs an explicit path in the system document; the
-engine does not guess a file from its name.
+but the VFX panel does not yet edit module assets. Each referenced module needs an explicit path
+in the system document; the engine does not guess a file from its name. Compile and preview load
+the mapped project sources, validate typed inputs and dependency stages, reject missing sources
+and cycles, and compose the module graphs into the engine's emitter stages before cooking.
+Saved module content participates in automatic compile signatures; moving nodes on its
+canvas does not request a new cook.
 **Compile VFX** submits the current stage snapshots to the engine's `vfx.compile` service. The
 engine reads the document into `VfxSystemAsset`, resolves its registered nodes, and runs
 `compile_system`; the panel shows the last cook identity, per-emitter kernel and memory counts,
 derived layout, generated Slang, and node and pin diagnostics. Compilation does not install an
-effect in the preview world. Module asset references currently produce a compiler refusal until
-module resolution is implemented.
+effect in the preview world. A module reference without an asset mapping or source produces a
+named refusal; module assets must be saved to the project before a dependent draft can compile.
 The engine tags each compiler diagnostic with its emitter and stage. The panel lists that location;
 clicking it opens the stage and selects the offending node. The active canvas outlines that node
 in red and shows the compiler message on hover, even when another stage reuses the same node key.

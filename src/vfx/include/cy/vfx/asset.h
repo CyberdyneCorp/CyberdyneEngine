@@ -181,6 +181,7 @@ public:
     /// Give a stage its graph. A stage already set is replaced, which is what an editor does.
     [[nodiscard]] Status set_stage(Stage which, Graph&& graph) noexcept;
     [[nodiscard]] const Graph* stage(Stage which) const noexcept;
+    [[nodiscard]] Graph* stage(Stage which) noexcept;
     /// Resolve every stage graph's node types against `registry`. CyberGraph's load-time step: a
     /// node whose type the registry does not have keeps whatever body it was loaded with and is
     /// reported by `validate`, rather than being dropped. `compile_system` refuses an asset that
@@ -198,6 +199,10 @@ public:
     /// Interfaces explicitly bound by this emitter's authored document.
     [[nodiscard]] Status bind_interface(Name interface_name) noexcept;
     [[nodiscard]] Span<const Name> interfaces() const noexcept { return interfaces_.span(); }
+
+    [[nodiscard]] Status reference_module(Name module_name) noexcept;
+    [[nodiscard]] Span<const Name> modules() const noexcept { return modules_.span(); }
+    void clear_module_references() noexcept { modules_.clear(); }
 
     [[nodiscard]] SimulationPath path() const noexcept { return path_; }
     void set_path(SimulationPath path) noexcept { path_ = path; }
@@ -230,6 +235,7 @@ private:
     Array<StageEntry> stages_;
     Array<AttributeDecl> attributes_;
     Array<Name> interfaces_;
+    Array<Name> modules_;
     SimulationPath path_ = SimulationPath::GpuPreferred;
     /// `RendererKind::Sprite`. See `set_renderer`.
     u8 renderer_ = 0;
@@ -253,6 +259,7 @@ public:
 
     [[nodiscard]] Status add_emitter(Emitter&& emitter) noexcept;
     [[nodiscard]] Span<const Emitter> emitters() const noexcept { return emitters_.span(); }
+    [[nodiscard]] Span<Emitter> edit_emitters() noexcept { return emitters_.span(); }
     [[nodiscard]] const Emitter* find_emitter(Name emitter) const noexcept;
 
     [[nodiscard]] Status declare_parameter(const ParameterDecl& decl) noexcept;

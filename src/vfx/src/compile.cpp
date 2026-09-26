@@ -1217,6 +1217,10 @@ Expected<CompiledSystem, Error> compile_system(const VfxSystemAsset& asset,
     u64 cook_key = declaration_key(asset, interfaces, options);
     for (u32 emitter_index = 0; emitter_index < asset.emitters().size(); ++emitter_index) {
         const Emitter& emitter = asset.emitters()[emitter_index];
+        if (!emitter.modules().empty()) {
+            return make_unexpected(Error{
+                ErrorCode::Unsupported, "vfx: emitter modules must be resolved before cooking", 0});
+        }
         for (Name interface_name : emitter.interfaces()) {
             const DataInterface* binding = interfaces.find(interface_name);
             if (binding == nullptr) {
