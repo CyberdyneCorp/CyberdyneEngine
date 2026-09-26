@@ -1050,7 +1050,8 @@ with tempfile.TemporaryDirectory() as directory:
 sys.exit(1 if selftest._failures else 0)
 PY
 out="$(mktemp)"
-just roadmap-milestone m11d --incremental --list --json --changed-since HEAD > "$out"
+# The selection reads the build graph of this tree, so the tree is named rather than defaulted.
+just roadmap-milestone m11d --incremental --list --json --changed-since HEAD --build-dir "${CY_BUILD_DIR:-build/dev}" > "$out"
 python3 - "$out" <<'PY'
 import json, sys
 sys.path.insert(0, "tools/roadmap")
