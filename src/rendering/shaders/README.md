@@ -41,7 +41,9 @@ ZERO, which is also why `samples/10-world` re-sampled the substrate at 152 000 t
 the processor every frame. `cy/field.slang` is written against `sample_field_image()` expression for
 expression — the comparison between them is bit-exact and `render.environment_field` runs it on a
 device — and the two consumers below it are the shapes the requirement names: a terrain material and
-a reader of the sky's cloud shadow.
+a reader of the sky's cloud shadow. `cy/cloud_shadow.slang` is imported by `samples/10-world`'s
+lit fragment path, through the image-bound `cyCloudShadowAtImage` that the bindless
+`cyCloudShadowAt` is built on; `render.world_cloud_shadow` runs that shader on a device.
 
 **Every module here is compiled by something.** `smoke.material_slang`'s last case compiles
 `cy.field`, `cy.terrain_shade` and `cy.cloud_shadow` through the engine's own Slang front end against

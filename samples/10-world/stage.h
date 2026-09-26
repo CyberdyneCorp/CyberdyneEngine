@@ -200,6 +200,11 @@ private:
     struct Device;
 
     [[nodiscard]] Status create_pipeline() noexcept;
+    /// Set 0 of the lit pipeline: the cloud shadow field's image and its placement.
+    [[nodiscard]] Status create_cloud_shadow_binding() noexcept;
+    /// Upload this frame's cloud shadow field and where it sits, or say "off" when the world
+    /// produces none.
+    [[nodiscard]] Status upload_cloud_shadow(const World& world) noexcept;
     [[nodiscard]] Status create_visual_pipelines() noexcept;
     /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
     /// writes. M11.c task 3.1.
@@ -231,6 +236,7 @@ private:
     u32 water_vertices_ = 0;
     u32 visual_frame_index_ = 0;
     u64 field_image_bytes_[4] = {};
+    u64 cloud_shadow_bytes_ = 0;
 
     /// The dynamic half's sky, stars and sea, rebuilt every frame and copied to the front of the
     /// dynamic buffers. Held as members so the arrays keep their capacity between frames. The

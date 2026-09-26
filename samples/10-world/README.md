@@ -104,6 +104,42 @@ the shore and snow in the air are both `cy::vfx` work that wants the GPU path M1
 no sample drives), and no plant is ever PROMOTED to an entity, because promotion is a gameplay call
 site and this artefact has no gameplay in it.
 
+## Cloud shadows
+
+![a cloud's shadow on the western hills](../../docs/design/images/cloud-shadows-crossing-on.png)
+![the same frame without cloud shadows](../../docs/design/images/cloud-shadows-crossing-off.png)
+
+`atmosphere-sky-and-clouds`' coarse cloud shadow field is **shaded through**, not only produced.
+The world claims `cloud-shadow` with `sky::CloudShadowField` and rewrites it every frame from
+`cloud_field_` — the same `CloudField` the sky's lighting integral marches, driven by weather's
+`CloudDrive` and advected by each layer's wind at the frame's own simulated time — so a shadow on
+the ground belongs to a cloud the lighting sees and drifts with the wind the hour lines report. The
+lit fragment path in `shaders/world.slang`, which draws the terrain, the foliage and the water,
+samples the field at each fragment's world position through `cy/cloud_shadow.slang` and multiplies
+the **direct sun** by it: the Lambert term and water's specular lobe. The ambient term — the sky's
+own mean radiance, already computed under the same clouds — and the emissive sky dome are left
+alone. Under cloud shadows the sun is given to that path before the clouds
+(`SkyLighting::clear_sun_illuminance`), so the cloud over the camera is no longer applied to every
+surface in the picture; the second pair shows that frame:
+
+![the viewer under a cloud, with cloud shadows](../../docs/design/images/cloud-shadows-viewer-under-cloud-on.png)
+![the same frame before: the whole world dimmed by the cloud over the camera](../../docs/design/images/cloud-shadows-viewer-under-cloud-off.png)
+
+The field is 256 m cells over the four 4 km tiles about the world's corner and eight steps of
+shadow ray; it costs about 1.3 ms of the frame's `sky_ms`, and the hour lines print its darkest,
+mean and brightest cell as `shadow d/m/b`. `--no-cloud-shadows` draws the frame as it was before:
+192 of 192 frames of a day compare byte-identical against the build before this change, and the
+authoritative digest does not move (`openspec/changes/add-cloud-shadows/evidence/`). A headless run
+produces no field. `render.world_cloud_shadow` draws with this directory's committed SPIR-V on a
+device and holds all of that to the texel.
+
+**What the dome draws is not what the ground is shadowed by.** The sky dome is still
+`world_visual.slang`'s seeded stand-in density (see above), not `CloudField`: the engine's sky and
+the field agree — `integration.render_sky_fields` compares them — but this picture's dome clouds
+and its ground shadows are two reconstructions. Marching `CloudField` in the dome's device pass is
+the step that would make them one. Metal's `world_msl.h` is regenerated from the same source and
+not run on this host; D3D12 builds no path for this sample (see the change's design).
+
 ## The three tasks this artefact answers
 
 **7.1 — the world.** Above. Run it and read the report it prints; every number in it is read back
@@ -245,6 +281,7 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--budget <path>` | write the per-frame, per-producer cost as a CSV, including field publication and device-stage bands |
 | `--budget-ms <ms>` | fail when the worst frame exceeds the threshold, a required visual dispatch is absent, or a rendered frame has no manifest |
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
+| `--no-cloud-shadows` | attenuate the sun once, at the viewer, as before cloud shadows existed; the frame is byte-identical to that build's |
 | `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
 | `--quiet-wait-s <s>` | how long `--quiet-host` waits for a quiet host before failing. Default 600 |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |

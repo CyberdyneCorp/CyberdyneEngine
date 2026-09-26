@@ -10,7 +10,7 @@
 //
 // WHAT IT IS: a Lambert term over a per-vertex colour. Device compute passes produce terrain, sky,
 // and water colours; the processor still produces foliage colours. This shader interpolates those
-// streams and applies one light.
+// streams and applies one light, attenuated per fragment by the cloud shadow field.
 //
 // ================================================================================================
 // WHY THE MATRIX IS FOUR EXPLICIT ROWS
@@ -33,22 +33,44 @@
 // which is one branch over a uniform and therefore free.
 //
 // ================================================================================================
+// CLOUD SHADOWS ATTENUATE THE SUN AND NOTHING ELSE
+// ================================================================================================
+//
+// `atmosphere-sky-and-clouds` — "Cloud shadows": the coarse field is "consumed by terrain, foliage,
+// water, and illumination". All four are drawn by the one lit path below, so the field is sampled
+// once per fragment, at the fragment's own world position, through `cy/cloud_shadow.slang` — the
+// same line of arithmetic every consumer of the field shares. The field `sky::CloudShadowField`
+// writes is packed by `environment::build_field_image` and bound in set 0 beside where it sits.
+//
+// The DIRECT sun is what it multiplies: the Lambert term and water's specular lobe. The ambient
+// term is the sky's own mean radiance, already computed from the same cloud deck, and the sky dome
+// is emissive — neither is touched, because a cloud redistributes skylight rather than removing it
+// and multiplying it again would darken an overcast day twice. `placement.z` of zero reads no field
+// at all and multiplies the sun by exactly one, which is what keeps a frame with cloud shadows off
+// byte-identical to the frame before they existed.
+//
+// ================================================================================================
 // REGENERATING
 // ================================================================================================
 //
-//   slangc world.slang -target spirv -profile spirv_1_5 \
+//   slangc world.slang -I ../../../src/rendering/shaders -target spirv -profile spirv_1_5 \
 //          -entry worldVertex -stage vertex   -o world_vertex.spv
-//   slangc world.slang -target spirv -profile spirv_1_5 \
+//   slangc world.slang -I ../../../src/rendering/shaders -target spirv -profile spirv_1_5 \
 //          -entry worldFragment -stage fragment -o world_fragment.spv
 //   python3 embed_spirv.py world_spirv.h \
 //          kWorldVertexSpirv=world_vertex.spv \
 //          kWorldFragmentSpirv=world_fragment.spv
-//   slangc world.slang -target metal -entry worldVertex -stage vertex -o world_vertex.metal
-//   slangc world.slang -target metal -entry worldFragment -stage fragment -o world_fragment.metal
+//   slangc world.slang -I ../../../src/rendering/shaders -target metal \
+//          -entry worldVertex -stage vertex -o world_vertex.metal
+//   slangc world.slang -I ../../../src/rendering/shaders -target metal \
+//          -entry worldFragment -stage fragment -o world_fragment.metal
 //   python3 embed_msl.py world_msl.h \
 //          kWorldVertexMsl=world_vertex.metal \
 //          kWorldFragmentMsl=world_fragment.metal
 //   clang-format -i world_spirv.h world_msl.h
+
+import cy.cloud_shadow;
+import cy.field;
 
 struct WorldPush
 {
@@ -68,6 +90,25 @@ struct WorldPush
     // a is unused.
     float4 ambient;
 };
+
+/// The cloud shadow field, and where it sits. Set 0, fragment stage only.
+///
+/// DECLARED BEFORE THE PUSH BLOCK, and the order is the Metal binding rather than taste: Slang
+/// numbers Metal buffer slots in declaration order, and the Metal backend puts set N at buffer N
+/// and the push block after the last set. The compute module beside this one declares its set
+/// first for the same reason.
+struct WorldCloudShadow
+{
+    /// `cy/field.slang`'s image of the `cloud-shadow` field at its regional level.
+    StructuredBuffer<uint> field;
+    /// One element. xy: metres from the world-relative origin to the image's origin corner, the f64
+    /// subtraction `environment::image_local()` makes done once on the processor. z: 1 when this
+    /// frame reads the field, 0 when cloud shadows are off. w: unused.
+    StructuredBuffer<float4> placement;
+};
+
+[[vk::binding(0, 0)]]
+ParameterBlock<WorldCloudShadow> cloudShadow;
 
 [[vk::push_constant]]
 ConstantBuffer<WorldPush> push;
@@ -116,6 +157,19 @@ float3 tonemap(float3 radiance)
     return pow(saturate(mapped), 1.0 / 2.2);
 }
 
+/// The fraction of the sun that reaches this world-relative position through the cloud deck.
+float sunThroughClouds(float3 world)
+{
+    const float4 placement = cloudShadow.placement[0];
+    if (placement.z < 0.5)
+    {
+        return 1.0;
+    }
+    CyFieldImage image;
+    image.words = cloudShadow.field;
+    return cyCloudShadowAtImage(image, world.x + placement.x, world.y, world.z + placement.y);
+}
+
 [shader("fragment")]
 float4 worldFragment(VertexOutput input) : SV_Target
 {
@@ -136,8 +190,11 @@ float4 worldFragment(VertexOutput input) : SV_Target
         normal = -normal;
     }
 
+    // The sun reaching this surface: the atmosphere's share is already in `push.sun`, and the
+    // cloud deck's is the field's, sampled here. See the header comment for why only this term.
+    let direct = push.sun.rgb * sunThroughClouds(input.world);
     let lambert = saturate(dot(normal, -push.light.xyz));
-    float3 lit = input.color * (push.ambient.rgb + (push.sun.rgb * lambert));
+    float3 lit = input.color * (push.ambient.rgb + (direct * lambert));
 
     if (push.sun.a > 0.0)
     {
@@ -147,7 +204,7 @@ float4 worldFragment(VertexOutput input) : SV_Target
         // wavelengths this lobe picks up.
         let half = normalize(-push.light.xyz + toEye);
         let spec = pow(saturate(dot(normal, half)), 120.0) * push.sun.a;
-        lit += push.sun.rgb * spec;
+        lit += direct * spec;
     }
 
     return float4(tonemap(lit), 1.0);

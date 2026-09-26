@@ -12,6 +12,8 @@
 #include <cy/environment/store.h>
 #include <cy/rendering/sky/cloud_shadows.h>
 #include <cy/rendering/sky/clouds.h>
+#include <cy/rendering/sky/composition.h>
+#include <cy/rendering/sky/tables.h>
 #include <cy/world/coordinates.h>
 
 #include <cmath>
@@ -72,6 +74,87 @@ struct Clouds {
         return {};
     }
 };
+
+/// ONE KNOWN CLOUD: a weather map that is clear everywhere except one kilometre cell, under one
+/// layer with one wind. What the two cases below need and a generated map cannot give them — a
+/// shadow with one place it can be, one velocity it can move at, and ground around it that no cloud
+/// can reach, so "outside the shadow" is exactly full sun rather than a threshold.
+struct KnownCloud {
+    static constexpr cy::i32 kCell = 20;
+    static constexpr f32 kCellMetres = 1000.0F;
+    /// The layer's wind, in m/s. Not the default, so a producer that advected by some other wind
+    /// lands somewhere else.
+    static constexpr f32 kWindX = 12.0F;
+    static constexpr f32 kWindZ = -5.0F;
+
+    CloudWeatherMap map;
+    CloudField field;
+
+    [[nodiscard]] cy::Status build() {
+        if (auto status = map.configure(40, kCellMetres); !status) {
+            return status;
+        }
+        if (auto status = map.set(kCell, kCell, 1.0F, 0.5F, 1.0F); !status) {
+            return status;
+        }
+        CloudLayer layer = default_cloud_layers().layers[0];
+        layer.wind = Vec3{kWindX, 0.0F, kWindZ};
+        field.map = &map;
+        field.layers = CloudLayerSet{};
+        field.seed = 0xC10D5ULL;
+        return field.layers.add(layer);
+    }
+
+    /// The cloud cell's centre, in world metres.
+    [[nodiscard]] static double centre() {
+        return (static_cast<double>(kCell) + 0.5) * static_cast<double>(kCellMetres);
+    }
+};
+
+/// A field over the known cloud, big enough to hold its shadow at every time the cases ask about.
+[[nodiscard]] CloudShadowQuality known_quality() {
+    CloudShadowQuality quality;
+    quality.regional_cell_metres = 128.0F;
+    quality.macro_cell_metres = 1024.0F;
+    quality.radius_metres = 3072.0F;
+    quality.steps = 12;
+    return quality;
+}
+
+/// The darkness-weighted centroid of the field's regional cells over a square about `centre`: where
+/// the shadow IS, as one point. Cell centres only, so every sample reads one stored lattice point.
+struct ShadowCentroid {
+    double x = 0.0;
+    double z = 0.0;
+    double weight = 0.0;
+    f32 darkest = 1.0F;
+};
+
+[[nodiscard]] ShadowCentroid shadow_centroid(const cy::environment::FieldStore& store,
+                                             double centre_x, double centre_z, double half) {
+    ShadowCentroid out;
+    const double cell = static_cast<double>(known_quality().regional_cell_metres);
+    const auto first_x = static_cast<cy::i64>(std::floor((centre_x - half) / cell));
+    const auto first_z = static_cast<cy::i64>(std::floor((centre_z - half) / cell));
+    const auto cells = static_cast<cy::i64>((2.0 * half) / cell);
+    for (cy::i64 k = 0; k < cells; ++k) {
+        for (cy::i64 i = 0; i < cells; ++i) {
+            const double x = (static_cast<double>(first_x + i) + 0.5) * cell;
+            const double z = (static_cast<double>(first_z + k) + 0.5) * cell;
+            const f32 sun = CloudShadowField::sample(store, WorldVec3d{x, 0.0, z});
+            const double dark = 1.0 - static_cast<double>(sun);
+            out.x += x * dark;
+            out.z += z * dark;
+            out.weight += dark;
+            out.darkest = cy::math::min(out.darkest, sun);
+        }
+    }
+    if (out.weight > 0.0) {
+        out.x /= out.weight;
+        out.z /= out.weight;
+    }
+    return out;
+}
 
 }  // namespace
 
@@ -456,4 +539,134 @@ CY_TEST_CASE("cloud shadows: without a claim, and without clouds, the producer r
     // No weather map is not "no clouds" — it is a configuration that has not been finished, and
     // writing a field of ones for it would hide the mistake behind a plausible picture.
     CY_CHECK_FALSE(sky.update(store, empty, Vec3{0.0F, 1.0F, 0.0F}, 0.0, WorldVec3d{}, 1.0F));
+}
+
+CY_TEST_CASE("cloud shadows: the shadow moves with the wind, by the distance the wind carries it") {
+    // `atmosphere-sky-and-clouds` — "WHEN clouds drift over terrain THEN a coarse shadow field
+    // SHALL darken the affected area". DRIFT: the shadow is the cloud's, so it moves when the cloud
+    // does, and the cloud moves with its layer's wind. One cloud, one layer, one wind, and two
+    // updates a known interval apart; the shadow's centroid must move by the wind times that
+    // interval. A producer that marched a still sky, or advected by a wind of its own, puts the
+    // second centroid somewhere else.
+    cy::environment::FieldRegistry registry(allocator());
+    CloudShadowField sky;
+    CY_REQUIRE(sky.attach(registry, known_quality()));
+    cy::environment::FieldStore store(allocator(), registry, partition());
+
+    KnownCloud cloud;
+    CY_REQUIRE(cloud.build());
+    const Vec3 sun = normalize(Vec3{0.3F, 0.8F, 0.2F});
+
+    // Two minutes: 1 440 m east and 600 m north, several cells of the field and well inside it.
+    constexpr double kInterval = 120.0;
+    const double drift_x = static_cast<double>(KnownCloud::kWindX) * kInterval;
+    const double drift_z = static_cast<double>(KnownCloud::kWindZ) * kInterval;
+    const WorldVec3d middle{KnownCloud::centre() + (drift_x * 0.5), 0.0,
+                            KnownCloud::centre() + (drift_z * 0.5)};
+    constexpr double kHalf = 2800.0;
+
+    // A LARGE update period, so the second call is not declined as too soon. The lever is not
+    // under test here, and a skip would leave the first field in the store to be measured twice.
+    CY_REQUIRE(sky.update(store, cloud.field, sun, 0.0, middle, 1.0F));
+    const ShadowCentroid before = shadow_centroid(store, middle.x, middle.z, kHalf);
+    CY_REQUIRE(sky.update(store, cloud.field, sun, kInterval, middle, 1.0F));
+    const ShadowCentroid after = shadow_centroid(store, middle.x, middle.z, kHalf);
+
+    const double moved_x = after.x - before.x;
+    const double moved_z = after.z - before.z;
+    CY_TEST_MESSAGE("shadow centroid (", before.x, ", ", before.z, ") -> (", after.x, ", ", after.z,
+                    "): moved (", moved_x, ", ", moved_z, ") m, the wind carried (", drift_x, ", ",
+                    drift_z, ") m; darkest ", before.darkest, " / ", after.darkest);
+
+    // There IS a shadow at both times, of about the same size — a centroid of nothing is the
+    // origin, and two empty fields "move" by exactly zero.
+    CY_CHECK_LT(before.darkest, 0.2F);
+    CY_CHECK_LT(after.darkest, 0.2F);
+    CY_CHECK_LT(std::fabs(after.weight - before.weight), before.weight * 0.1);
+    // And it moved by what the wind carried, to within half a cell: the field is sampled at cell
+    // centres, so a translation is recovered to a fraction of 128 m and not better. ABSOLUTE
+    // metres, and not `CY_CHECK_NEAR`: that is doctest's `Approx`, whose epsilon is RELATIVE, and
+    // a relative 64 accepts a shadow that never moved — which is how this case first passed a
+    // producer marching a still sky.
+    constexpr double kHalfCell = 64.0;
+    CY_CHECK_LT(std::fabs(moved_x - drift_x), kHalfCell);
+    CY_CHECK_LT(std::fabs(moved_z - drift_z), kHalfCell);
+}
+
+CY_TEST_CASE("cloud shadows: what the sky draws as cloud is what the ground receives as shadow") {
+    // "Cloud shadows SHALL NOT be produced through the virtual shadow page system" — they come from
+    // the CLOUDS, and the clouds are what the sky draws. So the question is asked from the ground:
+    // standing at a point and looking at the sun, how much of it does the sky's own composition
+    // leave visible through the cloud it draws there? That is `compose_sky()`'s cloud
+    // transmittance, the number the sky's pixel in that direction is made of. The field at the same
+    // point is the ground's answer. They are one cloud reconstruction read twice, so they must
+    // agree — and must agree where there is a shadow, not only where both say "clear".
+    cy::environment::FieldRegistry registry(allocator());
+    CloudShadowField sky;
+    CY_REQUIRE(sky.attach(registry, known_quality()));
+    cy::environment::FieldStore store(allocator(), registry, partition());
+
+    KnownCloud cloud;
+    CY_REQUIRE(cloud.build());
+    const Vec3 sun = normalize(Vec3{0.3F, 0.8F, 0.2F});
+    constexpr double kTime = 30.0;
+    const WorldVec3d middle{KnownCloud::centre(), 0.0, KnownCloud::centre()};
+    CY_REQUIRE(sky.update(store, cloud.field, sun, kTime, middle, 1.0F));
+
+    Atmosphere atmosphere = earth_atmosphere();
+    AtmosphereTables tables;
+    CY_REQUIRE(tables.configure(SkyTableQuality::Low));
+    CY_REQUIRE(tables.build(atmosphere));
+    CelestialState celestial;
+    celestial.sun.direction = sun;
+
+    // THE SKY AT THE FIELD'S OWN DETAIL: the same step count and the two octaves the producer
+    // reconstructs with, so what is compared is which cloud each of them saw rather than how
+    // finely. A sky drawn at a cinematic tier adds erosion a 128 m field averages away.
+    SkyCompositionInputs inputs;
+    inputs.atmosphere = &atmosphere;
+    inputs.tables = &tables;
+    inputs.celestial = &celestial;
+    inputs.clouds = &cloud.field;
+    inputs.cloud_quality.steps = known_quality().steps;
+    inputs.cloud_quality.light_steps = 2;
+    inputs.cloud_quality.octaves = 2;
+    inputs.time_seconds = kTime;
+
+    u32 compared = 0;
+    u32 shadowed = 0;
+    u32 lit = 0;
+    f32 worst = 0.0F;
+    f32 sky_darkest = 1.0F;
+    const double cell = static_cast<double>(known_quality().regional_cell_metres);
+    for (cy::i32 k = -20; k < 20; ++k) {
+        for (cy::i32 i = -20; i < 20; ++i) {
+            // Cell centres of the regional level, so the field reads one stored point.
+            const WorldVec3d at{(std::floor(middle.x / cell) + i + 0.5) * cell, 0.0,
+                                (std::floor(middle.z / cell) + k + 0.5) * cell};
+            inputs.view = planetary_view(atmosphere, at);
+            const f32 drawn = compose_sky(inputs, sun).cloud_transmittance;
+            const f32 received = CloudShadowField::sample(store, at);
+            worst = cy::math::max(worst, std::fabs(drawn - received));
+            sky_darkest = cy::math::min(sky_darkest, drawn);
+            shadowed += received < 0.5F ? 1U : 0U;
+            lit += received > 0.999F ? 1U : 0U;
+            ++compared;
+        }
+    }
+    CY_TEST_MESSAGE("sky and ground over ", compared, " points: ", shadowed, " shadowed, ", lit,
+                    " in full sun, the sky's darkest ", sky_darkest, ", worst disagreement ",
+                    worst);
+
+    // Both halves are present — a comparison over ground that is all in sun agrees with any field
+    // at all — and the sky itself sees the cloud, so the agreement is not two defaults.
+    CY_CHECK_GT(shadowed, 20U);
+    CY_CHECK_GT(lit, 200U);
+    CY_CHECK_LT(sky_darkest, 0.2F);
+    // One cloud read twice. Measured: a worst disagreement of 0.0095 over 1 600 points — the sky's
+    // slab is a spherical shell and the field's a flat one, a few metres apart at these distances,
+    // plus the field's `UNorm8` quantum. The bound is twice that, and a field marched along any
+    // other ray than the sky's misses it by two orders of magnitude (see
+    // `openspec/changes/add-cloud-shadows/evidence/falsification.txt`).
+    CY_CHECK_LT(worst, 0.02F);
 }

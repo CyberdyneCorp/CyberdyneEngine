@@ -583,8 +583,9 @@ rendering-forward-clustered = "complete"
 #                                      requirement (`Reprojection and disocclusion`, M11.c record)
 #   rendering-lighting-and-shadows   4 exempt — light types, shadow optimisation, decals,
 #                                      stochastic many-light (M11.c task 3.5)
-#   atmosphere-sky-and-clouds        2 exempt — cloud shadows and aerial perspective are libraries
-#                                      no frame calls (M11.c task 5.1)
+#   atmosphere-sky-and-clouds        1 exempt — aerial perspective is a library no frame calls
+#                                      (M11.c task 5.1); cloud shadows are shaded by the world frame
+#                                      since `add-cloud-shadows`
 #   rendering-architecture           2 exempt — pluggable pipelines, environment/post configuration
 #   rendering-geometry-and-resources 1 exempt — mesh and texture diagnostics
 #   vfx-system                       5 exempt (4 to M11.e, `Validation` to M11.d) — the build
