@@ -49,7 +49,8 @@ class World;
 
 namespace cy::build {
 
-/// Register `import` and `cook`. `cy_build` calls this after `add_builtins()`.
+/// Register `import`, `cook` and, in a build with `CY_VFX`, `vfx`. `cy_build` calls this after
+/// `add_builtins()`.
 ///
 /// `world` is the component registry the cook emits blocks against, and may be null — in which case
 /// the `cook` producer registers and fails by name if a node asks for it, rather than silently not
@@ -64,6 +65,10 @@ namespace cy::build {
 /// version, which covers only that importer's output.
 inline constexpr u32 kImportProducerVersion = 1;
 inline constexpr u32 kCookProducerVersion = 1;
+/// The `vfx` producer, registered when the build has `CY_VFX`: one `.cyvfxdoc` source in, one
+/// cooked-system record out, and every `.cyvfxmodule` the system reaches read through
+/// `NodeContext::discover` — so editing a module re-cooks every system that uses it.
+inline constexpr u32 kVfxProducerVersion = 1;
 
 }  // namespace cy::build
 

@@ -74,7 +74,8 @@ pub struct VfxCompileDiagnostic {
     pub pin: String,
     /// Emitter index in the submitted document, when the engine can identify it.
     pub emitter: Option<u32>,
-    /// Engine stage identity, in authoring order, when the engine can identify it.
+    /// Engine stage identity, in authoring order, when the engine can identify it. A module
+    /// reference the cook could not read names its emitter and no stage.
     pub stage: Option<u8>,
 }
 
@@ -206,11 +207,11 @@ impl VfxCompileFailure {
                 let stage = input.u8()?;
                 if emitter == u32::MAX && stage == 6 {
                     // Parse and pre-compile failures have no authored graph location.
-                } else if emitter == u32::MAX || stage >= 6 {
+                } else if emitter == u32::MAX || stage > 6 {
                     return Err(invalid("invalid VFX compiler diagnostic scope"));
                 } else {
                     diagnostic.emitter = Some(emitter);
-                    diagnostic.stage = Some(stage);
+                    diagnostic.stage = (stage < 6).then_some(stage);
                 }
             }
             if diagnostic.severity > 2 || diagnostic.code.is_empty() {
@@ -281,6 +282,27 @@ mod tests {
         assert_eq!(failure.diagnostics[0].pin, "value");
         assert_eq!(failure.diagnostics[0].emitter, Some(1));
         assert_eq!(failure.diagnostics[0].stage, Some(2));
+    }
+
+    #[test]
+    fn a_module_diagnostic_names_its_emitter_without_a_stage() {
+        let mut out = Writer::new();
+        out.u32(2);
+        out.text("vfx.modules");
+        out.text("missing module");
+        out.u32(1);
+        out.u8(2);
+        out.text("vfx.module.missing");
+        out.text("this emitter references a module the project does not have");
+        out.text("shared_drag");
+        out.u64(0);
+        out.text("");
+        out.u32(1);
+        out.u8(6);
+        let failure = VfxCompileFailure::decode(&out.finish()).unwrap();
+        assert_eq!(failure.diagnostics[0].detail, "shared_drag");
+        assert_eq!(failure.diagnostics[0].emitter, Some(1));
+        assert_eq!(failure.diagnostics[0].stage, None);
     }
 
     #[test]

@@ -28,6 +28,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace cy;
@@ -370,3 +371,193 @@ CY_TEST_CASE("a cook node without a component registry fails by name rather than
     CY_CHECK(import->distributable);
     CY_CHECK_EQ(import->version, kImportProducerVersion);
 }
+
+#if defined(CY_BUILD_HAS_VFX)
+
+namespace {
+
+/// The editor's `.cyvfxdoc` / `.cyvfxmodule` payloads: little-endian words and length-prefixed
+/// text, saved as a hexadecimal envelope.
+class VfxPayload {
+public:
+    VfxPayload& byte(u8 value) {
+        bytes_.push_back(value);
+        return *this;
+    }
+    VfxPayload& word(u32 value) {
+        for (u32 shift = 0; shift < 32; shift += 8) {
+            bytes_.push_back(static_cast<u8>(value >> shift));
+        }
+        return *this;
+    }
+    VfxPayload& text(std::string_view value) {
+        word(static_cast<u32>(value.size()));
+        bytes_.insert(bytes_.end(), value.begin(), value.end());
+        return *this;
+    }
+    [[nodiscard]] std::string envelope(std::string_view header) const {
+        constexpr char kDigits[] = "0123456789abcdef";
+        std::string out(header);
+        for (const u8 value : bytes_) {
+            out.push_back(kDigits[value >> 4U]);
+            out.push_back(kDigits[value & 15U]);
+        }
+        return out;
+    }
+
+private:
+    std::vector<u8> bytes_;
+};
+
+/// One CPU emitter that spawns three particles and references `gust`. The system maps `gust` and
+/// the module it uses, `base`, to explicit project paths.
+[[nodiscard]] std::string vfx_system() {
+    VfxPayload payload;
+    payload.word(3).text("puff").word(1).text("smoke").byte(1).text("Sprite").word(1).byte(0);
+    payload.text(
+        "cyvfxcanvas 1\nemitter smoke\nnode 1 vfx.constant\nprop 1 value 3\n"
+        "node 2 vfx.spawn_count\nlink 1 out 2 value\n");
+    payload.word(1).text("gust").word(0).word(256).word(0);
+    payload.word(0).word(0);  // parameters, channels
+    payload.word(2);
+    payload.text("gust").text("effects/modules/gust.cyvfxmodule");
+    payload.text("base").text("effects/modules/base.cyvfxmodule");
+    return payload.envelope("cyvfxdoc 1\n");
+}
+
+/// An Update module writing a constant to `attribute`, using the modules in `uses`.
+[[nodiscard]] std::string vfx_module(std::string_view name, std::string_view attribute,
+                                     std::string_view value,
+                                     const std::vector<std::string_view>& uses,
+                                     std::string_view layout = {}) {
+    VfxPayload payload;
+    payload.word(1).text(name).byte(2).word(0).word(static_cast<u32>(uses.size()));
+    for (const std::string_view used : uses) {
+        payload.text(used);
+    }
+    payload.text(std::string("cyvfxcanvas 1\nmodule ") + std::string(name) +
+                 "\nnode 1 vfx.constant\nprop 1 value " + std::string(value) + "\n" +
+                 std::string(layout) + "node 2 vfx.set_attribute\nprop 2 attribute " +
+                 std::string(attribute) + "\nlink 1 out 2 value\n");
+    return payload.envelope("cyvfxmodule 1\n");
+}
+
+/// The cooked record's `key` line: the system's content-addressed cook key.
+[[nodiscard]] std::string cook_key_line(const std::string& record) {
+    const usize at = record.find("\nkey ");
+    CY_REQUIRE(at != std::string::npos);
+    return record.substr(at + 1, record.find('\n', at + 1) - at - 1);
+}
+
+}  // namespace
+
+CY_TEST_CASE("a VFX system's modules are discovered dependencies of its cook node") {
+    // Issue #19: "the module is a declared build-graph dependency, so editing it re-cooks its
+    // users." The description names only the system; the producer reads each module, and each
+    // module that module uses, through `NodeContext::discover`, which files it against the node.
+    Project project("content-vfx");
+    seed(project);
+    project.write("effects/puff.cyvfxdoc", vfx_system());
+    project.write("effects/modules/gust.cyvfxmodule",
+                  vfx_module("gust", "emission", "2", {"base"}));
+    project.write("effects/modules/base.cyvfxmodule", vfx_module("base", "size", "0.5", {}));
+
+    ProducerRegistry producers;
+    CY_REQUIRE(producers.add_builtins().has_value());
+    CY_REQUIRE(add_content_producers(producers, nullptr).has_value());
+    const Producer* vfx = producers.find("vfx");
+    CY_REQUIRE(vfx != nullptr);
+    CY_CHECK_EQ(vfx->version, kVfxProducerVersion);
+
+    BuildGraph graph;
+    CY_REQUIRE(read_description("cybuild 1\n"
+                                "node \"vfx:puff\" cook \"vfx\" 1\n"
+                                "  source \"effects/puff.cyvfxdoc\"\n"
+                                "  output \"derived/puff.cyvfxcook\"\n"
+                                "node \"unrelated\" import \"copy\" 1\n"
+                                "  source \"assets/notes.txt\"\n"
+                                "  output \"derived/notes.bin\"\n",
+                                graph, &producers)
+                   .has_value());
+    DirectorySourceProvider sources(project.sources());
+    const std::string cache = project.cache();
+    const auto build = [&]() {
+        BuildConfig config;
+        config.graph = &graph;
+        config.producers = &producers;
+        config.sources = &sources;
+        config.artefact_root = project.artefacts();
+        config.cache.local = cache.c_str();
+        config.workers = 0;
+        BuildService service;
+        CY_REQUIRE(service.configure(std::move(config)).has_value());
+        Expected<BuildReport, Error> report = service.build();
+        CY_REQUIRE(report.has_value());
+        CY_REQUIRE(report->succeeded());
+        CY_CHECK(report->violations.empty());
+        return std::make_pair(std::move(*report),
+                              artefact_of(*report, service.artefacts(), "vfx:puff"));
+    };
+
+    const auto [cold, cooked] = build();
+    CY_CHECK(result_for(cold, "vfx:puff")->outcome == NodeOutcome::Ran);
+    CY_CHECK(cooked.starts_with("cyvfxcook 1\n"));
+
+    const auto [warm, cached] = build();
+    CY_CHECK(result_for(warm, "vfx:puff")->outcome == NodeOutcome::Cached);
+    CY_CHECK_EQ(cached, cooked);
+
+    // Only the USED module's layout changes. Its bytes changed, so the node re-runs — and the cook
+    // key does not move, because a layout is not content.
+    project.write("effects/modules/base.cyvfxmodule",
+                  vfx_module("base", "size", "0.5", {}, "# layout 1 40 50\n"));
+    const auto [moved, same] = build();
+    CY_CHECK(result_for(moved, "vfx:puff")->outcome != NodeOutcome::Cached);
+    CY_CHECK_EQ(cook_key_line(same), cook_key_line(cooked));
+
+    // The used module's content changes: the system re-cooks under a new key, and the node that
+    // reads none of this stays cached.
+    project.write("effects/modules/base.cyvfxmodule", vfx_module("base", "size", "0.25", {}));
+    const auto [edited, recooked] = build();
+    CY_CHECK(result_for(edited, "vfx:puff")->outcome != NodeOutcome::Cached);
+    CY_CHECK(cook_key_line(recooked) != cook_key_line(cooked));
+    CY_CHECK(result_for(edited, "unrelated")->outcome == NodeOutcome::Cached);
+}
+
+CY_TEST_CASE("a VFX cook node naming a missing module fails and names it") {
+    Project project("content-vfx-missing");
+    seed(project);
+    project.write("effects/puff.cyvfxdoc", vfx_system());
+    project.write("effects/modules/gust.cyvfxmodule",
+                  vfx_module("gust", "emission", "2", {"base"}));
+
+    ProducerRegistry producers;
+    CY_REQUIRE(producers.add_builtins().has_value());
+    CY_REQUIRE(add_content_producers(producers, nullptr).has_value());
+    BuildGraph graph;
+    CY_REQUIRE(read_description("cybuild 1\n"
+                                "node \"vfx:puff\" cook \"vfx\" 1\n"
+                                "  source \"effects/puff.cyvfxdoc\"\n"
+                                "  output \"derived/puff.cyvfxcook\"\n",
+                                graph, &producers)
+                   .has_value());
+    DirectorySourceProvider sources(project.sources());
+    BuildConfig config;
+    config.graph = &graph;
+    config.producers = &producers;
+    config.sources = &sources;
+    config.artefact_root = project.artefacts();
+    config.workers = 0;
+    BuildService service;
+    CY_REQUIRE(service.configure(std::move(config)).has_value());
+    const Expected<BuildReport, Error> report = service.build();
+    CY_REQUIRE(report.has_value());
+    CY_CHECK_FALSE(report->succeeded());
+    bool named = false;
+    for (const Diagnostic& diagnostic : report->diagnostics) {
+        named = named || (diagnostic.code == "vfx.module.missing" && diagnostic.location == "base");
+    }
+    CY_CHECK(named);
+}
+
+#endif  // CY_BUILD_HAS_VFX

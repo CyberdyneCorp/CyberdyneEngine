@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include <cy/vfx/authoring.h>
+#include <cy/vfx/compile.h>
+
+#include <cy/graph/expr.h>
 
 #include <algorithm>
 #include <charconv>
@@ -606,13 +609,28 @@ Expected<VfxModuleAsset, Error> read_authoring_module(std::string_view source,
 
 namespace {
 
-void module_diagnostic(graph::DiagnosticSink& diagnostics, const char* code, const char* message,
-                       Name module) noexcept {
+/// Where a module diagnostic points: the module is its `detail`, and the emitter that referenced
+/// it (and the module's stage, once it was read) is a `DiagnosticScope` in the compile report.
+struct ModuleLocation {
+    u32 emitter_index = UINT32_MAX;
+    Stage stage = Stage::Count;
+    graph::NodeKey node = graph::kInvalidNodeKey;
+};
+
+void module_diagnostic(graph::DiagnosticSink& diagnostics, CompileReport& report, const char* code,
+                       const char* message, Name module, ModuleLocation location = {}) noexcept {
     graph::Diagnostic diagnostic;
     diagnostic.code = code;
     diagnostic.message = message;
     diagnostic.detail = module;
+    diagnostic.node = location.node;
+    const usize before = diagnostics.entries().size();
     diagnostics.report(diagnostic);
+    // A capped sink drops the entry; a scope must never point at an older diagnostic.
+    if (location.emitter_index == UINT32_MAX || diagnostics.entries().size() == before) {
+        return;
+    }
+    (void)report.diagnostic_scopes.push_back({before, location.emitter_index, location.stage});
 }
 
 [[nodiscard]] graph::NodeKey remapped_key(
@@ -688,31 +706,59 @@ void module_diagnostic(graph::DiagnosticSink& diagnostics, const char* code, con
     return nullptr;
 }
 
+/// A module's content identity: its stage, typed inputs, graph semantics (not layout) and the
+/// content of the modules it uses, which were resolved first. Not its name, not its path.
+[[nodiscard]] u64 module_content_digest(const VfxSystemAsset& asset,
+                                        const VfxModuleAsset& module) noexcept {
+    u64 digest = graph::hash_u64(graph::kHashSeed, static_cast<u64>(module.stage));
+    for (const ModuleInputDecl& input : module.inputs) {
+        digest = graph::hash_text(digest, input.name.text());
+        digest = graph::hash_text(digest, input.type.text());
+    }
+    digest = graph::hash_u64(digest, module.graph.semantic_digest());
+    for (Name dependency : module.dependencies) {
+        const ModuleAssetRef* used = asset.find_module_asset(dependency);
+        digest = graph::hash_u64(digest, used != nullptr ? used->content_digest : 0U);
+    }
+    // Zero means "not resolved" to the cook key.
+    return digest != 0 ? digest : 1U;
+}
+
 struct ModuleResolution {
-    const VfxSystemAsset& asset;
+    VfxSystemAsset& asset;
     const Array<VfxModuleAsset>& modules;
     Emitter& emitter;
+    u32 emitter_index;
     graph::DiagnosticSink& diagnostics;
+    CompileReport& report;
     Array<Name> visiting;
     Array<Name> applied;
     Allocator& allocator;
 
-    ModuleResolution(const VfxSystemAsset& system, const Array<VfxModuleAsset>& sources,
-                     Emitter& host, graph::DiagnosticSink& sink, Allocator& memory) noexcept
+    ModuleResolution(VfxSystemAsset& system, const Array<VfxModuleAsset>& sources, u32 host_index,
+                     graph::DiagnosticSink& sink, CompileReport& compile_report,
+                     Allocator& memory) noexcept
         : asset(system),
           modules(sources),
-          emitter(host),
+          emitter(system.edit_emitters()[host_index]),
+          emitter_index(host_index),
           diagnostics(sink),
+          report(compile_report),
           visiting(memory),
           applied(memory),
           allocator(memory) {}
+
+    void diagnose(const char* code, const char* message, Name module, Stage stage = Stage::Count,
+                  graph::NodeKey node = graph::kInvalidNodeKey) noexcept {
+        module_diagnostic(diagnostics, report, code, message, module, {emitter_index, stage, node});
+    }
 
     [[nodiscard]] Status validate_inputs(const VfxModuleAsset& module) noexcept {
         for (const ModuleInputDecl& input : module.inputs) {
             const AttributeDecl* bound = emitter.find_attribute(input.name);
             if (bound == nullptr || bound->type != input.type) {
-                module_diagnostic(diagnostics, "vfx.module.input",
-                                  "VFX module input is missing or has the wrong type", module.name);
+                diagnose("vfx.module.input", "VFX module input is missing or has the wrong type",
+                         module.name, module.stage);
                 return fail(ErrorCode::InvalidArgument,
                             "vfx: module input does not match emitter attribute");
             }
@@ -727,8 +773,8 @@ struct ModuleResolution {
                                                      [attribute](const ModuleInputDecl& input) {
                                                          return input.name == attribute->text;
                                                      }) == module.inputs.end()) {
-                module_diagnostic(diagnostics, "vfx.module.interface",
-                                  "VFX module reads an undeclared host attribute", module.name);
+                diagnose("vfx.module.interface", "VFX module reads an undeclared host attribute",
+                         module.name, module.stage);
                 return fail(ErrorCode::InvalidArgument,
                             "vfx: module reads an undeclared host attribute");
             }
@@ -736,32 +782,53 @@ struct ModuleResolution {
         return ok();
     }
 
+    /// A node the module's declared stage cannot run. The same rule the lowering applies to an
+    /// emitter's own graph, checked here so the diagnostic names the module and the node the
+    /// author placed rather than a re-keyed copy of it.
+    [[nodiscard]] Status validate_stage_nodes(const VfxModuleAsset& module) noexcept {
+        static const Name spawn_count = Name::intern("vfx.spawn_count");
+        static const Name set_attribute = Name::intern("vfx.set_attribute");
+        static const Name kill_if = Name::intern("vfx.kill_if");
+        for (const graph::GraphNode& node : module.graph.nodes()) {
+            const bool spawn_only = node.type == spawn_count;
+            const bool particle_only = node.type == set_attribute || node.type == kill_if;
+            if ((spawn_only && module.stage != Stage::Spawn) ||
+                (particle_only && module.stage == Stage::Spawn)) {
+                diagnose("vfx.module.stage", "VFX module's declared stage cannot run this node",
+                         module.name, module.stage, node.key);
+                return fail(ErrorCode::InvalidArgument, "vfx: module node incompatible with stage");
+            }
+        }
+        return ok();
+    }
+
     [[nodiscard]] Status apply(Name name, Stage required_stage = Stage::Count) noexcept {
         if (std::find(visiting.begin(), visiting.end(), name) != visiting.end()) {
-            module_diagnostic(diagnostics, "vfx.module.cycle", "VFX module dependency cycle", name);
+            diagnose("vfx.module.cycle", "VFX module dependency cycle", name);
             return fail(ErrorCode::InvalidArgument, "vfx: module dependency cycle");
         }
         if (std::find(applied.begin(), applied.end(), name) != applied.end()) {
             return ok();
         }
         if (asset.find_module_asset(name) == nullptr) {
-            module_diagnostic(diagnostics, "vfx.module.mapping", "VFX module has no asset path",
-                              name);
+            diagnose("vfx.module.mapping", "VFX module has no asset path", name);
             return fail(ErrorCode::NotFound, "vfx: module has no asset mapping");
         }
         const VfxModuleAsset* module = find_module(modules, name);
         if (module == nullptr) {
-            module_diagnostic(diagnostics, "vfx.module.missing",
-                              "VFX module asset was not supplied", name);
+            diagnose("vfx.module.missing", "VFX module asset was not supplied", name);
             return fail(ErrorCode::NotFound, "vfx: module asset was not supplied");
         }
         if (required_stage != Stage::Count && module->stage != required_stage) {
-            module_diagnostic(diagnostics, "vfx.module.stage",
-                              "VFX module dependency has an incompatible stage", name);
+            diagnose("vfx.module.stage", "VFX module dependency has an incompatible stage", name,
+                     module->stage);
             return fail(ErrorCode::InvalidArgument, "vfx: incompatible module dependency stage");
         }
         if (Status inputs = validate_inputs(*module); !inputs) {
             return inputs;
+        }
+        if (Status nodes = validate_stage_nodes(*module); !nodes) {
+            return nodes;
         }
         if (Status pushed = visiting.push_back(name); !pushed) {
             return pushed;
@@ -785,6 +852,11 @@ struct ModuleResolution {
                    !appended) {
             return appended;
         }
+        if (Status recorded =
+                asset.record_module_digest(name, module_content_digest(asset, *module));
+            !recorded) {
+            return recorded;
+        }
         return applied.push_back(name);
     }
 };
@@ -794,17 +866,30 @@ struct ModuleResolution {
 Status resolve_authoring_modules(VfxSystemAsset& asset, Span<const ModuleSource> sources,
                                  graph::DiagnosticSink& diagnostics,
                                  Allocator& allocator) noexcept {
+    CompileReport report(allocator);
+    return resolve_authoring_modules(asset, sources, diagnostics, report, allocator);
+}
+
+Status resolve_authoring_modules(VfxSystemAsset& asset, Span<const ModuleSource> sources,
+                                 graph::DiagnosticSink& diagnostics, CompileReport& report,
+                                 Allocator& allocator) noexcept {
     Array<VfxModuleAsset> modules(allocator);
     for (const ModuleSource& source : sources) {
         if (asset.find_module_asset(source.name) == nullptr ||
             find_module(modules, source.name) != nullptr) {
+            module_diagnostic(diagnostics, report, "vfx.module.unexpected",
+                              "VFX module source has no mapping or is supplied twice", source.name);
             return fail(ErrorCode::InvalidArgument, "vfx: unexpected or duplicate module source");
         }
         auto parsed = read_authoring_module(source.source, allocator);
         if (!parsed) {
+            module_diagnostic(diagnostics, report, "vfx.module.malformed",
+                              "VFX module source does not parse", source.name);
             return make_unexpected(parsed.error());
         }
         if (parsed->name != source.name) {
+            module_diagnostic(diagnostics, report, "vfx.module.malformed",
+                              "VFX module source declares another name", source.name);
             return fail(ErrorCode::InvalidArgument,
                         "vfx: module source name does not match mapping");
         }
@@ -812,20 +897,28 @@ Status resolve_authoring_modules(VfxSystemAsset& asset, Span<const ModuleSource>
             return pushed;
         }
     }
-    for (Emitter& emitter : asset.edit_emitters()) {
-        ModuleResolution resolution(asset, modules, emitter, diagnostics, allocator);
-        for (Name name : emitter.modules()) {
+    for (u32 index = 0; index < asset.emitters().size(); ++index) {
+        ModuleResolution resolution(asset, modules, index, diagnostics, report, allocator);
+        for (Name name : asset.emitters()[index].modules()) {
             if (Status applied = resolution.apply(name); !applied) {
                 return applied;
             }
         }
-        emitter.clear_module_references();
+        asset.edit_emitters()[index].clear_module_references();
     }
     return ok();
 }
 
 Expected<VfxSystemAsset, Error> read_authoring_bundle(std::string_view source,
                                                       graph::DiagnosticSink& diagnostics,
+                                                      Allocator& allocator) noexcept {
+    CompileReport report(allocator);
+    return read_authoring_bundle(source, diagnostics, report, allocator);
+}
+
+Expected<VfxSystemAsset, Error> read_authoring_bundle(std::string_view source,
+                                                      graph::DiagnosticSink& diagnostics,
+                                                      CompileReport& report,
                                                       Allocator& allocator) noexcept {
     if (source.starts_with("cyvfxdoc 1\n")) {
         return read_authoring_document(source, allocator);
@@ -859,7 +952,8 @@ Expected<VfxSystemAsset, Error> read_authoring_bundle(std::string_view source,
     if (!reader.done()) {
         return make_unexpected(malformed("trailing VFX source bundle bytes"));
     }
-    if (Status resolved = resolve_authoring_modules(*asset, modules.span(), diagnostics, allocator);
+    if (Status resolved =
+            resolve_authoring_modules(*asset, modules.span(), diagnostics, report, allocator);
         !resolved) {
         return make_unexpected(resolved.error());
     }
