@@ -1443,6 +1443,10 @@ note = "the requirement enumerates what the cache key must include — the sourc
 #         behind it: `FramePassKind::Temporal` is declared by every assembled frame and NOTHING IN
 #         THIS TREE RECORDS IT — there is no temporal resolve shader under `src/rendering/` — so
 #         MSAA, TAA, FXAA and SMAA are four names with no pass between them.
+#         (SUPERSEDED, recorded at M11.d task 10.4 rather than rewritten: `Ambient occlusion` is
+#         GTAO on the device since `add-ambient-occlusion` and is answered by `render.ambient_occlusion`;
+#         TAA executes since `execute-temporal-antialiasing` and MSAA runs through the render graph
+#         since M11.d section 5 — the `Anti-aliasing` entry below says what is still exempt.)
 #   temporal  `History resources` asks for render-graph integration and aliasing; `Motion vectors
 #         are derived` asks for skinned, virtual-geometry, mesh-particle and world-space-UI motion
 #         and the suite covers camera and static motion; `Temporal diagnostics` asks for a
@@ -2660,6 +2664,11 @@ note = "this requirement is mostly a claim about what is ABSENT — \"Gameplay S
 # bloom, temporal resolve or upscaling shader under `src/rendering/` at all; `git ls-files
 # 'src/rendering/**/*.slang'` answers twenty-five files and not one of them is a post-process
 # effect. Every one of those deferrals names that, rather than saying "not tested".
+# SUPERSEDED IN PART, recorded at M11.d task 10.4: `add-bloom` (`cy/bloom.slang`),
+# `add-ambient-occlusion` (`src/rendering/occlusion/shaders/`) and `execute-temporal-antialiasing`
+# (`temporalResolve` in `cy/fullscreen.slang`) each added the device pass, so `Bloom` and `Ambient
+# occlusion` are cases now and `Anti-aliasing`'s exemption is narrower. Fog, depth of field, motion
+# blur and upscaling still have none.
 #
 # THREE CASES WERE WRITTEN FOR THIS MAP AND EACH WAS PROVED RED FIRST, by breaking the thing it
 # names and watching it fail: the compute reload case (`shader-system`), the point-light cube-face
@@ -2822,13 +2831,13 @@ row = "rendering-post-processing"
 requirement = "Bloom"
 evidence = "test:render.bloom"
 case = "a bright region glows onto its neighbours, falling off and centred on its source"
-note = "THE CHAIN IS A DEVICE PASS NOW: `forward/bloom_chain.h` declares a prefilter, a downsample per level, an upsample per level and a composite (`FramePassKind::Bloom`, between the temporal stage and the post-process), `cy/bloom.slang` shades them and `pipeline::BloomRenderer` records them. The named case runs that chain on Vulkan over a bright block and requires a halo that falls off and is centred on its source in both axes. Its companions in render.bloom cover every other sentence: `the Karis average stops one very bright texel producing a bloom star` (a one-texel firefly scatters about a third of what a block of the same energy does and a quarter of what it scatters unweighted, and the same energy under a one-texel shift — the Firefly suppression scenario); `bloom moves energy and never adds it` (Energy-conserving default: the frame never gains energy and most of what the threshold took returns); `a dim scene below the threshold comes out of the chain exactly as it went in` (the soft knee, bit for bit); `an anamorphic stretch widens the halo horizontally…` and `lens dirt brightens the bloom where the mask is…` (the two optional controls); `the assembled frame records bloom, and at intensity zero it is the frame without it` (FrameScene texel-identical); and `with bloom off the assembled frame is the frame drawn before bloom existed`, which holds the off path to `references/frame_scene_before_bloom.png`, render.pipeline's capture from a build before this change (byte-identical on the machine that wrote it). unit.render_forward's `with bloom off, nothing of it is declared…` pins absence, and unit.render_post's level-weight and composite cases pin the processor twins of the shader's arithmetic. D3D12 is not covered: the fragment entry points compile to HLSL but the shared `fullscreenVertex` is the declared gap m11c:every-shader-reaches-every-target."
+note = "THE CHAIN IS A DEVICE PASS NOW: `forward/bloom_chain.h` declares a prefilter, a downsample per level, an upsample per level and a composite (`FramePassKind::Bloom`, between the temporal stage and the post-process), `cy/bloom.slang` shades them and `pipeline::BloomRenderer` records them. The named case runs that chain on Vulkan over a bright block and requires a halo that falls off and is centred on its source in both axes. Its companions in render.bloom cover every other sentence: `the Karis average stops one very bright texel producing a bloom star` (a one-texel firefly scatters about a third of what a block of the same energy does and a quarter of what it scatters unweighted, and the same energy under a one-texel shift — the Firefly suppression scenario); `bloom moves energy and never adds it` (Energy-conserving default: the frame never gains energy and most of what the threshold took returns); `a dim scene below the threshold comes out of the chain exactly as it went in` (the soft knee, bit for bit); `an anamorphic stretch widens the halo horizontally…` and `lens dirt brightens the bloom where the mask is…` (the two optional controls); `the assembled frame records bloom, and at intensity zero it is the frame without it` (FrameScene texel-identical); and `with bloom off the assembled frame is the frame drawn before bloom existed`, which holds the off path to `references/frame_scene_before_bloom.png`, render.pipeline's capture from a build before this change (byte-identical on the machine that wrote it). unit.render_forward's `with bloom off, nothing of it is declared…` pins absence, and unit.render_post's level-weight and composite cases pin the processor twins of the shader's arithmetic. D3D12 is compiled and not run: `fullscreenVertex` took the portable `SV_VertexID` at M11.d task 9.9, which closed `m11c:every-shader-reaches-every-target`, so `cy/bloom.slang` reaches every target this build emits (`smoke.shader_targets`); no D3D12 device exists on this host, which is M11.d.5's."
 
 [[coverage]]
 row = "rendering-post-processing"
 requirement = "Anti-aliasing"
 evidence = "exempt:m11e"
-note = "FOUR NAMES WITH NO PASS BETWEEN THEM. The prerequisite scenario is answered — `a temporal stage without motion vectors is enabled or refused, never ignored` is 'the temporal framework SHALL enable their production, or TAA SHALL be refused' exactly — and `the temporal stage's history belongs to the framework, and the chain never owns one` is the prohibition on a second temporal implementation. The rest has no subject: there is no temporal resolve shader under `src/rendering/`, so neighbourhood clamping, the variance or YCoCg clip, the disocclusion reconstruction and the sharpening pass are undefined; MSAA, FXAA, SMAA and alpha-to-coverage are declared nowhere. `FramePassKind::Temporal` is declared by every assembled frame and NOTHING RECORDS IT. What would observe it: the resolve, with a device case measuring a trail behind a moving object against a clamped reference."
+note = "TWO OF THE FOUR NAMES HAVE A PASS NOW, AND THE REQUIREMENT STILL ASKS FOR MORE THAN THEY DO. Re-read at M11.d task 10.4 against the tree after `execute-temporal-antialiasing` and M11.d section 5: TAA EXECUTES — `temporalResolve` in `cy/fullscreen.slang` reprojects the history through the velocity target, clamps it to the current 3x3 neighbourhood's min/max in scene-linear RGB and rejects it off-screen, on the sky and on an invalidated history, and `render.pipeline`'s `temporal anti-aliasing accumulates a pinned history into a picture no frame drew` and `temporal anti-aliasing is deterministic: two pinned runs draw the identical frame` run it on the device; MSAA runs through the render graph's attachment model (`unit.render_graph`'s multisample cases, `unit.render_forward`'s `MSAA adds the multisampled targets and their resolves`, and `render.msaa_multiview`'s `4x edges are smoother than 1x, through the graph's twin and resolve`). The prerequisite scenario is answered — `a temporal stage without motion vectors is enabled or refused, never ignored` — and `the temporal stage's history belongs to the framework, and the chain never owns one` is the prohibition on a second temporal implementation. STILL EXEMPT, BY NAME: the variance or YCoCg clip the requirement names (the clamp is an RGB min/max box), disocclusion RECONSTRUCTION (a rejected history falls back to the current frame and nothing reconstructs), the sharpening pass, FXAA and SMAA (`post/chain.h` places them at step 14 and nothing records either), and alpha-to-coverage (no pipeline under `src/rendering/` declares it). What would observe the rest: the variance clip and sharpening in the resolve, with a device case measuring a trail behind a moving object against a clamped reference, and an FXAA/SMAA pass with an edge case of its own."
 
 [[coverage]]
 row = "rendering-post-processing"
@@ -3158,3 +3167,96 @@ row = "virtual-shadows"
 requirement = "Shadow diagnostics"
 evidence = "exempt:m11e"
 note = "HALF-BUILT, and the built half is real: `PageEntry` carries the light, the clip level, the virtual and physical page, the state, the age, the update class, the pin and — the one this requirement is most specific about — `dirty_reason` and `dirty_source_id`, kept as the FIRST reason rather than the last, which `a caster that moves dirties the pages it left and the pages it entered, and no more` asserts by name and id. `ShadowCacheStatistics` answers the profiler's pages resident, requested, dirty, rendered, evicted and starved, and `entries()` is deterministic so an overlay cannot flicker. WHAT IS MISSING is everything downstream of a device pass: the caster count per page and the last render cost of a real rasterisation, the cost of page marking, caster culling, rasterisation and filtering as separate numbers, and every visualisation the requirement enumerates — no shadow debug view exists in this tree. What would observe it is a debug-view registry entry per visualisation, checked the way `clouds: every debug view draws something, and a weather rejection is its own colour` checks the sky's, plus per-pass timings from the passes deferred above."
+
+# --- ecs-core ---------------------------------------------------------------------------------------
+#
+# M11.d task 10.4's first row, and the only one of the nine M11.d carries to Complete whose reading
+# supports it: section 6.3 read `ecs-core` requirement by requirement into `src/ecs/README.md` and
+# found twelve of twelve satisfied, each with a test. These entries turn that reading into the map
+# `m11d:core-rows-at-complete-grade` asks for — the case named is the one that observes the
+# requirement's sharpest scenario, and the note says which cases beside it carry the rest. Every
+# case is in `src/ecs/tests/`, in the suite named.
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Entities"
+evidence = "test:unit.ecs"
+case = "a stale entity id is not alive and its components read as null"
+note = "the Stale entity id scenario exactly: destroy, reuse the index, and require `is_alive` false and a null component read through the old id. The packing (32-bit index and generation in 64 bits), dense recycling with a generation bump and a destroy of an already-dead entity are `an entity packs a 32-bit index and a 32-bit generation into 64 bits`, `entity indices are dense and recycled` and `destroying an entity that is already dead is reported rather than corrupting` beside it; Bulk creation is cheap is integration.ecs_scale's `100 000 entities of one component set are allocated into chunks in bulk`."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Components"
+evidence = "test:unit.ecs"
+case = "a sparse component toggles without an archetype change"
+note = "the requirement's operative distinction — adding a data, tag or shared component moves the entity and a sparse one SHALL NOT — asserted over repeated toggles with the archetype unchanged. The other kinds are cases of their own in test_components.cpp: registration through reflection with its layout kept, a non-relocatable type refused, a tag with no column but in the key, `entities sharing a shared component group into the same chunks` (the Shared component scenario) and a buffer component inline until it spills."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Archetypes and chunk storage"
+evidence = "test:unit.ecs"
+case = "an archetype transition moves the data and repairs the vacated slot"
+note = "the Archetype transition scenario: the entity's data moves to the target archetype's chunk and the chunk's last entity fills the vacated slot with its location record updated. `component addition order does not change the archetype`, `chunk capacity is derived from the archetype's per-entity size` and `iteration walks contiguous spans with no per-row indirection` are the other two scenarios and the capacity rule, in the same file."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Queries"
+evidence = "test:unit.ecs"
+case = "a query's archetype list is cached and updated incrementally"
+note = "Query matching is amortised: the matching archetypes are computed once and extended as archetypes appear, not recomputed per run. The rest of the requirement is test_queries.cpp's other cases — With, Without and Optional selecting what they say, change filtering skipping untouched chunks, a shared-component filter, the query's terms being its access declaration, and random access through the location table documented as slower."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Systems and access declarations"
+evidence = "test:unit.ecs"
+case = "an explicit ordering constraint is honoured and a cycle is refused"
+note = "the Explicit ordering and Cyclic ordering is rejected scenarios in one case. `the eight stages are in the order ecs-core fixes, split fixed and variable` pins the stage list, `systems that do not conflict are batched together and conflicting ones are ordered` the derived graph; the declarations are `cy::jobs::AccessSet`'s component, resource and event-channel domains. Ordering is deterministic is integration.ecs_scheduling's `the parallel plan and the serial one produce the same world` and `the flush order is the systems' names, not the order they were registered in`."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Structural change deferral"
+evidence = "test:unit.ecs"
+case = "a spawn recorded during iteration appears at the flush and not before"
+note = "the Spawn during iteration scenario: the placeholder is usable immediately and not alive, and every placeholder is remapped to a real entity at the flush. `a structural change attempted mid-iteration is refused, not applied` is the prohibition, `buffers merge by system order, then thread index, then record order` the Deterministic merge scenario, and `add_child through a command buffer applies at the flush point` (test_relationships.cpp) the add-child operation."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Resources and singletons"
+evidence = "test:unit.ecs"
+case = "two systems writing one resource are serialised by the scheduler"
+note = "the requirement's one scenario. `a resource is declared once, zeroed, and read back by id` and `a reflected type can be a resource and is found by its manifest identifier` are the named, typed singleton half."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Change detection and versioning"
+evidence = "test:unit.ecs"
+case = "a read does not dirty and a change filter skips untouched chunks"
+note = "Read does not dirty, and the change filter it feeds. Conservative granularity is the documented contract in `query.h` — a chunk written through one entity is a changed chunk — which this case relies on when it skips whole chunks."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Entity relationships"
+evidence = "test:unit.ecs"
+case = "both sides of a reparent change together"
+note = "Hierarchy consistency. Cascade destroy is `destroying a parent destroys its whole subtree by default`, the opt-out `the opt-out reparents the children to the destroyed entity's own parent`, and a reparent closing a cycle is refused — all in test_relationships.cpp."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "World serialization and snapshots"
+evidence = "test:integration.ecs_serialization"
+case = "a serialized world round-trips into a second world with its references intact"
+note = "Entity references survive round-trip, into a second world. The play-mode reset scenario is `a snapshot restores the world it was taken from, byte for byte in effect`, and the filtered subset `a filtered write keeps the subset and nulls the references that leave it`. The binary form is the ECS's; the TEXT form is `serialization-and-prefabs`' single reflection-driven traversal by design (`snapshot.h` says why a second writer here is refused), so this row answers the entity data and the reference sites and that row answers the text."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "Multiple worlds"
+evidence = "test:unit.ecs"
+case = "two worlds share no entities, archetypes or component numbering state"
+note = "the Editor and play-mode coexist scenario as independence asserted directly. Bulk instantiation is integration.ecs_scale's `a prepared archetype block is instantiated as a bulk column copy` and `a cooked block of 100 000 rows activates as one memcpy per column per chunk`; a block whose columns do not match is refused beside this case. The name-not-overloaded scenario is a naming rule the API follows: the spatial layer is `world-partition-and-streaming`'s `cy::world` cells, which publish INTO a `World`."
+
+[[coverage]]
+row = "ecs-core"
+requirement = "ECS diagnostics"
+evidence = "test:integration.ecs_diagnostics"
+case = "archetype thrash is detected and names the component to declare sparse"
+note = "the Archetype thrash warning scenario. `the ECS reports its shape, its systems and its queries onto the one trace` carries archetype and chunk counts with fill ratio, per-system execution time and entity counts, query match statistics and structural-change counts; `a world under a sparse declaration does not thrash at all` is the negative control."

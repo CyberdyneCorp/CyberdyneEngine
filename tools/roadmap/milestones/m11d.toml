@@ -47,7 +47,7 @@ notes = [
     "THE NATIVE-PLATFORM CLAIM IS A DIFF CHECK AND NOT A TEST, and that is the point: the exit criterion is that replacing SDL3 on one desktop requires NO CHANGE in src/core/, src/ecs/, src/servers/ or src/scene/. A test cannot see that; a diff over the change that added the backend can, which is why `port-touches-no-engine-layer` reads the repository rather than running a suite.",
     "MSL AND DXIL ARE `shader-system`'s, WHICH IS M11.c's ROW. This rung's ledger checks that they exist because it cannot start without them, not because it owns them — M11.c's `shader-targets-for-the-next-rung` is the same claim from the other side, and the two are deliberately both present so the handover cannot be lost between rungs.",
     "tasks 9.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
-    "`just quality-requirements` DOES NOT EXIST YET AND THE CRITERIA THAT CALL IT WILL SAY SO. `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the tool that checks it is one of that row's four absent gates — the row is M11.d's. It is named here rather than avoided because the mapping IS the Complete-grade claim these rows are being judged on: whichever rung reaches it first writes the tool, and M11.d is where it is finished. A criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red.",
+    "`just quality-requirements` DID NOT EXIST WHEN THIS LEDGER WAS WRITTEN; it does now (tools/roadmap/requirements.py over tools/roadmap/requirements-coverage.toml). `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the mapping IS the Complete-grade claim `core-rows-at-complete-grade` judges these rows on — so a row with no entries is red there with its requirements listed, which is the honest red.",
 ]
 
 # --- The static gates, shared with every other rung -----------------------------------------------
@@ -166,43 +166,88 @@ note   = "deleting the run-time read of the shot's field of view (the line that 
 
 [[criterion]]
 id = "rhi-interface-gaps-settled"
-describe = "the eight gaps the Metal seed recorded are closed in the INTERFACE, proved against Vulkan and the null backend before either new backend is written. A gap closed inside a backend is a gap the other two backends will rediscover"
+describe = "the eight gaps the Metal seed recorded are closed in the INTERFACE, proved against Vulkan and the null backend before either new backend is written: every gap the interface changed has its own named cases in `unit.rhi` (gaps 1, 2, 3, 4, 5 and 7) or `integration.rhi_pipeline_cache` (gap 6, which touches a filesystem), and `unit.rhi_metal_seed` reports the seed's own table at eight gaps with none still open — so a row reopened in the data, or a gap whose cases were deleted, is red. A gap closed inside a backend is a gap the other two backends will rediscover"
 source = "tasks 1, rhi-and-render-graph, src/backends/rhi-metal/README.md"
 kind = "command"
 run = '''
-set -e
+set -eo pipefail
+# REWRITTEN AT M11.d's RECORDS PHASE (task 9.1) BECAUSE THE FILTER NAMED FOUR CASES THAT NEVER EXISTED.
+# It asked `unit.rhi` for 'an opaque memory pool*,queue ownership*,per-format support*,a pipeline
+# cache token*' — the seed's PROPOSALS, written before section 1 ran — and the cases section 1 wrote
+# are named for the gap they close (`gap 2: the pool class is MET, not compared for equality`, …).
+# The close phase measured it selecting 0 of 45 and left it red on purpose, so the person who wrote
+# the cases would name them; section 1's record (tasks 1.1-1.5) is that naming, and this body reads it
+# gap by gap rather than as one filter, so a single gap losing its cases cannot hide behind the others.
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_rhi"
-test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
-filter='an opaque memory pool*,queue ownership*,per-format support*,a pipeline cache token*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
-selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 4 it names"
-test "${selected:-0}" -ge 4 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+unit="$d/cy_test_unit_rhi"
+cache="$d/cy_test_integration_rhi_pipeline_cache"
+seed="$d/cy_test_unit_rhi_metal_seed"
+for binary in "$unit" "$cache" "$seed"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+selected() { sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1; }
+for gap in 1 2 3 4 5 7; do
+    out="$("$unit" "-tc=gap ${gap}:*" 2>&1)" || { echo "$out"; echo "gap ${gap}'s cases FAILED"; exit 1; }
+    count=$(printf '%s' "$out" | selected)
+    echo "  gap ${gap}: ${count:-0} case(s) in unit.rhi"
+    test "${count:-0}" -ge 1 || { echo "gap ${gap} has no case in unit.rhi any more — renamed or deleted"; exit 1; }
+done
+# Gap 6 took a path instead of a blob; its round trip blocks on a filesystem, so it lives a tier up.
+out="$("$cache" '-tc=the pipeline cache round-trips through a path*' 2>&1)" || { echo "$out"; echo "gap 6's round trip FAILED"; exit 1; }
+test "$(printf '%s' "$out" | selected)" = "1" || { echo "gap 6's round-trip case is not in integration.rhi_pipeline_cache"; exit 1; }
+out="$("$unit" '-tc=the pipeline cache refuses a path*' 2>&1)" || { echo "$out"; echo "gap 6's refusal FAILED"; exit 1; }
+test "$(printf '%s' "$out" | selected)" = "1" || { echo "gap 6's refusal case is not in unit.rhi"; exit 1; }
+echo "  gap 6: the round trip and the refusal"
+# Gap 8 is NoChangeNeeded and the seed's test holds that as data; the table's own count is the claim.
+out="$("$seed" 2>&1)" || { echo "$out"; echo "unit.rhi_metal_seed FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -q 'gaps: 8 total, 0 still open' || {
+    printf '%s\n' "$out" | grep 'gaps:' || true
+    echo "the seed's table no longer reports eight gaps with none open"; exit 1; }
+echo "  unit.rhi_metal_seed: 8 gaps, 0 still open"
 '''
 ci_job = "milestone-m11d"
 
+# THE MUTATION IS GAP 7's REMEDY TAKEN AWAY: with `return preferred;` gone, a depth format the device
+# supports is no longer handed back unchanged, so the engine substitutes where it must not — the
+# "substitution is not rewriting" half of `gap 7: the engine substitutes the depth format` fails,
+# while the tree still compiles and every other gap stays green.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/src/types.cpp"
+token  = "return preferred;"
+note   = "select_depth_stencil_format() falls through to its preference list for a format the device supports, so a Vulkan-like device asked for D24UnormS8Uint gets D32SfloatS8Uint back and gap 7's case goes red"
+
 [[criterion]]
 id = "null-backend-refuses-what-it-cannot-do"
-describe = "the null backend refuses every capability it does not implement rather than silently succeeding. It is the cheapest place to discover an interface that cannot express a refusal, and this rung adds two backends that will each need to make one"
+describe = "the null backend refuses every capability it does not implement rather than silently succeeding: it reports no async compute and no ray tracing through the same derivation a device uses, refuses a depth target it cannot support rather than substituting one, refuses a pipeline-cache path a caller forgot to fill in, and refuses to present a swapchain image it does not have. It is the cheapest place to discover an interface that cannot express a refusal, and M11.d.5 adds two backends that will each need to make one"
 source = "tasks 1, rhi-and-render-graph"
 kind = "command"
 run = '''
-set -e
+set -eo pipefail
+# REWRITTEN AT M11.d's RECORDS PHASE (task 9.1): the filter was 'the null backend refuses*', a name no
+# case ever had, and it selected 0 of 45. These are the five cases in `unit.rhi` that construct the
+# null device and require a refusal or a stated absence of it, named in full so the count is exact.
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
 binary="$d/cy_test_unit_rhi"
 test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
-filter='the null backend refuses*'
+filter='the null backend reports itself\, and reports no async compute,the ray-tracing capability reports the device: the null backend has none,a depth target the device cannot support is refused*,the pipeline cache refuses a path*,a swapchain hands out images and refuses*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
-selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+count=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${count:-0} case(s) of the 5 it names"
+test "${count:-0}" -eq 5 || { echo "a named case is not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11d"
+
+# The null device's present() refuses an image index outside the swapchain; without the refusal the
+# swapchain case's `present` of an image it never handed out succeeds and the case goes red.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/null/src/null_device.cpp"
+token  = "return fail(ErrorCode::OutOfRange, \"present(): image index outside the swapchain\");"
+note   = "the null backend presents an image it does not have instead of refusing it"
 
 # --- Section 2: THE TWO BACKENDS ARE NOT HERE ANY MORE ---------------------------------------------
 #
@@ -305,7 +350,19 @@ pattern='^(smoke.shader_targets|integration.render_pipeline|render.pipeline|rend
 registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
 echo "$registered of 4 suite(s) match $pattern"
 test "$registered" -ge 4 || { echo "a suite this criterion names is not registered — renamed, deleted, or this tree has no Vulkan renderer"; exit 1; }
-ctest --test-dir "$d" -R "$pattern" --output-on-failure
+# A DEVICE SUITE THAT FOUND NO DEVICE SKIPS AND EXITS ZERO, and `requires = "gpu"` only asks whether a
+# render node exists. So the verbose log is read for the two fixtures' own skip lines and for ctest's
+# own "Skipped" (render.pipeline returns its skip code), task 10.5: NOT EVALUATED is never a pass.
+# MEASURED with the Vulkan loader pointed at no driver: the old body exited 0 with render.pipeline
+# "(Skipped)" and render.vfx's four cases skipped; this one is red.
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
+ctest --test-dir "$d" -R "$pattern" --output-on-failure -V > "$log" 2>&1 || { tail -80 "$log"; exit 1; }
+if grep -E 'no requested graphics device on this machine|no Vulkan device on this machine|\*\*\*Skipped|\(Skipped\)' "$log"; then
+    echo "a render suite SKIPPED for want of a device: the frames this criterion is about were not drawn"
+    exit 1
+fi
+grep -E '^[0-9]+% tests passed|tests passed, ' "$log" | tail -1
 '''
 requires = "gpu"
 reason = "two of the four suites draw on a Vulkan device and count its validation errors, which is the only place a module that declares `DrawParameters` meets a device created without `shaderDrawParameters`; `smoke.shader_targets` and `integration.render_pipeline` carry the compile and the draw-base halves on every machine"
@@ -413,33 +470,92 @@ ci_job = "milestone-m11d"
 
 [[criterion]]
 id = "port-touches-no-engine-layer"
-describe = "and adding it required NO CHANGE in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`. This is the exit criterion in ROADMAP.md's own words, it is a property of the DIFF rather than of a test, and it is the only evidence that distinguishes an abstraction from a wrapper"
-source = "tasks 4, ROADMAP M11.d exit criteria, core-platform-abstraction"
+describe = "and adding it required NO CHANGE in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`. This is the exit criterion in ROADMAP.md's own words, it is a property of the DIFF rather than of a test, and it is the only evidence that distinguishes an abstraction from a wrapper. Read over every commit since the rung opened (ebdf8d5) that touched the native or the stub port: none of them changed the platform abstraction (`src/core/platform/`) or any engine-layer header the two ports compile against, and the working tree holds no uncommitted change to either"
+source = "tasks 4.2, ROADMAP M11.d exit criteria, core-platform-abstraction"
 kind = "command"
 run = '''
 set -eo pipefail
 python3 - <<'CHECK'
-import subprocess, sys
-marker = "native-platform-backend"
-log = subprocess.run(["git", "log", "--format=%H %s", "-40"], capture_output=True, text=True).stdout
-commits = [line.split(" ", 1)[0] for line in log.splitlines() if marker in line.lower()]
+# REWRITTEN AT M11.d's RECORDS PHASE (task 9.1) BECAUSE THE MARKER IT WAITED FOR CANNOT EXIST. It
+# looked for a commit whose subject names `native-platform-backend` in the last 40; the port landed
+# in interval snapshots (`WIP snapshot: N file(s) in flight`) that ALSO carried section 6's
+# `core-assets` remote serving and the memory and ECS work, so no commit is the port alone and the
+# old body reported "the native backend has not landed" about a backend that runs the M0 sample.
+#
+# WHAT IS READ INSTEAD, and why it is the claim rather than a proxy for it. A port that needed an
+# engine-layer change needed it in something the port COMPILES AGAINST: the abstraction it implements
+# (`src/core/platform/`, sources included) or a header its includes reach. So the forbidden set is
+# that — computed from the ports' own `#include`s, transitively, never a hand list — and a commit
+# counts against the port when it touched the port AND a file in that set. What the same snapshots
+# changed elsewhere in the four layers is printed, not judged: section 6's files the port does not
+# reach are not the port's cost, and `tools/ci/port_engine_layer_diff.py --since ebdf8d5` lists them.
+# An UNCOMMITTED change to the forbidden set counts too: it is a change nobody has attributed yet.
+import pathlib, re, subprocess, sys
+
+BASE = "ebdf8d5"   # the commit this rung opened on (tasks.md, the close phase's verdict)
+PORTS = ("platform/linux-native", "platform/stub")
+LAYERS = ("src/core/", "src/ecs/", "src/servers/", "src/scene/")
+ABSTRACTION = "src/core/platform/"
+
+def git(*arguments):
+    result = subprocess.run(["git", *arguments], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"git {' '.join(arguments)} failed: {result.stderr.strip()} — nothing to judge, not a pass")
+        sys.exit(1)
+    return result.stdout
+
+git("cat-file", "-e", f"{BASE}^{{commit}}")
+headers = {}
+for header in pathlib.Path("src").rglob("include/cy/**/*.h"):
+    headers.setdefault(str(header).split("/include/", 1)[1], []).append(str(header))
+pending = [str(f) for port in PORTS for f in pathlib.Path(port).rglob("*") if f.suffix in (".h", ".cpp")]
+if not pending:
+    print(f"no sources under {', '.join(PORTS)}: the ports have not landed"); sys.exit(1)
+reached = set()
+while pending:
+    text = pathlib.Path(pending.pop()).read_text(encoding="utf-8", errors="replace")
+    for name in re.findall(r'#include [<"](cy/[^>"]+)[>"]', text):
+        for header in headers.get(name, []):
+            if header not in reached:
+                reached.add(header)
+                pending.append(header)
+forbidden = {f for f in reached if f.startswith(LAYERS)}
+print(f"{len(forbidden)} engine-layer header(s) the two ports compile against, plus {ABSTRACTION}")
+
+def counted(name):
+    return name in forbidden or name.startswith(ABSTRACTION)
+
+commits = git("log", "--format=%H", f"{BASE}..HEAD", "--", *PORTS).split()
 if not commits:
-    print(f"no commit naming '{marker}' in the last 40 — the native backend has not landed,")
-    print("  so the claim that it touched no engine layer cannot be evaluated and is not passed")
-    sys.exit(1)
-forbidden = ("src/core/", "src/ecs/", "src/servers/", "src/scene/")
-bad = []
+    print(f"no commit since {BASE} touches {', '.join(PORTS)}: the port has not landed"); sys.exit(1)
+bad, elsewhere = [], set()
 for commit in commits:
-    files = subprocess.run(["git", "show", "--name-only", "--format=", commit],
-                           capture_output=True, text=True).stdout.split()
-    bad += [f"{commit[:9]} {name}" for name in files if name.startswith(forbidden)]
+    for name in git("show", "--name-only", "--format=", commit).split():
+        if counted(name):
+            bad.append(f"{commit[:9]} {name}")
+        elif name.startswith(LAYERS):
+            elsewhere.add(name)
+for name in git("diff", "--name-only", "HEAD", "--", *LAYERS).split():
+    if counted(name):
+        bad.append(f"uncommitted {name}")
+print(f"{len(commits)} commit(s) since {BASE} carried the ports; "
+      f"{len(elsewhere)} other engine-layer file(s) rode in them and the ports reach none of them")
 for entry in bad:
     print(f"  {entry}")
-print(f"{len(bad)} engine-layer file(s) changed by the native platform backend")
+print(f"{len(bad)} change(s) to the abstraction or to an engine header the ports compile against")
 sys.exit(1 if bad else 0)
 CHECK
 '''
 ci_job = "milestone-m11d"
+
+# An uncommitted edit to the interface the ports implement is exactly a change "the port required"
+# that nothing has attributed yet, and the body counts it. Whether the edit compiles does not matter:
+# this criterion reads the diff and builds nothing.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/core/platform/include/cy/core/platform/display_server.h"
+token  = "#pragma once"
+note   = "the working tree now differs from HEAD in src/core/platform/, and the body reports it as an unattributed change to the abstraction the ports implement"
 
 [[criterion]]
 id = "porting-surface-against-a-stub"
@@ -643,39 +759,94 @@ note = "Removing the header from a new source must fail the licence gate."
 
 [[criterion]]
 id = "developer-workflow-recipes"
-describe = "every category of the required recipe surface does something, and no recipe refuses naming a milestone that is not on the ladder. THE OTHER HALF OF `record-matches-plan-history` THIS RUNG OWNS: `developer-workflow-and-just` is recorded at Seed with its column claiming Working since M6, and four recipes in `just/release.just` refuse naming 'M12 — build-and-packaging', a milestone that does not exist on a ladder whose `record.MILESTONES` ends at m11e"
-source = "tasks, developer-workflow-and-just, m9:record-matches-plan-history"
+describe = "every category of the required recipe surface does something, no recipe line a developer runs or reads on its output names a milestone that is not on the ladder, and no recipe refuses through `_not-implemented` without naming a rung that is. THE OTHER HALF OF `record-matches-plan-history` THIS RUNG OWNS: `developer-workflow-and-just` was recorded at Seed with its column claiming Working since M6, and four recipes in `just/release.just` refused naming 'M12 — build-and-packaging' when the ladder ended at m11e"
+source = "tasks 7.7, 7.8, developer-workflow-and-just, m9:record-matches-plan-history"
 kind = "command"
 run = '''
 set -eo pipefail
 python3 - <<'CHECK'
+# REPAIRED AT M11.d's RECORDS PHASE (task 9.1), in both directions. It read `M11.E` — the rung, in
+# `deploy.just`'s refusal — as a bare `M11`, because the rung letter was matched lower-case only, and
+# it flagged COMMENTS that name M11 as a whole ("the documentation gate the M11 exit criteria name"),
+# which nobody running a recipe is told. It now reads every NON-COMMENT line, with no keyword filter
+# (it used to look only at lines saying "refus", "not yet" or carrying an em dash), and reads a rung
+# in any case, including M11.d.5.
 import pathlib, re, sys
 sys.path.insert(0, "tools/roadmap")
 import record as record_module
 ladder = set(record_module.MILESTONES)
+
+def identifier(name):
+    name = name.lower()
+    if re.fullmatch(r"\d+\.5", name):
+        return "m" + name.split(".")[0] + "b"
+    return "m" + name.replace(".", "")
+
 stale = []
 for path in sorted(pathlib.Path("just").glob("*.just")):
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        for name in re.findall(r"\bM(\d+(?:\.5|\.[a-e])?)\b", line):
-            identifier = f"m{name}".replace(".5", "b").replace(".", "")
-            if identifier not in ladder and ("refus" in line.lower() or "not yet" in line.lower()
-                                             or "—" in line):
+        if line.lstrip().startswith("#"):
+            continue
+        for name in re.findall(r"\bM(\d+(?:\.[a-eA-E](?:\.5)?|\.5)?)\b", line):
+            if identifier(name) not in ladder:
                 stale.append(f"{path.name}:{number}: names M{name}, which is not on the ladder")
+        # A REFUSAL THAT NAMES NO RUNG AT ALL is the same defect with less in it: `_not-implemented`
+        # prints "not implemented (task <task>)", and a task that is not a rung on the ladder tells a
+        # developer to wait for nothing. `maintenance-clean`'s "2.1.5" is the instance M11.e task 4.5
+        # found and this row owns.
+        refusal = re.search(r"_not-implemented\s+\S+\s+(.+)$", line)
+        if refusal and not any(identifier(name) in ladder for name in
+                               re.findall(r"\bM(\d+(?:\.[a-eA-E](?:\.5)?|\.5)?)\b", refusal.group(1))):
+            stale.append(f"{path.name}:{number}: refuses naming task '{refusal.group(1).strip()}', which is no rung on the ladder")
 for entry in stale:
     print(f"  {entry}")
-print(f"{len(stale)} recipe line(s) refuse naming a milestone the ladder does not carry")
+print(f"{len(stale)} recipe line(s) name a milestone the ladder does not carry, or refuse naming no rung")
 sys.exit(1 if stale else 0)
 CHECK
 '''
 ci_job = "milestone-m11d"
 
+# The ladder loses M11.e, and `just deploy-device`'s refusal — "The rung that owns it: M11.E" — now
+# tells a developer to wait for a rung that does not exist, which is the defect this criterion is for.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/record.py"
+token  = "\"m11e\","
+note   = "record.MILESTONES stops carrying m11e and the deploy refusal naming M11.E is reported"
+
 [[criterion]]
 id = "release-recipes-stop-refusing"
-describe = "the release recipes produce a version, a changelog and artefacts rather than refusing. THE OWNERSHIP HERE IS RECORDED RATHER THAN SETTLED: the row is this rung's and the four recipes are M11.e's work by M11.e's own proposal, so if they still refuse at this gate the row is demoted to M11.e with its reason instead of claimed over four refusals"
-source = "tasks, developer-workflow-and-just, build-and-packaging"
+describe = "the release recipes produce a version and a changelog rather than refusing, and the assembler's own cases — reproducible, normalised archives, a changed or missing artefact refused, publication a dry run by default — pass. `developer-workflow-and-just` cannot be Complete over recipes that refuse; the recipes themselves are M11.e task 4.1's work, and the full artefact set built from a Shipping tree is `m11e:release-recipes-produce-artefacts`, not this criterion"
+source = "tasks 7.8, developer-workflow-and-just, implement-m11e-ship task 4.1"
 kind = "command"
-run = "just release-version && just release-changelog && just release-artefacts --dry-run"
+run = '''
+set -eo pipefail
+# REPAIRED AT M11.d's RECORDS PHASE (task 9.1). The body was written while all four recipes were
+# `_not-implemented` stubs and asked for `release-changelog` with no version and `release-artefacts
+# --dry-run`; M11.e task 4.1 implemented them since (tools/release/release.py), `--version` is
+# required and `--dry-run` is not an option, so the old body went red on argument parsing rather than
+# on a refusal. It now asks each recipe for what it produces and reads the product.
+if grep -q '_not-implemented' just/release.just; then
+    echo "a release recipe still routes through _not-implemented"; exit 1
+fi
+reported="$(just release-version)"
+printf '%s\n' "$reported"
+version=$(printf '%s\n' "$reported" | sed -nE 's/^engine ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p')
+test -n "$version" || { echo "release-version reported no engine version"; exit 1; }
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+just release-changelog --version "$version" --output "$work"
+test -s "$work/$version/CHANGELOG-$version.md" || { echo "release-changelog wrote no changelog for $version"; exit 1; }
+echo "changelog: $(wc -l < "$work/$version/CHANGELOG-$version.md") line(s) for $version"
+just release-test
+'''
 ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "just/release.just"
+token  = "tools/release/release.py\" version {{args}}"
+note   = "release-version runs and prints nothing, so no version is reported and nothing downstream of it can be produced"
 
 [[criterion]]
 id = "content-audit"
@@ -805,7 +976,7 @@ note = "unbinding stops reaching the control index, so a driver who LEFT the veh
 
 [[criterion]]
 id = "core-rows-at-complete-grade"
-describe = "every requirement of the five core rows maps to a test, a gate or a recorded exemption. These rows are in this rung because the native backend's exit criterion is a first-hand audit of exactly them — `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `ecs-core` and `engine-architecture`, last advanced at M1 and M2 and never read at Complete grade"
+describe = "every requirement of the SIX rows this rung carries to Complete by audit maps to a test, a gate or a recorded exemption: the five core rows — `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `ecs-core` and `engine-architecture`, last advanced at M1 and M2 and never read at Complete grade — and `core-platform-abstraction`, whose port is the audit. They are in this rung because the native backend's exit criterion is a first-hand reading of exactly them. An `exempt:m11e` entry is a deferral, so a row answered partly by exemptions is not Complete here and moves to M11.e with them"
 source = "tasks, testing-and-quality"
 kind = "command"
 run = "just quality-requirements core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction"
@@ -897,16 +1068,33 @@ rendering-forward-clustered = "working"
 
 [[criterion]]
 id = "ship-sample-on-desktop"
-describe = "`samples/11-ship` is built, cooked, packaged and launched on each desktop target from ONE recipe. Four verbs, and *packaged* and *launched* are the two this project has never done: a recipe that produces a package nobody installed is a build claim wearing a ship claim's name"
-source = "tasks, ROADMAP M11.d closing artefact"
+describe = "`samples/11-ship` is built, cooked, packaged and launched on each desktop target from ONE recipe, and the launch DRAWS through both desktop platform backends this host has — the native X11 one and SDL3 — reading its provenance back out of the installed package, with backend validation clean. Four verbs, and *packaged* and *launched* are the two this project had never done: a recipe that produces a package nobody installed is a build claim wearing a ship claim's name. The Windows and macOS legs are M11.d.5's and M11.e's, and are not claimed here"
+source = "tasks 8.1-8.4, ROADMAP M11.d closing artefact"
 kind = "command"
 run = '''
 set -eo pipefail
-just content-package 11-ship
-just run-sample 11-ship --from-package
+# REPAIRED AT M11.d's RECORDS PHASE (task 9.1). The body was `just content-package 11-ship && just
+# run-sample 11-ship --from-package`, written before the sample existed: `run-sample` has no
+# `--from-package`, and falsify.py refuted it as `absent-sample` because no CMakeLists.txt declares
+# `cy_sample_11-ship` (the binary is `cy_sample_ship`). Section 8 built the ONE recipe the describe
+# asks for — `just run-ship` — and this runs it through both legs with `--require-draw`, so a leg
+# that presented nothing fails rather than reporting NOT EVALUATED, and exit 3 (it drew and tripped
+# validation, which ship.py records as a GAP) is red as well: the artefact is not shipped over it.
+just run-ship --platform both --require-draw --frames 30
 '''
+requires = "display"
+reason = "both legs open a window and present to it; `smoke.ship` runs the same recipe's headless leg — build, cook, package, install, verify, launch — on every machine"
 timeout_s = 7200
 ci_job = "milestone-m11d"
+
+# The installed manifest stops carrying the engine revision: the package still builds, installs and
+# draws, and the launch — which reads all seven provenance fields back out of the installation — no
+# longer finds the one it was built from, so the driver fails the act instead of trusting its memory.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/build/src/package.cpp"
+token  = "{\"engine-revision\", &packages.provenance.engine_revision},"
+note   = "the package manifest no longer writes the engine revision and act 2 fails: the package does not carry the engine revision it was built from"
 
 [[criterion]]
 id = "ship-sample-exists"

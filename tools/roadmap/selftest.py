@@ -212,8 +212,13 @@ def test_record_rules(root: Path) -> None:
 # raised by task 8.1 to the eleven rows the milestone moves, the substrate every one of them writes
 # into, the artefact, the record and the next rung. It carries 70; the floor is what may not be lost.
 # M11.d's floor stayed at 25 when its spike moved Metal, D3D12 and the three-backend image
-# comparison out to M11.d.5: it declared 30 and declares 27, which is still above the floor, and a
-# floor is what may not be LOST rather than a count of what is there. M11.d.5's own floor of 16 is
+# comparison out to M11.d.5, and task 9.1 raised it to 36 once the rung's work had landed: the nine
+# static gates, the interface (2), the shader prerequisite and the portable vertex index (2), the
+# port — backend, diff, stub, M0 sample (4) — the documentation and full gate sets (2), the recipes
+# and the release recipes (2), the content audit, provenance and the build-and-packaging move (3),
+# the acceptance scenarios, the core rows, MSAA, multi-view and the forward-clustered floor (5), the
+# artefact (3), the tiers, the handover, and tasks 9.7 and 9.8 (4). Every criterion it carries is one
+# of those, so losing any one of them is losing an exit condition. M11.d.5's own floor of 16 is
 # the deliberate answer to "how many exit conditions does this rung have" that adding a ledger is
 # supposed to force — nine static gates it shares with the ladder, the three moved claims, the three
 # a Linux host can still judge, the artefact, the tier and the handover.
@@ -227,7 +232,7 @@ def test_record_rules(root: Path) -> None:
 # raises the number here in the same change that writes the criteria.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
                     "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 62,
-                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11d5": 16, "m11e": 25,
+                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 36, "m11d5": 16, "m11e": 25,
                     "m12": 1, "m13": 1}
 
 
