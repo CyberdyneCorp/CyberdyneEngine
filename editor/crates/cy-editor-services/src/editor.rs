@@ -1402,6 +1402,10 @@ impl cy_editor_commands::ProjectHost for Editor {
         self.project.read_source(reference)
     }
 
+    fn vfx_module_exists(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
     fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()> {
         crate::vfx_module::validate_reference(reference)?;
         crate::vfx_module::validate_source(source)?;

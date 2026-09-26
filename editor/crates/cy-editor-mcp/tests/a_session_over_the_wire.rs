@@ -376,6 +376,87 @@ fn vfx_hierarchy_and_parameter_edits_use_the_same_undo_history_over_mcp() {
 }
 
 #[test]
+fn reusable_vfx_module_edits_and_attachment_round_trip_over_mcp() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+    use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+    let sandbox = Sandbox::new("vfx-module-authoring");
+    let system = "game/sparks.cyvfxdoc";
+    let module = "game/shared_drag.cyvfxmodule";
+    std::fs::write(
+        sandbox.0.join(system),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_drag","stage":"update"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.module.input.add","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"velocity","kind":"vec3"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.module.dependency.add","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_noise"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.module.attach","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","module_reference":"game/shared_drag.cyvfxmodule"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=5 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    let saved_module =
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(module)).unwrap()).unwrap();
+    assert_eq!(saved_module.inputs[0].kind, "vec3");
+    assert_eq!(saved_module.dependencies, ["shared_noise"]);
+    let saved_system =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(system)).unwrap())
+            .unwrap();
+    assert_eq!(saved_system.emitters[0].modules, ["shared_drag"]);
+    assert_eq!(saved_system.module_assets[0].path, module);
+
+    let duplicate = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"replacement","stage":"spawn"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&duplicate, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(module)).unwrap()).unwrap(),
+        saved_module
+    );
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let after_undo =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(system)).unwrap())
+            .unwrap();
+    assert!(after_undo.emitters[0].modules.is_empty());
+    assert!(after_undo.module_assets.is_empty());
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(system)).unwrap())
+            .unwrap(),
+        saved_system
+    );
+}
+
+#[test]
 fn a_tool_call_produces_one_transaction_attributed_to_the_agent() {
     let mut editor = Editor::new(Actor::human("designer"));
     let document = editor

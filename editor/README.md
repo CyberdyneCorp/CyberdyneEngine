@@ -544,6 +544,9 @@ The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.node.a
 `vfx.node.connect`, and `vfx.parameter.set`. Each reads the saved system, applies one edit, and
 saves through the same undoable document transaction. Node placement and connections require the
 live engine VFX catalogue; an unavailable catalogue or unknown node or pin is refused by name.
+Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and
+`vfx.module.dependency.add`, then linked to an emitter with `vfx.module.attach`. Each command saves
+one undoable change; creating a module refuses to replace an existing source at that path.
 Use `vfx.document.read` to inspect the saved source and `edit.undo` / `edit.redo` to reverse or
 reapply an edit. An open scene document is required for these transactions.
 The current draft payload records emitter capacity, typed particle attributes with range,

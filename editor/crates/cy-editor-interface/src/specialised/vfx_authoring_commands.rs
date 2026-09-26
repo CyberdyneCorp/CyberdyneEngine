@@ -12,6 +12,7 @@ use cy_editor_services::authoring::within_scope;
 use super::graph::{Catalogue, GraphCanvas, Layout, NodeKey};
 use super::material::catalogue_from_service;
 use super::vfx::{Emitter, Parameter, SimulationPath, Stage, VfxDocument};
+use super::vfx_module::{ModuleInput, VfxModule};
 
 /// Install the same VFX actions for the command palette, scripts, and MCP projection.
 pub fn register(registry: &mut Registry) -> Result<()> {
@@ -19,6 +20,10 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(add_node())?;
     registry.register(connect_nodes())?;
     registry.register(set_parameter())?;
+    registry.register(create_module())?;
+    registry.register(add_module_input())?;
+    registry.register(add_module_dependency())?;
+    registry.register(attach_module())?;
     Ok(())
 }
 
@@ -57,6 +62,19 @@ fn edit_document(
     let mut document = VfxDocument::decode_text(&project.vfx_document_read(reference)?)?;
     let outcome = edit(&mut document, project)?;
     project.vfx_document_save(reference, &document.encode_text()?)?;
+    Ok(outcome)
+}
+
+fn edit_module(
+    context: &mut dyn CommandContext,
+    reference: &str,
+    edit: impl FnOnce(&mut VfxModule) -> Result<Outcome>,
+) -> Result<Outcome> {
+    within_scope(context, reference)?;
+    let project = host(context)?;
+    let mut module = VfxModule::decode_text(&project.vfx_module_read(reference)?)?;
+    let outcome = edit(&mut module)?;
+    project.vfx_module_save(reference, &module.encode_text()?)?;
     Ok(outcome)
 }
 
@@ -381,6 +399,130 @@ fn set_parameter() -> Command {
                     document.parameters.push(parameter);
                 }
                 Ok(Outcome::new(format!("Set VFX parameter {name}")))
+            })
+        },
+    )
+}
+
+fn create_module() -> Command {
+    Command::new(
+        metadata(
+            "vfx.module.create",
+            "Create VFX Module",
+            "Creates a separately saved reusable stage module with undo history.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Unique module identifier used by systems and other modules.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Engine stage in which the module may run.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            let module = VfxModule::new(name, stage(arguments)?)?;
+            within_scope(context, reference)?;
+            let project = host(context)?;
+            if project.vfx_module_exists(reference) {
+                return Err(Problem::new(
+                    "create a VFX module",
+                    format!("{reference} already contains a module"),
+                ));
+            }
+            project.vfx_module_save(reference, &module.encode_text()?)?;
+            Ok(Outcome::new(format!("Created VFX module {name}")))
+        },
+    )
+}
+
+fn add_module_input() -> Command {
+    Command::new(
+        metadata(
+            "vfx.module.input.add",
+            "Add VFX Module Input",
+            "Declares a typed emitter attribute read by a reusable module.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Attribute identifier expected from the emitter.",
+        ))
+        .with(ParameterSpec::required(
+            "kind",
+            ValueKind::Text,
+            "Engine numeric type of the attribute.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            let kind = text(arguments, "kind");
+            edit_module(context, reference, |module| {
+                module.inputs.push(ModuleInput {
+                    name: name.into(),
+                    kind: kind.into(),
+                });
+                Ok(Outcome::new(format!("Added module input {name}")))
+            })
+        },
+    )
+}
+
+fn add_module_dependency() -> Command {
+    Command::new(
+        metadata(
+            "vfx.module.dependency.add",
+            "Add VFX Module Dependency",
+            "Declares another reusable module this module needs.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Identifier of the required module.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            edit_module(context, reference, |module| {
+                module.dependencies.push(name.into());
+                Ok(Outcome::new(format!("Added module dependency {name}")))
+            })
+        },
+    )
+}
+
+fn attach_module() -> Command {
+    Command::new(
+        metadata(
+            "vfx.module.attach",
+            "Attach VFX Module",
+            "Attaches a saved module asset to an emitter in one undoable system edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Emitter to which the module is attached.",
+        ))
+        .with(ParameterSpec::required(
+            "module_reference",
+            ValueKind::Text,
+            "Project-relative .cyvfxmodule path for the saved module.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter = text(arguments, "emitter");
+            let module_reference = text(arguments, "module_reference");
+            edit_document(context, reference, |document, project| {
+                let module = VfxModule::decode_text(&project.vfx_module_read(module_reference)?)?;
+                let index = emitter_index(document, emitter)?;
+                document.attach_module(index, module.name.clone(), module_reference.into())?;
+                Ok(Outcome::new(format!(
+                    "Attached VFX module {} to {emitter}",
+                    module.name
+                )))
             })
         },
     )

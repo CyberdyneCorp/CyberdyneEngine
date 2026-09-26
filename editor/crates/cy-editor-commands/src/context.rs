@@ -461,6 +461,12 @@ pub trait ProjectHost {
     /// Read a separately saved reusable VFX module.
     fn vfx_module_read(&self, reference: &str) -> Result<String>;
 
+    /// Whether a reusable VFX module source already occupies this project path.
+    fn vfx_module_exists(&self, reference: &str) -> bool {
+        let _ = reference;
+        false
+    }
+
     /// Save a reusable VFX module in one undoable project transaction.
     fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()>;
 
