@@ -86,9 +86,13 @@ So the owner moved the premise **into the harness** (option B):
   **only after its pre-run quiet check passed**, and it verifies the marker through `/proc` rather
   than believing it (`src/quiet_host_marker.cpp`): the pid must be a live **ancestor** of the test
   process, started at the marker's tick (field 22 of `/proc/<pid>/stat`, so a reused pid is
-  refused), whose executable is `cy_quiet_host`. A marker exported by hand in a shell, left over
-  from an earlier run, copied from another terminal's wrapper, or naming the shell or ctest names
-  no such ancestor and is refused. The stall message then says
+  refused), whose executable **is the `cy_quiet_host` this build produced** — the same device and
+  inode as the path CMake compiles into the harness, not merely a file of that name (M11.d task
+  9.7: a copy of `sh` renamed `cy_quiet_host` was trusted by the name check). A marker exported by
+  hand in a shell, left over from an earlier run, copied from another terminal's wrapper, naming
+  the shell or ctest, or set by a renamed impostor names no such ancestor and is refused. So is a
+  wrapper from another build tree, a copy of the wrapper, or one relinked while it ran — each
+  reported rather than failed, the direction this check always errs in. The stall message then says
   `enforced: inside cy_quiet_host: cy_quiet_host is pid N, ...`.
 - **Anywhere else a stall is reported and does not fail the case**: the same `stalled:` diagnosis
   on stderr, marked `not enforced: not on a quiet host (<why the marker was refused>)`. That is a
@@ -99,8 +103,8 @@ So the owner moved the premise **into the harness** (option B):
 - **The CPU budget is enforced everywhere**, inside the wrapper and out, because CPU time does not
   grow when a neighbour spins. Its `over budget:` message names the stall ceiling's state as well.
 
-Proven by `smoke.quiet_host_marker` (the wrapper around the stall probe, and the probe under five
-forged markers), by `integration.harness`'s probe cases (both halves when the suite itself runs
+Proven by `smoke.quiet_host_marker` (the wrapper around the stall probe, and the probe under six
+forged markers, the sixth set by a copy of `sh` renamed `cy_quiet_host`), by `integration.harness`'s probe cases (both halves when the suite itself runs
 inside the wrapper, as `m0:test` runs it; the unenforced half and the forgeries everywhere) and by
 `unit.harness`'s marker cases.
 

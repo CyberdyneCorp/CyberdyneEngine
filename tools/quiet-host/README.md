@@ -66,8 +66,10 @@ case unless its CPU budget failed (`tests/harness/README.md`). It learns where i
 `CY_QUIET_HOST`, and it does not take the variable's word for it. The value is the wrapper's pid
 and its start time — field 22 of `/proc/<pid>/stat`, in clock ticks since boot, the kernel's own
 nonce for one process instance — and the harness trusts it only when, read from `/proc`, that pid
-is a live **ancestor** of the test process, started at that tick, whose executable is
-`cy_quiet_host`. So:
+is a live **ancestor** of the test process, started at that tick, whose executable **is this
+build's `cy_quiet_host`**: `stat` on `/proc/<pid>/exe` (which the kernel resolves to the running
+image, even once unlinked) must give the same device and inode as the wrapper whose path
+tests/harness/CMakeLists.txt compiles in. So:
 
 - the marker exists only in the command's environment, and only once the pre-run check passed:
   a wrapper that refuses the host never runs the command, so nothing ever sees a marker for a
@@ -77,6 +79,11 @@ is a live **ancestor** of the test process, started at that tick, whose executab
 - a marker naming a **reused pid** has the wrong start time and is refused;
 - a marker naming the shell, ctest or any other real ancestor names something that is not
   `cy_quiet_host` and is refused;
+- a marker set by **another binary renamed `cy_quiet_host`** — a copy of `sh` that names its own
+  pid and start time and runs the suite as its child — is refused: until M11.d task 9.7 the check
+  compared the executable's basename and trusted it;
+- a wrapper from **another build tree**, a copy of this one, or this one relinked while it ran is
+  not the same file and is refused too — reported, not failed;
 - a nested wrapper overwrites the marker with its own, and a descendant that daemonises out of the
   tree loses its ancestry — both err towards reporting, never towards failing a case on a host
   nobody checked.
@@ -85,7 +92,7 @@ The host check across the run (step 3) is unchanged and still fails the whole ru
 busy: the marker says the host was quiet before the command started, and the wrapper's exit
 status says whether it stayed so. `smoke.quiet_host_marker` is the regression: the stall probe
 fails as `stalled:` inside the wrapper, passes with the "not enforced" line outside it and under
-five forged markers, and fails its CPU budget in both.
+six forged markers (the sixth a renamed impostor), and fails its CPU budget in both.
 
 ## I/O pressure, and why it is judged before the run only
 

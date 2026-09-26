@@ -18,6 +18,16 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::dep::doctest)
 
+# WHICH `cy_quiet_host` A MARKER MUST NAME (M11.d task 9.7). The harness trusts `CY_QUIET_HOST` only
+# when the ancestor it names runs THIS build's wrapper — the same device and inode as this path —
+# rather than any executable called `cy_quiet_host`. tools/ is configured before tests/, so the
+# target exists here when the tree has one; without it no marker is trusted, which errs towards
+# reporting a stall rather than failing a case on a host nobody checked.
+if(TARGET cy_quiet_host)
+    set_property(SOURCE src/quiet_host_marker.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                 "CY_QUIET_HOST_WRAPPER=\"$<TARGET_FILE:cy_quiet_host>\"")
+endif()
+
 # ================================================================================================
 # THE HARNESS'S PREMISE, UNDER A HOST MADE BUSY ON PURPOSE
 # ================================================================================================
@@ -45,7 +55,9 @@ cy_add_module(
 #   * `smoke.quiet_host_marker`  the harness's side of the premise (M11.c's ninth close, option
 #                                B): the stall probe (tests/integration/stall_probe.cpp) FAILS as
 #                                `stalled:` inside the wrapper, passes with "not enforced: not on
-#                                a quiet host" outside it and under every forged `CY_QUIET_HOST`,
+#                                a quiet host" outside it and under every forged `CY_QUIET_HOST`
+#                                — since M11.d task 9.7 including one set by a copy of `sh`
+#                                RENAMED `cy_quiet_host`, which the name check trusted —
 #                                and its spin fails its CPU budget in both.
 #
 # Declared here rather than beside the wrapper because tools/ is configured before tests/ and the

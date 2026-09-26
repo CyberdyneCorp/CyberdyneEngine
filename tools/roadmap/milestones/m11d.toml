@@ -739,3 +739,43 @@ ci_job = "milestone-m11d"
 mutate = "delete-lines"
 target = "openspec/changes/*m11d5*/tasks.md"
 token = "- [x] "
+
+[[criterion]]
+id = "quiet-host-marker-by-identity"
+describe = "the harness trusts a `CY_QUIET_HOST` marker only when the ancestor it names runs THE `cy_quiet_host` THIS BUILD PRODUCED — the same device and inode — and not any executable of that name. Until task 9.7 the check was the basename of `/proc/<pid>/exe`, so a copy of `sh` renamed `cy_quiet_host` that set the marker to its own pid and start time and ran a suite as its child was trusted, and the stall ceiling was enforced on a host nobody checked. `smoke.quiet_host_marker`'s leg runs that impostor and requires the stall to be reported, not enforced; the same leg requires the REAL wrapper to be trusted, so the check cannot pass by trusting nothing. MEASURED ON A QUIET HOST FOR ITS INSIDE HALF: exit 3 (the wrapper refused a busy host) FAILS this criterion rather than skipping it"
+source = "tasks 9.7, testing-and-quality"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+wrapper="$d/tools/quiet-host/cy_quiet_host"
+probe="$d/tests/integration/cy_test_stall_probe"
+unit="$d/tests/unit/harness/cy_test_unit_harness"
+for binary in "$wrapper" "$probe" "$unit"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+# The identity half on any host: the built wrapper's path is compiled in, the file the parent runs
+# is trusted, and a file of the same name elsewhere is not.
+filter="harness: a quiet-host marker is trusted by the wrapper's identity*"
+out="$("$unit" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case FAILED"; exit 1; }
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 1 || { echo "the identity case is not in unit.harness any more"; exit 1; }
+status=0
+python3 tools/quiet-host/quiet_host_test.py --wrapper "$wrapper" --leg marker --probe "$probe" || status=$?
+test "$status" -eq 0 || { echo "smoke.quiet_host_marker's leg exited $status (3: the host was busy for the inside half)"; exit 1; }
+grep -q 'renamed cy_quiet_host' tools/quiet-host/quiet_host_test.py || { echo "the renamed-impostor forgery is not in the leg any more"; exit 1; }
+'''
+timeout_s = 1800
+ci_job = "milestone-m11d"
+
+# THE MUTATION TAKES THE BUILT WRAPPER'S IDENTITY AWAY FROM THE HARNESS. With the configure-time
+# path renamed out of reach, `kBuiltWrapper` is null and no marker is trusted: `unit.harness`'s
+# identity case fails its `built != nullptr` requirement on any host, and on a quiet one the leg's
+# inside half — the real wrapper around the stall probe — stops saying `enforced` as well. The forgery half's red on the pre-9.7 name check was proven by hand when the case was
+# written (the impostor was trusted and the probe failed as `stalled:`); a delete-lines that
+# restores a name check without breaking the build does not exist over this code.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tests/harness/src/quiet_host_marker.cpp"
+token = "CY_QUIET_HOST_WRAPPER"

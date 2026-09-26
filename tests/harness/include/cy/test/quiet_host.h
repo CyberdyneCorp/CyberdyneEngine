@@ -21,7 +21,8 @@ inline constexpr const char* kQuietHostMarkerVariable = "CY_QUIET_HOST";
 
 /// What the harness concluded about a marker.
 enum class QuietHostMarker {
-    /// A live ancestor, started at the marker's tick, whose executable is `cy_quiet_host`.
+    /// A live ancestor, started at the marker's tick, whose executable is the `cy_quiet_host` this
+    /// build produced — the same device and inode, not merely the same name.
     Trusted,
     /// No marker at all: the run was not started by the wrapper.
     Absent,
@@ -32,7 +33,8 @@ enum class QuietHostMarker {
     NotAnAncestor,
     /// The pid is an ancestor, but it started at another tick: the wrapper's pid was reused.
     Restarted,
-    /// The pid is an ancestor with the right start time, but it is not `cy_quiet_host`.
+    /// The pid is an ancestor with the right start time, but its executable is not the built
+    /// `cy_quiet_host`: a shell, ctest, or another binary that is only NAMED `cy_quiet_host`.
     NotTheWrapper,
     /// No /proc to verify against (not Linux): never trusted.
     Unsupported,
@@ -46,8 +48,18 @@ struct QuietHostJudgement {
     char reason[320] = {};
 };
 
-/// Judges one marker's text against this process's ancestry. `nullptr` and "" are `Absent`.
+/// Judges one marker's text against this process's ancestry and the `cy_quiet_host` this build
+/// produced (its path is compiled in). `nullptr` and "" are `Absent`.
 QuietHostJudgement judge_quiet_host_marker(const char* marker) noexcept;
+
+/// The same, against the executable at `wrapper` instead of the built one — so that a test can
+/// name a file whose identity it knows. `nullptr` means no wrapper, and nothing is trusted.
+QuietHostJudgement judge_quiet_host_marker(const char* marker, const char* wrapper) noexcept;
+
+/// The `cy_quiet_host` this build produced, whose device and inode a trusted marker's ancestor must
+/// run — the path tests/harness/CMakeLists.txt compiles in — or `nullptr` when the tree has none
+/// (not Linux, or tools not built), in which case no marker is trusted.
+const char* built_quiet_host_wrapper() noexcept;
 
 /// This process's judgement of its own `CY_QUIET_HOST`, taken once, at first use.
 const QuietHostJudgement& quiet_host() noexcept;
