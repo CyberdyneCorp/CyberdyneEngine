@@ -48,6 +48,7 @@
 #    include <cy/platform/linux_platform.h>
 #endif
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -240,6 +241,24 @@ int main(int argc, char** argv) {
                 provenance.platform.c_str(), provenance.profile.c_str());
     std::printf("%s:               toolchain=%s content-version=%u\n", kTag,
                 provenance.toolchain.c_str(), provenance.content_version);
+    // The rest of the seven `build-and-packaging` names — M11.d task 7.5. Printed from the
+    // INSTALLED manifest like the four above, so the driver checks what the package says about
+    // itself rather than what it asked for.
+    std::printf("%s:               engine-revision=%s lockfile=%s\n", kTag,
+                provenance.engine_revision.c_str(), provenance.lockfile.c_str());
+    std::printf("%s:               cook-configuration=%s\n", kTag,
+                provenance.cook_configuration.c_str());
+    // The toolchain's description is several lines; each is printed on its own so none of them
+    // runs into the next record.
+    std::string_view versions = provenance.toolchain_versions;
+    while (!versions.empty()) {
+        const usize end = std::min(versions.find('\n'), versions.size());
+        if (end != 0) {
+            const std::string line(versions.substr(0, end));
+            std::printf("%s:               toolchain-version %s\n", kTag, line.c_str());
+        }
+        versions.remove_prefix(std::min(end + 1, versions.size()));
+    }
 
     // --- Act 3: the card, by logical name -------------------------------------------------------
     Array<u8> bytes(system_allocator(MemoryDomain::Assets));

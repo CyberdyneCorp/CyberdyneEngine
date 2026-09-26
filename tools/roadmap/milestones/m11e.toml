@@ -608,6 +608,13 @@ atmosphere-sky-and-clouds = "complete"
 rendering-architecture = "complete"
 rendering-geometry-and-resources = "complete"
 vfx-system = "complete"
+# MOVED FROM M11.d — its task 7.6, the demotion its design.md §5.1 predicted. M11.d made the content
+# audit, provenance and stripped-and-archived symbols real; downloadable content (a signed package
+# set, and nothing signs), distributed execution (remote workers, a second machine) and the
+# reproducibility bundle archived BY CI (an upload step in ci.yml) did not, and arrive here through
+# task 4.4 and `downloadable-content-and-distributed-execution`.
+# `m11d:build-and-packaging-moves-to-m11e` holds both halves of the move.
+build-and-packaging = "complete"
 
 # THE LADDER ENDS HERE, AND THE END IS CHECKED RATHER THAN ASSUMED. There is no `m12-open` criterion
 # because there is no M12: this is the 1.0 gate. What could still go wrong is a rung added above this

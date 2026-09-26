@@ -620,24 +620,105 @@ run = "just release-version && just release-changelog && just release-artefacts 
 ci_job = "milestone-m11d"
 
 [[criterion]]
-id = "content-audit-and-symbols"
-describe = "`build-and-packaging`'s content audit, provenance and symbol handling: a package names every asset in it, where each came from, and ships symbols separable from the binary"
-source = "tasks, build-and-packaging"
+id = "content-audit"
+describe = "`build-and-packaging`'s content audit, per FILE (task 7.4): every file in a package with the reference chain from a DECLARED root down to the node that produced it and the project files that node read, and what nothing asked for flagged — a node no declared root reaches, a project file no node reads, declared or discovered — plus size by plugin and by world region from what each node DECLARES, the two sizes that were printed NOT REPORTED because `cybuild 1` could not carry either declaration. The criterion this replaces named `cy_test_integration_packaging`, a suite that never existed, so it could not have evaluated anything; the two unit cases below run the audit's library half, and `smoke.ship` runs it over the packaged artefact, whose run FAILS on an unreferenced file"
+source = "tasks 7.4, build-and-packaging (Content audit)"
 kind = "command"
 run = '''
-set -e
+set -eo pipefail
 d="${CY_BUILD_DIR:-build/dev}"
-just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_packaging"
-test -x "$binary" || { echo "no $binary — the suite integration.packaging does not exist"; exit 1; }
-filter='a package audits its content*,provenance*,symbols are separable*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
+just build-engine --profile dev -D CY_BUILD_TOOLS=ON > /dev/null
+binary="$d/cy_test_unit_build_graph"
+test -x "$binary" || { echo "no $binary — unit.build_graph was not built"; exit 1; }
+filter='a description declares its delivery roots*,the content audit chains every file*,size by plugin and by world region*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the content-audit case(s) FAILED"; exit 1; }
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 3 it names"
-test "${selected:-0}" -ge 3 || { echo "the named case(s) are not in integration.packaging any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "unit.build_graph: the filter selected ${selected:-0} of the 3 content-audit cases it names"
+test "${selected:-0}" -eq 3 || { echo "the named cases are gone or renamed — the filter is stale"; exit 1; }
+registered=$(ctest --test-dir "$d" -N -R '^smoke\.ship$' 2>/dev/null | grep -c 'Test *#' || true)
+test "$registered" -eq 1 || { echo "smoke.ship is not registered in $d"; exit 1; }
+ctest --test-dir "$d" -R '^smoke\.ship$' --output-on-failure
 '''
 ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/build/src/package.cpp"
+token = "audit.unreachable_nodes.push_back(graph.node(id).name);"
+note = "the audit still prints every file's chain, and stops flagging a node no declared root reaches — the stray node in the unit case ships 900 bytes for nobody and the case's `unreachable_nodes` check fires"
+
+[[criterion]]
+id = "provenance-and-symbols"
+describe = "`build-and-packaging`'s provenance and symbols (task 7.5): the installed manifest carries all seven provenance fields and the LAUNCH reads them back, the shipped binary is STRIPPED and its symbols are archived separately under its build identity and PROVED to belong to it — one GNU build-id, the debuglink's CRC-32 over the archived bytes, and `main` symbolicated to its source line through the archive while the stripped binary alone places nothing — and a reproducibility bundle keyed by the build identity verifies on its own. `unit.build_symbols` builds a probe for each refusal and checks the CONFIGURED Shipping flags keep debug information, which they did not until this rung"
+source = "tasks 7.5, 8.4, build-and-packaging (Build provenance and symbols)"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev -D CY_BUILD_TOOLS=ON > /dev/null
+binary="$d/cy_test_unit_build_graph"
+out="$("$binary" '-tc=a package manifest carries every provenance field*' 2>&1)" || { echo "$out"; exit 1; }
+printf '%s' "$out" | grep -q 'test cases: *1 |' || { echo "the provenance round-trip case is gone or renamed"; exit 1; }
+registered=$(ctest --test-dir "$d" -N -R '^(unit\.build_symbols|smoke\.ship)$' 2>/dev/null | grep -c 'Test *#' || true)
+test "$registered" -eq 2 || { echo "expected unit.build_symbols and smoke.ship in $d, found $registered"; exit 1; }
+ctest --test-dir "$d" -R '^(unit\.build_symbols|smoke\.ship)$' --output-on-failure
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "cmake/profiles.cmake"
+token = "-O3 -g -DNDEBUG"
+note = "the Shipping row loses its debug information again — the state this rung found it in — and `unit.build_symbols` reads the configured flags and fires: a shipping configuration with nothing to archive"
+
+# THE DEMOTION `design.md` §5.1 PREDICTED, RECORDED AS A CHECK RATHER THAN A SENTENCE (task 7.6).
+# `build-and-packaging`'s Complete cell needs downloadable content (a SIGNED package set — nothing in
+# core/crypto signs), distributed execution (remote workers — a second machine), and a
+# reproducibility bundle archived BY CI (an upload step in ci.yml, M11.e's matrix). None of the three
+# can become real on this rung, so the cell moves to M11.e, where task 4.4 and
+# `downloadable-content-and-distributed-execution` already wait for it. A move has two halves and
+# losing either loses the row: this ledger must not expect it, and M11.e's must.
+[[criterion]]
+id = "build-and-packaging-moves-to-m11e"
+describe = "`build-and-packaging`'s Complete cell is M11.e's, with its reason recorded: this ledger's `roadmap-tiers` does not expect the row, M11.e's does, M11.e still carries the criterion that receives downloadable content and distributed execution, and design.md §5.1 records the decision. A row that changed owner in only one of those places would be a row nobody owns"
+source = "tasks 7.6, design.md §5.1, delivery-roadmap (A spike may resize a milestone)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+here = tomllib.loads(pathlib.Path("tools/roadmap/milestones/m11d.toml").read_text(encoding="utf-8"))
+there = tomllib.loads(pathlib.Path("tools/roadmap/milestones/m11e.toml").read_text(encoding="utf-8"))
+def tiers(ledger):
+    found = {}
+    for criterion in ledger.get("criterion", []):
+        if criterion.get("kind") == "tiers":
+            found.update(criterion.get("expect_tiers", {}))
+    return found
+problems = []
+if "build-and-packaging" in tiers(here):
+    problems.append("m11d's roadmap-tiers still expects build-and-packaging")
+if tiers(there).get("build-and-packaging") != "complete":
+    problems.append("m11e's roadmap-tiers does not expect build-and-packaging at complete")
+ids = {criterion.get("id") for criterion in there.get("criterion", [])}
+if "downloadable-content-and-distributed-execution" not in ids:
+    problems.append("m11e no longer carries the criterion that receives the moved scope")
+design = pathlib.Path("openspec/changes/implement-m11d-desktop/design.md").read_text(encoding="utf-8")
+if "DECIDED — task 7.6" not in design:
+    problems.append("design.md section 5.1 does not record the decision")
+for problem in problems:
+    print(f"  {problem}")
+print("build-and-packaging: " + ("moved to M11.e, both halves recorded" if not problems else "the move is incomplete"))
+sys.exit(1 if problems else 0)
+CHECK
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones/m11e.toml"
+token = "build-and-packaging = \"complete\""
+note = "M11.e stops expecting the row: the cell left this rung and arrived nowhere, which is the half of a move that loses a row silently"
 
 # THE THREE ACCEPTANCE SCENARIOS `testing-and-quality` NAMES (task 7.2), unwritten from M0 to here.
 [[criterion]]
@@ -714,7 +795,8 @@ ci_job = "milestone-m11d"
 
 [criterion.expect_tiers]
 core-platform-abstraction = "complete"
-build-and-packaging = "complete"
+# `build-and-packaging` MOVED TO M11.e — task 7.6, design.md §5.1, and
+# `build-and-packaging-moves-to-m11e` above, which fails if the row comes back here or goes nowhere.
 testing-and-quality = "complete"
 developer-workflow-and-just = "complete"
 core-assets-and-io = "complete"

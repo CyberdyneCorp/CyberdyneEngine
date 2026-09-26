@@ -482,15 +482,59 @@ std::string content_report(const BuildGraph& graph, const PackageSet& packages, 
     append_number(out, packages.size());
     out += " bytes\n";
 
-    // Named rather than omitted. `build-and-packaging` asks for size by plugin and by world region
-    // as well, and neither is answerable from `cybuild 1`: a node does not record which plugin
-    // declared it, and the description has no world-region concept at all. Inventing an attribution
-    // would be worse than reporting none — it would be a number nobody could check.
-    out += "size by plugin and by world region: NOT REPORTED. A node does not record the plugin\n";
-    out += "  that declared it and `cybuild 1` has no world-region concept, so both need a\n";
-    out +=
-        "  declaration the graph does not carry rather than an attribution this report invents.\n";
+    // Size by plugin and by world region, from what each node DECLARES. Until M11.d these were
+    // printed as NOT REPORTED because `cybuild 1` could not carry either declaration; it can now,
+    // and content no node attributes is reported as undeclared rather than guessed at.
+    const std::pair<const char*, Attribution> sections[] = {{"plugin", Attribution::Plugin},
+                                                            {"world region", Attribution::Region}};
+    for (const auto& [label, by] : sections) {
+        out += "size by ";
+        out += label;
+        out += '\n';
+        u64 section_total = 0;
+        for (const DeclaredShare& share : declared_shares(graph, packages, by)) {
+            section_total += share.bytes;
+            out += "  ";
+            out += share.name.empty() ? std::string("(undeclared)") : share.name;
+            out += "  ";
+            append_number(out, share.bytes);
+            out += " bytes in ";
+            append_number(out, share.entries);
+            out += " entries\n";
+        }
+        out += "  total ";
+        append_number(out, section_total);
+        out += " bytes; the package set reports ";
+        append_number(out, packages.size());
+        out += " bytes\n";
+    }
     return out;
+}
+
+std::vector<DeclaredShare> declared_shares(const BuildGraph& graph, const PackageSet& packages,
+                                           Attribution by) {
+    std::vector<DeclaredShare> shares;
+    for (const Bundle& bundle : packages.bundles) {
+        for (const PackageEntry& entry : bundle.entries) {
+            // A node that has left the graph is undeclared rather than dropped, for the reason
+            // `category_shares` gives: the sum is the check.
+            const NodeId id = graph.find(entry.node);
+            std::string name;
+            if (id != NodeId::Invalid) {
+                name = by == Attribution::Plugin ? graph.node(id).plugin : graph.node(id).region;
+            }
+            auto found = std::ranges::find(shares, name, &DeclaredShare::name);
+            if (found == shares.end()) {
+                shares.push_back(DeclaredShare{name, 0, 0});
+                found = shares.end() - 1;
+            }
+            ++found->entries;
+            found->bytes += entry.size;
+        }
+    }
+    std::ranges::sort(
+        shares, [](const DeclaredShare& a, const DeclaredShare& b) { return a.name < b.name; });
+    return shares;
 }
 
 Expected<AuditAnswer, Error> audit(const BuildGraph& graph, std::string_view node) {
@@ -506,6 +550,130 @@ Expected<AuditAnswer, Error> audit(const BuildGraph& graph, std::string_view nod
         answer.dependents.push_back(graph.node(dependent).name);
     }
     return answer;
+}
+
+}  // namespace cy::build
+
+namespace cy::build {
+namespace {
+
+/// Every name a node reads from the project: its declared sources, then what it discovered.
+[[nodiscard]] std::vector<std::string> sources_read(const NodeDesc& node,
+                                                    const NodeResult* result) {
+    std::vector<std::string> sources = node.sources;
+    if (result != nullptr) {
+        for (const std::string& discovered : result->discovered) {
+            if (std::ranges::find(sources, discovered) == sources.end()) {
+                sources.push_back(discovered);
+            }
+        }
+    }
+    return sources;
+}
+
+void append_list(std::string& out, const std::vector<std::string>& items, const char* separator) {
+    for (usize index = 0; index < items.size(); ++index) {
+        if (index != 0) {
+            out += separator;
+        }
+        out += items[index];
+    }
+}
+
+}  // namespace
+
+Expected<ContentAudit, Error> audit_content(const BuildGraph& graph, const PackageSet& packages,
+                                            const BuildReport& report,
+                                            const std::vector<std::string>& project_files) {
+    if (graph.declared_roots().empty()) {
+        return make_unexpected(invalid(
+            "the description declares no root, so nothing in it can be called unreferenced"));
+    }
+
+    ContentAudit audit;
+    audit.roots = graph.declared_root_names();
+
+    // Every node: reachable or not, and what it read. Computed once per node rather than once per
+    // file, because a cook with a hundred outputs has one chain.
+    std::vector<std::vector<std::string>> chains(graph.size());
+    std::vector<bool> read(project_files.size(), false);
+    for (const NodeId id : graph.order()) {
+        for (const NodeId step : graph.declared_reference_chain(id)) {
+            chains[node_index(id)].push_back(graph.node(step).name);
+        }
+        if (chains[node_index(id)].empty()) {
+            audit.unreachable_nodes.push_back(graph.node(id).name);
+        }
+        for (const std::string& source :
+             sources_read(graph.node(id), report.node(graph.node(id).name))) {
+            const auto found = std::ranges::find(project_files, source);
+            if (found != project_files.end()) {
+                read[static_cast<usize>(found - project_files.begin())] = true;
+            }
+        }
+    }
+    for (usize index = 0; index < project_files.size(); ++index) {
+        if (!read[index]) {
+            audit.unread_sources.push_back(project_files[index]);
+        }
+    }
+    std::ranges::sort(audit.unread_sources);
+
+    for (const Bundle& bundle : packages.bundles) {
+        for (const PackageEntry& entry : bundle.entries) {
+            const NodeId id = graph.find(entry.node);
+            if (id == NodeId::Invalid) {
+                return make_unexpected(Error{
+                    ErrorCode::NotFound, "the package names a node the graph does not have", 0});
+            }
+            audit.files.push_back(
+                AuditedFile{entry.name, bundle.name, entry.size, entry.node, chains[node_index(id)],
+                            sources_read(graph.node(id), report.node(entry.node))});
+        }
+    }
+    std::ranges::sort(audit.files,
+                      [](const AuditedFile& a, const AuditedFile& b) { return a.name < b.name; });
+    return audit;
+}
+
+std::string content_audit_report(const ContentAudit& audit) {
+    std::string out = "content audit: why each file is in the build, from the declared root(s) ";
+    append_list(out, audit.roots, ", ");
+    out += '\n';
+    for (const AuditedFile& file : audit.files) {
+        out += "  file ";
+        out += file.name;
+        out += "  ";
+        append_number(out, file.size);
+        out += " bytes, bundle ";
+        out += file.bundle;
+        out += "\n    why ";
+        if (file.chain.empty()) {
+            out += "UNREFERENCED — no declared root reaches ";
+            out += file.node;
+        } else {
+            append_list(out, file.chain, " > ");
+        }
+        if (!file.sources.empty()) {
+            out += " < ";
+            append_list(out, file.sources, ", ");
+        }
+        out += '\n';
+    }
+    for (const std::string& node : audit.unreachable_nodes) {
+        out += "  UNREFERENCED node ";
+        out += node;
+        out += ": no declared root reaches it, so it is built for nobody\n";
+    }
+    for (const std::string& source : audit.unread_sources) {
+        out += "  UNREFERENCED source ";
+        out += source;
+        out += ": in the project and read by no node, declared or discovered\n";
+    }
+    out += "unreferenced: ";
+    append_number(out, audit.unreachable_nodes.size() + audit.unread_sources.size());
+    out += '\n';
+    return out;
 }
 
 }  // namespace cy::build

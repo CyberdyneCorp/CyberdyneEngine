@@ -382,10 +382,33 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       `hardware`**, because the hosted Windows image's adapter 0 is a software rasteriser that does
       not set `DXGI_ADAPTER_FLAG_SOFTWARE`. A backend with no device is a row saying so with its
       reason, never an absence
-- [ ] 7.4 **`build-and-packaging` — content audit**: *why is this in the build* (the reference chain
+- [x] 7.4 **`build-and-packaging` — content audit**: *why is this in the build* (the reference chain
       from a declared root) and *what references this*; size by category, asset, plugin, world region
       and install bundle; cook and compile time by stage with cache hit rates.
-      **PARTLY DONE — three of the four questions answered, and the fourth NAMED rather than
+      **DONE — per FILE, from a DECLARED root, with what nothing asked for flagged, and the two
+      sizes that were NOT REPORTED now reported from declarations.** Three pieces:
+      * **Declared roots.** `cybuild 1` gains a top-level `root "<node>"` line
+        (`BuildGraph::declare_root`, resolved at `finalize()`, a root naming no node refused
+        `NotFound`, round-tripped by the writer). `roots()` was an INFERENCE — every node nothing
+        consumes — so a stray node was its own root and nothing could ever be called unreferenced.
+      * **`audit_content()` / `cy_build build --audit`.** Every file in the package with the chain
+        from the nearest declared root to the node that produced it and the project files that node
+        read; then every node no declared root reaches and every project file no node reads,
+        DECLARED OR DISCOVERED — `NodeResult::discovered` now carries discovery on a cache hit as
+        well as on a run, because a glTF's `.bin` is referenced and flagging it would be the false
+        positive that teaches a team to ignore the audit (`integration.build_content` holds it on a
+        warm build — watched red with the cache-hit half deleted). Exit **4** when anything is
+        flagged. A
+        description with no root is refused rather than inferred.
+      * **Size by plugin and by world region** from `plugin` / `region` node fields — attribution
+        only, never in the key, like `bundle`; undeclared content reported as `(undeclared)`, each
+        section's sum printed against the package's own size.
+      **The artefact**: `samples/11-ship/project/build/ship.cybuild` declares `root "package:card"`
+      and `ship.py`'s act 1b requires every one of the package's four files to trace to it and
+      **nothing unreferenced** — a copy of a card dropped into `project/card/` fails the run naming
+      `UNREFERENCED source card/stray.cycard` (watched, then removed and the project md5-verified).
+      Three `unit.build_graph` cases hold the library half. Criterion: `m11d:content-audit`.
+      *The earlier record, kept:* **PARTLY DONE — three of the four questions answered, and the fourth NAMED rather than
       invented.** `just content-audit` is the recipe: `cy_build audit` and `cy_build explain` have
       existed since M6 and **no recipe reached either**, so the reference chain was a capability
       with no workflow. `stage_report()` answers cook and compile time by stage with hit rates —
@@ -409,14 +432,50 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       the content manifest hash are deliberately ONE field, because two would be two things that can
       disagree. A round-trip case in `unit.build_graph` names each of the seven, so a field dropped
       from the writer or the reader fails there.
-      **NOT DONE: shipping binaries stripped with symbols archived separately and retrievable by
-      build identity, and a reproducibility bundle archived by CI.** Both are packaging and CI work
-      rather than manifest work — `objcopy --only-keep-debug` / `dsymutil` / PDB handling per
-      platform, an archive keyed by `build_id`, and an upload step — and neither was started
-- [ ] 7.6 **Downloadable content and distributed execution — contingent, and `design.md` §5 says
+      **SYMBOLS: DONE on ELF. REPRODUCIBILITY BUNDLE: produced and verified, NOT archived BY CI —
+      which is why this box stays open.**
+      * **`tools/build/symbols.py`** — `split` strips a binary (`objcopy --strip-all` plus a
+        `.gnu_debuglink`) and archives its symbols in GDB's own `debug-file-directory` layout keyed
+        by the GNU build-id, indexed under the PACKAGE build identity too; `locate` answers from
+        either; `verify` proves the archive belongs to the binary with four checks, because another
+        build's symbols symbolicate without complaint and name the wrong line — stripped; one
+        build-id; the debuglink's CRC-32 over the archived bytes; and `main` symbolicated through the
+        archive to its source line while the stripped binary alone places nothing.
+        `unit.build_symbols` builds a probe for every refusal (another build's symbols under this
+        build-id, symbols edited after the split, unstripped, no build-id, no `-g`, not ELF).
+      * **THE DEFECT WRITING IT EXPOSED**: `cmake/profiles.cmake`'s **Shipping row compiled with no
+        `-g`**, while its own comment said symbols were split at packaging time — a shipping build
+        had nothing to archive and a crash in one could never be placed on a line. Shipping now
+        compiles `-O3 -g -DNDEBUG` (`/Zi` + `/DEBUG /OPT:REF /OPT:ICF` on MSVC; debug information does
+        not change generated code), and `unit.build_symbols` is handed the CONFIGURED Shipping flags
+        and fails on a configuration without debug information — watched red on `-O3 -DNDEBUG`.
+      * **The artefact launches the STRIPPED binary.** `ship.py` act 1c splits `cy_sample_ship`,
+        verifies and locates the archive, then every launch runs the stripped copy — so what was
+        verified is what ran (measured: the stripped binary presented 30 frames through
+        `linux-x11` on the RTX 5060) — and writes `reproduce/<build id>/`: the package manifest, the
+        description, the lockfile statement, the build tree's configuration, every artefact hash and
+        the symbols, and requires that bundle's symbols to verify on their own. The launch now prints
+        and the driver checks all seven provenance fields, the ENGINE revision separate from the
+        PROJECT's (`git log -1 -- samples/11-ship/project`).
+      * **Not done, and not this rung's to do:** the CI upload of that bundle is a step in `ci.yml`,
+        which the close phase owns and M11.e's full matrix rewrites; and Mach-O (`dsymutil`) and
+        PE/PDB are the same four checks with other spellings, which this Linux host cannot produce —
+        a non-ELF input is refused by name, never treated as stripped. Both travel with the row to
+        M11.e (7.6). Criterion: `m11d:provenance-and-symbols`
+- [x] 7.6 **Downloadable content and distributed execution — contingent, and `design.md` §5 says
       why.** `docs/roadmap/risks.md` already lists distributed build execution as "M11 or later". If
       the distribution surface only becomes real at M11.e, this row's Complete cell moves there
-      **with its reason recorded**, which is what a demotion is for
+      **with its reason recorded**, which is what a demotion is for.
+      **DECIDED: the cell MOVES TO M11.e, and the prediction held.** `design.md` §5.1 records it
+      under *"DECIDED — task 7.6"*: downloadable content is a SIGNED package set and nothing in
+      `core/crypto` signs; distributed execution needs remote workers, a second machine; the
+      reproducibility bundle exists (7.5) but archiving it is a `ci.yml` step. The move has two
+      halves and both are made: `m11d.toml`'s `roadmap-tiers` no longer expects the row, and
+      `m11e.toml`'s does, received by M11.e task 4.4 and `downloadable-content-and-distributed-execution`,
+      which already existed for exactly this. `m11d:build-and-packaging-moves-to-m11e` fails if
+      either half is undone — watched red with M11.e's line deleted. **What the close phase owes**:
+      `capability-matrix.md` still shows the row's **C** under M11.d, and `status.yaml` /
+      `ROADMAP.md` follow it; the close phase edits them
 - [x] 7.7 **`developer-workflow-and-just`** — target selection on the build, test, package and deploy
       recipes, and **an impossible target explained**: the requirement says the workflow "SHALL say so
       and state what is required" rather than failing obscurely, and a second desktop is the first

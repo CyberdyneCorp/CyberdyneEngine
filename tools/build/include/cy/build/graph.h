@@ -116,6 +116,12 @@ struct NodeDesc {
     bool distributable = true;
     /// The install bundle this node's outputs belong to. Empty means the base bundle.
     std::string bundle;
+    /// The plugin that declared this node, and the world region its content belongs to — M11.d
+    /// task 7.4. ATTRIBUTION ONLY, like `bundle`: neither enters the derivation key, because moving
+    /// a node between regions changes where its bytes are reported and not what they are. Empty
+    /// means undeclared, and the size report says so rather than guessing.
+    std::string plugin;
+    std::string region;
 
     /// Look an option up by name. Absent options answer `fallback`, which is how a producer reads a
     /// setting it did not require.
@@ -179,11 +185,45 @@ public:
     /// The nodes nothing consumes: what a build produces for delivery.
     [[nodiscard]] std::vector<NodeId> roots() const;
 
+    // --- Declared delivery roots — M11.d task 7.4 ----------------------------------------------
+    //
+    // `build-and-packaging`: "Why is this in the build? — the reference chain from a DECLARED
+    // root". `roots()` above is not a declaration, it is an inference — every node nothing
+    // consumes — so a stray node that nothing consumes is its own root and can never be reported
+    // as content nothing asked for. A declared root is what makes "unreferenced" a question with
+    // an answer: anything no declared root reaches is in the build without a reason.
+
+    /// Declare a node as a delivery root: an entry point the build exists to produce. Before
+    /// `finalize()`, which fails with `NotFound` if the name is not a node. Declaring one twice is
+    /// a no-op rather than an error, because two descriptions merged may both name the package.
+    [[nodiscard]] Status declare_root(std::string name);
+
+    /// The declared roots, resolved, in declaration order. Empty before `finalize()` and when the
+    /// description declares none.
+    [[nodiscard]] const std::vector<NodeId>& declared_roots() const noexcept {
+        return declared_roots_;
+    }
+    /// The declared roots' names, as given. What a description writes back out.
+    [[nodiscard]] const std::vector<std::string>& declared_root_names() const noexcept {
+        return declared_root_names_;
+    }
+
+    /// The chain from the nearest DECLARED root down to `id`, root first. Empty when no declared
+    /// root reaches `id` — which is the answer "nothing asked for this" — and `{id}` when `id` is
+    /// itself a declared root.
+    [[nodiscard]] std::vector<NodeId> declared_reference_chain(NodeId id) const;
+
 private:
     [[nodiscard]] Status resolve_edges();
     [[nodiscard]] Status compute_order();
+    /// Breadth-first along the downstream edges from `id` to the first node `is_root` accepts, and
+    /// the chain read back root first. Empty when none is reached.
+    template <typename IsRoot>
+    [[nodiscard]] std::vector<NodeId> chain_to_root(NodeId id, IsRoot is_root) const;
 
     std::vector<NodeDesc> nodes_;
+    std::vector<std::string> declared_root_names_;
+    std::vector<NodeId> declared_roots_;
     std::unordered_map<std::string, u32> by_name_;
     std::vector<std::vector<NodeId>> upstreams_;
     std::vector<std::vector<NodeId>> downstreams_;

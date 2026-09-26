@@ -139,7 +139,7 @@ function(cy_apply_build_configurations)
         cy_set_configuration_flags(Debug       "/Od /Zi /DCY_DEVELOPMENT /DCY_UNOPTIMISED" "/DEBUG /INCREMENTAL:NO")
         cy_set_configuration_flags(Development "/O2 /Zi /DCY_DEVELOPMENT" "/DEBUG /INCREMENTAL:NO")
         cy_set_configuration_flags(Profile     "/O2 /Zi /DNDEBUG"         "/DEBUG /INCREMENTAL:NO")
-        cy_set_configuration_flags(Shipping    "/O2 /DNDEBUG"             "")
+        cy_set_configuration_flags(Shipping    "/O2 /Zi /DNDEBUG"         "/DEBUG /OPT:REF /OPT:ICF")
         # Select the runtime library explicitly: the engine's configurations are not the ones CMake's
         # default expression knows about, so Development, Profile and Shipping would otherwise pick
         # the debug runtime by omission.
@@ -148,11 +148,20 @@ function(cy_apply_build_configurations)
         cy_set_configuration_flags(Debug       "-O0 -g -DCY_DEVELOPMENT -DCY_UNOPTIMISED" "")
         cy_set_configuration_flags(Development "-O2 -g -DCY_DEVELOPMENT" "")
         cy_set_configuration_flags(Profile     "-O2 -g -DNDEBUG"         "")
-        cy_set_configuration_flags(Shipping    "-O3 -DNDEBUG"            "")
+        cy_set_configuration_flags(Shipping    "-O3 -g -DNDEBUG"         "")
     endif()
 
     # Shipping is the only configuration that pays for link-time optimisation. Symbols are stripped
-    # to a separate artefact at packaging time, not here; that is `build-and-packaging`.
+    # to a separate artefact at packaging time, not here; that is `build-and-packaging`, and
+    # `tools/build/symbols.py` is where it happens.
+    #
+    # WHICH IS WHY SHIPPING COMPILES WITH `-g` (and `/Zi` + `/DEBUG`). Until M11.d it did not, while
+    # this comment already said symbols were split at packaging time — so there were none to split,
+    # and a crash in a shipped build could never be placed on a source line. Debug information does
+    # not change the generated code on GCC, Clang or MSVC; it changes what the linker writes beside
+    # it, and the packaging step removes it from what ships. `/DEBUG` turns MSVC's `/OPT:REF` and
+    # `/OPT:ICF` off by default, so both are restored. `unit.build_symbols` checks the configured
+    # Shipping flags and fails on a configuration that drops the debug information again.
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_supported OUTPUT ipo_reason)
     if(ipo_supported)
