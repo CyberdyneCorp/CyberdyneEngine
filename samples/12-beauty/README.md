@@ -7,6 +7,7 @@
 > just capture-beauty-shot --video                  # ... and the turntable
 > just capture-beauty-shot --regenerate-textures    # ... regenerating the source images first
 > just measure-beauty-mip-chain                     # does the shot read its cooked mip chain?
+> just capture-beauty-bloom                         # the same shot with and without bloom
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -72,6 +73,22 @@ image rather than an obvious one:
    is the difference between a picture with a sun in it and a flat one: multiplying by the irradiance
    made the ambient π times too strong, the sun invisible against it, and every shadow in the frame a
    shade of the same grey.
+
+## Bloom, with and without
+
+`--bloom` puts bloom into the frame's post chain at step 9 with the grade the shot file carries
+(`bloom threshold-stops`, `intensity`, `scatter`, `levels`): the threshold is written in stops above
+the white the exposure maps to 1.0 and converted to scene units by `bloom_threshold_for_exposure`.
+Without the flag bloom is absent — no pass, no target — and the frame is the one M11.c published:
+`bloom-beauty-off.png` is pixel-identical to `m11c-beauty-shot.png`.
+`just capture-beauty-bloom` photographs both from one set of compiled programs:
+
+| Without bloom | With bloom |
+|---|---|
+| ![](../../docs/design/images/bloom-beauty-off.png) | ![](../../docs/design/images/bloom-beauty-on.png) |
+
+`docs/design/images/bloom-beauty-on.manifest` is the bloomed frame's provenance; its post-stage
+list names `Bloom` at step 9, before exposure.
 
 ## What it does not claim
 

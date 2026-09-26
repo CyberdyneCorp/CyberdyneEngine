@@ -57,6 +57,21 @@ sky seed 0x5EEDB107
 # curve's shoulder, which is where a photographer puts a sunlit stone wall.
 exposure-stops -11.45
 
+# The bloom grade: read by a capture that asks for bloom (`cy_sample_beauty --bloom`, which
+# `just capture-beauty-bloom` runs), and by nothing else — the M11.c still above is the frame without
+# it. The threshold is in STOPS ABOVE THE WHITE this exposure maps to 1.0, so it stays where it is
+# when the exposure moves: at -11.45 stops and half a stop above, the chain scatters what is brighter
+# than ~4 000 scene units — the sun's glints on the copper slab, the embers and the sphere's
+# highlight. The knee reaches half the threshold down, so the brightest sunlit stone gives up a
+# little too.
+# The intensity is higher than the physical default because the shot is a demonstration of the
+# pass; `rendering-post-processing`'s energy rule holds at any setting.
+bloom threshold-stops 0.5
+bloom knee 0.5
+bloom intensity 0.5
+bloom scatter 0.75
+bloom levels 8
+
 # --- The materials ----------------------------------------------------------------------------
 #
 # `graph` names the AUTHORED file — the `.cygraph` the editor's canvas produced — and the three
