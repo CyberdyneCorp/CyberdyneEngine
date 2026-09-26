@@ -309,10 +309,56 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       (2 582 of 2 584 files without an SPDX header, 540 of 2 472 public symbols undocumented) and a
       baseline entry that has since been FIXED also fails, which is what stops a backlog being an
       allowlist — `tools/quality/README.md` §"the baseline is a snapshot" names what the close owes
-- [ ] 7.2 The three acceptance scenarios the matrix records as unwritten — **strategy stress**,
+- [x] 7.2 The three acceptance scenarios the matrix records as unwritten — **strategy stress**,
       **control handover**, **headless server** — written where the taxonomy can run them, with the
       kind and budget they belong to stated rather than assumed.
-      **NOT DONE, and not started.** These are *benchmarks*, not tests — `testing-and-quality`'s
+      **DONE — all three written, registered and green, each asserting the property this rung's
+      delta names for it; and the first one found a defect before it could pass.**
+      `tests/acceptance/` holds them, its CMakeLists.txt carries the kind-and-budget table, and its
+      README says what each asserts and what it does NOT exercise:
+      * **`smoke.acceptance_strategy_stress`** (smoke, 30 s) — 8 participants, 4 teams, 100 000
+        units (20 000 moving), 5 000 groups, 1 000 structures, 320 group orders → **6 400 validated
+        member commands a tick**, every one reaching the replay-recording seam; the framework's share
+        of the tick measured against the simulation's and compared with a committed ceiling.
+      * **`integration.acceptance_control_handover`** (integration, 1 s) — four players, a vehicle,
+        a gunner, an AI taking the wheel, a spectator: the vehicle's motion continues across the
+        handover, the gunner is accepted on every tick including the handover's, the departed driver
+        is refused `NotControlled` on the next tick, the spectator reads the true controllers every
+        tick and is refused every order, and the recorded stream replayed into fresh state matches
+        at every tick.
+      * **`smoke.acceptance_headless_server`** (smoke, 30 s) — `cy_headless_server`, **the
+        dedicated-server BUILD configuration the tree did not have**: 100 000 entities, tiered AI
+        (~2 700 thinks a tick, none starved), ~270 orders a tick through one group binding per squad,
+        a kinematic Jolt body per entity, stepped at a fixed 30 Hz. Its trace is read back by
+        `tools/trace/trace_inspect.py`, which does not link the engine, and must carry every counter
+        a server owes at every tick. **"A dependency on any of them SHALL fail the build" is held
+        twice**: at configure time by `cy_require_headless` (gameplay's own closure check, reused so
+        there is one forbidden list) over the DECLARED closure, and POST_BUILD by
+        `headless_closure.py` over the LINKED binary's symbols and dynamic dependencies — which,
+        pointed at `cy_sample_ship`, names SDL, Vulkan, the RHI, the render graph and libX11.
+      **THE DEFECT (the regression is in `src/gameplay/tests/test_control.cpp`).** The strategy
+      stress could not be BUILT: `ControlRegistry::kMaxGroups` was **64** against the scenario's
+      5 000, and with the cap lifted the framework measured **94 % of a strategy tick** — 50.7 ms of
+      validation against 3.2 ms of simulation — because `controls()`, asked once per member command,
+      walked every binding and searched the group LIST for every group binding. It now answers from a
+      binding index and a membership index (exact for an entity in more groups than the inline four,
+      by falling back to the walk for that entity alone): **0.5–1.2 ms a tick, 22–34 % of this
+      scenario's deliberately modest simulation** on a host at load 20+. Three registry cases — 5 000
+      groups, every way a binding or membership goes away, an overflowed membership — were watched
+      red with the cap restored to 64 (the first) and with `unindex_binding` deleted (the second),
+      and the strategy stress red at 94 % before the index; each mutation restored and md5-verified.
+      **THE CEILING IS 50 %, AND IT IS A REGRESSION GUARD, NOT THE CLAIM THAT A THIRD IS "SMALL".**
+      A first draft set 15 % before anything was measured; the measurement replaced the guess and
+      the test records both. `gameplay-framework`'s "small, reported fraction" is judged against a
+      real strategy tick — pathfinding, combat, streaming — which this scenario does not have yet.
+      **NOT EXERCISED, and said on each test's own output:** world streaming and network authority
+      (strategy stress), networking and prediction (control handover), connections, replication and
+      world streaming (headless server). **The headless server's physics finding**: as DYNAMIC
+      bodies two metres apart, orders woke neighbours through contacts and the step went from 8 ms to
+      140 ms in thirty ticks; kinematic units whose orders run out after half a second hold it at
+      ~25 ms of the 33 ms tick — single-threaded, because the server hands Jolt no job system.
+      Criterion: `m11d:acceptance-scenarios`.
+      *Superseded record, kept:* These are *benchmarks*, not tests — `testing-and-quality`'s
       "Performance benchmarks" requirement is where the table lives — and each needs systems this
       rung's other sections were writing at the same time: 100 000 units with world streaming,
       network authority and replay recording; four networked players with vehicle entry, AI

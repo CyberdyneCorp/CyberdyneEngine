@@ -174,3 +174,100 @@ CY_TEST_CASE("gameplay: group membership changes without touching the binding") 
     // Still one binding. Changing a selection is not a change of control structure.
     CY_CHECK_EQ(fixture.control.binding_count(), 1);
 }
+
+// ==================================================================================================
+// M11.d task 7.2 — THE STRATEGY STRESS SCENARIO'S FINDING, held at the registry's own level.
+//
+// `testing-and-quality`'s strategy stress is 5 000 agent groups. The registry refused a 65th group,
+// and `controls()` answered by walking every binding and every group's member list — 94 % of a
+// strategy tick at the scenario's scale. `controls()` now answers from two indexes, and these cases
+// hold what the indexes must never get wrong: every way a binding or a membership goes AWAY must
+// take the answer with it, and an entity in more groups than the inline capacity must still be
+// answered exactly.
+// ==================================================================================================
+
+CY_TEST_CASE("gameplay: the registry holds the strategy scenario's five thousand groups") {
+    ControlFixture fixture;
+    CY_REQUIRE(fixture.build());
+    auto source = fixture.control.create_source(ControlSourceKind::Human, fixture.participant,
+                                                cy::Name::intern("player"));
+    CY_REQUIRE(source.has_value());
+    GroupId last;
+    for (u32 index = 0; index < 5000; ++index) {
+        auto group = fixture.control.create_group(cy::Name::intern("squad"));
+        CY_REQUIRE(group.has_value());
+        last = *group;
+    }
+    CY_REQUIRE(fixture.control.add_to_group(last, entity(7)).has_value());
+    CY_REQUIRE(fixture.control.bind_group(*source, channels::command(), last).has_value());
+    CY_CHECK(fixture.control.controls(*source, entity(7), channels::command()));
+    CY_CHECK_EQ(fixture.control.group_size(last), 1U);
+}
+
+CY_TEST_CASE("gameplay: the control index forgets exactly what is unbound or removed") {
+    ControlFixture fixture;
+    CY_REQUIRE(fixture.build());
+    auto source = fixture.control.create_source(ControlSourceKind::Human, fixture.participant,
+                                                cy::Name::intern("player"));
+    auto other = fixture.control.create_source(ControlSourceKind::Human, fixture.participant,
+                                               cy::Name::intern("other"));
+    auto group = fixture.control.create_group(cy::Name::intern("selection"));
+    CY_REQUIRE(source.has_value());
+    CY_REQUIRE(other.has_value());
+    CY_REQUIRE(group.has_value());
+
+    // The same binding twice, then one unbind of the channel: both go, because unbind removes every
+    // binding of that source on that channel — and the index must agree with the list.
+    CY_REQUIRE(fixture.control.bind_entity(*source, channels::movement(), entity(1)).has_value());
+    CY_REQUIRE(fixture.control.bind_entity(*source, channels::movement(), entity(1)).has_value());
+    CY_CHECK(fixture.control.controls(*source, entity(1), channels::movement()));
+    // A different channel, a different source and a different entity are all different keys.
+    CY_CHECK_FALSE(fixture.control.controls(*source, entity(1), channels::turret()));
+    CY_CHECK_FALSE(fixture.control.controls(*other, entity(1), channels::movement()));
+    CY_CHECK_FALSE(fixture.control.controls(*source, entity(2), channels::movement()));
+    fixture.control.unbind(*source, channels::movement());
+    CY_CHECK_FALSE(fixture.control.controls(*source, entity(1), channels::movement()));
+
+    // Through a group: membership removed, binding removed, source destroyed — each takes it away.
+    CY_REQUIRE(fixture.control.add_to_group(*group, entity(3)).has_value());
+    CY_REQUIRE(fixture.control.bind_group(*other, channels::command(), *group).has_value());
+    CY_CHECK(fixture.control.controls(*other, entity(3), channels::command()));
+    fixture.control.remove_from_group(*group, entity(3));
+    CY_CHECK_FALSE(fixture.control.controls(*other, entity(3), channels::command()));
+    CY_REQUIRE(fixture.control.add_to_group(*group, entity(3)).has_value());
+    CY_CHECK(fixture.control.controls(*other, entity(3), channels::command()));
+    fixture.control.destroy_source(*other);
+    CY_CHECK_FALSE(fixture.control.controls(*other, entity(3), channels::command()));
+}
+
+CY_TEST_CASE("gameplay: an entity in more groups than the inline index is still answered exactly") {
+    ControlFixture fixture;
+    CY_REQUIRE(fixture.build());
+    auto source = fixture.control.create_source(ControlSourceKind::Human, fixture.participant,
+                                                cy::Name::intern("player"));
+    CY_REQUIRE(source.has_value());
+    constexpr u32 kGroups = ControlRegistry::kInlineMemberships + 3;
+    GroupId groups[kGroups];
+    for (GroupId& group : groups) {
+        auto created = fixture.control.create_group(cy::Name::intern("overlap"));
+        CY_REQUIRE(created.has_value());
+        group = *created;
+        CY_REQUIRE(fixture.control.add_to_group(group, entity(9)).has_value());
+    }
+    // Only the LAST group is bound: the inline slots hold the first four, so an index that trusted
+    // them would answer no.
+    CY_REQUIRE(
+        fixture.control.bind_group(*source, channels::command(), groups[kGroups - 1]).has_value());
+    CY_CHECK(fixture.control.controls(*source, entity(9), channels::command()));
+    // And leaving that group, from the overflowed state, takes the answer away.
+    fixture.control.remove_from_group(groups[kGroups - 1], entity(9));
+    CY_CHECK_FALSE(fixture.control.controls(*source, entity(9), channels::command()));
+    // Leaving groups until it fits inline again keeps every remaining membership exact.
+    CY_REQUIRE(fixture.control.bind_group(*source, channels::command(), groups[0]).has_value());
+    for (u32 index = 1; index + 1 < kGroups; ++index) {
+        fixture.control.remove_from_group(groups[index], entity(9));
+    }
+    CY_CHECK(fixture.control.controls(*source, entity(9), channels::command()));
+    fixture.control.remove_from_group(groups[0], entity(9));
+    CY_CHECK_FALSE(fixture.control.controls(*source, entity(9), channels::command()));
+}

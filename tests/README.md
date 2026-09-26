@@ -9,6 +9,7 @@ the fast set staying fast is a requirement, not an aspiration.
 | `integration/` | `just test-integration` | 1 s CPU | Several subsystems together, and anything that does I/O |
 | `smoke/` | `just test-smoke` | 30 s CPU | The samples, run headless, asserted to exit cleanly |
 | `render/` | `just test-render` | 5 s | Golden-image and render-seam checks; declared only when a rendering backend is compiled in |
+| `acceptance/` | the kind each declares | its kind's | `testing-and-quality`'s three acceptance scenarios — strategy stress (smoke), control handover (integration), headless server (smoke) — each in the existing kind whose budget fits it. `tests/acceptance/README.md` says what each asserts and what it does not exercise |
 | `determinism/` | `just test-determinism` | 10 s | Golden replays against committed hashes, replay and save fuzzing, transactional saves. Empty until M10 — `tests/determinism/README.md` says why |
 
 `harness/` is not a suite: it is the framework seam and the fixtures every suite links.

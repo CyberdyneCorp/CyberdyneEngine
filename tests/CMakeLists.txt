@@ -124,3 +124,7 @@ add_subdirectory(render)
 # integration/, so `m9`'s own closing gate handed the empty directory forward. M10 task 6.4 declares
 # the kind above and the suites below.
 add_subdirectory(determinism)
+
+# acceptance/ is M11.d task 7.2: the three acceptance scenarios `testing-and-quality` names, each
+# declared in the existing kind whose budget fits it. Its CMakeLists.txt carries the table.
+add_subdirectory(acceptance)

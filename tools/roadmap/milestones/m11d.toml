@@ -639,6 +639,31 @@ test "${selected:-0}" -ge 3 || { echo "the named case(s) are not in integration.
 '''
 ci_job = "milestone-m11d"
 
+# THE THREE ACCEPTANCE SCENARIOS `testing-and-quality` NAMES (task 7.2), unwritten from M0 to here.
+[[criterion]]
+id = "acceptance-scenarios"
+describe = "the three acceptance scenarios exist as registered tests in the kinds whose budgets fit, and each asserts the property it is named for: STRATEGY STRESS (smoke) — 8 participants, 4 teams, 100 000 units, 20 000 moving, 5 000 groups, 1 000 structures, 6 400 validated member commands a tick — measures the framework's share of a tick against a committed ceiling; CONTROL HANDOVER (integration) — four players, a vehicle, an AI taking the wheel, a gunner, a spectator and a replay — asserts what must survive the handover; HEADLESS SERVER (smoke) — a dedicated-server build configuration whose declared AND linked closure hold no rendering, audio or interface code, running 100 000 entities with AI, commands and physics at a fixed rate — is observed through its trace by a reader that does not link the engine. Network authority, world streaming, prediction, connections and replication are NOT exercised and each test says so on its own face"
+source = "tasks 7.2, testing-and-quality (Performance benchmarks, the acceptance scenarios), diagnostics-profiling-and-crash (A headless server is observable)"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(smoke\.acceptance_strategy_stress|integration\.acceptance_control_handover|smoke\.acceptance_headless_server|unit\.gameplay_core)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "registered: $registered of the 4 suites this criterion names"
+test "$registered" -eq 4 || { echo "a named acceptance suite is not registered in $d"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+timeout_s = 3600
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/gameplay/src/control.cpp"
+token = "unindex_binding(bindings_[index]);"
+note = "unbinding stops reaching the control index, so a driver who LEFT the vehicle still controls it: the control-handover scenario's refusal of the departed driver fires, and so does the registry's own index case"
+
 [[criterion]]
 id = "core-rows-at-complete-grade"
 describe = "every requirement of the five core rows maps to a test, a gate or a recorded exemption. These rows are in this rung because the native backend's exit criterion is a first-hand audit of exactly them — `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `ecs-core` and `engine-architecture`, last advanced at M1 and M2 and never read at Complete grade"
