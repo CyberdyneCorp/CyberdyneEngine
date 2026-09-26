@@ -517,6 +517,15 @@ not change**, which is a first-hand reading of them whether or not anybody calls
         were cancelled or failed before the `test` job — so an archived bundle has not been seen.
         Tick it on the first run that shows a `provenance-linux-x86_64` artefact holding a
         `.debug` file.
+        **RE-CHECKED after the third verdict, and still not observable — for a reason outside the
+        step.** The first `main` run carrying it is `afaeb33`'s (run 36245703649): every Linux and
+        macOS build leg finished by 15:17 UTC, but `build windows-x86_64`'s `Build` step was still
+        running at 18:53 UTC, almost five hours in, and `test` declares `needs: build` over the whole
+        matrix, so no `test` job — and no Linux leg's upload — has started; the run on `0f1dfd1` is
+        queued behind it. The step itself was re-read and is unchanged: path, `include-hidden-files`,
+        the `job.status` switch. What unblocks it is a `needs` edge (the Linux `test` legs waiting on
+        their own build leg rather than on Windows's) or a Windows build that finishes, and both are
+        `ci.yml` changes outside the upload step, which the close phase owns. The box stays open
       * **Not done, and not this rung's to do:** Mach-O (`dsymutil`) and
         PE/PDB are the same four checks with other spellings, which this Linux host cannot produce —
         a non-ELF input is refused by name, never treated as stripped. Both travel with the row to
@@ -1002,6 +1011,34 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       `m9:record-matches-plan-history`, run here, names **39** cells over six closed milestones — 12
       at M11.a and 23 at M11.b planned Complete and recorded Working, beside the four its
       declaration describes — so the declaration's text is behind its own subject
+- [x] 10.4a **Five of the six core rows' Complete cells move to M11.e — the owner's decision after
+      the third verdict (item 7).** The full ledger on `afaeb33` read `core-rows-at-complete-grade`
+      at **12 of 71**, all twelve `ecs-core`'s, and 10.4 had already said only `ecs-core` could be
+      Complete here. The owner chose the move over writing 59 entries, because four of the five rows
+      have readings with partials that need `exempt:m11e` — by M11.c task 3.5's rule a deferral to
+      M11.e, so the entries would not have made them Complete here either — and
+      `core-platform-abstraction` was never read requirement by requirement.
+      **DONE, the way 7.6 moved `build-and-packaging`, and wider**: `design.md` §5.2 records it
+      under *"DECIDED — task 10.4a"*; `m11d.toml`'s `roadmap-tiers` expects `testing-and-quality`,
+      `developer-workflow-and-just` and `ecs-core` and nothing else; `core-rows-at-complete-grade`
+      judges `ecs-core` alone (green, 12 of 12); `m11e.toml`'s `roadmap-tiers` expects
+      `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+      `engine-architecture` and `core-platform-abstraction` at complete, received by M11.e task 5b.1
+      and `m11e:every-requirement-maps`. **Unlike 7.6, the plan documents moved in the same change**,
+      because a Complete cell left under M11.d in the matrix for a row this ledger no longer expects
+      would redden `m9:record-matches-plan-history` the day this gate turns green:
+      `capability-matrix.md` carries the five **C** cells under M11.e (Complete column included), its
+      Milestone load table reads M11.d 4/4 and M11.e 21/21 and its rung table 4 rows / 58
+      requirements and 21 / 325, and `docs/ROADMAP.md`'s M11.d work table carries the five at `—`
+      with a paragraph naming the move (M11.e's `Everything else | C` row receives them).
+      `tools/roadmap/selftest.py`'s *"the four plan documents agree"* is green over it.
+      **New criterion `m11d:core-rows-move-to-m11e`**, which fails if any half is undone — m11d
+      expecting a moved row, m11e not expecting one, the audit criterion still naming one, the matrix
+      placing one under M11.d or not completing it at M11.e, `ecs-core` dropped, M11.e's receiving
+      criterion gone, or the design record missing. Watched red under each of those four kinds of
+      mutation (its declared one: M11.e's `core-platform-abstraction` line deleted), restored,
+      md5-verified. The close phase still owns `status.yaml`, and `build-and-packaging`'s **C** under
+      M11.d in the matrix is still 7.6's to move
 - [x] 10.5 **The evidence rule applied to this rung's own claims.** No golden-image tick over an
       unphotographed frame; no "parity" over a backend that compiled; NOT EVALUATED is never a pass,
       and a reported gap is the outcome this gate prefers to a green one it cannot defend
@@ -1346,3 +1383,38 @@ verdict: this close ran the full ledger.
 - `maintenance.just:22` names a rung or a real task, and `test_control.cpp:189` gets its headroom.
 
 Then one full `just roadmap-milestone m11d` on a quiet tree, which is 10.1.
+
+### What the owner decided — the records and the two small defects
+
+- **Item 7, the six core rows: MOVED, five of six.** Task 10.4a above: `ecs-core` stays Complete
+  here, the other five cells are M11.e's, in both ledgers, the matrix, `docs/ROADMAP.md` and
+  design.md §5.2, held by the new `m11d:core-rows-move-to-m11e`.
+- **Item 6, `maintenance.just:22`: FIXED, with the check that would have caught it on the pull
+  request that wrote it.** `maintenance-clean` now refuses naming **M11.e**, whose sweep receives it
+  (M11.e tasks 4.5 and 5b.4). `tools/ci/test_recipes.py` gained *"a refusing recipe names a rung
+  that exists and is open"*: every `just _not-implemented <recipe> <task>` in `justfile` and
+  `just/*.just` must name a rung on `record.MILESTONES` whose milestone gate in `gates.toml` is not
+  green. `m11d:developer-workflow-recipes` runs once per close; this runs in `just ci-check` on
+  every pull request. Watched red on the unfixed line (*"refuses naming task '2.1.5', which is no
+  rung on the ladder"*) and on `M3` (*"whose gate is already green"*), green on `M11.e`.
+  `developer-workflow-recipes` is green and now PROVEN (its declared mutation, `record.py` losing
+  `"m11e"`, turns it red), recorded in the falsifiability inventory.
+- **Item 3, `m4:command-stream`'s flake: MOVED TO THE INTEGRATION KIND, the unit budget
+  untouched.** *"the registry holds the strategy scenario's five thousand groups"* left
+  `unit.gameplay_core` for `integration.gameplay_scale` (`test_framework_scale.cpp`), the suite
+  M8.b made for exactly this — cases only meaningful at a population a millisecond cannot hold —
+  with the same assertions and its budget stated in its header: the integration kind's 1 s of CPU
+  against **0.44 ms** measured. Making it cheaper was tried first and is not enough: interning the
+  group name once instead of 5 000 times took it from ~0.62 to ~0.47 ms and still left **3 of 10**
+  runs over half the unit budget; the rest is the 5 000 groups themselves, which are the claim.
+  **The proof, with `CY_TEST_BUDGET_SCALE=0.5`** — the margin check the harness's own over-budget
+  message prescribes: the ledger's own binary (`build/m11c-final`, `afaeb33`) runs that case **5 of
+  5 RED alone (0.607–0.649 ms)** and the whole suite 2 of 3 red; after the move `unit.gameplay_core`
+  is **10 of 10 green** at half budget, its slowest case 0.162 ms, and `integration.gameplay_scale`
+  passes. Built in `build/m11d-records-and-small` (Development) and the Debug profile;
+  clang-format and clang-tidy clean. `m8b:`'s `just test-integration -R gameplay_scale` now runs the
+  case; `m4:command-stream` and `m11d:acceptance-scenarios` keep `unit.gameplay_core`'s index cases
+- **Task 7.5, the bundle archived by CI: NOT FINISHED, and the reason is recorded under 7.5.** The
+  upload step is correct and unchanged; no `test` job has run since it landed because `test` waits
+  on the whole build matrix and `afaeb33`'s Windows build leg ran for five hours. Freeing the Linux
+  legs from Windows is a `needs` change outside the upload step.

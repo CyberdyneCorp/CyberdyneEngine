@@ -23,13 +23,13 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | Capability | Reqs | M0 | M1 | M2 | M3 | M4 | M5 | M5.5 | M6 | M7 | M8.a | M8.b | M8.c | M9 | M10 | M11.a | M11.b | M11.c | M11.d | M11.d.5 | M11.e | M12 | M13 | Complete |
 |---|---:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | **1 — Foundations** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| [`engine-architecture`](../../openspec/specs/engine-architecture/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
+| [`engine-architecture`](../../openspec/specs/engine-architecture/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`core-type-system`](../../openspec/specs/core-type-system/spec.md) | 13 |  | W |  |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
-| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
+| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`core-math`](../../openspec/specs/core-math/spec.md) | 10 |  | W |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M3 |
-| [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
-| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
-| [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
+| [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | **2 — World model** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
@@ -160,9 +160,9 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M11.a** · Foundations | 12 | 12 | the environment substrate and its four consumers, world streaming, determinism, replay, network, save, audio |
 | **M11.b** · Authoring | 23 | 23 | the editor, the authoring surface, and the gameplay rows authored through it |
 | **M11.c** · Image | 3 | 3 | `denoising`, `ray-tracing-infrastructure`, `rendering-culling-and-lod` |
-| **M11.d** · Desktop | 9 | 9 | the native platform backend, the foundations the port audits, the build and quality gates |
+| **M11.d** · Desktop | 4 | 4 | `build-and-packaging`, `developer-workflow-and-just`, `ecs-core`, `testing-and-quality` |
 | **M11.d.5** · Backends | 1 | 1 | `rhi-and-render-graph` |
-| **M11.e** · Ship | 16 | 16 | mobile and the full matrix, the dependency set, the forward pipeline, the roadmap itself, and the twelve renderer rows M11.c's re-judgement moved here |
+| **M11.e** · Ship | 21 | 21 | mobile and the full matrix, the dependency set, the forward pipeline, the roadmap itself, the twelve renderer rows M11.c's re-judgement moved here, and the five core rows M11.d's full ledger moved here |
 | **M12** · The Game | 0 | 0 | — |
 | **M13** · After 1.0 | 2 | 2 | `ml-inference` and `xr-support`, each deferred here by decision |
 
@@ -232,11 +232,14 @@ for all six because every M11 row arrives at its rung already at Working or Seed
 | **M11.a** · Foundations | 12 | 233 | the seven inherited gaps, the 122 ms frame budget, the one cross-leg digest job that answers three criteria, `save-and-persistence` re-scoped | the world demo inside a 16.7 ms budget on a device, streaming, with each gap closed or still red with its reason |
 | **M11.b** · Authoring | 24 | 420 | `editor-architecture` and `live-editing` off Seed, the rest of the editor, and the gameplay rows that are authored through it | **a real sample game**, made through the editor |
 | **M11.c** · Image | 3 | 21 | planned as fifteen rows and 232 requirements, `material-compiler` and `shader-system` first; re-judged at its gate to the three rows with no exemption — `denoising`, `ray-tracing-infrastructure`, `rendering-culling-and-lod` — and the other twelve moved to M11.e | **an art-directed beauty shot**, authored through the editor M11.b finished |
-| **M11.d** · Desktop | 9 | 117 | the RHI interface settled on Vulkan and null, a native `Platform` and `DisplayServer`, the core rows the port audits, the build and quality gates | `samples/11-ship` on desktop |
+| **M11.d** · Desktop | 4 | 58 | the RHI interface settled on Vulkan and null, a native `Platform` and `DisplayServer`, the core rows the port audits — `ecs-core` Complete, the other five moved to M11.e at its gate — the build and quality gates | `samples/11-ship` on desktop |
 | **M11.d.5** · Backends | 1 | 12 | Metal native and D3D12 from nothing — **inserted by M11.d's spike**, because neither compiles on the Linux host this project works on | **one scene, three backends, the same picture** |
-| **M11.e** · Ship | 16 | 266 | mobile and cross-compilation, the full CI matrix, distribution, the sweep, the 1.0 record, and the twelve renderer rows M11.c moved here with their 56 exemptions | every remaining row Complete or deferred with a re-entry point |
+| **M11.e** · Ship | 21 | 325 | mobile and cross-compilation, the full CI matrix, distribution, the sweep, the 1.0 record, the twelve renderer rows M11.c moved here with their 56 exemptions, and the five core rows M11.d moved here with their unmapped requirements | every remaining row Complete or deferred with a re-entry point |
 
-**M11.e's four rows were the smallest count on the ladder and not the smallest rung.** It now plans sixteen, twelve of them moved from M11.c. Its real load
+**M11.e's four rows were the smallest count on the ladder and not the smallest rung.** It now plans twenty-one: twelve moved from M11.c, and five — `core-assets-and-io`,
+`core-jobs-and-concurrency`, `core-memory-and-containers`, `engine-architecture` and
+`core-platform-abstraction` — moved from M11.d when its full ledger found 59 of their 59
+requirements unmapped (M11.d task 10.4a). Its real load
 is whatever the five rungs above could not finish: M11.a predicts demoting `save-and-persistence`
 and `audio`, M11.b `ml-inference` and `swift-scripting`, M11.c `rendering-culling-and-lod`, M11.d
 `build-and-packaging`, and M11.d.5 predicts no demotion but four declared deferrals no hosted runner

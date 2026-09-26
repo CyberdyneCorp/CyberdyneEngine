@@ -974,13 +974,91 @@ target = "src/gameplay/src/control.cpp"
 token = "unindex_binding(bindings_[index]);"
 note = "unbinding stops reaching the control index, so a driver who LEFT the vehicle still controls it: the control-handover scenario's refusal of the departed driver fires, and so does the registry's own index case"
 
+# SIX ROWS WERE WRITTEN HERE AND ONE IS LEFT (task 10.4a, design.md §5.2). The full ledger on
+# `afaeb33` read 12 of 71 requirements mapped across the six, all twelve `ecs-core`'s, and the
+# readings of four of the other five found partials that need `exempt:m11e` — a deferral to M11.e by
+# M11.c task 3.5's rule. The owner moved those five Complete cells to M11.e the way task 7.6 moved
+# `build-and-packaging`; `core-rows-move-to-m11e` below holds every half of the move.
 [[criterion]]
 id = "core-rows-at-complete-grade"
-describe = "every requirement of the SIX rows this rung carries to Complete by audit maps to a test, a gate or a recorded exemption: the five core rows — `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `ecs-core` and `engine-architecture`, last advanced at M1 and M2 and never read at Complete grade — and `core-platform-abstraction`, whose port is the audit. They are in this rung because the native backend's exit criterion is a first-hand reading of exactly them. An `exempt:m11e` entry is a deferral, so a row answered partly by exemptions is not Complete here and moves to M11.e with them"
-source = "tasks, testing-and-quality"
+describe = "every requirement of the ONE core row this rung carries to Complete by audit maps to a test, a gate or a recorded exemption: `ecs-core`, last advanced at M2, whose twelve requirements each name the case that observes it. It was six rows — `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `engine-architecture` and `core-platform-abstraction` beside it — until the full ledger read 12 of 71 mapped and the owner moved the other five Complete cells to M11.e (task 10.4a); an `exempt:m11e` entry is a deferral, so a row answered partly by exemptions is not Complete here"
+source = "tasks 10.4, 10.4a, testing-and-quality"
 kind = "command"
-run = "just quality-requirements core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction"
+run = "just quality-requirements ecs-core"
 ci_job = "milestone-m11d"
+
+# The row it judges is now fully mapped, so it is GREEN and needs a mutation of its own: the case the
+# `Entities` entry names is renamed in the suite's source, and the map answers a requirement with
+# something that is not there.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/ecs/tests/test_entities.cpp"
+token = "a stale entity id is not alive and its components read as null"
+note = "the case `ecs-core`'s `Entities` entry names disappears from `unit.ecs`, so the requirement is answered by something that is not there and the row is no longer mapped"
+
+# THE MOVE, RECORDED AS A CHECK RATHER THAN A SENTENCE, in the shape `build-and-packaging-moves-to-
+# m11e` gave task 7.6 — and wider, because this move also rewrote the plan documents: a cell that
+# left this ledger and still sat under M11.d in the matrix would redden `m9:record-matches-plan-
+# history` the day M11.d's gate turns green.
+[[criterion]]
+id = "core-rows-move-to-m11e"
+describe = "the Complete cells of `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `engine-architecture` and `core-platform-abstraction` are M11.e's, with the reason recorded: this ledger's `roadmap-tiers` expects none of them, M11.e's expects each at complete, M11.e still carries `every-requirement-maps` to receive them, the capability matrix places each Complete cell under M11.e and none under M11.d, `core-rows-at-complete-grade` no longer names them, and design.md §5.2 records the decision. `ecs-core`, whose map is written, stays Complete here"
+source = "tasks 10.4a, design.md §5.2, delivery-roadmap (A spike may resize a milestone)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import plan
+moved = ("core-assets-and-io", "core-jobs-and-concurrency", "core-memory-and-containers",
+         "engine-architecture", "core-platform-abstraction")
+here = tomllib.loads(pathlib.Path("tools/roadmap/milestones/m11d.toml").read_text(encoding="utf-8"))
+there = tomllib.loads(pathlib.Path("tools/roadmap/milestones/m11e.toml").read_text(encoding="utf-8"))
+def tiers(ledger):
+    found = {}
+    for criterion in ledger.get("criterion", []):
+        if criterion.get("kind") == "tiers":
+            found.update(criterion.get("expect_tiers", {}))
+    return found
+def criterion(ledger, name):
+    return next((c for c in ledger.get("criterion", []) if c.get("id") == name), {})
+matrix = plan.read_matrix()
+problems = []
+if tiers(here).get("ecs-core") != "complete":
+    problems.append("m11d's roadmap-tiers no longer expects ecs-core, the row that stays")
+audit = criterion(here, "core-rows-at-complete-grade").get("run", "")
+for row in moved:
+    if row in tiers(here):
+        problems.append(f"m11d's roadmap-tiers still expects {row}")
+    if tiers(there).get(row) != "complete":
+        problems.append(f"m11e's roadmap-tiers does not expect {row} at complete")
+    if row in audit.split():
+        problems.append(f"m11d:core-rows-at-complete-grade still judges {row} at Complete grade")
+    if matrix.cells.get(row, {}).get("m11d") == "complete":
+        problems.append(f"the capability matrix still places {row}'s Complete cell under M11.d")
+    if matrix.reaches(row, "complete") != "m11e":
+        problems.append(f"the capability matrix does not complete {row} at M11.e")
+if "ecs-core" not in audit.split():
+    problems.append("m11d:core-rows-at-complete-grade no longer judges ecs-core")
+if not criterion(there, "every-requirement-maps"):
+    problems.append("m11e no longer carries the criterion that receives the five rows")
+design = pathlib.Path("openspec/changes/implement-m11d-desktop/design.md").read_text(encoding="utf-8")
+if "DECIDED — task 10.4a" not in design:
+    problems.append("design.md section 5.2 does not record the decision")
+for problem in problems:
+    print(f"  {problem}")
+print("five core rows: " + ("moved to M11.e, every half recorded" if not problems else "the move is incomplete"))
+sys.exit(1 if problems else 0)
+CHECK
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones/m11e.toml"
+token = "core-platform-abstraction = \"complete\""
+note = "M11.e stops expecting `core-platform-abstraction`: the cell left this rung and arrived nowhere, which is the half of a move that loses a row silently"
 
 # --- Tasks 5.1 to 5.3: `rendering-forward-clustered`, the desktop half ---------------------------------
 #
@@ -1116,22 +1194,20 @@ ci_job = "milestone-m11d"
 
 [[criterion]]
 id = "roadmap-tiers"
-describe = "the status record is at this rung's exit tiers: NINE rows to Complete — ten until `rhi-and-render-graph` moved to M11.d.5 with the two backends its Complete cell was entirely about — two of them recorded at Seed since M0 with columns that have claimed Working since M3 and M6. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO, and `testing-and-quality` and `developer-workflow-and-just` are two of the four rows `m9:record-matches-plan-history` is about — so recording them here is half of closing that gap at M11.e"
+describe = "the status record is at this rung's exit tiers: THREE rows to Complete — `testing-and-quality`, `developer-workflow-and-just` and `ecs-core`. It was ten: `rhi-and-render-graph` moved to M11.d.5 with the two backends its Complete cell was entirely about, `build-and-packaging` to M11.e with downloadable content and distributed execution (task 7.6), and five core rows to M11.e when the full ledger found their requirements unmapped (task 10.4a). Two of the three were recorded at Seed since M0 with columns that have claimed Working since M3 and M6. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO, and `testing-and-quality` and `developer-workflow-and-just` are two of the four rows `m9:record-matches-plan-history` is about — so recording them here is half of closing that gap at M11.e"
 source = "tasks, ROADMAP M11.d, delivery-roadmap"
 kind = "tiers"
 ci_job = "milestone-m11d"
 
 [criterion.expect_tiers]
-core-platform-abstraction = "complete"
 # `build-and-packaging` MOVED TO M11.e — task 7.6, design.md §5.1, and
 # `build-and-packaging-moves-to-m11e` above, which fails if the row comes back here or goes nowhere.
+# `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+# `engine-architecture` and `core-platform-abstraction` MOVED TO M11.e — task 10.4a, design.md §5.2,
+# and `core-rows-move-to-m11e` above: 12 of their six rows' 71 requirements mapped, all `ecs-core`'s.
 testing-and-quality = "complete"
 developer-workflow-and-just = "complete"
-core-assets-and-io = "complete"
-core-jobs-and-concurrency = "complete"
-core-memory-and-containers = "complete"
 ecs-core = "complete"
-engine-architecture = "complete"
 
 # THE HANDOVER CHECK, in the shape `implement-m11-reach` task 0.1 settled for all five rungs — AND
 # RE-POINTED, because a sixth rung was inserted above this one. It named `m11e` until M11.d's spike
