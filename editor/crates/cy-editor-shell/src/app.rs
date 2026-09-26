@@ -366,6 +366,8 @@ impl EditorWindow {
                 }
                 Intent::OpenVfxDocument(reference) => self.open_vfx_document(&reference),
                 Intent::OpenVfxModule(reference) => self.open_vfx_module(&reference),
+                Intent::CreateVfxModule(name, stage) => self.create_vfx_module(name, stage),
+                Intent::DiscardVfxModuleChanges => self.discard_vfx_module_changes(),
                 Intent::ImportExternal { paths, destination } => {
                     for path in paths {
                         let arguments = Arguments::new()
@@ -733,6 +735,12 @@ impl EditorWindow {
     }
 
     fn open_vfx_module(&mut self, reference: &str) {
+        if let Err(problem) = self.ensure_vfx_module_saved() {
+            self.editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem));
+            return;
+        }
         let arguments = Arguments::new().with("reference", Value::Text(reference.into()));
         let result = self
             .registry
@@ -762,6 +770,62 @@ impl EditorWindow {
                 .notifications
                 .post(Notification::error(problem.what.clone(), problem)),
         }
+    }
+
+    fn create_vfx_module(
+        &mut self,
+        name: String,
+        stage: cy_editor_interface::specialised::vfx::Stage,
+    ) {
+        let result = self.ensure_vfx_module_saved().and_then(|()| {
+            let module = cy_editor_interface::specialised::vfx_module::VfxModule::new(name, stage)?;
+            self.specialised.start_vfx_module(module)?;
+            self.vfx_module_committed = None;
+            Ok(())
+        });
+        self.inputs.vfx_document_problem = result.err().map(|problem| problem.to_string());
+    }
+
+    fn discard_vfx_module_changes(&mut self) {
+        let result = (|| {
+            let Some((reference, _)) = self.vfx_module_committed.as_ref() else {
+                self.specialised.close_vfx_module();
+                return Ok(());
+            };
+            let reference = reference.clone();
+            if !self.editor.project.source_exists(&reference) {
+                self.specialised.close_vfx_module();
+                self.vfx_module_committed = None;
+                return Ok(());
+            }
+            let source = self.editor.project.read_source(&reference)?;
+            let module =
+                cy_editor_interface::specialised::vfx_module::VfxModule::decode_text(&source)?;
+            self.specialised.start_vfx_module(module)?;
+            self.vfx_module_committed = Some((reference, Some(source)));
+            Ok::<(), cy_editor_core::problem::Problem>(())
+        })();
+        self.inputs.vfx_document_problem = result.err().map(|problem| problem.to_string());
+    }
+
+    fn ensure_vfx_module_saved(&self) -> cy_editor_core::problem::Result<()> {
+        let Some(module) = self.specialised.vfx_module_snapshot()? else {
+            return Ok(());
+        };
+        let current = module.encode_text()?;
+        if self
+            .vfx_module_committed
+            .as_ref()
+            .and_then(|(_, source)| source.as_ref())
+            .is_some_and(|source| source == &current)
+        {
+            return Ok(());
+        }
+        Err(cy_editor_core::problem::Problem::new(
+            "switch VFX modules",
+            "the current module has unsaved edits",
+        )
+        .with_remedy("save the current module before opening or creating another"))
     }
 
     fn save_source(&mut self) {
@@ -1769,6 +1833,108 @@ mod tests {
             author.specialised.active_vfx_module().unwrap().name,
             "shared_drag"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn switching_vfx_modules_preserves_unsaved_graph_edits() {
+        use cy_editor_interface::specialised::graph::Layout;
+        use cy_editor_interface::specialised::vfx::Stage;
+        use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+        let root = scratch("vfx-module-switch-dirty");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut window = vfx_test_window(&root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        let other = VfxModule::new("other", Stage::Update).unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text("effects/other.cyvfxmodule".into()))
+                .with("source", Value::Text(other.encode_text().unwrap())),
+        )]);
+
+        window.apply(vec![Intent::CreateVfxModule("first".into(), Stage::Update)]);
+        window.apply(vec![Intent::OpenVfxModule(
+            "effects/other.cyvfxmodule".into(),
+        )]);
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().name,
+            "first"
+        );
+
+        let reference = "effects/first.cyvfxmodule";
+        let saved = window
+            .specialised
+            .vfx_module_snapshot()
+            .unwrap()
+            .unwrap()
+            .encode_text()
+            .unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(saved)),
+        )]);
+        window
+            .specialised
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.test_node", Layout::default())
+            .unwrap();
+        window.apply(vec![Intent::OpenVfxModule(
+            "effects/other.cyvfxmodule".into(),
+        )]);
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().name,
+            "first"
+        );
+        window.apply(vec![Intent::CreateVfxModule(
+            "replacement".into(),
+            Stage::Update,
+        )]);
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().name,
+            "first"
+        );
+        assert_eq!(
+            window
+                .specialised
+                .open(Domain::VfxGraph)
+                .unwrap()
+                .graph
+                .unwrap()
+                .nodes()
+                .count(),
+            1
+        );
+
+        window.apply(vec![Intent::DiscardVfxModuleChanges]);
+        assert_eq!(
+            window
+                .specialised
+                .open(Domain::VfxGraph)
+                .unwrap()
+                .graph
+                .unwrap()
+                .nodes()
+                .count(),
+            0
+        );
+        window.apply(vec![Intent::OpenVfxModule(
+            "effects/other.cyvfxmodule".into(),
+        )]);
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().name,
+            "other"
+        );
+        window.apply(vec![Intent::CreateVfxModule("new".into(), Stage::Spawn)]);
+        window.apply(vec![Intent::DiscardVfxModuleChanges]);
+        assert!(window.specialised.active_vfx_module().is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 

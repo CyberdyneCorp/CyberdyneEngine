@@ -69,6 +69,10 @@ pub enum Intent {
     OpenVfxDocument(String),
     /// Open a separately saved VFX module through its registered read command.
     OpenVfxModule(String),
+    /// Create a new reusable VFX module after checking the current draft.
+    CreateVfxModule(String, cy_editor_interface::specialised::vfx::Stage),
+    /// Revert the open module to its last saved source, or close an unsaved new module.
+    DiscardVfxModuleChanges,
     /// Stage and import files selected outside the project.
     ImportExternal {
         /// Native paths supplied by the chooser or operating-system drop.

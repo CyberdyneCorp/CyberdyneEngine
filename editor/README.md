@@ -543,6 +543,8 @@ edit its compatible stage, typed host inputs and dependencies, and save it throu
 `vfx.module.save`. It can attach a saved module to an emitter through an undoable document save;
 the attachment records its explicit project path. Module saves and attachments refresh when the
 scene history is undone or redone. Unsaved graph edits do not yet have individual history entries.
+Opening or creating another module keeps an unsaved draft in place; **Discard module edits**
+reopens its last saved source or closes a new module that has never been saved.
 Each referenced module needs an explicit path
 in the system document; the engine does not guess a file from its name. Compile and preview load
 the mapped project sources, validate typed inputs and dependency stages, reject missing sources

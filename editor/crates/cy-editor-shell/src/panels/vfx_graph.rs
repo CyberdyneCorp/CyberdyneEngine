@@ -395,6 +395,11 @@ fn module_toolbar(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 Err(problem) => panels.inputs.vfx_document_problem = Some(problem.to_string()),
             }
         }
+        if panels.specialised.active_vfx_module().is_some()
+            && ui.button("Discard module edits").clicked()
+        {
+            panels.intents.push(Intent::DiscardVfxModuleChanges);
+        }
     });
     ui.horizontal(|ui| {
         ui.label("New");
@@ -407,12 +412,10 @@ fn module_toolbar(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 }
             });
         if ui.button("Create module").clicked() {
-            let result = VfxModule::new(
+            panels.intents.push(Intent::CreateVfxModule(
                 panels.inputs.vfx_module_name.clone(),
                 panels.inputs.vfx_module_stage,
-            )
-            .and_then(|module| panels.specialised.start_vfx_module(module));
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+            ));
         }
     });
 }
