@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """samples/05b-editor-window — the viewport proved through MCP, without touching the keyboard.
 
 `smoke.editor_window_mcp` is the CTest entry; this file is what it runs.
