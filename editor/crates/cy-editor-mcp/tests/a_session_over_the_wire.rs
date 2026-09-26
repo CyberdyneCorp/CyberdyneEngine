@@ -118,6 +118,38 @@ fn converse(lines: &[&str], editor: &mut Editor) -> Vec<Json> {
     sink.replies()
 }
 
+/// `converse`, with the agent's write scope granted `directory` instead of `game/`.
+fn converse_within(lines: &[&str], editor: &mut Editor, directory: &str) -> Vec<Json> {
+    let sink = Sink::default();
+    let session = AgentSession::new(
+        AgentIdentity {
+            agent: "author".to_string(),
+            session: "s-1".to_string(),
+        },
+        "author a reusable VFX module",
+        Scope::new(
+            "authoring",
+            DocumentScope::All,
+            [EffectClass::Read, EffectClass::ReversibleMutation],
+        )
+        .with_directory(directory),
+        Budget::default(),
+        "r-1",
+        0,
+    );
+    let mut server = McpServer::new(sink.clone(), session);
+    let script = lines.join("\n");
+    serve(
+        script.as_bytes(),
+        &mut server,
+        editor,
+        &registry(),
+        &mut RefuseEverything,
+    )
+    .expect("the conversation runs to the end of the input");
+    sink.replies()
+}
+
 /// The `result` of the nth reply.
 fn result(replies: &[Json], index: usize) -> &Json {
     replies
@@ -294,6 +326,161 @@ fn vfx_preview_controls_and_status_are_projected_over_mcp() {
                 .contains(diagnostic)
         );
     }
+}
+
+/// `text` as a JSON string literal.
+fn quoted(text: &str) -> String {
+    let mut out = String::from("\"");
+    for character in text.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn hex_envelope(header: &str, bytes: Vec<u8>) -> String {
+    use std::fmt::Write as _;
+    let mut text = header.to_owned();
+    for byte in bytes {
+        write!(text, "{byte:02x}").expect("writing to a string");
+    }
+    text
+}
+
+/// A reusable Update module `shared_drag` that writes `value` to every particle's size.
+fn drag_module(value: &str) -> String {
+    let mut out = cy_editor_core::codec::Writer::new();
+    out.u32(1);
+    out.text("shared_drag");
+    out.u8(2);
+    out.u32(0);
+    out.u32(0);
+    out.text(&format!(
+        "cyvfxcanvas 1\nmodule shared_drag\nnode 1 vfx.constant\nprop 1 value {value}\n\
+         node 2 vfx.set_attribute\nprop 2 attribute size\nlink 1 out 2 value\n"
+    ));
+    hex_envelope("cyvfxmodule 1\n", out.finish())
+}
+
+/// A one-emitter version 3 system whose emitter references `shared_drag` at `module`.
+fn system_using_drag(module: &str) -> String {
+    let mut out = cy_editor_core::codec::Writer::new();
+    out.u32(3);
+    out.text("sparks");
+    out.u32(1);
+    out.text("smoke");
+    out.u8(0);
+    out.text("Sprite");
+    out.u32(0);
+    out.u32(1);
+    out.text("shared_drag");
+    for word in [0, 1024, 0, 0, 0] {
+        out.u32(word);
+    }
+    out.u32(1);
+    out.text("shared_drag");
+    out.text(module);
+    hex_envelope("cyvfxdoc 1\n", out.finish())
+}
+
+fn tool_call(id: u32, name: &str, arguments: &[(&str, &str)]) -> String {
+    let arguments: Vec<String> = arguments
+        .iter()
+        .map(|(key, value)| format!("{}:{}", quoted(key), quoted(value)))
+        .collect();
+    format!(
+        r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"{name}","arguments":{{{}}}}}}}"#,
+        arguments.join(",")
+    )
+}
+
+fn tool_text(replies: &[Json], index: usize) -> String {
+    let Json::Array(content) = result(replies, index).get("content") else {
+        panic!(
+            "reply {index} is not tool content: {:?}",
+            replies.get(index)
+        );
+    };
+    content[0]
+        .get("text")
+        .as_text()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[test]
+fn a_vfx_module_and_its_user_save_reopen_undo_and_redo_over_mcp() {
+    let sandbox = Sandbox::new("vfx-module");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor
+        .open_document("worlds/city.cyworld")
+        .expect("a document opens");
+    let module = "effects/modules/shared_drag.cyvfxmodule";
+    let system = "effects/sparks.cyvfxdoc";
+    let first = drag_module("0.5");
+    let edited = drag_module("0.25");
+    let source = system_using_drag(module);
+    let lines = [
+        INITIALIZE.to_owned(),
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#.to_owned(),
+        tool_call(
+            3,
+            "vfx.module.save",
+            &[("reference", module), ("source", &first)],
+        ),
+        tool_call(
+            4,
+            "vfx.document.save",
+            &[("reference", system), ("source", &source)],
+        ),
+        tool_call(
+            5,
+            "vfx.module.save",
+            &[("reference", module), ("source", &edited)],
+        ),
+        tool_call(6, "vfx.module.read", &[("reference", module)]),
+        tool_call(7, "vfx.document.read", &[("reference", system)]),
+        tool_call(8, "edit.undo", &[]),
+        tool_call(9, "vfx.module.read", &[("reference", module)]),
+        tool_call(10, "edit.redo", &[]),
+        tool_call(11, "vfx.module.read", &[("reference", module)]),
+    ];
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let replies = converse_within(&lines, &mut editor, "effects/");
+
+    let Json::Array(tools) = result(&replies, 1).get("tools") else {
+        panic!("tools/list must contain the registry projection");
+    };
+    for command in ["vfx.module.save", "vfx.module.read"] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} must be available over MCP"
+        );
+    }
+    for index in 2..=10 {
+        assert_eq!(
+            result(&replies, index).get("isError"),
+            &Json::Bool(false),
+            "reply {index}: {}",
+            tool_text(&replies, index)
+        );
+    }
+    assert!(tool_text(&replies, 5).contains(&edited));
+    assert!(tool_text(&replies, 6).contains(&source));
+    assert!(tool_text(&replies, 8).contains(&first));
+    assert!(tool_text(&replies, 10).contains(&edited));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join(module)).expect("the module is saved"),
+        edited
+    );
 }
 
 #[test]
