@@ -167,6 +167,14 @@ struct Shot {
     f32 occlusion_radius = 0.75F;
     f32 occlusion_power = 1.0F;
 
+    /// Soft and contact shadows, when a run switches them on. The sun's ANGULAR RADIUS is the whole
+    /// of what the penumbra is sized by — `virtual-shadows` asks for softness "driven by physical
+    /// source shape", so there is no softness to tune — and the contact trace's reach and thickness
+    /// are content for the reason the occlusion radius is: they are the scale of a column's foot.
+    f32 sun_angular_radius = 0.004625F;
+    f32 contact_length = 0.35F;
+    f32 contact_thickness = 0.2F;
+
     f32 exposure_stops = 12.0F;
 
     /// The bloom grade, read from the shot and applied only to a capture that asks for bloom
@@ -263,6 +271,19 @@ public:
         occlusion_power_ = shot.occlusion_power;
     }
 
+    /// SOFT AND CONTACT SHADOWS, before `stage_shot`. Off — the default, and the published M11.c
+    /// frame — draws exactly the frame this program always drew. On adds the depth and normal
+    /// prepass, declares the frame's contact shadow stage, and shades through `sceneFragmentSoft`:
+    /// the sun's map filtered by `cy.shadow`'s percentage-closer soft filter with a penumbra from
+    /// the shot's `sun_angular_radius`, and darkened further where the contact trace found an
+    /// occluder the map is too coarse to hold. Ambient occlusion composes with it.
+    void set_soft_shadows(bool enabled, const Shot& shot) noexcept {
+        soft_shadows_ = enabled;
+        sun_angular_radius_ = shot.sun_angular_radius;
+        contact_length_ = shot.contact_length;
+        contact_thickness_ = shot.contact_thickness;
+    }
+
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
     /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
@@ -306,6 +327,10 @@ private:
     [[nodiscard]] Status create_pipelines(const Shot& shot) noexcept;
     [[nodiscard]] Status create_frame() noexcept;
     [[nodiscard]] Status create_occlusion() noexcept;
+    [[nodiscard]] Status create_contact() noexcept;
+    /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
+    /// reads it.
+    [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
     [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
                                                     const rhi::GraphicsPipelineDescription& scene,
                                                     rhi::GraphicsPipelineHandle& occluded,
@@ -326,6 +351,10 @@ private:
     bool ambient_occlusion_ = false;
     f32 occlusion_radius_ = 0.0F;
     f32 occlusion_power_ = 1.0F;
+    bool soft_shadows_ = false;
+    f32 sun_angular_radius_ = 0.0F;
+    f32 contact_length_ = 0.0F;
+    f32 contact_thickness_ = 0.0F;
     u32 width_ = 0;
     u32 height_ = 0;
     u32 supersample_ = 1;

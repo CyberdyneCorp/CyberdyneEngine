@@ -91,6 +91,23 @@ this whole record dishonest."* So:
   term; it is where the sun does not reach — the shadowed faces of the plinths and the ground at
   their feet — that it is visible. `images/ambient-occlusion-on.manifest` is the frame with the
   stage, built from its own report.
+- **Soft and contact shadows are a setting of this program, off in the published frame.**
+  `--soft-shadows on` filters the sun's map with `cy/shadow.slang`'s percentage-closer soft filter —
+  a penumbra sized by the sun's own 0.265-degree angular radius, with no softness to tune — and adds
+  the contact term of `src/rendering/contact_shadows/` through the frame's `ContactShadows` stage.
+  `just capture-soft-shadows` photographs both and requires the setting off to be this file's
+  picture pixel for pixel:
+
+  ![Soft and contact shadows on](images/soft-shadows-beauty-on.png)
+
+  ![Off, on, and the difference amplified eight times](images/soft-shadows-beauty-detail.png)
+
+  Measured on the capture: 3.2 % of pixels change, 28 259 darker and 33 615 brighter by more than
+  one 8-bit step. Both directions are expected: with a 3.7 cm map texel the 3x3 filter blurred every
+  edge over about three texels, and the soft filter makes a shadow as sharp as the texel where its
+  caster is near and soft only where the caster is far — the detail's column carries both. The
+  sun's disc is small, so the softening is the far ends of long shadows rather than a haze.
+  `images/soft-shadows-beauty-on.manifest` is the frame with the setting, built from its own report.
 - **The normal map and the occlusion are sampled by the FRAME, not by the material.** `CySurface` is
   `{ CyClosure closures; float opacity; float3 preview; }` and `CyClosure` is five terms — diffuse,
   specular, emission, roughness, weight. **There is no normal term and no occlusion term in the

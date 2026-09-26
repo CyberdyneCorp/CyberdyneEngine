@@ -15,8 +15,10 @@
 #include <cy/import/texture.h>
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
+#include <cy/rendering/contact_shadows/contact_pass.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/lighting/soft_shadows.h>
 #include <cy/rendering/occlusion/occlusion_pass.h>
 #include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/particles/strip_renderer.h>
@@ -131,9 +133,12 @@ struct FrameConstants {
     f32 sun_color[4] = {};
     f32 ambient[4] = {};
     f32 eye[4] = {};
+    /// `BeautyFrame::softShadow` and `softControl`, read only by `sceneFragmentSoft`.
+    f32 soft_shadow[4] = {};
+    u32 soft_control[4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 192, "BeautyFrame is twelve float4");
+static_assert(sizeof(FrameConstants) == 224, "BeautyFrame is fourteen 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -204,6 +209,9 @@ struct Stage::Device {
     /// Ambient occlusion, created only when the run asked for it. See
     /// `Stage::set_ambient_occlusion`.
     rendering::occlusion::AmbientOcclusionPass occlusion;
+    /// The contact trace, created only when the run asked for soft shadows. See
+    /// `Stage::set_soft_shadows`.
+    rendering::contact_shadows::ContactShadowPass contact;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -256,6 +264,7 @@ Stage::~Stage() {
             device_->air.shutdown();
             device_->trails.shutdown();
             device_->occlusion.destroy();
+            device_->contact.destroy();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->pipelines.shutdown();
@@ -1021,17 +1030,18 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     }
     device_->table_layout = *table_layout;
 
-    // Binding 2 is the ambient occlusion term. Declared whatever the run asked for, and written
-    // only when the term exists: the one entry point that reads it is the one a run with the
-    // setting on draws with, and a binding no bound pipeline uses needs no descriptor.
-    const rhi::DescriptorBinding shadow_bindings[3] = {
+    // Binding 2 is the ambient occlusion term and binding 3 the contact term. Declared whatever the
+    // run asked for, and written only when an entry point that reads them is drawn with: a binding
+    // no bound pipeline uses needs no descriptor.
+    const rhi::DescriptorBinding shadow_bindings[4] = {
         {0, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {1, rhi::DescriptorKind::Sampler, 1, rhi::ShaderStage::Fragment, false},
         {2, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
+        {3, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
     };
     rhi::DescriptorSetLayoutDescription shadow;
     shadow.name = "beauty shadow";
-    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 3);
+    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 4);
     auto shadow_layout = device.create_descriptor_set_layout(shadow);
     if (!shadow_layout) {
         return make_unexpected(shadow_layout.error());
@@ -1253,7 +1263,7 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         }
         rhi::GraphicsPipelineHandle occluded;
         rhi::GraphicsPipelineHandle prepass;
-        if (ambient_occlusion_) {
+        if (has_prepass()) {
             if (Status made = create_occlusion_pipelines(entry, pipeline, occluded, prepass);
                 !made) {
                 return made;
@@ -1438,8 +1448,10 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     // THE SCENE PASS AGAINST THE PREPASS. The frame declares the opaque stage's depth as a READ
     // once there is a prepass — `ForwardFrame` tests it and writes nothing — so this pipeline
     // tests with the same comparison and does not write. Same vertex stage as the prepass, so the
-    // depth it compares is the depth it produces.
-    auto occluded_fragment = fragment("sceneFragmentOccluded");
+    // depth it compares is the depth it produces. With soft shadows on it shades through
+    // `sceneFragmentSoft`, which reads the ambient occlusion term too when that setting is on.
+    auto occluded_fragment =
+        fragment(soft_shadows_ ? "sceneFragmentSoft" : "sceneFragmentOccluded");
     if (!occluded_fragment) {
         return make_unexpected(occluded_fragment.error());
     }
@@ -1984,9 +1996,12 @@ Status Stage::create_frame() noexcept {
     // buffers, in the frame's `DepthPrepass` stage — `record_prepass` — so the depth the opaque
     // pass tests is written by the pass the frame declared as its writer. The post chain's own
     // setting is what switches the stage on; nothing else in the frame changes.
-    if (ambient_occlusion_) {
+    if (has_prepass()) {
         description.depth_prepass = true;
-        description.post.ambient_occlusion = true;
+        description.post.ambient_occlusion = ambient_occlusion_;
+        // THE CONTACT TRACE IS THE SECOND READER, and its stage is the frame's own
+        // `FramePassKind::ContactShadows`, declared by `contact_shadows::ContactShadowPass`.
+        description.contact_shadows = soft_shadows_;
     }
     description.sky = cy::rendering::sky::SkyTableQuality::Low;
     // PINNED, because a capture has to be reproducible.
@@ -2062,8 +2077,40 @@ Status Stage::create_frame() noexcept {
             return made;
         }
     }
+    if (soft_shadows_) {
+        if (Status made = create_contact(); !made) {
+            return made;
+        }
+    }
     device_->frame_ready = true;
     return ok();
+}
+
+Status Stage::create_contact() noexcept {
+    rhi::Device& device = *device_->handle.value();
+    rendering::contact_shadows::ContactShadowPassDescription description;
+    description.width = width_;
+    description.height = height_;
+    if (Status made = device_->contact.create(*allocator_, device, description); !made) {
+        return made;
+    }
+    rendering::contact_shadows::ContactShadowSettings settings;
+    settings.length = contact_length_;
+    settings.thickness = contact_thickness_;
+    device_->contact.set_settings(settings);
+    // `sceneFragmentSoft` names both terms, so both bindings hold a view whatever the run asked
+    // for; with ambient occlusion off, binding 2 holds one of the material views and
+    // `softControl.y` tells the shader not to read it.
+    rhi::DescriptorWrite writes[2];
+    writes[0].binding = 3;
+    writes[0].kind = rhi::DescriptorKind::SampledTexture;
+    writes[0].texture_view = device_->contact.target_view();
+    writes[0].use = rhi::ImageUse::SampledRead;
+    writes[1] = writes[0];
+    writes[1].binding = 2;
+    writes[1].texture_view = device_->views[0];
+    return device.update_descriptor_set(
+        device_->shadow_set, Span<const rhi::DescriptorWrite>(writes, ambient_occlusion_ ? 1 : 2));
 }
 
 Status Stage::create_occlusion() noexcept {
@@ -2155,6 +2202,25 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     constants.eye[0] = eye.x;
     constants.eye[1] = eye.y;
     constants.eye[2] = eye.z;
+    if (soft_shadows_) {
+        // THE MAP'S FOOTPRINT, from `write_sun_matrix`: it spans twice the extent across and four
+        // times the extent in depth. The penumbra per unit of depth follows from those and the
+        // sun's angular radius, and from nothing else.
+        rendering::SoftShadowSettings soft;
+        soft.angular_radius = sun_angular_radius_;
+        rendering::DirectionalShadowFootprint footprint;
+        footprint.depth_range_metres = shot.shadow_extent_metres * 4.0F;
+        footprint.width_metres = shot.shadow_extent_metres * 2.0F;
+        footprint.extent = kShadowExtent;
+        const rendering::PcssShape shape = rendering::make_pcss_shape(soft, footprint);
+        constants.soft_shadow[0] = shape.penumbra_per_depth;
+        constants.soft_shadow[1] = shape.min_radius;
+        constants.soft_shadow[2] = shape.max_radius;
+        constants.soft_shadow[3] = static_cast<f32>(shape.blocker_taps);
+        constants.soft_control[0] = shape.filter_taps;
+        constants.soft_control[1] = ambient_occlusion_ ? 1U : 0U;
+        constants.soft_control[2] = 1U;
+    }
     void* mapped = device.buffer_mapped_pointer(device_->frame_constants);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "the frame constants are not mapped");
@@ -2263,6 +2329,22 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         }
         view.ambient_occlusion = device_->occlusion.import_target(graph);
         sinks.ambient_occlusion = device_->occlusion.stage();
+    }
+    if (soft_shadows_) {
+        rendering::contact_shadows::ContactShadowView contact_view;
+        contact_view.projection = projection;
+        contact_view.relative_to_view = camera;
+        contact_view.to_light = sun_direction_;
+        contact_view.width = width_;
+        contact_view.height = height_;
+        if (Status set = device_->contact.set_view(contact_view); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        view.contact_shadows = device_->contact.import_target(graph);
+        sinks.contact_shadows = device_->contact.stage();
+    }
+    if (has_prepass()) {
         sinks.passes[static_cast<usize>(FramePassKind::DepthPrepass)] =
             cy::rendering::FramePassCallback{&record_prepass, &scene};
     }
@@ -2293,7 +2375,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     scene.color = resources.color;
     scene.depth = resources.depth;
     scene.normal = resources.normal_roughness;
-    scene.prepass = ambient_occlusion_;
+    scene.prepass = has_prepass();
     air.color = resources.color;
     air.depth = resources.depth;
     // What the post chain left for exposure: the scene colour, or the bloomed one.
