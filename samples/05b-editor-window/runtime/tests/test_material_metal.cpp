@@ -118,6 +118,16 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
     CY_REQUIRE(runtime.reload(preview, offset.cook_key(), {&target, 1}));
     CY_REQUIRE(renderer.render(scene, camera).has_value());
     CY_CHECK(images_differ(plain_image.span(), renderer.color_texels()));
+    Array<u32> offset_image = copy_image(renderer.color_texels());
+
+    // A constant world-space offset must produce the same visible pixels and shadow as moving
+    // this exact object on the CPU with the otherwise identical material.
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    const u32 object = world.object_for(entity);
+    CY_REQUIRE(object < scene.objects_mutable().size());
+    scene.objects_mutable()[object].world_position[1] += 2.0;
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    CY_CHECK_FALSE(images_differ(offset_image.span(), renderer.color_texels()));
 }
 
 bool images_differ(Span<const u32> left, Span<const u32> right) {
@@ -156,6 +166,11 @@ CY_TEST_CASE("the hosted material shader calls the compiled vertex offset") {
     CY_CHECK(shader.find("output.positionRelativeToCamera += "
                          "cy_material_vertex_sway_primary_high_vertex_offset(ctx)") !=
              std::string_view::npos);
+    CY_CHECK(shader.find("EditorVertexOutput output = editorMaterialVertexBase(input)") !=
+             std::string_view::npos);
+    CY_CHECK(
+        shader.find("let position = editorMaterialVertexBase(input).positionRelativeToCamera") !=
+        std::string_view::npos);
 }
 
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {

@@ -27,6 +27,7 @@ using rendering::material::QualityTier;
 using rendering::material::ValueType;
 
 [[maybe_unused]] inline constexpr const char* kVertexEntry = "editorMaterialVertex";
+[[maybe_unused]] inline constexpr const char* kShadowVertexEntry = "editorMaterialShadowVertex";
 [[maybe_unused]] inline constexpr const char* kFragmentEntry = "editorMaterialFragment";
 
 class Writer {
@@ -218,8 +219,7 @@ float3 editorPosition(float3 position)
     return float3(dot(object.modelRow0, point), dot(object.modelRow1, point),
                   dot(object.modelRow2, point));
 }
-[shader("vertex")]
-EditorVertexOutput editorMaterialVertex(EditorVertexInput input)
+EditorVertexOutput editorMaterialVertexBase(EditorVertexInput input)
 {
     EditorVertexOutput output;
     output.positionRelativeToCamera = editorPosition(input.position);
@@ -241,6 +241,12 @@ EditorVertexOutput editorMaterialVertex(EditorVertexInput input)
         writer.text("_vertex_offset(ctx);\n");
     }
     writer.text(R"(
+    return output;
+}
+[shader("vertex")]
+EditorVertexOutput editorMaterialVertex(EditorVertexInput input)
+{
+    EditorVertexOutput output = editorMaterialVertexBase(input);
     let point = float4(output.positionRelativeToCamera, 1.0);
     output.clip = float4(dot(editorFrame.frame.viewProjectionRow0, point),
                          dot(editorFrame.frame.viewProjectionRow1, point),
@@ -251,6 +257,19 @@ EditorVertexOutput editorMaterialVertex(EditorVertexInput input)
     {
         output.clip.x += keepTextureTable + float(cyMaterialParameters.cyMaterialSlotCount);
     }
+    return output;
+}
+struct EditorShadowOutput { float4 clip : SV_Position; };
+[shader("vertex")]
+EditorShadowOutput editorMaterialShadowVertex(EditorVertexInput input)
+{
+    let position = editorMaterialVertexBase(input).positionRelativeToCamera;
+    let point = float4(position, 1.0);
+    EditorShadowOutput output;
+    output.clip = float4(dot(editorFrame.frame.lightViewProjectionRow0, point),
+                         dot(editorFrame.frame.lightViewProjectionRow1, point),
+                         dot(editorFrame.frame.lightViewProjectionRow2, point),
+                         dot(editorFrame.frame.lightViewProjectionRow3, point));
     return output;
 }
 [shader("fragment")]
@@ -515,6 +534,13 @@ Status MetalMaterialRuntime::publish(
         return fail(ErrorCode::InvalidArgument,
                     "the generated material vertex program did not compile to MSL");
     }
+    shader::DiagnosticLog shadow_diagnostics(*allocator_);
+    auto shadow_vertex =
+        compile_stage(kShadowVertexEntry, rhi::ShaderStage::Vertex, shadow_diagnostics);
+    if (!shadow_vertex.has_value()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the generated material shadow vertex program did not compile to MSL");
+    }
     shader::DiagnosticLog fragment_diagnostics(*allocator_);
     auto fragment = compile_stage(kFragmentEntry, rhi::ShaderStage::Fragment, fragment_diagnostics);
     if (!fragment.has_value()) {
@@ -569,9 +595,10 @@ Status MetalMaterialRuntime::publish(
             std::memcpy(program.parameters + parameter->offset, &index, sizeof(index));
         }
     }
-    if (Status retained = renderer_->retain_material(
-            artefact, vertex->bytes(), kVertexEntry, fragment->bytes(), kFragmentEntry,
-            {program.parameters, sizeof(program.parameters)});
+    if (Status retained =
+            renderer_->retain_material(artefact, vertex->bytes(), kVertexEntry, fragment->bytes(),
+                                       kFragmentEntry, shadow_vertex->bytes(), kShadowVertexEntry,
+                                       {program.parameters, sizeof(program.parameters)});
         !retained) {
         return fail(ErrorCode::InvalidArgument,
                     "the Metal renderer rejected the compiled material pipeline or resources");

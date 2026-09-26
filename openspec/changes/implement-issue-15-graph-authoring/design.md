@@ -31,9 +31,11 @@ Cooked material bundle version 2 carries each variant's vertex source and digest
 fragment source. Opaque shadow variants retain the vertex source despite having no fragment work;
 the reader continues to accept older version 1 bundles, and the compiler version forces recooking.
 The hosted Metal material program now places that generated vertex function in its shader unit and
-adds its world-space result before projection. A shader-unit regression checks the call, while the
-Metal image case compares the same material with and without the offset. Shadow and motion-vector
-paths still need the shared displaced position before task 3.3 is complete.
+adds its world-space result before projection. Visible and shadow vertex entry points call the same
+displaced-position helper and bind the same material parameter block. A shader-unit regression
+checks both calls; the Metal image case compares the constant GPU offset, including its shadow,
+against moving the same mesh on the CPU. Motion vectors and a time-varying CPU reference remain
+before task 3.3 is complete.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 

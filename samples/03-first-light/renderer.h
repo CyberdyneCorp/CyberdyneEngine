@@ -110,7 +110,8 @@ public:
     /// already crossed the engine shader compiler; this method only creates RHI objects.
     [[nodiscard]] Status retain_material(u64 artefact, Span<const u8> vertex_msl,
                                          const char* vertex_entry, Span<const u8> fragment_msl,
-                                         const char* fragment_entry,
+                                         const char* fragment_entry, Span<const u8> shadow_msl,
+                                         const char* shadow_entry,
                                          Span<const u8> parameters) noexcept;
     [[nodiscard]] Status update_material(u64 artefact, Span<const u8> parameters) noexcept;
     /// Bind the retained program to one exact scene object. This sample has one section per object,
