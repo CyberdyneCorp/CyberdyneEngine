@@ -80,6 +80,9 @@ enum class GraphOp : u16 {
     WorldPosition,
     Normal,
     Uv0,
+    /// Seconds elapsed in the engine preview, supplied each frame rather than cooked into a
+    /// parameter.
+    Time,
     Count,
 };
 

@@ -458,7 +458,9 @@ text material front end. It is available for authored material arithmetic. The v
 `material.world_position`, `material.normal`, and `material.uv0` geometry inputs. World position
 uses the renderer's camera-relative world coordinates; object position uses the mesh's local
 coordinates. The hosted viewport binds both positions for visible and shadow vertex evaluation.
-Time-driven motion and the remaining outputs are tracked by issue #15.
+`material.time` reads elapsed engine seconds from the first-light hosted preview frame in both stages, so a
+`material.sin` chain can animate an offset without a parameter edit or recompile. The remaining
+outputs are tracked by issue #15.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 

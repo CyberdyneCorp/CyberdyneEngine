@@ -91,6 +91,9 @@ The engine material catalogue assigns `material.vertex_output` a stable identity
 vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
 `material.world_position` lowers to the engine's `position` attribute, in camera-relative world
 coordinates; `material.object_position` retains mesh-local coordinates. Both are float3 inputs.
+`material.time` is a scalar engine input. The first-light hosted renderer writes elapsed seconds into the
+frame uniform before drawing each preview frame, and the material shader binds it for vertex and
+fragment expressions. Its value changes without a material recompile.
 Each compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
 its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
 the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including

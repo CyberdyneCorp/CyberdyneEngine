@@ -52,8 +52,9 @@ Material catalogue schema 3 publishes a stage mask per node from the engine voca
 Named engine catalogue nodes for object position, camera-relative world position, normal, and UV0
 now lower to fixed typed material attributes. The hosted viewport supplies both positions to the
 vertex function and carries them to fragment evaluation; visible and shadow entry points use the
-same binding. Vertex colour, time, noise, wind, custom interpolants, and displacement remain in
-task 3.1.
+same binding. A typed time node now reads monotonic elapsed seconds from the first-light hosted renderer's
+per-frame uniform for sine-driven offset expressions, without changing the material program.
+Vertex colour, noise, wind, custom interpolants, and displacement remain in task 3.1.
 
 ## Verification
 

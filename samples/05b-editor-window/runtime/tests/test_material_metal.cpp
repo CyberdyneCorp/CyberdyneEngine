@@ -211,6 +211,27 @@ CY_TEST_CASE("the hosted material shader binds camera-relative world position") 
              std::string_view::npos);
 }
 
+CY_TEST_CASE("the hosted material shader samples engine time in vertex and fragment stages") {
+    constexpr std::string_view source =
+        "material time_sway { attribute time_seconds : float; "
+        "vertex_offset = (0.0, sin(time_seconds), 0.0); }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    constexpr std::string_view binding =
+        "ctx.attributes.time_seconds = editorFrame.frame.shadowControl.z";
+    const usize vertex = shader.find(binding);
+    const usize evaluation = shader.find("_vertex_offset(ctx)");
+    CY_REQUIRE_NE(vertex, std::string_view::npos);
+    CY_REQUIRE_NE(evaluation, std::string_view::npos);
+    CY_CHECK_LT(vertex, evaluation);
+    CY_CHECK(shader.find(binding, evaluation) != std::string_view::npos);
+}
+
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
     first_light::Scene scene(allocator());

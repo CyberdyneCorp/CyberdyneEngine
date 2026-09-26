@@ -100,6 +100,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.subsurface", &["colour", "weight"], true),
     ("material.subtract", &["a", "b"], false),
     ("material.swizzle", &["value"], false),
+    ("material.time", &[], false),
     ("material.texture_sample", &["uv"], false),
     ("material.transmission", &["colour", "weight"], true),
     ("material.uv0", &[], false),

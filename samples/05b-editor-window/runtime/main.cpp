@@ -1037,7 +1037,7 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
 }
 
 /// Render one frame, composite the gizmo into it, and publish it.
-[[nodiscard]] bool publish_frame(Host& host, f32 phase) noexcept {
+[[nodiscard]] bool publish_frame(Host& host, f32 phase, f32 time_seconds) noexcept {
     host.camera = host.editor_camera ? host.asked_camera : host.scene->camera_at(phase);
     if (host.game_camera != ~u64{0} && host.authored_frame != nullptr) {
         (void)host.authored_frame->scene_camera(host.view_world->world(), host.game_camera,
@@ -1080,6 +1080,7 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
         }
         texels = host.authored_frame->pixels();
     } else {
+        host.renderer->set_time_seconds(time_seconds);
         const Expected<first_light::FrameReport, Error> frame =
             host.renderer->render(*host.scene, host.camera);
         if (!frame) {
@@ -1486,7 +1487,7 @@ int main(int argc, char** argv) {
             host.publisher->service();
             serve_editor(host);
             const f32 phase = static_cast<f32>(elapsed * options.orbit);
-            if (!publish_frame(host, phase - std::floor(phase))) {
+            if (!publish_frame(host, phase - std::floor(phase), static_cast<f32>(elapsed))) {
                 exit_code = 1;
                 break;
             }

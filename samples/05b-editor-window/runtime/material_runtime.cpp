@@ -111,7 +111,9 @@ struct StandardLibrary {
         }
         writer.text("    ctx.attributes.");
         writer.text(node.symbol.text());
-        if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
+        if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+            writer.text(" = editorFrame.frame.shadowControl.z;\n");
+        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
             writer.text(" = ");
             writer.text(source);
             writer.text(".positionRelativeToCamera;\n");

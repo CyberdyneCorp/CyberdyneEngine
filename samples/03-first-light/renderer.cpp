@@ -814,6 +814,7 @@ void Renderer::write_frame_constants(const Scene& scene, const Camera& camera) n
     constants.sun_color_and_ambient[3] = sun.ambient;
     constants.shadow_control[0] = scene.description().sun_shadows ? 1.0F : 0.0F;
     constants.shadow_control[1] = sun.shadow_normal_offset;
+    constants.shadow_control[2] = time_seconds_;
     *block = constants;
 }
 

@@ -98,6 +98,9 @@ public:
     [[nodiscard]] Expected<FrameReport, Error> render(const Scene& scene,
                                                       const Camera& camera) noexcept;
 
+    /// Set the elapsed engine time sampled by authored material graphs in the next frame.
+    void set_time_seconds(f32 seconds) noexcept { time_seconds_ = seconds; }
+
     /// The colour target of the last frame, as Rgba8Unorm texels, row-major from the top-left —
     /// which is the layout an image copy produces and the layout a PNG or a PPM wants. Empty when
     /// `RendererOptions::readback` is off, and empty on a backend that executes nothing.
@@ -180,6 +183,7 @@ private:
     struct MaterialState;
     MaterialState* materials_ = nullptr;
     u32 index_count_ = 0;
+    f32 time_seconds_ = 0.0F;
 };
 
 }  // namespace cy::sample::first_light

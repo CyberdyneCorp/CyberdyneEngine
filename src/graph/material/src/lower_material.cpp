@@ -69,6 +69,7 @@ constexpr NodeSpec kPalette[] = {
     {29, "material.normal", GraphOp::Normal, {}, 0, false},
     {30, "material.uv0", GraphOp::Uv0, {}, 0, false},
     {31, "material.world_position", GraphOp::WorldPosition, {}, 0, false},
+    {32, "material.time", GraphOp::Time, {}, 0, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
@@ -293,6 +294,8 @@ private:
         type = MaterialValueType::Vec3;
     } else if (spec.op == GraphOp::Uv0) {
         type = MaterialValueType::Vec2;
+    } else if (spec.op == GraphOp::Time) {
+        type = MaterialValueType::Float;
     }
     const MaterialImmediate value =
         immediate_of(graph.property(node.key, Name::intern("value")), {});
