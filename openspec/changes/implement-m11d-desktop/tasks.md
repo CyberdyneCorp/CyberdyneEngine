@@ -658,7 +658,7 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 - [ ] 9.6 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the
       same change that closes it, because a declared gap that starts passing fails the ledger; any it
       does not close keeps `known_gap_closes` pointed at the rung that will
-- [ ] 9.7 **Bind the quiet-host marker to the real wrapper.** Moved here from M11.c's tenth close by
+- [x] 9.7 **Bind the quiet-host marker to the real wrapper.** Moved here from M11.c's tenth close by
       the owner's ruling. `tests/harness/src/quiet_host_marker.cpp` trusts `CY_QUIET_HOST` when the
       named pid is a live ancestor with the marker's start tick and the BASENAME of its
       `/proc/<pid>/exe` is `cy_quiet_host`, so any binary renamed `cy_quiet_host` is trusted. It did
@@ -668,7 +668,18 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       compare the ancestor's `/proc/<pid>/exe` against the `cy_quiet_host` the build produced (same
       dev/inode or resolved path, passed at configure time), or hand the child a secret over an
       inherited file descriptor — and add a copied/renamed-binary forgery case to
-      `smoke.quiet_host_marker`, proven red on the current check
+      `smoke.quiet_host_marker`, proven red on the current check.
+      **Done.** The harness trusts the ancestor `CY_QUIET_HOST` names only when `/proc/<pid>/exe`
+      has the device and inode of the `cy_quiet_host` this build produced, whose path is compiled
+      in at configure time (`CY_QUIET_HOST_WRAPPER`). `smoke.quiet_host_marker`'s leg runs a copy
+      of `sh` renamed `cy_quiet_host` that forges a marker naming itself, and requires the stall to
+      be reported, not enforced; `unit.harness` holds trust by identity and the refusal of a
+      same-named file elsewhere. **The inside half, measured on a quiet host** (load 2.5): the real
+      built wrapper around the stall probe still says `enforced`, `quiet_host_test.py --leg marker`
+      exit 0 against `build/m11d-quiet-host-identity`. The criterion's impostor check grepped for
+      text the source splits across two literals and was red unmutated; it now matches the call
+      that runs the forgery. `m11d:quiet-host-marker-by-identity` is *proven against a built tree*
+      (red with `CY_QUIET_HOST_WRAPPER` renamed, green again once restored)
 - [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
       [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
       new or edited since the base (its falsifiability digest moved, or it was not in the base's
@@ -691,11 +702,11 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       Measured on a current `build/m11d-incremental-close`: a change to
       `src/save/src/container.cpp` selects 248 of 474 (the 5 save criteria by inputs, the renderer's
       skipped), a change to `cy/core/base/types.h` 417 (174 by inputs), no change 243 — a floor of
-      27 own, 4 smoke and 211 whose inputs cannot be read. **Owed at the next re-record:** the
-      criterion has no `falsifiability.toml` entry. The prover's sandbox copies TRACKED files and
-      `incremental.py` is not committed yet, so it reports "not provable here"; its declared
-      mutation was applied by hand instead — green, red (the shared-header case), green again,
-      md5-verified.
+      27 own, 4 smoke and 211 whose inputs cannot be read. **Recorded**: the body now names the
+      tree it selects against (`--build-dir "${CY_BUILD_DIR:-build/dev}"`), which it always read,
+      so the prover judges it against a build rather than a source copy with no git history.
+      `falsify prove --mutate-the-tree` against `build/m11d-incremental-close`: green, red under the
+      declared mutation, green again once restored — *proven against a built tree*.
 - [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
       change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
       from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
@@ -759,10 +770,10 @@ luck apart. `present.cpp` scopes it, and says so where it does.
         the recipe it runs is **red** with `SV_VulkanVertexID` reintroduced (`target_refusals=1`)
         and under its new declared mutation, `SV_Target` renamed in `cy/fullscreen.slang`
         (`target_refusals=2`, DXC: *invalid semantic … for ps 6.6*). `docs/roadmap/open-debts.md`
-        regenerated. **Not re-recorded**: `tools/roadmap/falsifiability.toml` still carries this
-        criterion's M11.c verdict and has no entry for `vertex-id-is-portable`, because
-        `--mutate-the-tree` refuses a tree other agents are writing to; the close phase's re-record
-        owes both.
+        regenerated. **Re-recorded** on the committed tree with `falsify prove
+        --mutate-the-tree` against `build/m11d-shaders-every-target`: both this criterion (red under the `SV_Target` rename)
+        and `vertex-id-is-portable` (red under the deleted `shaderDrawParameters` request) are
+        *proven against a built tree*, green again once restored.
 
 ## 10. The gate
 

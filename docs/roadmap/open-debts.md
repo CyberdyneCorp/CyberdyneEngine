@@ -98,7 +98,6 @@ so this document states the finding and moves nothing.
 | M11.b | `the-game-drawn` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
 | M11.b | `the-game-exists` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/ |
 | M11.b | `the-game-is-playable` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/ |
-| M11.c | `every-shader-reaches-every-target` | — nobody | red against a built tree | red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final … Interprocedural optimizations are turned on |
 
 ## 3. Behind the plan
 

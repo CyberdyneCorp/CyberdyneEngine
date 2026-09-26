@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 281 proven, 397 not yet shown able to fail.
+# 291 proven, 396 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -814,10 +814,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1
 [[proof]]
 ledger = "m11c"
 criterion = "every-shader-reaches-every-target"
-digest = "c443f5c5d23091ce"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final … Interprocedural optimizations are turned on"
+digest = "63f51821c507ddc3"
+verdict = "proven against a built tree"
+mutation = "rename-token 'SV_Target' in src/rendering/shaders/cy/fullscreen.slang (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-shaders-every-target (exit 1: error: Recipe `build-shaders` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -1141,6 +1141,30 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "acceptance-scenarios"
+digest = "7f5a9a7dbfc98aad"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'unindex_binding(bindings_[index]);' in src/gameplay/src/control.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-packaging-stress (exit 8: Errors while running CTest), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
+criterion = "build-and-packaging-moves-to-m11e"
+digest = "d5c1dfcf073521b8"
+verdict = "proven"
+mutation = "delete-lines 'build-and-packaging = \"complete\"' in tools/roadmap/milestones/m11e.toml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d"
+criterion = "content-audit"
+digest = "1a58f3e8d8d8ae3a"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'audit.unreachable_nodes.push_back(graph.node(id).name);' in tools/build/src/package.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-packaging-stress (exit 1: the content-audit case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
 criterion = "core-rows-at-complete-grade"
 digest = "c0bbe416d88044a7"
 verdict = "red in the tree"
@@ -1165,6 +1189,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "forward-clustered-desktop-floor"
+digest = "184a613cb0af6968"
+verdict = "proven"
+mutation = "lower-tiers (derived)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d"
 criterion = "four-profiles"
 digest = "9acead4583011b9e"
 verdict = "proven against a built tree"
@@ -1181,6 +1213,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "incremental-close-selects-by-inputs"
+digest = "16d0e38b68418060"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'files.update(self._repository_paths(headers))' in tools/roadmap/incremental.py (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-incremental-close (exit 1: ok   incremental: --changed-since without --incremental is refused, not a full run), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
 criterion = "layering"
 digest = "4a0b109ec0277529"
 verdict = "proven"
@@ -1194,6 +1234,22 @@ digest = "8131c42bc53b4505"
 verdict = "proven"
 mutation = "delete-lines '- [x] ' in openspec/changes/*m11d5*/tasks.md (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d"
+criterion = "msaa-through-the-graph"
+digest = "446136c1b88aab24"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'attachment.resolve_view = context.executor->view(target);' in src/rendering/graph/src/multisample.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-msaa-multiview (exit 1: render.msaa_multiview FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
+criterion = "multiview-by-capability"
+digest = "f281f1ecd39bfd7a"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'context.view_index = view;' in src/rendering/graph/src/executor.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-msaa-multiview (exit 1: the null-backend multi-view cases FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1221,11 +1277,27 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): no commi
 
 [[proof]]
 ledger = "m11d"
+criterion = "provenance-and-symbols"
+digest = "21de112ab8c51719"
+verdict = "proven against a built tree"
+mutation = "rename-token '-O3 -g -DNDEBUG' in cmake/profiles.cmake (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-packaging-stress (exit 8: Errors while running CTest), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
+criterion = "quiet-host-marker-by-identity"
+digest = "576f99d99406ff5e"
+verdict = "proven against a built tree"
+mutation = "rename-token 'CY_QUIET_HOST_WRAPPER' in tests/harness/src/quiet_host_marker.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-quiet-host-identity (exit 1: the named case FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
 criterion = "roadmap-tiers"
-digest = "9137be083990859b"
+digest = "a3ec71f3734cf25f"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): build-and-packaging: recorded 'working', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): core-assets-and-io: recorded 'working', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
 
 [[proof]]
 ledger = "m11d"
@@ -1250,6 +1322,14 @@ digest = "2eb2f60fe49c40a6"
 verdict = "proven"
 mutation = "delete-path in samples/11-ship/CMakeLists.txt (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d"
+criterion = "vertex-id-is-portable"
+digest = "031b7133f842a291"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'features11.shaderDrawParameters = VK_TRUE;' in src/backends/rhi/vulkan/src/vulkan_instance.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-shaders-every-target (exit 8: Errors while running CTest), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1422,7 +1502,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/release (exit 1
 [[proof]]
 ledger = "m11e"
 criterion = "roadmap-tiers"
-digest = "a3ad79ced5f6a180"
+digest = "f988198aac40f74f"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
@@ -2946,14 +3026,6 @@ digest = "222149cbbdac18cb"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "content-audit-and-symbols"
-digest = "19f816333575e311"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
