@@ -134,6 +134,22 @@ Regeneration works as `render.golden`'s does and for the same reason — `CY_REN
 ctest -R render.sky_times_of_day` writes the four references and then **fails**, naming what it
 wrote.
 
+## Cloud shadows in the world frame — `render.world_cloud_shadow`
+
+Draws with `samples/10-world`'s committed lit-pipeline SPIR-V (`samples/10-world/shaders/world_spirv.h`)
+over ground lit by a real `sky::CloudShadowField` that has marched one known cloud, seen straight
+down, and reads the half-float target back. Every texel is classified by the processor's reading of
+the same image bytes (`environment::sample_field_image`).
+
+| Case | Asserts |
+|---|---|
+| darker under, unchanged beside | every texel where the field lets less than half the sun through is darker, and matches the Lambert term with the sun scaled by the processor's field to 1%; every texel in full sun is bit-identical to the frame with cloud shadows off; no texel is brighter |
+| off, or under a clear sky | the placeholder binding, the field bound and off, the clear field bound and off, and the clear field bound and ON each give, bit for bit, the frame the world's shaders drew before cloud shadows (`world_before_cloud_shadows_spirv.h`, pinned at 2614fb0) — and the cloudy field on does not |
+| sky and ambient untouched | the emissive path the dome uses, and ground lit by the ambient term alone, are bit-identical with the field on and off over the darkest cloud |
+
+Each was seen red under a shader mutation, regenerated and restored:
+`openspec/changes/add-cloud-shadows/evidence/falsification.txt`.
+
 ## The artefact's air — `render.vfx`, whose reference lives here
 
 M11.c task 6.3, `m11c:vfx-in-the-shot`. **The case is declared by `src/vfx/tests/CMakeLists.txt`

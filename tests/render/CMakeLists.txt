@@ -217,6 +217,22 @@ function(cy_render_declare_tests)
         DEPENDENCIES cy::environment cy::rhi cy::rhi-null cy::rhi-vulkan cy::world)
     # For "device.h" and "shaders/field_probe_spirv.h", as the conventions suite above.
     target_include_directories(cy_test_render_environment_field PRIVATE "${cy_render_tests_dir}")
+
+    # CLOUD SHADOWS IN THE WORLD FRAME. `atmosphere-sky-and-clouds` — "Cloud shadows". The frame
+    # that consumes the field is `samples/10-world`'s, so this suite draws with THAT pipeline's
+    # committed SPIR-V over ground lit by a real `sky::CloudShadowField`, and reads the pixels back:
+    # darker under the cloud, unchanged beside it, the same frame with the field off or the sky
+    # clear, and the sky and the ambient term untouched. It includes the sample's shader header by
+    # path rather than linking the sample — the sample is an executable and its shaders are the
+    # only part of it under test.
+    cy_add_test(
+        NAME world_cloud_shadow
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_world_cloud_shadow.cpp"
+        DEPENDENCIES cy::environment cy::rendering-graph cy::rendering-sky cy::rhi cy::rhi-null
+                     cy::rhi-vulkan cy::world)
+    target_include_directories(cy_test_render_world_cloud_shadow
+                               PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
 endfunction()
 
 cy_render_declare_tests()
