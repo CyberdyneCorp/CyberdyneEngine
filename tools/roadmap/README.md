@@ -29,7 +29,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `quiet_host.py` | Whether a criterion that runs through `just test-quiet-host` keeps its whole line inside it: nothing after the wrapped command but `\|\| exit <n>`, and `exclusive` declared. M11.c's eighth close found `m6:culling`'s second suite running after the wrapper had exited. Since the ninth close (option B) it no longer names suites that must never run bare: the harness itself enforces its stall ceiling only inside a verified `cy_quiet_host` and reports a stall anywhere else. `tools/quiet-host/README.md` has why. |
 | `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
 | `incremental.py` | Incremental closes: which criteria a change since the last green full ledger can have moved, read from the build graph, the recipes and the ledgers' digests. A criterion whose inputs cannot be read is always selected. `just roadmap-milestone <rung> --incremental`. |
-| `incremental.toml` | Hand-written, reviewed and PINNED. Compile definitions that name the repository root and are only strings — `CY_DIAG_SOURCE_ROOT` — each with the files allowed to use it and a digest of their content, so the exemption lapses the moment the code it was reviewed over changes. |
+| `incremental.toml` | Hand-written, reviewed and PINNED. Compile definitions that name the repository root and are only strings — `CY_DIAG_SOURCE_ROOT` — each with the files allowed to use it and a digest of their content; and the ORIGINS of build-tree files no build edge produces (configure-time headers, fetched dependencies), each with every source it is made from and a digest of the code that generates it. Either lapses the moment the code it was reviewed over changes. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
 
@@ -210,6 +210,11 @@ repository itself, lets the criterion's own body rebuild over it (every one of t
 The ledger-blind control is not repeated here, and that is a rule rather than an omission: the shape
 it exists to catch — a grep that matches the ledger declaring it — is refused *before any run*, by
 the `self-match` rule in the table below.
+
+The same three runs take a criterion that is red in the sandbox only because the copy has no `.git`
+— one that reads the repository's history, as `m11d:port-touches-no-engine-layer` does. Without the
+flag it stays `not provable here`; with it, the tree control's green is the positive control and the
+mutation goes into the working tree.
 
 **What makes it safe to point at the repository.** `--mutate-the-tree` is a flag on a command line,
 never a default and never reached by `check`. It refuses to run inside another prover. Every byte it
@@ -795,7 +800,8 @@ curated list goes stale in the unsafe direction:
 a pipe, a redirection, a variable); a recipe that is not a test recipe with `-R`; a test that runs
 something the tree does not build (a Python script); a test that names the repository root or the
 build tree's root; a regex that selects no test; an object with no recorded or a `STALE` header
-record; and **a build tree that is not current** — `ninja -n` has work to do for the executable, so
+record; a build-tree file no build edge produces and no declared origin covers (below); and **a
+build tree that is not current** — `ninja -n` has work to do for the executable, so
 its dependency log describes an older tree. Build it first (`just build-engine`, with the same
 `CY_BUILD_DIR`) for a precise selection; `--build-dir` names another tree.
 
@@ -809,25 +815,54 @@ files changes or another file names a token, and the lapsed message prints the d
 after re-reading them. `CY_SOURCE_DIR`, which `test_material_compile_service.cpp` really does
 `fopen` under, has no entry and makes its tests unknown, as it should.
 
-**Measured on a current `build/m11d-incremental-close`, against M11.d's 474-criterion ledger:**
+**A build-tree file is known only through what it is made from.** A header or source in the build
+tree that a build edge produces is in the graph: `ninja -t inputs` already lists its sources, and a
+header only the dependency log names adds its edge's inputs. One that **no** edge produces — written
+at configure time by `configure_file()` or a generator `execute_process` runs, a precompiled-header
+stub, or a fetched dependency under `_deps/` (or under `CY_DEPS_CACHE`, which is read as the tree's
+own `_deps/`) — is made from files CMake *read*, and `file(STRINGS)` and `file(READ)` are not
+edges. The M11.d gate showed the cost: `toolchain_generated.h` is `configure_file()` of
+`toolchain_generated.h.in` with `deps/manifest.toml` and `deps/host-tools.toml` read into it, the
+selector kept only source-tree paths, and a change to the manifest selected nothing that included the
+header — a criterion's verdict flipped red unseen. Such a file now makes its target **unknown**,
+naming the file, unless `incremental.toml` declares its origin under `[[generated]]`: the output
+globs, every repository path it is made from (`sources`), and the code that writes it
+(`generated_by`, itself a source), pinned by a digest of that code. When that code changes it may
+read something new, so the origin **lapses** and the files are unknown again until somebody re-reads
+it and writes back the digest the message prints. Four origins are declared — the toolchain
+fingerprint header, `cy_features.h`/`cy_modules.h`, `cy_project.h`, and the fetched dependencies
+(`_deps/**` and glslang's `include/glslang/build_info.h`, from the commits `deps/manifest.toml`
+pins) — and `test_incremental_generated_headers` proves that a change to every source of every one
+selects the tests that include it; the profile spike's `spike/cy_profile_spike.cpp`, written by the
+top-level `CMakeLists.txt`, is left undeclared, so its tests are unknown.
 
-| changed | selected | by inputs | skipped |
-|---|---|---|---|
-| `src/save/src/container.cpp` | 248 | 5 — the save criteria; the renderer's are skipped | 226 |
-| `src/core/base/include/cy/core/base/types.h` | 417 | 174 | 57 |
-| nothing | 243 | 0 | 231 |
+**Measured on a current `build/m11d-selector-generated-headers` (main at `23ad643` plus this
+change), against M11.d's 474-criterion ledger:**
 
-The floor of about 240 is the rung's own 27, the smoke set, and **211 criteria whose inputs cannot be
-read** — 141 multi-line shell bodies, and recipes such as `quality-requirements` or `run-sample` that
+| changed | selected | by inputs | skipped | before generated files were traced |
+|---|---|---|---|---|
+| `src/save/src/container.cpp` | 248 | 5 — the save criteria; the renderer's are skipped | 226 | the same |
+| `src/core/base/include/cy/core/base/types.h` | 417 | 174 | 57 | the same |
+| `deps/manifest.toml` | 417 | 174 — every test built from `toolchain_generated.h` or a fetched dependency | 57 | **243, 0 by inputs** — the gate's hole |
+| nothing | 243 | 0 | 231 | the same |
+
+The last column is the selector as it was, on the same tree. With the four origins taken out of
+`incremental.toml`, the same 174 test criteria are **unknown** instead — selected every time, whatever
+changed — which is the fail-safe answer and the reason the origins are declared rather than guessed.
+The floor of about 240 is the rung's own 27, the smoke set, and **212 criteria whose inputs cannot be
+read** — 142 multi-line shell bodies, and recipes such as `quality-requirements` or `run-sample` that
 declare nothing. Every one of those is selected, every time; narrowing that floor is a matter of
-criteria saying what they read, never of this tool guessing. The three selections above took 28.6 s
-together, most of it reading the graph the first time.
+criteria saying what they read, never of this tool guessing. Reading the graph the first time took
+89 s on a machine running three other builds (28.6 s when M11.d first measured it on a quiet one);
+each further selection over the same graph is immediate.
 
-**The trust boundary is Ninja's own.** A generator reading a file its build edge does not declare
-would make Ninja skip a rebuild too; that is a build defect, and this mode inherits it rather than
-second-guessing it. What it does not inherit is anything a test reads *at run time* by a path the
-graph cannot see — which is why a test whose working directory is the repository root, or whose
-definitions name it, is unknown rather than known.
+**The trust boundary is Ninja's own, for what Ninja builds.** A generator reading a file its build
+edge does not declare would make Ninja skip a rebuild too; that is a build defect, and this mode
+inherits it rather than second-guessing it. What CMake writes at configure time is outside that
+boundary, which is why it is unknown unless an origin is declared. What it does not inherit is
+anything a test reads *at run time* by a path the graph cannot see — which is why a test whose
+working directory is the repository root, or whose definitions name it, is unknown rather than
+known.
 
 **The baseline is only ever a green FULL run.** A full `roadmap-milestone <rung>` that exits 0, on a
 tree that was clean and at the same HEAD from its first criterion to its last, records that HEAD in

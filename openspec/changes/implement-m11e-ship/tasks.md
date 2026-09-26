@@ -167,7 +167,10 @@ tier.
       milestone at all. The same defect was found and corrected **by hand, in one file** at
       `just/content.just` line 149 — which is why this is a check rather than a fourth edit.
       **`build-shaders` and `maintenance-clean` belong to `developer-workflow-and-just`, M11.d's row**;
-      correcting a stale label is a one-line edit and is not this rung absorbing that capability
+      correcting a stale label is a one-line edit and is not this rung absorbing that capability.
+      *Re-read at M11.d's records phase*: the four release recipes stopped refusing with 4.1 and
+      `build-shaders` refuses nothing; **`maintenance-clean` still names "2.1.5"**, and
+      `m11d:developer-workflow-recipes` now fails naming it (5b.4)
 
 ## 5. The full continuous-integration matrix
 
@@ -274,6 +277,94 @@ outside the first material vertical slice.
       deferred with a re-entry point — rather than absorbed into this section. The engine-side
       vocabulary a VFX catalogue would need does not exist either, which is what makes it a row for
       the sweep and not a front end for 5a.2
+
+## 5b. Inherited from M11.d — what the desktop rung did not finish, each with its defect
+
+**Lettered for the reason 5a is.** Written by M11.d's records phase (its task 9.5), in the shape
+M8.a, M8.c and M10 handed their next rung its entry: each item names the unchecked work and the
+DEFECT, not the intention. M11.d.5 sits between the two rungs and owns `rhi-and-render-graph`'s
+Complete cell; items whose subject is that row are routed there and are listed here only so this
+rung's sweep does not find them unannounced. **M11.d had not closed when this was written** —
+`implement-m11d-desktop` tasks 7.5, 9.3, 9.4, 10.1 and 10.3 were open — so its close phase
+re-reads this list against its own ledger run, deletes what it finished, and adds what it found.
+
+- [ ] 5b.1 **The nine rows' Complete cells have no requirement map behind them.** Measured with
+      `just quality-requirements` at M11.d's records phase: **0 of 98** requirements mapped to a test,
+      a gate or a recorded exemption across `testing-and-quality` (12), `developer-workflow-and-just`
+      (15), `core-assets-and-io` (10), `core-jobs-and-concurrency` (16), `core-memory-and-containers`
+      (16), `ecs-core` (12), `engine-architecture` (10) and `core-platform-abstraction` (7);
+      `build-and-packaging`'s 19 moved here with the row (5b.2). **No task in M11.d's list writes
+      the entries**: its task 6.3 read five of the rows requirement by requirement into their
+      READMEs, which is the reading and not the map. What the readings say, so the sweep starts from
+      them rather than from nothing:
+      - `ecs-core` (`src/ecs/README.md`) — 12 of 12 satisfied; the only one of the nine whose
+        reading supports Complete, and **its twelve entries were written by that same records
+        phase**, so it is 12 of 12 mapped and the other 86 are what this item carries
+      - `engine-architecture` (`src/runtime/README.md`) — `Server architecture` **partial since M2**
+      - `core-jobs-and-concurrency` (`src/core/jobs/README.md`) — `Frame pacing and synchronisation
+        points` and `Concurrency diagnostics` partial
+      - `core-memory-and-containers` (`src/core/memory/README.md`) — `Memory diagnostics` partial
+      - `core-assets-and-io` (`src/core/assets/README.md`) — `Package format` (the two encryption
+        flags) and `File and directory access` (behind `CY_ASSETS_POSIX_IO`) partial, `Compression
+        and cryptography` unmet in part
+      - `core-platform-abstraction`, `testing-and-quality`, `developer-workflow-and-just` — **never
+        read requirement by requirement**
+      Under M11.c task 3.5's rule an `exempt:m11e` entry is a deferral to this rung, so every row
+      above whose map needs one arrives in section 6's sweep with that partial as its reason, and
+      `m11d:core-rows-at-complete-grade` and `m11d:roadmap-tiers` stay red until the map is written
+- [ ] 5b.2 **`build-and-packaging` — already received, restated so the reason travels with it.**
+      M11.d task 7.6 moved the Complete cell here (`m11d:build-and-packaging-moves-to-m11e` holds
+      both halves of the move) and task 4.4 above receives it: downloadable content needs a SIGNED
+      package set and nothing in `core/crypto` signs; distributed execution needs remote workers; the
+      reproducibility bundle `samples/11-ship/ship.py` writes and verifies is archived by no CI step;
+      and symbol splitting is proved on ELF only — Mach-O (`dsymutil`) and PE/PDB are refused by name
+      because this host cannot produce them (M11.d task 7.5)
+- [ ] 5b.3 **`rendering-forward-clustered` — the desktop half is done and is not re-opened here.**
+      MSAA through the graph's attachment model and multi-view by capability are M11.d's
+      (`m11d:msaa-through-the-graph`, `m11d:multiview-by-capability`, both proven against a built
+      tree); section 2's mobile pipeline differences are what is left of the row's Complete cell,
+      and `m11d:forward-clustered-desktop-floor` holds the row at Working until then
+- [ ] 5b.4 **`maintenance-clean` still refuses naming task "2.1.5"**, which is no rung at all
+      (`just/maintenance.just:22`). It is `developer-workflow-and-just`'s — M11.d's row — and the
+      third of the three stale refusals task 4.5 found; `build-shaders` and the four `release-*`
+      recipes no longer refuse. `m11d:developer-workflow-recipes` now fails naming the line, so the
+      row cannot be recorded Complete over it at M11.d; if M11.d closes without the one-line fix, 4.5's
+      check receives it
+- [ ] 5b.5 **The shipped frame's two swapchain-boundary hazards** (M11.d section 8):
+      `SYNC-HAZARD-PRESENT-AFTER-WRITE`, one per frame, removed by giving `access.cpp`'s `Present` row
+      `Stage::AllCommands` (measured, then reverted, because that row is the render graph's own
+      vocabulary), and `SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ`, which neither
+      the acquire semaphore's wait stage nor importing the image as `Presentable` moved. Both are
+      `rhi-and-render-graph`'s and so **M11.d.5's**; `cy_sample_ship` exits 3 over them and
+      `m11d:ship-sample-on-desktop` is red while they stand — re-measured at M11.d's records phase
+      on HEAD `23ad643`: 60 errors per 30-frame leg, both legs, identical
+- [ ] 5b.6 **The stub platform's default user mount is a relative path that must already exist.**
+      `StubPlatform::user_mount_` is `"stub-user/"` (`platform/stub/include/cy/platform/stub_platform.h`)
+      and nothing calls `set_user_mount()`, so `cy_sample_empty --platform stub` fails startup with
+      *"the trace file could not be created (Io)"* in any directory without that folder. The
+      porting-surface proof this rung's mobile target repeats (proposal §What Changes) inherits it:
+      default it to a directory the platform creates, or make the refusal name the path it wanted
+- [ ] 5b.7 **Nothing persists the pipeline cache across runs.** Metal gap 6 changed both calls to
+      take a path and `integration.rhi_pipeline_cache` round-trips it, but no caller above
+      `src/backends/rhi/` saves or loads one — the requirement the calls serve is unimplemented, which
+      a signature change does not fix (`metal_gaps()`'s own row says so). `rhi-and-render-graph`,
+      M11.d.5
+- [ ] 5b.8 **The RHI has no device-class query.** `DeviceCapabilities` answers `device_name()` and
+      `driver_version()` and nothing that says discrete, integrated or software, so the ship card and
+      `render.golden_backends` classify a device from its identity (M11.d tasks 7.3 and 8.3). Any
+      claim this rung makes about a mobile GPU names the device the same way until the capability
+      exists — M11.d.5's row
+- [ ] 5b.9 **A dead duplicate header tree redefines a public class.**
+      `src/core/assets/include/cy/core/assets/hot_reload.h` declares a second, differently-shaped
+      `cy::assets::FileWatcher` beside `watch.h`'s; `src/hot_reload.cpp` and its test are compiled by
+      nothing, and its one includer is a dead tree under `src/backends/shader/include/cy/shader/`.
+      Not a live bug, and an ODR violation the day anything includes it. Both trees go in one change
+      (`src/core/assets/README.md`, M11.d's reading of `core-assets-and-io`)
+- [ ] 5b.10 **What the acceptance scenarios say they do not exercise** (M11.d task 7.2), on each
+      test's own output: world streaming and network authority (strategy stress), networking and
+      prediction (control handover), connections, replication and world streaming (headless server).
+      They are `networking-and-replication`'s and `world-partition-and-streaming`'s claims, read by
+      section 6 — not a gap in the scenarios
 
 ## 6. The sweep — every remaining row Complete, or deferred with a re-entry point
 

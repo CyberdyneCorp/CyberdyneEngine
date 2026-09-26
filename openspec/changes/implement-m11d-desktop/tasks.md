@@ -499,8 +499,25 @@ not change**, which is a first-hand reading of them whether or not anybody calls
         the symbols, and requires that bundle's symbols to verify on their own. The launch now prints
         and the driver checks all seven provenance fields, the ENGINE revision separate from the
         PROJECT's (`git log -1 -- samples/11-ship/project`).
-      * **Not done, and not this rung's to do:** the CI upload of that bundle is a step in `ci.yml`,
-        which the close phase owns and M11.e's full matrix rewrites; and Mach-O (`dsymutil`) and
+      * **THE CI UPLOAD: WRITTEN, NOT YET OBSERVED ON A RUN.** `ci.yml`'s `test` job gained *"The
+        package's reproducibility bundle and its split symbols"* after `just test-all`, on the two
+        Linux legs: `actions/upload-artifact` of `build/dev/samples/11-ship/run/reproduce` as
+        `provenance-<label>`. The bundle already carries the split symbols (`symbols/.build-id/…`
+        and `symbols/builds/<build id>`), so the work directory's own store is not uploaded twice.
+        **`include-hidden-files: true` is load-bearing**: `.build-id/` is a dot-directory, and
+        upload-artifact drops hidden files by default, which would have archived the build-identity
+        index and not the symbols it points at. `if-no-files-found` is `error` when the job is green
+        and `warn` when it is red, so a passing suite that produced no bundle fails the job. Checked
+        here: the path is exactly what `smoke.ship` writes (run green on
+        `build/m11d-provenance-ci-and-quiet`: 6 bundle files plus the 2 symbol files, 26 MB, the
+        `.debug` under the dot-directory), `symbols.py locate` and `verify` answer from the bundle's
+        copy alone, `ship.py` clears `reproduce/` at the start of every run so a restored
+        `build/dev` cache cannot contribute a stale bundle, and `just ci-check` is unchanged against
+        `main`. **Why the box stays open**: no CI run has executed the step — recent `main` runs
+        were cancelled or failed before the `test` job — so an archived bundle has not been seen.
+        Tick it on the first run that shows a `provenance-linux-x86_64` artefact holding a
+        `.debug` file.
+      * **Not done, and not this rung's to do:** Mach-O (`dsymutil`) and
         PE/PDB are the same four checks with other spellings, which this Linux host cannot produce —
         a non-ELF input is refused by name, never treated as stripped. Both travel with the row to
         M11.e (7.6). Criterion: `m11d:provenance-and-symbols`
@@ -644,20 +661,96 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 
 ## 9. Records and gates
 
-- [ ] 9.1 Write `tools/roadmap/milestones/m11d.toml` — this rung's own criteria only, the ledger flat
+- [x] 9.1 Write `tools/roadmap/milestones/m11d.toml` — this rung's own criteria only, the ledger flat
       — declare `milestone-m11d` in `gates.toml` and raise `selftest.MINIMUM_CRITERIA`
+      **Done, as a review of the ledger the rung had grown rather than a first draft of it.** 36
+      criteria, every one this rung's own (none restates an earlier rung's; the nine static gates are
+      spelled as every ledger spells them). `milestone-m11d` was already declared; its `describe`
+      still names Metal and D3D12, which moved to M11.d.5 — the close phase owns `gates.toml` and
+      is told so in 10.4. The floor is **36** (`selftest.MINIMUM_CRITERIA`, was 25), counted from
+      the exit conditions rather than from the file, and the count is written beside it.
+      **Six criteria could not do what they claimed, and each is repaired to check more, not less:**
+      - `rhi-interface-gaps-settled` and `null-backend-refuses-what-it-cannot-do` — the close
+        phase's items 6 and 7: filters naming cases that never existed, selecting 0 of 45. They now
+        name section 1's cases gap by gap (13 in `unit.rhi`, gap 6 in
+        `integration.rhi_pipeline_cache`, and `unit.rhi_metal_seed`'s own *"8 total, 0 still
+        open"*), and the null backend's five refusal cases by full name with an exact count. Both
+        green against `build/m11d-records` (and `build/m11d-incremental-close`), and each watched
+        RED there under its declared mutation — `return preferred;` deleted from
+        `select_depth_stencil_format()` fails gap 7 (`D32SfloatS8Uint` handed back for a supported
+        `D24UnormS8Uint`), and the null `present()`'s out-of-range refusal deleted fails the
+        swapchain case — then restored, md5-verified, rebuilt and green again
+      - `port-touches-no-engine-layer` — item 8: it waited for a commit subject the interval
+        snapshots could never write. It now reads every commit since `ebdf8d5` that touched
+        `platform/linux-native/` or `platform/stub/`, and fails on any change in them — or
+        uncommitted — to `src/core/platform/` or to an engine-layer header the two ports include,
+        transitively (29, computed from the `#include`s, never a hand list). Measured: 8 commits,
+        0 such changes; 15 other engine-layer files rode in those snapshots and the ports reach
+        none of them (section 6's work). Watched RED with `#pragma once` deleted from
+        `display_server.h`, green again once restored, md5-verified
+      - `developer-workflow-recipes` — item 4: it read `M11.E` as a bare `M11` (lower-case rung
+        letters only) and flagged three COMMENTS. It now reads every non-comment line with no
+        keyword filter, reads a rung in either case, and ALSO fails a `_not-implemented` refusal
+        whose task names no rung — so it is **red today, on purpose**: `maintenance-clean` refuses
+        naming task "2.1.5" (`just/maintenance.just:22`). Green in a copy with that one argument
+        naming M11.e; red with `"m11e",` deleted from `record.MILESTONES`, restored and md5-verified
+      - `release-recipes-stop-refusing` — M11.e task 4.1 implemented the four recipes, and the body
+        still called `release-changelog` with no `--version` and `release-artefacts --dry-run`, an
+        option that does not exist: red on argument parsing. It now reads what each recipe
+        produces — a version, a changelog file for it — and runs `just release-test` (6 of 6).
+        Green; red with the `release-version` recipe's body deleted, restored and md5-verified
+      - `ship-sample-on-desktop` — refuted by the prover as `absent-sample`: `run-sample 11-ship
+        --from-package` named a binary and an option that never existed. It now runs the ONE recipe
+        section 8 built, `just run-ship --platform both --require-draw`, `requires = "display"`.
+        **Run against `build/m11d-records`: RED, and correctly.** 14 steps satisfied — built,
+        cooked, packaged, installed, verified, launched, provenance read back, 30 frames PRESENTED
+        through `desktop-sdl3` and through `linux-x11` on the RTX 5060, the content change redrawn
+        without a recompile — and 2 not: each leg trips **60 validation errors** (two per frame,
+        `SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ` and
+        `SYNC-HAZARD-PRESENT-AFTER-WRITE`), section 8's two hazards, unchanged. The artefact is not
+        shipped over them; M11.e 5b.5 names the owner. Its declared mutation cannot be proven
+        against a criterion that is red unmutated, so it waits for the hazards
+      **And two made stricter by 10.5**: `vertex-id-is-portable` reads its render suites' verbose
+      log and fails on either fixture's skip line (see 10.5), and the stale note claiming `just
+      quality-requirements` does not exist is corrected. `core-rows-at-complete-grade`'s describe
+      said five rows while its command has always named six; the describe now says six.
+      **What this costs, stated so it is not discovered**: every repaired body has a new digest,
+      so its falsifiability entry no longer matches and `just roadmap-test` refuses it until it is
+      re-proven — which `falsify prove --mutate-the-tree` will only do on a tree git calls clean.
+      10.2 lists them
 - [x] 9.2 An `m11e-open` criterion using the double-star glob form — satisfied and RE-POINTED by
       the insertion; see the close phase's verdict at the end of this file
 - [ ] 9.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them
 - [ ] 9.4 Move `ci.yml`'s milestone job to `m11d` in the same commit that flips the gate green — the
       job runs on every push to `main`, so this commit must not land before the gate is green
-- [ ] 9.5 **Hand M11.e its entry.** The M11.e change directory already exists with its README and
+- [x] 9.5 **Hand M11.e its entry.** The M11.e change directory already exists with its README and
       proposal; what this rung owes it is a written statement of **what M11.d did not close**, in the
       shape M8.a, M8.c and M10 used — unchecked tasks named, with the defect rather than the intention
-- [ ] 9.6 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the
+      **Written**: `implement-m11e-ship/tasks.md` section **5b**, lettered as 5a is so `m11e.toml`'s
+      task citations keep pointing where they did. Ten items, each an unchecked task with its defect
+      and its owner: the nine rows' requirement map (0 of 98, and what section 6.3's readings say
+      per row), `build-and-packaging`'s move restated with its four reasons, the desktop half of
+      `rendering-forward-clustered` recorded as done, `maintenance-clean`'s rung-less refusal, the
+      ship frame's two swapchain hazards, the stub platform's relative user mount, the pipeline
+      cache nothing persists, the missing device-class query, the dead duplicate `FileWatcher`
+      header, and what the acceptance scenarios say they do not exercise. **Items whose subject is
+      `rhi-and-render-graph` (5b.5, 5b.7, 5b.8) are named as M11.d.5's**, the rung between the two;
+      they are listed in M11.e only so its sweep does not meet them unannounced. **M11.d had not
+      closed when this was written**, and the section says so: the close phase re-reads it against
+      its own ledger run, deletes what it finished and adds what it found
+- [x] 9.6 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the
       same change that closes it, because a declared gap that starts passing fails the ledger; any it
       does not close keeps `known_gap_closes` pointed at the rung that will
+      **Checked across all 22 ledgers, and there is nothing left to move.** No declared gap names
+      `known_gap_closes = "m11d"`. The two this rung was handed or reached are already closed with
+      their declarations deleted in the change that closed them: `m11c:every-shader-reaches-every-target`
+      (9.9) and `m11a:developer-workflow-at-working` (its own comment: *"THE GAP HAS CLOSED"* — the
+      Release category stopped refusing with M11.e task 4.1). The one this rung owns half of,
+      `m9:record-matches-plan-history`, stays pointed at **m11e**, correctly: `testing-and-quality`
+      and `developer-workflow-and-just` are still recorded at Seed, and a tier nobody has written is
+      the gap still open. The other fifteen declarations point at m11e, m12 or m13 and none has a
+      subject in this rung. `just roadmap-debts --check`: the open-debts document matches its sources
 - [x] 9.7 **Bind the quiet-host marker to the real wrapper.** Moved here from M11.c's tenth close by
       the owner's ruling. `tests/harness/src/quiet_host_marker.cpp` trusts `CY_QUIET_HOST` when the
       named pid is a live ancestor with the marker's start tick and the BASENAME of its
@@ -679,7 +772,18 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       exit 0 against `build/m11d-quiet-host-identity`. The criterion's impostor check grepped for
       text the source splits across two literals and was red unmutated; it now matches the call
       that runs the forgery. `m11d:quiet-host-marker-by-identity` is *proven against a built tree*
-      (red with `CY_QUIET_HOST_WRAPPER` renamed, green again once restored)
+      (red with `CY_QUIET_HOST_WRAPPER` renamed, green again once restored).
+      **Re-measured on a second, independent tree, quiet by the wrapper's own verdict rather than
+      by load average**: `build/m11d-provenance-ci-and-quiet` at `23ad643`, its compiled-in
+      `CY_QUIET_HOST_WRAPPER` naming that tree's own `cy_quiet_host`. Each attempt first ran that
+      wrapper around `true` as the gate, then the leg; a heavy I/O burst from peer builds (full
+      I/O pressure 60–95%) held the gate shut from 08:31 to 08:54, and three gated attempts
+      after it still came back exit 3 because the wrapper inside the leg judged the host busy (2.4
+      to 4.5 other cores). Attempt 5 (gate at 09:01:14: 1.05 other cores, CPU and I/O pressure
+      0.0%) gave `leg 6, the marker the harness trusts: held`, exit 0 at 09:01:28. That run covers
+      both halves: every forgery, including the renamed copy of `sh`, came back `not enforced`, and
+      inside the real wrapper both the vfork stall and the spin failed with `enforced: inside
+      cy_quiet_host`
 - [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
       [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
       new or edited since the base (its falsifiability digest moved, or it was not in the base's
@@ -782,18 +886,99 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 - [ ] 10.2 **Every criterion executes something and can fail** — break what it checks and prove it
       goes red. M6 shipped four that did not, and M9's gate found one that passed 44 of 44 with its
       enforcement point deleted
+      **THE LIST, from the records phase — 16 of 36 have no current recorded proof**, read by
+      comparing each criterion's `falsify.digest` with its entry in `falsifiability.toml`:
+      - **edited by 9.1 or 10.5, so the entry no longer matches** (7): `rhi-interface-gaps-settled`,
+        `null-backend-refuses-what-it-cannot-do`, `vertex-id-is-portable` (was proven against a
+        built tree), `port-touches-no-engine-layer`, `developer-workflow-recipes`,
+        `release-recipes-stop-refusing`, `ship-sample-on-desktop`. Each carries a declared mutation
+        and each was watched RED by hand under it or under the defect it now catches (9.1, 10.5);
+        none is RECORDED, because `falsify prove --mutate-the-tree` refuses a tree git calls dirty
+        and this phase may not commit. `falsify prove m11d --only rhi-interface-gaps --record`
+        was tried and REFUSED — *"not already on the list. The list only shrinks"* — which is the
+        rule working
+      - **recorded red in the tree, and meant to be until the close** (2, and
+        `developer-workflow-recipes` above): `core-rows-at-complete-grade` (12 of 71 mapped) and
+        `roadmap-tiers` (nothing written)
+      - **the shared static gates, unproven on every ledger** (6): `specs`, `format`,
+        `roadmap-record`, `plan-consistency` (no mutation derivable), `lint`, `generated-code`
+        (need a built tree) — ladder debt, not this rung's
+      - **`porting-surface-against-a-stub`** (1): "not provable here", a build, with no declared
+        mutation
+      The other 20 are proven, 10 of them against a built tree. What the close owes, in order: land
+      this phase's edits, then on the clean tree `falsify prove m11d --mutate-the-tree --build-dir
+      <a current build> --record`
 - [ ] 10.3 **Adversarial pass on this rung's own invariants**: make a deliberate edit under
       `src/core/` during the port and confirm 4.2's check refuses it; ask for a backend that was not
       built and confirm the refusal names the option rather than failing at the first call; remove a
       format from the per-format query and confirm the engine picks the substitute rather than
       drawing wrong; record a secondary before its pass is begun and confirm 1.2's precondition
       refuses; delete a gate's input and confirm the gate goes red
-- [ ] 10.4 Records verified against what the code supports, not what the plan claimed — **including
+- [x] 10.4 Records verified against what the code supports, not what the plan claimed — **including
       this rung's own Complete cells against the status record**, which is what `m9:record-matches-plan`
       is for and it is not milestone-specific in shape
-- [ ] 10.5 **The evidence rule applied to this rung's own claims.** No golden-image tick over an
+      **VERIFIED, AND THE VERDICT IS THAT NONE OF THE NINE COMPLETE CELLS IS SUPPORTED TODAY.**
+      `just quality-requirements` over the rows: **0 of 98** requirements mapped to anything for
+      `testing-and-quality`, `developer-workflow-and-just`, the five core rows and
+      `core-platform-abstraction` (`build-and-packaging` moved, 7.6) — no task in this list writes
+      the entries. Section 6.3's READMEs are the
+      reading and they are not all clean: `ecs-core` 12 of 12 satisfied, but `engine-architecture`
+      has `Server architecture` partial, `core-jobs-and-concurrency` two partials,
+      `core-memory-and-containers` one, `core-assets-and-io` two and one unmet in part, and three
+      rows were never read requirement by requirement. By M11.c task 3.5's rule a row that needs an
+      `exempt:m11e` is not Complete here, so **at most `ecs-core` can be recorded Complete**, and
+      its twelve entries are now written (`requirements-coverage.toml`, `--- ecs-core ---`, each
+      naming the case that observes the requirement's sharpest scenario and the cases beside it):
+      12 of 12, and `core-rows-at-complete-grade` reads **12 of 71**. The rest is M11.e's section
+      5b.1 unless finished first. The
+      status record agrees with the specifications (`just roadmap-status`: 76 capabilities, the
+      matrix's lists rendered from it) and records all nine below Complete, which is right.
+      **The merges since M11.c's close, checked against the records**:
+      - **#21 bloom, #22 ambient occlusion**: `rendering-post-processing` answers 15 of 15 with 7
+        exemptions and is recorded Working — consistent. Three passages the two merges made false
+        are corrected in `requirements-coverage.toml`: `Anti-aliasing`'s exemption said *"NOTHING
+        RECORDS"* the temporal stage and MSAA was *"declared nowhere"* — TAA executes
+        (`execute-temporal-antialiasing`) and MSAA runs through the graph (section 5), so the note
+        now names what executes and what is still exempt (variance/YCoCg clip, disocclusion
+        reconstruction, sharpening, FXAA, SMAA, alpha-to-coverage); `Bloom`'s note said D3D12 was
+        blocked on `m11c:every-shader-reaches-every-target`, which 9.9 closed — measured on HEAD's
+        sources, `cy_shaderc build --strict src samples` answers `entry_points=60 artefacts=180
+        failures=0 target_refusals=0`, `cy/bloom.slang` and both GTAO modules among them; and two
+        historical comment blocks that said no AO or bloom shader exists carry a dated correction
+        rather than a rewrite
+      - **#23 cloud shadows**: `atmosphere-sky-and-clouds` 13 of 13, one exemption, recorded Working
+        — the section's own header was updated by that change and agrees
+      - **#14 editor FBX, lights and Swift Play; #20 the Linux viewport**: every editor row answers
+        all of its requirements (with exemptions) and is recorded Working — consistent
+      - **#16 save system**: `save-and-persistence` maps 0 of 20 and is recorded Working, demoted to
+        M11.e by M11.a — no Complete claim to contradict; `just roadmap-debts --check` agrees
+      - across **all 76 rows**: 409 of 1 229 requirements answered, and **no entry names a suite
+        that is not there or a requirement the specification no longer asks**
+      **Records the close phase owns and must correct, not edited here**: `gates.toml`'s
+      `milestone-m11d` describe still promises *"Metal native … D3D12 to Vulkan parity"*, which moved
+      to M11.d.5; `capability-matrix.md` still shows `build-and-packaging`'s **C** under M11.d (7.6
+      said so); and `m11e.toml`'s comment lists `rendering-post-processing` as *"9 exempt — AO … bloom"*,
+      which is 7 now. And one observation for the ladder rather than this rung:
+      `m9:record-matches-plan-history`, run here, names **39** cells over six closed milestones — 12
+      at M11.a and 23 at M11.b planned Complete and recorded Working, beside the four its
+      declaration describes — so the declaration's text is behind its own subject
+- [x] 10.5 **The evidence rule applied to this rung's own claims.** No golden-image tick over an
       unphotographed frame; no "parity" over a backend that compiled; NOT EVALUATED is never a pass,
       and a reported gap is the outcome this gate prefers to a green one it cannot defend
+      **Applied criterion by criterion, and ONE WAS PASSING ON A RUN THAT DREW NOTHING.**
+      `vertex-id-is-portable` ran `ctest` over `render.pipeline` and `render.vfx` and trusted its
+      exit status, and `requires = "gpu"` asks only whether a DRM render node exists. **Measured**
+      against `build/m11d-shaders-every-target` with the Vulkan loader pointed at no driver: the old
+      body exits **0** with `render.pipeline (Skipped)` and render.vfx's four cases printing *"no
+      Vulkan device on this machine"*. The body now reads the verbose log and fails on either
+      fixture's skip line or on ctest's own `Skipped` — **red** in that run, **green** (4 of 4) on
+      the RTX 5060. The rest hold: `msaa-through-the-graph` and `multiview-by-capability` already
+      required a printed device measurement; `native-backend-runs-the-m0-sample` reads the display
+      the sample reports and checks it against an SDL3 control; `shader-targets-emitted` claims
+      emission and nothing about parity; the ship card and `render.golden_backends` print Metal and
+      D3D12 as NOT EVALUATED rather than omitting them; `ship-sample-on-desktop` now asks for
+      `--require-draw` on both legs, so a leg that presented nothing is red rather than NOT
+      EVALUATED, and exit 3 — drew, tripped validation, a GAP — is red too
 
 
 ## The close phase's verdict — M11.d DOES NOT CLOSE, AND NEITHER DOES M11.c TODAY

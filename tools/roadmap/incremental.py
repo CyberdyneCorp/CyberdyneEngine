@@ -39,6 +39,14 @@ entry — the second is the digest check in set 2. A compile definition naming t
 a read of anything, unless `incremental.toml` carries a reviewed exemption for it, pinned by a digest
 of the files that use it (`exempt_definitions`).
 
+A BUILD-TREE file a target is made from is known only through what it is made from. One a build edge
+produces is in the graph. One no edge produces — written at configure time (configure_file, a
+generator run by execute_process, a PCH header) or fetched (`_deps/`) — records its sources nowhere:
+the files CMake read to write it are not edges, so a change to them moves nothing in the graph. Such a
+file makes its target UNKNOWN, unless `incremental.toml` declares its origin: every source it is made
+from, pinned by a digest of the code that generates it (`generated_origins`), so the declaration
+lapses — and the file is unknown again — the moment that code changes.
+
 **THE FULL LEDGER STAYS THE DEFAULT AND STAYS THE CLOSE.** `just roadmap-milestone <rung>` is
 unchanged; this mode is an explicit flag. The full flattened ledger runs nightly and at M11.e, and a
 green full run is what records the commit an incremental run defaults to comparing against — an
@@ -50,6 +58,7 @@ Governed by: delivery-roadmap (Milestone exit criteria are executable), testing-
 from __future__ import annotations
 
 import datetime
+import functools
 import hashlib
 import json
 import os
@@ -94,10 +103,12 @@ UNCHANGED = "inputs unchanged"
 _UNREADABLE_BODY = re.compile(r"[\n;|&`<>*?\[\]#\\]|\$[({A-Za-z_0-9]")
 _NO_WORK = "no work to do"
 
-#: The reviewed exemptions for compile definitions that name the repository root. See
-#: `exempt_definitions`.
+#: The reviewed declarations: exemptions for compile definitions that name the repository root
+#: (`exempt_definitions`) and the origins of build-tree files no build edge produces
+#: (`generated_origins`).
 EXEMPTIONS_FILE = Path(__file__).resolve().parent / "incremental.toml"
 EXEMPT = "exempt"
+OBJECT_SUFFIXES = (".o", ".obj")
 
 
 class IncrementalError(Exception):
@@ -153,6 +164,7 @@ def _glob_matches(path: str, pattern: str) -> bool:
                if str(ancestor) != ".")
 
 
+@functools.cache
 def _glob_regex(pattern: str) -> "re.Pattern[str]":
     """`PurePath.full_match` semantics without it: that method arrived in Python 3.13, and CI runs 3.12.
     `**` spans any number of whole segments (including none), `*` and `?` stay within one segment."""
@@ -165,6 +177,10 @@ def _glob_regex(pattern: str) -> "re.Pattern[str]":
             continue
         text = "".join("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c) for c in segment)
         parts.append(text if last else text + "/")
+    if len(segments) > 1 and segments[-1] == "**" and segments[-2] != "**":
+        # A trailing `**` matches no segment too, and then the separator before it goes with it:
+        # `src/save/**` matches `src/save`.
+        parts[-2:] = [parts[-2][:-1], "(?:/[^/]+)*"]
     return re.compile("".join(parts))
 
 
@@ -243,9 +259,17 @@ class BuildGraph:
     _unavailable: str | None = field(default=None, init=False)
     _targets: dict[str, Inputs] = field(default_factory=dict, init=False)
     _classified: dict[str, tuple[str, str]] = field(default_factory=dict, init=False)
+    _outputs: frozenset[str] | None = field(default=None, init=False)
+    _declared: tuple[Origin, ...] | None = field(default=None, init=False)
+    _origin_of: dict[str, Origin | None] = field(default_factory=dict, init=False)
+    #: Where FetchContent put the dependencies' sources when that is outside the tree (the cache's
+    #: `CY_DEPS_CACHE`); a path under it is read as the tree's own `_deps/`.
+    _deps_cache: str = field(default="", init=False)
     #: Definitions that name the repository root and are READ AS TEXT, never opened: see
     #: `exempt_definitions`. Each maps to the reason it is exempt, or to why its exemption lapsed.
     exemptions: Callable[[], dict[str, str]] = field(default=lambda: {})
+    #: The declared origins of build-tree files no build edge produces: see `generated_origins`.
+    origins: Callable[[], tuple[Origin, ...]] = field(default=lambda: generated_origins())
 
     def __post_init__(self) -> None:
         # Every path a tree reports is absolute or relative to it, so both roots must be absolute
@@ -278,6 +302,9 @@ class BuildGraph:
         home = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$", cache, re.MULTILINE)
         if not home or Path(home.group(1)).resolve() != self.repo_root.resolve():
             return f"{self._display(self.build_dir)} was configured from another source tree"
+        deps_cache = re.search(r"^CY_DEPS_CACHE:PATH=(.+)$", cache, re.MULTILINE)
+        if deps_cache:
+            self._deps_cache = str((self.build_dir / deps_cache.group(1).strip()).resolve())
         stale = self._manifest_stale() or self._globs_stale()
         if stale:
             return stale
@@ -359,24 +386,33 @@ class BuildGraph:
         if status != 0:
             return Inputs.unknowable(f"`ninja -t inputs {target}` failed")
         files: set[str] = set()
+        listed: set[str] = set()
+        included: set[str] = set()
         inputs = Inputs(account=(f"the build graph of {target}",))
         for line in filter(None, (line.strip() for line in listing.splitlines())):
             where, path = self._classify(line)
             if where == "repo":
                 files.add(path)
-            elif where == "build" and path.endswith((".o", ".obj")):
-                inputs = inputs.union(self._object_inputs(path, files))
-        return inputs.union(_with_cmake(files))
+            elif where == "build" and path.endswith(OBJECT_SUFFIXES):
+                inputs = inputs.union(self._object_inputs(path, files, included))
+            elif where == "build" and path:
+                listed.add(path)
+        return inputs.union(self._built_inputs(target, listed, included)).union(_with_cmake(files))
 
-    def _object_inputs(self, obj: str, files: set[str]) -> Inputs:
-        """An object's headers, from the dependency log, and the paths its definitions name."""
+    def _object_inputs(self, obj: str, files: set[str], included: set[str]) -> Inputs:
+        """An object's headers, from the dependency log, and the paths its definitions name.
+        Source-tree headers go to `files`, build-tree ones to `included`."""
         deps = self._dependency_log()
         if obj not in deps:
             return Inputs.unknowable(f"{obj} has no recorded header dependencies")
         valid, headers = deps[obj]
         if not valid:
             return Inputs.unknowable(f"{obj}'s recorded header dependencies are STALE")
-        files.update(self._repository_paths(headers))
+        for where, path in (self._classify(header) for header in headers):
+            if where == "repo" and path:
+                files.add(path)
+            elif where == "build" and path:
+                included.add(path)
         inputs = Inputs()
         for name, value in self._definitions().get(obj, ()):
             inputs = inputs.union(self._defined(name, value, obj))
@@ -394,10 +430,56 @@ class BuildGraph:
             return Inputs()
         return Inputs.unknowable(exemption).union(named) if exemption else named
 
-    def _repository_paths(self, paths: Iterable[str]) -> set[str]:
-        """The source-tree files among a build's paths; build outputs and system headers are not."""
-        classified = (self._classify(path) for path in paths)
-        return {path for where, path in classified if where == "repo" and path}
+    def _built_inputs(self, target: str, listed: set[str], included: set[str]) -> Inputs:
+        """What the BUILD-TREE files a target is made from are made from. `listed` came from `ninja
+        -t inputs`, which is transitive, so a listed file a build edge produces has its sources in
+        that listing already; `included` came from the dependency log, and a header a build edge
+        produces adds that edge's inputs. A file NO edge produces was written at configure time or
+        fetched, and is known only through the origin `incremental.toml` declares for it."""
+        outputs = self._build_outputs()
+        if outputs is None:
+            return Inputs.unknowable(f"`ninja -t targets all` failed in "
+                                     f"{self._display(self.build_dir)}")
+        inputs = Inputs()
+        for header in sorted((included - listed) & outputs):
+            inputs = inputs.union(self.target_inputs(header))
+        return inputs.union(self._declared_origins(target, (listed | included) - outputs))
+
+    def _declared_origins(self, target: str, paths: set[str]) -> Inputs:
+        origins: dict[str, Origin] = {}
+        for path in sorted(paths):
+            origin = self._origin(path)
+            if origin is None:
+                return Inputs.unknowable(
+                    f"{target} is built from {path}, which no build edge produces — it was written "
+                    "at configure time or fetched, so the files it is made from are not in the build "
+                    "graph — and incremental.toml declares no origin for it")
+            origins.setdefault(origin.name, origin)
+        inputs = Inputs()
+        for origin in origins.values():
+            inputs = inputs.union(origin.inputs)
+        return inputs
+
+    def _origin(self, path: str) -> Origin | None:
+        """The first declared origin whose outputs match a build-tree path. Memoised: a target's
+        dependency sources are thousands of fetched files."""
+        if path not in self._origin_of:
+            if self._declared is None:
+                self._declared = tuple(self.origins())
+            self._origin_of[path] = next(
+                (origin for origin in self._declared if origin.produces(path)), None)
+        return self._origin_of[path]
+
+    def _build_outputs(self) -> frozenset[str] | None:
+        """Every path a build edge of this tree produces, relative to it. Read once."""
+        if self._outputs is None:
+            status, text = self.run(["ninja", "-C", str(self.build_dir), "-t", "targets", "all"])
+            if status != 0:
+                return None
+            classified = (self._classify(line.rpartition(": ")[0]) for line in text.splitlines()
+                          if ": " in line)
+            self._outputs = frozenset(path for where, path in classified if where == "build")
+        return self._outputs
 
     def _named(self, value: str, where: str) -> Inputs:
         """A path a test reads at run time: in the source tree it is an input, in the build tree it
@@ -452,6 +534,8 @@ class BuildGraph:
 
     def _classify_once(self, path: str) -> tuple[str, str]:
         absolute = os.path.normpath(os.path.join(self.build_dir, path))
+        if self._deps_cache and absolute.startswith(self._deps_cache + os.sep):
+            return "build", "_deps/" + Path(absolute[len(self._deps_cache) + 1:]).as_posix()
         for kind, root in (("build", str(self.build_dir)), ("repo", str(self.repo_root))):
             if absolute == root:
                 return kind, ""
@@ -604,6 +688,61 @@ def definition_digest(paths: Iterable[str], repo_root: Path = REPO_ROOT) -> str:
         except OSError:
             digest.update(b"<absent>")
     return digest.hexdigest()[:16]
+
+
+# --- Build-tree files no build edge produces --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Origin:
+    """What a set of build-tree files is made from, as a person traced it and pinned it.
+
+    `outputs` are globs relative to the build tree. `inputs` are the declared sources with the CMake
+    files above them, or — when the code that generates the outputs changed since the declaration
+    was reviewed — unknown, with the digest to write back once it has been re-read.
+    """
+
+    name: str
+    outputs: tuple[str, ...]
+    inputs: Inputs
+
+    def produces(self, path: str) -> bool:
+        return any(_glob_regex(pattern).fullmatch(path) for pattern in self.outputs)
+
+
+def generated_origins(source: Path = EXEMPTIONS_FILE,
+                      repo_root: Path = REPO_ROOT) -> tuple[Origin, ...]:
+    """Each `[[generated]]` entry of `incremental.toml`, in order.
+
+    A file no build edge produces — configure_file() output, a header a generator wrote from
+    execute_process, a precompiled-header stub, a fetched dependency — is made from files CMake
+    READ, and nothing records which: file(STRINGS) and file(READ) are not edges, and not every read
+    is a configure dependency. So its origin is declared: `sources` is every repository path it is
+    made from, and `generated_by` is the CMake (or script) code that writes it — itself a source —
+    whose `digest` pins the review. When that code changes it may read something new, so the origin
+    LAPSES: the files are unknown until somebody re-reads the code and updates the digest.
+    """
+    try:
+        with source.open("rb") as handle:
+            document = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return ()
+    return tuple(_origin(entry, repo_root) for entry in document.get("generated", ()))
+
+
+def _origin(entry: dict, repo_root: Path) -> Origin:
+    name = str(entry.get("name", ""))
+    generated_by = sorted(entry.get("generated_by", ()))
+    outputs = tuple(entry.get("outputs", ()))
+    current = definition_digest(generated_by, repo_root)
+    if not generated_by or current != entry.get("digest"):
+        return Origin(name, outputs, Inputs.unknowable(
+            f"the declared origin of {name} in incremental.toml lapsed: "
+            f"{', '.join(generated_by) or 'no generating code is named'} changed since it was "
+            f"reviewed (digest now {current}); re-read what it reads and update it"))
+    sources = _with_cmake((*entry.get("sources", ()), *generated_by))
+    return Origin(name, outputs, Inputs(paths=sources.paths, cmake_dirs=sources.cmake_dirs,
+                                        account=(f"the declared origin of {name}",)))
 
 
 # --- What a recipe reads --------------------------------------------------------------------------
@@ -953,6 +1092,7 @@ def selection_for(plan: criteria_module.Plan, since: str, build_dir: Path) -> Se
         if not exemptions:
             exemptions.update(exempt_definitions() or {"": ""})
         return exemptions
-    resolver = Resolver(BuildGraph(build_dir, exemptions=reviewed), Recipes())
+    resolver = Resolver(BuildGraph(build_dir, exemptions=reviewed, origins=generated_origins),
+                        Recipes())
     return select(plan, changed_files(base), base, base_digests(plan.milestone.id, base),
                   resolver.inputs)

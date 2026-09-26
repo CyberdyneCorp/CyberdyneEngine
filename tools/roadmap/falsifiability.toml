@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 291 proven, 396 not yet shown able to fail.
+# 310 proven, 377 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -34,6 +34,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m0"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m0"
@@ -122,6 +130,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m10"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m10"
@@ -1169,15 +1185,15 @@ criterion = "core-rows-at-complete-grade"
 digest = "c0bbe416d88044a7"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction … 0 of 71 requirement(s) across 6 row(s) map to a test, a gate or a recorded exemption"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction … 12 of 71 requirement(s) across 6 row(s) map to a test, a gate or a recorded exemption"
 
 [[proof]]
 ledger = "m11d"
 criterion = "developer-workflow-recipes"
-digest = "c98044d98067383f"
+digest = "6e34bb5f1682a123"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): deploy.just:110: names M11, which is not on the ladder … 4 recipe line(s) refuse naming a milestone the ladder does not carry"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): maintenance.just:22: refuses naming task '2.1.5', which is no rung on the ladder … 1 recipe line(s) name a milestone the ladder does not carry, or refuse naming no rung"
 
 [[proof]]
 ledger = "m11d"
@@ -1229,6 +1245,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m11d"
 criterion = "m11d5-open"
 digest = "8131c42bc53b4505"
 verdict = "proven"
@@ -1269,11 +1293,19 @@ detail = "red under mutation of 9 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "null-backend-refuses-what-it-cannot-do"
+digest = "476864d3412c1e5a"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'return fail(ErrorCode::OutOfRange, \"present(): image index outside the swapchain\");' in src/backends/rhi/null/src/null_device.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
 criterion = "port-touches-no-engine-layer"
-digest = "cd7e974bb12e88d9"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): no commit naming 'native-platform-backend' in the last 40 — the native backend has not landed, … so the claim that it touched no engine layer cannot be evaluated and is not passed"
+digest = "417024384b31c62a"
+verdict = "proven against a built tree"
+mutation = "delete-lines '#pragma once' in src/core/platform/include/cy/core/platform/display_server.h (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (exit 1: 1 change(s) to the abstraction or to an engine header the ports compile against), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1290,6 +1322,22 @@ digest = "576f99d99406ff5e"
 verdict = "proven against a built tree"
 mutation = "rename-token 'CY_QUIET_HOST_WRAPPER' in tests/harness/src/quiet_host_marker.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11d-quiet-host-identity (exit 1: the named case FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
+criterion = "release-recipes-stop-refusing"
+digest = "486c34d9e69e4ddc"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'tools/release/release.py\" version {{args}}' in just/release.just (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (exit 1: release-version reported no engine version), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
+criterion = "rhi-interface-gaps-settled"
+digest = "081eee1f4066056c"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'return preferred;' in src/backends/rhi/src/types.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (exit 1: gap 7's cases FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1325,11 +1373,19 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
+criterion = "ship-sample-on-desktop"
+digest = "df6bc9ef74f70754"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/m11d-records (exit 1): override: CY_BUILD_DIR=build/m11d-records … A GAP IS NOT A PASS. This run returns 1 because something it claims was not satisfied."
+
+[[proof]]
+ledger = "m11d"
 criterion = "vertex-id-is-portable"
-digest = "031b7133f842a291"
+digest = "5ca1ef30fb7d8a00"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'features11.shaderDrawParameters = VK_TRUE;' in src/backends/rhi/vulkan/src/vulkan_instance.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11d-shaders-every-target (exit 8: Errors while running CTest), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (exit 1: Errors while running CTest), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1362,6 +1418,14 @@ digest = "d915eb4fa3e15cc9"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m11d5"
@@ -1458,6 +1522,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11e"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m11e"
@@ -1621,6 +1693,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m3"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m3"
 criterion = "m4-open"
 digest = "fdc62442b34292cf"
 verdict = "proven"
@@ -1677,6 +1757,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m4"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m4"
 criterion = "m5-open"
 digest = "637caed5b65e3bed"
 verdict = "proven"
@@ -1717,6 +1805,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m5"
 criterion = "m5b-open"
 digest = "5d0b03a321f6dbde"
 verdict = "proven"
@@ -1754,6 +1850,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m5b"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m5b"
@@ -1829,6 +1933,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m6"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m6"
 criterion = "m7-open"
 digest = "3036764d52d53678"
 verdict = "proven"
@@ -1882,6 +1994,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m7"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m7"
@@ -1965,6 +2085,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8a"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m8a"
 criterion = "m8b-open"
 digest = "0cd45a1b73980e83"
 verdict = "proven"
@@ -2018,6 +2146,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8b"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m8b"
@@ -2082,6 +2218,14 @@ digest = "4a0b109ec0277529"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8c"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
 
 [[proof]]
 ledger = "m8c"
@@ -2229,6 +2373,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m9"
+criterion = "lint"
+digest = "3cf233aba6556ea2"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+
+[[proof]]
+ledger = "m9"
 criterion = "lockstep-cross-platform"
 digest = "144ed86870cafdeb"
 verdict = "proven"
@@ -2370,14 +2522,6 @@ digest = "3b3928ebb85ae874"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m0"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m0"
@@ -2682,14 +2826,6 @@ digest = "0571f02a45293a0d"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m10"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m10"
@@ -3039,25 +3175,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11d"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "null-backend-refuses-what-it-cannot-do"
-digest = "712e97a7d530f8b1"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11d-records, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m11d"
@@ -3071,25 +3191,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11d"
 criterion = "porting-surface-against-a-stub"
 digest = "2f33b8c76e7b2bef"
-verdict = "not provable here"
+verdict = "no mutation"
 mutation = "-"
-detail = "it needs a built tree ('just build'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "release-recipes-stop-refusing"
-digest = "920245983af0b4e9"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just release'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "rhi-interface-gaps-settled"
-digest = "d0c4804ed354e5ed"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+detail = "it PASSES against the build tree build/m11d-records, and no mutation can be derived from its text: it must declare a [criterion.falsifies] before a build-backed run can turn it red"
 
 [[unproven]]
 ledger = "m11d"
@@ -3098,14 +3202,6 @@ digest = "bd88005f43ddec38"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "ship-sample-on-desktop"
-digest = "42a781a223612aef"
-verdict = "refuted"
-mutation = "-"
-detail = "absent-sample: just run-sample 11-ship: no samples/*/CMakeLists.txt declares cy_sample_11-ship"
 
 [[unproven]]
 ledger = "m11d"
@@ -3146,14 +3242,6 @@ digest = "7b49d70a1417310d"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: three backends live on three operating systems and no single machine has all three; the comparison is between legs of the matrix, which is the same shape as the cross-leg digest job M11.a built — CI job 'milestone-m11d5'"
-
-[[unproven]]
-ledger = "m11d5"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d5"
@@ -3242,14 +3330,6 @@ digest = "ab91a63ac2d84303"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -3525,14 +3605,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m3"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m3"
 criterion = "materials"
 digest = "0ed76fbebc85cfd6"
 verdict = "not provable here"
@@ -3698,14 +3770,6 @@ digest = "a5db884bd3c45689"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m4"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m4"
@@ -3877,14 +3941,6 @@ detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m5"
 criterion = "live-reload"
 digest = "366921474aa97a68"
 verdict = "not provable here"
@@ -4013,14 +4069,6 @@ detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m5b"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m5b"
 criterion = "roadmap-record"
 digest = "bd88005f43ddec38"
 verdict = "no mutation"
@@ -4138,14 +4186,6 @@ digest = "e278fbdd86d8f52f"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m6"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m6"
@@ -4354,14 +4394,6 @@ digest = "4f361659105a73fa"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m7"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m7"
@@ -4594,14 +4626,6 @@ digest = "3feae5a03b6bc37f"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8a"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8a"
@@ -4869,14 +4893,6 @@ detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8b"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8b"
 criterion = "mesh-renderer-reflected"
 digest = "d09d8b6e708bbec9"
 verdict = "not provable here"
@@ -5066,14 +5082,6 @@ digest = "0571f02a45293a0d"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m8c"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m8c"
@@ -5330,14 +5338,6 @@ digest = "0571f02a45293a0d"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m9"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"

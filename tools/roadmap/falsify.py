@@ -1436,7 +1436,8 @@ def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
 
 
 def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: str, finished,
-                     build_dir: str = "") -> Proof:
+                     build_dir: str = "", mutation: Mutation | None = None,
+                     tree: WorkingTree | None = None) -> Proof:
     """A criterion that failed unmutated: watched going red, or red for the sandbox's own reasons.
 
     THE TREE CONTROL IS WHAT SEPARATES THOSE TWO. The sandbox is a copy of the TRACKED tree, so a
@@ -1444,6 +1445,12 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
     header nobody commits, an untracked fixture. Red in the sandbox AND red in the repository is a
     property of the repository; red only in the sandbox is a property of the copy, and is reported
     `not provable here` with that said in as many words.
+
+    UNLESS `--mutate-the-tree` WAS GIVEN. A criterion that reads the repository's git history —
+    `m11d:port-touches-no-engine-layer` reads every commit since the rung opened — is red in every
+    sandbox, because a copy of the tracked tree has no `.git`, and so it could never be proven at
+    all. Green in the repository is then the positive control, and the working tree is where the
+    mutation goes: red under it and green again once restored, exactly as for a built tree.
     """
     if code == 124:
         return finished(UNPROVABLE, "-", f"the unmutated run did not finish: {_first_line(output)}")
@@ -1453,17 +1460,23 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
     # real tree — so a tree control that did not hand over the build would have recorded "watched
     # going red" about a criterion that was only missing a build, which is the defect this module
     # polices, committed by the module.
-    tree_code, tree_output = run_in_the_repository(criterion, build_dir, TREE_CONTROL_TIMEOUT_S)
+    tree_code, tree_output = run_in_the_repository(
+        criterion, build_dir, TREE_CONTROL_TIMEOUT_S, tree.root if tree is not None else REPO_ROOT)
     if tree_code < 0:
         return finished(UNPROVABLE, "-", f"red in the sandbox, and the tree control cannot run: "
                                          f"{tree_output}", unjudged=True)
     if tree_code == 124:
         return finished(UNPROVABLE, "-", "red in the sandbox, and the tree control did not finish "
                                          f"within {TREE_CONTROL_TIMEOUT_S} s")
+    if tree_code == 0 and tree is not None and mutation is not None:
+        return _prove_by_mutating_the_tree(criterion, build_dir, mutation, tree, finished)
+    # With a mutation but no tree to put it in, this run declined to re-earn a standing proof rather
+    # than contradicting it — the same answer a build-backed proof gets without --mutate-the-tree.
     if tree_code == 0:
         return finished(UNPROVABLE, "-",
                         "it is red in the sandbox and GREEN in the repository, so the copy is what "
-                        f"made it red, not the tree: {_first_line(output)}")
+                        f"made it red, not the tree: {_first_line(output)}",
+                        unjudged=mutation is not None)
     # THE DETAIL COMES FROM THE TREE RUN, not the sandbox's. They are red for the same criterion but
     # not always at the same line — a sandbox lacks untracked inputs, so its first line can be an
     # import error over a check that fails in the repository for its own stated reason, and the
@@ -1637,7 +1650,7 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
                     return proof
                 attempted = proof.detail
             return _gap_no_mutation_can_close(mutation, attempted, output, finished)
-        return _red_in_the_tree(criterion, code, output, finished, build_dir)
+        return _red_in_the_tree(criterion, code, output, finished, build_dir, mutation, tree)
 
     if mutation is None:
         return finished(NO_MUTATION, "-", "no mutation can be derived from this criterion's text; "

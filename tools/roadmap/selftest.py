@@ -212,8 +212,13 @@ def test_record_rules(root: Path) -> None:
 # raised by task 8.1 to the eleven rows the milestone moves, the substrate every one of them writes
 # into, the artefact, the record and the next rung. It carries 70; the floor is what may not be lost.
 # M11.d's floor stayed at 25 when its spike moved Metal, D3D12 and the three-backend image
-# comparison out to M11.d.5: it declared 30 and declares 27, which is still above the floor, and a
-# floor is what may not be LOST rather than a count of what is there. M11.d.5's own floor of 16 is
+# comparison out to M11.d.5, and task 9.1 raised it to 36 once the rung's work had landed: the nine
+# static gates, the interface (2), the shader prerequisite and the portable vertex index (2), the
+# port — backend, diff, stub, M0 sample (4) — the documentation and full gate sets (2), the recipes
+# and the release recipes (2), the content audit, provenance and the build-and-packaging move (3),
+# the acceptance scenarios, the core rows, MSAA, multi-view and the forward-clustered floor (5), the
+# artefact (3), the tiers, the handover, and tasks 9.7 and 9.8 (4). Every criterion it carries is one
+# of those, so losing any one of them is losing an exit condition. M11.d.5's own floor of 16 is
 # the deliberate answer to "how many exit conditions does this rung have" that adding a ledger is
 # supposed to force — nine static gates it shares with the ladder, the three moved claims, the three
 # a Linux host can still judge, the artefact, the tier and the handover.
@@ -227,7 +232,7 @@ def test_record_rules(root: Path) -> None:
 # raises the number here in the same change that writes the criteria.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
                     "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 62,
-                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11d5": 16, "m11e": 25,
+                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 36, "m11d5": 16, "m11e": 25,
                     "m12": 1, "m13": 1}
 
 
@@ -2200,6 +2205,29 @@ def test_falsifiability_by_mutating_the_tree(root: Path) -> None:
           proof.verdict == falsify_module.REFUTED, f"{proof.verdict}: {proof.detail}")
     check("and the tree is clean after that too", not tree.dirty(), tree.dirty())
 
+    # REGRESSION: a criterion that reads git history is red in every sandbox, which has no `.git`,
+    # and green in the checkout — so `prove` answered `not provable here` even under
+    # `--mutate-the-tree`, and `m11d:port-touches-no-engine-layer` could never be proven. The tree
+    # control's green is its positive control; the mutation then goes into the working tree.
+    copy = root / "copy-without-git"
+    copy.mkdir(parents=True, exist_ok=True)
+    (copy / "subject.txt").write_bytes(before)
+    reads_history = _criterion("reads-history", "test -d .git && grep -q cySubjectToken subject.txt",
+                               falsifies={"mutate": "rename-token", "target": "subject.txt",
+                                          "token": "cySubjectToken"})
+    proof = falsify_module.prove(falsify_module.Sandbox(copy), "m0", reads_history, "", tree)
+    check("A CRITERION RED ONLY IN THE SANDBOX IS PROVEN BY MUTATING THE TREE when that is allowed",
+          proof.verdict == falsify_module.PROVEN_BY_REBUILD, f"{proof.verdict}: {proof.detail}")
+    check("and the tree is clean after that one as well", not tree.dirty(), tree.dirty())
+    # And `check`, which has no tree to mutate, must leave that proof standing: it declined to
+    # re-earn it, it did not contradict it. `test -d .git` is green in this repository.
+    in_a_checkout = _criterion("in-a-checkout", "test -d .git",
+                               falsifies={"mutate": "delete-path", "target": "subject.txt"})
+    proof = falsify_module.prove(falsify_module.Sandbox(copy), "m0", in_a_checkout)
+    check("and without a tree to mutate, that run is UNJUDGED rather than a finding",
+          proof.verdict == falsify_module.UNPROVABLE and proof.unjudged,
+          f"{proof.verdict} (unjudged={proof.unjudged}): {proof.detail}")
+
     # A RESTORE THE TOOL LOST. `forget()` drops what it remembered, which is the worst case short of
     # the process dying: the recovery is git's, and it is checked rather than assumed.
     tree.apply(mutation)
@@ -2720,10 +2748,20 @@ class _FakeTree:
     The canned text is what ninja, ctest and just print, so the parsing is under test too."""
 
     def __init__(self, root: Path, current: bool = True, configured: bool = True,
-                 globs_match: bool = True, exemptions: dict | None = None) -> None:
+                 globs_match: bool = True, exemptions: dict | None = None,
+                 generated: tuple[str, ...] = (), listed: tuple[str, ...] = (),
+                 edges: dict[str, str] | None = None, cache: str = "", **graph: object) -> None:
+        """`generated` are build-tree paths — relative to it, or absolute outside it — that the
+        save suite's objects also include, as a configure-time header is included; `listed` are
+        build-tree files the save executable is built from directly, as a fetched dependency's
+        source is. `edges` maps a
+        build-tree output a build EDGE produces to the source it is made from. `cache` is extra
+        CMakeCache.txt text. `graph` is passed to the BuildGraph as it is, so a case can hand it
+        declared origins."""
         self.root, self.build = root, root / "build" / "dev"
         self.current, self.configured, self.globs_match = current, configured, globs_match
-        self.exemptions = exemptions
+        self.exemptions, self.graph = exemptions, graph
+        self.edges, self.cache, self.listed = edges or {}, cache, listed
         for directory in ("src", "tests", "tools", "just"):
             (root / directory).mkdir(parents=True, exist_ok=True)
         shared = f"{root}/src/core/base/include/cy/core/base/types.h"
@@ -2737,9 +2775,10 @@ class _FakeTree:
         }
         self.deps = ""
         for name, (short, test_source, source, header) in self.targets.items():
+            extra = "".join(f"    {self.build / path}\n" for path in generated if short == "save")
             for index, cpp in enumerate((test_source, source)):
                 self.deps += (f"CMakeFiles/{name}.dir/{short}{index}.cpp.o: #deps 4, deps mtime 1 "
-                              f"(VALID)\n    {cpp}\n    {header}\n    {shared}\n"
+                              f"(VALID)\n    {cpp}\n    {header}\n    {shared}\n{extra}"
                               "    /usr/include/stdio.h\n\n")
         self.tests = {"tests": [
             self._test("unit.save", "unit", [f"{self.build}/cy_test_unit_save"]),
@@ -2786,7 +2825,12 @@ class _FakeTree:
         if argv == ["-t", "query", "build.ninja"]:
             return 0, (f"build.ninja:\n  input: RERUN_CMAKE\n    {self.build}/CMakeFiles/"
                        f"cmake.verify_globs\n    | {self.root}/CMakeLists.txt\n  outputs:\n")
+        if argv == ["-t", "targets", "all"]:
+            return 0, self._outputs()
         target = argv[-1]
+        if target in self.edges:
+            return 0, ("ninja: no work to do.\n" if argv[0] == "-f"
+                       else f"{self.root}/{self.edges[target]}\n")
         if target not in self.targets:
             return 1, ""
         if argv[0] == "-f" and argv[2] == "-n":
@@ -2796,8 +2840,18 @@ class _FakeTree:
             # and ninja returns there without looking at the target.
             return 0, "[0/2] Re-checking globbed directories...\n[1/2] Re-running CMake...\n"
         short, test_source, source, _ = self.targets[target]
+        listed = "".join(f"{path}\n" for path in self.listed if short == "save")
         return 0, (f"CMakeFiles/{target}.dir/{short}0.cpp.o\n{test_source}\n"
-                   f"CMakeFiles/{target}.dir/{short}1.cpp.o\n{source}\nlib{short}.a\n")
+                   f"CMakeFiles/{target}.dir/{short}1.cpp.o\n{source}\nlib{short}.a\n{listed}")
+
+    def _outputs(self) -> str:
+        """What `ninja -t targets all` prints: every output a build edge produces, and its rule."""
+        lines = [f"{output}: CUSTOM_COMMAND" for output in self.edges]
+        for name, (short, *_) in self.targets.items():
+            lines += [f"{name}: CXX_EXECUTABLE_LINKER", f"lib{short}.a: CXX_STATIC_LIBRARY"]
+            lines += [f"CMakeFiles/{name}.dir/{short}{index}.cpp.o: CXX_COMPILER"
+                      for index in (0, 1)]
+        return "\n".join(lines) + "\n"
 
     def _just(self, argv: list[str]) -> tuple[int, str]:
         bodies = {"test-unit": "test-unit *args:\n    @just _ctest unit {{args}}\n",
@@ -2815,7 +2869,7 @@ class _FakeTree:
     def resolver(self):
         def read_text(path: Path) -> str | None:
             if path.name == "CMakeCache.txt":
-                return f"CMAKE_HOME_DIRECTORY:INTERNAL={self.root}\n"
+                return f"CMAKE_HOME_DIRECTORY:INTERNAL={self.root}\n{self.cache}"
             if path.name == "VerifyGlobs.cmake":
                 return ('if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")\n  file(TOUCH_NOCREATE '
                         f'"{self.build}/CMakeFiles/cmake.verify_globs")\nendif()\n')
@@ -2828,7 +2882,8 @@ class _FakeTree:
             return configured_at if path.name == "build.ninja" else 50.0
         graph = incremental_module.BuildGraph(self.build, repo_root=self.root, run=self.run,
                                               read_text=read_text, mtime=mtime,
-                                              exemptions=lambda: self.exemptions or {})
+                                              exemptions=lambda: self.exemptions or {},
+                                              **self.graph)
         recipes = incremental_module.Recipes(run=self.run, repo_root=self.root)
         return incremental_module.Resolver(graph, recipes)
 
@@ -2865,6 +2920,126 @@ def _chosen(plan, tree: _FakeTree, changed, digests=None) -> dict[str, increment
 
 def _reason(choice: incremental_module.Choice) -> str:
     return choice.reasons[0]
+
+
+#: The header the M11.d gate caught: written by configure_file() from a template, with the two
+#: dependency manifests read into it by file(STRINGS), and produced by no build edge.
+TOOLCHAIN_HEADER = "src/core/assets/generated/cy/core/assets/toolchain_generated.h"
+
+
+def test_incremental_generated_headers(root: Path) -> None:
+    """A header the build tree generated at configure time is an input, through what it is made from.
+
+    REGRESSION: `_target_inputs` and `_object_inputs` kept only source-tree paths, so
+    `toolchain_generated.h` — produced by configure_file() from `toolchain_generated.h.in`, with
+    `deps/manifest.toml` and `deps/host-tools.toml` read into it by file(STRINGS) — was dropped, and
+    neither manifest is a ninja edge. The gate changed `deps/manifest.toml`, the selection picked
+    nothing that included the header, and a criterion's verdict flipped red unseen. This is that
+    case, against the origin `incremental.toml` really declares.
+    """
+    plan = _incremental_plan(root)
+    tree = _FakeTree(root / "toolchain", generated=(TOOLCHAIN_HEADER,))
+    chosen = _chosen(plan, tree, ["deps/manifest.toml"])
+    check("incremental: a change to deps/manifest.toml selects the criteria whose tests include "
+          "toolchain_generated.h", chosen["m0:save"].selected and _reason(
+              chosen["m0:save"]).startswith(incremental_module.CHANGED), _reason(chosen["m0:save"]))
+    check("incremental: a change to deps/manifest.toml does not select a criterion whose tests do "
+          "not include it", not chosen["m0:render"].selected, _reason(chosen["m0:render"]))
+    _check_every_declared_source(root, plan)
+    _check_undeclared_build_files(root, plan)
+    _check_origin_pinning(root / "origin-pinning")
+
+
+def _example_output(pattern: str) -> str:
+    """A build-tree path an output glob matches."""
+    return pattern.replace("**", "x/y").replace("*", "x").replace("?", "x")
+
+
+def _check_every_declared_source(root: Path, plan) -> None:
+    """Every origin `incremental.toml` declares, every output of it and every source it names: a
+    change to that source selects the criterion whose tests include that output. An origin that has
+    LAPSED maps nothing, and its outputs must be unknown instead."""
+    origins = incremental_module.generated_origins()
+    check("incremental: incremental.toml declares the toolchain header's origin",
+          any(origin.produces(TOOLCHAIN_HEADER) for origin in origins))
+    for index, origin in enumerate(origins):
+        for pattern in origin.outputs:
+            output = _example_output(pattern)
+            tree = _FakeTree(root / f"origin-{index}-{len(pattern)}", generated=(output,))
+            if origin.inputs.unknown:
+                print(f"     note: {origin.inputs.unknown}")
+                chosen = _chosen(plan, tree, [])
+                check(f"incremental: {output}, whose declared origin lapsed, is unknown",
+                      _reason(chosen["m0:save"]).startswith(incremental_module.UNKNOWN),
+                      _reason(chosen["m0:save"]))
+                continue
+            chosen = _chosen(plan, tree, [])
+            check(f"incremental: with nothing changed, a test including {output} is skipped",
+                  not chosen["m0:save"].selected, _reason(chosen["m0:save"]))
+            for source in sorted(origin.inputs.paths):
+                changed = f"{source}/x" if (record_module.REPO_ROOT / source).is_dir() else source
+                chosen = _chosen(plan, tree, [changed])
+                check(f"incremental: a change to {changed} selects the tests including {output}",
+                      _reason(chosen["m0:save"]).startswith(incremental_module.CHANGED),
+                      _reason(chosen["m0:save"]))
+
+
+def _check_undeclared_build_files(root: Path, plan) -> None:
+    """A build-tree file no build edge produces and no origin declares is unknown, however it is
+    reached; one a build edge produces is known through that edge; and a fetched dependency in a
+    shared cache outside the tree is the tree's `_deps/`, not a system header."""
+    none = {"origins": lambda: ()}
+    for how, tree in (("included", _FakeTree(root / "undeclared-h", generated=("gen/cy_x.h",),
+                                             **none)),
+                      ("built from", _FakeTree(root / "undeclared-c", listed=("gen/cy_x.cpp",),
+                                               **none))):
+        chosen = _chosen(plan, tree, [])
+        check(f"incremental: an undeclared configure-time file a test is {how} makes it unknown",
+              _reason(chosen["m0:save"]).startswith(incremental_module.UNKNOWN)
+              and "gen/cy_x." in _reason(chosen["m0:save"]) and not chosen["m0:render"].selected,
+              _reason(chosen["m0:save"]))
+    tree = _FakeTree(root / "edge", generated=("gen/x_spirv.h",),
+                     edges={"gen/x_spirv.h": "src/shaders/x.slang"}, **none)
+    check("incremental: a header a build edge produces is known through that edge",
+          not _chosen(plan, tree, [])["m0:save"].selected)
+    chosen = _chosen(plan, tree, ["src/shaders/x.slang"])
+    check("incremental: a change to what a build edge makes a header from selects its includers",
+          _reason(chosen["m0:save"]).startswith(incremental_module.CHANGED),
+          _reason(chosen["m0:save"]))
+    tree = _FakeTree(root / "deps-cache", cache=f"CY_DEPS_CACHE:PATH={root}/cache\n",
+                     generated=(f"{root}/cache/zstd-src/lib/zstd.h",))
+    chosen = _chosen(plan, tree, ["deps/manifest.toml"])
+    check("incremental: a dependency header in CY_DEPS_CACHE is the tree's _deps/, and a change to "
+          "deps/manifest.toml selects its includers",
+          _reason(chosen["m0:save"]).startswith(incremental_module.CHANGED),
+          _reason(chosen["m0:save"]))
+    tree = _FakeTree(root / "lapsed-origin", generated=("gen/cy_x.h",), origins=lambda: (
+        incremental_module.Origin("x", ("gen/**",), incremental_module.Inputs.unknowable(
+            "the declared origin of x in incremental.toml lapsed")),))
+    chosen = _chosen(plan, tree, [])
+    check("incremental: a file whose declared origin lapsed is unknown, and says why",
+          "lapsed" in _reason(chosen["m0:save"]), _reason(chosen["m0:save"]))
+
+
+def _check_origin_pinning(root: Path) -> None:
+    """`generated_origins` over a real file: the digest pins the generating code, and the origin
+    lapses when that code changes."""
+    generator = write_parents(root / "cmake" / "gen.cmake", 'file(STRINGS "deps/a.toml" x)\n')
+    table = root / "incremental.toml"
+
+    def origin() -> incremental_module.Origin:
+        return incremental_module.generated_origins(table, root)[0]
+    digest = incremental_module.definition_digest(["cmake/gen.cmake"], root)
+    write(table, f'[[generated]]\nname = "x"\noutputs = ["gen/x.h"]\nsources = ["deps/a.toml"]\n'
+                 f'generated_by = ["cmake/gen.cmake"]\ndigest = "{digest}"\n')
+    check("incremental: a declared origin over unchanged generating code holds, and maps both "
+          "its sources and that code",
+          not origin().inputs.unknown
+          and {"deps/a.toml", "cmake/gen.cmake"} <= origin().inputs.paths, origin().inputs.unknown)
+    generator.write_text('file(STRINGS "deps/a.toml" x)\nfile(READ "deps/b.toml" y)\n',
+                         encoding="utf-8")
+    check("incremental: a declared origin lapses when the code that generates it changes",
+          "lapsed" in origin().inputs.unknown, origin().inputs.unknown)
 
 
 def test_incremental_globs_run_on_python_3_12(root: Path) -> None:
@@ -3095,6 +3270,7 @@ def main() -> int:
         test_scheduler_over_the_real_ledgers(_area(root, "scheduler-corpus"))
         test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
         test_incremental_selection(_area(root, "incremental"))
+        test_incremental_generated_headers(_area(root, "incremental-generated"))
         test_incremental_globs_run_on_python_3_12(root)
         if not _nested():
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
