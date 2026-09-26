@@ -554,11 +554,14 @@ or unknown node, pin, or property is refused by name.
 `vfx.channel.set` / `vfx.channel.remove` provide the panel's particle storage and bounded event
 declarations through MCP with the same save and undo history. Invalid bounds or attribute types
 leave the saved document intact.
+`vfx.parameter.remove` removes a saved system parameter by name.
 Interface names and renderer choices in saved commands are checked against the engine when the
 draft is compiled; the desktop pickers only offer entries reported by the attached engine.
 Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and
 `vfx.module.dependency.add`, then linked to an emitter with `vfx.module.attach`. Each command saves
 one undoable change; creating a module refuses to replace an existing source at that path.
+`vfx.module.input.remove` and `vfx.module.dependency.remove` remove named declarations through
+the same history.
 The module graph also supports `vfx.module.node.add`, `vfx.module.node.connect`,
 `vfx.module.node.disconnect`, `vfx.module.node.remove`, and
 `vfx.module.node.property.set`. These commands use the live engine catalogue and save each

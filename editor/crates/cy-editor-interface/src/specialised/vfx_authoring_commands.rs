@@ -26,6 +26,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(remove_node())?;
     registry.register(set_node_property())?;
     registry.register(set_parameter())?;
+    registry.register(remove_parameter())?;
     registry.register(set_emitter_capacity())?;
     registry.register(set_attribute())?;
     registry.register(remove_attribute())?;
@@ -33,7 +34,9 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(remove_channel())?;
     registry.register(create_module())?;
     registry.register(add_module_input())?;
+    registry.register(remove_module_input())?;
     registry.register(add_module_dependency())?;
+    registry.register(remove_module_dependency())?;
     registry.register(add_module_node())?;
     registry.register(connect_module_nodes())?;
     registry.register(disconnect_module_nodes())?;
@@ -788,6 +791,36 @@ fn set_parameter() -> Command {
     )
 }
 
+fn remove_parameter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.parameter.remove",
+            "Remove VFX Parameter",
+            "Removes one typed system parameter in an undoable document edit.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Identifier of the system parameter to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            edit_document(context, reference, |document, _| {
+                let position = document
+                    .parameters
+                    .iter()
+                    .position(|entry| entry.name == name)
+                    .ok_or_else(|| {
+                        Problem::new("remove a VFX parameter", format!("{name} does not exist"))
+                    })?;
+                document.parameters.remove(position);
+                Ok(Outcome::new(format!("Removed VFX parameter {name}")))
+            })
+        },
+    )
+}
+
 fn set_emitter_capacity() -> Command {
     Command::new(
         metadata(
@@ -1091,6 +1124,39 @@ fn add_module_input() -> Command {
     )
 }
 
+fn remove_module_input() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.input.remove",
+            "Remove VFX Module Input",
+            "Removes one declared host attribute from a saved reusable module.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Identifier of the module host input to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            edit_module(context, reference, |module| {
+                let position = module
+                    .inputs
+                    .iter()
+                    .position(|entry| entry.name == name)
+                    .ok_or_else(|| {
+                        Problem::new(
+                            "remove a VFX module input",
+                            format!("{name} does not exist"),
+                        )
+                    })?;
+                module.inputs.remove(position);
+                Ok(Outcome::new(format!("Removed VFX module input {name}")))
+            })
+        },
+    )
+}
+
 fn add_module_dependency() -> Command {
     Command::new(
         module_metadata(
@@ -1109,6 +1175,41 @@ fn add_module_dependency() -> Command {
             edit_module(context, reference, |module| {
                 module.dependencies.push(name.into());
                 Ok(Outcome::new(format!("Added module dependency {name}")))
+            })
+        },
+    )
+}
+
+fn remove_module_dependency() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.dependency.remove",
+            "Remove VFX Module Dependency",
+            "Removes one named dependency from a saved reusable module.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Identifier of the module dependency to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            edit_module(context, reference, |module| {
+                let position = module
+                    .dependencies
+                    .iter()
+                    .position(|entry| entry == name)
+                    .ok_or_else(|| {
+                        Problem::new(
+                            "remove a VFX module dependency",
+                            format!("{name} does not exist"),
+                        )
+                    })?;
+                module.dependencies.remove(position);
+                Ok(Outcome::new(format!(
+                    "Removed VFX module dependency {name}"
+                )))
             })
         },
     )

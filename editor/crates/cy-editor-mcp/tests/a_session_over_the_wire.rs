@@ -454,6 +454,18 @@ fn vfx_capacity_attributes_and_channels_round_trip_with_mcp_undo() {
     assert_eq!(result(&removed, 2).get("isError"), &Json::Bool(false));
     assert!(read().emitters[0].attributes.is_empty());
     assert!(read().channels.is_empty());
+
+    let parameter = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"vfx.parameter.set","arguments":{"reference":"game/sparks.cyvfxdoc","name":"speed","kind":"float","values":[2,0,0,0],"exposed":true}}}"#,
+            r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"vfx.parameter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","name":"speed"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&parameter, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&parameter, 2).get("isError"), &Json::Bool(false));
+    assert!(read().parameters.is_empty());
 }
 
 #[test]
@@ -644,6 +656,52 @@ fn reusable_vfx_module_edits_and_attachment_round_trip_over_mcp() {
             .unwrap(),
         saved_system
     );
+}
+
+#[test]
+fn vfx_module_declarations_can_be_removed_and_undone_over_mcp() {
+    use cy_editor_interface::specialised::vfx::Stage;
+    use cy_editor_interface::specialised::vfx_module::{ModuleInput, VfxModule};
+
+    let sandbox = Sandbox::new("vfx-module-removal");
+    let reference = "game/shared_drag.cyvfxmodule";
+    let mut module = VfxModule::new("shared_drag", Stage::Update).unwrap();
+    module.inputs.push(ModuleInput {
+        name: "velocity".into(),
+        kind: "vec3".into(),
+    });
+    module.dependencies.push("shared_noise".into());
+    std::fs::write(sandbox.0.join(reference), module.encode_text().unwrap()).unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.module.input.remove","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"velocity"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.module.dependency.remove","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"shared_noise"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(false));
+    let read = || {
+        VfxModule::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    assert!(read().inputs.is_empty());
+    assert!(read().dependencies.is_empty());
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(read().inputs.is_empty());
+    assert_eq!(read().dependencies, ["shared_noise"]);
 }
 
 #[test]
