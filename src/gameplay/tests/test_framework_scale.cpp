@@ -16,6 +16,8 @@
 #include <cy/gameplay/time.h>
 #include <cy/test/test.h>
 
+#include "fixture.h"
+
 using namespace cy::gameplay;
 using cy::Name;
 using cy::u32;
@@ -214,4 +216,35 @@ CY_TEST_CASE("gameplay_scale: the framework is destroyed full, in the wrong orde
         CY_CHECK_EQ(indexes.tracked_entities(), kEntities / 2);
     }
     CY_CHECK(true);
+}
+
+CY_TEST_CASE(
+    "gameplay_scale: the control registry holds the strategy scenario's five thousand groups") {
+    // M11.d task 7.2's finding, held at the registry's own level: `testing-and-quality`'s strategy
+    // stress is 5 000 agent groups and the registry refused a 65th. MOVED HERE FROM
+    // `unit.gameplay_core`, where M11.d's full ledger on `afaeb33` measured it at 1.017 ms of CPU
+    // against the unit kind's 1 ms budget — `m4:command-stream` red — and, run alone, 5 of 5 over
+    // half that budget (`CY_TEST_BUDGET_SCALE=0.5`, the margin check the harness's own over-budget
+    // message prescribes). Interning the group name once instead of five thousand times took about
+    // a fifth off and still left 3 of 10 runs over half the budget. The population IS the claim, so
+    // it is not trimmed; the case lives with the others that are only meaningful at scale. Its
+    // budget is the integration kind's, 1 s of CPU, against about half a millisecond measured.
+    cy::gameplay_test::Fixture fixture;
+    auto participant =
+        fixture.session.add_participant(ParticipantKind::LocalHuman, Name::intern("commander"));
+    CY_REQUIRE(participant.has_value());
+    auto source = fixture.control.create_source(ControlSourceKind::Human, *participant,
+                                                Name::intern("player"));
+    CY_REQUIRE(source.has_value());
+    const Name squad = Name::intern("squad");
+    GroupId last;
+    for (u32 index = 0; index < 5000; ++index) {
+        auto group = fixture.control.create_group(squad);
+        CY_REQUIRE(group.has_value());
+        last = *group;
+    }
+    CY_REQUIRE(fixture.control.add_to_group(last, entity(7)).has_value());
+    CY_REQUIRE(fixture.control.bind_group(*source, channels::command(), last).has_value());
+    CY_CHECK(fixture.control.controls(*source, entity(7), channels::command()));
+    CY_CHECK_EQ(fixture.control.group_size(last), 1U);
 }
