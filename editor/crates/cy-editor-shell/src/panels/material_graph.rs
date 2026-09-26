@@ -15,7 +15,7 @@ use cy_editor_interface::specialised::graph::{
 use cy_editor_interface::specialised::material::{
     SURFACE_STAGE, VERTEX_STAGE, canvas_interchange, load_canvas_interchange,
 };
-use cy_editor_services::primitives::{material_of, mesh_of};
+use cy_editor_services::primitives::{material_of, material_slots_of, mesh_of};
 use cy_editor_services::{
     AssetCatalogueService, Editor, MaterialCatalogueState, MaterialDiagnosticSeverity,
     MaterialOperation, MaterialPreviewState, MaterialRequestState,
@@ -33,7 +33,7 @@ const PIN_ROW: f32 = 18.0;
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let selected_graph = selected_material_graph(panels.editor);
-    let geometry = selected_material_geometry(
+    let geometry = active_material_geometry(
         panels.editor,
         panels.inputs.material_open_reference.as_deref(),
     );
@@ -218,16 +218,17 @@ fn selected_material_graph(editor: &Editor) -> Option<String> {
     material_of(document, node).filter(|path| path.ends_with(".cygraph"))
 }
 
-fn selected_material_geometry(editor: &Editor, reference: Option<&str>) -> Option<&'static str> {
+fn active_material_geometry(editor: &Editor, reference: Option<&str>) -> Option<&'static str> {
     let reference = reference?;
     let document = editor.documents.get(editor.workspace.active()?)?;
-    let mut selected = editor.selection.get().nodes();
-    let node = selected.next()?;
-    if selected.next().is_some() || material_of(document, node).as_deref() != Some(reference) {
-        return None;
-    }
     // The authored scene renderer currently loads MeshRenderer assets as static meshes.
-    mesh_of(document, node).map(|_| "StaticMesh")
+    document.content().nodes().find_map(|node| {
+        (mesh_of(document, node).is_some()
+            && material_slots_of(document, node)
+                .iter()
+                .any(|material| material == reference))
+        .then_some("StaticMesh")
+    })
 }
 
 fn open_selected_graph(
@@ -1480,16 +1481,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn selected_authored_mesh_supplies_its_static_geometry_assignment() {
+    fn active_scene_meshes_supply_static_geometry_for_primary_and_imported_slots() {
         use cy_editor_core::Actor;
         use cy_editor_documents::operation::Operation;
         use cy_editor_documents::selection::Selection;
-        use cy_editor_services::primitives::{MaterialBinding, create_mesh_instance};
+        use cy_editor_services::primitives::{
+            MaterialBinding, create_mesh_instance, set_material_slots,
+        };
         use cy_editor_viewport::gizmo::Transform3;
 
         let mut editor = Editor::default();
         let document_id = editor.open_document("worlds/city.cyworld").unwrap();
-        let node = editor
+        let unrelated_node = editor
             .documents
             .get_mut(document_id)
             .unwrap()
@@ -1508,22 +1511,40 @@ mod tests {
                     before: String::new(),
                     after: "materials/sway.cygraph".into(),
                 })?;
-                Ok(node)
+                let slotted = create_mesh_instance(
+                    document,
+                    None,
+                    "meshes/other.cyprim",
+                    Transform3::default(),
+                )?;
+                set_material_slots(
+                    document,
+                    slotted,
+                    &[
+                        "materials/other.cygraph".into(),
+                        "materials/secondary.cygraph".into(),
+                    ],
+                )?;
+                Ok(slotted)
             })
             .unwrap();
         let mut selection = Selection::new();
-        selection.set_nodes([node]);
+        selection.set_nodes([unrelated_node]);
         editor.selection.set(selection);
 
         assert_eq!(
-            selected_material_geometry(&editor, Some("materials/sway.cygraph")),
+            active_material_geometry(&editor, Some("materials/sway.cygraph")),
             Some("StaticMesh")
         );
         assert_eq!(
-            selected_material_geometry(&editor, Some("materials/other.cygraph")),
+            active_material_geometry(&editor, Some("materials/secondary.cygraph")),
+            Some("StaticMesh")
+        );
+        assert_eq!(
+            active_material_geometry(&editor, Some("materials/missing.cygraph")),
             None
         );
-        assert_eq!(selected_material_geometry(&editor, None), None);
+        assert_eq!(active_material_geometry(&editor, None), None);
     }
 
     #[test]
