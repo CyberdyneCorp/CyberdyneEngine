@@ -29,6 +29,11 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(create_module())?;
     registry.register(add_module_input())?;
     registry.register(add_module_dependency())?;
+    registry.register(add_module_node())?;
+    registry.register(connect_module_nodes())?;
+    registry.register(disconnect_module_nodes())?;
+    registry.register(remove_module_node())?;
+    registry.register(set_module_node_property())?;
     registry.register(attach_module())?;
     Ok(())
 }
@@ -45,6 +50,21 @@ fn metadata(id: &str, label: &str, description: &str) -> Metadata {
         "reference",
         ValueKind::Text,
         "Project-relative .cyvfxdoc authoring document path.",
+    ))
+}
+
+fn module_metadata(id: &str, label: &str, description: &str) -> Metadata {
+    Metadata::new(
+        id,
+        label,
+        "VFX Graph",
+        description,
+        EffectClass::ReversibleMutation,
+    )
+    .with(ParameterSpec::required(
+        "reference",
+        ValueKind::Text,
+        "Project-relative .cyvfxmodule authoring source path.",
     ))
 }
 
@@ -82,6 +102,35 @@ fn edit_module(
     let outcome = edit(&mut module)?;
     project.vfx_module_save(reference, &module.encode_text()?)?;
     Ok(outcome)
+}
+
+fn edit_module_canvas(
+    context: &mut dyn CommandContext,
+    reference: &str,
+    edit: impl FnOnce(&mut GraphCanvas) -> Result<Outcome>,
+) -> Result<Outcome> {
+    within_scope(context, reference)?;
+    let project = host(context)?;
+    let mut module = VfxModule::decode_text(&project.vfx_module_read(reference)?)?;
+    let mut canvas = module_canvas(&catalogue(project)?, &module)?;
+    let outcome = edit(&mut canvas)?;
+    module.capture(&canvas)?;
+    project.vfx_module_save(reference, &module.encode_text()?)?;
+    Ok(outcome)
+}
+
+fn module_canvas(payload: &[u8], module: &VfxModule) -> Result<GraphCanvas> {
+    let nodes = catalogue_from_service(payload)?;
+    if nodes.is_empty() || nodes.iter().any(|node| !node.name.starts_with("vfx.")) {
+        return Err(Problem::new(
+            "edit a VFX module graph",
+            "the engine supplied no usable VFX node catalogue",
+        ));
+    }
+    let mut canvas = GraphCanvas::new(1);
+    canvas.load(Catalogue::new(nodes)?);
+    module.open(&mut canvas)?;
+    Ok(canvas)
 }
 
 fn emitter_index(document: &VfxDocument, name: &str) -> Result<usize> {
@@ -725,7 +774,7 @@ fn set_parameter() -> Command {
 
 fn create_module() -> Command {
     Command::new(
-        metadata(
+        module_metadata(
             "vfx.module.create",
             "Create VFX Module",
             "Creates a separately saved reusable stage module with undo history.",
@@ -760,7 +809,7 @@ fn create_module() -> Command {
 
 fn add_module_input() -> Command {
     Command::new(
-        metadata(
+        module_metadata(
             "vfx.module.input.add",
             "Add VFX Module Input",
             "Declares a typed emitter attribute read by a reusable module.",
@@ -792,7 +841,7 @@ fn add_module_input() -> Command {
 
 fn add_module_dependency() -> Command {
     Command::new(
-        metadata(
+        module_metadata(
             "vfx.module.dependency.add",
             "Add VFX Module Dependency",
             "Declares another reusable module this module needs.",
@@ -808,6 +857,212 @@ fn add_module_dependency() -> Command {
             edit_module(context, reference, |module| {
                 module.dependencies.push(name.into());
                 Ok(Outcome::new(format!("Added module dependency {name}")))
+            })
+        },
+    )
+}
+
+fn add_module_node() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.node.add",
+            "Add VFX Module Node",
+            "Places an engine-catalogue node on a saved reusable module graph.",
+        )
+        .with(ParameterSpec::required(
+            "node_type",
+            ValueKind::Text,
+            "Node type from the engine VFX catalogue.",
+        ))
+        .with(ParameterSpec::required(
+            "x",
+            ValueKind::Float,
+            "Horizontal position on the shared canvas.",
+        ))
+        .with(ParameterSpec::required(
+            "y",
+            ValueKind::Float,
+            "Vertical position on the shared canvas.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let node_type = text(arguments, "node_type");
+            let x = arguments
+                .get("x")
+                .and_then(Value::as_float)
+                .unwrap_or_default();
+            let y = arguments
+                .get("y")
+                .and_then(Value::as_float)
+                .unwrap_or_default();
+            if !x.is_finite() || !y.is_finite() {
+                return Err(Problem::new(
+                    "place a VFX module node",
+                    "canvas position must be finite",
+                ));
+            }
+            edit_module_canvas(context, reference, |canvas| {
+                let node = canvas.add(node_type, Layout { x, y })?;
+                Ok(
+                    Outcome::new(format!("Added {node_type} to VFX module")).with(
+                        "node",
+                        Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
+                    ),
+                )
+            })
+        },
+    )
+}
+
+fn connect_module_nodes() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.node.connect",
+            "Connect VFX Module Nodes",
+            "Connects engine-typed pins on one saved reusable module graph.",
+        )
+        .with(ParameterSpec::required(
+            "from",
+            ValueKind::Int,
+            "Stable key of the node providing the output value.",
+        ))
+        .with(ParameterSpec::required(
+            "from_pin",
+            ValueKind::Text,
+            "Engine-declared source output pin.",
+        ))
+        .with(ParameterSpec::required(
+            "to",
+            ValueKind::Int,
+            "Stable key of the node receiving the input value.",
+        ))
+        .with(ParameterSpec::required(
+            "to_pin",
+            ValueKind::Text,
+            "Engine-declared destination input pin.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let from = node_key(arguments, "from")?;
+            let to = node_key(arguments, "to")?;
+            let from_pin = text(arguments, "from_pin");
+            let to_pin = text(arguments, "to_pin");
+            edit_module_canvas(context, reference, |canvas| {
+                canvas.connect(from, from_pin, to, to_pin)?;
+                Ok(Outcome::new(format!(
+                    "Connected VFX module nodes {} and {}",
+                    from.ordinal(),
+                    to.ordinal()
+                )))
+            })
+        },
+    )
+}
+
+fn disconnect_module_nodes() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.node.disconnect",
+            "Disconnect VFX Module Nodes",
+            "Removes one wire from a saved reusable module graph.",
+        )
+        .with(ParameterSpec::required(
+            "from",
+            ValueKind::Int,
+            "Stable key of the node providing the wire's value.",
+        ))
+        .with(ParameterSpec::required(
+            "from_pin",
+            ValueKind::Text,
+            "Engine-declared source output pin.",
+        ))
+        .with(ParameterSpec::required(
+            "to",
+            ValueKind::Int,
+            "Stable key of the node receiving the wire's value.",
+        ))
+        .with(ParameterSpec::required(
+            "to_pin",
+            ValueKind::Text,
+            "Engine-declared destination input pin.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let from = node_key(arguments, "from")?;
+            let to = node_key(arguments, "to")?;
+            let from_pin = text(arguments, "from_pin");
+            let to_pin = text(arguments, "to_pin");
+            edit_module_canvas(context, reference, |canvas| {
+                canvas.disconnect(from, from_pin, to, to_pin)?;
+                Ok(Outcome::new(format!(
+                    "Disconnected VFX module nodes {} and {}",
+                    from.ordinal(),
+                    to.ordinal()
+                )))
+            })
+        },
+    )
+}
+
+fn remove_module_node() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.node.remove",
+            "Remove VFX Module Node",
+            "Removes a node and its wires from a saved reusable module graph.",
+        )
+        .with(ParameterSpec::required(
+            "node",
+            ValueKind::Int,
+            "Stable key of the node to remove.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let node = node_key(arguments, "node")?;
+            edit_module_canvas(context, reference, |canvas| {
+                canvas.remove(node)?;
+                Ok(Outcome::new(format!(
+                    "Removed VFX module node {}",
+                    node.ordinal()
+                )))
+            })
+        },
+    )
+}
+
+fn set_module_node_property() -> Command {
+    Command::new(
+        module_metadata(
+            "vfx.module.node.property.set",
+            "Set VFX Module Node Property",
+            "Sets an engine-declared property on a saved reusable module node.",
+        )
+        .with(ParameterSpec::required(
+            "node",
+            ValueKind::Int,
+            "Stable key of the module node whose property will change.",
+        ))
+        .with(ParameterSpec::required(
+            "property",
+            ValueKind::Text,
+            "Engine-declared property name.",
+        ))
+        .with(ParameterSpec::required(
+            "value",
+            ValueKind::Text,
+            "Property value in the engine-declared textual form.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let node = node_key(arguments, "node")?;
+            let property = text(arguments, "property");
+            let value = text(arguments, "value");
+            edit_module_canvas(context, reference, |canvas| {
+                set_declared_property(canvas, node, property, value)?;
+                Ok(Outcome::new(format!(
+                    "Set {property} on VFX module node {}",
+                    node.ordinal()
+                )))
             })
         },
     )
@@ -1066,5 +1321,39 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn module_canvas_edits_preserve_graph_and_reject_unknown_engine_pins() {
+        let catalogue = engine_catalogue();
+        let mut module = VfxModule::new("shared_drag", Stage::Update).unwrap();
+        let mut canvas = module_canvas(&catalogue, &module).unwrap();
+        let from = canvas
+            .add("vfx.constant", Layout { x: 10.0, y: 20.0 })
+            .unwrap();
+        let to = canvas
+            .add("vfx.spawn_count", Layout { x: 80.0, y: 20.0 })
+            .unwrap();
+        canvas.connect(from, "out", to, "value").unwrap();
+        set_declared_property(&mut canvas, from, "value", "2.5").unwrap();
+        module.capture(&canvas).unwrap();
+
+        let reopened = VfxModule::decode_text(&module.encode_text().unwrap()).unwrap();
+        let mut canvas = module_canvas(&catalogue, &reopened).unwrap();
+        assert_eq!(canvas.nodes().count(), 2);
+        assert_eq!(canvas.links().count(), 1);
+        assert_eq!(
+            canvas.resolved_properties(from).get("value"),
+            Some(&"2.5".into())
+        );
+        assert!(canvas.connect(from, "unknown", to, "value").is_err());
+        canvas.disconnect(from, "out", to, "value").unwrap();
+        canvas.remove(from).unwrap();
+        module.capture(&canvas).unwrap();
+        let reopened = VfxModule::decode_text(&module.encode_text().unwrap()).unwrap();
+        let canvas = module_canvas(&catalogue, &reopened).unwrap();
+        assert_eq!(canvas.nodes().count(), 1);
+        assert_eq!(canvas.links().count(), 0);
+        assert!(canvas.node(to).is_some());
     }
 }

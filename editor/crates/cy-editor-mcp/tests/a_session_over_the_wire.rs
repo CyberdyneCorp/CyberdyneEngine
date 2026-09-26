@@ -388,7 +388,15 @@ fn vfx_canvas_removal_commands_are_projected_over_mcp() {
     let Json::Array(tools) = result(&replies, 1).get("tools") else {
         panic!("tools/list must contain VFX canvas commands");
     };
-    for command in ["vfx.node.disconnect", "vfx.node.remove"] {
+    for command in [
+        "vfx.node.disconnect",
+        "vfx.node.remove",
+        "vfx.module.node.add",
+        "vfx.module.node.connect",
+        "vfx.module.node.disconnect",
+        "vfx.module.node.remove",
+        "vfx.module.node.property.set",
+    ] {
         assert!(
             tools
                 .iter()
