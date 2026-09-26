@@ -87,6 +87,8 @@ content enters the material digest and versioned module encoding; optimisation a
 derivation retain it for visible and shadow programs. Graph lowering and the text front end
 (`vertex_offset = ...;`) require a float3 expression. Vertex shader emission, stage-aware canvas
 output, geometry-source validation, and displaced rendering remain under issue #15.
+The engine material catalogue assigns `material.vertex_output` a stable identity and marks it as a
+vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
 
 ### The one decision everything else follows from
 

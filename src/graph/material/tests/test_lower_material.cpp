@@ -67,7 +67,7 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
     for (const auto& type : types) {
         offered.emplace_back(type);
     }
-    CY_CHECK(offered.size() == static_cast<usize>(GraphOp::Count) + 1U);
+    CY_CHECK(offered.size() == static_cast<usize>(GraphOp::Count) + 2U);
     for (u32 index = 0; index < static_cast<u32>(GraphOp::Count); ++index) {
         const std::string expected =
             std::string("material.") +
@@ -75,6 +75,7 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
         CY_CHECK(std::ranges::find(offered, expected) != offered.end());
     }
     CY_CHECK(std::ranges::find(offered, std::string("material.output")) != offered.end());
+    CY_CHECK(std::ranges::find(offered, std::string("material.vertex_output")) != offered.end());
 }
 
 CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero identity") {
@@ -101,6 +102,7 @@ CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero 
 CY_TEST_CASE("graph_material: stage compatibility comes from the engine palette") {
     using cy::graph::material::material_node_stage_mask;
     CY_CHECK_EQ(material_node_stage_mask("material.output"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.vertex_output"), 2U);
     CY_CHECK_EQ(material_node_stage_mask("material.diffuse"), 1U);
     CY_CHECK_EQ(material_node_stage_mask("material.texture_sample"), 1U);
     CY_CHECK_EQ(material_node_stage_mask("material.custom"), 1U);
@@ -123,7 +125,7 @@ CY_TEST_CASE("graph_material: the service catalogue is deterministic and version
                (static_cast<u32>(first[offset + 3]) << 24U);
     };
     CY_CHECK_EQ(read_u32(0), 3U);
-    CY_CHECK_EQ(read_u32(4), 5U);
+    CY_CHECK_EQ(read_u32(4), 6U);
     CY_CHECK_EQ(read_u32(8), material_node_types().size());
 }
 
@@ -175,7 +177,7 @@ CY_TEST_CASE("graph_material: the pin an author wires is the port the compiler r
     // entry, wire a constant into every input pin in turn and require it to land on the port index
     // `MaterialGraph::input` reports — which is the number `graph.h` fixes the meaning of.
     for (const auto& type : material_node_types()) {
-        if (type == "material.output") {
+        if (type == "material.output" || type == "material.vertex_output") {
             continue;
         }
         cy::graph::PinDesc storage[cy::graph::material::kMaxPins];
@@ -226,4 +228,32 @@ CY_TEST_CASE("graph_material: authored vector sine reaches the material IR") {
                      (node.op == cy::rendering::material::Op::Sin && node.type == ValueType::Vec3);
     }
     CY_CHECK(found_sine);
+}
+
+CY_TEST_CASE("graph_material: the vertex output reaches the same typed IR root") {
+    Canvas canvas("wind_sway");
+    const NodeKey offset = canvas.add("material.constant");
+    canvas.type_of(offset, ValueType::Vec3);
+    canvas.value(offset, "value", 0.0F, 0.25F, 0.0F, 0.0F, 0);
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(offset, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("wind_sway"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    CY_CHECK_NE(ir.value().vertex_offset(), cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir.value().node(ir.value().vertex_offset()).type, ValueType::Vec3);
+
+    Canvas invalid("bad_sway");
+    const NodeKey scalar = invalid.add("material.constant");
+    invalid.type_of(scalar, ValueType::Float);
+    invalid.value(scalar, "value", 0.25F, 0.0F, 0.0F, 0.0F, 0);
+    const NodeKey invalid_output = invalid.add("material.vertex_output");
+    invalid.wire(scalar, invalid_output, "offset");
+    CY_REQUIRE(invalid.good());
+    MaterialGraph rejected(allocator(), Name::intern("bad_sway"));
+    CY_REQUIRE(lower_material(invalid.graph(), rejected));
+    CY_CHECK_FALSE(cy::rendering::material::lower_graph(rejected, allocator()).has_value());
 }

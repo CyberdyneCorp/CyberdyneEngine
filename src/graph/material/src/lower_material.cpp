@@ -37,6 +37,7 @@ struct NodeSpec {
 /// `set_opacity_output` — so this is the one palette entry that is not a `GraphOp`, and the
 /// lowering turns it into those two calls.
 constexpr std::string_view kOutputType = "material.output";
+constexpr std::string_view kVertexOutputType = "material.vertex_output";
 
 constexpr NodeSpec kPalette[] = {
     {1, "material.constant", GraphOp::Constant, {}, 0, false},
@@ -67,9 +68,11 @@ constexpr NodeSpec kPalette[] = {
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
+constexpr NodeTypeId kVertexOutputIdentity = 27;
 
 /// The root's two pins, which are the two setters.
 constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
+constexpr std::string_view kVertexOutputPin = "offset";
 
 /// The pin type names. Deliberately two and not a lattice: `cybergraph.h` decision 2 keeps pin
 /// types the domain's business, and this domain has exactly one distinction that matters — a
@@ -340,6 +343,13 @@ private:
         return fail(ErrorCode::InvalidArgument,
                     "a wire into `material.output` on a pin it does not have");
     }
+    if (type == kVertexOutputType) {
+        if (link.to_pin.text() == kVertexOutputPin) {
+            return out.set_vertex_offset_output(source);
+        }
+        return fail(ErrorCode::InvalidArgument,
+                    "a wire into `material.vertex_output` on a pin it does not have");
+    }
     const NodeSpec* spec = spec_for(type);
     const u32 destination = keys.find(link.to);
     if (spec == nullptr || destination == rendering::material::kInvalidNode) {
@@ -357,14 +367,15 @@ private:
 }  // namespace
 
 Span<const std::string_view> material_node_types() noexcept {
-    // Built once, in the palette's own order plus the root. `static` rather than a member of a
-    // registry because the list is a property of this build and not of a session.
-    static std::string_view names[std::size(kPalette) + 1];
+    // Built once, in the palette's own order plus both output roots. `static` rather than a member
+    // of a registry because the list is a property of this build and not of a session.
+    static std::string_view names[std::size(kPalette) + 2];
     static const bool built = [] {
         for (usize index = 0; index < std::size(kPalette); ++index) {
             names[index] = kPalette[index].type;
         }
         names[std::size(kPalette)] = kOutputType;
+        names[std::size(kPalette) + 1] = kVertexOutputType;
         return true;
     }();
     (void)built;
@@ -375,6 +386,9 @@ NodeTypeId material_node_type_id(std::string_view type) noexcept {
     if (type == kOutputType) {
         return kOutputIdentity;
     }
+    if (type == kVertexOutputType) {
+        return kVertexOutputIdentity;
+    }
     const NodeSpec* spec = spec_for(type);
     return spec != nullptr ? spec->identity : kInvalidNodeTypeId;
 }
@@ -384,6 +398,9 @@ u8 material_node_stage_mask(std::string_view type) noexcept {
     constexpr u8 vertex = 2U;
     if (type == kOutputType) {
         return surface;
+    }
+    if (type == kVertexOutputType) {
+        return vertex;
     }
     const NodeSpec* spec = spec_for(type);
     if (spec == nullptr) {
@@ -432,7 +449,7 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
     if (Status status = u32_value(3); !status) {
         return status;  // schema
     }
-    if (Status status = u32_value(5); !status) {
+    if (Status status = u32_value(6); !status) {
         return status;  // catalogue version
     }
     const auto types = material_node_types();
@@ -576,6 +593,10 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
         push(kOutputPins[1], kValuePin, PinDirection::Input);
         return {storage, count};
     }
+    if (type == kVertexOutputType) {
+        push(kVertexOutputPin, kValuePin, PinDirection::Input);
+        return {storage, count};
+    }
     const NodeSpec* spec = spec_for(type);
     if (spec == nullptr) {
         return {};
@@ -615,7 +636,7 @@ Status lower_material(const Graph& graph, MaterialGraph& out) noexcept {
     // PASS ONE: every node, in the authored order, including the disconnected and the muted ones.
     for (const GraphNode& node : graph.nodes()) {
         const std::string_view type = node.type.text();
-        if (type == kOutputType) {
+        if (type == kOutputType || type == kVertexOutputType) {
             continue;
         }
         const NodeSpec* spec = spec_for(type);

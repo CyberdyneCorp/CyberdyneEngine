@@ -100,6 +100,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.swizzle", &["value"], false),
     ("material.texture_sample", &["uv"], false),
     ("material.transmission", &["colour", "weight"], true),
+    ("material.vertex_output", &["offset"], false),
 ];
 
 /// Whether a closure node's INPUTS are closures too, which only the two combiners' are.
@@ -109,9 +110,7 @@ fn takes_closures(type_name: &str) -> bool {
 
 /// The catalogue the material editor opens with: the engine's node types, with their pins.
 ///
-/// `material.output` is the root and the one entry that is not a `GraphOp` — `MaterialGraph` has
-/// `set_surface_output` and `set_opacity_output` rather than an output node, and an author needs
-/// something to wire the final closure into.
+/// Surface and vertex output nodes represent the graph's typed roots and are not `GraphOp` values.
 #[must_use]
 pub fn material_catalogue() -> Vec<NodeType> {
     MATERIAL_PINS
@@ -134,14 +133,19 @@ pub fn material_catalogue() -> Vec<NodeType> {
                     Pin::new(*pin, PinDirection::Input, data_type)
                 })
                 .collect();
-            if *name != "material.output" {
+            if *name != "material.output" && *name != "material.vertex_output" {
                 pins.push(Pin::new(
                     "out",
                     PinDirection::Output,
                     if *closure { CLOSURE_PIN } else { VALUE_PIN },
                 ));
             }
-            NodeType::new(*name, pins)
+            let node = NodeType::new(*name, pins);
+            if *name == "material.vertex_output" {
+                node.with_stage_mask(VERTEX_STAGE)
+            } else {
+                node
+            }
         })
         .collect()
 }
@@ -861,11 +865,10 @@ mod tests {
                 "{name}: the editor's pins and the engine's ports disagree"
             );
         }
-        // `material.output` is the one entry that is not a `GraphOp` and so is not in `kPalette`;
-        // everything else must be on both sides.
+        // The two output roots are not `GraphOp` values and so are not in `kPalette`.
         assert_eq!(
             MATERIAL_PINS.len(),
-            engine.len() + 1,
+            engine.len() + 2,
             "the editor offers a node type the engine cannot lower, or is missing one it can"
         );
     }
