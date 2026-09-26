@@ -21,6 +21,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/particles/particle_renderer.h>
+#include <cy/rendering/pipeline/bloom_renderer.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 
 #include <cmath>
@@ -113,7 +114,10 @@ public:
     FrameScene(const FrameScene&) = delete;
     FrameScene& operator=(const FrameScene&) = delete;
 
-    [[nodiscard]] Status build(rhi::Device& device) noexcept;
+    /// `bloom` non-null puts bloom in the frame's post chain with those settings, recorded by the
+    /// scene's own `BloomRenderer` through `FrameRecorder::set_bloom`. Null is the frame this
+    /// scene always rendered.
+    [[nodiscard]] Status build(rhi::Device& device, const BloomSettings* bloom = nullptr) noexcept;
     void release() noexcept;
 
     [[nodiscard]] Status render(RecordMode mode, AssemblyReport& out) noexcept;
@@ -140,6 +144,7 @@ public:
         return effect_.report();
     }
     [[nodiscard]] const FrameRecorder& recorder() const noexcept { return recorder_; }
+    [[nodiscard]] const BloomRenderer& bloom() const noexcept { return bloom_; }
     [[nodiscard]] const FramePipelines& pipelines() const noexcept { return pipelines_; }
     [[nodiscard]] FrameAssembly& assembly() noexcept { return assembly_; }
     /// The last frame's output, Rgba8Unorm, row-major from the top-left. Empty until a device
@@ -168,6 +173,7 @@ private:
     FramePipelines pipelines_;
     FrameBindings bindings_;
     FrameRecorder recorder_;
+    BloomRenderer bloom_;
     particles::ParticleRenderer effect_;
     Array<InstanceTransform> instances_;
     Array<particles::ParticleInstance> particles_;
