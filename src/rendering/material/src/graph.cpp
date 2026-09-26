@@ -214,6 +214,42 @@ struct Lowering {
                         Span<const NodeId>(scaled, 2));
 }
 
+[[nodiscard]] Expected<NodeId, Error> lower_vertex_output(const MaterialGraph& graph,
+                                                          Span<const NodeId> mapped,
+                                                          Builder& builder) noexcept {
+    NodeId offset = graph.vertex_offset_output() == kInvalidNode
+                        ? kInvalidNode
+                        : mapped[graph.vertex_offset_output()];
+    if (graph.vertex_displacement_output() == kInvalidNode) {
+        return offset;
+    }
+    const NodeId amount = mapped[graph.vertex_displacement_output()];
+    if (amount == kInvalidNode) {
+        return fail(ErrorCode::InvalidArgument, "vertex displacement source is unavailable");
+    }
+    if (builder.node(amount).type != ValueType::Float) {
+        return fail(ErrorCode::InvalidArgument, "vertex displacement must be a scalar distance");
+    }
+    auto normal = builder.attribute(Name::intern("normal"), ValueType::Vec3);
+    if (!normal) {
+        return make_unexpected(normal.error());
+    }
+    const NodeId operands[] = {*normal, amount};
+    auto displaced = builder.make(Op::Mul, {operands, 2});
+    if (!displaced) {
+        return make_unexpected(displaced.error());
+    }
+    if (Status origin = builder.add_origin(*displaced, graph.vertex_displacement_output());
+        !origin) {
+        return make_unexpected(origin.error());
+    }
+    if (offset == kInvalidNode) {
+        return *displaced;
+    }
+    const NodeId combined[] = {offset, *displaced};
+    return builder.make(Op::Add, {combined, 2});
+}
+
 }  // namespace
 
 const char* graph_op_name(GraphOp op) noexcept {
@@ -378,6 +414,14 @@ Status MaterialGraph::set_vertex_offset_output(u32 node) noexcept {
     return ok();
 }
 
+Status MaterialGraph::set_vertex_displacement_output(u32 node) noexcept {
+    if (node >= nodes_.size()) {
+        return make_unexpected(Error{ErrorCode::InvalidArgument, "no such node", 0});
+    }
+    vertex_displacement_ = node;
+    return ok();
+}
+
 u32 MaterialGraph::input(u32 node, u8 port) const noexcept {
     if (node >= nodes_.size() || port >= kMaxPorts) {
         return kInvalidNode;
@@ -437,8 +481,12 @@ Expected<Module, Error> lower_graph(const MaterialGraph& graph, Allocator& alloc
             return make_unexpected(set.error());
         }
     }
-    if (graph.vertex_offset_output() != kInvalidNode) {
-        if (Status set = builder.set_vertex_offset(mapped[graph.vertex_offset_output()]); !set) {
+    auto vertex_offset = lower_vertex_output(graph, mapped.span(), builder);
+    if (!vertex_offset) {
+        return make_unexpected(vertex_offset.error());
+    }
+    if (*vertex_offset != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(*vertex_offset); !set) {
             return make_unexpected(set.error());
         }
     }

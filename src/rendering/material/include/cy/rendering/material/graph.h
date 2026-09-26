@@ -135,6 +135,8 @@ public:
     [[nodiscard]] Status set_opacity_output(u32 node) noexcept;
     /// Select the authored float3 expression that moves vertices in world space.
     [[nodiscard]] Status set_vertex_offset_output(u32 node) noexcept;
+    /// Select a scalar displacement in metres along the mesh normal.
+    [[nodiscard]] Status set_vertex_displacement_output(u32 node) noexcept;
 
     [[nodiscard]] Name name() const noexcept { return name_; }
     [[nodiscard]] Span<const GraphNode> nodes() const noexcept { return nodes_.span(); }
@@ -147,6 +149,7 @@ public:
     [[nodiscard]] u32 surface_output() const noexcept { return surface_; }
     [[nodiscard]] u32 opacity_output() const noexcept { return opacity_; }
     [[nodiscard]] u32 vertex_offset_output() const noexcept { return vertex_offset_; }
+    [[nodiscard]] u32 vertex_displacement_output() const noexcept { return vertex_displacement_; }
     [[nodiscard]] Allocator& allocator() const noexcept { return nodes_.allocator(); }
 
     /// The most inputs any node has: two operands plus a weight.
@@ -161,6 +164,7 @@ private:
     u32 surface_ = kInvalidNode;
     u32 opacity_ = kInvalidNode;
     u32 vertex_offset_ = kInvalidNode;
+    u32 vertex_displacement_ = kInvalidNode;
 };
 
 /// Lower an authored graph to the IR. Every node is lowered, including the disconnected ones: the

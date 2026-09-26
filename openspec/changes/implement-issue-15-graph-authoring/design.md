@@ -23,6 +23,10 @@ An isolated engine preview instance drives play, pause, restart, scrub, and time
 ## Vertex material stage
 
 The existing material graph gains an explicit vertex stage and typed outputs for world-position offset, custom interpolants, and displacement. Stage-aware nodes use the same canvas and backend catalogue. Compilation reports variants by geometry source. Unsupported paths, including virtual geometry where offset evaluation is unavailable, fail in both editor validation and cook. The same vertex expression drives the main, shadow, and previous-frame positions so motion vectors follow displacement.
+The `material.vertex_output` graph node now accepts scalar normal displacement as well as a
+float3 world-space offset. Graph lowering combines them as `offset + normal * displacement` in
+the existing typed vertex root; tests confirm the normal reaches visible and shadow vertex programs.
+Custom interpolants and previous-frame evaluation remain open.
 
 The material IR first carries a typed `float3` world-space vertex offset root beside its surface
 and opacity roots. Graph and text authoring lower to that same root; its content enters the module

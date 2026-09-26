@@ -97,6 +97,46 @@ CY_TEST_CASE("graph_material: spatial vertex noise has one graph and text cook i
     CY_CHECK_EQ(graph_program->cook_key(), text_program->cook_key());
 }
 
+CY_TEST_CASE("graph_material: normal displacement reaches visible and shadow vertex programs") {
+    Canvas canvas("raised");
+    const auto amount = canvas.add("material.constant");
+    canvas.type_of(amount, ValueType::Float);
+    canvas.value(amount, "value", 0.25F, 0.0F, 0.0F, 0.0F, 0);
+    const auto output = canvas.add("material.vertex_output");
+    canvas.wire(amount, output, "displacement");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("raised"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    CompileOptions options;
+    auto compiled = cy::rendering::material::compile_material(*ir, options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const cy::rendering::material::CompiledProgram* visible = nullptr;
+    const cy::rendering::material::CompiledProgram* shadow = nullptr;
+    for (const auto& program : compiled->programs()) {
+        if (program.tier != cy::rendering::material::QualityTier::High) {
+            continue;
+        }
+        if (program.kind == cy::rendering::material::ProgramKind::Primary) {
+            visible = &program;
+        } else if (program.kind == cy::rendering::material::ProgramKind::Shadow) {
+            shadow = &program;
+        }
+    }
+    CY_REQUIRE(visible != nullptr);
+    CY_REQUIRE(shadow != nullptr);
+    const std::string_view visible_source(visible->vertex_source.text.data(),
+                                          visible->vertex_source.text.size());
+    const std::string_view shadow_source(shadow->vertex_source.text.data(),
+                                         shadow->vertex_source.text.size());
+    CY_CHECK(visible_source.find("ctx.attributes.normal") != std::string_view::npos);
+    CY_CHECK(shadow_source.find("ctx.attributes.normal") != std::string_view::npos);
+    CY_CHECK(visible_source.find("0.25") != std::string_view::npos);
+    CY_CHECK(shadow_source.find("0.25") != std::string_view::npos);
+}
+
 CY_TEST_CASE("graph_material: animated procedural wind has one graph and text cook identity") {
     Canvas canvas("wind");
     const auto position = canvas.add("material.world_position");

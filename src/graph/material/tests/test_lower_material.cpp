@@ -258,6 +258,51 @@ CY_TEST_CASE("graph_material: the vertex output reaches the same typed IR root")
     CY_CHECK_FALSE(cy::rendering::material::lower_graph(rejected, allocator()).has_value());
 }
 
+CY_TEST_CASE("graph_material: scalar displacement follows the normal and combines with offset") {
+    Canvas canvas("normal_displacement");
+    const NodeKey amount = canvas.add("material.constant");
+    canvas.type_of(amount, ValueType::Float);
+    canvas.value(amount, "value", 0.25F, 0.0F, 0.0F, 0.0F, 0);
+    const NodeKey offset = canvas.add("material.constant");
+    canvas.type_of(offset, ValueType::Vec3);
+    canvas.value(offset, "value", 0.0F, 0.1F, 0.0F, 0.0F, 0);
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(amount, output, "displacement");
+    canvas.wire(offset, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("normal_displacement"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    const auto root = ir->vertex_offset();
+    CY_REQUIRE_NE(root, cy::rendering::material::kInvalidNode);
+    CY_CHECK_EQ(ir->node(root).op, cy::rendering::material::Op::Add);
+    bool uses_normal = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir->size(); ++id) {
+        const auto& node = ir->node(id);
+        uses_normal =
+            uses_normal || (node.op == cy::rendering::material::Op::Attribute &&
+                            node.symbol == Name::intern("normal") && node.type == ValueType::Vec3);
+    }
+    CY_CHECK(uses_normal);
+
+    Canvas invalid("vector_displacement");
+    const NodeKey vector = invalid.add("material.constant");
+    invalid.type_of(vector, ValueType::Vec3);
+    const NodeKey invalid_output = invalid.add("material.vertex_output");
+    invalid.wire(vector, invalid_output, "displacement");
+    CY_REQUIRE(invalid.good());
+    MaterialGraph rejected(allocator(), Name::intern("vector_displacement"));
+    CY_REQUIRE(lower_material(invalid.graph(), rejected));
+    auto result = cy::rendering::material::lower_graph(rejected, allocator());
+    CY_CHECK_FALSE(result.has_value());
+    if (!result) {
+        CY_CHECK_EQ(std::string_view(result.error().message),
+                    "vertex displacement must be a scalar distance");
+    }
+}
+
 CY_TEST_CASE("graph_material: named geometry nodes lower to fixed typed attributes") {
     Canvas canvas("geometry_inputs");
     const NodeKey position = canvas.add("material.object_position");

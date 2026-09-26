@@ -454,7 +454,7 @@ migrated into the typed property shape, and older catalogues leave stage compati
 so reconnecting an older runtime does not discard the graph being authored.
 The engine catalogue includes `material.sin`, a typed scalar/vector sine node shared with the
 text material front end. It is available for authored material arithmetic. The vertex palette offers
-`material.vertex_output` for an offset expression and typed `material.object_position`,
+`material.vertex_output` for an offset expression or scalar normal displacement, and typed `material.object_position`,
 `material.world_position`, `material.normal`, and `material.uv0` geometry inputs. World position
 uses the renderer's camera-relative world coordinates; object position uses the mesh's local
 coordinates. The hosted viewport binds both positions for visible and shadow vertex evaluation.
@@ -466,7 +466,9 @@ vector from world position and engine time; multiply it by a scalar or vector am
 it to the vertex offset. `material.vertex_color` reads the mesh vertex's linear RGB colour;
 the hosted compiled-material preview passes that attribute through to vertex and fragment graphs.
 Its generated mesh assigns a different colour to each face axis for a visible preview.
-The actual `environment-fields` wind binding and the remaining outputs are tracked by issue #15.
+The `displacement` pin accepts a scalar distance in metres; the engine combines it with any
+connected `offset` as `offset + normal * displacement` for visible and shadow vertex programs.
+The actual `environment-fields` wind binding and custom interpolants are tracked by issue #15.
 The authored scene frame currently accepts only its standard
 constant-colour graph subset; a graph with `material.vertex_output` reports the missing
 vertex-offset pass explicitly instead of being presented as a generic graph mismatch.

@@ -81,6 +81,7 @@ constexpr NodeTypeId kVertexOutputIdentity = 27;
 /// The root's two pins, which are the two setters.
 constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
 constexpr std::string_view kVertexOutputPin = "offset";
+constexpr std::string_view kVertexDisplacementPin = "displacement";
 
 /// The pin type names. Deliberately two and not a lattice: `cybergraph.h` decision 2 keeps pin
 /// types the domain's business, and this domain has exactly one distinction that matters — a
@@ -365,6 +366,9 @@ private:
         if (link.to_pin.text() == kVertexOutputPin) {
             return out.set_vertex_offset_output(source);
         }
+        if (link.to_pin.text() == kVertexDisplacementPin) {
+            return out.set_vertex_displacement_output(source);
+        }
         return fail(ErrorCode::InvalidArgument,
                     "a wire into `material.vertex_output` on a pin it does not have");
     }
@@ -613,6 +617,7 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
     }
     if (type == kVertexOutputType) {
         push(kVertexOutputPin, kValuePin, PinDirection::Input);
+        push(kVertexDisplacementPin, kValuePin, PinDirection::Input);
         return {storage, count};
     }
     const NodeSpec* spec = spec_for(type);
