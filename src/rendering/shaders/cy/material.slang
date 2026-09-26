@@ -47,6 +47,16 @@ public float cyMaterialNoise(float3 position)
     return lerp(z0, z1, blend.z);
 }
 
+/// Smooth, time-varying wind direction in [-1, 1] for each axis.
+public float3 cyMaterialWind(float3 position, float timeSeconds)
+{
+    let drift = position + timeSeconds * float3(0.17, 0.11, 0.13);
+    return 2.0 * float3(
+        cyMaterialNoise(drift),
+        cyMaterialNoise(drift + float3(17.0, 43.0, 11.0)),
+        cyMaterialNoise(drift + float3(31.0, 7.0, 59.0))) - 1.0;
+}
+
 /// What the engine's vertex processing hands a surface function.
 ///
 /// Camera-relative (design.md §3): `positionRelativeToCamera` is never world space.

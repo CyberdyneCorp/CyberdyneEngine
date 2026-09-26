@@ -96,3 +96,35 @@ CY_TEST_CASE("graph_material: spatial vertex noise has one graph and text cook i
     CY_REQUIRE(text_program.has_value());
     CY_CHECK_EQ(graph_program->cook_key(), text_program->cook_key());
 }
+
+CY_TEST_CASE("graph_material: animated wind has one graph and text cook identity") {
+    Canvas canvas("wind");
+    const auto position = canvas.add("material.world_position");
+    const auto time = canvas.add("material.time");
+    const auto wind = canvas.add("material.wind");
+    canvas.wire(position, wind, "position");
+    canvas.wire(time, wind, "time");
+    const auto output = canvas.add("material.vertex_output");
+    canvas.wire(wind, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("wind"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto from_canvas = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(from_canvas.has_value());
+
+    cy::rendering::material::ParseDiagnostic diagnostic(allocator());
+    auto from_text = cy::rendering::material::parse_material(
+        "material wind { attribute position : float3; attribute time_seconds : float; "
+        "vertex_offset = wind(position, time_seconds); }",
+        allocator(), diagnostic);
+    CY_REQUIRE(from_text.has_value());
+
+    CompileOptions options;
+    auto graph_program =
+        cy::rendering::material::compile_material(*from_canvas, options, allocator());
+    auto text_program = cy::rendering::material::compile_material(*from_text, options, allocator());
+    CY_REQUIRE(graph_program.has_value());
+    CY_REQUIRE(text_program.has_value());
+    CY_CHECK_EQ(graph_program->cook_key(), text_program->cook_key());
+}

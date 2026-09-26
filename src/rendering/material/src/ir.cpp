@@ -56,6 +56,7 @@ constexpr OpInfo kOps[] = {
     {"closure_layer", 2, false, true, false},
     {"sin", 1, false, false, false},
     {"noise", 1, false, false, false},
+    {"wind", 2, false, false, false},
 };
 
 static_assert(sizeof(kOps) / sizeof(kOps[0]) == static_cast<usize>(Op::Count),
@@ -780,6 +781,14 @@ namespace {
                 return make_unexpected(checked.error());
             }
             return ValueType::Float;
+        case Op::Wind:
+            if (Status checked =
+                    require(types[0] == ValueType::Vec3 && types[1] == ValueType::Float,
+                            "wind requires a float3 position and float time");
+                !checked) {
+                return make_unexpected(checked.error());
+            }
+            return ValueType::Vec3;
         case Op::Lerp: {
             auto blended = combine_numeric(types[0], types[1]);
             if (!blended) {

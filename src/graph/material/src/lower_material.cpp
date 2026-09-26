@@ -71,6 +71,7 @@ constexpr NodeSpec kPalette[] = {
     {31, "material.world_position", GraphOp::WorldPosition, {}, 0, false},
     {32, "material.time", GraphOp::Time, {}, 0, false},
     {33, "material.noise", GraphOp::Noise, {"position"}, 1, false},
+    {34, "material.wind", GraphOp::Wind, {"position", "time"}, 2, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;

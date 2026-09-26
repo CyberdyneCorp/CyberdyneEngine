@@ -56,7 +56,9 @@ same binding. A typed time node now reads monotonic elapsed seconds from the fir
 per-frame uniform for sine-driven offset expressions, without changing the material program.
 The engine material IR now includes a typed three-dimensional value-noise operation, exposed by
 both the graph palette and `noise(position)` text syntax. Slang compiles it in a vertex expression;
-the node rejects non-float3 coordinates. Vertex colour, wind, custom interpolants, and displacement
+the node rejects non-float3 coordinates. A typed wind operation samples three decorrelated noise
+channels at an animated coordinate and returns a float3 vector; both graph and text front ends
+lower to the same IR operation. Vertex colour, custom interpolants, and displacement
 remain in task 3.1.
 The authored scene frame still uses the standard material path. It now rejects a vertex graph
 with a named missing-pass error before that path can flatten it to a diffuse colour; the

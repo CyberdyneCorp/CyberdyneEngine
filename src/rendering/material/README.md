@@ -96,6 +96,9 @@ frame uniform before drawing each preview frame, and the material shader binds i
 fragment expressions. Its value changes without a material recompile.
 `material.noise` accepts a float3 coordinate and returns smooth value noise in `[0, 1]`. The node
 and `noise(position)` text form lower to the same IR operation and engine Slang function.
+`material.wind` accepts a float3 coordinate and elapsed seconds, returning a smooth float3 vector
+with components in `[-1, 1]`. The node and `wind(position, time_seconds)` text form share that IR
+operation; authors scale the vector to control displacement amplitude.
 Each compiled variant now carries separate Slang for that offset; a shadow variant retains it even when
 its fragment program is absent. The vertex source compiles as an actual Slang vertex entry point in
 the smoke suite. Material bundle version 2 retains each variant's vertex source and digest, including

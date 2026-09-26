@@ -316,3 +316,39 @@ CY_TEST_CASE("graph_material: spatial noise refuses a scalar coordinate") {
     CY_REQUIRE(lower_material(canvas.graph(), lowered));
     CY_CHECK_FALSE(cy::rendering::material::lower_graph(lowered, allocator()).has_value());
 }
+
+CY_TEST_CASE("graph_material: wind requires position and scalar time") {
+    Canvas canvas("wind");
+    const NodeKey position = canvas.add("material.world_position");
+    const NodeKey time = canvas.add("material.time");
+    const NodeKey wind = canvas.add("material.wind");
+    canvas.wire(position, wind, "position");
+    canvas.wire(time, wind, "time");
+    const NodeKey output = canvas.add("material.vertex_output");
+    canvas.wire(wind, output, "offset");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("wind"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    bool found = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir->size(); ++id) {
+        const auto& node = ir->node(id);
+        found = found || (node.op == cy::rendering::material::Op::Wind &&
+                          node.type == ValueType::Vec3 && ir->operands(id).size() == 2);
+    }
+    CY_CHECK(found);
+
+    Canvas invalid("invalid_wind");
+    const NodeKey scalar = invalid.add("material.constant");
+    invalid.type_of(scalar, ValueType::Float);
+    const NodeKey invalid_time = invalid.add("material.time");
+    const NodeKey invalid_wind = invalid.add("material.wind");
+    invalid.wire(scalar, invalid_wind, "position");
+    invalid.wire(invalid_time, invalid_wind, "time");
+    CY_REQUIRE(invalid.good());
+    MaterialGraph rejected(allocator(), Name::intern("invalid_wind"));
+    CY_REQUIRE(lower_material(invalid.graph(), rejected));
+    CY_CHECK_FALSE(cy::rendering::material::lower_graph(rejected, allocator()).has_value());
+}

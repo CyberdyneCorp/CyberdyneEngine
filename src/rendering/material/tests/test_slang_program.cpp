@@ -266,12 +266,13 @@ CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standar
     std::printf("worn_metal primary/high compiled to %u SPIR-V words\n", words);
 }
 
-CY_TEST_CASE("sine and spatial noise compile in a generated vertex offset") {
+CY_TEST_CASE("sine noise and wind compile in a generated vertex offset") {
     CY_REQUIRE(shader::slang::slang_available());
     ParseDiagnostic sink(current_allocator());
     auto module = parse_material(
-        "material wind_sway { param time : float = 0.0; attribute position : float3; "
-        "vertex_offset = position * sin(time) + (0.0, noise(position), 0.0); }",
+        "material wind_sway { attribute time_seconds : float; attribute position : float3; "
+        "vertex_offset = position * sin(time_seconds) + "
+        "(0.0, noise(position), 0.0) + wind(position, time_seconds); }",
         current_allocator(), sink);
     CY_REQUIRE(module.has_value());
     auto generated = emit_vertex_offset(*module, EmitOptions{});

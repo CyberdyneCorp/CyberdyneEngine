@@ -221,6 +221,9 @@ struct Binding {
     if (text == "noise") {
         return Op::Noise;
     }
+    if (text == "wind") {
+        return Op::Wind;
+    }
     if (text == "normalize") {
         return Op::Normalize;
     }

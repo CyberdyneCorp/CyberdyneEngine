@@ -107,6 +107,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.uv0", &[], false),
     ("material.vertex_output", &["offset"], false),
     ("material.world_position", &[], false),
+    ("material.wind", &["position", "time"], false),
 ];
 
 /// Whether a closure node's INPUTS are closures too, which only the two combiners' are.
