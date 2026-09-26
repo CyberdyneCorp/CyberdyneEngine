@@ -28,8 +28,7 @@ constexpr u32 kMaxItems = 4096;
         return false;
     }
     for (const char character : value) {
-        if (!((character >= 'a' && character <= 'z') ||
-              (character >= 'A' && character <= 'Z') ||
+        if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
               (character >= '0' && character <= '9') || character == '_')) {
             return false;
         }
@@ -182,8 +181,8 @@ private:
         }
         constexpr const char* types[] = {"", "float", "vec2", "vec3", "vec4"};
         literal.type = Name::intern(types[count]);
-        literal.value = graph::Immediate{components[0], components[1], components[2],
-                                         components[3], 0};
+        literal.value =
+            graph::Immediate{components[0], components[1], components[2], components[3], 0};
     } else {
         const std::string_view name = take(value);
         if (!identifier(name) || !take(value).empty()) {
@@ -482,8 +481,8 @@ private:
     Array<u8> bytes(allocator);
     for (usize index = 0; index < source.size(); index += 2) {
         u32 value = 0;
-        const auto result = std::from_chars(source.data() + index, source.data() + index + 2,
-                                            value, 16);
+        const auto result =
+            std::from_chars(source.data() + index, source.data() + index + 2, value, 16);
         if (result.ec != std::errc{} || result.ptr != source.data() + index + 2) {
             return make_unexpected(malformed("invalid VFX document hexadecimal payload"));
         }
@@ -497,7 +496,7 @@ private:
 }  // namespace
 
 Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
-                                                          Allocator& allocator) noexcept {
+                                                        Allocator& allocator) noexcept {
     auto bytes = decode_hex(source, "cyvfxdoc 1\n", allocator);
     if (!bytes) {
         return make_unexpected(bytes.error());

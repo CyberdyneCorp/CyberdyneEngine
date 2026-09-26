@@ -40,8 +40,7 @@ Status put_renderer(Array<u8>& out, RendererKind kind) noexcept {
     return put_text(out, availability.reason);
 }
 
-Status put_target(Array<u8>& out, SimulationPath path,
-                  const DeviceCapability* device) noexcept {
+Status put_target(Array<u8>& out, SimulationPath path, const DeviceCapability* device) noexcept {
     if (Status value = out.push_back(static_cast<u8>(path)); !value) {
         return value;
     }
@@ -63,8 +62,7 @@ Status put_target(Array<u8>& out, SimulationPath path,
 
 }  // namespace
 
-Status encode_authoring_capabilities(Array<u8>& out,
-                                     const DeviceCapability* device) noexcept {
+Status encode_authoring_capabilities(Array<u8>& out, const DeviceCapability* device) noexcept {
     out.clear();
     if (Status value = put_u32(out, 2); !value) {
         return value;

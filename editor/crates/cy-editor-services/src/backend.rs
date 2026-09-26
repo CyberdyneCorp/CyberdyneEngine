@@ -1441,116 +1441,40 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_runtime_catalogue_is_requested_asynchronously_and_survives_disconnect() {
-        let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
-        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
-        let mut runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
-        let mut backend = BackendServices::new();
-
-        assert!(backend.maintain(&runtime).is_none());
-        assert_eq!(
-            backend.material_catalogue_state(),
-            MaterialCatalogueState::Loading
-        );
-        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+    fn reply_to_service_request(
+        reader: &mut impl std::io::Read,
+        writer: &mut impl std::io::Write,
+        expected_operation: &str,
+        response: Vec<u8>,
+    ) {
+        let message = Message::decode(&read_frame(reader).unwrap().unwrap()).unwrap();
         let Message::ServiceRequest {
             request,
             schema_version,
             operation,
             payload,
-        } = request
+        } = message
         else {
-            panic!("the first backend message was not a service request")
+            panic!("the backend message was not a service request")
         };
         assert_ne!(request.as_u64(), 0);
         assert_eq!(schema_version, 1);
-        assert_eq!(operation, MATERIAL_CATALOGUE_OPERATION);
+        assert_eq!(operation, expected_operation);
         assert!(payload.is_empty());
-
-        let mut catalogue = Writer::new();
-        catalogue.u32(1);
-        catalogue.u32(7);
-        catalogue.u32(0);
-        let catalogue = catalogue.finish();
         write_frame(
-            &mut runtime_writer,
+            writer,
             &Message::ServiceEvent {
                 request,
                 kind: ServiceEventKind::Completed,
                 schema_version: 1,
-                payload: catalogue.clone(),
+                payload: response,
             }
             .encode(),
         )
         .unwrap();
+    }
 
-        let mut notifications = NotificationService::new();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while backend.material_catalogue().is_none() && Instant::now() < deadline {
-            for message in runtime.pump(&mut notifications) {
-                assert!(backend.accept(&message).is_none());
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(backend.material_catalogue(), Some(catalogue.as_slice()));
-        assert_eq!(
-            backend.material_catalogue_state(),
-            MaterialCatalogueState::Ready
-        );
-
-        assert!(backend.maintain(&runtime).is_none());
-        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
-        let Message::ServiceRequest {
-            request,
-            schema_version,
-            operation,
-            payload,
-        } = request
-        else {
-            panic!("the second backend message was not a service request")
-        };
-        assert_eq!(schema_version, 1);
-        assert_eq!(operation, VFX_CATALOGUE_OPERATION);
-        assert!(payload.is_empty());
-        let mut vfx_catalogue = Writer::new();
-        vfx_catalogue.u32(1);
-        vfx_catalogue.u32(1);
-        vfx_catalogue.u32(0);
-        let vfx_catalogue = vfx_catalogue.finish();
-        write_frame(
-            &mut runtime_writer,
-            &Message::ServiceEvent {
-                request,
-                kind: ServiceEventKind::Completed,
-                schema_version: 1,
-                payload: vfx_catalogue.clone(),
-            }
-            .encode(),
-        )
-        .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while backend.vfx_catalogue().is_none() && Instant::now() < deadline {
-            for message in runtime.pump(&mut notifications) {
-                assert!(backend.accept(&message).is_none());
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
-
-        assert!(backend.maintain(&runtime).is_none());
-        let request = Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
-        let Message::ServiceRequest {
-            request,
-            operation,
-            payload,
-            ..
-        } = request
-        else {
-            panic!("the third backend message was not a service request")
-        };
-        assert_eq!(operation, VFX_CAPABILITIES_OPERATION);
-        assert!(payload.is_empty());
+    fn test_vfx_capabilities_payload() -> Vec<u8> {
         let mut capabilities = Writer::new();
         capabilities.u32(1);
         capabilities.u32(1);
@@ -1571,17 +1495,75 @@ mod tests {
             });
             capabilities.text("reason");
         }
-        write_frame(
+        capabilities.finish()
+    }
+
+    #[test]
+    fn a_runtime_catalogue_is_requested_asynchronously_and_survives_disconnect() {
+        let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let mut runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+        let mut backend = BackendServices::new();
+
+        assert!(backend.maintain(&runtime).is_none());
+        assert_eq!(
+            backend.material_catalogue_state(),
+            MaterialCatalogueState::Loading
+        );
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(7);
+        catalogue.u32(0);
+        let catalogue = catalogue.finish();
+        reply_to_service_request(
+            &mut runtime_reader,
             &mut runtime_writer,
-            &Message::ServiceEvent {
-                request,
-                kind: ServiceEventKind::Completed,
-                schema_version: 1,
-                payload: capabilities.finish(),
+            MATERIAL_CATALOGUE_OPERATION,
+            catalogue.clone(),
+        );
+
+        let mut notifications = NotificationService::new();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.material_catalogue().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
             }
-            .encode(),
-        )
-        .unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(backend.material_catalogue(), Some(catalogue.as_slice()));
+        assert_eq!(
+            backend.material_catalogue_state(),
+            MaterialCatalogueState::Ready
+        );
+
+        assert!(backend.maintain(&runtime).is_none());
+        let mut vfx_catalogue = Writer::new();
+        vfx_catalogue.u32(1);
+        vfx_catalogue.u32(1);
+        vfx_catalogue.u32(0);
+        let vfx_catalogue = vfx_catalogue.finish();
+        reply_to_service_request(
+            &mut runtime_reader,
+            &mut runtime_writer,
+            VFX_CATALOGUE_OPERATION,
+            vfx_catalogue.clone(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while backend.vfx_catalogue().is_none() && Instant::now() < deadline {
+            for message in runtime.pump(&mut notifications) {
+                assert!(backend.accept(&message).is_none());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(backend.vfx_catalogue(), Some(vfx_catalogue.as_slice()));
+
+        assert!(backend.maintain(&runtime).is_none());
+        reply_to_service_request(
+            &mut runtime_reader,
+            &mut runtime_writer,
+            VFX_CAPABILITIES_OPERATION,
+            test_vfx_capabilities_payload(),
+        );
         let deadline = Instant::now() + Duration::from_secs(5);
         while backend.vfx_authoring_capabilities().is_none() && Instant::now() < deadline {
             for message in runtime.pump(&mut notifications) {

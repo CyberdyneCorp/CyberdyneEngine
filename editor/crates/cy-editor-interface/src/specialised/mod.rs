@@ -349,6 +349,7 @@ const MATERIAL_NODES: &[&str] = &[
     "material.parameter",
     "material.saturate",
     "material.sheen",
+    "material.sin",
     "material.specular",
     "material.subsurface",
     "material.subtract",

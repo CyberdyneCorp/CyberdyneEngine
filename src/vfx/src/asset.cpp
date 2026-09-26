@@ -62,8 +62,8 @@ const char* path_name(SimulationPath path) noexcept {
 }
 
 const char* asset_renderer_name(u8 kind) noexcept {
-    constexpr const char* names[kAssetRendererCount] = {"Sprite", "Mesh", "Ribbon", "Beam",
-                                                        "Trail", "Decal", "Light", "Volume"};
+    constexpr const char* names[kAssetRendererCount] = {"Sprite", "Mesh",  "Ribbon", "Beam",
+                                                        "Trail",  "Decal", "Light",  "Volume"};
     return kind < kAssetRendererCount ? names[kind] : "unknown";
 }
 

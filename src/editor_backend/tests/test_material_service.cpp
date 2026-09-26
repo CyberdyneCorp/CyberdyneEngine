@@ -189,9 +189,9 @@ std::string vfx_document(std::string_view node_type = "vfx.constant", cy::u32 ve
             append_u32(bytes, 1);     // attributes
             append_text(bytes, attribute_name);
             append_text(bytes, "vec3");
-            append_u32(bytes, 0);  // minimum
+            append_u32(bytes, 0);            // minimum
             append_u32(bytes, 0x42c80000U);  // maximum 100
-            append_u32(bytes, 0);  // tolerance
+            append_u32(bytes, 0);            // tolerance
             append_text(bytes, "Auto");
         }
     }
@@ -276,8 +276,12 @@ CY_TEST_CASE("editor_backend: VFX document compiles through the engine service")
     CY_REQUIRE(api != nullptr);
     CyServiceSession session = nullptr;
     CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
-    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 4, "vfx.compile",
-                                   reinterpret_cast<const cy::u8*>(source.data()), source.size()};
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   4,
+                                   "vfx.compile",
+                                   reinterpret_cast<const cy::u8*>(source.data()),
+                                   source.size()};
     const CyServiceEvent event = submit_and_poll(*api, host, session, request);
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     cy::usize cursor = 0;
@@ -630,8 +634,12 @@ CY_TEST_CASE("editor_backend: VFX compiler diagnostics name the authored node") 
     CY_REQUIRE(api != nullptr);
     CyServiceSession session = nullptr;
     CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
-    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 5, "vfx.compile",
-                                   reinterpret_cast<const cy::u8*>(source.data()), source.size()};
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   5,
+                                   "vfx.compile",
+                                   reinterpret_cast<const cy::u8*>(source.data()),
+                                   source.size()};
     const CyServiceEvent event = submit_and_poll(*api, host, session, request);
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
     cy::usize cursor = 0;
@@ -744,7 +752,7 @@ CY_TEST_CASE("editor_backend: VFX renderer and target availability comes from ru
     CY_REQUIRE(api != nullptr);
     CyServiceSession session = nullptr;
     CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
-    const CyServiceRequest request{sizeof(CyServiceRequest), 1, 3,
+    const CyServiceRequest request{sizeof(CyServiceRequest),         1,       3,
                                    "vfx.authoring-capabilities.get", nullptr, 0};
     const CyServiceEvent event = submit_and_poll(*api, host, session, request);
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
@@ -769,8 +777,8 @@ CY_TEST_CASE("editor_backend: VFX renderer and target availability comes from ru
     CY_REQUIRE(cursor + 4 <= event.payload_size);
     CY_REQUIRE_EQ(read_u32(event.payload + cursor), 2U);
     cursor += 4;
-    for (const cy::vfx::SimulationPath path : {cy::vfx::SimulationPath::GpuPreferred,
-                                               cy::vfx::SimulationPath::CpuRequired}) {
+    for (const cy::vfx::SimulationPath path :
+         {cy::vfx::SimulationPath::GpuPreferred, cy::vfx::SimulationPath::CpuRequired}) {
         CY_REQUIRE(cursor < event.payload_size);
         CY_CHECK_EQ(event.payload[cursor++], static_cast<cy::u8>(path));
         CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),

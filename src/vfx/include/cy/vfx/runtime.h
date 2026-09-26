@@ -113,8 +113,8 @@ struct TargetAvailability {
     const char* explanation = "";
 };
 
-[[nodiscard]] TargetAvailability target_availability(
-    SimulationPath path, const DeviceCapability* device) noexcept;
+[[nodiscard]] TargetAvailability target_availability(SimulationPath path,
+                                                     const DeviceCapability* device) noexcept;
 
 struct PathDecision {
     ExecutionPath path = ExecutionPath::Gpu;
