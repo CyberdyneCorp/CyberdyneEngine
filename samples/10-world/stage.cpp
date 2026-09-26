@@ -194,6 +194,7 @@ struct DrawState {
     const cy::rendering::GraphExecutor* executor = nullptr;
     rhi::GraphicsPipelineHandle pipeline;
     rhi::PipelineLayoutHandle layout;
+    rhi::DescriptorSetHandle cloud_shadow;
     rhi::BufferHandle static_vertices;
     rhi::BufferHandle static_colours;
     rhi::BufferHandle static_indices;
@@ -248,6 +249,8 @@ void record_draw(const PassContext& context, void* user) noexcept {
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
     context.commands->bind_graphics_pipeline(state->pipeline);
+    context.commands->bind_descriptor_sets(
+        state->layout, 0, Span<const rhi::DescriptorSetHandle>(&state->cloud_shadow, 1));
 
     const u64 offsets[2] = {0, 0};
     for (u32 index = 0; index < state->run_count; ++index) {
@@ -542,6 +545,12 @@ struct Stage::Device {
     rhi::BufferHandle foam_next;
     rhi::BufferHandle terrain_fields[4];
     rhi::BufferHandle readback;
+    /// Set 0 of the lit pipeline: the cloud shadow field's image and where it sits. See
+    /// `shaders/world.slang`, which reads both in the fragment stage.
+    rhi::DescriptorSetLayoutHandle world_set_layout;
+    rhi::DescriptorSetHandle world_set;
+    rhi::BufferHandle cloud_shadow_field;
+    rhi::BufferHandle cloud_shadow_placement;
 
     // --- THE ASSEMBLED FRAME. M11.c task 3.1. --------------------------------------------------
     //
@@ -689,10 +698,14 @@ Status Stage::create_pipeline() noexcept {
     }
     device_->fragment = *fragment_module;
 
+    if (Status bound = create_cloud_shadow_binding(); !bound) {
+        return bound;
+    }
     const rhi::PushConstantRange range{rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
                                        sizeof(WorldPush)};
     rhi::PipelineLayoutDescription layout;
     layout.name = "world layout";
+    layout.set_layouts = Span<const rhi::DescriptorSetLayoutHandle>(&device_->world_set_layout, 1);
     layout.push_constants = Span<const rhi::PushConstantRange>(&range, 1);
     Expected<rhi::PipelineLayoutHandle, Error> layout_handle =
         device.create_pipeline_layout(layout);
@@ -860,6 +873,127 @@ Status Stage::create_frame() noexcept {
     device_->output = *created;
     device_->frame_ready = true;
     return ok();
+}
+
+/// The cloud shadow placement, `WorldCloudShadow::placement` in shaders/world.slang.
+struct CloudShadowPlacement {
+    f32 origin_x = 0.0F;
+    f32 origin_z = 0.0F;
+    f32 enabled = 0.0F;
+    f32 unused = 0.0F;
+};
+
+static_assert(sizeof(CloudShadowPlacement) == 16, "one float4, as the shader declares it");
+
+/// Words in the placeholder image bound before the first frame: a field image's header and
+/// nothing else. It is never read — the placement says "off" until a frame uploads a real one.
+constexpr u64 kPlaceholderCloudShadowWords = 16;
+
+Status Stage::create_cloud_shadow_binding() noexcept {
+    rhi::Device& device = *device_->handle.value();
+    rhi::DescriptorBinding bindings[2] = {};
+    for (u32 index = 0; index < 2; ++index) {
+        bindings[index].binding = index;
+        bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
+        bindings[index].count = 1;
+        bindings[index].stages = rhi::ShaderStage::Fragment;
+    }
+    rhi::DescriptorSetLayoutDescription set_description;
+    set_description.name = "world cloud shadow";
+    set_description.bindings = Span<const rhi::DescriptorBinding>(bindings, 2);
+    auto set_layout = device.create_descriptor_set_layout(set_description);
+    if (!set_layout) {
+        return make_unexpected(set_layout.error());
+    }
+    device_->world_set_layout = *set_layout;
+
+    rhi::BufferDescription description;
+    description.name = "world cloud shadow field";
+    description.size = kPlaceholderCloudShadowWords * sizeof(u32);
+    description.usage = rhi::BufferUsage::Storage;
+    description.memory = rhi::MemoryUse::Upload;
+    auto field = device.create_buffer(description);
+    if (!field) {
+        return make_unexpected(field.error());
+    }
+    device_->cloud_shadow_field = *field;
+    cloud_shadow_bytes_ = description.size;
+    std::memset(device.buffer_mapped_pointer(*field), 0, static_cast<usize>(description.size));
+
+    description.name = "world cloud shadow placement";
+    description.size = sizeof(CloudShadowPlacement);
+    auto placement = device.create_buffer(description);
+    if (!placement) {
+        return make_unexpected(placement.error());
+    }
+    device_->cloud_shadow_placement = *placement;
+    const CloudShadowPlacement off;
+    std::memcpy(device.buffer_mapped_pointer(*placement), &off, sizeof(off));
+
+    auto set = device.allocate_descriptor_set(device_->world_set_layout, false);
+    if (!set) {
+        return make_unexpected(set.error());
+    }
+    device_->world_set = *set;
+    rhi::DescriptorWrite writes[2] = {};
+    writes[0].binding = 0;
+    writes[0].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[0].buffer = device_->cloud_shadow_field;
+    writes[1].binding = 1;
+    writes[1].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[1].buffer = device_->cloud_shadow_placement;
+    return device.update_descriptor_set(device_->world_set,
+                                        Span<const rhi::DescriptorWrite>(writes, 2));
+}
+
+Status Stage::upload_cloud_shadow(const World& world) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    CloudShadowPlacement placement;
+    if (world.cloud_shadows()) {
+        auto image = world.cloud_shadow_image();
+        if (!image) {
+            return make_unexpected(image.error());
+        }
+        const u64 bytes = image->words.size() * sizeof(u32);
+        if (bytes > cloud_shadow_bytes_) {
+            // The image grows when the field's written area gains a tile. Every previous frame is
+            // idle before `shoot()` uploads, so the buffer is replaced here and the set moved to
+            // it before this frame is recorded — the terrain field images' own arrangement.
+            rhi::BufferDescription description;
+            description.name = "world cloud shadow field";
+            description.size = bytes;
+            description.usage = rhi::BufferUsage::Storage;
+            description.memory = rhi::MemoryUse::Upload;
+            auto grown = device.create_buffer(description);
+            if (!grown) {
+                return make_unexpected(grown.error());
+            }
+            rhi::DescriptorWrite write;
+            write.binding = 0;
+            write.kind = rhi::DescriptorKind::StorageBuffer;
+            write.buffer = *grown;
+            if (Status updated = device.update_descriptor_set(
+                    device_->world_set, Span<const rhi::DescriptorWrite>(&write, 1));
+                !updated) {
+                device.destroy_buffer(*grown);
+                return updated;
+            }
+            device.destroy_buffer(device_->cloud_shadow_field);
+            device_->cloud_shadow_field = *grown;
+            cloud_shadow_bytes_ = bytes;
+        }
+        if (Status uploaded =
+                upload_bytes(device, device_->cloud_shadow_field, image->words.data(), bytes);
+            !uploaded) {
+            return uploaded;
+        }
+        // The f64 subtraction `environment::image_local()` makes, once: a fragment's world-relative
+        // position plus this is its position relative to the image's origin corner.
+        placement.origin_x = static_cast<f32>(world.centre().x - image->origin_x);
+        placement.origin_z = static_cast<f32>(world.centre().z - image->origin_z);
+        placement.enabled = 1.0F;
+    }
+    return upload_bytes(device, device_->cloud_shadow_placement, &placement, sizeof(placement));
 }
 
 Status Stage::create_visual_pipelines() noexcept {
@@ -1542,6 +1676,9 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     if (Status uploaded = upload_dynamic(world, field_origin_x, field_origin_z); !uploaded) {
         return uploaded;
     }
+    if (Status uploaded = upload_cloud_shadow(world); !uploaded) {
+        return uploaded;
+    }
     out.build_ms = now_millis() - mark;
 
     mark = now_millis();
@@ -1707,12 +1844,17 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     }
     write_vec3(push.light, lighting.sun_travel, 0.0F);
     write_vec3(push.eye, relative_eye, 0.0F);
-    write_vec3(push.sun, lighting.sun_colour, 0.0F);
+    // UNDER CLOUD SHADOWS THE SUN IS PLACED BEFORE THE CLOUDS, because the field attenuates it per
+    // fragment; `sun_colour` already carries the cloud over the viewer and would shade every
+    // surface under that cloud twice. Off, the picture is exactly the one before cloud shadows.
+    write_vec3(push.sun, world.cloud_shadows() ? lighting.clear_sun_colour : lighting.sun_colour,
+               0.0F);
     write_vec3(push.ambient, lighting.ambient, 0.0F);
 
     DrawState state;
     state.pipeline = device_->pipeline;
     state.layout = device_->layout;
+    state.cloud_shadow = device_->world_set;
     state.static_vertices = device_->static_vertices;
     state.static_colours = device_->static_colours;
     state.static_indices = device_->static_indices;
@@ -2123,6 +2265,11 @@ void Stage::close() noexcept {
             device.destroy_buffer(field);
         }
         device.destroy_buffer(device_->readback);
+        device.destroy_buffer(device_->cloud_shadow_field);
+        device.destroy_buffer(device_->cloud_shadow_placement);
+        if (!device_->world_set_layout.is_null()) {
+            device.destroy_descriptor_set_layout(device_->world_set_layout);
+        }
         rhi::destroy_device(*allocator_, device_->handle.value());
     }
     delete device_;

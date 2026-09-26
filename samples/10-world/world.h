@@ -59,6 +59,7 @@
 #include <cy/pcg/foliage_adapter.h>
 #include <cy/pcg/program.h>
 #include <cy/rendering/sky/celestial.h>
+#include <cy/rendering/sky/cloud_shadows.h>
 #include <cy/rendering/sky/clouds.h>
 #include <cy/rendering/sky/composition.h>
 #include <cy/rendering/sky/tables.h>
@@ -107,6 +108,26 @@ struct WorldOptions {
     /// rings and segments; `cloud_steps` remains the CPU lighting reference's quality lever.
     u32 sky_rings = 56;
     u32 sky_segments = 112;
+    /// Whether the cloud deck casts shadows onto the world through `sky::CloudShadowField`: the
+    /// coarse field is written every frame and the lit path samples it per fragment. Off, the sun
+    /// is attenuated once, at the viewer, and the frame is the one this program drew before cloud
+    /// shadows existed. Headless runs turn it off — the field is presentation, not simulation.
+    bool cloud_shadows = true;
+    /// The field's levers, chosen by what they cost. 256 m cells are still four times finer than
+    /// the weather map's kilometre. A 1 km radius about the world's centre straddles the tile
+    /// boundary at the world's corner, so the regional image is the four 4 096 m tiles around it:
+    /// the whole world and at least 2.5 km of sea on every side, which is all this orbit sees.
+    /// Eight steps rather than twelve, because the field is quantised to 1/255 and its detail is
+    /// the weather map's. Measured on the take: 2 048 cells a frame, against 3 328 for a 4 km
+    /// radius at twelve steps, which cost 5 ms of `sky_ms` more than no field at all.
+    rendering::sky::CloudShadowQuality cloud_shadow_quality = [] {
+        rendering::sky::CloudShadowQuality quality;
+        quality.regional_cell_metres = 256.0F;
+        quality.macro_cell_metres = 2048.0F;
+        quality.radius_metres = 1024.0F;
+        quality.steps = 8;
+        return quality;
+    }();
 };
 
 /// What building the world produced. Counted, not claimed: every number here is read back off the
@@ -289,6 +310,10 @@ struct Lighting {
     /// The fraction of the sun that survived the clouds. Reported so the video's caption can say
     /// whether a dark frame is dusk or a storm.
     f32 cloud_transmittance = 1.0F;
+    /// The sun after the atmosphere and BEFORE the clouds, with the same normalisation as
+    /// `sun_colour`. What the lit path is given when the cloud shadow field attenuates the sun per
+    /// fragment instead.
+    Vec3 clear_sun_colour{1.0F, 1.0F, 1.0F};
 };
 
 /// Everything the simulated state is, for the report and for the caption.
@@ -318,6 +343,11 @@ struct WorldState {
     /// The divisor the tone map is fed through. See `Lighting::exposure`.
     f32 exposure = 1.0F;
     f32 star_visibility = 0.0F;
+    /// The cloud shadow field this frame: its darkest, brightest and mean cell, as
+    /// `sky::CloudShadowStats` reports them. All three stay one when cloud shadows are off.
+    f32 cloud_shadow_darkest = 1.0F;
+    f32 cloud_shadow_brightest = 1.0F;
+    f32 cloud_shadow_mean = 1.0F;
     const char* precipitation = "none";
 };
 
@@ -404,6 +434,13 @@ public:
     /// vegetation, in that order.
     [[nodiscard]] Expected<environment::FieldGpuImage, Error> terrain_field_image(
         u32 index) const noexcept;
+    /// Whether the world casts cloud shadows. See `WorldOptions::cloud_shadows`.
+    [[nodiscard]] bool cloud_shadows() const noexcept { return cloud_shadow_.attached(); }
+    /// The cloud shadow field at its regional level, as the lit fragment path samples it.
+    [[nodiscard]] Expected<environment::FieldGpuImage, Error> cloud_shadow_image() const noexcept;
+    /// The fraction of the sun the cloud shadow field lets through at a position, through the same
+    /// sampler every consumer of the field reads. One when cloud shadows are off.
+    [[nodiscard]] f32 cloud_shadow_at(const WorldVec3d& at) const noexcept;
     [[nodiscard]] const WorldOptions& options() const noexcept { return options_; }
     /// The centre of the world, which is what f32 rendering coordinates are relative to.
     [[nodiscard]] WorldVec3d centre() const noexcept;
@@ -426,6 +463,11 @@ private:
     [[nodiscard]] Status configure_weather(BuildReport& report) noexcept;
     [[nodiscard]] Status place_foliage(BuildReport& report) noexcept;
     [[nodiscard]] Status configure_sky(BuildReport& report) noexcept;
+    /// Claim the cloud shadow field and declare the four consumers the requirement names, before
+    /// the firewall validates the configuration.
+    [[nodiscard]] Status claim_cloud_shadow() noexcept;
+    /// Rewrite the cloud shadow field for this frame's sun, clouds and time.
+    [[nodiscard]] Status update_cloud_shadow(f64 step) noexcept;
     [[nodiscard]] Status mesh_terrain(BuildReport& report) noexcept;
     [[nodiscard]] Status build_sky_dome() noexcept;
 
@@ -548,6 +590,8 @@ private:
     rendering::sky::CloudLayerSet cloud_layers_;
     rendering::sky::CloudField cloud_field_;
     rendering::sky::CloudQuality cloud_quality_;
+    /// The producer of the `cloud-shadow` field. Attached only when `WorldOptions::cloud_shadows`.
+    rendering::sky::CloudShadowField cloud_shadow_;
     Array<SkyVertex> sky_dome_;
     Array<u32> sky_indices_;
     Array<StarDraw> star_draws_;
