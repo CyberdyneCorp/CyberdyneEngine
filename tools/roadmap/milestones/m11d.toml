@@ -1026,3 +1026,54 @@ ci_job = "milestone-m11d"
 mutate = "rename-token"
 target = "tests/harness/src/quiet_host_marker.cpp"
 token = "CY_QUIET_HOST_WRAPPER"
+
+# INCREMENTAL LEDGER CLOSES. `just roadmap-milestone <rung> --incremental` evaluates the rung's own
+# criteria, the earlier ones a change since the last green full ledger can have moved, and the smoke
+# set; the full ledger stays the default, nightly and at M11.e. The body runs the selftest group that
+# pins the four properties — a src/save change selects save and not the renderer, a shared header
+# selects its dependents, an unknown-input criterion is always selected, the rung's own always are —
+# and then the real mode over THIS ledger, requiring the same invariants of its JSON.
+[[criterion]]
+id = "incremental-close-selects-by-inputs"
+describe = "an incremental close selects every criterion a change can have moved and skips only those whose inputs are known and unchanged: a change under src/save selects the save criteria and not the renderer's, a change to a shared header selects every criterion whose tests include it, a criterion whose inputs cannot be read is always selected, and the rung's own criteria and the smoke set (build, format, lint, test-all) always run"
+source = "tasks 9.8, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'PY'
+import sys, tempfile
+from pathlib import Path
+sys.path.insert(0, "tools/roadmap")
+import selftest
+with tempfile.TemporaryDirectory() as directory:
+    selftest.test_incremental_selection(Path(directory))
+sys.exit(1 if selftest._failures else 0)
+PY
+out="$(mktemp)"
+just roadmap-milestone m11d --incremental --list --json --changed-since HEAD > "$out"
+python3 - "$out" <<'PY'
+import json, sys
+sys.path.insert(0, "tools/roadmap")
+import incremental
+document = json.load(open(sys.argv[1]))
+choices = {choice["label"]: choice for choice in document["choices"]}
+wrong = [label for label in incremental.SMOKE if not choices[label]["selected"]]
+wrong += [label for label, choice in choices.items() if label.startswith("m11d:") and not choice["selected"]]
+wrong += [label for label, choice in choices.items()
+          if not choice["selected"] and not choice["reasons"][0].startswith(incremental.UNCHANGED)]
+print(f"{document['selected']} of {document['of']} selected against {document['base'][:12]}")
+if wrong:
+    print("selected wrongly:", ", ".join(wrong))
+sys.exit(1 if wrong else 0)
+PY
+'''
+timeout_s = 600
+ci_job = "milestone-m11d"
+
+# THE MUTATION DROPS EVERY HEADER THE DEPENDENCY LOG RECORDED. What is left still parses and still
+# selects on sources, so the only thing that goes red is the shared-header case — the one a
+# selection by source files alone gets silently wrong.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/incremental.py"
+token = "files.update(self._repository_paths(headers))"

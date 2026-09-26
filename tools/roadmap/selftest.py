@@ -39,6 +39,7 @@ from __future__ import annotations
 import contextlib
 import io
 import itertools
+import json
 import os
 import re
 import subprocess
@@ -56,6 +57,7 @@ import criteria as criteria_module  # noqa: E402
 import debts as debts_module  # noqa: E402
 import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
+import incremental as incremental_module  # noqa: E402
 import matrix as matrix_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import quiet_host as quiet_host_module  # noqa: E402
@@ -2697,6 +2699,337 @@ def test_ledger_report_order_is_the_ledger_order(root: Path) -> None:
 
 
 
+# --- Incremental ledger closes (M11.d) -------------------------------------------------------------
+
+
+_INCREMENTAL_LEDGER = """schema = 1
+id = "{id}"
+name = "{id}"
+{criteria}
+"""
+
+
+def _incremental_criterion(identifier: str, run: str) -> str:
+    return (f'[[criterion]]\nid = "{identifier}"\ndescribe = "{identifier}"\nsource = "selftest"\n'
+            f'kind = "recipe"\nrun = "{run}"\nci_job = "selftest"\n')
+
+
+class _FakeTree:
+    """A build tree and a justfile answered from canned text: two C++ test executables — the save
+    suite and the forward renderer's — that share ONE header, and a test that runs a Python script.
+    The canned text is what ninja, ctest and just print, so the parsing is under test too."""
+
+    def __init__(self, root: Path, current: bool = True, configured: bool = True,
+                 globs_match: bool = True, exemptions: dict | None = None) -> None:
+        self.root, self.build = root, root / "build" / "dev"
+        self.current, self.configured, self.globs_match = current, configured, globs_match
+        self.exemptions = exemptions
+        for directory in ("src", "tests", "tools", "just"):
+            (root / directory).mkdir(parents=True, exist_ok=True)
+        shared = f"{root}/src/core/base/include/cy/core/base/types.h"
+        self.targets = {
+            "cy_test_unit_save": ("save", f"{root}/src/save/tests/test_save.cpp",
+                                  f"{root}/src/save/src/save.cpp",
+                                  f"{root}/src/save/include/cy/save/save.h"),
+            "cy_test_unit_render_forward": ("forward", f"{root}/src/rendering/forward/test.cpp",
+                                            f"{root}/src/rendering/forward/frame.cpp",
+                                            f"{root}/src/rendering/forward/include/frame.h"),
+        }
+        self.deps = ""
+        for name, (short, test_source, source, header) in self.targets.items():
+            for index, cpp in enumerate((test_source, source)):
+                self.deps += (f"CMakeFiles/{name}.dir/{short}{index}.cpp.o: #deps 4, deps mtime 1 "
+                              f"(VALID)\n    {cpp}\n    {header}\n    {shared}\n"
+                              "    /usr/include/stdio.h\n\n")
+        self.tests = {"tests": [
+            self._test("unit.save", "unit", [f"{self.build}/cy_test_unit_save"]),
+            self._test("unit.render_forward", "unit", [f"{self.build}/cy_test_unit_render_forward"]),
+            self._test("integration.tool", "integration",
+                       ["/usr/bin/python3", f"{root}/tools/tool/check.py"]),
+        ]}
+
+    def _compile_commands(self) -> str:
+        """With `exemptions` given, the save library's object is compiled with a definition naming
+        the repository ROOT, as the diagnostics library's is in this repository."""
+        if self.exemptions is None:
+            return "[]"
+        return json.dumps([{"output": "CMakeFiles/cy_test_unit_save.dir/save1.cpp.o",
+                            "command": f'c++ -DCY_ROOT=\\"{self.root}\\" -c save.cpp'}])
+
+    def _test(self, name: str, label: str, command: list[str]) -> dict:
+        return {"name": name, "command": command, "properties": [
+            {"name": "LABELS", "value": [label]},
+            {"name": "WORKING_DIRECTORY", "value": str(self.build)}]}
+
+    def run(self, argv: list[str]) -> tuple[int, str]:
+        if argv[0] == "ctest":
+            return 0, json.dumps(self.tests)
+        if argv[0] == "just":
+            return self._just(argv[1:])
+        if argv[0] == "cmake":
+            return self._verify_globs(Path(argv[-1]))
+        return self._ninja(argv[3:])
+
+    def _verify_globs(self, script: Path) -> tuple[int, str]:
+        """What CMake does with the rewritten copy: on a mismatch, write the flag it names — and
+        nothing else, which is why the original's touch of the real stamp must be gone."""
+        text = script.read_text(encoding="utf-8")
+        if "TOUCH_NOCREATE" in text:
+            return 1, "the copy still touches the tree's own stamp"
+        if not self.globs_match:
+            Path(re.search(r'file\(WRITE "([^"]+)"', text).group(1)).write_text("1")
+        return 0, ""
+
+    def _ninja(self, argv: list[str]) -> tuple[int, str]:
+        if argv == ["-t", "deps"]:
+            return 0, self.deps
+        if argv == ["-t", "query", "build.ninja"]:
+            return 0, (f"build.ninja:\n  input: RERUN_CMAKE\n    {self.build}/CMakeFiles/"
+                       f"cmake.verify_globs\n    | {self.root}/CMakeLists.txt\n  outputs:\n")
+        target = argv[-1]
+        if target not in self.targets:
+            return 1, ""
+        if argv[0] == "-f" and argv[2] == "-n":
+            return 0, "ninja: no work to do.\n" if self.current else "[1/2] Building CXX\n"
+        if argv[0] == "-n":
+            # A dry run on the real manifest: VerifyGlobs.cmake_force makes it regenerate first,
+            # and ninja returns there without looking at the target.
+            return 0, "[0/2] Re-checking globbed directories...\n[1/2] Re-running CMake...\n"
+        short, test_source, source, _ = self.targets[target]
+        return 0, (f"CMakeFiles/{target}.dir/{short}0.cpp.o\n{test_source}\n"
+                   f"CMakeFiles/{target}.dir/{short}1.cpp.o\n{source}\nlib{short}.a\n")
+
+    def _just(self, argv: list[str]) -> tuple[int, str]:
+        bodies = {"test-unit": "test-unit *args:\n    @just _ctest unit {{args}}\n",
+                  "test-integration": "test-integration *args:\n    @just _ctest integration\n",
+                  "_ctest": "_ctest kind *args:\n    # just quality-docs is only a comment\n"
+                            "    python3 tools/ctest/wrap.py\n    ctest --test-dir build\n",
+                  "quality-docs": "quality-docs:\n    python3 tools/docs/check.py\n"}
+        if argv[0] == "--summary":
+            # What `just --summary` really prints: no private recipe.
+            return 0, " ".join(name for name in bodies if not name.startswith("_"))
+        if argv[0] == "--dump":
+            return 0, json.dumps({"recipes": {name: {} for name in bodies}})
+        return (0, bodies[argv[1]]) if argv[1] in bodies else (1, "")
+
+    def resolver(self):
+        def read_text(path: Path) -> str | None:
+            if path.name == "CMakeCache.txt":
+                return f"CMAKE_HOME_DIRECTORY:INTERNAL={self.root}\n"
+            if path.name == "VerifyGlobs.cmake":
+                return ('if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")\n  file(TOUCH_NOCREATE '
+                        f'"{self.build}/CMakeFiles/cmake.verify_globs")\nendif()\n')
+            if path.name == "compile_commands.json":
+                return self._compile_commands()
+            return None
+
+        def mtime(path: Path) -> float | None:
+            configured_at = 100.0 if self.configured else 10.0
+            return configured_at if path.name == "build.ninja" else 50.0
+        graph = incremental_module.BuildGraph(self.build, repo_root=self.root, run=self.run,
+                                              read_text=read_text, mtime=mtime,
+                                              exemptions=lambda: self.exemptions or {})
+        recipes = incremental_module.Recipes(run=self.run, repo_root=self.root)
+        return incremental_module.Resolver(graph, recipes)
+
+
+def write_parents(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return write(path, text)
+
+
+def _incremental_plan(root: Path) -> criteria_module.Plan:
+    """m0 holds the smoke set and three earlier criteria; m1 is the rung, with one criterion of its
+    own that reads nothing a later case changes."""
+    ledgers = root / "ledgers"
+    ledgers.mkdir(parents=True, exist_ok=True)
+    earlier = [("build", "just build-engine"), ("format", "just quality-format-check"),
+               ("lint", "just quality-lint"), ("test", "just test-quiet-host -- just test-all"),
+               ("save", "just test-unit -R unit.save"),
+               ("render", "just test-unit -R render_forward"),
+               ("docs", "just quality-docs"), ("tool", "just test-integration -R tool")]
+    write(ledgers / "m0.toml", _INCREMENTAL_LEDGER.format(
+        id="m0", criteria="\n".join(_incremental_criterion(*pair) for pair in earlier)))
+    write(ledgers / "m1.toml", _INCREMENTAL_LEDGER.format(
+        id="m1", criteria=_incremental_criterion("own", "just test-unit -R ^unit.render_forward$")))
+    return criteria_module.build_plan("m1", ("m0",), directory=ledgers)
+
+
+def _chosen(plan, tree: _FakeTree, changed, digests=None) -> dict[str, incremental_module.Choice]:
+    if digests is None:
+        digests = {entry.label: falsify_module.digest(entry.criterion) for entry in plan.entries}
+    selection = incremental_module.select(plan, changed, "0" * 40, digests,
+                                          tree.resolver().inputs)
+    return {choice.entry.label: choice for choice in selection.choices}
+
+
+def _reason(choice: incremental_module.Choice) -> str:
+    return choice.reasons[0]
+
+
+def test_incremental_selection(root: Path) -> None:
+    """`roadmap milestone <rung> --incremental`: what a change since a green ledger can have moved.
+
+    Four properties are the mode's contract and each is silent when lost. A change under src/save
+    selects the save criteria and NOT the renderer's — otherwise the mode is a slower full ledger.
+    A change to a header both include selects BOTH — otherwise it skips what a change broke. A
+    criterion whose inputs cannot be read is ALWAYS selected — fail safe, never a guess. And the
+    rung's own criteria always run, whatever changed.
+    """
+    plan = _incremental_plan(root)
+    tree = _FakeTree(root / "repo")
+
+    chosen = _chosen(plan, tree, ["src/save/src/save.cpp"])
+    check("incremental: a change under src/save selects the save criterion",
+          chosen["m0:save"].selected and _reason(chosen["m0:save"]).startswith(
+              incremental_module.CHANGED), _reason(chosen["m0:save"]))
+    check("incremental: a change under src/save does NOT select the renderer's criterion",
+          not chosen["m0:render"].selected, _reason(chosen["m0:render"]))
+
+    chosen = _chosen(plan, tree, ["src/core/base/include/cy/core/base/types.h"])
+    check("incremental: a change to a shared header selects every criterion whose tests include it",
+          chosen["m0:save"].selected and chosen["m0:render"].selected,
+          f"{_reason(chosen['m0:save'])}\n{_reason(chosen['m0:render'])}")
+
+    chosen = _chosen(plan, tree, [])
+    for label in ("m0:docs", "m0:tool"):
+        check(f"incremental: {label}, whose inputs are unknown, is selected with nothing changed",
+              chosen[label].selected and _reason(chosen[label]).startswith(
+                  incremental_module.UNKNOWN), _reason(chosen[label]))
+    check("incremental: the rung's own criterion is selected with nothing changed",
+          chosen["m1:own"].selected and _reason(chosen["m1:own"]).startswith(
+              incremental_module.OWN), _reason(chosen["m1:own"]))
+    check("incremental: the smoke set is selected with nothing changed",
+          all(chosen[label].selected for label in incremental_module.SMOKE))
+    check("incremental: with nothing changed, a criterion with known inputs is skipped",
+          not chosen["m0:save"].selected and not chosen["m0:render"].selected,
+          f"{_reason(chosen['m0:save'])}\n{_reason(chosen['m0:render'])}")
+    _check_incremental_fail_safes(root, plan, tree)
+
+
+def _check_incremental_fail_safes(root: Path, plan, tree: _FakeTree) -> None:
+    """The ways an answer that WAS known stops being trusted."""
+    chosen = _chosen(plan, tree, ["src/save/CMakeLists.txt"])
+    check("incremental: a CMake file above a test's sources selects it, and not a sibling's",
+          chosen["m0:save"].selected and not chosen["m0:render"].selected,
+          f"{_reason(chosen['m0:save'])}\n{_reason(chosen['m0:render'])}")
+    chosen = _chosen(plan, tree, ["just/test.just"])
+    check("incremental: a change to the recipes a test criterion runs selects it",
+          chosen["m0:save"].selected and chosen["m0:render"].selected)
+    chosen = _chosen(plan, tree, ["tools/ctest/wrap.py"])
+    check("incremental: a script named only by a PRIVATE recipe the test recipe runs selects it",
+          chosen["m0:save"].selected and chosen["m0:render"].selected,
+          f"{_reason(chosen['m0:save'])}\n{_reason(chosen['m0:render'])}")
+    chosen = _chosen(plan, tree, ["tools/docs/check.py"])
+    check("incremental: a script named only in a recipe's comment selects nothing through it",
+          not chosen["m0:save"].selected, _reason(chosen["m0:save"]))
+    for name, stale in (("a target with work to do", _FakeTree(root / "s1", current=False)),
+                        ("a CMake file newer than build.ninja",
+                         _FakeTree(root / "s2", configured=False)),
+                        ("a CONFIGURE_DEPENDS glob that matches something else now",
+                         _FakeTree(root / "s3", globs_match=False))):
+        chosen = _chosen(plan, stale, [])
+        check(f"incremental: {name} makes the build-graph criteria unknown",
+              chosen["m0:save"].selected and _reason(chosen["m0:save"]).startswith(
+                  incremental_module.UNKNOWN), _reason(chosen["m0:save"]))
+    digests = {entry.label: falsify_module.digest(entry.criterion) for entry in plan.entries}
+    digests["m0:render"] = "0" * 16
+    del digests["m0:save"]
+    chosen = _chosen(plan, tree, [], digests)
+    check("incremental: an edited criterion and one new since the base are both selected",
+          chosen["m0:render"].selected and chosen["m0:save"].selected
+          and all(_reason(chosen[label]).startswith(incremental_module.EDITED)
+                  for label in ("m0:render", "m0:save")))
+    none_readable = incremental_module.select(plan, [], "0" * 40, None, tree.resolver().inputs)
+    check("incremental: when the base's ledgers cannot be read, every criterion is selected",
+          all(choice.selected for choice in none_readable.choices))
+    for body in ("just test-unit -R a; rm -rf x", "just test-unit -R 'a|b'",
+                 "just test-unit -R $x", "just test-unit -R a\njust lint",
+                 "just test-unit -R a > log", "just test-unit -R a &"):
+        check(f"incremental: a body a shell would do more with is unreadable: {body!r}",
+              incremental_module.parse_body(body) is None)
+    smokeless = criteria_module.Plan(plan.milestone, plan.ledgers,
+                                     tuple(e for e in plan.entries if e.label != "m0:lint"),
+                                     plan.declarations)
+    expect_error("incremental: a plan without the smoke set is refused",
+                 incremental_module.IncrementalError,
+                 lambda: incremental_module.select(smokeless, [], "0" * 40, {}, lambda c: None))
+    _check_incremental_exemptions(root, plan)
+    _check_incremental_baseline(root)
+
+
+def _check_incremental_exemptions(root: Path, plan) -> None:
+    """A definition naming the repository root is a read of anything, unless a reviewed exemption,
+    pinned to the files that use it, says it is only a string."""
+    unexempt = _FakeTree(root / "root-define", exemptions={})
+    chosen = _chosen(plan, unexempt, [])
+    check("incremental: a definition naming the repository root makes its tests unknown",
+          chosen["m0:save"].selected and "repository root" in _reason(chosen["m0:save"])
+          and not chosen["m0:render"].selected, _reason(chosen["m0:save"]))
+    exempt = _FakeTree(root / "root-exempt", exemptions={"CY_ROOT": incremental_module.EXEMPT})
+    chosen = _chosen(plan, exempt, [])
+    check("incremental: a reviewed exemption makes that definition a string, not a read",
+          not chosen["m0:save"].selected, _reason(chosen["m0:save"]))
+    lapsed = _FakeTree(root / "root-lapsed", exemptions={"CY_ROOT": "the exemption lapsed"})
+    chosen = _chosen(plan, lapsed, [])
+    check("incremental: a lapsed exemption is unknown again, and says why",
+          chosen["m0:save"].selected and "lapsed" in _reason(chosen["m0:save"]),
+          _reason(chosen["m0:save"]))
+    _check_exemption_pinning(root / "pinning")
+
+
+def _check_exemption_pinning(root: Path) -> None:
+    """`exempt_definitions` over a real file: the digest pins the reviewed files' content, and any
+    other file naming a token lapses the exemption."""
+    user = write_parents(root / "src" / "diag.cpp", "return CY_ROOT;  // compared, never opened\n")
+    grep = {"stray": ""}
+
+    def run(argv: list[str]) -> tuple[int, str]:
+        return (0, "src/diag.cpp\n" + grep["stray"]) if "grep" in argv else (1, "")
+
+    def state() -> str:
+        digest = incremental_module.definition_digest(["src/diag.cpp"], root)
+        table = write(root / "incremental.toml",
+                      f'[[definition]]\nname = "CY_ROOT"\ntokens = ["CY_ROOT"]\n'
+                      f'used_by = ["src/diag.cpp"]\ndigest = "{pinned or digest}"\n')
+        return incremental_module.exempt_definitions(table, root, run)["CY_ROOT"]
+    pinned = ""
+    check("incremental: an exemption over unchanged files holds", state() == incremental_module.EXEMPT)
+    pinned = incremental_module.definition_digest(["src/diag.cpp"], root)
+    user.write_text("return fopen(CY_ROOT);\n", encoding="utf-8")
+    check("incremental: an exemption lapses when a file it was reviewed over changes",
+          "lapsed" in state())
+    pinned = ""
+    grep["stray"] = "src/elsewhere.cpp\n"
+    check("incremental: an exemption lapses when another file names the definition",
+          "src/elsewhere.cpp" in state())
+
+
+def _check_incremental_baseline(root: Path) -> None:
+    """Only a green FULL run on one clean, unmoved commit becomes the baseline."""
+    baseline = root / "baseline" / "last-green.json"
+    with patch.object(incremental_module, "baseline_file", lambda: baseline), \
+            patch.object(incremental_module, "tree_state", lambda: ("b" * 40, True)):
+        message = incremental_module.record_green("m1", ("a" * 40, True))
+        check("incremental: a ledger across which HEAD moved records no baseline",
+              "not recorded" in message and not baseline.exists(), message)
+        incremental_module.record_green("m1", ("b" * 40, True))
+        check("incremental: a green run on a clean, unmoved tree records its commit",
+              incremental_module.last_green("m1") == "b" * 40)
+    with patch.object(incremental_module, "baseline_file", lambda: baseline), \
+            patch.object(incremental_module, "tree_state", lambda: ("c" * 40, False)):
+        message = incremental_module.record_green("m1", ("c" * 40, False))
+        check("incremental: a dirty tree records no baseline and keeps the last one",
+              "not recorded" in message and incremental_module.last_green("m1") == "b" * 40,
+              message)
+    completed = subprocess.run(
+        [sys.executable, str(ROADMAP), "milestone", "m0", "--changed-since", "HEAD"],
+        capture_output=True, text=True, check=False)
+    check("incremental: --changed-since without --incremental is refused, not a full run",
+          completed.returncode == DATA_EXIT and "--incremental" in completed.stderr,
+          completed.stderr)
+
+
 def _nested() -> bool:
     return bool(os.environ.get(NESTED_IN_THE_PROVER))
 
@@ -2740,6 +3073,7 @@ def main() -> int:
         test_scheduler_tables_match_the_justfile(_area(root, "scheduler-tables"))
         test_scheduler_over_the_real_ledgers(_area(root, "scheduler-corpus"))
         test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
+        test_incremental_selection(_area(root, "incremental"))
         if not _nested():
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
             test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))

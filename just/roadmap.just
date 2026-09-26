@@ -16,18 +16,27 @@ roadmap-status *args:
 roadmap-debts *args:
     @cd "{{root}}" && python3 tools/roadmap/debts.py {{args}}
 
-# Run a milestone's full exit criteria. Usage: just roadmap-milestone <id> [--list] [--ci]
+# Usage: just roadmap-milestone <id> [--list] [--ci] [--json]
 #   [--jobs n]  independent criteria at a time. DEFAULT 1 — concurrency is opt-in, because at
 #               min(8, cores) it changed verdicts: five criteria failed that pass when run alone,
 #               on a wall-clock watchdog that does not subtract I/O waiting. Set --jobs n or
 #               CY_LEDGER_JOBS to opt in. What each criterion holds is in tools/roadmap/
 #               schedule.py; one whose needs cannot be read runs alone.
+#   [--incremental [--changed-since <commit>] [--build-dir <tree>]]  only the rung's own criteria,
+#               the earlier ones whose inputs changed since <commit> (default: the last green FULL
+#               run of this rung), and the smoke set — build, format, lint, test-all. A criterion
+#               whose inputs cannot be read is always run. With --list it prints the selection and
+#               why. NOT the default: the full ledger runs nightly and at M11.e, and only a green
+#               full run on a clean tree records the baseline. tools/roadmap/incremental.py.
+#
+# Run a milestone's full exit criteria, or with --incremental only what a change can have moved.
 roadmap-milestone *args:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
     if [ -z "{{args}}" ]; then
         echo "usage: just roadmap-milestone <id> [--list] [--ci] [--json] [--jobs n]" >&2
+        echo "       [--incremental [--changed-since <commit>] [--build-dir <tree>]]" >&2
         echo "  milestones with criteria: $(ls tools/roadmap/milestones/*.toml \
             | xargs -n1 basename | sed 's/\.toml$//' | tr '\n' ' ')" >&2
         exit 2

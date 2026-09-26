@@ -669,6 +669,33 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       dev/inode or resolved path, passed at configure time), or hand the child a secret over an
       inherited file descriptor — and add a copied/renamed-binary forgery case to
       `smoke.quiet_host_marker`, proven red on the current check
+- [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
+      [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
+      new or edited since the base (its falsifiability digest moved, or it was not in the base's
+      plan) or whose inputs a changed file belongs to, and the smoke set (`m0:build`, `m0:format`,
+      `m0:lint`, `m0:test`); the base defaults to the commit a green FULL run on a clean tree
+      recorded. Inputs are read from the build graph (`ninja -t inputs`/`-t deps`, ctest's JSON,
+      compile definitions), the recipes' `just --show` closure and the criterion's glob or record —
+      never a hand list — and a criterion whose inputs cannot be read is ALWAYS selected, with the
+      reason printed. The full ledger stays the default and runs nightly and at M11.e.
+      `tools/roadmap/incremental.py`; `test_incremental_selection` in `selftest.py`, each of its
+      four required cases proven red against a mutation of the code that provides it;
+      `m11d:incremental-close-selects-by-inputs`; the `delivery-roadmap` delta in `specs/`.
+      **Done.** Three defects were found while building it, each now a regression case proven red:
+      `just --summary` hides private recipes, so a closure read from it stopped before `_ctest`;
+      `VerifyGlobs.cmake_force` makes `build.ninja` dirty on every run and ninja's dry run stops
+      at the manifest, so the target dry run goes through a wrapper manifest; and a definition
+      naming the repository root (`CY_DIAG_SOURCE_ROOT`, in the diagnostics library nearly every
+      test links) made almost every test criterion unknown — it is a stripped prefix, so
+      `tools/roadmap/incremental.toml` exempts it, pinned by a digest of every file that uses it.
+      Measured on a current `build/m11d-incremental-close`: a change to
+      `src/save/src/container.cpp` selects 248 of 474 (the 5 save criteria by inputs, the renderer's
+      skipped), a change to `cy/core/base/types.h` 417 (174 by inputs), no change 243 — a floor of
+      27 own, 4 smoke and 211 whose inputs cannot be read. **Owed at the next re-record:** the
+      criterion has no `falsifiability.toml` entry. The prover's sandbox copies TRACKED files and
+      `incremental.py` is not committed yet, so it reports "not provable here"; its declared
+      mutation was applied by hand instead — green, red (the shared-header case), green again,
+      md5-verified.
 - [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
       change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
       from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
