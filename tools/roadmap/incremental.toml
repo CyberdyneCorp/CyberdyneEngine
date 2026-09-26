@@ -20,3 +20,55 @@ used_by = [
     "src/core/diagnostics/tests/test_source_privacy.cpp",
 ]
 digest = "fe288b243db10e1a"
+
+# Build-tree files NO build edge produces, and what each is made from.
+#
+# A file written at configure time (configure_file, a generator run by execute_process) or fetched
+# (FetchContent's `_deps/`) is made from files CMake READ, and nothing records which: file(STRINGS)
+# and file(READ) are not ninja edges. `--incremental` therefore treats every such file a test is
+# built from as "inputs unknown" — always selected — unless it matches an entry here. An entry is a
+# person's trace of EVERY repository path the outputs are made from: `sources`, plus `generated_by`,
+# the code that writes them, which is a source too. The CMake files above every source, `cmake/` and
+# `CMakePresets.json` are added, as for any input. `digest` pins the review over `generated_by`: when
+# that code changes it may read something new, so the entry LAPSES and its outputs are unknown again
+# until somebody re-reads it and writes back the digest the lapsed message prints. CMake variables
+# the code reads come from `cmake/`, `CMakePresets.json`, the CMakeLists.txt above it, the cache and
+# the host — the first three are inputs already, and the last two are not repository files.
+# `test_incremental_generated_headers` in selftest.py proves each source here selects its outputs.
+# See tools/roadmap/incremental.py, `generated_origins`.
+
+[[generated]]
+name = "the toolchain fingerprint header"
+outputs = ["src/core/assets/generated/cy/core/assets/toolchain_generated.h"]
+reason = "configure_file() of the template, with the two dependency manifests read by _cy_assets_read_manifest through file(STRINGS); every other value is a CMake variable (compiler, system, flags, CY_SYSTEM_*)"
+sources = [
+    "src/core/assets/toolchain_generated.h.in",
+    "deps/manifest.toml",
+    "deps/host-tools.toml",
+]
+generated_by = ["src/core/assets/CMakeLists.txt"]
+digest = "ef1d063fcce99703"
+
+[[generated]]
+name = "cy_features.h and cy_modules.h"
+outputs = ["generated/include/cy_features.h", "generated/include/cy_modules.h"]
+reason = "tools/gen/generate_headers.py renders them from the input file cmake/features.cmake writes: the feature options, CY_SETTINGS, and the module records cmake/modules.cmake reads from every module.json it globs under modules/ (CY_EXTRA_MODULE_PATHS is outside the repository)"
+sources = ["modules"]
+generated_by = ["cmake/features.cmake", "cmake/modules.cmake", "tools/gen/generate_headers.py"]
+digest = "4def48dcc734aaa9"
+
+[[generated]]
+name = "cy_project.h"
+outputs = ["generated/project/include/cy_project.h"]
+reason = "tools/project/project.py emit-header, from project.json when it exists and otherwise from the project name and version and the module records cmake/modules.cmake read from modules/"
+sources = ["project.json", "modules", "tools/project"]
+generated_by = ["cmake/project.cmake", "cmake/modules.cmake", "tools/project/project.py", "tools/project/graph.py", "tools/project/schema.py"]
+digest = "dbe8d493fbf3cae0"
+
+[[generated]]
+name = "the fetched third-party dependencies"
+outputs = ["_deps/**", "include/glslang/**"]
+reason = "FetchContent checks out the commit deps/manifest.toml pins for each dependency, and the dependency's own CMake — in that checkout — writes its configure-time files (SDL's build config and Wayland protocols, PCH stubs, glslang's build_info.h at the top of the tree) with the options cmake/ sets. No repository file is patched into a checkout"
+sources = ["deps/manifest.toml"]
+generated_by = ["cmake/dependencies.cmake"]
+digest = "d054edb23deb3625"
