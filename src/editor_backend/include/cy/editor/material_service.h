@@ -72,8 +72,8 @@ public:
                                 bool& out_has_event) noexcept override;
 
     /// The effect currently simulated by this session, for the host's engine frame renderer.
-    [[nodiscard]] const vfx::SimulationWorld* vfx_preview_world(
-        CyServiceSession session) const noexcept;
+    [[nodiscard]] static const vfx::SimulationWorld* vfx_preview_world(
+        CyServiceSession session) noexcept;
 
 private:
     Allocator* allocator_;

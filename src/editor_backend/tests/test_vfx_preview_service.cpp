@@ -147,12 +147,12 @@ VfxPreviewSnapshot preview_snapshot(const CyServiceEvent& event) {
             const cy::u8 components = bytes[cursor++];
             CY_REQUIRE(components >= 1);
             CY_REQUIRE(components <= 4);
-            CY_REQUIRE(cursor + components * 4 <= event.payload_size);
+            CY_REQUIRE(cursor + (static_cast<cy::usize>(components) * 4U) <= event.payload_size);
             if (name == "position") {
                 snapshot.sampled_position = true;
                 CY_CHECK_EQ(components, 3U);
             }
-            cursor += components * 4;
+            cursor += static_cast<cy::usize>(components) * 4U;
         }
     }
     CY_CHECK_EQ(cursor, event.payload_size);

@@ -4,6 +4,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/editor/material_service.h>
 #include <cy/graph/cybergraph.h>
+#include <cy/graph/material/lower_material.h>
 #include <cy/test/test.h>
 #if defined(CY_EDITOR_HAS_VFX)
 #    include <cy/vfx/asset.h>
@@ -148,7 +149,8 @@ CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
     CY_REQUIRE(event.payload_size >= 12U);
     CY_CHECK_EQ(read_u32(event.payload), 3U);
     CY_CHECK_EQ(read_u32(event.payload + 4), 6U);
-    CY_CHECK_EQ(read_u32(event.payload + 8), 27U);
+    CY_CHECK_EQ(read_u32(event.payload + 8),
+                static_cast<cy::u32>(cy::graph::material::material_node_types().size()));
     api->service_close(&host, session);
 }
 
@@ -310,7 +312,7 @@ CY_TEST_CASE("editor_backend: VFX document compiles through the engine service")
         CY_CHECK_EQ(event.payload[cursor++], name[0] == 'c' ? 1U : 0U);
         CY_CHECK_EQ(read_u32(event.payload + cursor), 1U);
         cursor += 4;
-        cursor += 4 * 2 + 8 + 4;  // size, population, cost, folded constants
+        cursor += (4 * 2) + 8 + 4;  // size, population, cost, folded constants
         const cy::u32 slots = read_u32(event.payload + cursor);
         cursor += 4;
         CY_CHECK_EQ(slots, 0U);  // Unused declaration has no storage slot.

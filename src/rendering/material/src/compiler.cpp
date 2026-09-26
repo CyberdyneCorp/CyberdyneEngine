@@ -235,7 +235,7 @@ struct Build {
     if (Status sized = visited.resize(primary.size()); !sized) {
         return sized;
     }
-    std::fill(visited.begin(), visited.end(), 0);
+    std::ranges::fill(visited, 0);
     Array<NodeId> pending(allocator);
     if (Status added = pending.push_back(primary.vertex_offset()); !added) {
         return added;

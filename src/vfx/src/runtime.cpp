@@ -466,7 +466,8 @@ TargetAvailability target_availability(SimulationPath path,
                 fallback_explanation(FallbackReason::EffectRequiresCpu)};
     }
     FallbackReason reason = FallbackReason::None;
-    if (device == nullptr) {
+    if (device == nullptr || (device->gpu_path_enabled && device->compute &&
+                              device->indirect_dispatch && !device_dispatch_available())) {
         reason = FallbackReason::NoDeviceInThisWorld;
     } else if (!device->gpu_path_enabled) {
         reason = FallbackReason::DisabledByHost;
@@ -474,8 +475,6 @@ TargetAvailability target_availability(SimulationPath path,
         reason = FallbackReason::DeviceLacksCompute;
     } else if (!device->indirect_dispatch) {
         reason = FallbackReason::DeviceLacksIndirectDispatch;
-    } else if (!device_dispatch_available()) {
-        reason = FallbackReason::NoDeviceInThisWorld;
     }
     return {true, reason == FallbackReason::None, reason, fallback_explanation(reason)};
 }

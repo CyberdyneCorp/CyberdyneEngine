@@ -337,7 +337,7 @@ cy::f32 read_f32(const Array<u8>& bytes, usize offset) noexcept {
 
 Status put_preview_sample(Array<u8>& out, const VfxPreviewState& preview,
                           const cy::vfx::EffectInstance* instance) noexcept {
-    if (instance == nullptr) {
+    if (instance == nullptr || !preview.system.has_value()) {
         return put_u8(out, 0);
     }
     for (u32 emitter = 0; emitter < preview.system->emitters().size(); ++emitter) {
@@ -404,7 +404,7 @@ CyResult preview_snapshot(CyServiceSession_T& session) noexcept {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     const auto instances = preview.world.instances();
-    const cy::vfx::EffectInstance* instance = instances.empty() ? nullptr : &instances[0];
+    const cy::vfx::EffectInstance* instance = instances.empty() ? nullptr : instances.data();
     for (usize index = 0; index < preview.system->emitters().size(); ++index) {
         u32 live = 0;
         if (instance != nullptr) {
@@ -513,12 +513,13 @@ CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
     }
     const usize count_offset = 4U + length;
     const u8 count = payload[count_offset];
-    if (count == 0 || count > 4 || payload.size() != count_offset + 1U + (count * 4U)) {
+    if (count == 0 || count > 4 ||
+        payload.size() != count_offset + 1U + (static_cast<usize>(count) * 4U)) {
         return failed(session, "vfx.preview.parameter", "invalid parameter component count");
     }
     cy::f32 values[4] = {};
     for (u8 index = 0; index < count; ++index) {
-        values[index] = read_f32(payload, count_offset + 1U + (index * 4U));
+        values[index] = read_f32(payload, count_offset + 1U + (static_cast<usize>(index) * 4U));
         if (!std::isfinite(values[index])) {
             return failed(session, "vfx.preview.parameter", "parameter values must be finite");
         }
@@ -1044,8 +1045,7 @@ CyResult capabilities(CyServiceSession_T& session,
 
 namespace cy::editor {
 
-const vfx::SimulationWorld* MaterialService::vfx_preview_world(
-    CyServiceSession session) const noexcept {
+const vfx::SimulationWorld* MaterialService::vfx_preview_world(CyServiceSession session) noexcept {
 #if defined(CY_EDITOR_HAS_VFX)
     if (session != nullptr && session->vfx_preview.system &&
         session->vfx_preview.world.find(session->vfx_preview.handle) != nullptr) {

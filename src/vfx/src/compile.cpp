@@ -1051,7 +1051,7 @@ namespace {
             continue;
         }
         const usize start = sink.entries().size();
-        const Status valid = graph::validate(*stage_graph, registry, nullptr, sink);
+        Status valid = graph::validate(*stage_graph, registry, nullptr, sink);
         if (Status recorded = record_diagnostic_scopes(sink, scopes, start, emitter_index,
                                                        static_cast<Stage>(which));
             !recorded) {

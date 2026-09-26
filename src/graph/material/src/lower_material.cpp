@@ -294,14 +294,12 @@ private:
     const Name symbol = symbol_property != nullptr ? symbol_property->text : Name{};
     MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
     if (spec.op == GraphOp::ObjectPosition || spec.op == GraphOp::WorldPosition ||
-        spec.op == GraphOp::Normal) {
+        spec.op == GraphOp::Normal || spec.op == GraphOp::VertexColor) {
         type = MaterialValueType::Vec3;
     } else if (spec.op == GraphOp::Uv0) {
         type = MaterialValueType::Vec2;
     } else if (spec.op == GraphOp::Time) {
         type = MaterialValueType::Float;
-    } else if (spec.op == GraphOp::VertexColor) {
-        type = MaterialValueType::Vec3;
     }
     const MaterialImmediate value =
         immediate_of(graph.property(node.key, Name::intern("value")), {});

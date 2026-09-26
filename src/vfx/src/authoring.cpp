@@ -27,13 +27,10 @@ constexpr u32 kMaxItems = 4096;
     if (value.empty()) {
         return false;
     }
-    for (const char character : value) {
-        if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
-              (character >= '0' && character <= '9') || character == '_')) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(value, [](char character) {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+               (character >= '0' && character <= '9') || character == '_';
+    });
 }
 
 [[nodiscard]] bool module_path(std::string_view value) noexcept {
@@ -354,7 +351,7 @@ private:
             emitter.has_stage(static_cast<Stage>(*stage_id))) {
             return make_unexpected(malformed("invalid or duplicate VFX stage"));
         }
-        const Stage stage = static_cast<Stage>(*stage_id);
+        const auto stage = static_cast<Stage>(*stage_id);
         auto graph = read_stage_canvas(*canvas, *name, stage, allocator, "emitter");
         if (!graph) {
             return make_unexpected(graph.error());
@@ -592,7 +589,7 @@ Expected<VfxModuleAsset, Error> read_authoring_module(std::string_view source,
     if (!canvas || !reader.done()) {
         return make_unexpected(malformed("invalid VFX module canvas or trailing bytes"));
     }
-    const Stage stage = static_cast<Stage>(*stage_id);
+    const auto stage = static_cast<Stage>(*stage_id);
     auto graph = read_stage_canvas(*canvas, *name, stage, allocator, "module");
     if (!graph) {
         return make_unexpected(graph.error());
@@ -722,10 +719,10 @@ struct ModuleResolution {
             }
             const graph::Literal* attribute =
                 module.graph.property(node.key, Name::intern(prop::kAttribute));
-            if (attribute == nullptr || std::find_if(module.inputs.begin(), module.inputs.end(),
-                                                     [attribute](const ModuleInputDecl& input) {
-                                                         return input.name == attribute->text;
-                                                     }) == module.inputs.end()) {
+            if (attribute == nullptr ||
+                std::ranges::find_if(module.inputs, [attribute](const ModuleInputDecl& input) {
+                    return input.name == attribute->text;
+                }) == module.inputs.end()) {
                 module_diagnostic(diagnostics, "vfx.module.interface",
                                   "VFX module reads an undeclared host attribute", module.name);
                 return fail(ErrorCode::InvalidArgument,
@@ -736,11 +733,11 @@ struct ModuleResolution {
     }
 
     [[nodiscard]] Status apply(Name name, Stage required_stage = Stage::Count) noexcept {
-        if (std::find(visiting.begin(), visiting.end(), name) != visiting.end()) {
+        if (std::ranges::find(visiting, name) != visiting.end()) {
             module_diagnostic(diagnostics, "vfx.module.cycle", "VFX module dependency cycle", name);
             return fail(ErrorCode::InvalidArgument, "vfx: module dependency cycle");
         }
-        if (std::find(applied.begin(), applied.end(), name) != applied.end()) {
+        if (std::ranges::find(applied, name) != applied.end()) {
             return ok();
         }
         if (asset.find_module_asset(name) == nullptr) {
