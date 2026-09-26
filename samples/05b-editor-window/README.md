@@ -102,6 +102,9 @@ Editing a valid colour in the opened graph previews it on the Cube in the hosted
 without saving. A rejected or unsupported edit keeps the last valid viewport colour and shows a
 material diagnostic. Object colour overrides that differ from the saved graph default remain in
 control. **Save .cygraph** persists the graph and editable canvas; graph previews alone do not.
+The hosted Metal compiled-material path also evaluates a graph's `vertex_offset` on the selected
+mesh. Its shadow pass still uses the original mesh position; displaced shadows and motion vectors
+remain part of issue #15's acceptance work.
 
 The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
 override. Changing it updates that cube in the authored viewport and saves with the

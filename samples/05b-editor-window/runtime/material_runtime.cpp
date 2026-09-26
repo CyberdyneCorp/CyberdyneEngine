@@ -98,8 +98,8 @@ struct StandardLibrary {
     shader::SourceRegistry registry;
 };
 
-[[nodiscard]] Status append_attribute_bindings(const CompiledProgram& program,
-                                               Writer& writer) noexcept {
+[[nodiscard]] Status append_attribute_bindings(const CompiledProgram& program, Writer& writer,
+                                               std::string_view source) noexcept {
     for (const Node& node : program.module.nodes()) {
         if (node.op == Op::Field) {
             return fail(ErrorCode::Unsupported,
@@ -111,12 +111,18 @@ struct StandardLibrary {
         writer.text("    ctx.attributes.");
         writer.text(node.symbol.text());
         if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
-            writer.text(" = input.positionRelativeToCamera;\n");
+            writer.text(" = ");
+            writer.text(source);
+            writer.text(".positionRelativeToCamera;\n");
         } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
-            writer.text(" = input.normal;\n");
+            writer.text(" = ");
+            writer.text(source);
+            writer.text(".normal;\n");
         } else if ((node.symbol == Name::intern("uv0") || node.symbol == Name::intern("uv1")) &&
                    node.type == ValueType::Vec2) {
-            writer.text(" = input.uv;\n");
+            writer.text(" = ");
+            writer.text(source);
+            writer.text(".uv;\n");
         } else if (node.symbol == Name::intern("tangent") && node.type == ValueType::Vec4) {
             writer.text(" = float4(1.0, 0.0, 0.0, 1.0);\n");
         } else if (node.symbol == Name::intern("color0") && node.type == ValueType::Vec4) {
@@ -164,6 +170,14 @@ float4 cyMaterialSampleTextureLevel(uint bindlessIndex, float2 uv, float level)
         return make_unexpected(report.error());
     }
     writer.text(std::string_view(program.source.text.data(), program.source.text.size()));
+    writer.text(
+        std::string_view(program.vertex_source.text.data(), program.vertex_source.text.size()));
+    Array<char> generated_entry(program.module.allocator());
+    if (Status named = rendering::material::entry_point_name(
+            program.module.name(), ProgramKind::Primary, QualityTier::High, generated_entry);
+        !named) {
+        return named;
+    }
     writer.text(R"(
 struct EditorFrameConstants
 {
@@ -213,6 +227,20 @@ EditorVertexOutput editorMaterialVertex(EditorVertexInput input)
                                      dot(object.modelRow1.xyz, input.normal),
                                      dot(object.modelRow2.xyz, input.normal)));
     output.uv = input.uv;
+)");
+    if (program.module.vertex_offset() != rendering::material::kInvalidNode) {
+        writer.text(
+            "    CyMaterialContext ctx;\n"
+            "    ctx.params = cyMaterialParameters;\n"
+            "    ctx.attributes = cyZeroAttributes();\n");
+        if (Status attributes = append_attribute_bindings(program, writer, "output"); !attributes) {
+            return attributes;
+        }
+        writer.text("    output.positionRelativeToCamera += ");
+        writer.text({generated_entry.data(), generated_entry.size()});
+        writer.text("_vertex_offset(ctx);\n");
+    }
+    writer.text(R"(
     let point = float4(output.positionRelativeToCamera, 1.0);
     output.clip = float4(dot(editorFrame.frame.viewProjectionRow0, point),
                          dot(editorFrame.frame.viewProjectionRow1, point),
@@ -232,14 +260,8 @@ float4 editorMaterialFragment(EditorVertexOutput input) : SV_Target
     ctx.params = cyMaterialParameters;
     ctx.attributes = cyZeroAttributes();
 )");
-    if (Status attributes = append_attribute_bindings(program, writer); !attributes) {
+    if (Status attributes = append_attribute_bindings(program, writer, "input"); !attributes) {
         return attributes;
-    }
-    Array<char> generated_entry(program.module.allocator());
-    if (Status named = rendering::material::entry_point_name(
-            program.module.name(), ProgramKind::Primary, QualityTier::High, generated_entry);
-        !named) {
-        return named;
     }
     writer.text("    CySurface compiled = cyDefaultSurface();\n    ");
     writer.text({generated_entry.data(), generated_entry.size()});
@@ -357,6 +379,10 @@ float4 editorMaterialFragment(EditorVertexOutput input) : SV_Target
 
 }  // namespace
 
+Status assemble_material_unit(const CompiledProgram& program, Array<char>& unit) noexcept {
+    return assemble_unit(program, unit);
+}
+
 struct MetalMaterialRuntime::Program {
     struct Slot {
         u32 identity = 0;
@@ -432,7 +458,7 @@ Status MetalMaterialRuntime::publish(
     }
 
     Array<char> unit(*allocator_);
-    if (Status assembled = assemble_unit(*primary, unit); !assembled) {
+    if (Status assembled = assemble_material_unit(*primary, unit); !assembled) {
         // Status owns a copied Error whose message uses static storage. The analyzer follows
         // Writer's Array pointer into `unit`, although that pointer is not part of the Status.
         return assembled;  // NOLINT(clang-analyzer-core.StackAddressEscape)

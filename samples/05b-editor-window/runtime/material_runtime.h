@@ -9,6 +9,10 @@
 
 namespace cy::sample::editor_window {
 
+/// Assemble the engine-compiled surface and vertex sources into the hosted material program.
+[[nodiscard]] Status assemble_material_unit(const rendering::material::CompiledProgram& program,
+                                            Array<char>& unit) noexcept;
+
 /// The Mac editor-preview adapter. It owns the retained compiler layouts and preview bindings;
 /// `first_light::Renderer` owns the Metal shader modules, pipelines, descriptor sets and buffers.
 class MetalMaterialRuntime final : public editor::MaterialPreviewRuntime {
