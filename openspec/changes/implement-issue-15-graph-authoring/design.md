@@ -36,6 +36,10 @@ displaced-position helper and bind the same material parameter block. A shader-u
 checks both calls; the Metal image case compares the constant GPU offset, including its shadow,
 against moving the same mesh on the CPU. Motion vectors and a time-varying CPU reference remain
 before task 3.3 is complete.
+The compiler now walks the vertex offset expression and reports `vertex-stage-unsupported` if a
+texture sample or custom Slang node reaches it. Editor validation and material cooking consume the
+same compiler diagnostic and refuse the asset, while surface-only texture sampling stays valid.
+Assignment-aware geometry selection in editor and project cooking remains part of task 3.2.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 

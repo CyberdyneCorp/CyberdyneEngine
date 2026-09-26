@@ -225,6 +225,52 @@ struct Build {
     return ok();
 }
 
+[[nodiscard]] Status check_vertex_operations(const Module& primary,
+                                             Array<CompileDiagnostic>& diagnostics,
+                                             Allocator& allocator) noexcept {
+    if (primary.vertex_offset() == kInvalidNode) {
+        return ok();
+    }
+    Array<u8> visited(allocator);
+    if (Status sized = visited.resize(primary.size()); !sized) {
+        return sized;
+    }
+    std::fill(visited.begin(), visited.end(), 0);
+    Array<NodeId> pending(allocator);
+    if (Status added = pending.push_back(primary.vertex_offset()); !added) {
+        return added;
+    }
+    while (!pending.empty()) {
+        const NodeId id = pending.back();
+        pending.pop_back();
+        if (visited[id] != 0) {
+            continue;
+        }
+        visited[id] = 1;
+        const Node& node = primary.node(id);
+        if (node.op == Op::TextureSample || node.op == Op::Custom) {
+            CompileDiagnostic diagnostic;
+            diagnostic.severity = DiagnosticSeverity::Error;
+            diagnostic.code = "vertex-stage-unsupported";
+            diagnostic.detail = node.op == Op::TextureSample
+                                    ? "texture sampling has no vertex-stage material binding"
+                                    : "custom Slang is unavailable in authored vertex graphs";
+            diagnostic.subject = node.symbol;
+            const Span<const u32> origins = primary.origins(id);
+            diagnostic.origin = origins.empty() ? kUnattributed : origins[0];
+            if (Status said = diagnostics.push_back(diagnostic); !said) {
+                return said;
+            }
+        }
+        for (const NodeId input : primary.operands(id)) {
+            if (Status added = pending.push_back(input); !added) {
+                return added;
+            }
+        }
+    }
+    return ok();
+}
+
 /// Translate M3's material report into the compiler's diagnostics, so there is one validator rather
 /// than two answers to "is this material well formed".
 [[nodiscard]] Status carry_validation(const MaterialProgram& layout,
@@ -434,6 +480,10 @@ Expected<CompiledMaterial, Error> compile_material(const Module& authored,
     }
     if (Status checked = check_geometry_paths(primary, options.geometry_paths,
                                               material.geometry_paths_, material.diagnostics_);
+        !checked) {
+        return make_unexpected(checked.error());
+    }
+    if (Status checked = check_vertex_operations(primary, material.diagnostics_, allocator);
         !checked) {
         return make_unexpected(checked.error());
     }

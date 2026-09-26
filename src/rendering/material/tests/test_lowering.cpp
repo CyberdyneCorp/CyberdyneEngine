@@ -371,6 +371,51 @@ CY_TEST_CASE("material_lowering: named geometry variants reject unsupported vert
     CY_CHECK_FALSE(compile_material(module.value(), options, allocator()).has_value());
 }
 
+CY_TEST_CASE("material_lowering: fragment-only operations cannot reach a vertex offset") {
+    constexpr std::string_view source = R"(
+material vertex_texture {
+    texture colour average (0.5, 0.5, 0.5, 1.0);
+    attribute uv0 : float2;
+    let sampled = sample(colour, uv0).xyz;
+    surface = diffuse(sampled);
+    vertex_offset = sampled;
+}
+)";
+    auto module = from_text(source);
+    CY_REQUIRE(module.has_value());
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto rejected = compile_material(module.value(), options, allocator());
+    CY_REQUIRE(rejected.has_value());
+    CY_CHECK(rejected.value().failed());
+    CY_CHECK(has_diagnostic(rejected.value(), "vertex-stage-unsupported"));
+
+    auto surface = from_text(R"(
+material surface_texture {
+    texture colour average (0.5, 0.5, 0.5, 1.0);
+    attribute uv0 : float2;
+    surface = diffuse(sample(colour, uv0).xyz);
+}
+)");
+    CY_REQUIRE(surface.has_value());
+    auto accepted = compile_material(surface.value(), options, allocator());
+    CY_REQUIRE(accepted.has_value());
+    CY_CHECK_FALSE(accepted.value().failed());
+
+    auto custom = from_text(R"(
+material custom_offset {
+    param sway : float3 = (0.0, 0.25, 0.0);
+    vertex_offset = custom("$0", sway);
+}
+)");
+    CY_REQUIRE(custom.has_value());
+    auto custom_rejected = compile_material(custom.value(), options, allocator());
+    CY_REQUIRE(custom_rejected.has_value());
+    CY_CHECK(custom_rejected.value().failed());
+    CY_CHECK(has_diagnostic(custom_rejected.value(), "vertex-stage-unsupported"));
+}
+
 CY_TEST_CASE("material_lowering: cost is attributed to the authoring nodes that caused it") {
     MaterialGraph graph(allocator(), Name::intern("worn_metal"));
     GraphIds ids;

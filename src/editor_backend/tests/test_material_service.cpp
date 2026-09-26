@@ -936,6 +936,43 @@ CY_TEST_CASE("editor_backend: material diagnostics carry stable node and pin loc
     api->service_close(&host, session);
 }
 
+CY_TEST_CASE("editor_backend: vertex graphs refuse fragment-only nodes") {
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+
+    constexpr std::string_view canvas =
+        "cymatcanvas 1\n"
+        "material sampled_offset\n"
+        "node 1 material.attribute\n"
+        "prop 1 symbol uv0\n"
+        "prop 1 type float2\n"
+        "node 2 material.texture_sample\n"
+        "prop 2 symbol colour\n"
+        "node 3 material.vertex_output\n"
+        "node 4 material.swizzle\n"
+        "prop 4 swizzle xyz\n"
+        "link 1 out 2 uv\n"
+        "link 2 out 4 value\n"
+        "link 4 out 3 offset\n";
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   19,
+                                   "material.validate",
+                                   reinterpret_cast<const cy::u8*>(canvas.data()),
+                                   canvas.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    CY_REQUIRE(event.payload_size >= 13U);
+    cy::usize cursor = 8;
+    ++cursor;  // severity
+    CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor), "vertex-stage-unsupported");
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: preview handles are generational and reload is acknowledged") {
     cy::abi::Host host(allocator());
     PreviewRuntime preview_runtime;

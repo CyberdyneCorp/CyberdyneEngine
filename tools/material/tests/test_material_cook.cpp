@@ -339,6 +339,24 @@ CY_TEST_CASE("material_cook: virtual geometry refuses a vertex offset without an
              std::string_view::npos);
 }
 
+CY_TEST_CASE("material_cook: fragment sampling in a vertex graph leaves no artefact") {
+    constexpr std::string_view source = R"(
+material sampled_offset {
+    texture colour average (0.5, 0.5, 0.5, 1.0);
+    attribute uv0 : float2;
+    vertex_offset = sample(colour, uv0).xyz;
+}
+)";
+    material::CompileOptions options;
+    Array<u8> bundle(allocator());
+    Array<char> report(allocator());
+    CY_CHECK_FALSE(
+        material::cook_material(source, options, allocator(), bundle, report).has_value());
+    CY_CHECK(bundle.empty());
+    const std::string_view message(report.data(), report.size());
+    CY_CHECK(message.find("vertex-stage-unsupported") != std::string_view::npos);
+}
+
 CY_TEST_CASE("material_cook: vertex and shadow offset source survives the cooked bundle") {
     constexpr std::string_view source =
         "material moving_stone { "
