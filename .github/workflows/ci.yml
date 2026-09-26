@@ -317,27 +317,6 @@ jobs:
           name: test-results-${{ matrix.label }}
           path: test-results.xml
           if-no-files-found: ignore
-      # M11.d task 7.5: `build-and-packaging` asks for a reproducibility bundle ARCHIVED BY CI, and
-      # for shipping symbols archived separately and retrievable by build identity. `smoke.ship`
-      # (run by `just test-all` above) writes `reproduce/<build id>/` under its work directory and
-      # clears it at the start of every run, so a restored build/dev cannot contribute a previous
-      # build's bundle. The bundle holds the manifest, description, lockfile, configuration,
-      # artefact hashes and the stripped binary's hash, and `symbols/`: the split symbols in GDB's
-      # `.build-id/` layout, indexed under the package build identity in `symbols/builds/`, which
-      # the run has already verified against the stripped binary using the bundle's copy alone.
-      # The work directory's own `symbols/` store is the same bytes and is not uploaded twice.
-      # Linux legs only: the split is ELF-only, and Mach-O and PE/PDB are M11.e's (task 7.6).
-      # `include-hidden-files` because `.build-id/` is a dot-directory, which upload-artifact
-      # otherwise drops without a word — an archive holding the index and not the symbols. A green
-      # suite that produced no bundle fails here; a red one uploads whatever it got to.
-      - name: The package's reproducibility bundle and its split symbols
-        if: always() && runner.os == 'Linux'
-        uses: actions/upload-artifact@v5
-        with:
-          name: provenance-${{ matrix.label }}
-          path: build/dev/samples/11-ship/run/reproduce
-          include-hidden-files: true
-          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
 
   # --- The concurrency suites under a data-race detector, and the job system's throughput ---------
   #
@@ -1470,6 +1449,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The falsifiability ledger replays a proof against this historical commit.
+          fetch-depth: 0
       - uses: extractions/setup-just@v4
       # `just roadmap-test`'s falsifiability sweep runs every check the milestone gates depend on,
       # so this job needs the same tools those checks need: openspec for the spec queries,
@@ -1487,6 +1469,8 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8 codespell==2.4.3 Pillow
       - name: Status matches the specification set
         run: just roadmap-status
+      - name: Historical proof commit is available
+        run: just roadmap-history-check
       # The drift detection's own negative fixtures: a status recipe that stopped failing on drift
       # would report every capability green and gate nothing.
       - name: The drift detection still fires
