@@ -1011,7 +1011,7 @@ test "${selected:-0}" -ge 1 || { echo "the identity case is not in unit.harness 
 status=0
 python3 tools/quiet-host/quiet_host_test.py --wrapper "$wrapper" --leg marker --probe "$probe" || status=$?
 test "$status" -eq 0 || { echo "smoke.quiet_host_marker's leg exited $status (3: the host was busy for the inside half)"; exit 1; }
-grep -q 'renamed cy_quiet_host' tools/quiet-host/quiet_host_test.py || { echo "the renamed-impostor forgery is not in the leg any more"; exit 1; }
+grep -q 'run_under_impostor(probe, VFORK_CASE)' tools/quiet-host/quiet_host_test.py || { echo "the renamed-impostor forgery is not in the leg any more"; exit 1; }
 '''
 timeout_s = 1800
 ci_job = "milestone-m11d"
