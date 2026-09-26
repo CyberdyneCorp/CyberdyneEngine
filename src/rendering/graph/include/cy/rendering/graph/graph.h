@@ -108,6 +108,12 @@ struct ResourceInfo {
     rhi::QueueOwner initial_owner{};
     rhi::TextureHandle imported_texture;
     rhi::BufferHandle imported_buffer;
+    /// MSAA through the attachment model. On a single-sample texture a multisampled pass rendered
+    /// into: the graph-owned twin it actually rendered into. On that twin: the texture it resolves
+    /// into. `kInvalidResource` everywhere else — which is every resource of a frame with no
+    /// multisampled pass, so a 1x graph is the graph it was before this existed.
+    ResourceId multisampled = kInvalidResource;
+    ResourceId resolves_into = kInvalidResource;
 };
 
 /// One declared use of one resource by one pass.
@@ -137,6 +143,27 @@ struct PassContext {
     PassId pass = kInvalidPass;
     /// The pass's index in the schedule, which is what a breadcrumb and a debug label carry.
     u32 schedule_index = 0;
+    /// The graph the pass was declared in. What `attachment_view` reads the pass's sample count
+    /// and the multisampled twins through.
+    const RenderGraph* graph = nullptr;
+    /// What the pass declared with `PassBuilder::multisample`. A pipeline the pass binds must be
+    /// created with this sample count.
+    u16 sample_count = 1;
+    /// What the pass declared with `PassBuilder::views`, and how the executor chose to record it.
+    ///
+    /// WITH `Capability::Multiview` the callback runs ONCE, `view_mask` has one bit per view and a
+    /// pipeline created with that mask renders every view in one pass. WITHOUT it the callback runs
+    /// once PER VIEW, `view_mask` is zero, `view_index` names the view, and `attachment_view` hands
+    /// back a single-layer view of that layer. The choice is the capability's and never the
+    /// backend's name — `rhi-and-render-graph`'s "the renderer SHALL branch on capabilities".
+    u32 view_count = 1;
+    u32 view_mask = 0;
+    u32 view_index = 0;
+
+    /// The view a pass renders `resource` through: the multisampled twin where the pass is
+    /// multisampled, the single layer of this recording where multi-view is emulated, and the
+    /// resource's own whole view otherwise. Defined in executor.cpp.
+    [[nodiscard]] rhi::TextureViewHandle attachment_view(ResourceId resource) const noexcept;
 };
 
 /// A plain function pointer rather than a std::function: the engine has no exceptions and no
@@ -169,6 +196,44 @@ public:
     /// this: a pass whose whole purpose is a side effect the graph cannot see — a readback, a
     /// query, a debug overlay that is meant to run — says so here.
     PassBuilder& side_effect() noexcept;
+
+    // --- MSAA through the attachment model -----------------------------------------------------
+    //
+    //     graph.add_pass("opaque", QueueKind::Graphics)
+    //          .multisample(4)                                  // before the attachments
+    //          .write(colour, Access::ColorAttachmentWrite)     // renders into colour's 4x twin
+    //          .write(depth, Access::DepthStencilAttachmentWrite)
+    //          .resolve(colour)                                 // 4x -> colour, after this pass
+    //          .record(&record_opaque, &state);
+    //
+    // The pass names the single-sample texture it means; the graph allocates the multisampled twin
+    // (transient, same format and extent) and redirects every ATTACHMENT use of this pass to it.
+    // Sampled, storage and transfer uses are not redirected. `resolve` inserts a graph-owned pass
+    // directly after this one that resolves the twin into the texture, and compile() REFUSES a
+    // graph in which anything touches the texture while its twin holds rendering no resolve has
+    // reached — a missing resolve, or one declared on a pass before the last multisampled write.
+    //
+    // A 1x pass is untouched: `multisample(1)` is the default, creates nothing and changes no
+    // decision in the plan, so a frame with no multisampled pass compiles to the identical plan.
+
+    /// The sample count this pass renders its attachments at: 1, 2, 4 or 8. Must precede every
+    /// attachment use of the pass, because the redirection happens as each use is declared.
+    PassBuilder& multisample(u16 samples) noexcept;
+    /// Resolve `target`'s multisampled twin into `target` after this pass. Colour targets only: the
+    /// RHI exposes no depth resolve mode yet, and a depth resolve is refused rather than guessed.
+    PassBuilder& resolve(ResourceId target) noexcept;
+    /// This pass cannot render multisampled, for the reason given. `multisample(n > 1)` on it then
+    /// fails the graph with exactly that reason — the virtual-geometry stage is the first user,
+    /// because a visibility payload is one surface a pixel.
+    PassBuilder& single_sample(const char* reason) noexcept;
+
+    // --- Multi-view ------------------------------------------------------------------------------
+
+    /// Render `count` views into the leading `count` layers of every attachment. Recorded once with
+    /// a view mask where the device reports `Capability::Multiview`, and once per view into a
+    /// single-layer view where it does not — see `PassContext::view_count`. The plan is the same
+    /// either way: the declarations, and therefore every barrier, do not depend on the choice.
+    PassBuilder& views(u32 count) noexcept;
 
     [[nodiscard]] PassId id() const noexcept { return pass_; }
 
@@ -360,6 +425,13 @@ public:
     [[nodiscard]] bool pass_has_side_effect(PassId pass) const noexcept;
     [[nodiscard]] RecordFn pass_record_function(PassId pass) const noexcept;
     [[nodiscard]] void* pass_record_user(PassId pass) const noexcept;
+    /// What `PassBuilder::multisample` and `PassBuilder::views` declared; 1 when nothing did.
+    [[nodiscard]] u16 pass_sample_count(PassId pass) const noexcept;
+    [[nodiscard]] u32 pass_view_count(PassId pass) const noexcept;
+    /// For a pass the GRAPH inserted to resolve a multisampled twin: the twin and the texture it
+    /// resolves into. `kInvalidResource` for both on every pass an author declared.
+    [[nodiscard]] ResourceId pass_resolve_source(PassId pass) const noexcept;
+    [[nodiscard]] ResourceId pass_resolve_target(PassId pass) const noexcept;
 
     /// The first declaration failure, or success. Checked once before compiling.
     [[nodiscard]] Status status() const noexcept { return status_; }
@@ -380,7 +452,35 @@ private:
         void* user = nullptr;
         usize first_use = 0;  // index into uses_
         usize use_count = 0;
+        u16 samples = 1;
+        u32 views = 1;
+        const char* single_sample_reason = nullptr;
+        /// Set on a graph-inserted resolve pass only.
+        ResourceId resolve_source = kInvalidResource;
+        ResourceId resolve_target = kInvalidResource;
     };
+
+    /// A `resolve()` waiting for its pass to finish being declared: the pass is still the one
+    /// uses are appended to, so the resolve pass is inserted when the NEXT pass is added, or at
+    /// compile(). Either way it lands directly after the pass that declared it.
+    struct PendingResolve {
+        PassId pass = kInvalidPass;
+        ResourceId target = kInvalidResource;
+    };
+
+    // multisample.cpp — MSAA and multi-view, kept out of the declaration core above.
+    void set_samples(PassId pass, u16 samples) noexcept;
+    void set_single_sample(PassId pass, const char* reason) noexcept;
+    void set_views(PassId pass, u32 views) noexcept;
+    void request_resolve(PassId pass, ResourceId target) noexcept;
+    /// The twin `resource` renders into from `pass`, creating it on first use; `resource` itself
+    /// when the pass is single-sample or the access is not an attachment.
+    [[nodiscard]] ResourceId attachment_target(PassId pass, ResourceId resource,
+                                               rhi::Access access) noexcept;
+    void flush_resolves() noexcept;
+    /// Refuses a graph whose resolves are missing or misplaced, or whose multi-view pass renders
+    /// into an attachment with fewer layers than views. Run at the start of compile().
+    [[nodiscard]] Status validate_multisampling() const noexcept;
 
     /// Append a use to the pass currently being built. Fails the graph when the pass is not the
     /// last one declared, because uses are stored in one flat array and interleaving two passes'
@@ -396,6 +496,7 @@ private:
     Array<ResourceInfo> resources_;
     Array<Pass> passes_;
     Array<Use> uses_;
+    Array<PendingResolve> pending_resolves_;
     Status status_;
 
     friend struct Compiler;

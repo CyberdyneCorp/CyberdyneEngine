@@ -7,7 +7,7 @@
 //
 // Subcommands:
 //   toolchain                     what every derivation key contributes about the toolchain
-//   build                         run a description's graph
+//   build                         run a description's graph; `--audit` adds the per-file audit
 //   explain    --source <name>    which nodes a change to that source would reach
 //   audit      --node <name>      why a node is in the build, and what references it
 //   determinism                   build the description twice into two roots and diff the artefacts
@@ -27,6 +27,7 @@
 #include <cy/core/reflect/registry.h>
 #include <cy/ecs/world.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -204,6 +205,41 @@ void print_report(const BuildReport& report) {
     return service.build();
 }
 
+/// Every regular file under the project root, by project-relative generic name, sorted — minus the
+/// description itself, which is the build's declaration rather than content in it.
+[[nodiscard]] std::vector<std::string> project_files(const Arguments& arguments) {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    const fs::path root = fs::weakly_canonical(arguments.value("project", "."), error);
+    const fs::path description = fs::weakly_canonical(arguments.value("description"), error);
+    std::vector<std::string> files;
+    for (fs::recursive_directory_iterator walk(root, error), end; !error && walk != end;
+         walk.increment(error)) {
+        if (!walk->is_regular_file(error) || walk->path() == description) {
+            continue;
+        }
+        files.push_back(walk->path().lexically_relative(root).generic_string());
+    }
+    std::ranges::sort(files);
+    return files;
+}
+
+/// `build --audit`: the per-file content audit. Exit 4 when it flags anything — the build itself
+/// succeeded, so this is not 1, and a caller that asked for the audit asked to hear about it.
+[[nodiscard]] int audit_build(const Arguments& arguments, const Project& project,
+                              const BuildReport& report, const PackageSet& packages) {
+    const Expected<ContentAudit, Error> audited =
+        audit_content(project.graph, packages, report, project_files(arguments));
+    if (!audited) {
+        return fail("the content audit could not run", audited.error());
+    }
+    std::printf("%s", content_audit_report(*audited).c_str());
+    if (!report.succeeded()) {
+        return 1;
+    }
+    return audited->flagged() ? 4 : 0;
+}
+
 [[nodiscard]] int command_toolchain() {
     const ToolchainFingerprint& fingerprint = current_toolchain();
     char digest[assets::ContentHash::kTextLength + 1] = {};
@@ -268,6 +304,12 @@ void print_report(const BuildReport& report) {
         // printed because it CAN disagree with the package's own total.
         std::printf("%s", content_report(project.graph, *packages).c_str());
         std::printf("build %s\n", packages->build_id.c_str());
+
+        // The per-file audit — M11.d task 7.4. Asked for rather than always printed, because it
+        // walks the project directory and a description with no declared root cannot answer it.
+        if (arguments.has("audit")) {
+            return audit_build(arguments, project, *report, *packages);
+        }
     }
     return report->succeeded() ? 0 : 1;
 }

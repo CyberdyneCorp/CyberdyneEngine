@@ -1,0 +1,109 @@
+# Mutations applied to the shipped sources, each rebuilt (SPIR-V/MSL regenerated for shader
+# mutations), run, and restored; md5 of every touched file verified identical after restore.
+# Driver: apply -> regen -> cmake --build <suite> -> run suite binary -> restore -> regen -> md5.
+
+## render.world_cloud_shadow (samples/10-world/shaders/world.slang)
+
+== a-ignore-field: 'let direct = push.sun.rgb * sunThroughClouds(input.world);' -> 'let direct = push.sun.rgb;'
+exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:749: MESSAGE: 244 texels under the cloud (0 darker, worst 1.42966 from the processor's field), 8790 in full sun (0 changed), 0 brighter anywhere; darkest field 0; 0 validation errors
+tests/render/test_world_cloud_shadow.cpp:759: ERROR: CHECK_EQ( shadowed_darker, shadowed ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:760: ERROR: CHECK_LT( worst_relative, 0.01F ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:797: MESSAGE: texels differing from the frame without cloud shadows: cloudy off 0, clear off 0, clear on 0, cloudy on 0
+tests/render/test_world_cloud_shadow.cpp:804: ERROR: CHECK_GT( cloudy_changed, 200U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:843: MESSAGE: sky texels changed by the field 0, ambient-lit texels changed 0, ambient-lit texels at the ambient level 9216
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+== a-wrong-origin: 'world.x + placement.x' -> 'world.x - placement.x'
+exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:749: MESSAGE: 244 texels under the cloud (0 darker, worst 1.42966 from the processor's field), 8790 in full sun (0 changed), 0 brighter anywhere; darkest field 0; 0 validation errors
+tests/render/test_world_cloud_shadow.cpp:759: ERROR: CHECK_EQ( shadowed_darker, shadowed ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:760: ERROR: CHECK_LT( worst_relative, 0.01F ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:797: MESSAGE: texels differing from the frame without cloud shadows: cloudy off 0, clear off 0, clear on 0, cloudy on 0
+tests/render/test_world_cloud_shadow.cpp:804: ERROR: CHECK_GT( cloudy_changed, 200U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:843: MESSAGE: sky texels changed by the field 0, ambient-lit texels changed 0, ambient-lit texels at the ambient level 9216
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+== c-off-not-one: '        return 1.0;\n    }\n    CyFieldImage' -> '        return 0.999;\n    }\n    CyFieldImage'
+exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:749: MESSAGE: 244 texels under the cloud (244 darker, worst 0.000942285 from the processor's field), 8790 in full sun (8790 changed), 8806 brighter anywhere; darkest field 0; 0 validation errors
+tests/render/test_world_cloud_shadow.cpp:762: ERROR: CHECK_EQ( in_sun_changed, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:763: ERROR: CHECK_EQ( brighter, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:797: MESSAGE: texels differing from the frame without cloud shadows: cloudy off 0, clear off 0, clear on 9216, cloudy on 9214
+tests/render/test_world_cloud_shadow.cpp:802: ERROR: CHECK_EQ( clear_on_changed, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:843: MESSAGE: sky texels changed by the field 0, ambient-lit texels changed 0, ambient-lit texels at the ambient level 9216
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+== d-ambient-attenuated: 'input.color * (push.ambient.rgb + (direct * lambert))' -> 'input.color * ((push.ambient.rgb * sunThroughClouds(input.world)) + (direct * lambert))'
+exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:749: MESSAGE: 244 texels under the cloud (244 darker, worst 1 from the processor's field), 8790 in full sun (0 changed), 0 brighter anywhere; darkest field 0; 0 validation errors
+tests/render/test_world_cloud_shadow.cpp:760: ERROR: CHECK_LT( worst_relative, 0.01F ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:797: MESSAGE: texels differing from the frame without cloud shadows: cloudy off 0, clear off 0, clear on 0, cloudy on 410
+tests/render/test_world_cloud_shadow.cpp:843: MESSAGE: sky texels changed by the field 0, ambient-lit texels changed 410, ambient-lit texels at the ambient level 8825
+tests/render/test_world_cloud_shadow.cpp:846: ERROR: CHECK_EQ( ambient_lit, kTexels ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:848: ERROR: CHECK_EQ( ambient_changed, 0U ) is NOT correct!
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+== d-sky-attenuated: 'return float4(tonemap(input.color), 1.0);' -> 'return float4(tonemap(input.color * sunThroughClouds(input.world)), 1.0);'
+exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:749: MESSAGE: 244 texels under the cloud (244 darker, worst 0.000942285 from the processor's field), 8790 in full sun (0 changed), 0 brighter anywhere; darkest field 0; 0 validation errors
+tests/render/test_world_cloud_shadow.cpp:797: MESSAGE: texels differing from the frame without cloud shadows: cloudy off 0, clear off 0, clear on 0, cloudy on 410
+tests/render/test_world_cloud_shadow.cpp:843: MESSAGE: sky texels changed by the field 409, ambient-lit texels changed 0, ambient-lit texels at the ambient level 9216
+tests/render/test_world_cloud_shadow.cpp:847: ERROR: CHECK_EQ( sky_changed, 0U ) is NOT correct!
+[doctest] test cases:  3 |  2 passed | 1 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+== unmutated after restore: exit 0
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+
+== c-frame-drift: 'return float4(tonemap(lit), 1.0);' -> 'return float4(tonemap(lit * 0.999), 1.0);'
+# Every frame moves, shadows on or off. The suite as first written compared the off and clear-sky
+# frames only with each other, drawn by the same (mutated) shader, and stayed green. Case (c) now
+# draws a reference with the world's shaders pinned at 2614fb0
+# (tests/render/world_before_cloud_shadows_spirv.h) and compares every "no shadow" frame with it.
+exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:788: MESSAGE: 244 texels under the cloud (244 darker, worst 0.00139436 from the processor's field), 8790 in full sun (0 changed), 0 brighter anywhere; darkest field 0; 0 validation errors
+tests/render/test_world_cloud_shadow.cpp:842: MESSAGE: texels differing from the frame before cloud shadows: placeholder 9216, cloudy off 9216, clear off 9216, clear on 9216, cloudy on 9216
+tests/render/test_world_cloud_shadow.cpp:845: ERROR: CHECK_EQ( placeholder_changed, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:846: ERROR: CHECK_EQ( off_changed, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:847: ERROR: CHECK_EQ( clear_changed, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:848: ERROR: CHECK_EQ( clear_on_changed, 0U ) is NOT correct!
+[doctest] test cases:  3 |  2 passed | 1 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+== unmutated after restore (debug and dev): exit 0
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+
+## integration.render_sky_fields (src/rendering/sky/src/cloud_shadows.cpp)
+
+== b-still-sky: 'cloud_density(clouds, position, time_seconds, kShadowOctaves)' -> 'cloud_density(clouds, position, time_seconds * 0.0, kShadowOctaves)'
+exit 1 (RED)
+src/rendering/sky/tests/test_cloud_shadows.cpp:577: MESSAGE: shadow centroid (19638.6, 19959.4) -> (19638.6, 19959.4): moved (0, 0) m, the wind carried (1440, -600) m; darkest 0 / 0
+src/rendering/sky/tests/test_cloud_shadows.cpp:592: ERROR: CHECK_LT( std::fabs(moved_x - drift_x), kHalfCell ) is NOT correct!
+src/rendering/sky/tests/test_cloud_shadows.cpp:593: ERROR: CHECK_LT( std::fabs(moved_z - drift_z), kHalfCell ) is NOT correct!
+src/rendering/sky/tests/test_cloud_shadows.cpp:657: MESSAGE: sky and ground over 1600 points: 38 shadowed, 1556 in full sun, the sky's darkest 0.000667137, worst disagreement 1
+src/rendering/sky/tests/test_cloud_shadows.cpp:671: ERROR: CHECK_LT( worst, 0.02F ) is NOT correct!
+[doctest] test cases:    8 |    6 passed | 2 failed | 0 skipped
+restored, md5 73ba84577bcb70b9c9fb50aa9884ec15 identical: True
+
+== e-wrong-ray: 'static_cast<f32>(world_x) + (sun.x * distance)' -> 'static_cast<f32>(world_x) - (sun.x * distance)'
+exit 1 (RED)
+src/rendering/sky/tests/test_cloud_shadows.cpp:577: MESSAGE: shadow centroid (21336.4, 19960.4) -> (22773.6, 19356.6): moved (1437.2, -603.798) m, the wind carried (1440, -600) m; darkest 0 / 0
+src/rendering/sky/tests/test_cloud_shadows.cpp:657: MESSAGE: sky and ground over 1600 points: 37 shadowed, 1554 in full sun, the sky's darkest 0.000667137, worst disagreement 1
+src/rendering/sky/tests/test_cloud_shadows.cpp:671: ERROR: CHECK_LT( worst, 0.02F ) is NOT correct!
+[doctest] test cases:    8 |    7 passed | 1 failed | 0 skipped
+restored, md5 73ba84577bcb70b9c9fb50aa9884ec15 identical: True
+
+== unmutated after restore: exit 0
+[doctest] test cases:    8 |    8 passed | 0 failed | 0 skipped
+
+## A defect this falsification found in the test itself
+
+The first run of b-still-sky stayed GREEN: the wind case compared the centroid's motion with
+CY_CHECK_NEAR, which is doctest's Approx with a RELATIVE epsilon, so an epsilon of 64 accepted a
+shadow that moved (0, 0) against (1440, -600). The case now compares absolute metres, and the
+second run above is red on both axes.

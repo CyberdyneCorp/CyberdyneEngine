@@ -212,15 +212,90 @@ struct CategoryShare {
 [[nodiscard]] std::vector<CategoryShare> category_shares(const BuildGraph& graph,
                                                          const PackageSet& packages);
 
-/// "Size by category, asset and install bundle", as text.
-///
-/// PLUGIN AND WORLD REGION ARE NOT HERE, and the report says so rather than omitting them silently.
-/// Both need a declaration this graph does not carry: a node does not record which plugin declared
-/// it, and `cybuild 1` has no world-region concept at all. Reporting them would mean inventing an
-/// attribution, and an invented attribution in a size report is worse than an absent one — it is
-/// the shape of claim `delivery-roadmap` calls evidence about something nobody examined.
+/// One plugin's or one world region's share of a package set.
+struct DeclaredShare {
+    /// The declared name, or empty for content whose node declared none.
+    std::string name;
+    u64 entries = 0;
+    u64 bytes = 0;
+};
+
+/// Which declaration `declared_shares` groups by.
+enum class Attribution : u8 { Plugin, Region };
+
+/// Size by plugin, or by world region — M11.d task 7.4. Grouped by what each producing node
+/// DECLARES (`plugin` / `region` in `cybuild 1`), sorted by name, the undeclared share first under
+/// an empty name. It is never inferred: an attribution the description did not make is reported as
+/// undeclared, because an invented one in a size report is worse than an absent one.
+[[nodiscard]] std::vector<DeclaredShare> declared_shares(const BuildGraph& graph,
+                                                         const PackageSet& packages,
+                                                         Attribution by);
+
+/// "Size by category, asset, plugin, world region and install bundle", as text. Every section's sum
+/// is printed against the package set's own size, so a section that lost bytes says so.
 [[nodiscard]] std::string content_report(const BuildGraph& graph, const PackageSet& packages,
                                          u32 top = 5);
+
+// --- The content audit, per file — M11.d task 7.4
+// --------------------------------------------------
+//
+// `audit()` answers "why is this in the build?" for a NODE a developer already suspects. A shipped
+// build is a list of FILES, and the question a release asks is the other way round: for every file
+// in the package, the chain from a declared entry point to it — and, just as important, what is in
+// the build or in the project that NO entry point asked for. That second list is what "controls
+// build size" means in practice: an asset nothing references is either dead content or a missing
+// reference, and both are defects a size report cannot see.
+
+/// One file in the build, and the reason it is there.
+struct AuditedFile {
+    /// The chunk's logical name, as the manifest records it.
+    std::string name;
+    std::string bundle;
+    u64 size = 0;
+    /// The node that produced it.
+    std::string node;
+    /// The declared root … the producing node, root first. EMPTY when no declared root reaches the
+    /// node, which is the audit's "unreferenced".
+    std::vector<std::string> chain;
+    /// The project files the producing node read — declared and discovered — which is where the
+    /// chain ends on disk.
+    std::vector<std::string> sources;
+};
+
+/// The whole package, audited.
+struct ContentAudit {
+    /// The declared roots the chains are read from.
+    std::vector<std::string> roots;
+    /// Every file in the package, sorted by logical name.
+    std::vector<AuditedFile> files;
+    /// Nodes in the graph that no declared root reaches: built for nobody.
+    std::vector<std::string> unreachable_nodes;
+    /// Project files no node reads, declared or discovered: shipped with the project, in no build.
+    std::vector<std::string> unread_sources;
+
+    /// Whether the audit flagged anything. A file with an empty chain is flagged too, because its
+    /// node is in `unreachable_nodes`.
+    [[nodiscard]] bool flagged() const noexcept {
+        return !unreachable_nodes.empty() || !unread_sources.empty();
+    }
+};
+
+/// Audit a package against the graph that produced it.
+///
+/// `report` supplies each node's DISCOVERED inputs, so a file only discovery reads is not flagged
+/// as unread. `project_files` is every file under the project root by project-relative name —
+/// the caller enumerates it, so this function touches no filesystem — with the build description
+/// itself excluded, since it is the declaration rather than content.
+///
+/// Fails with `InvalidArgument` when the graph declares no root: "unreferenced" is relative to a
+/// declaration, and inferring roots from what nothing consumes would make every stray node its own
+/// reason to exist. Fails with `NotFound` when the package names a node the graph does not have.
+[[nodiscard]] Expected<ContentAudit, Error> audit_content(
+    const BuildGraph& graph, const PackageSet& packages, const BuildReport& report,
+    const std::vector<std::string>& project_files);
+
+/// The audit as text. Ends with `unreferenced: <n>`, the count a script reads.
+[[nodiscard]] std::string content_audit_report(const ContentAudit& audit);
 
 }  // namespace cy::build
 

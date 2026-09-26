@@ -9,6 +9,13 @@ cybuild 1
 #
 # THE CONCATENATION ORDER IS THE DECLARATION ORDER: palette, then card. card.cpp parses a stream
 # carrying two `cycard 1` headers for that reason and says so where it does it.
+#
+# THE ENTRY POINT IS DECLARED, not inferred (M11.d task 7.4). `cy_build build --audit` reads every
+# file in the package back to this root, and flags any node it does not reach and any file in the
+# project no node reads — so a card added to `card/` and never wired in is reported, not shipped
+# silently or left behind silently. `ship.py` requires the audit to flag nothing.
+
+root "package:card"
 
 node "import:palette" import "normalise"
   source "card/palette.cycard"

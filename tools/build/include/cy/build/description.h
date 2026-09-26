@@ -11,15 +11,23 @@
 // `cyworld` — two-space indent, quoted names, `#` comments, one record per line:
 //
 //     cybuild 1
+//     root "package:city"
 //     node "import:city" import "copy" 1
 //       platform "host"
 //       profile "client"
 //       bundle "base"
+//       plugin "city-pack"
+//       region "3 -2"
 //       source "assets/city.txt"
 //       upstream "generate:types"
 //       output "derived/city.bin"
 //       option "quality" "high"
 //       distributable false
+//
+// A `root` line declares a DELIVERY ROOT — an entry point the build exists to produce — and may
+// name a node declared later in the file. Roots are what the content audit reads "why is this in
+// the build?" from, and what lets it flag content no root reaches (M11.d task 7.4). A description
+// with no `root` line is still valid; it just cannot say that anything in it is unreferenced.
 //
 // The node's four head words are its name, its kind, its producer and that producer's version. The
 // version is on the node rather than looked up from the registry on purpose: a remote worker keys

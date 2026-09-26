@@ -19,6 +19,15 @@ launched, with every claim checked against what the two programs printed.
   3. LAUNCH      `cy_sample_ship` opens the installation, reads the card by logical name, composes
                  it, opens a window and presents it. What it could not do it reports as NOT
                  EVALUATED, which this driver records as not evaluated too — never as a pass.
+  1b. AUDIT     every file in the package is read back to the description's declared root, and
+                 nothing in the project is left unreferenced — no node the root does not reach, no
+                 file no node reads (task 7.4). A card dropped into `card/` and never wired in
+                 fails the run rather than shipping, or staying behind, silently.
+  1c. SYMBOLS    the program is stripped, its symbols archived under its build identity, and the
+                 archive is proved to belong to the stripped binary; the LAUNCH then runs the
+                 stripped binary, so what was verified is what ran (task 7.5). A reproducibility
+                 bundle — manifest, description, configuration, artefact hashes, symbols — is
+                 written beside it and checked complete.
   4. THE CONTENT DECIDES THE PIXELS. One line of the card changes; the palette's import is served
                  from the cache and the card's is not; the package is rebuilt and reinstalled; and
                  the program reports a card of a different size out of the same installation
@@ -35,6 +44,7 @@ length, the card says so on the screen, and this docstring says so to whoever gr
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -46,8 +56,10 @@ from pathlib import Path
 SAMPLE = Path(__file__).resolve().parent
 ROOT = SAMPLE.parents[1]
 sys.path.insert(0, str(SAMPLE.parent / "harness"))
+sys.path.insert(0, str(ROOT / "tools" / "build"))
 
 import artefact  # noqa: E402  — the path above is what makes it importable
+import symbols  # noqa: E402  — tools/build/symbols.py, task 7.5
 from artefact import Failed, Report, expect  # noqa: E402
 
 OUTCOME = re.compile(r"^(ran|cached|rebuilt|skipped|failed)\s+(\S+)\s+([0-9a-f]{16})")
@@ -78,16 +90,40 @@ def revision() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
+def project_revision() -> str:
+    """The PROJECT's revision: the last commit that touched the project's own tree. It is not the
+    engine's — the whole point of the two fields — and in this repository the two differ whenever
+    anything outside `samples/11-ship/project/` changed since the card last did."""
+    result = run(["git", "log", "-1", "--format=%H", "--", str(SAMPLE / "project")], timeout=30)
+    text = result.stdout.strip()
+    return text if result.returncode == 0 and text else "unknown"
+
+
+# THE PLUGIN LOCKFILE. `project-and-plugins` makes a committed lockfile what fixes a build's plugin
+# set; this project declares no plugins, so there is no lockfile to hash. Written as a statement
+# rather than left empty, because an empty field reads as "the build did not record its lockfile".
+LOCKFILE = "none:the-project-declares-no-plugins"
+# The cook configuration: what every node of the card's graph is cooked FOR. Not the build profile.
+COOK_CONFIGURATION = "platform=host profile=client"
+
+
 class Tools:
     def __init__(self, sample: Path, cy_build: Path, work: Path) -> None:
         self.sample = sample
+        # The binary as the build tree produced it. `sample` becomes the STRIPPED copy once act 1c
+        # has split it; this stays pointed at the tree, which is where the configuration is read.
+        self.built = sample
         self.cy_build = cy_build
         self.work = work
         self.project = work / "project"
         self.artefacts = work / "artefacts"
         self.cache = work / "cache"
         self.install = work / "install"
-        self.revision = revision()
+        self.symbols = work / "symbols"
+        self.shipped = work / "shipped" / sample.name
+        self.reproduce = work / "reproduce"
+        self.engine_revision = revision()
+        self.revision = project_revision()
 
     def build(self, package: Path) -> subprocess.CompletedProcess:
         return run([
@@ -100,6 +136,10 @@ class Tools:
             "--platform", "host",
             "--profile", "client",
             "--revision", self.revision,
+            "--engine-revision", self.engine_revision,
+            "--lockfile", LOCKFILE,
+            "--cook-configuration", COOK_CONFIGURATION,
+            "--audit",
         ])
 
     def install_package(self, package: Path) -> subprocess.CompletedProcess:
@@ -140,13 +180,18 @@ def act_ship(tools: Tools, report: Report) -> None:
     def _force_delete(func, path, _exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
-    for directory in (tools.project, tools.cache, tools.artefacts, tools.install):
+    for directory in (tools.project, tools.cache, tools.artefacts, tools.install, tools.symbols,
+                      tools.shipped.parent, tools.reproduce):
         if directory.exists():
             shutil.rmtree(directory, onerror=_force_delete)
     tools.work.mkdir(parents=True, exist_ok=True)
     shutil.copytree(SAMPLE / "project", tools.project)
 
     cold = tools.build(tools.work / "base.cypackage")
+    # EXIT 4 IS `cy_build build --audit`'s "it built, and the audit flagged content": read the
+    # audit so the failure names the unreferenced file rather than calling the build broken.
+    if cold.returncode == 4:
+        act_audit(cold.stdout, report)
     expect(cold.returncode == 0, f"the card's graph did not build:\n{cold.stdout}{cold.stderr}")
     nodes = outcomes(cold.stdout)
     expect(set(nodes) == NODES,
@@ -167,6 +212,115 @@ def act_ship(tools: Tools, report: Report) -> None:
     installed = tools.install_package(tools.work / "base.cypackage")
     expect(installed.returncode == 0, f"the build did not install:\n{installed.stderr}")
     report.did("the build is installed", installed.stdout.strip().splitlines()[-1])
+    act_audit(cold.stdout, report)
+
+
+# --- Act 1b: the content audit -----------------------------------------------------------------------
+
+
+AUDITED_FILE = re.compile(r"^  file (\S+)\s+(\d+) bytes, bundle (\S+)\n    why (.+)$", re.MULTILINE)
+UNREFERENCED = re.compile(r"^unreferenced: (\d+)$", re.MULTILINE)
+
+
+def act_audit(build_output: str, report: Report) -> None:
+    """Task 7.4: why each file is in the build, and nothing in it or beside it for no reason."""
+    print("\n==> Act 1b — every file in the package, and the chain from the entry point to it")
+    files = {match.group(1): match.group(4) for match in AUDITED_FILE.finditer(build_output)}
+    unreferenced = UNREFERENCED.search(build_output)
+    expect(unreferenced is not None, f"the build printed no content audit:\n{build_output}")
+    flagged = [line.strip() for line in build_output.splitlines() if "UNREFERENCED" in line]
+    expect(int(unreferenced.group(1)) == 0 and not flagged,
+           "the content audit flagged content nothing asked for:\n  " + "\n  ".join(flagged))
+    expect(files, "the audit named no file")
+    for name, why in sorted(files.items()):
+        expect(why.startswith("package:card"),
+               f"{name} is in the build for a reason that does not start at the entry point: {why}")
+        print(f"    {name:24} {why}")
+    report.did("every file in the package traces to the declared entry point, and nothing is "
+               "unreferenced", f"{len(files)} files from package:card, 0 unreferenced")
+
+
+# --- Act 1c: symbols, and the reproducibility bundle -------------------------------------------------
+
+
+def act_symbols(tools: Tools, report: Report) -> None:
+    """Task 7.5: the binary that ships is stripped, and the symbols that belong to it are archived
+    under its build identity — proved to belong to it, not assumed to."""
+    print("\n==> Act 1c — the binary is stripped, its symbols archived by build identity")
+    manifest = (tools.work / "base.cypackage").read_text()
+    build = re.search(r"^build (\S+)$", manifest, re.MULTILINE)
+    expect(build is not None, "the package manifest names no build")
+    try:
+        done = symbols.split(tools.sample, tools.shipped, tools.symbols, build.group(1))
+        proved = symbols.verify(done.shipped, tools.symbols, "samples/11-ship/main.cpp")
+        located = symbols.locate(tools.symbols, build.group(1))
+    except symbols.SymbolError as refusal:
+        raise Failed(f"the shipped binary's symbols: {refusal}") from None
+    expect([path for _, path in located] == [done.symbols],
+           f"the package build identity does not locate the archived symbols: {located}")
+    saved = tools.sample.stat().st_size - done.shipped.stat().st_size
+    report.did("the shipped binary is stripped and its archived symbols are proved to be its own",
+               f"build-id {proved.build_id[:16]}, {saved} bytes removed, main -> "
+               f"{Path(proved.location.split(':')[0]).name}:{proved.location.rsplit(':', 1)[-1]}")
+    # FROM HERE ON THE LAUNCH RUNS THE STRIPPED BINARY. What was verified is what runs.
+    tools.sample = done.shipped
+    write_reproducibility_bundle(tools, build.group(1), done, report)
+
+
+def cmake_configuration(sample: Path) -> list[str]:
+    """The configuration the binary was built under, from the build tree's own cache."""
+    for parent in sample.resolve().parents:
+        cache = parent / "CMakeCache.txt"
+        if cache.is_file():
+            wanted = re.compile(r"^(CMAKE_BUILD_TYPE|CMAKE_CXX_COMPILER|CMAKE_C_COMPILER|"
+                                r"CMAKE_CXX_FLAGS_[A-Z]+|CY_[A-Z0-9_]+):[A-Z]+=(.*)$")
+            return sorted(line for line in cache.read_text().splitlines() if wanted.match(line))
+    return []
+
+
+def write_reproducibility_bundle(tools: Tools, build_id: str, split_result, report: Report) -> None:
+    """`build-and-packaging`: "manifests, lockfile, configuration, artefact hashes, and symbols",
+    in one directory keyed by the build identity — and checked complete rather than written and
+    trusted."""
+    bundle = tools.reproduce / build_id
+    bundle.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(tools.work / "base.cypackage", bundle / "package.cypackage")
+    shutil.copyfile(tools.project / "build" / "ship.cybuild", bundle / "description.cybuild")
+    (bundle / "lockfile").write_text(f"{LOCKFILE}\n")
+    configuration = cmake_configuration(tools.built)
+    expect(configuration, "the build tree's configuration could not be read for the bundle")
+    (bundle / "configuration").write_text("\n".join(configuration) + "\n")
+    chunks = re.findall(r"^  chunk (\S+) ([0-9a-f]+) (\d+)", (bundle / "package.cypackage").read_text(),
+                        re.MULTILINE)
+    (bundle / "artefacts").write_text("".join(f"{digest} {size} {name}\n"
+                                              for name, digest, size in chunks))
+    symbol_dir = bundle / "symbols"
+    target = symbols.debug_path(symbol_dir, split_result.build_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(split_result.symbols, target)
+    (symbol_dir / "builds").mkdir(exist_ok=True)
+    shutil.copyfile(tools.symbols / "builds" / build_id, symbol_dir / "builds" / build_id)
+    (bundle / "binaries").write_text(
+        f"{split_result.name} {split_result.build_id} "
+        f"{hashlib.sha256(Path(split_result.shipped).read_bytes()).hexdigest()}\n")
+
+    # COMPLETE, OR NOT A BUNDLE: every chunk the manifest names, the configuration, the lockfile,
+    # and symbols that verify against the shipped binary FROM THE BUNDLE ALONE.
+    expect(len(chunks) == manifest_chunk_count(tools.work / "base.cypackage"),
+           "the bundle's artefact list does not cover every chunk in the manifest")
+    try:
+        symbols.verify(Path(split_result.shipped), symbol_dir, "samples/11-ship/main.cpp")
+    except symbols.SymbolError as refusal:
+        raise Failed(f"the reproducibility bundle's symbols do not verify: {refusal}") from None
+    contents = sorted(path.relative_to(bundle).as_posix() for path in bundle.rglob("*")
+                      if path.is_file())
+    report.did("a reproducibility bundle is keyed by the build identity and verifies on its own",
+               f"{bundle.relative_to(tools.work)}: {len(contents)} files, {len(chunks)} artefact "
+               f"hashes, {len(configuration)} configuration entries")
+
+
+def manifest_chunk_count(manifest: Path) -> int:
+    return sum(1 for line in manifest.read_text().splitlines() if line.startswith("  chunk "))
 
 
 # --- Act 2 and 3: provenance, and the launch --------------------------------------------------------
@@ -174,6 +328,10 @@ def act_ship(tools: Tools, report: Report) -> None:
 
 PROVENANCE = re.compile(r"provenance\s+project=(\S*) revision=(\S*) platform=(\S*) profile=(\S*)")
 TOOLCHAIN = re.compile(r"toolchain=(\S*) content-version=(\d+)")
+ENGINE = re.compile(r"engine-revision=(\S*) lockfile=(\S*)")
+COOK = re.compile(r"cook-configuration=(.*)$", re.MULTILINE)
+VERSIONS = re.compile(r"toolchain-version (.+)$", re.MULTILINE)
+BUILD = re.compile(r"build\s+([0-9a-f]{16,})\s+\(verified")
 CARD = re.compile(r"card\s+(\S+) (\d+)x(\d+), (\d+) directives, (\d+) bytes")
 PRESENTED = re.compile(r"frames presented\s+(\d+)")
 # Anchored, because the coverage table also carries a `device class` line two rows down and an
@@ -218,7 +376,22 @@ def act_launch(tools: Tools, report: Report, platform: str, frames: int,
     toolchain = TOOLCHAIN.search(text)
     expect(toolchain is not None and toolchain.group(1) != "",
            f"the package carries no toolchain fingerprint:\n{text}")
+    # THE REST OF THE SEVEN (task 7.5), each read back out of the installed manifest and compared
+    # with what the build was given — a field the writer drops or the reader loses fails here.
+    engine = ENGINE.search(text)
+    expect(engine is not None and engine.group(1) == tools.engine_revision,
+           f"the package does not carry the engine revision it was built from:\n{text}")
+    expect(engine.group(2) == LOCKFILE, f"the package's lockfile is {engine.group(2)!r}")
+    cook = COOK.search(text)
+    expect(cook is not None and cook.group(1).strip() == COOK_CONFIGURATION,
+           f"the package does not carry its cook configuration:\n{text}")
+    versions = VERSIONS.findall(text)
+    expect(any(line.startswith("compiler") for line in versions),
+           f"the package carries no readable toolchain versions:\n{text}")
+    build_line = BUILD.search(text)
+    expect(build_line is not None, f"the launch printed no build identity:\n{text}")
     report.did("the launch read its provenance out of the package it was installed from",
+               f"build={build_line.group(1)[:12]} engine={engine.group(1)[:12]} "
                f"revision={provenance.group(2)[:12]} platform={provenance.group(3)} "
                f"profile={provenance.group(4)} toolchain={toolchain.group(1)[:12]} "
                f"content-version={toolchain.group(2)}")
@@ -332,6 +505,7 @@ def main(argv: list[str] | None = None) -> int:
         tools = Tools(sample, cy_build, work)
 
         act_ship(tools, report)
+        act_symbols(tools, report)
 
         # `--platform both` runs the SAME BINARY twice, once per display server, which is the only
         # form in which task 8.2's claim — that it draws through the native backend AND through

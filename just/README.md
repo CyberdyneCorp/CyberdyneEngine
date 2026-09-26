@@ -52,4 +52,12 @@ them together is the job pool every compile and link goes through (`cmake/jobpoo
 ctest stays one test at a time unless `CY_JOBS` is set. `tools/workflow/README.md` has the design;
 `tools/ci/test_recipes.py` holds the rule.
 
+**Closing a milestone.** `just roadmap-milestone <rung>` runs the full flattened ledger, and that
+stays the default — it is what runs nightly and at M11.e, and a green full run on a clean tree is
+what records the incremental baseline. `just roadmap-milestone <rung> --incremental
+[--changed-since <commit>]` runs only the rung's own criteria, the earlier ones whose inputs changed
+since the last green full run (or `<commit>`), and the smoke set — build, format, lint, test-all.
+A criterion whose inputs cannot be read is always run; `--list` prints the selection and each
+reason. `tools/roadmap/README.md` has the rules.
+
 **Governed by**: `developer-workflow-and-just`.

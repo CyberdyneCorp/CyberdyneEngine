@@ -67,6 +67,10 @@ namespace {
         node.profile = value;
     } else if (keyword == "bundle") {
         node.bundle = value;
+    } else if (keyword == "plugin") {
+        node.plugin = value;
+    } else if (keyword == "region") {
+        node.region = value;
     } else if (keyword == "source") {
         node.sources.push_back(value);
     } else if (keyword == "upstream") {
@@ -111,9 +115,20 @@ Status read_description(std::string_view document, BuildGraph& out,
 
     for (usize index = 1; index < lines->size(); ++index) {
         const text::Line& line = (*lines)[index];
+        if (line.depth == 0 && line.word(0) == "root") {
+            // A delivery root — M11.d task 7.4. It may name a node declared further down, so it is
+            // resolved at `finalize()` rather than here.
+            if (line.words.size() != 2) {
+                return make_unexpected(invalid("a root names exactly one node"));
+            }
+            if (Status declared = out.declare_root(std::string(line.word(1))); !declared) {
+                return declared;
+            }
+            continue;
+        }
         if (line.depth == 0) {
             if (line.word(0) != "node") {
-                return make_unexpected(invalid("expected a node record"));
+                return make_unexpected(invalid("expected a node record or a root"));
             }
             if (Status flushed = flush(); !flushed) {
                 return flushed;
@@ -139,6 +154,11 @@ Status read_description(std::string_view document, BuildGraph& out,
 
 std::string write_description(const BuildGraph& graph) {
     std::string out = "cybuild 1\n";
+    for (const std::string& root : graph.declared_root_names()) {
+        out += "root ";
+        out += text::quote(root);
+        out += '\n';
+    }
     for (u32 index = 0; index < graph.size(); ++index) {
         const NodeDesc& node = graph.node(static_cast<NodeId>(index));
         out += "node ";
@@ -171,6 +191,12 @@ std::string write_description(const BuildGraph& graph) {
         field("profile", node.profile);
         if (!node.bundle.empty()) {
             field("bundle", node.bundle);
+        }
+        if (!node.plugin.empty()) {
+            field("plugin", node.plugin);
+        }
+        if (!node.region.empty()) {
+            field("region", node.region);
         }
         for (const std::string& source : node.sources) {
             field("source", source);

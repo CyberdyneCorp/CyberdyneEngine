@@ -85,7 +85,32 @@ struct RecordBatch {
     std::atomic<bool> failed{false};
 };
 
+/// One bit per view, from bit 0. `views` is at most 32, which `PassBuilder::views` enforces.
+u32 view_mask_of(u32 views) noexcept {
+    return views >= 32 ? ~0U : ((1U << views) - 1U);
+}
+
 }  // namespace
+
+rhi::TextureViewHandle PassContext::attachment_view(ResourceId resource) const noexcept {
+    ResourceId target = resource;
+    if (sample_count > 1 && graph != nullptr && resource < graph->resource_count()) {
+        const ResourceId twin = graph->resource(resource).multisampled;
+        target = twin != kInvalidResource ? twin : resource;
+    }
+    if (view_count > 1 && view_mask == 0 && graph != nullptr && target < graph->resource_count()) {
+        // The emulated multi-view: this recording's single layer of the declared attachment.
+        for (const Use& use : graph->pass_uses(pass)) {
+            if (use.resource == target) {
+                rhi::SubresourceRange range = use.range;
+                range.base_layer = static_cast<u16>(use.range.base_layer + view_index);
+                range.layer_count = 1;
+                return executor->view(target, range);
+            }
+        }
+    }
+    return executor->view(target);
+}
 
 GraphExecutor::GraphExecutor(Allocator& allocator, rhi::Device& device) noexcept
     : allocator_(&allocator),
@@ -240,6 +265,49 @@ Status GraphExecutor::bind_and_view(RenderGraph& graph, const CompiledGraph& pla
                     return pushed;
                 }
             }
+            if (Status layered = create_view_layers(graph, scheduled.pass); !layered) {
+                return layered;
+            }
+        }
+    }
+    return ok();
+}
+
+Status GraphExecutor::create_view_layers(RenderGraph& graph, PassId pass) noexcept {
+    // Only the multi-view BASELINE needs these: a device with the capability renders every view
+    // through the whole view above and a view mask.
+    const u32 views = graph.pass_view_count(pass);
+    if (views <= 1 || records_multiview()) {
+        return ok();
+    }
+    for (const Use& use : graph.pass_uses(pass)) {
+        const ResourceInfo& info = graph.resource(use.resource);
+        if (!info.is_texture || textures_[use.resource].is_null() ||
+            !admits_a_view(info.texture_usage)) {
+            continue;
+        }
+        for (u32 view = 0; view < views; ++view) {
+            rhi::SubresourceRange range = use.range;
+            range.base_layer = static_cast<u16>(use.range.base_layer + view);
+            range.layer_count = 1;
+            if (!this->view(use.resource, range).is_null()) {
+                continue;
+            }
+            rhi::TextureViewDescription description;
+            description.name = info.name;
+            description.texture = textures_[use.resource];
+            description.dimension = info.texture.dimension;
+            description.format = info.texture.format;
+            description.range = range;
+            Expected<rhi::TextureViewHandle, Error> handle =
+                device_->create_texture_view(description);
+            if (!handle) {
+                return make_unexpected(handle.error());
+            }
+            if (Status pushed = views_.push_back(ViewEntry{use.resource, range, *handle});
+                !pushed) {
+                return pushed;
+            }
         }
     }
     return ok();
@@ -298,8 +366,27 @@ Status GraphExecutor::record_pass(RenderGraph& graph, PassId pass, u32 schedule_
     context.executor = this;
     context.pass = pass;
     context.schedule_index = schedule_index;
-    record(context, graph.pass_record_user(pass));
+    context.graph = &graph;
+    context.sample_count = graph.pass_sample_count(pass);
+    context.view_count = graph.pass_view_count(pass);
+    if (context.view_count <= 1 || records_multiview()) {
+        // One recording. With several views it carries one mask bit per view, and a pipeline
+        // created with that mask renders all of them in one pass.
+        context.view_mask = context.view_count > 1 ? view_mask_of(context.view_count) : 0U;
+        record(context, graph.pass_record_user(pass));
+        return ok();
+    }
+    // THE BASELINE, where the device reports no multi-view: the same callback once per view, each
+    // into a single-layer view of its layer. Same subresources, same order, same plan.
+    for (u32 view = 0; view < context.view_count; ++view) {
+        context.view_index = view;
+        record(context, graph.pass_record_user(pass));
+    }
     return ok();
+}
+
+bool GraphExecutor::records_multiview() const noexcept {
+    return device_->capabilities().has(rhi::Capability::Multiview);
 }
 
 Status GraphExecutor::record_and_submit(RenderGraph& graph, CompiledGraph& plan,

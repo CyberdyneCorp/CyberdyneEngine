@@ -35,8 +35,9 @@
 //     and with `CY_QUIET_HOST=<this pid>:<this process's start time>` in its environment. The
 //     marker is set only here, after step 1 passed; the test harness enforces its wall-clock stall
 //     ceiling only when it finds the marker AND verifies through /proc that the pid is a live
-//     ancestor started at that tick whose executable is this one (tests/harness/, M11.c's ninth
-//     close, the owner's option B). A marker exported by hand names no such ancestor.
+//     ancestor started at that tick whose executable is this very file — its device and inode,
+//     not its name (tests/harness/, M11.c's ninth close, the owner's option B; M11.d task 9.7).
+//     A marker exported by hand names no such ancestor.
 //  3. ACROSS THE RUN: judges the host a second at a time with the command's whole tree subtracted
 //     (host_load.h says how), and requires the BUSIEST second to be quiet. A run shorter than a
 //     second is judged over a full second, because a tick's resolution decides nothing shorter.

@@ -1,0 +1,22 @@
+# Compile definitions that name the repository ROOT and are read as text, never opened.
+#
+# `just roadmap-milestone <rung> --incremental` treats a definition naming the repository root as
+# "this object can read any file", which makes every criterion whose tests link the object UNKNOWN,
+# and therefore selected. That is right by default and wrong for a definition that is only a string.
+# Each entry here is a person's review that it is only a string, PINNED so the review cannot outlive
+# the code it read: `used_by` is every file allowed to name one of `tokens` (in `pathspec`), and
+# `digest` is over their content. The exemption LAPSES — the definition is a read again — when any
+# of those files changes or another file names a token. Re-read them, then update the digest the
+# lapsed message prints. See tools/roadmap/incremental.py, `exempt_definitions`.
+
+[[definition]]
+name = "CY_DIAG_SOURCE_ROOT"
+reason = "the prefix sanitise_source_path() strips from a reported source location; it is compared with memcmp and never opened. Residual, accepted: a call to source_root() through a pointer, or spelt with a space before its parentheses, is not seen by the pin"
+tokens = ["CY_DIAG_SOURCE_ROOT", "source_root()"]
+pathspec = ["*.c", "*.cc", "*.cpp", "*.h", "*.hpp", "*.inl", "*.mm", "*.m"]
+used_by = [
+    "src/core/diagnostics/include/cy/core/diagnostics/source.h",
+    "src/core/diagnostics/src/source.cpp",
+    "src/core/diagnostics/tests/test_source_privacy.cpp",
+]
+digest = "fe288b243db10e1a"

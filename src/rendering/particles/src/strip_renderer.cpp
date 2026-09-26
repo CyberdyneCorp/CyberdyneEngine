@@ -33,6 +33,8 @@ void record_strips(const pipeline::ExtensionContext& context, void* user) noexce
     }
     rhi::CommandBuffer& commands = *context.commands;
     renderer->draw().bind(commands);
+    // First vertex ZERO, for the reason particle_renderer.cpp gives: it is the one base on which
+    // SPIR-V's and Metal's `SV_VertexID` agree.
     commands.draw((renderer->live() - 1U) * kVerticesPerSegment, 1, 0, 0);
     ++renderer->mutable_report().draws;
 }

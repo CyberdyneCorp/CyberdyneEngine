@@ -65,8 +65,10 @@ carries where each stands as data.
   the render graph places into, and the GPU memory report that feeds the engine's own budget tree.
 - `null/include/cy/backends/rhi/null/null_device.h` — why the null backend is not a set of empty
   functions, and what its command log is for.
-- `vulkan/src/vulkan_instance.cpp` — queue selection by capability, the 1.3 baseline, and why
-  synchronisation validation has to be asked for explicitly.
+- `vulkan/src/vulkan_instance.cpp` — queue selection by capability, the 1.3 baseline, why
+  synchronisation validation has to be asked for explicitly, and why `shaderDrawParameters` is
+  required rather than optional: the portable `SV_VertexID` every procedural vertex stage uses
+  lowers on SPIR-V to `VertexIndex - BaseVertex`, which declares `DrawParameters`.
 
 ## Complete-grade requirement audit
 

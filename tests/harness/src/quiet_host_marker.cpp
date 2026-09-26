@@ -33,14 +33,26 @@
 //      descend from, and is refused;
 //   2. that ancestor's start time is the marker's — so a pid reused by an unrelated process after
 //      the wrapper exited is refused;
-//   3. that ancestor's executable is `cy_quiet_host` — so a marker naming one's own shell or
-//      ctest, which ARE ancestors, is refused.
+//   3. that ancestor's executable IS the `cy_quiet_host` this build produced — the same file, by
+//      device and inode, as the path CMake handed this library at configure time — so a marker
+//      naming one's own shell or ctest, which ARE ancestors, is refused, and so is any other
+//      binary merely NAMED `cy_quiet_host`.
 //
 // A test run that is a descendant of a live wrapper that passed its check is exactly what the
 // premise means, so that is not a forgery. A descendant that daemonises out of the tree loses its
 // ancestry and is refused: the check errs towards reporting, never towards failing a case on a
 // host nobody checked. Where /proc does not exist the marker is never trusted, and the stall
 // ceiling is reported and not enforced — Windows and macOS have no wrapper to be inside.
+//
+// WHY THE IDENTITY AND NOT THE NAME (M11.d task 9.7). Until then rule 3 compared the BASENAME of
+// the ancestor's `/proc/<pid>/exe`, so a copy of `sh` renamed `cy_quiet_host` that set the marker
+// to its own pid and start time and ran a suite as its child was trusted, and the stall ceiling was
+// enforced on a host nothing had checked. `smoke.quiet_host_marker` runs exactly that impostor. The
+// kernel resolves `/proc/<pid>/exe` to the file the process is running, even once that file has
+// been unlinked, so `stat` on it gives the device and inode of the very binary; comparing them with
+// the built wrapper's needs no name at all. What this refuses that a name did not: a wrapper from
+// ANOTHER build tree, a copy of the wrapper, and a wrapper relinked while it ran (its running image
+// is the old inode). Each is reported, not failed — the direction this check always errs in.
 
 #include <cy/test/quiet_host.h>
 
@@ -50,8 +62,8 @@
 #include <cstring>
 
 #if defined(__linux__)
+#    include <sys/stat.h>
 #    include <unistd.h>
-#    include <climits>
 #endif
 
 namespace cy::test {
@@ -60,6 +72,13 @@ namespace {
 #if defined(__linux__)
 
 constexpr const char* kWrapperName = "cy_quiet_host";
+/// The wrapper this build produced, as tests/harness/CMakeLists.txt passes it. Absent when the tree
+/// has no wrapper, and then no marker is trusted.
+#    if defined(CY_QUIET_HOST_WRAPPER)
+constexpr const char* kBuiltWrapper = CY_QUIET_HOST_WRAPPER;
+#    else
+constexpr const char* kBuiltWrapper = nullptr;
+#    endif
 /// A process tree deeper than this is a loop in a /proc that is changing under the walk.
 constexpr int kMaximumDepth = 4096;
 
@@ -118,31 +137,32 @@ StatFields read_stat(long pid) noexcept {
     return fields;
 }
 
-/// The basename of `/proc/<pid>/exe`, with the " (deleted)" the kernel appends when the binary was
-/// replaced while it ran (a build during the run). Empty when the link cannot be read.
-void executable_name(long pid, char* out, std::size_t size) noexcept {
+/// Where `/proc/<pid>/exe` points, for the reason a refusal prints; " (deleted)" is kept, since a
+/// wrapper relinked while it ran is one of the things refused. Empty when it cannot be read.
+void executable_path(long pid, char* out, std::size_t size) noexcept {
     out[0] = '\0';
     char path[64];
     std::snprintf(path, sizeof(path), "/proc/%ld/exe", pid);
-    char target[PATH_MAX];
-    const ::ssize_t got = ::readlink(path, target, sizeof(target) - 1);
-    if (got <= 0) {
-        return;
-    }
-    target[got] = '\0';
-    constexpr const char* kDeleted = " (deleted)";
-    const std::size_t length = std::strlen(target);
-    const std::size_t suffix = std::strlen(kDeleted);
-    if (length > suffix && std::strcmp(target + length - suffix, kDeleted) == 0) {
-        target[length - suffix] = '\0';
-    }
-    const char* slash = std::strrchr(target, '/');
-    std::snprintf(out, size, "%s", slash != nullptr ? slash + 1 : target);
+    const ::ssize_t got = ::readlink(path, out, size - 1);
+    out[got > 0 ? got : 0] = '\0';
 }
 
-/// The ancestor the marker names, judged: its start time, then its executable.
+/// Whether `/proc/<pid>/exe` is the file at `wrapper`: the same device and inode. `stat` follows
+/// the link to the image the process runs, so no name — the ancestor's or the wrapper's — enters.
+bool runs_executable(long pid, const char* wrapper) noexcept {
+    char path[64];
+    std::snprintf(path, sizeof(path), "/proc/%ld/exe", pid);
+    struct ::stat running{};
+    struct ::stat built{};
+    if (::stat(path, &running) != 0 || ::stat(wrapper, &built) != 0) {
+        return false;
+    }
+    return running.st_dev == built.st_dev && running.st_ino == built.st_ino;
+}
+
+/// The ancestor the marker names, judged: its start time, then its executable's identity.
 QuietHostJudgement judge_ancestor(long pid, unsigned long long marker_start,
-                                  unsigned long long actual_start) noexcept {
+                                  unsigned long long actual_start, const char* wrapper) noexcept {
     QuietHostJudgement out;
     out.pid = pid;
     if (actual_start != marker_start) {
@@ -153,14 +173,22 @@ QuietHostJudgement judge_ancestor(long pid, unsigned long long marker_start,
                       kQuietHostMarkerVariable, pid, marker_start, actual_start);
         return out;
     }
-    char name[256];
-    executable_name(pid, name, sizeof(name));
-    if (std::strcmp(name, kWrapperName) != 0) {
+    if (wrapper == nullptr || *wrapper == '\0') {
         out.verdict = QuietHostMarker::NotTheWrapper;
         std::snprintf(out.reason, sizeof(out.reason),
-                      "%s names pid %ld, an ancestor that is not %s (its executable is '%.96s')",
+                      "%s names pid %ld, but this build produced no %s to compare it with",
+                      kQuietHostMarkerVariable, pid, kWrapperName);
+        return out;
+    }
+    if (!runs_executable(pid, wrapper)) {
+        char running[256];
+        executable_path(pid, running, sizeof(running));
+        out.verdict = QuietHostMarker::NotTheWrapper;
+        std::snprintf(out.reason, sizeof(out.reason),
+                      "%s names pid %ld, an ancestor that is not the %s this build produced (it "
+                      "runs '%.64s', not the file at '%.64s')",
                       kQuietHostMarkerVariable, pid, kWrapperName,
-                      name[0] != '\0' ? name : "unreadable");
+                      running[0] != '\0' ? running : "unreadable", wrapper);
         return out;
     }
     out.verdict = QuietHostMarker::Trusted;
@@ -183,7 +211,19 @@ unsigned long long process_start_ticks(long pid) noexcept {
 #endif
 }
 
+const char* built_quiet_host_wrapper() noexcept {
+#if defined(__linux__)
+    return kBuiltWrapper;
+#else
+    return nullptr;
+#endif
+}
+
 QuietHostJudgement judge_quiet_host_marker(const char* marker) noexcept {
+    return judge_quiet_host_marker(marker, built_quiet_host_wrapper());
+}
+
+QuietHostJudgement judge_quiet_host_marker(const char* marker, const char* wrapper) noexcept {
     QuietHostJudgement out;
     if (marker == nullptr || *marker == '\0') {
         out.verdict = QuietHostMarker::Absent;
@@ -215,7 +255,7 @@ QuietHostJudgement judge_quiet_host_marker(const char* marker) noexcept {
             break;
         }
         if (current == pid) {
-            return judge_ancestor(pid, start, fields.start);
+            return judge_ancestor(pid, start, fields.start, wrapper);
         }
         current = fields.parent;
     }
@@ -227,6 +267,7 @@ QuietHostJudgement judge_quiet_host_marker(const char* marker) noexcept {
                   kQuietHostMarkerVariable, pid);
     return out;
 #else
+    (void)wrapper;
     out.verdict = QuietHostMarker::Unsupported;
     std::snprintf(out.reason, sizeof(out.reason),
                   "this platform has no /proc to verify a %s marker against, and no wrapper",

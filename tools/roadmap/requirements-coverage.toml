@@ -2819,8 +2819,9 @@ note = "BOTH SCENARIOS ARE ARITHMETIC HERE AND NEITHER IS AN IMAGE. `blur length
 [[coverage]]
 row = "rendering-post-processing"
 requirement = "Bloom"
-evidence = "exempt:m11e"
-note = "THE THRESHOLD, THE KARIS WEIGHT AND THE ENERGY REDISTRIBUTION ARE OBSERVED — `bloom has a soft knee, suppresses fireflies, and redistributes rather than adds` drives all three, including that the composite scales the scene down by exactly what the bloom adds. What is missing is the requirement's first sentence: 'a PROGRESSIVE DOWNSAMPLE AND UPSAMPLE CHAIN', with the Karis average on the first downsample and a tent filter on upsample. There is no mip chain and no filter; `BloomSettings::mip_count` and `anamorphic` are read by nothing, and lens dirt does not exist. The weight function is where a firefly is suppressed only if something applies it. What would observe it: the chain, with a device case requiring a single bright texel to produce a stable halo across frames."
+evidence = "test:render.bloom"
+case = "a bright region glows onto its neighbours, falling off and centred on its source"
+note = "THE CHAIN IS A DEVICE PASS NOW: `forward/bloom_chain.h` declares a prefilter, a downsample per level, an upsample per level and a composite (`FramePassKind::Bloom`, between the temporal stage and the post-process), `cy/bloom.slang` shades them and `pipeline::BloomRenderer` records them. The named case runs that chain on Vulkan over a bright block and requires a halo that falls off and is centred on its source in both axes. Its companions in render.bloom cover every other sentence: `the Karis average stops one very bright texel producing a bloom star` (a one-texel firefly scatters about a third of what a block of the same energy does and a quarter of what it scatters unweighted, and the same energy under a one-texel shift — the Firefly suppression scenario); `bloom moves energy and never adds it` (Energy-conserving default: the frame never gains energy and most of what the threshold took returns); `a dim scene below the threshold comes out of the chain exactly as it went in` (the soft knee, bit for bit); `an anamorphic stretch widens the halo horizontally…` and `lens dirt brightens the bloom where the mask is…` (the two optional controls); `the assembled frame records bloom, and at intensity zero it is the frame without it` (FrameScene texel-identical); and `with bloom off the assembled frame is the frame drawn before bloom existed`, which holds the off path to `references/frame_scene_before_bloom.png`, render.pipeline's capture from a build before this change (byte-identical on the machine that wrote it). unit.render_forward's `with bloom off, nothing of it is declared…` pins absence, and unit.render_post's level-weight and composite cases pin the processor twins of the shader's arithmetic. D3D12 is not covered: the fragment entry points compile to HLSL but the shared `fullscreenVertex` is the declared gap m11c:every-shader-reaches-every-target."
 
 [[coverage]]
 row = "rendering-post-processing"
@@ -2870,13 +2871,13 @@ note = "THREE OF THE FOUR REQUIRED DIAGNOSTICS EXIST AND THE SCENARIO NEEDS THE 
 
 # --- atmosphere-sky-and-clouds ----------------------------------------------------------------------
 #
-# THIRTEEN OF THIRTEEN — ELEVEN CASES AND, SINCE M11.c's POST-GATE JUDGEMENT, TWO EXEMPTIONS. M11.c
-# task 5.1 read `Cloud shadows` and `Aerial perspective` against the frame rather than against the
-# model and found both satisfied as LIBRARIES that no frame calls: nothing samples the cloud shadow
-# field at a surface, and nothing applies aerial perspective to opaque shading. The cases named below
-# for them still pass and still decide the model's half; they cannot decide the half the
-# requirement's first sentence is about, and a map that says they do is how this row was once
-# expected at Complete while short. Both are `exempt:m11e` with what would observe them.
+# THIRTEEN OF THIRTEEN — TWELVE CASES AND ONE EXEMPTION. M11.c task 5.1 read `Cloud shadows` and
+# `Aerial perspective` against the frame rather than against the model and found both satisfied as
+# LIBRARIES that no frame calls, and its post-gate judgement made both `exempt:m11e`. `Cloud
+# shadows` is a case again since `add-cloud-shadows`: `samples/10-world`'s lit fragment path samples
+# the field per fragment, and `render.world_cloud_shadow` draws with that path's committed SPIR-V
+# and reads the pixels back. `Aerial perspective` is still applied to no opaque surface and stays
+# `exempt:m11e` with what would observe it.
 #
 # What follows is the text written when every entry was a case, kept because it is still true of
 # the eleven. Every one of them was a CASE rather than a deferral. That is not a
@@ -2952,8 +2953,9 @@ note = "the requirement's first paragraph — the march over reconstructed densi
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
 requirement = "Cloud shadows"
-evidence = "exempt:m11e"
-note = "THE FIELD IS WRITTEN AND READ BACK; NOTHING THE REQUIREMENT NAMES CONSUMES IT IN A FRAME. Answered and kept: `integration.render_sky_fields`' `cloud shadows: an update writes the field, and a storm darkens the ground` writes the field through a real `environment::FieldRegistry` and `FieldStore`, reads every cell centre back through the store and a second time through `CloudShadowField::sample`, and compares them (5,120 samples, 0 disagreeing); `clouds: a cloud shadow declaration that asks for a shadow map is refused` is the prohibition on virtual shadow pages; `cloud shadows: the update rate is a budget lever that can be seen working` is the lever; and `integration.render_illumination_clouds` shows the illumination consumer darkening the sun under a cloud (10,980 lux against 100,000). NOT ANSWERED: the field SHALL be `consumed by terrain, foliage, water, and illumination`, `sampled by surfaces and by illumination`. M11.c task 5.1 measured that `rendering::apply_cloud_shadows` has no caller outside its own test, `SkyIllumination`'s cloud source is set by nothing outside its module, `cy/cloud_shadow.slang` is imported by no shader, terrain, foliage and water read nothing, and `samples/10-world` attenuates its sun by one scalar `cloud_transmittance` rather than by the field at a position. So the producer and one consumer LIBRARY are built and no surface is shaded through them. WHAT WOULD OBSERVE IT: the forward frame's lit path sampling the field per surface position (through `cy/cloud_shadow.slang`), and a case in which one frame's ground is darker under a cloud than beside it. Closing rung M11.e, with the row; recorded at M11.c task 5.1 and moved from a test entry to this exemption by the post-gate judgement (task 9.4a)."
+evidence = "test:render.world_cloud_shadow"
+case = "world cloud shadows: ground under a cloud is darker, beside it unchanged"
+note = "THE FIELD IS CONSUMED IN A FRAME. `samples/10-world` claims `cloud-shadow` through `sky::CloudShadowField`, rewrites it every frame from the same `CloudField` its sky lighting marches, and its one lit fragment path — terrain, foliage and water — samples it per fragment through `cy/cloud_shadow.slang` and attenuates the direct sun. This case draws with that path's COMMITTED SPIR-V (`samples/10-world/shaders/world_spirv.h`) over ground lit by a real producer that marched one known cloud, classifies every texel by the processor's reading of the same image bytes, and requires each texel under the cloud to be darker by the field's own amount (within 1% after the shader's tonemap) and each texel in full sun to be bit-identical to the frame with cloud shadows off. The requirement's neighbouring sentences are decided in the same suite and one other: `world cloud shadows: off, or under a clear sky, the frame is the same frame` (every texel bit-identical to the frame the world's shaders drew before this change, pinned at 2614fb0 in `tests/render/world_before_cloud_shadows_spirv.h`); `world cloud shadows: the sky and the ambient term are not attenuated`; `integration.render_sky_fields`' `cloud shadows: the shadow moves with the wind, by the distance the wind carries it` and `cloud shadows: what the sky draws as cloud is what the ground receives as shadow` (`compose_sky()`'s cloud transmittance toward the sun against the field at the same ground point); `clouds: a cloud shadow declaration that asks for a shadow map is refused` (the mechanism) and `cloud shadows: the update rate is a budget lever that can be seen working` (the levers). NOT BUILT, and recorded rather than mapped: the engine forward frame (`cy/frame.slang`) has no environment-field binding and draws no world, and the sample's device sky dome is a seeded stand-in density rather than `CloudField`. KIND render: the suite skips, loudly, on a machine with no Vulkan device."
 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"

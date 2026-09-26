@@ -96,6 +96,17 @@ read the sprite's billboard basis out of last frame's clip matrix for two days w
 did not render the same frame twice green. Regenerate both headers whenever `cy/frame.slang`'s block
 changes; this suite is what says so.
 
+**The source is compiled on every smoke run, because the headers once hid that it did not compile.**
+When `cy/frame.slang`'s view block became a parameter block, `cyFrame` became a `#define` — and a
+macro does not cross an `import`, so `particle.slang` stopped compiling for every target while the
+checked-in `particle_spirv.h`, compiled before the change, kept drawing. M11.d found it closing
+`m11c:every-shader-reaches-every-target`; the file names `cyFrameView.frame` now, both vertex stages
+take the portable `SV_VertexID` (the device carries the `shaderDrawParameters` that costs on SPIR-V,
+and both draws start at vertex zero), and `smoke.shader_targets` compiles this directory's sources
+for every target on every smoke run. The four headers were regenerated from the sources as they are;
+the fragment SPIR-V came out byte-identical, and the vertex modules now declare the whole per-view
+block, shadow rows included.
+
 **Metal sprite compositing is exercised by the editor.** The authored viewport smoke test loads
 the committed two-emitter VFX draft, advances the engine simulation, and checks that drawing its
 sprites changes the Metal frame. The MSL embed step maps Slang's compacted particle argument buffer

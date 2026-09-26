@@ -576,6 +576,11 @@ private:
     bool break_on_validation_error_ = false;
     bool debug_markers_ = false;
     bool memory_budget_ = false;
+    /// `VkPhysicalDeviceVulkan11Features::multiview`, asked for and ENABLED.
+    /// `Capability::Multiview` is this and nothing else: it was reported true unconditionally until
+    /// M11.d while the feature was never enabled, so every view-masked pipeline and rendering scope
+    /// was invalid usage the driver happened to accept.
+    bool multiview_ = false;
     /// WHAT THE DEVICE SAID ABOUT RAY TRACING, kept as the five separate answers it gave rather
     /// than as the one bit they reduce to. `fill_capabilities()` hands it to `DeviceCapabilities`,
     /// which is where the reduction happens and where it can be tested without a device.

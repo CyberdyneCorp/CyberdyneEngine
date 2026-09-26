@@ -75,9 +75,11 @@ struct MaterialProbeVaryings
 ///
 /// A VERTEX BUFFER AND NOT `SV_VertexID`, which would be the shorter way to write it. Slang lowers
 /// that semantic to `VertexIndex - BaseVertex`, and the subtraction declares the SPIR-V
-/// `DrawParameters` capability: a device created without `shaderDrawParameters` — which this
-/// engine's is — refuses the module by name. Three vertices of position and texture coordinate cost
-/// 48 bytes and no device feature.
+/// `DrawParameters` capability. When this probe was written the engine's device was created without
+/// `shaderDrawParameters` and refused such a module by name; since M11.d it carries the feature,
+/// because the engine's own procedural stages moved to the portable spelling. The vertex buffer
+/// stays: three vertices of position and texture coordinate cost 48 bytes, and changing the probe
+/// would change the checked-in module its suite compares.
 ///
 /// THE Y FLIP IS THE ENGINE'S, and the caller's three vertices honour it.
 /// `VulkanCommandBuffer::set_viewport` gives the viewport a NEGATIVE height because "Vulkan's clip

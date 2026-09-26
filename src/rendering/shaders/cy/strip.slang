@@ -82,10 +82,12 @@ float3 sideAt(float3 position, float3 tangent)
     return lengthSquared > 1.0e-12 ? side * rsqrt(lengthSquared) : float3(0.0, 0.0, 0.0);
 }
 
-/// `SV_VulkanVertexID` for the reason `particle.slang` records: `SV_VertexID` lowers to a
-/// DrawParameters capability the Vulkan backend does not request.
+/// `SV_VertexID`, which all three targets accept, for the reason and at the cost
+/// `cy/fullscreen.slang`'s `fullscreenVertex` records: the Vulkan device carries
+/// `shaderDrawParameters`, and the one draw of this stage starts at vertex zero
+/// (`strip_renderer.cpp`), the one base on which SPIR-V and Metal agree about the index.
 [shader("vertex")]
-public CyStripOutput cyStripVertex(uint vertexId: SV_VulkanVertexID)
+public CyStripOutput cyStripVertex(uint vertexId: SV_VertexID)
 {
     let segment = vertexId / 6;
     let corner = kCorners[vertexId % 6];

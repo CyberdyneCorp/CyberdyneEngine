@@ -102,6 +102,10 @@ struct Options {
     /// seven-times defect one level up. The flag exists so the two are different runs.
     f32 budget_ms = 0.0F;
     bool headless = false;
+    /// Draw the frame with the sun attenuated once at the viewer, as before cloud shadows existed,
+    /// instead of per fragment through the cloud shadow field. The before half of the committed
+    /// before/after pair, and the frame a byte-identity check compares against.
+    bool no_cloud_shadows = false;
     /// MEASURE ON A QUIET HOST, OR FAIL SAYING THE HOST WAS NOT QUIET. A frame budget on a loaded
     /// machine measures the machine: `m11a:world-budget-on-a-device` held at 10.8 ms worst alone
     /// on the host and missed at 58 to 286 ms beside 24 spinning processes, same binary, same
@@ -238,6 +242,7 @@ private:
             cursor.number("--seconds", out.seconds) ||
             cursor.number("--budget-ms", out.budget_ms) ||
             cursor.flag("--headless", out.headless) ||
+            cursor.flag("--no-cloud-shadows", out.no_cloud_shadows) ||
             cursor.flag("--quiet-host", out.quiet_host) ||
             cursor.number("--quiet-wait-s", out.quiet_wait_s);
         if (!recognised) {
@@ -424,7 +429,7 @@ void print_hour(u64 frame, const WorldState& state) {
     std::printf(
         "  %5llu  %02.0f:%02.0f  sun %+6.1f deg  %5.1f C  wind %4.1f m/s  "
         "%s %4.1f mm/h  cloud %.2f sun-t %.2f thickest %.2f  wet %.2f  "
-        "snow %.3f/%.3f m  sky %10.5f nit  star %.2f\n",
+        "snow %.3f/%.3f m  sky %10.5f nit  star %.2f  shadow %.2f/%.2f/%.2f\n",
         static_cast<unsigned long long>(frame),
         std::floor(static_cast<double>(state.day_fraction) * 24.0),
         std::floor(std::fmod(static_cast<double>(state.day_fraction) * 1440.0, 60.0)),
@@ -435,7 +440,9 @@ void print_hour(u64 frame, const WorldState& state) {
         static_cast<double>(state.thickest_cloud), static_cast<double>(state.wetness),
         static_cast<double>(state.snow_depth_metres),
         static_cast<double>(state.snow_depth_west_metres), static_cast<double>(state.mean_sky_nits),
-        static_cast<double>(state.star_visibility));
+        static_cast<double>(state.star_visibility), static_cast<double>(state.cloud_shadow_darkest),
+        static_cast<double>(state.cloud_shadow_mean),
+        static_cast<double>(state.cloud_shadow_brightest));
 }
 
 /// One frame's picture, and the still when this is the still's frame. Separated from the loop
@@ -775,6 +782,8 @@ int main(int argc, char** argv) {
     world_options.foliage_edge = static_cast<i32>(options.regions);
     world_options.seconds_per_day = options.seconds;
     world_options.take_fps = static_cast<f32>(options.fps);
+    // Presentation, not simulation: a headless run draws nothing that could be shadowed.
+    world_options.cloud_shadows = !options.no_cloud_shadows && !options.headless;
 
     World world(allocator, world_options);
     BuildReport report;

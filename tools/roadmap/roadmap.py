@@ -11,7 +11,10 @@ Tasks 4.3.1 to 4.3.4 and 4.4.1. Three subcommands, one behind each recipe in jus
                       milestone's criteria, deduplicated — plus the ones this milestone adds, each
                       evaluated exactly once. Exits non-zero if any criterion this host can
                       evaluate fails. It invokes no other ledger; `criteria.build_plan` is the rule
-                      and the change that flattened it records what chaining cost.
+                      and the change that flattened it records what chaining cost. With
+                      `--incremental` it evaluates only the rung's own criteria, the earlier ones a
+                      change since `--changed-since` can have moved, and the smoke set; see
+                      incremental.py. The full ledger stays the default, runs nightly and at M11.e.
   gates               the permanent merge-gate set and any recorded override.
 
 Nothing here decides anything: the record, the criteria and the gates are data, and the milestones
@@ -23,6 +26,8 @@ Governed by: delivery-roadmap, testing-and-quality (Quality gates for merge).
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -31,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import criteria as criteria_module  # noqa: E402
 import gates as gates_module  # noqa: E402
+import incremental as incremental_module  # noqa: E402
 import record as record_module  # noqa: E402
 import schedule as schedule_module  # noqa: E402
 
@@ -152,15 +158,104 @@ def command_milestone(arguments: argparse.Namespace) -> int:
     gate_set = gates_module.load()
     plan = criteria_module.build_plan(arguments.id, gates_module.permanent_milestones(gate_set))
     _check_criteria_are_gated(plan, gate_set)
+    if arguments.changed_since and not arguments.incremental:
+        raise incremental_module.IncrementalError(
+            "--changed-since selects the base of an --incremental run; pass --incremental too. "
+            "Without it the full ledger runs, which is the default on purpose")
+    if arguments.incremental:
+        return _incremental(plan, arguments)
     if arguments.list:
         return _list_criteria(plan, arguments.json)
 
     entries = record_module.load(arguments.record)
     jobs = max(1, arguments.jobs if arguments.jobs else schedule_module.default_jobs())
+    before = _tree_state()
     _print_plan(plan, jobs)
     results = _evaluate_plan(plan, entries, arguments.ci, jobs)
     print()
-    return _summarise(plan, results, arguments.json)
+    verdict = _summarise(plan, results, arguments.json)
+    if verdict == OK_EXIT and before is not None:
+        # A GREEN FULL LEDGER IS THE ONLY THING THAT MOVES THE INCREMENTAL BASELINE: an incremental
+        # run never records one, so the commit it compares against was always evaluated in full.
+        print(incremental_module.record_green(plan.milestone.id, before), file=sys.stderr)
+    return verdict
+
+
+def _tree_state() -> tuple[str, bool] | None:
+    try:
+        return incremental_module.tree_state()
+    except incremental_module.IncrementalError:
+        return None
+
+
+def _incremental(plan: criteria_module.Plan, arguments: argparse.Namespace) -> int:
+    """The rung's own criteria, what a change since the base can have moved, and the smoke set."""
+    build_dir = arguments.build_dir or incremental_module.default_build_dir()
+    selection = incremental_module.selection_for(plan, arguments.changed_since, build_dir)
+    narrowed = criteria_module.Plan(milestone=plan.milestone, ledgers=plan.ledgers,
+                                    entries=selection.selected, declarations=plan.declarations)
+    if arguments.list:
+        if arguments.json:
+            print(json.dumps(_selection_document(plan, selection, build_dir), indent=2))
+        else:
+            _print_selection(plan, selection, build_dir)
+        return OK_EXIT
+    entries = record_module.load(arguments.record)
+    jobs = max(1, arguments.jobs if arguments.jobs else schedule_module.default_jobs())
+    if not arguments.json:
+        _print_selection(plan, selection, build_dir)
+    _print_plan(narrowed, jobs)
+    results = _evaluate_plan(narrowed, entries, arguments.ci, jobs)
+    print()
+    if arguments.json:
+        document = _milestone_document(narrowed, results)
+        document["incremental"] = _selection_document(plan, selection, build_dir)
+        print(json.dumps(document, indent=2))
+        return _verdict(narrowed, results)
+    verdict = _summarise(narrowed, results, False)
+    print(f"  note: INCREMENTAL — {len(selection.selected)} of {len(plan.entries)} criteria, chosen "
+          f"against {selection.base[:12]}. It is not a close by itself: the full ledger runs "
+          "nightly and at M11.e, and only a green full run records a baseline.")
+    return verdict
+
+
+def _print_selection(plan: criteria_module.Plan, selection, build_dir: Path) -> None:
+    """Every criterion, selected or not, and why. The reason is the record, so none is omitted."""
+    reasons = (incremental_module.OWN, incremental_module.SMOKE_SET, incremental_module.EDITED,
+               incremental_module.CHANGED, incremental_module.UNKNOWN,
+               incremental_module.UNCHANGED)
+    print(f"{plan.milestone.id.upper()} — incremental against {selection.base[:12]}: "
+          f"{len(selection.selected)} of {len(plan.entries)} criteria selected, "
+          f"{len(selection.changed)} path(s) changed, build graph from "
+          f"{incremental_module.display(build_dir)}")
+    for reason in reasons:
+        print(f"  {selection.count(reason):>4}  {reason}")
+    print()
+    for choice in selection.choices:
+        verdict = "run " if choice.selected else "skip"
+        print(f"  {verdict} {choice.entry.label:<40} {choice.reasons[0]}")
+        for detail in choice.reasons[1:]:
+            print(f"       {'':<40} {detail}")
+    print()
+
+
+def _selection_document(plan: criteria_module.Plan, selection, build_dir: Path) -> dict:
+    return {
+        "milestone": plan.milestone.id,
+        "base": selection.base,
+        "build_dir": incremental_module.display(build_dir),
+        "changed": list(selection.changed),
+        "selected": len(selection.selected),
+        "of": len(plan.entries),
+        "choices": [{"label": choice.entry.label, "selected": choice.selected,
+                     "reasons": list(choice.reasons)} for choice in selection.choices],
+    }
+
+
+def _verdict(plan: criteria_module.Plan, results) -> int:
+    """`_summarise`'s exit code without its report, for the JSON document."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        return _summarise(plan, results, False)
 
 
 def _evaluate_plan(plan: criteria_module.Plan, entries, force_ci: bool, jobs: int) -> list:
@@ -485,6 +580,17 @@ def _parser() -> argparse.ArgumentParser:
                            help="how many criteria to evaluate at once; 1 is the sequential ledger "
                                 "(default: 1 — concurrency is opt-in; see schedule.default_jobs)")
     milestone.add_argument("--record", type=Path, default=record_module.DEFAULT_RECORD)
+    milestone.add_argument("--incremental", action="store_true",
+                           help="evaluate only the rung's own criteria, the earlier ones whose "
+                                "inputs changed since --changed-since, and the smoke set (build, "
+                                "format, lint, test-all). NOT the default: the full ledger runs "
+                                "nightly and at M11.e. With --list, prints the selection only")
+    milestone.add_argument("--changed-since", default="", metavar="COMMIT",
+                           help="the base of an --incremental run (default: the commit the last "
+                                "green full ledger of this rung recorded)")
+    milestone.add_argument("--build-dir", type=Path, default=None,
+                           help="the build tree whose graph says what a test reads (default: "
+                                "$CY_BUILD_DIR, else build/dev)")
     milestone.set_defaults(handler=command_milestone)
 
     gate_command = subcommands.add_parser("gates", help="the permanent merge-gate set")
@@ -499,7 +605,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
         return arguments.handler(arguments)
-    except (record_module.RecordError, criteria_module.CriteriaError, gates_module.GateError) as error:
+    except (record_module.RecordError, criteria_module.CriteriaError, gates_module.GateError,
+            incremental_module.IncrementalError) as error:
         print(f"roadmap {arguments.command}: {error}", file=sys.stderr)
         return DATA_EXIT
 

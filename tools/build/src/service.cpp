@@ -374,6 +374,9 @@ NodeResult BuildService::evaluate(Run& run, NodeId id, assets::DerivedCache& cac
         const bool present = std::ranges::all_of(
             result.outputs, [this](const NodeOutput& o) { return artefacts_.contains(o.digest); });
         if (present) {
+            for (u32 index = 0; index < lookup.entry.dependency_count(); ++index) {
+                result.discovered.emplace_back(lookup.entry.dependency(index).name);
+            }
             result.outcome = NodeOutcome::Cached;
             result.tier = lookup.tier;
             result.result = result_digest(as_pairs(result.outputs));
@@ -488,6 +491,7 @@ NodeResult BuildService::run_producer(Run& run, NodeId id, const assets::Derivat
     dependencies.reserve(context.discoveries().size());
     for (const DiscoveredDependency& discovered : context.discoveries()) {
         dependencies.push_back(assets::DerivedDependency{discovered.name, discovered.hash});
+        result.discovered.push_back(discovered.name);
     }
 
     assets::DerivedArtefact artefact;

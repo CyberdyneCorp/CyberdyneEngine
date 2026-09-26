@@ -6,16 +6,16 @@
 
 namespace cy::rendering::particles {
 
-/// cyStripVertex.metal, 4945 bytes.
+/// cyStripVertex.metal, 6124 bytes.
 inline constexpr char kStripVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 69 "src/rendering/shaders/cy/strip.slang"
+#line 70 "src/rendering/shaders/cy/strip.slang"
 constant array<float2, int(6)> kCorners_0 = { float2(0.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(0.0, -1.0), float2(1.0, 1.0), float2(0.0, 1.0) };
 
-#line 43
+#line 44
 struct CyStripVertex_0
 {
     float4 positionAndWidth_0;
@@ -36,7 +36,7 @@ struct ClusterGrid_0
 };
 
 
-#line 124 "src/rendering/shaders/cy/frame.slang"
+#line 112 "src/rendering/shaders/cy/frame.slang"
 struct CyFrameData_0
 {
     float4 relativeToClipRow0_0;
@@ -59,194 +59,248 @@ struct CyFrameData_0
     float4 temporalFeedback_0;
     float4 temporalJitter_0;
     uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
 };
 
 
-#line 124
+#line 20 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    float3 positionRelativeToCamera_0;
+    float range_0;
+    float3 direction_0;
+    float intensity_0;
+    float3 color_1;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    float2 padding_0;
+};
+
+
+#line 186 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_0;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 208
 struct KernelContext_0
 {
     CyStripVertex_0 device* cyStrips_0;
-    CyFrameData_0 constant* cyFrame_0;
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
 };
 
 
-#line 239
+#line 263
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
-    return float4(dot(kernelContext_0->cyFrame_0->relativeToClipRow0_0, _S1), dot(kernelContext_0->cyFrame_0->relativeToClipRow1_0, _S1), dot(kernelContext_0->cyFrame_0->relativeToClipRow2_0, _S1), dot(kernelContext_0->cyFrame_0->relativeToClipRow3_0, _S1));
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow0_0, _S1), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow1_0, _S1), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow2_0, _S1), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow3_0, _S1));
 }
 
 
-#line 77 "src/rendering/shaders/cy/strip.slang"
+#line 78 "src/rendering/shaders/cy/strip.slang"
 float3 sideAt_0(float3 position_0, float3 tangent_0)
 {
     float3 _S2 = cross(tangent_0, - position_0);
     float _S3 = dot(_S2, _S2);
 
-#line 80
+#line 81
     float3 _S4;
     if(_S3 > 9.999999960041972e-13)
     {
 
-#line 81
+#line 82
         _S4 = _S2 * float3(rsqrt(_S3)) ;
 
-#line 81
+#line 82
     }
     else
     {
 
-#line 81
+#line 82
         _S4 = float3(0.0, 0.0, 0.0);
 
-#line 81
+#line 82
     }
 
-#line 81
+#line 82
     return _S4;
 }
 
 
-#line 81
+#line 82
 struct cyStripVertex_Result_0
 {
     float4 position_1 [[position]];
     float2 coordinates_0 [[user(TEXCOORD)]];
-    float4 color_1 [[user(TEXCOORD_1)]];
+    float4 color_2 [[user(TEXCOORD_1)]];
 };
 
 
-#line 59
+#line 60
 struct CyStripOutput_0
 {
     float4 position_2;
     float2 coordinates_1;
-    float4 color_2;
+    float4 color_3;
 };
 
 
-#line 59
-[[vertex]] cyStripVertex_Result_0 cyStripVertex(uint vertexId_0 [[vertex_id]], CyStripVertex_0 device* cyStrips_1 [[buffer(0)]], CyFrameData_0 constant* cyFrame_1 [[buffer(1)]])
+#line 60
+[[vertex]] cyStripVertex_Result_0 cyStripVertex(uint vertexId_0 [[vertex_id]], CyStripVertex_0 device* cyStrips_1 [[buffer(0)]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]])
 {
 
-#line 59
+#line 60
     CyStripOutput_0 _S5;
 
-#line 59
+#line 60
     thread KernelContext_0 kernelContext_1;
 
-#line 59
+#line 60
     (&kernelContext_1)->cyStrips_0 = cyStrips_1;
 
-#line 59
-    (&kernelContext_1)->cyFrame_0 = cyFrame_1;
+#line 60
+    (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
 
-#line 59
+#line 60
     for(;;)
     {
 
-#line 89
+#line 92
         uint _S6 = vertexId_0 / 6U;
         uint _S7 = vertexId_0 % 6U;
         CyStripVertex_0 _S8 = (&kernelContext_1)->cyStrips_0[_S6];
         CyStripVertex_0 _S9 = (&kernelContext_1)->cyStrips_0[_S6 + 1U];
 
-#line 92
+#line 95
         CyStripVertex_0 _S10;
 
         if((kCorners_0[_S7].x) > 0.5)
         {
 
-#line 94
+#line 97
             _S10 = _S9;
 
-#line 94
+#line 97
         }
         else
         {
 
-#line 94
+#line 97
             _S10 = _S8;
 
-#line 94
+#line 97
         }
 
-#line 94
+#line 97
         CyStripVertex_0 _S11 = _S10;
         float3 _S12 = _S10.positionAndWidth_0.xyz;
 
         thread CyStripOutput_0 output_0;
         float _S13 = kCorners_0[_S7].y;
 
-#line 98
+#line 101
         (&output_0)->coordinates_1 = float2(_S10.alongAndStrip_0.x, _S13);
-        (&output_0)->color_2 = _S10.color_0;
+        (&output_0)->color_3 = _S10.color_0;
 
-#line 104
+#line 107
         float3 _S14 = _S8.positionAndWidth_0.xyz;
 
-#line 104
+#line 107
         float3 _S15 = _S9.positionAndWidth_0.xyz - _S14;
 
-#line 104
+#line 107
         bool _S16;
         if(!((as_type<uint>((_S8.alongAndStrip_0.y))) == (as_type<uint>((_S9.alongAndStrip_0.y)))))
         {
 
-#line 105
+#line 108
             _S16 = true;
 
-#line 105
+#line 108
         }
         else
         {
 
-#line 105
+#line 108
             _S16 = (dot(_S15, _S15)) <= 9.999999960041972e-13;
 
-#line 105
+#line 108
         }
 
-#line 105
+#line 108
         if(_S16)
         {
 
-#line 105
+#line 108
             float4 _S17 = transformToClip_0(_S14, &kernelContext_1);
 
             (&output_0)->position_2 = _S17;
 
-#line 107
+#line 110
             _S5 = output_0;
             break;
         }
 
-#line 108
+#line 111
         float4 _S18 = transformToClip_0(_S12 + sideAt_0(_S12, _S15) * float3((_S13 * _S11.positionAndWidth_0.w)) , &kernelContext_1);
 
 
 
         (&output_0)->position_2 = _S18;
 
-#line 112
+#line 115
         _S5 = output_0;
         break;
     }
 
-#line 113
+#line 116
     thread cyStripVertex_Result_0 _S19;
 
-#line 113
+#line 116
     (&_S19)->position_1 = _S5.position_2;
 
-#line 113
+#line 116
     (&_S19)->coordinates_0 = _S5.coordinates_1;
 
-#line 113
-    (&_S19)->color_1 = _S5.color_2;
+#line 116
+    (&_S19)->color_2 = _S5.color_3;
 
-#line 113
+#line 116
     return _S19;
 }
 
@@ -273,17 +327,17 @@ struct pixelInput_0
 };
 
 
-#line 117 "src/rendering/shaders/cy/strip.slang"
+#line 120 "src/rendering/shaders/cy/strip.slang"
 [[fragment]] pixelOutput_0 cyStripFragment(pixelInput_0 _S1 [[stage_in]], float4 position_0 [[position]])
 {
 
 
     float _S2 = _S1.coordinates_0.y;
 
-#line 121
+#line 124
     pixelOutput_0 _S3 = { float4(_S1.color_0.xyz * float3((_S1.color_0.w * saturate(1.0 - _S2 * _S2) * saturate(1.0 - _S1.coordinates_0.x))) , 0.0) };
 
-#line 130
+#line 133
     return _S3;
 }
 

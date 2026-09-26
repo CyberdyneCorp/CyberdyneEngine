@@ -117,7 +117,12 @@ function(cy_require_headless target)
         "SDL"                 # the window and input backend, by any target spelling
         "vulkan"
         "volk"
-        "Vulkan")
+        "Vulkan"
+        # M11.d task 7.2: the dedicated server (tests/acceptance/) runs this check too, and a
+        # server must not reach the second desktop display server or the audio library either.
+        "^cy_platform_desktop"
+        "^cy_platform_linux_native"
+        "miniaudio")
 
     cy_headless_closure("${target}" closure edges)
 

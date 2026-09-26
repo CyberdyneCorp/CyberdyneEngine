@@ -42,14 +42,17 @@ passes nor skips. This test is what goes red if that check is removed or stops l
     of tests/integration/). Since M11.c's ninth close the harness enforces its wall-clock stall
     ceiling only inside this wrapper, which it learns from `CY_QUIET_HOST=<pid>:<start time>`, set
     by the wrapper for its command after the pre-run check passed and verified by the harness
-    through /proc (the pid is a live ANCESTOR, started at that tick, whose executable is
-    `cy_quiet_host`). Against the probe's real `CY_TEST_CASE`s:
+    through /proc (the pid is a live ANCESTOR, started at that tick, whose executable IS the
+    `cy_quiet_host` this build produced — the same file, not a file of that name). Against the probe's real `CY_TEST_CASE`s:
       (b) outside the wrapper, the case held 300 ms by its own `vfork` child PASSES, and prints its
           `stalled:` diagnosis marked "not enforced: not on a quiet host";
       (c) the same with a FORGED marker — malformed, naming a dead pid, naming this test's own
           process (a live ancestor that is not the wrapper), naming a live `cy_quiet_host` that is
-          not an ancestor, and naming the right ancestor with the wrong start time — is refused:
-          it passes with the same "not enforced" line;
+          not an ancestor, naming the right ancestor with the wrong start time, and (M11.d task
+          9.7) naming a live ancestor with the right start time that is a copy of `sh` RENAMED
+          `cy_quiet_host` — is refused: it passes with the same "not enforced" line. The last is
+          why the harness compares the ancestor's executable with the wrapper THE BUILD PRODUCED
+          (same device and inode) rather than with its name;
       (d) the case that spins past its CPU budget FAILS outside the wrapper, and inside it;
       (a) inside the wrapper, the vfork case FAILS as `stalled:` and says the ceiling was
           "enforced: inside cy_quiet_host".
@@ -70,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -362,6 +366,34 @@ def forged_markers(wrapper: str) -> tuple[list[tuple[str, str]], subprocess.Pope
     ], unrelated
 
 
+#: THE IMPOSTOR'S SCRIPT, run by a copy of `sh` that is NAMED `cy_quiet_host`. It sets the marker
+#: to its OWN pid and start time and runs the probe as its child rather than exec'ing it, so the probe
+#: finds a live ancestor, started at the marker's tick, whose executable's basename is the wrapper's:
+#: right in every respect a name can carry. What it is not is the wrapper the build produced, and
+#: nothing it ran checked the host. Field 22 of /proc/$$/stat is the start time; the command name in
+#: field 2 is `(cy_quiet_host)`, with no space to shift the count.
+IMPOSTOR = (
+    'probe=$1; name=$2\n'
+    'set -- $(cat /proc/$$/stat)\n'
+    'CY_QUIET_HOST="$$:${22}" "$probe" "--test-case=$name"\n'
+    'exit $?\n'
+)
+
+
+def run_under_impostor(probe: str, case: str) -> subprocess.CompletedProcess:
+    """The probe, under a copy of `sh` renamed `cy_quiet_host` that forges a marker naming itself.
+
+    M11.d task 9.7: until then the harness trusted an ancestor whose executable was CALLED
+    `cy_quiet_host`, so this run was trusted and its stall was enforced on a host nobody checked.
+    """
+    with tempfile.TemporaryDirectory(prefix="cy-impostor-") as scratch:
+        impostor = Path(scratch) / "cy_quiet_host"
+        shutil.copy2(os.path.realpath(shutil.which("sh") or "/bin/sh"), impostor)
+        return subprocess.run([str(impostor), "-c", IMPOSTOR, "cy_quiet_host", probe, case],
+                              env=probe_environment(None), capture_output=True, text=True,
+                              timeout=120, check=False)
+
+
 def leg_marker(wrapper: str, probe: str | None) -> tuple[list[str], str]:
     """Problems found, or an empty list and a reason the inside half could not be judged."""
     if probe is None:
@@ -382,6 +414,8 @@ def leg_marker(wrapper: str, probe: str | None) -> tuple[list[str], str]:
         except subprocess.TimeoutExpired:
             unrelated.kill()
             unrelated.wait()
+    problems += judge_outside("(c) a marker naming a live ancestor that is a copy of `sh` renamed "
+                              "cy_quiet_host", run_under_impostor(probe, VFORK_CASE), False)
 
     # Every half is judged, so that one red half never hides another's verdict.
     for label, case, verdict in (("(a) inside the wrapper", VFORK_CASE, "stalled:"),

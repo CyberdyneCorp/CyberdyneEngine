@@ -7,6 +7,7 @@ a change has to pass. Three recipes, four data files, and no judgement anywhere 
 just roadmap-status                # every capability's tier, milestone and change
 just roadmap-milestone m0          # M0's exit criteria, run
 just roadmap-milestone m3 --list   # what M3's are, without running them
+just roadmap-milestone m11d --incremental --list   # which criteria a change can have moved, and why
 just roadmap-gates                 # the permanent merge gates and any recorded override
 just roadmap-test                  # the tooling's own tests, including the three drift cases
 ```
@@ -27,6 +28,8 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Thirteen configurations between eight criteria, `m1:four-profiles` among them. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
 | `quiet_host.py` | Whether a criterion that runs through `just test-quiet-host` keeps its whole line inside it: nothing after the wrapped command but `\|\| exit <n>`, and `exclusive` declared. M11.c's eighth close found `m6:culling`'s second suite running after the wrapper had exited. Since the ninth close (option B) it no longer names suites that must never run bare: the harness itself enforces its stall ceiling only inside a verified `cy_quiet_host` and reports a stall anywhere else. `tools/quiet-host/README.md` has why. |
 | `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
+| `incremental.py` | Incremental closes: which criteria a change since the last green full ledger can have moved, read from the build graph, the recipes and the ledgers' digests. A criterion whose inputs cannot be read is always selected. `just roadmap-milestone <rung> --incremental`. |
+| `incremental.toml` | Hand-written, reviewed and PINNED. Compile definitions that name the repository root and are only strings — `CY_DIAG_SOURCE_ROOT` — each with the files allowed to use it and a digest of their content, so the exemption lapses the moment the code it was reviewed over changes. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
 
@@ -749,5 +752,95 @@ extend — and it was not extended, so **M4's ledger landed covered by nothing**
 data and the last check over them is the one that matters: a ledger under `milestones/` with no
 floor recorded **fails**, rather than being quietly unchecked. Adding a milestone therefore forces a
 deliberate answer to "how many exit conditions does this have", which is the question the floor asks.
+
+## An incremental close runs what a change can have moved, and never guesses
+
+The full flattened ledger is the close: M11.c's took 9 824 s and M11.d's 6 744 s for 423 evaluated
+criteria, most of which read nothing the change under review touched. `--incremental` evaluates
+three sets instead and prints, for **every** criterion, whether it runs and why:
+
+| set | selected when |
+|---|---|
+| **own** | always — the rung's own criteria are what it is closing |
+| **smoke** | always — `m0:build`, `m0:format`, `m0:lint`, `m0:test`. A plan without all four is refused: a broken build or suite anywhere is not something an input set can rule out, and it is why a test criterion's inputs can leave out the rest of the build `_ctest` runs first |
+| **new or edited** | its falsifiability digest (`falsify.digest`) differs from the one it had in the rung's plan at the base commit — the ledgers and `gates.toml` are read from that commit — or it was not in that plan at all, which is what a gate flipped green in between looks like |
+| **inputs changed** | a path changed since the base (the working tree against it, both sides of a rename, and untracked files) is one of its inputs |
+| **inputs unknown** | always. This is the rule the module is built around |
+
+```
+just roadmap-milestone m11d --incremental                          # against the last green full run
+just roadmap-milestone m11d --incremental --changed-since main~3   # against a named commit
+just roadmap-milestone m11d --incremental --list [--json]          # the selection alone, not run
+```
+
+**What "inputs" means, and where each answer comes from.** Nothing is curated by hand, because a
+curated list goes stale in the unsafe direction:
+
+- `tiers` — the status record and its parser. `path` — the criterion's glob, matched against a
+  changed path or any directory above it.
+- `recipe` and `command` — **only** a one-line body of `just <recipe>` invocations joined by `&&`,
+  where each is a test recipe (`test-unit`, `test-integration`, `test-smoke`, `test-determinism`,
+  `test-render`) given exactly `-R <regex>`, or `test-suites kind:regex…`, optionally behind
+  `test-quiet-host --`. The tests that selects are read from `ctest --show-only=json-v1` in the build
+  tree, and each one's inputs are: what its executable is built from (`ninja -t inputs`, then
+  `ninja -t deps` for every header each object included); every repository path it names at run
+  time — its objects' compile definitions, its command line, its environment, and its working
+  directory when that is in the source tree — a build-tree path adding that output's own inputs; the
+  CMake files of every directory above an input, `cmake/` and `CMakePresets.json`; and the recipe's
+  own text — `justfile`, `just/*.just`, and the directory of every repository path the recipe's
+  closure names in `just --show`.
+- Every criterion also reads `tools/roadmap/criteria.py`, the evaluator.
+
+**Unknown, and therefore selected**, with the reason printed: any other body (a multi-line script,
+a pipe, a redirection, a variable); a recipe that is not a test recipe with `-R`; a test that runs
+something the tree does not build (a Python script); a test that names the repository root or the
+build tree's root; a regex that selects no test; an object with no recorded or a `STALE` header
+record; and **a build tree that is not current** — `ninja -n` has work to do for the executable, so
+its dependency log describes an older tree. Build it first (`just build-engine`, with the same
+`CY_BUILD_DIR`) for a precise selection; `--build-dir` names another tree.
+
+**One declared exception, pinned so it cannot outlive its review.** A compile definition naming
+the repository ROOT means "this object can read any file", and `CY_DIAG_SOURCE_ROOT` is compiled into
+the diagnostics library nearly every test links — so without an exception almost every test
+criterion would be unknown. It is a prefix `sanitise_source_path()` strips with `memcmp`, never
+opened; `incremental.toml` says so, names every file that uses the macro or calls `source_root()`,
+and carries a digest of them. It **lapses** — the definition is a read again — when one of those
+files changes or another file names a token, and the lapsed message prints the digest to write back
+after re-reading them. `CY_SOURCE_DIR`, which `test_material_compile_service.cpp` really does
+`fopen` under, has no entry and makes its tests unknown, as it should.
+
+**Measured on a current `build/m11d-incremental-close`, against M11.d's 474-criterion ledger:**
+
+| changed | selected | by inputs | skipped |
+|---|---|---|---|
+| `src/save/src/container.cpp` | 248 | 5 — the save criteria; the renderer's are skipped | 226 |
+| `src/core/base/include/cy/core/base/types.h` | 417 | 174 | 57 |
+| nothing | 243 | 0 | 231 |
+
+The floor of about 240 is the rung's own 27, the smoke set, and **211 criteria whose inputs cannot be
+read** — 141 multi-line shell bodies, and recipes such as `quality-requirements` or `run-sample` that
+declare nothing. Every one of those is selected, every time; narrowing that floor is a matter of
+criteria saying what they read, never of this tool guessing. The three selections above took 28.6 s
+together, most of it reading the graph the first time.
+
+**The trust boundary is Ninja's own.** A generator reading a file its build edge does not declare
+would make Ninja skip a rebuild too; that is a build defect, and this mode inherits it rather than
+second-guessing it. What it does not inherit is anything a test reads *at run time* by a path the
+graph cannot see — which is why a test whose working directory is the repository root, or whose
+definitions name it, is unknown rather than known.
+
+**The baseline is only ever a green FULL run.** A full `roadmap-milestone <rung>` that exits 0, on a
+tree that was clean and at the same HEAD from its first criterion to its last, records that HEAD in
+`<git-common-dir>/cy-roadmap/last-green.json` — beside the object store, shared by every worktree,
+never committed and never reaped. An incremental run never records one, so what it compares against
+was always evaluated in full. With no record, `--changed-since` is required.
+
+**The full ledger stays the default, runs nightly and at M11.e.** An incremental run is a fast
+answer during a rung, not a close by itself, and its summary says so. The selection's four
+properties — a change under `src/save` selects the save criteria and not the renderer's, a shared
+header selects its dependents, an unknown-input criterion is always selected, and the rung's own
+always are — are `test_incremental_selection` in `selftest.py`, each proven red against a mutation
+of the code that provides it, and `m11d:incremental-close-selects-by-inputs` runs them and the real
+mode over M11.d's own ledger.
 
 **Governed by**: `delivery-roadmap`, `testing-and-quality` (Quality gates for merge).

@@ -62,7 +62,10 @@ inline void count_validation(rhi::ValidationSeverity severity, const char* messa
 /// the errors it reported.
 class DeviceFixture {
 public:
-    DeviceFixture(const char* backend, const char* application) noexcept
+    /// `request_multiview` off creates a device that reports no `Capability::Multiview`, which is
+    /// how `render.msaa_multiview` runs the per-view baseline on hardware that has the feature.
+    DeviceFixture(const char* backend, const char* application,
+                  bool request_multiview = true) noexcept
         : allocator_(system_allocator(MemoryDomain::Gpu)) {
         (void)rhi::vulkan::register_vulkan_backend();
         (void)rhi::null::register_null_backend();
@@ -74,6 +77,7 @@ public:
         // hazards are reported at all. (M3 spike, gotcha 6h.)
         description.enable_synchronisation_validation = true;
         description.request_async_compute = false;
+        description.request_multiview = request_multiview;
         device_ = rhi::create_device(allocator_, backend, description, selection_);
         if (device_.has_value()) {
             device_.value()->set_validation_callback(&count_validation, &validation_errors_);

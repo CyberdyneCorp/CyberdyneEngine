@@ -1762,7 +1762,7 @@ target = "src/backends/shader/slang/src/slang_compiler.cpp"
 token  = "return \"sm_6_6\";"
 note   = "measured at M11.c's close: the previously declared mutation on cmake/features.cmake was REFUTED — the criterion stayed green with the CY_SHADER_DXIL row deleted and the tree rebuilt, because an incremental rebuild does not reconfigure the Slang dependency the row governs. This one is inside the engine's own sources and is reached by the same rebuild: with no shader model the DXIL probe cannot compile, the target table reports d3d12-dxil=unavailable, and the first half of this body fails before the cross-target comparison is reached."
 
-# --- The completeness half of the same subject, asked separately and answered red ------------------
+# --- The completeness half of the same subject, asked separately: red at M11.c, closed at M11.d ---
 #
 # WHY THIS IS A SECOND CRITERION AND NOT A STRICTER FIRST ONE. The one above asks whether the shader
 # system EMITS the three targets and whether two of them agree about a graph. This one asks whether
@@ -1776,10 +1776,11 @@ note   = "measured at M11.c's close: the previously declared mutation on cmake/f
 [[criterion]]
 id = "every-shader-reaches-every-target"
 describe = """every entry point the engine declares compiles for every target this build emits. \\
-It does not: `fullscreenVertex` and `cyParticleVertex` take `SV_VulkanVertexID`, which HLSL has no \\
-equivalent of, and DXC refuses them with `invalid semantic 'SV_VulkanVertexID' for vs 6.5`. \\
-37 of 39 entry points reach all three targets and these two reach two of them; nothing else in the \\
-tree is short"""
+Declared red here — `fullscreenVertex` and `cyParticleVertex` took `SV_VulkanVertexID`, which HLSL \\
+has no equivalent of, and DXC refused them — and CLOSED AT M11.d, which found the set had grown \\
+worse than declared: `cyStripVertex` and `vgVisHwVertex` had landed with the same semantic, and \\
+`cy/particle.slang` compiled for no target at all. All four stages take the portable `SV_VertexID` \\
+now; `m11d:vertex-id-is-portable` carries the device feature and the draw base that spelling costs"""
 source = "tasks 1.5-1.7, shader-system, M11.d design.md §6"
 kind = "command"
 run = '''
@@ -1792,5 +1793,18 @@ grep -o "shader-set: .*" /tmp/cy-m11c-shader-strict.txt | tail -1 | grep -q "tar
 timeout_s = 3600
 ci_job = "milestone-m11c"
 
-known_gap = "DECLARED BY THE RUNG THAT FOUND IT, WITH THE MEASUREMENT THAT SIZES IT, AND CLOSED BY THE RUNG THAT OWNS THE DECISION. `SV_VulkanVertexID` is the raw Vulkan vertex index; `SV_VertexID` is the portable spelling and is NOT the same value — measured here rather than assumed: recompiling `fullscreenVertex` with `SV_VertexID` changes the SPIR-V from 832 to 948 bytes, adds the `DrawParameters` capability, and subtracts a `BaseVertex` builtin the current module never loads. So this is a rendering change behind two golden images and a device capability, not a rename. It was found by compiling the engine's whole shader set for all three targets, which nothing in this tree had ever done. THE COST, so the next rung prices it rather than discovers it: two entry points, in `src/rendering/shaders/cy/fullscreen.slang` and `src/rendering/shaders/cy/particle.slang`, both drawing a procedural triangle strip from the vertex index with no vertex buffer; the fix is either to pass the base vertex explicitly or to prove `SV_VertexID` equivalent for the draws these two are issued by, and either way the evidence is the golden images compared across backends — which is `m11d:golden-images-across-three-backends`, a criterion M11.d already carries. M11.c fixed the two refusals it could fix without touching a pixel: `cyForwardFragment` gained the `: SV_Target` that HLSL requires for a fragment return, verified SPIR-V-byte-identical before and after so no checked-in module and no golden image moved, and the DXIL floor rose from shader model 6.5 to 6.6 because `vgVisRaster`'s 64-bit atomic minimum is how `virtual-geometry` rasterises and is not negotiable."
-known_gap_closes = "m11d"
+# THE MUTATION TAKES A SEMANTIC ONE TARGET REQUIRES, WHICH IS THE CLASS THIS CRITERION IS ABOUT. What
+# closed the gap was an ADDITION — `SV_VertexID` where `SV_VulkanVertexID` stood — and every verb the
+# prover has subtracts, so the closing act cannot be reversed by it; it was reversed by hand instead
+# (`SV_VulkanVertexID` put back in `fullscreenVertex` alone: `target_refusals=1`, red, and green
+# again once restored — M11.d tasks.md, 9.9). The declared mutation is the same failure one stage
+# over: renaming `SV_Target` leaves `fullscreenResolve` and `temporalResolve` a return value with a
+# user semantic, which SPIR-V and MSL accept as colour output 0 and DXC rejects (`invalid semantic
+# ... for ps 6.6`) — two entry points one target refused and the other two compiled, which is
+# a `target_refusal` and nothing else, and the tree still builds because the modules the renderer
+# draws with are the checked-in ones.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/shaders/cy/fullscreen.slang"
+token  = "SV_Target"
+note   = "renaming the fragment return semantic makes DXC refuse the two full-screen fragment stages while SPIR-V and MSL still compile them; --strict ends red on target_refusals=2 while the tree still builds and draws. Measured at M11.d: exit 1, target_refusals=2, DXC 'invalid semantic ... for ps 6.6'"

@@ -237,12 +237,54 @@ with nothing to check.
 
 ## 5. `rendering-forward-clustered` — the desktop half only
 
-- [ ] 5.1 MSAA through the render graph's attachment model, resolved where the pass declares it
-- [ ] 5.2 Multi-view, selected by **capability query** rather than backend identity, with the
-      baseline path still correct where the capability is absent
-- [ ] 5.3 **The row does NOT reach Complete here, and the ledger says so rather than the gate
+- [x] 5.1 MSAA through the render graph's attachment model, resolved where the pass declares it.
+      **Done**: `PassBuilder::multisample(n)` (before the attachments), `resolve(target)` and
+      `single_sample(reason)` (`src/rendering/graph/src/multisample.cpp`). The graph creates the
+      multisampled twin of a texture the first time a multisampled pass names it as an attachment,
+      redirects that pass's attachment uses to it, and inserts a graph-owned resolve pass directly
+      after the declaring pass; `PassContext::attachment_view` hands the pass the twin's view.
+      compile() refuses a frame in which the texture is used while its twin holds rendering no
+      resolve has reached — a missing resolve, or one declared before the last multisampled write.
+      The virtual-geometry stage declares `single_sample` with the words `ForwardFrame::build`
+      refuses a multisampled frame with, so the graph refuses it by the same name. Colour only: the
+      RHI has no depth resolve mode, and a depth `resolve()` is refused by name. **Proved**:
+      `unit.render_graph` (7 cases: twin, placement, missing, misplaced, resolve on the wrong pass,
+      1x plan hash identical with `multisample(1)` declared, the named refusal); `render.msaa_multiview`
+      on the RTX 5060 — 1x: 1 250 full, 0 partial; 4x: 1 191 full, 120 partial, area 1 250.4 vs
+      1 250.0; 1x through the model byte-identical to the pass declared the old way; zero
+      validation errors. Mutations, each restored and md5-verified: deleting the resolve view →
+      4x reads back empty (0 full, 0 partial), red; deleting the twin's unresolved mark → the
+      missing/misplaced cases red. **Not done here, and said so in `src/rendering/forward/README.md`**:
+      `ForwardFrame` still declares its own `colour (msaa)` targets and caller-recorded `resolve`
+      stage, and `FrameRecorder` still refuses MSAA — moving the frame onto the graph's model edits
+      the shading and post-chain declarations PRs #21 and #22 are editing. Criterion
+      `m11d:msaa-through-the-graph`.
+- [x] 5.2 Multi-view, selected by **capability query** rather than backend identity, with the
+      baseline path still correct where the capability is absent. **Done**: `PassBuilder::views(n)`;
+      the executor records the pass once with an n-bit view mask where the device reports
+      `Capability::Multiview`, and once per view into single-layer views where it does not
+      (`PassContext::view_mask`, `view_index`). The plan does not depend on the choice.
+      `DeviceDescription::request_multiview` lets a device that has the feature run the baseline.
+      **A defect found and fixed on the way**: the Vulkan backend reported `Capability::Multiview`
+      unconditionally and never enabled `VkPhysicalDeviceVulkan11Features::multiview`, so every
+      view-masked pipeline and rendering scope was invalid usage. Now asked for, and the capability
+      follows the feature. Regression: `render.msaa_multiview`'s multi-view case — with the old
+      behaviour restored it reports `VUID-VkRenderingInfo-multiview-06127`,
+      `VUID-VkGraphicsPipelineCreateInfo-multiview-06577` and
+      `VUID-VkShaderModuleCreateInfo-pCode-08740`, red; restored and md5-verified. **Proved**:
+      `integration.render_graph_scale` on the null backend with the capability present, requested
+      absent and overridden absent — one recording with mask `0b11` versus two with view indices 0
+      and 1 through two different single-layer views, identical plan hash; on the device, a
+      multi-view device and one created without it produce byte-identical two-layer images, each
+      layer only its own view's colour, zero validation errors. Mutation: deleting the per-view index
+      → null case red and the device images DIFFER. Criterion `m11d:multiview-by-capability`.
+- [x] 5.3 **The row does NOT reach Complete here, and the ledger says so rather than the gate
       discovering it.** The mobile pipeline differences are M11.e's half of the same row, and a row
-      is not Complete on the half of its scope one rung can reach. This rung records a floor
+      is not Complete on the half of its scope one rung can reach. This rung records a floor.
+      **Done**: `m11d:forward-clustered-desktop-floor`, a `tiers` criterion expecting
+      `rendering-forward-clustered` at `working` and not `complete`; `m11e.toml` keeps the row's
+      `complete` expectation. The spec delta `specs/rendering-forward-clustered/spec.md` records the
+      MSAA and multi-view requirements as built, including the capability-absent scenario.
 
 ## 6. The core rows the port audits
 
@@ -309,10 +351,56 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       (2 582 of 2 584 files without an SPDX header, 540 of 2 472 public symbols undocumented) and a
       baseline entry that has since been FIXED also fails, which is what stops a backlog being an
       allowlist — `tools/quality/README.md` §"the baseline is a snapshot" names what the close owes
-- [ ] 7.2 The three acceptance scenarios the matrix records as unwritten — **strategy stress**,
+- [x] 7.2 The three acceptance scenarios the matrix records as unwritten — **strategy stress**,
       **control handover**, **headless server** — written where the taxonomy can run them, with the
       kind and budget they belong to stated rather than assumed.
-      **NOT DONE, and not started.** These are *benchmarks*, not tests — `testing-and-quality`'s
+      **DONE — all three written, registered and green, each asserting the property this rung's
+      delta names for it; and the first one found a defect before it could pass.**
+      `tests/acceptance/` holds them, its CMakeLists.txt carries the kind-and-budget table, and its
+      README says what each asserts and what it does NOT exercise:
+      * **`smoke.acceptance_strategy_stress`** (smoke, 30 s) — 8 participants, 4 teams, 100 000
+        units (20 000 moving), 5 000 groups, 1 000 structures, 320 group orders → **6 400 validated
+        member commands a tick**, every one reaching the replay-recording seam; the framework's share
+        of the tick measured against the simulation's and compared with a committed ceiling.
+      * **`integration.acceptance_control_handover`** (integration, 1 s) — four players, a vehicle,
+        a gunner, an AI taking the wheel, a spectator: the vehicle's motion continues across the
+        handover, the gunner is accepted on every tick including the handover's, the departed driver
+        is refused `NotControlled` on the next tick, the spectator reads the true controllers every
+        tick and is refused every order, and the recorded stream replayed into fresh state matches
+        at every tick.
+      * **`smoke.acceptance_headless_server`** (smoke, 30 s) — `cy_headless_server`, **the
+        dedicated-server BUILD configuration the tree did not have**: 100 000 entities, tiered AI
+        (~2 700 thinks a tick, none starved), ~270 orders a tick through one group binding per squad,
+        a kinematic Jolt body per entity, stepped at a fixed 30 Hz. Its trace is read back by
+        `tools/trace/trace_inspect.py`, which does not link the engine, and must carry every counter
+        a server owes at every tick. **"A dependency on any of them SHALL fail the build" is held
+        twice**: at configure time by `cy_require_headless` (gameplay's own closure check, reused so
+        there is one forbidden list) over the DECLARED closure, and POST_BUILD by
+        `headless_closure.py` over the LINKED binary's symbols and dynamic dependencies — which,
+        pointed at `cy_sample_ship`, names SDL, Vulkan, the RHI, the render graph and libX11.
+      **THE DEFECT (the regression is in `src/gameplay/tests/test_control.cpp`).** The strategy
+      stress could not be BUILT: `ControlRegistry::kMaxGroups` was **64** against the scenario's
+      5 000, and with the cap lifted the framework measured **94 % of a strategy tick** — 50.7 ms of
+      validation against 3.2 ms of simulation — because `controls()`, asked once per member command,
+      walked every binding and searched the group LIST for every group binding. It now answers from a
+      binding index and a membership index (exact for an entity in more groups than the inline four,
+      by falling back to the walk for that entity alone): **0.5–1.2 ms a tick, 22–34 % of this
+      scenario's deliberately modest simulation** on a host at load 20+. Three registry cases — 5 000
+      groups, every way a binding or membership goes away, an overflowed membership — were watched
+      red with the cap restored to 64 (the first) and with `unindex_binding` deleted (the second),
+      and the strategy stress red at 94 % before the index; each mutation restored and md5-verified.
+      **THE CEILING IS 50 %, AND IT IS A REGRESSION GUARD, NOT THE CLAIM THAT A THIRD IS "SMALL".**
+      A first draft set 15 % before anything was measured; the measurement replaced the guess and
+      the test records both. `gameplay-framework`'s "small, reported fraction" is judged against a
+      real strategy tick — pathfinding, combat, streaming — which this scenario does not have yet.
+      **NOT EXERCISED, and said on each test's own output:** world streaming and network authority
+      (strategy stress), networking and prediction (control handover), connections, replication and
+      world streaming (headless server). **The headless server's physics finding**: as DYNAMIC
+      bodies two metres apart, orders woke neighbours through contacts and the step went from 8 ms to
+      140 ms in thirty ticks; kinematic units whose orders run out after half a second hold it at
+      ~25 ms of the 33 ms tick — single-threaded, because the server hands Jolt no job system.
+      Criterion: `m11d:acceptance-scenarios`.
+      *Superseded record, kept:* These are *benchmarks*, not tests — `testing-and-quality`'s
       "Performance benchmarks" requirement is where the table lives — and each needs systems this
       rung's other sections were writing at the same time: 100 000 units with world streaming,
       network authority and replay recording; four networked players with vehicle entry, AI
@@ -336,10 +424,33 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       `hardware`**, because the hosted Windows image's adapter 0 is a software rasteriser that does
       not set `DXGI_ADAPTER_FLAG_SOFTWARE`. A backend with no device is a row saying so with its
       reason, never an absence
-- [ ] 7.4 **`build-and-packaging` — content audit**: *why is this in the build* (the reference chain
+- [x] 7.4 **`build-and-packaging` — content audit**: *why is this in the build* (the reference chain
       from a declared root) and *what references this*; size by category, asset, plugin, world region
       and install bundle; cook and compile time by stage with cache hit rates.
-      **PARTLY DONE — three of the four questions answered, and the fourth NAMED rather than
+      **DONE — per FILE, from a DECLARED root, with what nothing asked for flagged, and the two
+      sizes that were NOT REPORTED now reported from declarations.** Three pieces:
+      * **Declared roots.** `cybuild 1` gains a top-level `root "<node>"` line
+        (`BuildGraph::declare_root`, resolved at `finalize()`, a root naming no node refused
+        `NotFound`, round-tripped by the writer). `roots()` was an INFERENCE — every node nothing
+        consumes — so a stray node was its own root and nothing could ever be called unreferenced.
+      * **`audit_content()` / `cy_build build --audit`.** Every file in the package with the chain
+        from the nearest declared root to the node that produced it and the project files that node
+        read; then every node no declared root reaches and every project file no node reads,
+        DECLARED OR DISCOVERED — `NodeResult::discovered` now carries discovery on a cache hit as
+        well as on a run, because a glTF's `.bin` is referenced and flagging it would be the false
+        positive that teaches a team to ignore the audit (`integration.build_content` holds it on a
+        warm build — watched red with the cache-hit half deleted). Exit **4** when anything is
+        flagged. A
+        description with no root is refused rather than inferred.
+      * **Size by plugin and by world region** from `plugin` / `region` node fields — attribution
+        only, never in the key, like `bundle`; undeclared content reported as `(undeclared)`, each
+        section's sum printed against the package's own size.
+      **The artefact**: `samples/11-ship/project/build/ship.cybuild` declares `root "package:card"`
+      and `ship.py`'s act 1b requires every one of the package's four files to trace to it and
+      **nothing unreferenced** — a copy of a card dropped into `project/card/` fails the run naming
+      `UNREFERENCED source card/stray.cycard` (watched, then removed and the project md5-verified).
+      Three `unit.build_graph` cases hold the library half. Criterion: `m11d:content-audit`.
+      *The earlier record, kept:* **PARTLY DONE — three of the four questions answered, and the fourth NAMED rather than
       invented.** `just content-audit` is the recipe: `cy_build audit` and `cy_build explain` have
       existed since M6 and **no recipe reached either**, so the reference chain was a capability
       with no workflow. `stage_report()` answers cook and compile time by stage with hit rates —
@@ -363,14 +474,50 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       the content manifest hash are deliberately ONE field, because two would be two things that can
       disagree. A round-trip case in `unit.build_graph` names each of the seven, so a field dropped
       from the writer or the reader fails there.
-      **NOT DONE: shipping binaries stripped with symbols archived separately and retrievable by
-      build identity, and a reproducibility bundle archived by CI.** Both are packaging and CI work
-      rather than manifest work — `objcopy --only-keep-debug` / `dsymutil` / PDB handling per
-      platform, an archive keyed by `build_id`, and an upload step — and neither was started
-- [ ] 7.6 **Downloadable content and distributed execution — contingent, and `design.md` §5 says
+      **SYMBOLS: DONE on ELF. REPRODUCIBILITY BUNDLE: produced and verified, NOT archived BY CI —
+      which is why this box stays open.**
+      * **`tools/build/symbols.py`** — `split` strips a binary (`objcopy --strip-all` plus a
+        `.gnu_debuglink`) and archives its symbols in GDB's own `debug-file-directory` layout keyed
+        by the GNU build-id, indexed under the PACKAGE build identity too; `locate` answers from
+        either; `verify` proves the archive belongs to the binary with four checks, because another
+        build's symbols symbolicate without complaint and name the wrong line — stripped; one
+        build-id; the debuglink's CRC-32 over the archived bytes; and `main` symbolicated through the
+        archive to its source line while the stripped binary alone places nothing.
+        `unit.build_symbols` builds a probe for every refusal (another build's symbols under this
+        build-id, symbols edited after the split, unstripped, no build-id, no `-g`, not ELF).
+      * **THE DEFECT WRITING IT EXPOSED**: `cmake/profiles.cmake`'s **Shipping row compiled with no
+        `-g`**, while its own comment said symbols were split at packaging time — a shipping build
+        had nothing to archive and a crash in one could never be placed on a line. Shipping now
+        compiles `-O3 -g -DNDEBUG` (`/Zi` + `/DEBUG /OPT:REF /OPT:ICF` on MSVC; debug information does
+        not change generated code), and `unit.build_symbols` is handed the CONFIGURED Shipping flags
+        and fails on a configuration without debug information — watched red on `-O3 -DNDEBUG`.
+      * **The artefact launches the STRIPPED binary.** `ship.py` act 1c splits `cy_sample_ship`,
+        verifies and locates the archive, then every launch runs the stripped copy — so what was
+        verified is what ran (measured: the stripped binary presented 30 frames through
+        `linux-x11` on the RTX 5060) — and writes `reproduce/<build id>/`: the package manifest, the
+        description, the lockfile statement, the build tree's configuration, every artefact hash and
+        the symbols, and requires that bundle's symbols to verify on their own. The launch now prints
+        and the driver checks all seven provenance fields, the ENGINE revision separate from the
+        PROJECT's (`git log -1 -- samples/11-ship/project`).
+      * **Not done, and not this rung's to do:** the CI upload of that bundle is a step in `ci.yml`,
+        which the close phase owns and M11.e's full matrix rewrites; and Mach-O (`dsymutil`) and
+        PE/PDB are the same four checks with other spellings, which this Linux host cannot produce —
+        a non-ELF input is refused by name, never treated as stripped. Both travel with the row to
+        M11.e (7.6). Criterion: `m11d:provenance-and-symbols`
+- [x] 7.6 **Downloadable content and distributed execution — contingent, and `design.md` §5 says
       why.** `docs/roadmap/risks.md` already lists distributed build execution as "M11 or later". If
       the distribution surface only becomes real at M11.e, this row's Complete cell moves there
-      **with its reason recorded**, which is what a demotion is for
+      **with its reason recorded**, which is what a demotion is for.
+      **DECIDED: the cell MOVES TO M11.e, and the prediction held.** `design.md` §5.1 records it
+      under *"DECIDED — task 7.6"*: downloadable content is a SIGNED package set and nothing in
+      `core/crypto` signs; distributed execution needs remote workers, a second machine; the
+      reproducibility bundle exists (7.5) but archiving it is a `ci.yml` step. The move has two
+      halves and both are made: `m11d.toml`'s `roadmap-tiers` no longer expects the row, and
+      `m11e.toml`'s does, received by M11.e task 4.4 and `downloadable-content-and-distributed-execution`,
+      which already existed for exactly this. `m11d:build-and-packaging-moves-to-m11e` fails if
+      either half is undone — watched red with M11.e's line deleted. **What the close phase owes**:
+      `capability-matrix.md` still shows the row's **C** under M11.d, and `status.yaml` /
+      `ROADMAP.md` follow it; the close phase edits them
 - [x] 7.7 **`developer-workflow-and-just`** — target selection on the build, test, package and deploy
       recipes, and **an impossible target explained**: the requirement says the workflow "SHALL say so
       and state what is required" rather than failing obscurely, and a second desktop is the first
@@ -511,7 +658,7 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 - [ ] 9.6 **Re-point, do not delete.** Any gap this rung closes has its declaration deleted in the
       same change that closes it, because a declared gap that starts passing fails the ledger; any it
       does not close keeps `known_gap_closes` pointed at the rung that will
-- [ ] 9.7 **Bind the quiet-host marker to the real wrapper.** Moved here from M11.c's tenth close by
+- [x] 9.7 **Bind the quiet-host marker to the real wrapper.** Moved here from M11.c's tenth close by
       the owner's ruling. `tests/harness/src/quiet_host_marker.cpp` trusts `CY_QUIET_HOST` when the
       named pid is a live ancestor with the marker's start tick and the BASENAME of its
       `/proc/<pid>/exe` is `cy_quiet_host`, so any binary renamed `cy_quiet_host` is trusted. It did
@@ -521,7 +668,112 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       compare the ancestor's `/proc/<pid>/exe` against the `cy_quiet_host` the build produced (same
       dev/inode or resolved path, passed at configure time), or hand the child a secret over an
       inherited file descriptor — and add a copied/renamed-binary forgery case to
-      `smoke.quiet_host_marker`, proven red on the current check
+      `smoke.quiet_host_marker`, proven red on the current check.
+      **Done.** The harness trusts the ancestor `CY_QUIET_HOST` names only when `/proc/<pid>/exe`
+      has the device and inode of the `cy_quiet_host` this build produced, whose path is compiled
+      in at configure time (`CY_QUIET_HOST_WRAPPER`). `smoke.quiet_host_marker`'s leg runs a copy
+      of `sh` renamed `cy_quiet_host` that forges a marker naming itself, and requires the stall to
+      be reported, not enforced; `unit.harness` holds trust by identity and the refusal of a
+      same-named file elsewhere. **The inside half, measured on a quiet host** (load 2.5): the real
+      built wrapper around the stall probe still says `enforced`, `quiet_host_test.py --leg marker`
+      exit 0 against `build/m11d-quiet-host-identity`. The criterion's impostor check grepped for
+      text the source splits across two literals and was red unmutated; it now matches the call
+      that runs the forgery. `m11d:quiet-host-marker-by-identity` is *proven against a built tree*
+      (red with `CY_QUIET_HOST_WRAPPER` renamed, green again once restored)
+- [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
+      [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
+      new or edited since the base (its falsifiability digest moved, or it was not in the base's
+      plan) or whose inputs a changed file belongs to, and the smoke set (`m0:build`, `m0:format`,
+      `m0:lint`, `m0:test`); the base defaults to the commit a green FULL run on a clean tree
+      recorded. Inputs are read from the build graph (`ninja -t inputs`/`-t deps`, ctest's JSON,
+      compile definitions), the recipes' `just --show` closure and the criterion's glob or record —
+      never a hand list — and a criterion whose inputs cannot be read is ALWAYS selected, with the
+      reason printed. The full ledger stays the default and runs nightly and at M11.e.
+      `tools/roadmap/incremental.py`; `test_incremental_selection` in `selftest.py`, each of its
+      four required cases proven red against a mutation of the code that provides it;
+      `m11d:incremental-close-selects-by-inputs`; the `delivery-roadmap` delta in `specs/`.
+      **Done.** Three defects were found while building it, each now a regression case proven red:
+      `just --summary` hides private recipes, so a closure read from it stopped before `_ctest`;
+      `VerifyGlobs.cmake_force` makes `build.ninja` dirty on every run and ninja's dry run stops
+      at the manifest, so the target dry run goes through a wrapper manifest; and a definition
+      naming the repository root (`CY_DIAG_SOURCE_ROOT`, in the diagnostics library nearly every
+      test links) made almost every test criterion unknown — it is a stripped prefix, so
+      `tools/roadmap/incremental.toml` exempts it, pinned by a digest of every file that uses it.
+      Measured on a current `build/m11d-incremental-close`: a change to
+      `src/save/src/container.cpp` selects 248 of 474 (the 5 save criteria by inputs, the renderer's
+      skipped), a change to `cy/core/base/types.h` 417 (174 by inputs), no change 243 — a floor of
+      27 own, 4 smoke and 211 whose inputs cannot be read. **Recorded**: the body now names the
+      tree it selects against (`--build-dir "${CY_BUILD_DIR:-build/dev}"`), which it always read,
+      so the prover judges it against a build rather than a source copy with no git history.
+      `falsify prove --mutate-the-tree` against `build/m11d-incremental-close`: green, red under the
+      declared mutation, green again once restored — *proven against a built tree*.
+- [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
+      change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
+      from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
+      `failures=2 target_refusals=3`, not two refusals. `cyStripVertex` and `vgVisHwVertex` had
+      landed after M11.c's measurement with the same `SV_VulkanVertexID` (the second with
+      `SV_VulkanInstanceID` too), and **`cy/particle.slang` compiled for no target at all**: it
+      named `cyFrame`, which `cy/frame.slang` turned into a `#define` when its view block became a
+      parameter block, and a macro does not cross an `import` — the checked-in `particle_spirv.h`,
+      compiled before that change, kept the renderer drawing and hid it. **Done**:
+      - the four stages take `SV_VertexID` (and `SV_InstanceID`); `particle.slang` names
+        `cyFrameView.frame`. The entry points keep their names and parameters, so a pass that binds
+        `fullscreenVertex` (bloom's, in flight) binds it unchanged;
+      - the Vulkan device requests `shaderDrawParameters` and refuses a device without it, by name
+        (`vulkan_instance.cpp`), because Slang's SPIR-V for the portable spelling is `VertexIndex -
+        BaseVertex` and declares `DrawParameters`. It is chained onto the
+        `VkPhysicalDeviceVulkan11Features` section 5's multi-view work introduced, not a second one;
+      - **the base vertex is handled by the draws**: every draw of those stages starts at vertex and
+        instance zero — the one base on which SPIR-V's subtraction and Metal's `vertex_id` agree
+        (`vgVisHwPrepare` writes the indirect draw's `vertexOffset` and `firstInstance` as 0) — and
+        `integration.render_pipeline`'s *every procedural draw starts at vertex and instance zero*
+        asserts it for the frame from the null backend's command log;
+      - regenerated with the pinned slangc 2026.9.2, which was first shown to reproduce the
+        checked-in resolve and visibility-raster modules byte for byte from the unchanged sources:
+        `frame_spirv.h`/`frame_msl.h` (the resolve vertex only, spliced, so a regeneration of the
+        forward entries elsewhere rebases), `particle_*.h` and `strip_*.h` (the fragments' SPIR-V
+        came out byte-identical, their MSL moved only in `#line`; the vertex modules now declare the
+        whole per-view block, shadow rows included), `vg_visbuffer_spirv.h` (the hardware vertex).
+        `ResolveVertex.spv` is 948 bytes, M11.c's measurement to the byte. **No DXIL is embedded
+        for any of them**: the tree embeds DXIL only for `samples/03-first-light`, which this does
+        not touch. Metal's modules are compiled and, as before, not run on this host.
+
+      **Evidence** — `build/m11d-shaders-every-target` (Development, `-O2`) and
+      `build/m11d-shaders-every-target-debug` (Debug; every changed C++ file compiled with its
+      flags, `integration.render_pipeline` green):
+      - `cy_shaderc build --strict src samples`: `entry_points=54 artefacts=162 comparisons=162
+        disagreements=0 failures=0 target_refusals=0`, exit 0.
+      - **Byte-identical on Vulkan, before and after**, every image each binary writes, captured
+        from binaries built from the tree before the change and after it (references written through
+        `CY_RENDER_UPDATE_GOLDEN` into a scratch copy, the committed files restored): `first_light`
+        and `first_light_no_shadows` (`render.golden`), the sample's own `--capture`, the four sky
+        references, `beauty_shot_air` (`render.vfx`), the full beauty shot and its linear still —
+        996 particles in one draw and 984 trails through `StripRenderer` — `render.pipeline`'s six
+        captures including `pipeline-frame-particles`, and `virtual_geometry_shaded`;
+        `render.virtual_geometry_forward` reported the same 2 529 pixels in agreement. Each of the
+        references `render.*` writes is also byte-equal to the committed one. Two runs of the same
+        binary were first shown byte-identical, so equality is a measurement and not noise.
+      - `smoke.shader_targets` (new, `tools/shaders/tests/`): the strict measurement over
+        `src/rendering/` on every smoke run — `entry_points=35 artefacts=105`, three targets
+        required when `CY_SHADER_DXIL` is on, so a build whose DXC did not load cannot pass on two.
+        **Red** with `SV_VulkanVertexID` put back in `fullscreenVertex` (`target_refusals=1`) and
+        with `cyFrame` put back in `particle.slang` (`failures=2`); green once each was restored,
+        md5-verified.
+      - `integration.render_pipeline`'s new case: **red** (`offset` 1 of 0) with the resolve's draw
+        given a first vertex (`draw(3, 1, 1, 0)` in `frame_recorder.cpp`), green once restored.
+      - **`m11d:vertex-id-is-portable`** (new): its four suites green, 4 of 4 registered; **red**
+        under its declared mutation — `features11.shaderDrawParameters = VK_TRUE;` deleted —
+        `render.pipeline` 6 of 6 cases and `render.vfx` 4 of 4 failing on
+        `VUID-VkShaderModuleCreateInfo-pCode-08740` (*"SPIR-V Capability DrawParameters was
+        declared, but…"*); green once restored.
+      - **`m11c:every-shader-reaches-every-target`**: `known_gap` and `known_gap_closes` deleted;
+        the recipe it runs is **red** with `SV_VulkanVertexID` reintroduced (`target_refusals=1`)
+        and under its new declared mutation, `SV_Target` renamed in `cy/fullscreen.slang`
+        (`target_refusals=2`, DXC: *invalid semantic … for ps 6.6*). `docs/roadmap/open-debts.md`
+        regenerated. **Re-recorded** on the committed tree with `falsify prove
+        --mutate-the-tree` against `build/m11d-shaders-every-target`: both this criterion (red under the `SV_Target` rename)
+        and `vertex-id-is-portable` (red under the deleted `shaderDrawParameters` request) are
+        *proven against a built tree*, green again once restored.
 
 ## 10. The gate
 

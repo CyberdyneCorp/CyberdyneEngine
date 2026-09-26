@@ -134,6 +134,22 @@ Regeneration works as `render.golden`'s does and for the same reason — `CY_REN
 ctest -R render.sky_times_of_day` writes the four references and then **fails**, naming what it
 wrote.
 
+## Cloud shadows in the world frame — `render.world_cloud_shadow`
+
+Draws with `samples/10-world`'s committed lit-pipeline SPIR-V (`samples/10-world/shaders/world_spirv.h`)
+over ground lit by a real `sky::CloudShadowField` that has marched one known cloud, seen straight
+down, and reads the half-float target back. Every texel is classified by the processor's reading of
+the same image bytes (`environment::sample_field_image`).
+
+| Case | Asserts |
+|---|---|
+| darker under, unchanged beside | every texel where the field lets less than half the sun through is darker, and matches the Lambert term with the sun scaled by the processor's field to 1%; every texel in full sun is bit-identical to the frame with cloud shadows off; no texel is brighter |
+| off, or under a clear sky | the placeholder binding, the field bound and off, the clear field bound and off, and the clear field bound and ON each give, bit for bit, the frame the world's shaders drew before cloud shadows (`world_before_cloud_shadows_spirv.h`, pinned at 2614fb0) — and the cloudy field on does not |
+| sky and ambient untouched | the emissive path the dome uses, and ground lit by the ambient term alone, are bit-identical with the field on and off over the darkest cloud |
+
+Each was seen red under a shader mutation, regenerated and restored:
+`openspec/changes/add-cloud-shadows/evidence/falsification.txt`.
+
 ## The artefact's air — `render.vfx`, whose reference lives here
 
 M11.c task 6.3, `m11c:vfx-in-the-shot`. **The case is declared by `src/vfx/tests/CMakeLists.txt`
@@ -205,6 +221,25 @@ drawn.
 
 A rendering milestone whose only gate is a photograph is a rendering milestone that is not gated on
 the machines that build it.
+
+## MSAA and multi-view on the device — `render.msaa_multiview`
+
+M11.d tasks 5.1 and 5.2. The render graph owns MSAA and multi-view now: a pass declares
+`multisample(n)` and `resolve(target)` and the graph allocates the multisampled twin and inserts the
+resolve; a pass declares `views(n)` and the executor records it once with a view mask where the
+device reports `Capability::Multiview`, and once per view into single-layer views where it does not.
+`unit.render_graph` and `integration.render_graph_scale` prove the structure with no GPU. This suite
+proves the pixels, with one triangle whose edges are all oblique (`shaders/view_probe.slang`):
+
+| Case | Asserts |
+|---|---|
+| 4x edges are smoother than 1x | 1x has **no** partially covered pixel; 4x has at least 64 along the edges; both cover the same area within 3%. A resolve the executor skipped leaves the target at its clear colour and fails all three |
+| 1x declared through the model is byte-identical | the same pass with `multisample(1)` declared and without it produce the same bytes |
+| multi-view and its baseline render the same layers | a device with multi-view and one created with `request_multiview = false` produce byte-identical two-layer images, each layer carrying only its own view's colour, with zero validation errors on both |
+
+The third case is also the regression test for a Vulkan defect M11.d found: `Capability::Multiview`
+was reported unconditionally while `VkPhysicalDeviceVulkan11Features::multiview` was never enabled,
+so every view-masked pipeline and rendering scope was invalid usage the driver happened to accept.
 
 ## What M3 did NOT wire here, from `testing-and-quality`
 

@@ -323,6 +323,31 @@ distribution is a second machine. **If the distribution surface only becomes rea
 row's Complete cell moves there with its reason recorded**, and that is a demotion done properly
 rather than a cell claimed thinly.
 
+> **DECIDED — task 7.6, and the prediction held.** `build-and-packaging`'s Complete cell **moves to
+> M11.e**. What this rung made real: the content audit per file, with the chain from a *declared*
+> root and unreferenced content flagged (7.4); provenance with all seven fields and stripped
+> binaries whose separated symbols are *proved* to match them, archived by build identity, plus a
+> reproducibility bundle keyed by that identity (7.5). What did **not** become real here, each for a
+> reason a code change in this rung could not remove:
+>
+> - **Downloadable content** is *"a signed package set with a declared dependency on a base
+>   build"*. Nothing in `core/crypto` signs anything, and `tools/build/README.md` already declines
+>   to invent a signature scheme because the requirement forbids it. Mounting by stable identity
+>   exists; the signed set does not.
+> - **Distributed execution** needs remote workers — a second machine. `BuildConfig::distributed`
+>   is read and reported and has no worker pool behind it; the local degradation the requirement
+>   asks for is the state the build ships in, and that is all a one-host rung can show.
+> - **The reproducibility bundle archived *by CI***. The bundle exists and verifies on its own
+>   (`samples/11-ship`, act 1c); archiving it is an upload step in `ci.yml`, which the close phase
+>   owns and M11.e's full CI matrix rewrites.
+> - **Size by plugin and by world region** stay `NOT REPORTED`: neither is a declaration
+>   `cybuild 1` carries.
+>
+> The cell is received by M11.e task 4.4 and its criterion
+> `m11e:downloadable-content-and-distributed-execution`, which already existed for exactly this;
+> `m11e.toml`'s `roadmap-tiers` now expects the row there and `m11d.toml`'s no longer does.
+> `m11d:build-and-packaging-moves-to-m11e` fails if either half of that move is undone.
+
 **And a second, smaller one: `developer-workflow-and-just`.** Target selection and the second-platform
 recipes are this rung's. The four `release-*` recipes are not — they refuse today naming *"M12 —
 build-and-packaging"*, a milestone that does not exist on a ladder whose `record.MILESTONES` ends at

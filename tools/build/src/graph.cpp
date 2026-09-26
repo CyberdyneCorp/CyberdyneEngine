@@ -186,6 +186,15 @@ Status BuildGraph::finalize() {
     if (Status ordered = compute_order(); !ordered) {
         return ordered;
     }
+    declared_roots_.clear();
+    for (const std::string& name : declared_root_names_) {
+        const NodeId root = find(name);
+        if (root == NodeId::Invalid) {
+            return make_unexpected(
+                Error{ErrorCode::NotFound, "a declared root names no node in the graph", 0});
+        }
+        declared_roots_.push_back(root);
+    }
     finalized_ = true;
     return ok();
 }
@@ -235,11 +244,8 @@ std::vector<NodeId> BuildGraph::dependents_of_source(std::string_view source) co
     return result;
 }
 
-std::vector<NodeId> BuildGraph::reference_chain(NodeId id) const {
-    // "Why is this in the build?" is answered from a DELIVERY ROOT downward: the package that was
-    // asked for needs a cook, which needs this import. So the walk goes along `downstreams_` until
-    // it reaches a node nothing consumes, and the chain is then read back from that node to `id`.
-    //
+template <typename IsRoot>
+std::vector<NodeId> BuildGraph::chain_to_root(NodeId id, IsRoot is_root) const {
     // Breadth-first, so the answer is the SHORTEST chain: an asset pulled in both directly and
     // through six intermediaries should report the direct route rather than whichever route the
     // traversal happened to take first.
@@ -249,9 +255,9 @@ std::vector<NodeId> BuildGraph::reference_chain(NodeId id) const {
     seen[node_index(id)] = true;
     NodeId root = NodeId::Invalid;
 
-    for (usize head = 0; head < queue.size() && root == NodeId::Invalid; ++head) {
+    for (usize head = 0; head < queue.size(); ++head) {
         const NodeId current = queue[head];
-        if (downstreams_[node_index(current)].empty()) {
+        if (is_root(current)) {
             root = current;
             break;
         }
@@ -273,6 +279,32 @@ std::vector<NodeId> BuildGraph::reference_chain(NodeId id) const {
         }
     }
     return chain;
+}
+
+std::vector<NodeId> BuildGraph::reference_chain(NodeId id) const {
+    // "Why is this in the build?" is answered from a DELIVERY ROOT downward: the package that was
+    // asked for needs a cook, which needs this import. So the walk goes along `downstreams_` until
+    // it reaches a node nothing consumes, and the chain is then read back from that node to `id`.
+    return chain_to_root(
+        id, [this](NodeId candidate) { return downstreams_[node_index(candidate)].empty(); });
+}
+
+Status BuildGraph::declare_root(std::string name) {
+    if (finalized_) {
+        return make_unexpected(invalid("a root is declared before the graph is finalised"));
+    }
+    if (std::ranges::find(declared_root_names_, name) == declared_root_names_.end()) {
+        declared_root_names_.push_back(std::move(name));
+    }
+    return ok();
+}
+
+std::vector<NodeId> BuildGraph::declared_reference_chain(NodeId id) const {
+    // The same walk, stopping at a DECLARED root instead of at any node nothing consumes. A node no
+    // declared root reaches gets an empty chain, and that emptiness is the audit's "unreferenced".
+    return chain_to_root(id, [this](NodeId candidate) {
+        return std::ranges::find(declared_roots_, candidate) != declared_roots_.end();
+    });
 }
 
 std::vector<NodeId> BuildGraph::roots() const {

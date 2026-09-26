@@ -138,6 +138,11 @@ private:
 
     Status realise_resources(RenderGraph& graph) noexcept;
     Status bind_and_view(RenderGraph& graph, const CompiledGraph& plan) noexcept;
+    /// The single-layer views the multi-view baseline records each view through.
+    Status create_view_layers(RenderGraph& graph, PassId pass) noexcept;
+    /// Whether a multi-view pass is recorded once with a view mask. The device's capability and
+    /// nothing else — never the backend's identity.
+    [[nodiscard]] bool records_multiview() const noexcept;
     Status record_and_submit(RenderGraph& graph, CompiledGraph& plan, const ExecuteOptions& options,
                              ExecutionResult& result) noexcept;
     void patch_batch(RenderGraph& graph, rhi::BarrierBatch& batch) noexcept;

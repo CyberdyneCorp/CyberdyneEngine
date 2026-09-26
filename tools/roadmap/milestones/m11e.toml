@@ -564,8 +564,8 @@ rendering-forward-clustered = "complete"
 #   material-compiler                4 exempt — surface closures, geometry attribute interface,
 #                                      material API, portability across pipelines and profiles
 #   shader-system                    3 exempt — compilation pipeline, hot reload, the visual material
-#                                      editor; plus `m11c:every-shader-reaches-every-target`, a gap
-#                                      closing at M11.d (two vertex entry points DXC refuses)
+#                                      editor; `m11c:every-shader-reaches-every-target`, the gap
+#                                      declared beside them, was closed at M11.d
 #   virtual-geometry                 9 exempt — the forward frame does not SHADE it (the Forward+ half
 #                                      of `Visibility buffer and material resolve`), no per-cluster
 #                                      rasteriser selection, assemblies, tangents, budget controller,
@@ -583,8 +583,9 @@ rendering-forward-clustered = "complete"
 #                                      requirement (`Reprojection and disocclusion`, M11.c record)
 #   rendering-lighting-and-shadows   4 exempt — light types, shadow optimisation, decals,
 #                                      stochastic many-light (M11.c task 3.5)
-#   atmosphere-sky-and-clouds        2 exempt — cloud shadows and aerial perspective are libraries
-#                                      no frame calls (M11.c task 5.1)
+#   atmosphere-sky-and-clouds        1 exempt — aerial perspective is a library no frame calls
+#                                      (M11.c task 5.1); cloud shadows are shaded by the world frame
+#                                      since `add-cloud-shadows`
 #   rendering-architecture           2 exempt — pluggable pipelines, environment/post configuration
 #   rendering-geometry-and-resources 1 exempt — mesh and texture diagnostics
 #   vfx-system                       5 exempt (4 to M11.e, `Validation` to M11.d) — the build
@@ -608,6 +609,13 @@ atmosphere-sky-and-clouds = "complete"
 rendering-architecture = "complete"
 rendering-geometry-and-resources = "complete"
 vfx-system = "complete"
+# MOVED FROM M11.d — its task 7.6, the demotion its design.md §5.1 predicted. M11.d made the content
+# audit, provenance and stripped-and-archived symbols real; downloadable content (a signed package
+# set, and nothing signs), distributed execution (remote workers, a second machine) and the
+# reproducibility bundle archived BY CI (an upload step in ci.yml) did not, and arrive here through
+# task 4.4 and `downloadable-content-and-distributed-execution`.
+# `m11d:build-and-packaging-moves-to-m11e` holds both halves of the move.
+build-and-packaging = "complete"
 
 # THE LADDER ENDS HERE, AND THE END IS CHECKED RATHER THAN ASSUMED. There is no `m12-open` criterion
 # because there is no M12: this is the 1.0 gate. What could still go wrong is a rung added above this

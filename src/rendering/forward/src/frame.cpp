@@ -21,6 +21,12 @@ using rhi::Access;
 using rhi::QueueKind;
 using FrameState = ForwardFrame::BuildState;
 
+/// Why the virtual-geometry stage cannot render multisampled, in one place: build() refuses a
+/// multisampled frame with it and the stage's declaration hands it to the graph.
+constexpr const char* kVirtualGeometrySingleSample =
+    "forward frame: virtual geometry's visibility target is single-sample, and this frame is "
+    "multisampled";
+
 [[nodiscard]] bool valid(ResourceId resource) noexcept {
     return resource != kInvalidResource;
 }
@@ -245,6 +251,9 @@ PassId declare_depth_resolve(RenderGraph& graph, FrameState& state) noexcept {
 PassId declare_virtual_geometry(RenderGraph& graph, FrameState& state) noexcept {
     const FrameResources& resources = *state.resources;
     PassBuilder builder = graph.add_pass("virtual geometry", QueueKind::Graphics);
+    // Stated to the graph as well as refused by build(): a pass that later asks this stage for a
+    // sample count gets the same reason from the graph, not a twin nothing can resolve.
+    builder.single_sample(kVirtualGeometrySingleSample);
     builder.write(resources.visibility, Access::ColorAttachmentWrite);
     builder.write(resources.depth, Access::DepthStencilAttachmentWrite);
     attach(builder, *state.description, FramePassKind::VirtualGeometry);
@@ -421,6 +430,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "resolve";
         case FramePassKind::Temporal:
             return "temporal";
+        case FramePassKind::Bloom:
+            return "bloom";
         case FramePassKind::PostProcess:
             return "post-process";
         case FramePassKind::UiAndDebug:
@@ -561,8 +572,23 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
         state.current_color = resources_.temporal_history;
     }
 
+    // Bloom: scene-referred, after the temporal resolve and before the exposure the post-process
+    // applies, which is what makes its threshold a physical quantity.
+    if (features.bloom && status_) {
+        status_ = declare_bloom_chain(
+            graph, state.current_color, description.width, description.height,
+            description.color_format, features.bloom_levels,
+            description.callbacks[static_cast<u32>(FramePassKind::Bloom)], bloom_);
+        for (u32 index = 0; index < bloom_.step_count; ++index) {
+            stage(FramePassKind::Bloom, graph.pass_name(bloom_.steps[index].pass),
+                  bloom_.steps[index].pass);
+        }
+        state.current_color = bloom_.output;
+    }
+
     // 11. Post-process, which tonemaps STRAIGHT INTO THE OUTPUT. That is what removes the composite
     // blit in the ordinary case: the swapchain image is a colour attachment like any other.
+    resources_.post_source = state.current_color;
     if (features.post_process) {
         PassBuilder builder = graph.add_pass("post-process", QueueKind::Graphics);
         builder.read(state.current_color, Access::FragmentSampledRead);
@@ -620,6 +646,7 @@ Status ForwardFrame::declare_passes(RenderGraph& graph,
 Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& description) noexcept {
     passes_.clear();
     resources_ = FrameResources{};
+    bloom_ = BloomChain{};
     status_ = ok();
 
     if (description.width == 0 || description.height == 0) {
@@ -634,9 +661,7 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
     // a payload per sample and a resolve that shades them, and neither exists. Refused rather than
     // drawn into a single-sample target beside a multisampled depth, which would not validate.
     if (description.features.virtual_geometry && samples != 1) {
-        return fail(ErrorCode::Unsupported,
-                    "forward frame: virtual geometry's visibility target is single-sample, and "
-                    "this frame is multisampled");
+        return fail(ErrorCode::Unsupported, kVirtualGeometrySingleSample);
     }
     // EVERY SCREEN-SPACE AND TEMPORAL FEATURE READS THE PREPASS'S OUTPUT. Allowing one without a
     // prepass would declare a pass that samples a depth target nothing wrote — which compiles,

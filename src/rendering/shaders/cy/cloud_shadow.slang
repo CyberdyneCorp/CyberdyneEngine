@@ -25,16 +25,28 @@ module cloud_shadow;
 
 import cy.field;
 
-/// The fraction of direct sunlight reaching this position through the cloud layers: 1 in full sun,
-/// 0 under a storm. `slot` is the cloud shadow field's slot in the GPU scene's bindless table, and
-/// `x`/`z` are metres relative to that image's origin — `cy/field.slang`'s rule.
-public float cyCloudShadowAt(uint slot, float x, float y, float z)
+/// The fraction of direct sunlight reaching this position through the cloud layers, read from an
+/// image a pass bound itself: 1 in full sun, 0 under a storm. `x`/`z` are metres relative to the
+/// image's origin — `cy/field.slang`'s rule.
+///
+/// The form a frame without the GPU scene's bindless table uses — `samples/10-world` binds its
+/// packed field images directly — and the one `cyCloudShadowAt` below is built on, so the two
+/// binding paths share one line of arithmetic and cannot answer differently.
+public float cyCloudShadowAtImage(CyFieldImage image, float x, float y, float z)
 {
     // SATURATED, and not because the producer is untrusted. `UNorm8` over a declared range decodes
     // inside [0, 1] by construction; what this guards is a consumer binding a slot that holds a
     // DIFFERENT field, whose range is something else entirely. A transmittance above one brightens
     // a surface in sunlight, which looks like a lighting bug three subsystems away.
-    return saturate(cyFieldSampleScene(slot, x, y, z).value.x);
+    return saturate(cyFieldSample(image, x, y, z).value.x);
+}
+
+/// The fraction of direct sunlight reaching this position through the cloud layers: 1 in full sun,
+/// 0 under a storm. `slot` is the cloud shadow field's slot in the GPU scene's bindless table, and
+/// `x`/`z` are metres relative to that image's origin — `cy/field.slang`'s rule.
+public float cyCloudShadowAt(uint slot, float x, float y, float z)
+{
+    return cyCloudShadowAtImage(cyFieldFromScene(slot), x, y, z);
 }
 
 /// Direct sunlight, attenuated by the cloud deck. The whole of what the four consumers the
@@ -46,4 +58,11 @@ public float cyCloudShadowAt(uint slot, float x, float y, float z)
 public float3 cyCloudShadowAttenuate(float3 directSunlight, uint slot, float x, float y, float z)
 {
     return directSunlight * cyCloudShadowAt(slot, x, y, z);
+}
+
+/// The same attenuation through a directly bound image.
+public float3 cyCloudShadowAttenuateImage(float3 directSunlight, CyFieldImage image, float x,
+                                          float y, float z)
+{
+    return directSunlight * cyCloudShadowAtImage(image, x, y, z);
 }

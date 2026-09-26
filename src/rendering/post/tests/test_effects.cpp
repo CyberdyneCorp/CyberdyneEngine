@@ -184,12 +184,49 @@ CY_TEST_CASE("bloom has a soft knee, suppresses fireflies, and redistributes rat
     CY_CHECK_NEAR(karis_weight(0.0F), 1.0F, 1e-6F);
     CY_CHECK_GT(karis_weight(400.0F), 0.0F);
 
-    // Energy conserving: with bloom equal to the scene, the composite is the scene. Bloom
-    // redistributes energy rather than adding it.
-    const cy::Vec3 scene{2.0F, 1.0F, 0.5F};
-    const cy::Vec3 same = bloom_composite(scene, scene, settings);
+    // Energy conserving: the composite moves the PREFILTERED energy and nothing else. A bloom
+    // equal to the scene's own prefiltered part — a blur of a uniform field — leaves it unchanged.
+    const cy::Vec3 scene{4.0F, 3.0F, 2.5F};
+    const cy::Vec3 same = bloom_composite(scene, bloom_prefilter(scene, settings), settings);
     CY_CHECK_NEAR(same.x, scene.x, 1e-6F);
-    const cy::Vec3 mixed = bloom_composite(scene, cy::Vec3{0.0F, 0.0F, 0.0F}, settings);
-    CY_CHECK_LT(mixed.x, scene.x);
-    CY_CHECK_NEAR(mixed.x, scene.x * (1.0F - settings.intensity), 1e-5F);
+    CY_CHECK_NEAR(same.z, scene.z, 1e-6F);
+    // A bright pixel whose energy the blur carried away loses exactly `intensity` of its excess.
+    const cy::Vec3 spread = bloom_composite(scene, cy::Vec3{0.0F, 0.0F, 0.0F}, settings);
+    CY_CHECK_LT(spread.x, scene.x);
+    CY_CHECK_NEAR(spread.x, scene.x - (settings.intensity * bloom_prefilter(scene, settings).x),
+                  1e-5F);
+    // A pixel below the knee is returned EXACTLY, not approximately: bloom never dims a dim frame.
+    const cy::Vec3 dim{0.2F, 0.3F, 0.1F};
+    const cy::Vec3 untouched = bloom_composite(dim, cy::Vec3{0.0F, 0.0F, 0.0F}, settings);
+    CY_CHECK_EQ(untouched.x, dim.x);
+    CY_CHECK_EQ(untouched.y, dim.y);
+    CY_CHECK_EQ(untouched.z, dim.z);
+}
+
+CY_TEST_CASE("the bloom chain's level weights sum to one, so the chain redistributes") {
+    BloomSettings settings;
+    const cy::f32 scatters[] = {0.0F, 0.3F, 0.7F, 1.0F};
+    for (const cy::f32 scatter : scatters) {
+        settings.scatter = scatter;
+        for (cy::u32 levels = 1; levels <= 8; ++levels) {
+            cy::f32 total = 0.0F;
+            for (cy::u32 level = 0; level < levels; ++level) {
+                total += bloom_level_weight(level, levels, settings);
+            }
+            CY_CHECK_NEAR(total, 1.0F, 1e-5F);
+        }
+    }
+    settings.scatter = 0.7F;
+    // Finer levels carry more than coarser ones at the default, which is what keeps the halo
+    // centred on its source rather than a flat wash.
+    CY_CHECK_GT(bloom_level_weight(0, 6, settings), bloom_level_weight(3, 6, settings));
+    CY_CHECK_EQ(bloom_level_weight(6, 6, settings), 0.0F);
+}
+
+CY_TEST_CASE("a threshold derived from an exposure is physical and moves with the camera") {
+    // At -10 stops the luminance that reaches 1.0 is 1024 scene units; one stop above that is 2048.
+    CY_CHECK_NEAR(cy::rendering::bloom_threshold_for_exposure(-10.0F, 1.0F), 2048.0F, 1e-2F);
+    // One more stop of exposure halves the scene luminance a pixel needs to bloom.
+    CY_CHECK_NEAR(cy::rendering::bloom_threshold_for_exposure(-9.0F, 1.0F),
+                  cy::rendering::bloom_threshold_for_exposure(-10.0F, 1.0F) * 0.5F, 1e-2F);
 }

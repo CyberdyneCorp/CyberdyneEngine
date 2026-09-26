@@ -25,6 +25,7 @@
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -257,6 +258,17 @@ CY_TEST_CASE("a glTF's external buffer is a discovered dependency of the node") 
     CY_REQUIRE(unchanged.has_value());
     CY_CHECK(result_for(*unchanged, "import:quad")->outcome == NodeOutcome::Cached);
     CY_CHECK_EQ(artefact_of(*unchanged, warm.artefacts(), "import:quad"), before);
+
+    // M11.d task 7.4: the report NAMES the discovered read, on the run AND on the cache hit — the
+    // content audit counts `quad.bin` as referenced from this list, and a warm build that forgot it
+    // would flag a file the importer reads on every cold one.
+    const auto discovered = [](const NodeResult* result) {
+        return result != nullptr &&
+               std::ranges::find(result->discovered, std::string("assets/quad.bin")) !=
+                   result->discovered.end();
+    };
+    CY_CHECK(discovered(result_for(*cold, "import:quad")));
+    CY_CHECK(discovered(result_for(*unchanged, "import:quad")));
 
     // The BUFFER changes, and the .gltf does not. Only a recorded discovery can see this.
     project.write("assets/quad.bin", quad_buffer(4.0F));

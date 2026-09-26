@@ -538,5 +538,17 @@ CY_TEST_CASE(
     RenderGraph msaa_graph(allocator());
     ForwardFrame msaa_frame(allocator());
     description.features.msaa_samples = 4;
-    CY_CHECK_FALSE(msaa_frame.build(msaa_graph, description).has_value());
+    const cy::Status refused = msaa_frame.build(msaa_graph, description);
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK_EQ(refused.error().code, cy::ErrorCode::Unsupported);
+    CY_CHECK(std::strstr(refused.error().message, "virtual geometry") != nullptr);
+
+    // THE SAME REASON REACHES THE GRAPH. The stage declares itself single-sample, so a pass author
+    // who asks the declared stage for a sample count is refused by the graph with the frame's own
+    // words rather than handed a twin nothing could resolve.
+    const cy::rendering::PassId stage = frame.pass_of(FramePassKind::VirtualGeometry);
+    CY_REQUIRE_NE(stage, cy::rendering::kInvalidPass);
+    cy::rendering::PassBuilder(&graph, stage).multisample(4);
+    CY_REQUIRE_FALSE(graph.status().has_value());
+    CY_CHECK(std::strstr(graph.status().error().message, "virtual geometry") != nullptr);
 }

@@ -172,16 +172,24 @@ granularities because a cell that changed and a state that changed fail differen
   illumination's half: it attenuates a DIRECTIONAL light's illuminance by
   `CloudShadowField::sample`, and `integration.render_illumination_clouds` searches the written
   ground for the darkest and the brightest cell and reports both — 10 980 lux under the cloud against
-  100 000 beside it. Terrain, foliage and water are still declared and still do not sample.
-* **AND NO FRAME CALLS EITHER HALF, WHICH IS WHY THE ROW IS NOT COMPLETE AT M11.c.** The illumination
-  consumer above is a library whose only caller is its own test; `cy/cloud_shadow.slang` is imported
-  by no shader; and `samples/10-world` dims its sun by one scalar `cloud_transmittance`, not by the
-  field at a position. `aerial_perspective()` and the froxel table are built from the same
-  `Atmosphere` as the sky — which is the requirement's prohibition, answered — and applied to no
-  opaque surface anywhere in the tree. M11.c task 5.1 measured both, and `Cloud shadows` and `Aerial
-  perspective` are `exempt:m11e` in `tools/roadmap/requirements-coverage.toml`, so
-  `atmosphere-sky-and-clouds` waits for M11.e. The re-entry point is the forward frame's lit path
-  sampling the field per surface position and the aerial-perspective table for opaque surfaces.
+  100 000 beside it. Terrain, foliage and water sample it in `samples/10-world`'s frame, below.
+* **A FRAME NOW SHADES THROUGH THE FIELD — `samples/10-world`'s, and only the direct sun.** The
+  world claims the field, rewrites it every frame from the same `CloudField` the sky's lighting
+  marches (weather's `CloudDrive`, each layer's wind, the frame's own time), and its one lit fragment
+  path — terrain, foliage and water — samples it per fragment through `cy/cloud_shadow.slang`'s
+  `cyCloudShadowAtImage`. The Lambert term and water's specular lobe are attenuated; the ambient term
+  and the emissive dome are not. `SkyLighting::clear_sun_illuminance` is the sun before the clouds,
+  which is what that path is given so the cloud over the viewer is not applied twice. Evidence:
+  `render.world_cloud_shadow` (the sample's own SPIR-V on a device: darker under the cloud, bit-exact
+  beside it, bit-exact with the field off or the sky clear, sky and ambient untouched) and two cases
+  in `integration.render_sky_fields` (the shadow drifts by wind times time; `compose_sky()`'s cloud
+  transmittance toward the sun equals the field at the same ground point).
+* **WHAT IS STILL NOT SHADED BY IT.** The engine's forward frame (`cy/frame.slang`) has no
+  environment-field binding and draws no world, so it reads nothing; and the sample's device sky
+  dome is a seeded stand-in density, not `CloudField`, so the dome's clouds and the ground's
+  shadows are two reconstructions in that one picture even though the engine's sky and field agree.
+  `Aerial perspective` is still `exempt:m11e`: `aerial_perspective()` and the froxel table are built
+  from the same `Atmosphere` as the sky and applied to no opaque surface anywhere in the tree.
 * **The lighting integral's cloud term is a hemispherical mean.** `compose_sky_lighting()` measures
   the clouds' effect over twelve probes and applies one attenuation plus one addition. It is right in
   magnitude — thicker cover gives less irradiance — and wrong in DIRECTION: a cloud bank on one

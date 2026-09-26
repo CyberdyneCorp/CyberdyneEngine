@@ -10,6 +10,7 @@
 #include <cy/test/test.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -299,5 +300,61 @@ CY_TEST_CASE("harness: a quiet-host marker exported by hand is not trusted") {
     CY_CHECK_NE(process_start_ticks(self), 0ULL);
 #else
     CY_CHECK(judge_quiet_host_marker("1:1").verdict == QuietHostMarker::Unsupported);
+#endif
+}
+
+CY_TEST_CASE("harness: a quiet-host marker is trusted by the wrapper's identity, not its name") {
+    // M11.d task 9.7. The marker names the parent with its real start time, and the check is given
+    // the executable to compare that ancestor with. The file the parent runs is trusted; a file of
+    // the SAME NAME elsewhere is not, because the check compares device and inode. Until 9.7 the
+    // rule was the basename, and a copy of `sh` renamed `cy_quiet_host` was trusted by it
+    // (`smoke.quiet_host_marker` runs that impostor end to end).
+    using cy::test::judge_quiet_host_marker;
+    using cy::test::process_start_ticks;
+    using cy::test::QuietHostMarker;
+#if defined(__linux__)
+    // The identity the one-argument judgement compares with is this build's wrapper. Without it
+    // no marker is trusted anywhere and the stall ceiling is never enforced, a failure the forgery
+    // cases cannot see because every one of them is refused either way.
+    const char* built = cy::test::built_quiet_host_wrapper();
+    CY_REQUIRE(built != nullptr);
+    CY_TEST_MESSAGE(built);
+    const std::string wrapper(built);
+    CY_CHECK(wrapper.size() > std::strlen("/cy_quiet_host"));
+    CY_CHECK(wrapper.substr(wrapper.find_last_of('/') + 1) == "cy_quiet_host");
+
+    const long parent = static_cast<long>(::getppid());
+    const std::string marker =
+        std::to_string(parent) + ":" + std::to_string(process_start_ticks(parent));
+    const std::string link = "/proc/" + std::to_string(parent) + "/exe";
+    char target[4096];
+    const ::ssize_t got = ::readlink(link.c_str(), target, sizeof(target) - 1);
+    CY_REQUIRE(got > 0);
+    target[got > 0 ? got : 0] = '\0';
+    const std::string running(target);
+    const cy::test::QuietHostJudgement own =
+        judge_quiet_host_marker(marker.c_str(), running.c_str());
+    CY_TEST_MESSAGE(own.reason);
+    CY_CHECK(own.verdict == QuietHostMarker::Trusted);
+
+    // An empty file carrying the parent's executable's basename, in a directory of its own.
+    char directory[] = "/tmp/cy-quiet-host-XXXXXX";
+    CY_REQUIRE(::mkdtemp(directory) != nullptr);
+    const std::string namesake =
+        std::string(directory) + "/" + running.substr(running.find_last_of('/') + 1);
+    std::FILE* file = std::fopen(namesake.c_str(), "w");
+    CY_REQUIRE(file != nullptr);
+    std::fclose(file);
+    const cy::test::QuietHostJudgement forged =
+        judge_quiet_host_marker(marker.c_str(), namesake.c_str());
+    CY_TEST_MESSAGE(forged.reason);
+    CY_CHECK(forged.verdict == QuietHostMarker::NotTheWrapper);
+    CY_CHECK(judge_quiet_host_marker(marker.c_str(), nullptr).verdict ==
+             QuietHostMarker::NotTheWrapper);
+    (void)std::remove(namesake.c_str());
+    (void)::rmdir(directory);
+#else
+    CY_CHECK(judge_quiet_host_marker("1:1", "cy_quiet_host").verdict ==
+             QuietHostMarker::Unsupported);
 #endif
 }

@@ -25,7 +25,9 @@ void record_particles(const ExtensionContext& context, void* user) noexcept {
     rhi::CommandBuffer& commands = *context.commands;
     renderer->draw().bind(commands);
     // ONE DRAW for the whole effect. Six vertices a particle, expanded from `SV_VertexID`; there is
-    // no vertex buffer, no index buffer and no per-particle call.
+    // no vertex buffer, no index buffer and no per-particle call. The first vertex is ZERO and must
+    // stay so: SPIR-V's index is `VertexIndex - BaseVertex` and Metal's counts from the first
+    // vertex, and zero is the base on which they agree (`cy/fullscreen.slang`).
     commands.draw(renderer->live() * kVerticesPerParticle, 1, 0, 0);
     ++renderer->mutable_report().draws;
 }

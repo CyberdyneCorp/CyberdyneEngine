@@ -22,11 +22,16 @@
 // stream, no per-particle draw call. `vfx-system` requires a GPU-first path and this is the drawing
 // half of it — the CPU supplies a buffer of records and issues ONE draw.
 //
-// The billboard basis is the VIEW basis read out of `cyFrame.relativeToView`: rows 0 and 1 of a
-// camera-relative-to-view matrix are the camera's right and up expressed in camera-relative space,
-// which is exactly the two vectors a screen-facing quad needs. There is no world-space camera
+// The billboard basis is the VIEW basis read out of `cyFrameView.frame.relativeToView`: rows 0 and 1
+// of a camera-relative-to-view matrix are the camera's right and up expressed in camera-relative
+// space, which is exactly the two vectors a screen-facing quad needs. There is no world-space camera
 // anywhere in this file, which is design.md §3's rule and the reason the basis is read rather than
 // passed.
+//
+// `cyFrameView.frame` AND NOT `cyFrame`. `cy/frame.slang` spells the view block `cyFrame` through a
+// `#define`, and a macro does not cross an `import`: when the block became a parameter block this
+// file stopped compiling for every target, and nothing saw it because `particle_spirv.h` had been
+// compiled before the change. `smoke.shader_targets` compiles this file on every smoke run now.
 //
 // REGENERATING: see cy/frame.slang's header. The entry points are `cyParticleVertex` and
 // `cyParticleFragment`.
@@ -70,16 +75,12 @@ static const float2 kCorners[6] = {
     float2(-1.0, -1.0), float2(1.0, 1.0),  float2(-1.0, 1.0),
 };
 
-/// `SV_VulkanVertexID` rather than `SV_VertexID`, and the difference is a DEVICE FEATURE.
-///
-/// Slang lowers `SV_VertexID` to `gl_VertexIndex - gl_BaseVertex`, to match Direct3D's semantics —
-/// which declares the SPIR-V `DrawParameters` capability, which a Vulkan device only accepts with
-/// `VkPhysicalDeviceVulkan11Features::shaderDrawParameters` enabled. `src/backends/rhi/vulkan/` does
-/// not request that feature, so a pipeline built from such a module is refused by validation.
-/// `SV_VulkanVertexID` is the raw `VertexIndex`, which is what a draw with no vertex buffer and no
-/// base vertex means anyway. Recorded here because the alternative fix is in the backend.
+/// `SV_VertexID`, which all three targets accept, for the reason and at the cost
+/// `cy/fullscreen.slang`'s `fullscreenVertex` records: the Vulkan device carries
+/// `shaderDrawParameters`, and the one draw of this stage starts at vertex zero
+/// (`particle_renderer.cpp`), the one base on which SPIR-V and Metal agree about the index.
 [shader("vertex")]
-public CyParticleVertex cyParticleVertex(uint vertexId: SV_VulkanVertexID)
+public CyParticleVertex cyParticleVertex(uint vertexId: SV_VertexID)
 {
     let particle = cyParticlePass.particles[vertexId / 6];
     let corner = kCorners[vertexId % 6];

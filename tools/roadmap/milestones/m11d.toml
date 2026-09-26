@@ -266,6 +266,64 @@ target = "src/backends/shader/slang/src/slang_compiler.cpp"
 token  = "return \"sm_6_6\";"
 note   = "this criterion had no derivable mutation at all — its body is two greps over a recipe's output, and `derive` refuses to guess one from that — so it declares this one. The subject is the emission rather than the word in the table: a stub that printed \"d3d12-dxil=emitted\" without compiling anything would survive a mutation of the output file and does not survive this."
 
+# --- `m11c:every-shader-reaches-every-target`, closed here ------------------------------------------
+#
+# DECLARED AT M11.c, CLOSED BY THIS RUNG, AND ITS DECLARATION DELETED IN THE SAME CHANGE. The M11.c
+# criterion itself — `just build-shaders --strict src samples` reporting `target_refusals=0` — stays
+# in m11c.toml and is green now; this one carries what that one cannot see. Closing the gap took the
+# portable `SV_VertexID` (and `SV_InstanceID`) in the FOUR vertex stages that draw from the index
+# alone — the two M11.c measured, and `cyStripVertex` and `vgVisHwVertex`, which landed after the
+# measurement with the same semantic — and on SPIR-V that spelling is `VertexIndex - BaseVertex`,
+# which costs the `DrawParameters` capability. So the Vulkan device now asks for
+# `shaderDrawParameters` and refuses a device without it, and the three ways this can still go wrong
+# are three suites:
+#
+#   smoke.shader_targets          every entry point under src/rendering compiles for every target
+#                                 this build emits — on every smoke run, not only on a ledger run
+#   integration.render_pipeline   every procedural draw starts at vertex and instance zero, the one
+#                                 base on which SPIR-V's subtraction and Metal's `vertex_id` agree
+#   render.pipeline, render.vfx   the frames drawn through those stages, on the device, with
+#                                 validation on and its errors counted — a module declaring a
+#                                 capability the device was created without is an error by name
+#
+# The images were measured byte-identical before and after on this host (first_light, the four sky
+# references, the beauty shot and its air-only reference, the particle frame and the shaded
+# virtual-geometry frame; tasks.md 9.9 records it), and it is not repeated here
+# because a criterion that compared against a capture from before the change would be comparing
+# against a file nothing regenerates.
+[[criterion]]
+id = "vertex-id-is-portable"
+describe = "the vertex stages that draw from the vertex index alone take `SV_VertexID`, which all three targets accept, so every entry point under src/rendering reaches every target this build emits; the Vulkan device is created with the `shaderDrawParameters` feature that spelling costs on SPIR-V; and every draw feeding those stages starts at vertex and instance zero, the one base on which the targets agree about the index. Closes `m11c:every-shader-reaches-every-target`"
+source = "m11c:every-shader-reaches-every-target, shader-system, rhi-and-render-graph"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# ASKED FOR BY NAME BEFORE THEY RUN: `ctest -R` over a pattern that matches nothing exits zero.
+pattern='^(smoke.shader_targets|integration.render_pipeline|render.pipeline|render.vfx)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 4 suite(s) match $pattern"
+test "$registered" -ge 4 || { echo "a suite this criterion names is not registered — renamed, deleted, or this tree has no Vulkan renderer"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+requires = "gpu"
+reason = "two of the four suites draw on a Vulkan device and count its validation errors, which is the only place a module that declares `DrawParameters` meets a device created without `shaderDrawParameters`; `smoke.shader_targets` and `integration.render_pipeline` carry the compile and the draw-base halves on every machine"
+timeout_s = 3600
+ci_job = "milestone-m11d"
+
+# THE MUTATION TAKES THE FEATURE AWAY AND LEAVES THE SHADERS ALONE. With the one assignment gone the
+# device is created without `shaderDrawParameters`, the resolve's and the particles' modules still
+# declare `DrawParameters`, and validation names the mismatch when their pipelines are created — so
+# render.pipeline and render.vfx fail on their error count while the tree still configures, builds
+# and draws. The shader half is `m11c:every-shader-reaches-every-target`'s mutation, and the draw
+# base is `integration.render_pipeline`'s own case, proven red by giving the resolve a first vertex.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/vulkan/src/vulkan_instance.cpp"
+token  = "features11.shaderDrawParameters = VK_TRUE;"
+note   = "deleting the request leaves a device without shaderDrawParameters under modules that declare DrawParameters; validation reports it at pipeline creation and the render suites fail on their validation-error count"
+
 [[criterion]]
 id = "native-platform-backend"
 describe = "a native `Platform` AND a native `DisplayServer` exist for one desktop platform, are neither SDL3's nor anything that predates this rung, and are compiled — so SDL3 is not the only way this engine opens a window. SDL3 was both since M0, and nothing had proved the abstraction carries no SDL assumption"
@@ -620,24 +678,130 @@ run = "just release-version && just release-changelog && just release-artefacts 
 ci_job = "milestone-m11d"
 
 [[criterion]]
-id = "content-audit-and-symbols"
-describe = "`build-and-packaging`'s content audit, provenance and symbol handling: a package names every asset in it, where each came from, and ships symbols separable from the binary"
-source = "tasks, build-and-packaging"
+id = "content-audit"
+describe = "`build-and-packaging`'s content audit, per FILE (task 7.4): every file in a package with the reference chain from a DECLARED root down to the node that produced it and the project files that node read, and what nothing asked for flagged — a node no declared root reaches, a project file no node reads, declared or discovered — plus size by plugin and by world region from what each node DECLARES, the two sizes that were printed NOT REPORTED because `cybuild 1` could not carry either declaration. The criterion this replaces named `cy_test_integration_packaging`, a suite that never existed, so it could not have evaluated anything; the two unit cases below run the audit's library half, and `smoke.ship` runs it over the packaged artefact, whose run FAILS on an unreferenced file"
+source = "tasks 7.4, build-and-packaging (Content audit)"
 kind = "command"
 run = '''
-set -e
+set -eo pipefail
 d="${CY_BUILD_DIR:-build/dev}"
-just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_packaging"
-test -x "$binary" || { echo "no $binary — the suite integration.packaging does not exist"; exit 1; }
-filter='a package audits its content*,provenance*,symbols are separable*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
+just build-engine --profile dev -D CY_BUILD_TOOLS=ON > /dev/null
+binary="$d/cy_test_unit_build_graph"
+test -x "$binary" || { echo "no $binary — unit.build_graph was not built"; exit 1; }
+filter='a description declares its delivery roots*,the content audit chains every file*,size by plugin and by world region*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the content-audit case(s) FAILED"; exit 1; }
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 3 it names"
-test "${selected:-0}" -ge 3 || { echo "the named case(s) are not in integration.packaging any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "unit.build_graph: the filter selected ${selected:-0} of the 3 content-audit cases it names"
+test "${selected:-0}" -eq 3 || { echo "the named cases are gone or renamed — the filter is stale"; exit 1; }
+registered=$(ctest --test-dir "$d" -N -R '^smoke\.ship$' 2>/dev/null | grep -c 'Test *#' || true)
+test "$registered" -eq 1 || { echo "smoke.ship is not registered in $d"; exit 1; }
+ctest --test-dir "$d" -R '^smoke\.ship$' --output-on-failure
 '''
 ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/build/src/package.cpp"
+token = "audit.unreachable_nodes.push_back(graph.node(id).name);"
+note = "the audit still prints every file's chain, and stops flagging a node no declared root reaches — the stray node in the unit case ships 900 bytes for nobody and the case's `unreachable_nodes` check fires"
+
+[[criterion]]
+id = "provenance-and-symbols"
+describe = "`build-and-packaging`'s provenance and symbols (task 7.5): the installed manifest carries all seven provenance fields and the LAUNCH reads them back, the shipped binary is STRIPPED and its symbols are archived separately under its build identity and PROVED to belong to it — one GNU build-id, the debuglink's CRC-32 over the archived bytes, and `main` symbolicated to its source line through the archive while the stripped binary alone places nothing — and a reproducibility bundle keyed by the build identity verifies on its own. `unit.build_symbols` builds a probe for each refusal and checks the CONFIGURED Shipping flags keep debug information, which they did not until this rung"
+source = "tasks 7.5, 8.4, build-and-packaging (Build provenance and symbols)"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev -D CY_BUILD_TOOLS=ON > /dev/null
+binary="$d/cy_test_unit_build_graph"
+out="$("$binary" '-tc=a package manifest carries every provenance field*' 2>&1)" || { echo "$out"; exit 1; }
+printf '%s' "$out" | grep -q 'test cases: *1 |' || { echo "the provenance round-trip case is gone or renamed"; exit 1; }
+registered=$(ctest --test-dir "$d" -N -R '^(unit\.build_symbols|smoke\.ship)$' 2>/dev/null | grep -c 'Test *#' || true)
+test "$registered" -eq 2 || { echo "expected unit.build_symbols and smoke.ship in $d, found $registered"; exit 1; }
+ctest --test-dir "$d" -R '^(unit\.build_symbols|smoke\.ship)$' --output-on-failure
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "cmake/profiles.cmake"
+token = "-O3 -g -DNDEBUG"
+note = "the Shipping row loses its debug information again — the state this rung found it in — and `unit.build_symbols` reads the configured flags and fires: a shipping configuration with nothing to archive"
+
+# THE DEMOTION `design.md` §5.1 PREDICTED, RECORDED AS A CHECK RATHER THAN A SENTENCE (task 7.6).
+# `build-and-packaging`'s Complete cell needs downloadable content (a SIGNED package set — nothing in
+# core/crypto signs), distributed execution (remote workers — a second machine), and a
+# reproducibility bundle archived BY CI (an upload step in ci.yml, M11.e's matrix). None of the three
+# can become real on this rung, so the cell moves to M11.e, where task 4.4 and
+# `downloadable-content-and-distributed-execution` already wait for it. A move has two halves and
+# losing either loses the row: this ledger must not expect it, and M11.e's must.
+[[criterion]]
+id = "build-and-packaging-moves-to-m11e"
+describe = "`build-and-packaging`'s Complete cell is M11.e's, with its reason recorded: this ledger's `roadmap-tiers` does not expect the row, M11.e's does, M11.e still carries the criterion that receives downloadable content and distributed execution, and design.md §5.1 records the decision. A row that changed owner in only one of those places would be a row nobody owns"
+source = "tasks 7.6, design.md §5.1, delivery-roadmap (A spike may resize a milestone)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+here = tomllib.loads(pathlib.Path("tools/roadmap/milestones/m11d.toml").read_text(encoding="utf-8"))
+there = tomllib.loads(pathlib.Path("tools/roadmap/milestones/m11e.toml").read_text(encoding="utf-8"))
+def tiers(ledger):
+    found = {}
+    for criterion in ledger.get("criterion", []):
+        if criterion.get("kind") == "tiers":
+            found.update(criterion.get("expect_tiers", {}))
+    return found
+problems = []
+if "build-and-packaging" in tiers(here):
+    problems.append("m11d's roadmap-tiers still expects build-and-packaging")
+if tiers(there).get("build-and-packaging") != "complete":
+    problems.append("m11e's roadmap-tiers does not expect build-and-packaging at complete")
+ids = {criterion.get("id") for criterion in there.get("criterion", [])}
+if "downloadable-content-and-distributed-execution" not in ids:
+    problems.append("m11e no longer carries the criterion that receives the moved scope")
+design = pathlib.Path("openspec/changes/implement-m11d-desktop/design.md").read_text(encoding="utf-8")
+if "DECIDED — task 7.6" not in design:
+    problems.append("design.md section 5.1 does not record the decision")
+for problem in problems:
+    print(f"  {problem}")
+print("build-and-packaging: " + ("moved to M11.e, both halves recorded" if not problems else "the move is incomplete"))
+sys.exit(1 if problems else 0)
+CHECK
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones/m11e.toml"
+token = "build-and-packaging = \"complete\""
+note = "M11.e stops expecting the row: the cell left this rung and arrived nowhere, which is the half of a move that loses a row silently"
+
+# THE THREE ACCEPTANCE SCENARIOS `testing-and-quality` NAMES (task 7.2), unwritten from M0 to here.
+[[criterion]]
+id = "acceptance-scenarios"
+describe = "the three acceptance scenarios exist as registered tests in the kinds whose budgets fit, and each asserts the property it is named for: STRATEGY STRESS (smoke) — 8 participants, 4 teams, 100 000 units, 20 000 moving, 5 000 groups, 1 000 structures, 6 400 validated member commands a tick — measures the framework's share of a tick against a committed ceiling; CONTROL HANDOVER (integration) — four players, a vehicle, an AI taking the wheel, a gunner, a spectator and a replay — asserts what must survive the handover; HEADLESS SERVER (smoke) — a dedicated-server build configuration whose declared AND linked closure hold no rendering, audio or interface code, running 100 000 entities with AI, commands and physics at a fixed rate — is observed through its trace by a reader that does not link the engine. Network authority, world streaming, prediction, connections and replication are NOT exercised and each test says so on its own face"
+source = "tasks 7.2, testing-and-quality (Performance benchmarks, the acceptance scenarios), diagnostics-profiling-and-crash (A headless server is observable)"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(smoke\.acceptance_strategy_stress|integration\.acceptance_control_handover|smoke\.acceptance_headless_server|unit\.gameplay_core)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "registered: $registered of the 4 suites this criterion names"
+test "$registered" -eq 4 || { echo "a named acceptance suite is not registered in $d"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+timeout_s = 3600
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/gameplay/src/control.cpp"
+token = "unindex_binding(bindings_[index]);"
+note = "unbinding stops reaching the control index, so a driver who LEFT the vehicle still controls it: the control-handover scenario's refusal of the departed driver fires, and so does the registry's own index case"
 
 [[criterion]]
 id = "core-rows-at-complete-grade"
@@ -646,6 +810,88 @@ source = "tasks, testing-and-quality"
 kind = "command"
 run = "just quality-requirements core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction"
 ci_job = "milestone-m11d"
+
+# --- Tasks 5.1 to 5.3: `rendering-forward-clustered`, the desktop half ---------------------------------
+#
+# MSAA and multi-view through the render graph, and the row's floor. Both claims are proved twice:
+# with no GPU (the graph's own suites — the twin, the resolve's placement, the refusals, the
+# capability-selected recording) and on the device (`render.msaa_multiview` — the pixels). The device
+# half REQUIRES A PRINTED MEASUREMENT for the reason `m11c:sky-as-an-image` gives: every suite in
+# tests/render/ skips loudly and exits zero with no device, and a criterion whose claim is a picture
+# must not pass on a run that took none.
+
+[[criterion]]
+id = "msaa-through-the-graph"
+describe = "MSAA through the render graph's attachment model: a pass declares a sample count and a resolve point, the graph allocates the multisampled twin and inserts the resolve there, a missing or misplaced resolve is REFUSED, a pass that cannot take MSAA (the virtual-geometry stage) refuses with its own named reason, and 1x compiles to the identical plan. On the device: 1x has no partially covered pixel, 4x has at least one edge's worth, both cover the same area, and 1x declared through the model is byte-identical to the pass declared the old way"
+source = "tasks 5.1, rendering-forward-clustered (MSAA and alpha coverage)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+for binary in "$d/cy_test_unit_render_graph" "$d/cy_test_unit_render_forward" "$d/tests/render/cy_test_render_msaa_multiview"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+filter='a multisampled pass renders*,a missing resolve*,a resolve declared before*,a resolve on a pass*,1x is the graph it was*,a pass that cannot take MSAA*,multisample() is refused*'
+out="$("$d/cy_test_unit_render_graph" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the graph's MSAA cases FAILED"; exit 1; }
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "unit.render_graph: the filter selected ${selected:-0} of the 7 MSAA cases it names"
+test "${selected:-0}" -ge 7 || { echo "the named MSAA cases are not in unit.render_graph any more"; exit 1; }
+out="$("$d/cy_test_unit_render_forward" 2>&1)" || { echo "$out" | tail -30; echo "unit.render_forward FAILED (the virtual-geometry refusal lives there)"; exit 1; }
+out="$("$d/tests/render/cy_test_render_msaa_multiview" '-tc=4x edges*,1x declared*' 2>&1)" || { echo "$out" | tail -40; echo "render.msaa_multiview FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -E '^1x: ' || { echo "$out" | tail -20; echo "no 1x/4x measurement was printed: the suite SKIPPED (no Vulkan device), and a picture nobody took is not evidence"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/graph/src/multisample.cpp"
+token  = "attachment.resolve_view = context.executor->view(target);"
+note   = "deleting the resolve view leaves the graph's resolve pass an empty rendering scope that loads the 4x twin and resolves nothing, so the single-sample target is never written: the 4x image reads back at its clear colour, with no partially covered pixel and none of the triangle's area, and render.msaa_multiview's first case goes red. Every unit case still passes — the plan is unchanged — which is exactly why the device half is part of this criterion"
+
+[[criterion]]
+id = "multiview-by-capability"
+describe = "multi-view is selected by `Capability::Multiview` and never by backend identity: a pass declaring two views is recorded ONCE with a two-bit view mask where the device reports the capability, and once PER VIEW into single-layer views where it does not — proved on the null backend with the capability present, requested absent and overridden absent, with an identical plan hash across all three — and on the Vulkan device a device created with multi-view and one created without it render byte-identical two-layer images with zero validation errors"
+source = "tasks 5.2, rendering-forward-clustered (Multi-view rendering), rhi-and-render-graph (capabilities)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+for binary in "$d/cy_test_integration_render_graph_scale" "$d/tests/render/cy_test_render_msaa_multiview"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+filter='multi-view is recorded once*,without the capability every view*,the capability changes the recording*,a multisampled pass is handed*'
+out="$("$d/cy_test_integration_render_graph_scale" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the null-backend multi-view cases FAILED"; exit 1; }
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "integration.render_graph_scale: the filter selected ${selected:-0} of the 4 cases it names"
+test "${selected:-0}" -ge 4 || { echo "the named multi-view cases are not in integration.render_graph_scale any more"; exit 1; }
+out="$("$d/tests/render/cy_test_render_msaa_multiview" '-tc=multi-view and its per-view baseline*' 2>&1)" || { echo "$out" | tail -40; echo "render.msaa_multiview's multi-view case FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -E '^multi-view: ' || { echo "$out" | tail -20; echo "no multi-view comparison was printed: the suite SKIPPED (no Vulkan device)"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/graph/src/executor.cpp"
+token  = "context.view_index = view;"
+note   = "deleting the per-view index leaves the baseline recording every view as view 0: each recording renders through layer 0's single-layer view, so the null case asserting two DIFFERENT attachment views goes red, and on the device layer 1 is never drawn and the baseline stops matching the multi-view image"
+
+# THE ROW'S FLOOR, AND WHY IT IS A FLOOR (task 5.3). `rendering-forward-clustered` has two halves:
+# MSAA and multi-view, which are this rung's and are above, and the mobile pipeline differences —
+# tile memory, memoryless attachments, the tonemapping subpass — which are M11.e's
+# (`m11e.toml` expects the row at `complete`). A row is not Complete on the half of its scope one rung
+# can reach, so this ledger records the tier the row must NOT fall below here, and says so in the
+# ledger rather than leaving the gate to discover that nothing expected Complete.
+[[criterion]]
+id = "forward-clustered-desktop-floor"
+describe = "`rendering-forward-clustered` is held at its floor of Working at this rung and deliberately NOT expected at Complete: its Complete cell is M11.e's, with the mobile pipeline differences, and this rung's MSAA and multi-view are the desktop half of that cell rather than a reason to claim it"
+source = "tasks 5.3, ROADMAP M11.d, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11d"
+
+[criterion.expect_tiers]
+rendering-forward-clustered = "working"
 
 # --- Section 5: the artefact --------------------------------------------------------------------------
 
@@ -689,7 +935,8 @@ ci_job = "milestone-m11d"
 
 [criterion.expect_tiers]
 core-platform-abstraction = "complete"
-build-and-packaging = "complete"
+# `build-and-packaging` MOVED TO M11.e — task 7.6, design.md §5.1, and
+# `build-and-packaging-moves-to-m11e` above, which fails if the row comes back here or goes nowhere.
 testing-and-quality = "complete"
 developer-workflow-and-just = "complete"
 core-assets-and-io = "complete"
@@ -739,3 +986,95 @@ ci_job = "milestone-m11d"
 mutate = "delete-lines"
 target = "openspec/changes/*m11d5*/tasks.md"
 token = "- [x] "
+
+[[criterion]]
+id = "quiet-host-marker-by-identity"
+describe = "the harness trusts a `CY_QUIET_HOST` marker only when the ancestor it names runs THE `cy_quiet_host` THIS BUILD PRODUCED — the same device and inode — and not any executable of that name. Until task 9.7 the check was the basename of `/proc/<pid>/exe`, so a copy of `sh` renamed `cy_quiet_host` that set the marker to its own pid and start time and ran a suite as its child was trusted, and the stall ceiling was enforced on a host nobody checked. `smoke.quiet_host_marker`'s leg runs that impostor and requires the stall to be reported, not enforced; the same leg requires the REAL wrapper to be trusted, so the check cannot pass by trusting nothing. MEASURED ON A QUIET HOST FOR ITS INSIDE HALF: exit 3 (the wrapper refused a busy host) FAILS this criterion rather than skipping it"
+source = "tasks 9.7, testing-and-quality"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+wrapper="$d/tools/quiet-host/cy_quiet_host"
+probe="$d/tests/integration/cy_test_stall_probe"
+unit="$d/tests/unit/harness/cy_test_unit_harness"
+for binary in "$wrapper" "$probe" "$unit"; do
+    test -x "$binary" || { echo "no $binary"; exit 1; }
+done
+# The identity half on any host: the built wrapper's path is compiled in, the file the parent runs
+# is trusted, and a file of the same name elsewhere is not.
+filter="harness: a quiet-host marker is trusted by the wrapper's identity*"
+out="$("$unit" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case FAILED"; exit 1; }
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 1 || { echo "the identity case is not in unit.harness any more"; exit 1; }
+status=0
+python3 tools/quiet-host/quiet_host_test.py --wrapper "$wrapper" --leg marker --probe "$probe" || status=$?
+test "$status" -eq 0 || { echo "smoke.quiet_host_marker's leg exited $status (3: the host was busy for the inside half)"; exit 1; }
+grep -q 'run_under_impostor(probe, VFORK_CASE)' tools/quiet-host/quiet_host_test.py || { echo "the renamed-impostor forgery is not in the leg any more"; exit 1; }
+'''
+timeout_s = 1800
+ci_job = "milestone-m11d"
+
+# THE MUTATION TAKES THE BUILT WRAPPER'S IDENTITY AWAY FROM THE HARNESS. With the configure-time
+# path renamed out of reach, `kBuiltWrapper` is null and no marker is trusted: `unit.harness`'s
+# identity case fails its `built != nullptr` requirement on any host, and on a quiet one the leg's
+# inside half — the real wrapper around the stall probe — stops saying `enforced` as well. The forgery half's red on the pre-9.7 name check was proven by hand when the case was
+# written (the impostor was trusted and the probe failed as `stalled:`); a delete-lines that
+# restores a name check without breaking the build does not exist over this code.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tests/harness/src/quiet_host_marker.cpp"
+token = "CY_QUIET_HOST_WRAPPER"
+
+# INCREMENTAL LEDGER CLOSES. `just roadmap-milestone <rung> --incremental` evaluates the rung's own
+# criteria, the earlier ones a change since the last green full ledger can have moved, and the smoke
+# set; the full ledger stays the default, nightly and at M11.e. The body runs the selftest group that
+# pins the four properties — a src/save change selects save and not the renderer, a shared header
+# selects its dependents, an unknown-input criterion is always selected, the rung's own always are —
+# and then the real mode over THIS ledger, requiring the same invariants of its JSON.
+[[criterion]]
+id = "incremental-close-selects-by-inputs"
+describe = "an incremental close selects every criterion a change can have moved and skips only those whose inputs are known and unchanged: a change under src/save selects the save criteria and not the renderer's, a change to a shared header selects every criterion whose tests include it, a criterion whose inputs cannot be read is always selected, and the rung's own criteria and the smoke set (build, format, lint, test-all) always run"
+source = "tasks 9.8, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'PY'
+import sys, tempfile
+from pathlib import Path
+sys.path.insert(0, "tools/roadmap")
+import selftest
+with tempfile.TemporaryDirectory() as directory:
+    selftest.test_incremental_selection(Path(directory))
+sys.exit(1 if selftest._failures else 0)
+PY
+out="$(mktemp)"
+# The selection reads the build graph of this tree, so the tree is named rather than defaulted.
+just roadmap-milestone m11d --incremental --list --json --changed-since HEAD --build-dir "${CY_BUILD_DIR:-build/dev}" > "$out"
+python3 - "$out" <<'PY'
+import json, sys
+sys.path.insert(0, "tools/roadmap")
+import incremental
+document = json.load(open(sys.argv[1]))
+choices = {choice["label"]: choice for choice in document["choices"]}
+wrong = [label for label in incremental.SMOKE if not choices[label]["selected"]]
+wrong += [label for label, choice in choices.items() if label.startswith("m11d:") and not choice["selected"]]
+wrong += [label for label, choice in choices.items()
+          if not choice["selected"] and not choice["reasons"][0].startswith(incremental.UNCHANGED)]
+print(f"{document['selected']} of {document['of']} selected against {document['base'][:12]}")
+if wrong:
+    print("selected wrongly:", ", ".join(wrong))
+sys.exit(1 if wrong else 0)
+PY
+'''
+timeout_s = 600
+ci_job = "milestone-m11d"
+
+# THE MUTATION DROPS EVERY HEADER THE DEPENDENCY LOG RECORDED. What is left still parses and still
+# selects on sources, so the only thing that goes red is the shared-header case — the one a
+# selection by source files alone gets silently wrong.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/incremental.py"
+token = "files.update(self._repository_paths(headers))"

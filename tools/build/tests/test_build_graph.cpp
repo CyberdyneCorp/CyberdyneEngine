@@ -468,12 +468,160 @@ CY_TEST_CASE("size by category adds up to the package, and names what it cannot 
     }
     CY_CHECK_EQ(after, packages.size());
 
-    // And plugin and world region are NAMED as unreported rather than omitted: both need a
-    // declaration `cybuild 1` does not carry, and an invented attribution in a size report is worse
-    // than an absent one.
     const std::string text = content_report(graph, packages);
     CY_CHECK(text.find("size by category") != std::string::npos);
-    CY_CHECK(text.find("size by plugin and by world region: NOT REPORTED") != std::string::npos);
+}
+
+// M11.d task 7.4: size by plugin and by world region, from what each node DECLARES. They were
+// printed as NOT REPORTED while `cybuild 1` could not carry either declaration; content whose node
+// declares none is reported as undeclared, never guessed into a plugin or a region.
+CY_TEST_CASE("size by plugin and by world region follows the declarations, and names the rest") {
+    const std::string document =
+        "cybuild 1\n"
+        "node \"import:city\" import \"copy\" 1\n"
+        "  plugin \"city-pack\"\n"
+        "  region \"3 -2\"\n"
+        "  output \"city.bin\"\n"
+        "node \"import:core\" import \"copy\" 1\n"
+        "  output \"core.bin\"\n";
+    BuildGraph graph;
+    CY_REQUIRE(read_description(document, graph).has_value());
+    CY_CHECK_EQ(graph.node(graph.find("import:city")).plugin, "city-pack");
+    CY_CHECK_EQ(graph.node(graph.find("import:city")).region, "3 -2");
+    // The declarations survive the writer.
+    BuildGraph again;
+    CY_REQUIRE(read_description(write_description(graph), again).has_value());
+    CY_CHECK_EQ(write_description(graph), write_description(again));
+
+    PackageSet packages;
+    packages.bundles.push_back(Bundle{"base",
+                                      {PackageEntry{"city.bin", hash_of("C"), 700, "import:city"},
+                                       PackageEntry{"core.bin", hash_of("K"), 40, "import:core"}}});
+    const std::vector<DeclaredShare> plugins =
+        declared_shares(graph, packages, Attribution::Plugin);
+    CY_REQUIRE_EQ(plugins.size(), 2U);
+    CY_CHECK(plugins[0].name.empty());  // the undeclared share, first, and not dropped
+    CY_CHECK_EQ(plugins[0].bytes, 40U);
+    CY_CHECK_EQ(plugins[1].name, "city-pack");
+    CY_CHECK_EQ(plugins[1].bytes, 700U);
+    const std::vector<DeclaredShare> regions =
+        declared_shares(graph, packages, Attribution::Region);
+    CY_REQUIRE_EQ(regions.size(), 2U);
+    CY_CHECK_EQ(regions[1].name, "3 -2");
+    CY_CHECK_EQ(regions[0].bytes + regions[1].bytes, packages.size());
+
+    const std::string text = content_report(graph, packages);
+    CY_CHECK(text.find("size by plugin\n") != std::string::npos);
+    CY_CHECK(text.find("  city-pack  700 bytes in 1 entries") != std::string::npos);
+    CY_CHECK(text.find("size by world region\n") != std::string::npos);
+    CY_CHECK(text.find("  (undeclared)  40 bytes in 1 entries") != std::string::npos);
+    CY_CHECK(text.find("NOT REPORTED") == std::string::npos);
+}
+
+// ==================================================================================================
+// M11.d task 7.4 — the content audit PER FILE. `audit()` answers "why is this in the build?" for a
+// node somebody already suspects; a shipped build is a list of files, and a release asks the other
+// way round: for each file, the chain from a DECLARED root to it, and what nothing declared asked
+// for. `roots()` cannot answer the second question — every node nothing consumes is its own root —
+// which is why the roots are declared in the description rather than inferred.
+// ==================================================================================================
+CY_TEST_CASE("a description declares its delivery roots, and a root naming no node is refused") {
+    const std::string document =
+        "cybuild 1\n"
+        "root \"package\"\n"
+        "node \"import:a\" import \"copy\" 1\n"
+        "  source \"a.txt\"\n"
+        "  output \"a.bin\"\n"
+        "node \"package\" package \"manifest\" 1\n"
+        "  upstream \"import:a\"\n"
+        "  output \"a.manifest\"\n";
+    BuildGraph graph;
+    CY_REQUIRE(read_description(document, graph).has_value());
+    CY_REQUIRE_EQ(graph.declared_roots().size(), 1U);
+    CY_CHECK_EQ(graph.node(graph.declared_roots()[0]).name, "package");
+
+    // The root survives the writer, so a generated description keeps its entry points.
+    BuildGraph again;
+    CY_REQUIRE(read_description(write_description(graph), again).has_value());
+    CY_CHECK_EQ(again.declared_root_names().size(), 1U);
+    CY_CHECK_EQ(write_description(graph), write_description(again));
+
+    // A root is a declaration about the graph; one naming nothing is a typo that would otherwise
+    // make every node in the build "unreferenced" and bury the real finding.
+    BuildGraph typo;
+    const Status refused = read_description(
+        "cybuild 1\nroot \"pakage\"\nnode \"a\" import \"copy\" 1\n  output \"a.bin\"\n", typo);
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK(refused.error().code == ErrorCode::NotFound);
+}
+
+CY_TEST_CASE("the content audit chains every file to a declared root and flags what none reaches") {
+    BuildGraph graph;
+    CY_REQUIRE(graph.add(node("import:a", {"a.txt"}, {})).has_value());
+    CY_REQUIRE(graph.add(node("import:b", {"b.txt"}, {})).has_value());
+    CY_REQUIRE(graph.add(node("cook", {}, {"import:a", "import:b"})).has_value());
+    CY_REQUIRE(graph.add(node("package", {}, {"cook"})).has_value());
+    // Built, packaged, and asked for by nobody: nothing consumes it, so `roots()` calls it a root.
+    CY_REQUIRE(graph.add(node("import:stray", {"stray.txt"}, {})).has_value());
+    CY_REQUIRE(graph.declare_root("package").has_value());
+    CY_REQUIRE(graph.finalize().has_value());
+
+    // The report is where DISCOVERED reads live: `a.bin` is named by no node and read by import:a
+    // through discovery, which is a reference — flagging it would be the false positive that makes
+    // a team stop reading the audit.
+    BuildReport report;
+    NodeResult imported;
+    imported.name = "import:a";
+    imported.discovered.emplace_back("a.bin");
+    report.nodes.push_back(imported);
+
+    PackageSet packages;
+    packages.bundles.push_back(
+        Bundle{"base",
+               {PackageEntry{"import:a.out", hash_of("A"), 10, "import:a"},
+                PackageEntry{"cook.out", hash_of("C"), 30, "cook"},
+                PackageEntry{"package.out", hash_of("P"), 5, "package"},
+                PackageEntry{"import:stray.out", hash_of("S"), 900, "import:stray"}}});
+
+    const std::vector<std::string> on_disk = {"a.bin", "a.txt", "b.txt", "orphan.txt", "stray.txt"};
+    const Expected<ContentAudit, Error> audit = audit_content(graph, packages, report, on_disk);
+    CY_REQUIRE(audit.has_value());
+
+    // Every file, sorted, with the chain from the declared root down to the node that made it.
+    CY_REQUIRE_EQ(audit->files.size(), 4U);
+    const AuditedFile& first = audit->files[1];  // "import:a.out" sorts after "cook.out"
+    CY_CHECK_EQ(first.name, "import:a.out");
+    CY_REQUIRE_EQ(first.chain.size(), 3U);
+    CY_CHECK_EQ(first.chain[0], "package");
+    CY_CHECK_EQ(first.chain[1], "cook");
+    CY_CHECK_EQ(first.chain[2], "import:a");
+    CY_REQUIRE_EQ(first.sources.size(), 2U);
+    CY_CHECK_EQ(first.sources[1], "a.bin");
+    // The root's own file is in the build because it IS the root.
+    CY_CHECK_EQ(audit->files[3].name, "package.out");
+    CY_REQUIRE_EQ(audit->files[3].chain.size(), 1U);
+
+    // THE FLAGS. The stray node is built for nobody and its 900 bytes ship anyway; `orphan.txt`
+    // is read by nothing. `a.bin` is NOT flagged — discovery is a reference.
+    CY_CHECK(audit->flagged());
+    CY_REQUIRE_EQ(audit->unreachable_nodes.size(), 1U);
+    CY_CHECK_EQ(audit->unreachable_nodes[0], "import:stray");
+    CY_REQUIRE_EQ(audit->unread_sources.size(), 1U);
+    CY_CHECK_EQ(audit->unread_sources[0], "orphan.txt");
+    CY_CHECK(audit->files[2].chain.empty());
+
+    const std::string text = content_audit_report(*audit);
+    CY_CHECK(text.find("why package > cook > import:a < a.txt, a.bin") != std::string::npos);
+    CY_CHECK(text.find("UNREFERENCED node import:stray") != std::string::npos);
+    CY_CHECK(text.find("UNREFERENCED source orphan.txt") != std::string::npos);
+    CY_CHECK(text.find("unreferenced: 2\n") != std::string::npos);
+
+    // A graph with no declared root cannot call anything unreferenced, and says so rather than
+    // inferring roots and reporting a clean audit.
+    BuildGraph undeclared;
+    CY_REQUIRE(undeclared.add(node("import:a", {"a.txt"}, {})).has_value());
+    CY_REQUIRE(undeclared.finalize().has_value());
+    CY_CHECK_FALSE(audit_content(undeclared, packages, report, on_disk).has_value());
 }
 
 CY_TEST_CASE("a patch carries only the chunks whose content changed") {

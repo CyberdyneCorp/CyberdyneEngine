@@ -50,7 +50,109 @@ Name command() noexcept {
 }  // namespace channels
 
 ControlRegistry::ControlRegistry(Allocator& allocator) noexcept
-    : allocator_(&allocator), sources_(allocator), bindings_(allocator), groups_(allocator) {}
+    : allocator_(&allocator),
+      sources_(allocator),
+      bindings_(allocator),
+      groups_(allocator),
+      binding_index_(allocator),
+      memberships_(allocator) {}
+
+// --- The two indexes `controls()` answers from. See control.h for why they exist.
+// -----------------
+
+u64 ControlRegistry::BindingKeyHash::operator()(const BindingKey& key) const noexcept {
+    const u64 seed = hash_seed();
+    u64 hash = hash_integer(key.source, seed);
+    hash = hash_integer(key.target ^ hash, seed);
+    return hash_integer((static_cast<u64>(key.channel) << 1U) ^ key.group ^ hash, seed);
+}
+
+ControlRegistry::BindingKey ControlRegistry::key_of(const ControlBinding& binding) noexcept {
+    return BindingKey{binding.source.bits(),
+                      binding.is_group() ? binding.group.bits() : binding.entity.bits(),
+                      binding.channel.index(), binding.is_group() ? 1U : 0U};
+}
+
+Status ControlRegistry::index_binding(const ControlBinding& binding) noexcept {
+    const BindingKey key = key_of(binding);
+    if (u32* count = binding_index_.find(key); count != nullptr) {
+        ++*count;
+        return ok();
+    }
+    const Expected<u32*, Error> inserted = binding_index_.insert(key, 1U);
+    return inserted ? ok() : make_unexpected(inserted.error());
+}
+
+void ControlRegistry::unindex_binding(const ControlBinding& binding) noexcept {
+    const BindingKey key = key_of(binding);
+    u32* count = binding_index_.find(key);
+    if (count == nullptr) {
+        return;
+    }
+    if (--*count == 0) {
+        (void)binding_index_.remove(key);
+    }
+}
+
+Status ControlRegistry::index_membership(ecs::Entity entity, u32 slot) noexcept {
+    Membership* membership = memberships_.find(entity.bits());
+    if (membership == nullptr) {
+        Membership fresh;
+        fresh.count = 1;
+        fresh.slots[0] = slot;
+        const Expected<Membership*, Error> inserted = memberships_.insert(entity.bits(), fresh);
+        return inserted ? ok() : make_unexpected(inserted.error());
+    }
+    // Past the inline capacity the slots are not all recorded, and `count` keeps counting so that
+    // `controls()` knows to walk for this entity rather than trust a partial list.
+    if (membership->count < kInlineMemberships) {
+        membership->slots[membership->count] = slot;
+    }
+    ++membership->count;
+    return ok();
+}
+
+void ControlRegistry::unindex_membership(ecs::Entity entity, u32 slot) noexcept {
+    Membership* membership = memberships_.find(entity.bits());
+    if (membership == nullptr) {
+        return;
+    }
+    if (membership->count > kInlineMemberships) {
+        // Overflowed: which slots are inline is not the whole story, so rebuild from the groups.
+        membership->count = 0;
+        for (const Group& group : groups_) {
+            if (group.id.index() == slot) {
+                continue;
+            }
+            for (const ecs::Entity member : group.members) {
+                if (member == entity) {
+                    if (membership->count < kInlineMemberships) {
+                        membership->slots[membership->count] = group.id.index();
+                    }
+                    ++membership->count;
+                    break;
+                }
+            }
+        }
+    } else {
+        for (u32 index = 0; index < membership->count; ++index) {
+            if (membership->slots[index] == slot) {
+                membership->slots[index] = membership->slots[membership->count - 1];
+                --membership->count;
+                break;
+            }
+        }
+    }
+    if (membership->count == 0) {
+        (void)memberships_.remove(entity.bits());
+    }
+}
+
+bool ControlRegistry::bound(ControlSourceId source_id, Name channel, u64 target,
+                            bool group) const noexcept {
+    return binding_index_.contains(
+        BindingKey{source_id.bits(), target, channel.index(), group ? 1U : 0U});
+}
 
 Expected<ControlSourceId, Error> ControlRegistry::create_source(ControlSourceKind kind,
                                                                 ParticipantId participant,
@@ -70,6 +172,7 @@ void ControlRegistry::destroy_source(ControlSourceId source_id) noexcept {
     usize index = bindings_.size();
     while (index-- > 0) {
         if (bindings_[index].source == source_id) {
+            unindex_binding(bindings_[index]);
             bindings_.erase(index);
         }
     }
@@ -106,28 +209,22 @@ Expected<GroupId, Error> ControlRegistry::create_group(Name debug_name) noexcept
     return id;
 }
 
+// A group's slot IS its index: groups are appended and never removed, so the handle's slot finds
+// it directly and the generation check refuses a handle that names some other group.
 ControlRegistry::Group* ControlRegistry::find_group(GroupId group) noexcept {
-    if (group.is_null()) {
+    const u32 slot = group.index();
+    if (group.is_null() || slot >= groups_.size() || groups_[slot].id != group) {
         return nullptr;
     }
-    for (auto& index : groups_) {
-        if (index.id == group) {
-            return &index;
-        }
-    }
-    return nullptr;
+    return &groups_[slot];
 }
 
 const ControlRegistry::Group* ControlRegistry::find_group(GroupId group) const noexcept {
-    if (group.is_null()) {
+    const u32 slot = group.index();
+    if (group.is_null() || slot >= groups_.size() || groups_[slot].id != group) {
         return nullptr;
     }
-    for (const auto& index : groups_) {
-        if (index.id == group) {
-            return &index;
-        }
-    }
-    return nullptr;
+    return &groups_[slot];
 }
 
 Status ControlRegistry::add_to_group(GroupId group, ecs::Entity entity) noexcept {
@@ -140,7 +237,10 @@ Status ControlRegistry::add_to_group(GroupId group, ecs::Entity entity) noexcept
             return ok();
         }
     }
-    return record->members.push_back(entity);
+    if (Status pushed = record->members.push_back(entity); !pushed) {
+        return pushed;
+    }
+    return index_membership(entity, group.index());
 }
 
 void ControlRegistry::remove_from_group(GroupId group, ecs::Entity entity) noexcept {
@@ -151,6 +251,7 @@ void ControlRegistry::remove_from_group(GroupId group, ecs::Entity entity) noexc
     for (usize index = 0; index < record->members.size(); ++index) {
         if (record->members[index] == entity) {
             record->members.erase(index);
+            unindex_membership(entity, group.index());
             return;
         }
     }
@@ -178,7 +279,10 @@ Status ControlRegistry::bind_entity(ControlSourceId source_id, Name channel,
     binding.source = source_id;
     binding.channel = channel;
     binding.entity = entity;
-    return bindings_.push_back(binding);
+    if (Status pushed = bindings_.push_back(binding); !pushed) {
+        return pushed;
+    }
+    return index_binding(binding);
 }
 
 Status ControlRegistry::bind_group(ControlSourceId source_id, Name channel,
@@ -194,13 +298,17 @@ Status ControlRegistry::bind_group(ControlSourceId source_id, Name channel,
     // "Representing a large controlled group as one control relationship per entity", and the
     // reason is not tidiness: two hundred relationships is two hundred rows to keep consistent
     // every time the selection changes.
-    return bindings_.push_back(binding);
+    if (Status pushed = bindings_.push_back(binding); !pushed) {
+        return pushed;
+    }
+    return index_binding(binding);
 }
 
 void ControlRegistry::unbind(ControlSourceId source_id, Name channel) noexcept {
     usize index = bindings_.size();
     while (index-- > 0) {
         if (bindings_[index].source == source_id && bindings_[index].channel == channel) {
+            unindex_binding(bindings_[index]);
             bindings_.erase(index);
         }
     }
@@ -208,6 +316,26 @@ void ControlRegistry::unbind(ControlSourceId source_id, Name channel) noexcept {
 
 bool ControlRegistry::controls(ControlSourceId source_id, ecs::Entity entity,
                                Name channel) const noexcept {
+    if (bound(source_id, channel, entity.bits(), false)) {
+        return true;
+    }
+    const Membership* membership = memberships_.find(entity.bits());
+    if (membership == nullptr) {
+        return false;
+    }
+    if (membership->count > kInlineMemberships) {
+        return controls_by_walk(source_id, entity, channel);
+    }
+    for (u32 index = 0; index < membership->count; ++index) {
+        if (bound(source_id, channel, groups_[membership->slots[index]].id.bits(), true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ControlRegistry::controls_by_walk(ControlSourceId source_id, ecs::Entity entity,
+                                       Name channel) const noexcept {
     for (const auto& binding : bindings_) {
         if (binding.source != source_id || binding.channel != channel) {
             continue;

@@ -290,6 +290,11 @@ struct SkyLighting {
     /// The sunlight reaching the ground, after the atmosphere AND after the clouds overhead. The
     /// directional light a renderer places.
     Vec3 sun_illuminance{0.0F, 0.0F, 0.0F};
+    /// The sunlight after the atmosphere and BEFORE the clouds. What a renderer places when it
+    /// attenuates the sun per surface position through the cloud shadow field instead of once at
+    /// the viewer — `sun_illuminance` already carries the viewer's cloud, and multiplying it by the
+    /// field as well would shade every surface under that cloud twice.
+    Vec3 clear_sun_illuminance{0.0F, 0.0F, 0.0F};
     /// The fraction of the sun that survived the clouds. Reported separately so that "WHEN cloud
     /// cover thickens THEN the radiance and irradiance the illumination system consumes SHALL
     /// change accordingly" can be attributed to the clouds rather than to the time of day.

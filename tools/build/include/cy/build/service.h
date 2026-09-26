@@ -99,6 +99,11 @@ struct NodeResult {
     /// file and position, an asset, or a graph node".
     std::vector<Diagnostic> diagnostics;
     std::vector<AccessViolation> violations;
+    /// Every input the producer DISCOVERED while running — a glTF's `.bin`, a shader's include —
+    /// by project-relative name, on a cache hit as well as on a run (the cache records them, which
+    /// is how it invalidates on them). M11.d task 7.4: the content audit needs them, because a file
+    /// only discovery reads is referenced, and without this list it would be flagged as unread.
+    std::vector<std::string> discovered;
 };
 
 /// What a whole build did. Deterministic: nodes appear in evaluation order regardless of which

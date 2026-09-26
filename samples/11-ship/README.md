@@ -140,7 +140,9 @@ not a frame that works", which is exactly why this is a gap and not a footnote.
 | | |
 |---|---|
 | 1. **ship** | `cy_build` runs the card's four-node graph cold, then warm; the two manifests are byte-identical; the package installs; and the installation **verifies** — every chunk present and digesting |
-| 2. **provenance** | the build identity, project, revision, platform, profile, toolchain fingerprint and content version, read back **out of the installed manifest** by the program that launched from it |
+| 1b. **audit** | every file in the package traced back to the description's declared entry point, `root "package:card"`, with the sources its node read; and **nothing unreferenced** — a file dropped into `project/card/` that no node reads fails the run by name (M11.d task 7.4) |
+| 1c. **symbols** | `cy_sample_ship` stripped, its symbols archived under its GNU build-id and indexed by the package build identity, and **proved** to belong to it — one build-id, the debuglink's CRC over the archived bytes, `main` symbolicated through the archive and through nothing else; then a reproducibility bundle keyed by the build identity, checked complete. **Every launch after this act runs the stripped binary**, so what was verified is what ran (task 7.5) |
+| 2. **provenance** | all seven fields `build-and-packaging` names — build identity, project AND engine revisions, lockfile, platform and profile, cook configuration, toolchain digest and readable versions — plus the content version, read back **out of the installed manifest** by the program that launched from it |
 | 3. **launch** | the card by logical name, composed, and presented on a swapchain through a display server chosen at run time |
 | 4. **report** | which legs ran, which reported NOT EVALUATED and why, and **which device answered** — hardware, software or null |
 | 5. **content** | one line of the card changes; the palette's import is served from the cache and the card's is not; the same binary draws a different card out of the same installation directory, with no recompile |

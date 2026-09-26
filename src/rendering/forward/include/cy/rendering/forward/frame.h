@@ -49,6 +49,7 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
+#include <cy/rendering/forward/bloom_chain.h>
 #include <cy/rendering/forward/cluster.h>
 #include <cy/rendering/graph/graph.h>
 
@@ -84,6 +85,11 @@ struct FrameFeatures {
     /// is a declared pass and the read is a declared read.
     bool transparent_refraction = false;
     bool post_process = true;
+    /// Bloom's downsample and upsample chain, between the temporal stage and the post-process that
+    /// applies exposure — `bloom_chain.h`. Off by default, and absent rather than skipped when off.
+    bool bloom = false;
+    /// Levels requested of the chain; `bloom_level_count` clamps it to what the extent can hold.
+    u32 bloom_levels = 6;
     bool ui = true;
     /// Virtual geometry's hardware rasteriser: a stage after the depth prepass that writes the
     /// visibility target and the frame's own depth. Off by default, and a caller turns it on by
@@ -124,6 +130,9 @@ enum class FramePassKind : u8 {
     Transparent,
     Resolve,
     Temporal,
+    /// Step 9 of `rendering-post-processing`: bloom, on linear HDR before exposure. Several graph
+    /// passes, one callback — `ForwardFrame::bloom()` says which step a pass is.
+    Bloom,
     PostProcess,
     UiAndDebug,
     /// The blit that puts the last colour the frame produced into `output`. Declared ONLY when the
@@ -186,6 +195,9 @@ struct FrameResources {
     ResourceId temporal_previous = kInvalidResource;
     ResourceId temporal_history = kInvalidResource;
     ResourceId post_color = kInvalidResource;
+    /// The scene-referred colour the post-process reads: `color`, the temporal history, or the
+    /// bloomed colour, whichever stage ran last before exposure.
+    ResourceId post_source = kInvalidResource;
     /// Where the frame ends up: the caller's imported swapchain image, or a frame-owned texture
     /// when the caller imported none.
     ResourceId output = kInvalidResource;
@@ -267,6 +279,8 @@ public:
     [[nodiscard]] const FrameResources& resources() const noexcept { return resources_; }
     [[nodiscard]] Span<const FramePass> passes() const noexcept { return passes_.span(); }
     [[nodiscard]] PrepassMode prepass_mode() const noexcept { return prepass_mode_; }
+    /// The bloom chain this frame declared; `levels == 0` when bloom is off.
+    [[nodiscard]] const BloomChain& bloom() const noexcept { return bloom_; }
 
     /// The pass declared for a stage, or `kInvalidPass` when the feature set left it out.
     [[nodiscard]] PassId pass_of(FramePassKind kind) const noexcept;
@@ -292,6 +306,7 @@ private:
 
     Array<FramePass> passes_;
     FrameResources resources_{};
+    BloomChain bloom_{};
     PrepassMode prepass_mode_ = PrepassMode::DepthOnly;
     Status status_;
 };

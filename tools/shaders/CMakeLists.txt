@@ -30,3 +30,8 @@ cy_add_module(
     SOURCES
         src/main.cpp
     PRIVATE_DEPENDENCIES cy::shader-targets)
+
+# tests/ is read now and declares its suites later; see the comment at the top of it for why.
+if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+    add_subdirectory(tests)
+endif()

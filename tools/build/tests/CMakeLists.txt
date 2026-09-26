@@ -61,6 +61,21 @@ function(cy_build_declare_tests)
     # suite is registered only on POSIX hosts. The rollback path is still covered on every host by
     # the soft-interrupt case in `Installation::apply` itself, which returns at each stage rather
     # than crashing — the loss is coverage of the "no destructor runs" property, not of rollback.
+    # `unit.build_symbols` — M11.d task 7.5. `tools/build/symbols.py` splits a shipping binary's
+    # symbols into an archive keyed by build identity, and this is every refusal it makes, each on a
+    # probe built to deserve it. The configured SHIPPING flags are handed in, because a shipping
+    # configuration compiled without debug information has nothing to archive — which is what
+    # cmake/profiles.cmake's Shipping row did until this test existed.
+    find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME unit.build_symbols
+                 COMMAND "${Python3_EXECUTABLE}" "${tests_dir}/../test_symbols.py"
+                         --flags "${CMAKE_CXX_FLAGS_SHIPPING}"
+                         --compiler-id "${CMAKE_CXX_COMPILER_ID}")
+        set_tests_properties(unit.build_symbols PROPERTIES LABELS "unit"
+                             TIMEOUT "${CY_TEST_TIMEOUT_unit}")
+    endif()
+
     if(NOT WIN32)
         cy_add_test(
             NAME build_patch

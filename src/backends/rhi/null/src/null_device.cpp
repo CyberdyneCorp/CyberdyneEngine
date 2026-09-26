@@ -155,7 +155,9 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
     capabilities_.set(Capability::BindlessPartiallyBound, true);
     capabilities_.set(Capability::DescriptorIndexingNonUniform, true);
     capabilities_.set(Capability::TimestampQueries, true);
-    capabilities_.set(Capability::Multiview, true);
+    // As Vulkan does: reported when the caller asked for it, so `request_multiview = false` puts a
+    // null device on the per-view baseline without a test hook.
+    capabilities_.set(Capability::Multiview, desc.request_multiview);
     capabilities_.set(Capability::MemoryBudgetReporting, true);
     // The null backend models Vulkan's secondary command buffers — `acquire_command_buffer(queue,
     // true)` and `execute_secondary` are implemented rather than stubbed — so it answers true and

@@ -104,6 +104,19 @@ $BUILD apply     --install <dir> --patch <file> --artefacts <store> [--crash-at 
 $BUILD verify    --install <dir> | --artefacts <store>
 ```
 
+`build --audit` adds the per-file content audit (M11.d task 7.4): every file in the package with
+the chain from a **declared root** to the node that produced it and the project files that node read,
+then every node no declared root reaches and every project file no node reads — declared or
+discovered. It exits **4** when it flags anything, so a caller that asked for the audit hears about
+it. A description declares its roots with a top-level `root "<node>"` line; one that declares none
+is refused by the audit rather than inferred, because inferring roots from "what nothing consumes"
+makes every stray node its own reason to be in the build.
+
+Size by plugin and by world region come from what a node DECLARES — `plugin "<name>"` and
+`region "<cell>"` in `cybuild 1`, attribution only and never in the key, like `bundle`. Content whose
+node declares neither is reported as `(undeclared)` rather than guessed into one; before M11.d both
+sizes were printed `NOT REPORTED` because the description could not carry the declaration.
+
 `--crash-at <begin|fetch|verify|commit|switch>` kills the process at that stage with `_exit`, which
 is how the exit criterion *"a patch applies atomically and rolls back cleanly when interrupted"* is
 executed rather than argued. `--stop-at` does the same thing softly, returning through the rollback.
@@ -124,6 +137,39 @@ just content-patch   --apply --install <dir> --patch <file> --artefacts <store>
 | `unit.build_graph` | Topology, cycles, the key model (including the collision E1 demonstrates), the three text formats. No filesystem |
 | `integration.build_service` | Both build exit criteria, undeclared reads, a mutated artefact, cancellation, parallelism, and **a service destroyed while its workers are still running** |
 | `integration.build_patch` | Packaging, a chunk-level patch, and an application interrupted at every stage — softly, and by killing the process |
+
+## Symbols — `symbols.py` (M11.d task 7.5)
+
+`build-and-packaging`: *"Shipping binaries SHALL be stripped, with symbols archived separately and
+retrievable by build identity, so a crash report carrying that identity can be symbolicated."*
+
+```sh
+python3 tools/build/symbols.py split  <binary> --out <shipped> --store <archive> [--build <package build id>]
+python3 tools/build/symbols.py verify <shipped> --store <archive> --source <file main must resolve to>
+python3 tools/build/symbols.py locate <package build id | GNU build-id> --store <archive>
+```
+
+The archive is GDB's own `debug-file-directory` layout (`.build-id/ab/cdef….debug`), plus
+`builds/<package build id>` naming each binary's GNU build-id, so the package's identity and a crash
+report's module identity both reach the symbols. `verify` is four checks, because a debug file from a
+different build of the same program symbolicates without complaint and names the wrong line: the
+shipped binary is stripped; both carry one build-id; the shipped binary's `.gnu_debuglink` carries
+the archived file's CRC-32; and `main`'s address resolves through the archive to the named source
+file while the shipped binary alone resolves it to nothing. `unit.build_symbols` builds a probe for
+every refusal and requires it — another build's symbols under this build-id, symbols edited after
+the split, an unstripped binary, a binary with no build-id, one compiled without `-g`, and a
+non-ELF file.
+
+**The finding that writing it exposed**: `cmake/profiles.cmake`'s Shipping row compiled with no
+`-g`, while its own comment said symbols were split at packaging time — so a shipping build had no
+symbols to archive. Shipping now compiles with `-g` (`/Zi` and `/DEBUG /OPT:REF /OPT:ICF` on MSVC),
+and `unit.build_symbols` checks the CONFIGURED Shipping flags, so a configuration that drops them
+fails a test rather than a crash investigation.
+
+ELF only: Mach-O (`dsymutil`) and PE/PDB are the same four checks with other spellings, and this host
+produces neither, so a non-ELF input is refused by name rather than treated as stripped.
+`samples/11-ship` runs the whole thing — split, verify, locate, and a reproducibility bundle keyed by
+the build identity — and then launches the STRIPPED binary, so what was verified is what ran.
 
 ## What is deliberately not here yet
 

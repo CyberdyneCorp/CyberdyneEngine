@@ -52,16 +52,22 @@ public struct FullscreenVertex
     public float2 uv : TEXCOORD0;
 };
 
-/// `SV_VulkanVertexID` rather than `SV_VertexID`, and the difference is a DEVICE FEATURE.
+/// `SV_VertexID`, the one vertex-index spelling all three targets accept, and what it costs on each.
 ///
-/// Slang lowers `SV_VertexID` to `gl_VertexIndex - gl_BaseVertex`, to match Direct3D's semantics —
-/// which declares the SPIR-V `DrawParameters` capability, which a Vulkan device only accepts with
-/// `VkPhysicalDeviceVulkan11Features::shaderDrawParameters` enabled. `src/backends/rhi/vulkan/` does
-/// not request that feature, so a pipeline built from such a module is refused by validation.
-/// `SV_VulkanVertexID` is the raw `VertexIndex`, which is what a draw with no vertex buffer and no
-/// base vertex means anyway. Recorded here because the alternative fix is in the backend.
+/// DXIL takes it as written and MSL as `[[vertex_id]]`. SPIR-V has no direct equivalent: Slang
+/// lowers it to `gl_VertexIndex - gl_BaseVertex`, which declares the `DrawParameters` capability, so
+/// `src/backends/rhi/vulkan/` creates its device with `shaderDrawParameters` and refuses one without
+/// it. Until M11.d this took `SV_VulkanVertexID` — the raw `VertexIndex`, and no feature — which DXC
+/// rejects for every vertex shader model (`m11c:every-shader-reaches-every-target`).
+///
+/// THE BASE VERTEX IS HANDLED BY THE DRAWS, NOT BY THIS FUNCTION. The targets agree on the index
+/// only when the draw's first vertex is zero: SPIR-V subtracts the base and Metal's `vertex_id`
+/// counts from it. Every draw of this stage is `draw(3, 1, 0, 0)`, so the subtraction is of zero and
+/// the index is the one `SV_VulkanVertexID` gave — the frames drawn through it were byte-identical
+/// before and after on Vulkan, and `integration.render_pipeline` asserts the zero. A pass that
+/// wants an offset passes it as data.
 [shader("vertex")]
-public FullscreenVertex fullscreenVertex(uint vertexId: SV_VulkanVertexID)
+public FullscreenVertex fullscreenVertex(uint vertexId: SV_VertexID)
 {
     FullscreenVertex output;
     output.uv = float2((vertexId << 1) & 2, vertexId & 2);

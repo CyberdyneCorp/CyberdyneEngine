@@ -37,6 +37,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/memory/hash_map.h>
 #include <cy/core/values/handle.h>
 #include <cy/core/values/name.h>
 #include <cy/ecs/entity.h>
@@ -100,9 +101,32 @@ struct ControlBinding {
 ///
 /// Not thread-safe: binding changes happen at the commit boundary, like every other structural
 /// change. Queries are const and are what validation calls.
+///
+/// ================================================================================================
+/// `controls()` IS INDEXED, AND THE STRATEGY STRESS SCENARIO IS WHY (M11.d task 7.2)
+/// ================================================================================================
+///
+/// Validation asks `controls()` once for EVERY member command a group order expands into. It used
+/// to walk every binding and, for each group binding, search the group list for the group and then
+/// that group's members — and the registry refused a 65th group outright. `testing-and-quality`'s
+/// strategy stress scenario is 5 000 groups and hundreds of orders a tick; it could not be built,
+/// and with the cap lifted it measured the framework at 94 % of a strategy tick (50.7 ms of
+/// validation against 3.2 ms of simulation). So the answer is now two hash lookups:
+///
+///   * a BINDING INDEX over (source, channel, target) — target being an entity or a group — with
+///     how many bindings share the key, so `unbind` can remove one without a rescan;
+///   * a MEMBERSHIP INDEX from an entity to the groups it is in, by group slot, inline up to
+///     `kInlineMemberships`. An entity in more groups than that is answered by the old walk, so the
+///     answer is always exact and only the rare case is slow.
+///
+/// `tests/test_control.cpp` holds the regression at the registry's own level, and
+/// `tests/acceptance/test_strategy_stress.cpp` at the scenario's.
 class ControlRegistry {
 public:
-    static constexpr u32 kMaxGroups = 64;
+    /// The scenario `testing-and-quality` calls the primary architectural test has 5 000 groups.
+    static constexpr u32 kMaxGroups = 8192;
+    /// Groups an entity can be in before `controls()` falls back to a walk for it.
+    static constexpr u32 kInlineMemberships = 4;
 
     explicit ControlRegistry(Allocator& allocator) noexcept;
 
@@ -158,13 +182,43 @@ private:
         Array<ecs::Entity> members;
     };
 
+    /// One distinct (source, channel, target). `group` is 1 when `target` is a group's bits.
+    struct BindingKey {
+        u64 source = 0;
+        u64 target = 0;
+        u32 channel = 0;
+        u32 group = 0;
+
+        [[nodiscard]] bool operator==(const BindingKey&) const noexcept = default;
+    };
+    struct BindingKeyHash {
+        [[nodiscard]] u64 operator()(const BindingKey& key) const noexcept;
+    };
+    /// The groups an entity is in, by slot. `count` above `kInlineMemberships` means "more than
+    /// fit": the slots are then not all here and `controls()` walks for this entity.
+    struct Membership {
+        u32 count = 0;
+        u32 slots[kInlineMemberships] = {};
+    };
+
     [[nodiscard]] const Group* find_group(GroupId group) const noexcept;
     [[nodiscard]] Group* find_group(GroupId group) noexcept;
+    [[nodiscard]] static BindingKey key_of(const ControlBinding& binding) noexcept;
+    [[nodiscard]] Status index_binding(const ControlBinding& binding) noexcept;
+    void unindex_binding(const ControlBinding& binding) noexcept;
+    [[nodiscard]] Status index_membership(ecs::Entity entity, u32 slot) noexcept;
+    void unindex_membership(ecs::Entity entity, u32 slot) noexcept;
+    [[nodiscard]] bool bound(ControlSourceId source_id, Name channel, u64 target,
+                             bool group) const noexcept;
+    [[nodiscard]] bool controls_by_walk(ControlSourceId source_id, ecs::Entity entity,
+                                        Name channel) const noexcept;
 
     Allocator* allocator_;
     Array<ControlSourceRecord> sources_;
     Array<ControlBinding> bindings_;
     Array<Group> groups_;
+    HashMap<BindingKey, u32, BindingKeyHash> binding_index_;
+    HashMap<u64, Membership> memberships_;
     u32 next_source_ = 1;
     u32 next_group_ = 1;
 };

@@ -4,7 +4,7 @@
 measures the agreement between them. `just build-shaders` is this tool.
 
     cy_shaderc targets
-    cy_shaderc build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>] [--verbose]
+    cy_shaderc build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>] [--verbose] [--strict]
 
 ## What it is for
 
@@ -54,3 +54,23 @@ on by default in Debug and Development) and loads dynamically when it is first a
 `cy_shaderc targets` answers by **compiling a shader for each target**, so a machine where that
 library is missing is reported as a machine that does not emit DXIL — not as one where an option
 was set.
+
+## Every entry point, every target — and the suite that keeps it so
+
+`--strict` also ends the run red when ONE target refused an entry point another compiled. That is a
+different fact from a failure — a portability finding about one shader on one API, not a broken
+shader — and the report counts the two separately (`target_refusals`, `failures`).
+
+`m11c:every-shader-reaches-every-target` asked it of the whole tree and was declared red at M11.c.
+M11.d closed it, and the strict run on the tree it started from was worse than the declaration:
+`failures=2 target_refusals=3`. Four vertex stages drew from `SV_VulkanVertexID`, which DXC rejects
+for every vertex shader model — `fullscreenVertex`, `cyParticleVertex`, and `cyStripVertex` and
+`vgVisHwVertex`, which had landed after M11.c's measurement — and `cy/particle.slang` compiled for
+no target at all, because it named `cy/frame.slang`'s `cyFrame` macro and a macro does not cross an
+`import`. All four take `SV_VertexID` (and `SV_InstanceID`) now; `cy/fullscreen.slang` records what
+that spelling costs on each target and why every draw of those stages starts at zero.
+
+`tests/` is `smoke.shader_targets`: the same measurement over `src/rendering/`, on every smoke run,
+requiring no failure, no disagreement and no target refusal. It was red on the tree M11.d started
+from for both reasons above, so the next shader that reaches for a one-target semantic is found by
+the build that adds it rather than by the next ledger run.
