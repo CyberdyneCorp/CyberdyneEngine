@@ -17,8 +17,12 @@ use super::vfx_module::{ModuleInput, VfxModule};
 /// Install the same VFX actions for the command palette, scripts, and MCP projection.
 pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(add_emitter())?;
+    registry.register(configure_emitter())?;
+    registry.register(bind_interface())?;
+    registry.register(unbind_interface())?;
     registry.register(add_node())?;
     registry.register(connect_nodes())?;
+    registry.register(set_node_property())?;
     registry.register(set_parameter())?;
     registry.register(create_module())?;
     registry.register(add_module_input())?;
@@ -136,6 +140,29 @@ fn edit_canvas(
     Ok(outcome)
 }
 
+fn set_declared_property(
+    canvas: &mut GraphCanvas,
+    key: NodeKey,
+    property: &str,
+    value: &str,
+) -> Result<()> {
+    let identity = canvas
+        .node(key)
+        .and_then(|node| canvas.catalogue().get(&node.type_name))
+        .and_then(|kind| kind.properties.iter().find(|item| item.name == property))
+        .map(|item| item.identity)
+        .ok_or_else(|| {
+            Problem::new(
+                "set a VFX node property",
+                format!(
+                    "node {} has no engine-declared property {property}",
+                    key.ordinal()
+                ),
+            )
+        })?;
+    canvas.set_property_by_identity(key, identity, value)
+}
+
 fn catalogue(project: &dyn ProjectHost) -> Result<Vec<u8>> {
     project.vfx_catalogue().ok_or_else(|| {
         Problem::new(
@@ -193,6 +220,129 @@ fn add_emitter() -> Command {
                     attributes: Vec::new(),
                 });
                 Ok(Outcome::new(format!("Added VFX emitter {name}")))
+            })
+        },
+    )
+}
+
+fn simulation_path(value: &str) -> Result<SimulationPath> {
+    match value {
+        "cpu" => Ok(SimulationPath::CpuRequired),
+        "gpu" => Ok(SimulationPath::GpuPreferred),
+        other => Err(Problem::new(
+            "configure a VFX emitter",
+            format!("target {other} must be cpu or gpu"),
+        )),
+    }
+}
+
+fn configure_emitter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.emitter.configure",
+            "Configure VFX Emitter",
+            "Changes an emitter's renderer and CPU/GPU target in one undoable document edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter to configure.",
+        ))
+        .with(ParameterSpec::required(
+            "target",
+            ValueKind::Text,
+            "Simulation target: cpu or gpu.",
+        ))
+        .with(ParameterSpec::required(
+            "renderer",
+            ValueKind::Text,
+            "Engine renderer kind, such as Sprite or Mesh.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "emitter");
+            let path = simulation_path(text(arguments, "target"))?;
+            let renderer = text(arguments, "renderer");
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, name)?;
+                let emitter = &mut document.emitters[index];
+                emitter.path = path;
+                emitter.renderer = renderer.into();
+                Ok(Outcome::new(format!("Configured VFX emitter {name}")))
+            })
+        },
+    )
+}
+
+fn bind_interface() -> Command {
+    Command::new(
+        metadata(
+            "vfx.interface.bind",
+            "Bind VFX Data Interface",
+            "Binds a named engine data interface to an emitter in one undoable edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter receiving the interface.",
+        ))
+        .with(ParameterSpec::required(
+            "interface",
+            ValueKind::Text,
+            "Engine data-interface name.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let interface = text(arguments, "interface");
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, emitter_name)?;
+                document.emitters[index].interfaces.push(interface.into());
+                Ok(Outcome::new(format!(
+                    "Bound {interface} to VFX emitter {emitter_name}"
+                )))
+            })
+        },
+    )
+}
+
+fn unbind_interface() -> Command {
+    Command::new(
+        metadata(
+            "vfx.interface.unbind",
+            "Unbind VFX Data Interface",
+            "Removes an emitter's data-interface binding in one undoable edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter losing the interface.",
+        ))
+        .with(ParameterSpec::required(
+            "interface",
+            ValueKind::Text,
+            "Bound engine data-interface name.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let interface = text(arguments, "interface");
+            edit_document(context, reference, |document, _| {
+                let index = emitter_index(document, emitter_name)?;
+                let bindings = &mut document.emitters[index].interfaces;
+                let position = bindings
+                    .iter()
+                    .position(|name| name == interface)
+                    .ok_or_else(|| {
+                        Problem::new(
+                            "unbind a VFX data interface",
+                            format!("{interface} is not bound to {emitter_name}"),
+                        )
+                    })?;
+                bindings.remove(position);
+                Ok(Outcome::new(format!(
+                    "Unbound {interface} from VFX emitter {emitter_name}"
+                )))
             })
         },
     )
@@ -336,6 +486,68 @@ fn connect_nodes() -> Command {
                             "Connected VFX nodes {} and {}",
                             from.ordinal(),
                             to.ordinal()
+                        )))
+                    },
+                )
+            })
+        },
+    )
+}
+
+fn set_node_property() -> Command {
+    Command::new(
+        metadata(
+            "vfx.node.property.set",
+            "Set VFX Node Property",
+            "Sets an engine-declared node property on one saved emitter stage.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter whose stage owns the node.",
+        ))
+        .with(ParameterSpec::required(
+            "stage",
+            ValueKind::Text,
+            "Stage containing the node.",
+        ))
+        .with(ParameterSpec::required(
+            "node",
+            ValueKind::Int,
+            "Stable key of the node to edit.",
+        ))
+        .with(ParameterSpec::required(
+            "property",
+            ValueKind::Text,
+            "Engine-declared property name.",
+        ))
+        .with(ParameterSpec::required(
+            "value",
+            ValueKind::Text,
+            "Property value in the engine-declared textual form.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter_name = text(arguments, "emitter");
+            let stage = stage(arguments)?;
+            let ordinal = arguments
+                .get("node")
+                .and_then(Value::as_int)
+                .unwrap_or_default();
+            let key = NodeKey::new(u64::try_from(ordinal).unwrap_or_default())?;
+            let property = text(arguments, "property");
+            let value = text(arguments, "value");
+            edit_document(context, reference, |document, project| {
+                edit_canvas(
+                    document,
+                    &catalogue(project)?,
+                    emitter_name,
+                    stage,
+                    |canvas| {
+                        set_declared_property(canvas, key, property, value)?;
+                        Ok(Outcome::new(format!(
+                            "Set {property} on VFX node {}",
+                            key.ordinal()
                         )))
                     },
                 )
@@ -550,7 +762,17 @@ mod tests {
             out.u8(direction);
             out.text(pin);
             out.text("value");
-            out.u32(0); // properties
+            if identity == 1 {
+                out.u32(1); // properties
+                out.u32(1); // property identity
+                out.u8(2); // scalar
+                out.text("value");
+                out.text("0");
+                out.text(""); // legacy constraint
+                out.text("Constant value");
+            } else {
+                out.u32(0);
+            }
         }
         out.finish()
     }
@@ -644,5 +866,43 @@ mod tests {
         let from = canvas.add("vfx.constant", Layout::default()).unwrap();
         let to = canvas.add("vfx.spawn_count", Layout::default()).unwrap();
         assert!(canvas.connect(from, "wrong", to, "value").is_err());
+    }
+
+    #[test]
+    fn stage_property_edit_uses_the_engine_property_schema() {
+        let catalogue = engine_catalogue();
+        let mut document = document();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Spawn,
+            |canvas| {
+                let node = canvas.add("vfx.constant", Layout::default())?;
+                set_declared_property(canvas, node, "value", "2.5")?;
+                Ok(Outcome::new("constant edited"))
+            },
+        )
+        .unwrap();
+        let reopened = VfxDocument::decode_text(&document.encode_text().unwrap()).unwrap();
+        let canvas = stage_canvas(&catalogue, &reopened, 0, Stage::Spawn).unwrap();
+        let key = NodeKey::new(1).unwrap();
+        assert_eq!(
+            canvas.resolved_properties(key).get("value"),
+            Some(&"2.5".into())
+        );
+        assert!(
+            edit_canvas(
+                &mut document,
+                &catalogue,
+                "embers",
+                Stage::Spawn,
+                |canvas| {
+                    set_declared_property(canvas, key, "unknown", "3")?;
+                    Ok(Outcome::new("unknown property"))
+                }
+            )
+            .is_err()
+        );
     }
 }

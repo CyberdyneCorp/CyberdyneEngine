@@ -1952,9 +1952,40 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    fn configure_vfx_draft(window: &mut EditorWindow) {
+        use cy_editor_interface::specialised::vfx::{Emitter, Parameter, SimulationPath};
+
+        window
+            .specialised
+            .edit_vfx_metadata(|document| {
+                document.parameters.push(Parameter {
+                    name: "speed".into(),
+                    kind: "float".into(),
+                    value: [2.0, 0.0, 0.0, 0.0],
+                    exposed: true,
+                });
+                document.emitters.push(Emitter {
+                    name: "sparks".into(),
+                    path: SimulationPath::GpuPreferred,
+                    renderer: "Sprite".into(),
+                    stages: Vec::new(),
+                    modules: Vec::new(),
+                    interfaces: vec!["texture".into()],
+                    capacity: 1024,
+                    attributes: Vec::new(),
+                });
+                Ok(())
+            })
+            .unwrap();
+        window
+            .specialised
+            .set_vfx_emitter_settings(0, SimulationPath::CpuRequired, "Mesh".into())
+            .unwrap();
+    }
+
     #[test]
     fn vfx_undo_and_redo_refresh_the_open_authoring_document() {
-        use cy_editor_interface::specialised::vfx::{Parameter, VfxDocument};
+        use cy_editor_interface::specialised::vfx::{SimulationPath, VfxDocument};
 
         let root = scratch("vfx-draft-undo-redo");
         let _ = std::fs::remove_dir_all(&root);
@@ -1982,18 +2013,7 @@ mod tests {
             )
         };
         window.apply(vec![save(first.clone())]);
-        window
-            .specialised
-            .edit_vfx_metadata(|document| {
-                document.parameters.push(Parameter {
-                    name: "speed".into(),
-                    kind: "float".into(),
-                    value: [2.0, 0.0, 0.0, 0.0],
-                    exposed: true,
-                });
-                Ok(())
-            })
-            .unwrap();
+        configure_vfx_draft(&mut window);
         let second = window
             .specialised
             .vfx_document_snapshot()
@@ -2013,6 +2033,14 @@ mod tests {
                 .parameters
                 .is_empty()
         );
+        assert!(
+            window
+                .specialised
+                .vfx_document()
+                .unwrap()
+                .emitters
+                .is_empty()
+        );
         window.apply(vec![history("edit.redo")]);
         assert_eq!(
             window.editor.project.read_source(reference).unwrap(),
@@ -2022,6 +2050,10 @@ mod tests {
             window.specialised.vfx_document().unwrap().parameters.len(),
             1
         );
+        let emitter = &window.specialised.vfx_document().unwrap().emitters[0];
+        assert_eq!(emitter.path, SimulationPath::CpuRequired);
+        assert_eq!(emitter.renderer, "Mesh");
+        assert_eq!(emitter.interfaces, ["texture"]);
         let unrelated = VfxDocument::new("other").unwrap().encode_text().unwrap();
         window.apply(vec![Intent::Invoke(
             "vfx.document.save".into(),

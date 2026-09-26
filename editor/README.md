@@ -543,10 +543,14 @@ so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable
 authoring data; engine canonicalisation, runtime cooking, and runtime preview are tracked by
 `openspec/changes/implement-issue-15-graph-authoring/`.
-The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.node.add`,
-`vfx.node.connect`, and `vfx.parameter.set`. Each reads the saved system, applies one edit, and
-saves through the same undoable document transaction. Node placement and connections require the
-live engine VFX catalogue; an unavailable catalogue or unknown node or pin is refused by name.
+The command palette, scripts, and MCP also expose `vfx.emitter.add`,
+`vfx.emitter.configure`, `vfx.interface.bind`, `vfx.interface.unbind`, `vfx.node.add`,
+`vfx.node.connect`, `vfx.node.property.set`, and `vfx.parameter.set`. Each reads the saved system,
+applies one edit, and saves through the same undoable document transaction. Node placement,
+connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
+or unknown node, pin, or property is refused by name.
+Interface names and renderer choices in saved commands are checked against the engine when the
+draft is compiled; the desktop pickers only offer entries reported by the attached engine.
 Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and
 `vfx.module.dependency.add`, then linked to an emitter with `vfx.module.attach`. Each command saves
 one undoable change; creating a module refuses to replace an existing source at that path.

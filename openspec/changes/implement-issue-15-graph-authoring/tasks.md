@@ -12,7 +12,7 @@
 ## 2. VFX documents and engine services
 
 - [x] 2.1a Add a versioned system/emitter/stage authoring document, shared-canvas stage switching, and project draft save/reopen through undoable commands.
-- [ ] 2.1b Author separately saved modules, typed parameters, interface bindings, renderer settings, and CPU/GPU targets through transactions and undo/redo.
+- [x] 2.1b Author separately saved modules, typed parameters, interface bindings, renderer settings, and CPU/GPU targets through transactions and undo/redo.
 - [x] 2.2 Validate and compile through `cy::vfx-compiler`; expose node-located `CompileReport` diagnostics, attribute layout, and generated source.
 - [x] 2.3 Save, reopen, cook, and render a two-emitter CPU/GPU sample; add image comparison.
 - [x] 2.4 Make parameter edits update a running effect without compilation and graph edits recompile; test the distinction.
