@@ -91,6 +91,8 @@ pub struct EditorWindow {
     vfx_catalogue_revision: Revision,
     /// Last project-backed VFX source seen by this window, including an undone creation.
     vfx_committed: Option<(String, Option<String>)>,
+    /// Last project-backed reusable module source seen by this window.
+    vfx_module_committed: Option<(String, Option<String>)>,
     documents: DocumentTabsViewModel,
     hierarchy: HierarchyViewModel,
     history: HistoryViewModel,
@@ -181,6 +183,7 @@ impl EditorWindow {
             material_catalogue_revision: Revision::INITIAL,
             vfx_catalogue_revision: Revision::INITIAL,
             vfx_committed: None,
+            vfx_module_committed: None,
             documents: DocumentTabsViewModel::new(),
             hierarchy: HierarchyViewModel::new(),
             history: HistoryViewModel::new(),
@@ -362,6 +365,7 @@ impl EditorWindow {
                     }
                 }
                 Intent::OpenVfxDocument(reference) => self.open_vfx_document(&reference),
+                Intent::OpenVfxModule(reference) => self.open_vfx_module(&reference),
                 Intent::ImportExternal { paths, destination } => {
                     for path in paths {
                         let arguments = Arguments::new()
@@ -579,8 +583,28 @@ impl EditorWindow {
                 {
                     self.vfx_committed = Some((reference.into(), Some(source.into())));
                 }
+                if id == "vfx.module.save"
+                    && let (Some(reference), Some(source)) =
+                        (arguments.text("reference"), arguments.text("source"))
+                    && self
+                        .specialised
+                        .vfx_module_snapshot()
+                        .ok()
+                        .flatten()
+                        .and_then(|module| module.encode_text().ok())
+                        .is_some_and(|open_source| open_source == source)
+                {
+                    self.vfx_module_committed = Some((reference.into(), Some(source.into())));
+                }
                 if matches!(id, "edit.undo" | "edit.redo")
                     && let Err(problem) = self.sync_vfx_after_history()
+                {
+                    self.editor
+                        .notifications
+                        .post(Notification::error(problem.what.clone(), problem));
+                }
+                if matches!(id, "edit.undo" | "edit.redo")
+                    && let Err(problem) = self.sync_vfx_module_after_history()
                 {
                     self.editor
                         .notifications
@@ -633,6 +657,36 @@ impl EditorWindow {
         Ok(())
     }
 
+    fn sync_vfx_module_after_history(&mut self) -> cy_editor_core::problem::Result<()> {
+        let Some((reference, previous)) = self.vfx_module_committed.as_ref() else {
+            return Ok(());
+        };
+        let reference = reference.clone();
+        let current = if self.editor.project.source_exists(&reference) {
+            Some(self.editor.project.read_source(&reference)?)
+        } else {
+            None
+        };
+        if &current == previous {
+            return Ok(());
+        }
+        let reopen = self.specialised.active_vfx_module().is_some()
+            || (previous.is_none() && self.specialised.active_vfx_stage().is_none());
+        if reopen {
+            if let Some(source) = &current {
+                let module =
+                    cy_editor_interface::specialised::vfx_module::VfxModule::decode_text(source)?;
+                self.specialised.start_vfx_module(module)?;
+            } else {
+                self.specialised.close_vfx_module();
+            }
+        } else {
+            self.specialised.close_vfx_module();
+        }
+        self.vfx_module_committed = Some((reference, current));
+        Ok(())
+    }
+
     fn open_vfx_document(&mut self, reference: &str) {
         let arguments = Arguments::new().with("reference", Value::Text(reference.into()));
         let result = self
@@ -670,6 +724,38 @@ impl EditorWindow {
                 self.editor.notifications.post(Notification::info(format!(
                     "Opened VFX document {reference}"
                 )));
+            }
+            Err(problem) => self
+                .editor
+                .notifications
+                .post(Notification::error(problem.what.clone(), problem)),
+        }
+    }
+
+    fn open_vfx_module(&mut self, reference: &str) {
+        let arguments = Arguments::new().with("reference", Value::Text(reference.into()));
+        let result = self
+            .registry
+            .invoke("vfx.module.read", &self.scope, &mut self.editor, &arguments)
+            .and_then(|outcome| {
+                let Some(Value::Text(source)) = outcome.values.get("source") else {
+                    return Err(cy_editor_core::problem::Problem::new(
+                        "open a VFX module",
+                        "the read command returned no source",
+                    ));
+                };
+                let module =
+                    cy_editor_interface::specialised::vfx_module::VfxModule::decode_text(source)?;
+                self.specialised.start_vfx_module(module)?;
+                self.vfx_module_committed = Some((reference.into(), Some(source.clone())));
+                Ok(())
+            });
+        match result {
+            Ok(()) => {
+                self.inputs.vfx_module_reference = reference.into();
+                self.editor
+                    .notifications
+                    .post(Notification::info(format!("Opened VFX module {reference}")));
             }
             Err(problem) => self
                 .editor
@@ -1611,6 +1697,78 @@ mod tests {
             [1.0_f32, 2.0, 3.0, 0.0].map(f32::to_bits)
         );
         assert_eq!(document.channels[0].max_events_per_frame, 128);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reusable_vfx_module_saved_through_command_reopens_and_tracks_history() {
+        use cy_editor_interface::specialised::graph::Layout;
+        use cy_editor_interface::specialised::vfx::Stage;
+        use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+        let root = scratch("vfx-module-round-trip");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut author = vfx_test_window(&root);
+        author.editor.open_document("worlds/city.cyworld").unwrap();
+        author
+            .specialised
+            .start_vfx_module(VfxModule::new("shared_drag", Stage::Update).unwrap())
+            .unwrap();
+        author
+            .specialised
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add("vfx.test_node", Layout { x: 23.0, y: 45.0 })
+            .unwrap();
+        let source = author
+            .specialised
+            .vfx_module_snapshot()
+            .unwrap()
+            .unwrap()
+            .encode_text()
+            .unwrap();
+        let reference = "effects/shared_drag.cyvfxmodule";
+        author.apply(vec![Intent::Invoke(
+            "vfx.module.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(source.clone())),
+        )]);
+        assert_eq!(
+            author.editor.project.read_source(reference).unwrap(),
+            source
+        );
+
+        let mut reopened = vfx_test_window(&root);
+        reopened.apply(vec![Intent::OpenVfxModule(reference.into())]);
+        let canvas = reopened
+            .specialised
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap();
+        let node = canvas.nodes().next().unwrap();
+        assert_eq!(node.type_name, "vfx.test_node");
+        assert_eq!(
+            canvas.layout_of(node.key),
+            Some(Layout { x: 23.0, y: 45.0 })
+        );
+
+        author.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert!(!author.editor.project.source_exists(reference));
+        assert!(author.specialised.active_vfx_module().is_none());
+        author.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
+        assert_eq!(
+            author.editor.project.read_source(reference).unwrap(),
+            source
+        );
+        assert_eq!(
+            author.specialised.active_vfx_module().unwrap().name,
+            "shared_drag"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

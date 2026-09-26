@@ -203,6 +203,33 @@ impl VfxDocument {
         Ok(())
     }
 
+    /// Attach a saved reusable module to one emitter using an explicit project asset path.
+    pub fn attach_module(&mut self, emitter: usize, name: String, path: String) -> Result<()> {
+        identifier(&name)?;
+        module_path(&path)?;
+        if emitter >= self.emitters.len() {
+            return Err(invalid("unknown emitter"));
+        }
+        if let Some(existing) = self.module_assets.iter().find(|asset| asset.name == name) {
+            if existing.path != path {
+                return Err(invalid("module name already maps to another asset"));
+            }
+        } else {
+            if self.module_assets.iter().any(|asset| asset.path == path) {
+                return Err(invalid("module asset path already maps to another name"));
+            }
+            self.module_assets.push(ModuleAssetReference {
+                name: name.clone(),
+                path,
+            });
+        }
+        let target = &mut self.emitters[emitter];
+        if !target.modules.contains(&name) {
+            target.modules.push(name);
+        }
+        Ok(())
+    }
+
     /// Snapshot the active shared canvas into one emitter stage.
     pub fn capture_stage(
         &mut self,
@@ -786,6 +813,51 @@ mod tests {
             .module_assets
             .push(document.module_assets[0].clone());
         assert!(document.encode().is_err());
+    }
+
+    #[test]
+    fn module_attachment_records_one_mapping_and_emitter_reference() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "smoke".into(),
+            path: SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        document
+            .attach_module(
+                0,
+                "shared_drag".into(),
+                "effects/shared_drag.cyvfxmodule".into(),
+            )
+            .unwrap();
+        document
+            .attach_module(
+                0,
+                "shared_drag".into(),
+                "effects/shared_drag.cyvfxmodule".into(),
+            )
+            .unwrap();
+        assert_eq!(document.emitters[0].modules, ["shared_drag"]);
+        assert_eq!(document.module_assets.len(), 1);
+        assert!(
+            document
+                .attach_module(0, "shared_drag".into(), "effects/other.cyvfxmodule".into())
+                .is_err()
+        );
+        assert!(
+            document
+                .attach_module(0, "other".into(), "effects/shared_drag.cyvfxmodule".into())
+                .is_err()
+        );
+        assert_eq!(
+            VfxDocument::decode(&document.encode().unwrap()).unwrap(),
+            document
+        );
     }
 
     #[test]

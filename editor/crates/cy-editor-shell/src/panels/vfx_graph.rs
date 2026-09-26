@@ -2,20 +2,23 @@
 //! VFX node editing uses the same graph canvas and backend catalogue as material authoring.
 
 use cy_editor_commands::Arguments;
+use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
+use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::SpecialisedEditors;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey};
 use cy_editor_interface::specialised::vfx::{
     Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument,
 };
-use cy_editor_services::MaterialCatalogueState;
+use cy_editor_interface::specialised::vfx_module::{ModuleInput, VfxModule};
 use cy_editor_services::backend::VfxCompileState;
 use cy_editor_services::vfx_capabilities::VfxAuthoringCapabilities;
 use cy_editor_services::vfx_compile::VfxCompileDiagnostic;
 use cy_editor_services::vfx_preview::VfxPreviewAction;
+use cy_editor_services::{AssetCatalogueService, MaterialCatalogueState};
 
-use super::{Intent, Panels, material_graph, nothing_here, secondary};
+use super::{Inputs, Intent, Panels, material_graph, nothing_here, secondary};
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let state = panels.editor.backend.vfx_catalogue_state();
@@ -42,10 +45,13 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     }
 
     ui.heading("VFX Graph");
+    module_controls(panels, ui);
     document_controls(panels, ui);
     preview_controls(panels, ui);
     compile_report(panels, ui);
-    if panels.specialised.active_vfx_stage().is_none() {
+    if panels.specialised.active_vfx_stage().is_none()
+        && panels.specialised.active_vfx_module().is_none()
+    {
         auto_compile(panels);
         ui.heading("Engine catalogue");
         nothing_here(
@@ -56,14 +62,15 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         );
         return;
     }
-    let active_stage = panels
-        .specialised
-        .active_vfx_stage()
-        .expect("checked above");
+    let active_stage = panels.specialised.active_vfx_stage();
     let failed_diagnostics = match panels.editor.backend.vfx_compile_state() {
         VfxCompileState::Failed(_, failure) => failure.diagnostics.clone(),
         _ => Vec::new(),
     };
+    let context = panels.specialised.active_vfx_module().map_or_else(
+        || "Editable emitter stage draft".to_owned(),
+        |module| format!("Reusable module {} · {}", module.name, module.stage.label()),
+    );
     let session = match panels.specialised.open(Domain::VfxGraph) {
         Ok(session) => session,
         Err(problem) => {
@@ -77,23 +84,46 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         }
     };
     let canvas = session.graph.expect("VFX uses the shared graph canvas");
-    let node_alerts = active_node_alerts(active_stage, &failed_diagnostics);
+    let node_alerts = active_stage
+        .map(|stage| active_node_alerts(stage, &failed_diagnostics))
+        .unwrap_or_default();
     ui.label(secondary(
         panels.shell,
-        "Editable stage draft · engine simulation preview · viewport particles",
+        format!("{context} · engine simulation preview · viewport particles"),
     ));
+    canvas_area(
+        ui,
+        panels.shell,
+        canvas,
+        state,
+        &panels.editor.asset_catalogue,
+        panels.inputs,
+        &node_alerts,
+    );
+    auto_compile(panels);
+}
+
+fn canvas_area(
+    ui: &mut egui::Ui,
+    shell: &Shell,
+    canvas: &mut GraphCanvas,
+    state: MaterialCatalogueState,
+    assets: &AssetCatalogueService,
+    inputs: &mut Inputs,
+    node_alerts: &[(u64, String)],
+) {
     let available = ui.available_size();
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
             egui::vec2(220.0_f32.min(available.x * 0.38), available.y),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                palette(ui, panels.shell, canvas, &mut panels.inputs.vfx_filter);
+                palette(ui, shell, canvas, &mut inputs.vfx_filter);
                 material_graph::graph_properties(
                     ui,
                     canvas,
-                    &panels.editor.asset_catalogue,
-                    &mut panels.inputs.vfx_property_problem,
+                    assets,
+                    &mut inputs.vfx_property_problem,
                 );
             },
         );
@@ -101,19 +131,18 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         ui.allocate_ui(egui::vec2(ui.available_width(), available.y), |ui| {
             material_graph::draw_canvas(
                 ui,
-                panels.shell,
+                shell,
                 canvas,
                 state,
                 "Empty VFX stage graph\nChoose a node from the engine catalogue",
-                &mut panels.inputs.vfx_link_source,
+                &mut inputs.vfx_link_source,
                 &mut material_graph::CanvasFeedback {
-                    link_problem: &mut panels.inputs.vfx_link_problem,
-                    node_alerts: &node_alerts,
+                    link_problem: &mut inputs.vfx_link_problem,
+                    node_alerts,
                 },
             );
         });
     });
-    auto_compile(panels);
 }
 
 fn active_node_alerts(
@@ -318,6 +347,238 @@ fn preview_timeline(panels: &mut Panels<'_>, ui: &mut egui::Ui, enabled: bool) {
             panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
+}
+
+fn module_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    ui.collapsing("Reusable VFX module", |ui| {
+        module_toolbar(panels, ui);
+        if let Some(module) = panels.specialised.active_vfx_module() {
+            ui.label(format!(
+                "Editing {} · {}",
+                module.name,
+                module.stage.label()
+            ));
+            module_input_controls(panels, ui);
+            module_dependency_controls(panels, ui);
+            module_attachment_controls(panels, ui);
+        }
+    });
+}
+
+fn module_toolbar(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.label("Asset");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_module_reference);
+        if ui.button("Open module").clicked() {
+            panels.intents.push(Intent::OpenVfxModule(
+                panels.inputs.vfx_module_reference.clone(),
+            ));
+        }
+        if panels.specialised.active_vfx_module().is_some() && ui.button("Save module").clicked() {
+            let result = panels
+                .specialised
+                .vfx_module_snapshot()
+                .and_then(|module| {
+                    module.ok_or_else(|| Problem::new("save a VFX module", "no module is open"))
+                })
+                .and_then(|module| module.encode_text());
+            match result {
+                Ok(source) => panels.intents.push(Intent::Invoke(
+                    "vfx.module.save".into(),
+                    Arguments::new()
+                        .with(
+                            "reference",
+                            Value::Text(panels.inputs.vfx_module_reference.clone()),
+                        )
+                        .with("source", Value::Text(source)),
+                )),
+                Err(problem) => panels.inputs.vfx_document_problem = Some(problem.to_string()),
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label("New");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_module_name);
+        egui::ComboBox::from_id_salt("new-vfx-module-stage")
+            .selected_text(panels.inputs.vfx_module_stage.label())
+            .show_ui(ui, |ui| {
+                for stage in Stage::ALL {
+                    ui.selectable_value(&mut panels.inputs.vfx_module_stage, stage, stage.label());
+                }
+            });
+        if ui.button("Create module").clicked() {
+            let result = VfxModule::new(
+                panels.inputs.vfx_module_name.clone(),
+                panels.inputs.vfx_module_stage,
+            )
+            .and_then(|module| panels.specialised.start_vfx_module(module));
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
+}
+
+fn module_input_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let inputs = panels
+        .specialised
+        .active_vfx_module()
+        .unwrap()
+        .inputs
+        .clone();
+    for (index, input) in inputs.into_iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(format!("Input {}: {}", input.name, input.kind));
+            if ui.button("Remove").clicked() {
+                let result = panels.specialised.edit_vfx_module_metadata(|module| {
+                    module.inputs.remove(index);
+                    Ok(())
+                });
+                panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+            }
+        });
+    }
+    ui.horizontal(|ui| {
+        ui.label("Host input");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_module_input_name);
+        numeric_kind(
+            ui,
+            "vfx-module-input-kind",
+            &mut panels.inputs.vfx_module_input_kind,
+        );
+        if ui.button("Add input").clicked() {
+            let input = ModuleInput {
+                name: panels.inputs.vfx_module_input_name.clone(),
+                kind: panels.inputs.vfx_module_input_kind.clone(),
+            };
+            let result = panels.specialised.edit_vfx_module_metadata(|module| {
+                module.inputs.push(input);
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
+}
+
+fn module_dependency_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let dependencies = panels
+        .specialised
+        .active_vfx_module()
+        .unwrap()
+        .dependencies
+        .clone();
+    for (index, dependency) in dependencies.into_iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(format!("Depends on {dependency}"));
+            if ui.button("Remove").clicked() {
+                let result = panels.specialised.edit_vfx_module_metadata(|module| {
+                    module.dependencies.remove(index);
+                    Ok(())
+                });
+                panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+            }
+        });
+    }
+    ui.horizontal(|ui| {
+        ui.label("Dependency");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_module_dependency_name);
+        if ui.button("Add dependency").clicked() {
+            let name = panels.inputs.vfx_module_dependency_name.clone();
+            let result = panels.specialised.edit_vfx_module_metadata(|module| {
+                module.dependencies.push(name);
+                Ok(())
+            });
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
+    });
+}
+
+fn module_attachment_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let Some(document) = panels.specialised.vfx_document() else {
+        return;
+    };
+    let emitters: Vec<String> = document
+        .emitters
+        .iter()
+        .map(|emitter| emitter.name.clone())
+        .collect();
+    if emitters.is_empty() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_id_salt("vfx-module-emitter")
+            .selected_text(
+                emitters
+                    .get(panels.inputs.vfx_module_emitter)
+                    .map_or("Emitter", String::as_str),
+            )
+            .show_ui(ui, |ui| {
+                for (index, name) in emitters.iter().enumerate() {
+                    ui.selectable_value(&mut panels.inputs.vfx_module_emitter, index, name);
+                }
+            });
+        if ui.button("Attach saved module").clicked() {
+            match attach_saved_module(panels) {
+                Ok(source) => {
+                    panels.intents.push(Intent::Invoke(
+                        "vfx.document.save".into(),
+                        Arguments::new()
+                            .with(
+                                "reference",
+                                Value::Text(panels.inputs.vfx_reference.clone()),
+                            )
+                            .with("source", Value::Text(source)),
+                    ));
+                    panels.inputs.vfx_document_problem = None;
+                }
+                Err(problem) => panels.inputs.vfx_document_problem = Some(problem.to_string()),
+            }
+        }
+    });
+}
+
+fn attach_saved_module(panels: &mut Panels<'_>) -> Result<String> {
+    if panels.editor.workspace.active().is_none() {
+        return Err(Problem::new(
+            "attach a VFX module",
+            "no scene document is active for undo history",
+        ));
+    }
+    cy_editor_services::vfx_document::validate_reference(&panels.inputs.vfx_reference)?;
+    let path = panels.inputs.vfx_module_reference.clone();
+    cy_editor_services::vfx_module::validate_reference(&path)?;
+    let saved = panels.editor.project.read_source(&path)?;
+    let module = VfxModule::decode_text(&saved)?;
+    let emitter = panels.inputs.vfx_module_emitter;
+    let document = panels
+        .specialised
+        .vfx_document()
+        .ok_or_else(|| Problem::new("attach a VFX module", "no system document is open"))?;
+    let host = document
+        .emitters
+        .get(emitter)
+        .ok_or_else(|| Problem::new("attach a VFX module", "unknown emitter"))?;
+    for input in &module.inputs {
+        if !host
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == input.name && attribute.kind == input.kind)
+        {
+            return Err(Problem::new(
+                "attach a VFX module",
+                format!(
+                    "emitter {} lacks {} ({})",
+                    host.name, input.name, input.kind
+                ),
+            ));
+        }
+    }
+    panels
+        .specialised
+        .edit_vfx_metadata(|document| document.attach_module(emitter, module.name, path))?;
+    panels
+        .specialised
+        .vfx_document_snapshot()?
+        .ok_or_else(|| Problem::new("attach a VFX module", "system document closed"))?
+        .encode_text()
 }
 
 fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {

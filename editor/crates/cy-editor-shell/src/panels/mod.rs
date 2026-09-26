@@ -67,6 +67,8 @@ pub enum Intent {
     OpenAsset(String),
     /// Open an editable VFX authoring document through its registered read command.
     OpenVfxDocument(String),
+    /// Open a separately saved VFX module through its registered read command.
+    OpenVfxModule(String),
     /// Stage and import files selected outside the project.
     ImportExternal {
         /// Native paths supplied by the chooser or operating-system drop.
@@ -179,6 +181,20 @@ pub struct Inputs {
     pub vfx_document_problem: Option<String>,
     /// Project-relative VFX document path for save and reopen.
     pub vfx_reference: String,
+    /// Project-relative module path for create, save, and reopen.
+    pub vfx_module_reference: String,
+    /// Identifier for a new reusable module.
+    pub vfx_module_name: String,
+    /// Compatible stage for a new reusable module.
+    pub vfx_module_stage: cy_editor_interface::specialised::vfx::Stage,
+    /// New typed host input name and kind.
+    pub vfx_module_input_name: String,
+    /// Numeric type of the next module host input.
+    pub vfx_module_input_kind: String,
+    /// Name of another mapped module this module depends on.
+    pub vfx_module_dependency_name: String,
+    /// Emitter receiving the open module reference.
+    pub vfx_module_emitter: usize,
     /// Backend renderer identity selected for the next emitter.
     pub vfx_new_renderer: u8,
     /// Backend simulation path selected for the next emitter.
@@ -301,6 +317,13 @@ impl Default for Inputs {
             vfx_emitter_name: "Emitter0".into(),
             vfx_document_problem: None,
             vfx_reference: "effects/NewVfx.cyvfxdoc".into(),
+            vfx_module_reference: "effects/NewModule.cyvfxmodule".into(),
+            vfx_module_name: "NewModule".into(),
+            vfx_module_stage: cy_editor_interface::specialised::vfx::Stage::Update,
+            vfx_module_input_name: "velocity".into(),
+            vfx_module_input_kind: "vec3".into(),
+            vfx_module_dependency_name: String::new(),
+            vfx_module_emitter: 0,
             vfx_new_renderer: 0,
             vfx_new_path: 0,
             vfx_parameter_name: "speed".into(),

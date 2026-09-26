@@ -303,7 +303,12 @@ fn vfx_metadata_sections_are_visible_on_an_open_engine_catalogue() {
         .select_vfx_stage(0, Stage::Spawn)
         .unwrap();
     let evidence = harness.frame("editor-vfx-graph", egui::vec2(900.0, 700.0), Vec::new());
-    for section in ["System parameters", "Event channels", "Particle attributes"] {
+    for section in [
+        "System parameters",
+        "Event channels",
+        "Particle attributes",
+        "Reusable VFX module",
+    ] {
         assert!(
             evidence.labels.iter().any(|label| label.contains(section)),
             "missing {section} in {:?}",
