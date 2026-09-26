@@ -95,43 +95,38 @@ nothing had ever built a swapchain on a window.
 
 ---
 
-## The two hazards this artefact found, and whose they are
+## The two hazards this artefact found, and how they were fixed
 
 The first frame this repository ever presented tripped **two synchronisation-validation hazards per
-frame**, on both platform legs, with an identical plan hash — so they are the render graph's, not the
-window system's. `just run-ship` records them as a **GAP**: the run is non-zero, `cy_sample_ship`
-exits **3** ("it drew and tripped validation", which is neither a pass nor a fallen-over run), and
-neither can be turned back into a green without deleting the check.
+frame**, on both platform legs, with an identical plan hash — so they were the render graph's, not
+the window system's. M11.d's full ledger on `afaeb33` measured 60 errors on each leg of a 30-frame
+run. `cy_sample_ship` still exits **3** on any validation error ("it drew and tripped validation"),
+and `ship.py` still records that as a **GAP** naming what the layer reported: the check stays, and
+the frame now passes it.
 
-**1. `SYNC-HAZARD-PRESENT-AFTER-WRITE`** — one per frame, and **measured to one token**.
-`src/backends/rhi/src/access.cpp`'s `Present` row is
-`{Stage::None, AccessFlags::None, ImageUse::Presentable, …}`, with a comment arguing that "the
-transition to the presentable layout is ordered against the presentation engine by the semaphore the
-submit signals, not by a destination stage". Synchronisation validation disagrees: a barrier whose
-`dstStageMask` is `NONE` makes the layout-transition write available to nothing, and syncval reports
-it as `write_barriers: 0`. **Changing that row's stage to `Stage::AllCommands` removes every one of
-these** — measured here, 10 of 10 gone on a 10-frame run, with the other hazard untouched. The change
-is not made in this directory: that row is `rhi-and-render-graph`'s own vocabulary and its comment is
-a deliberate design statement, so what this artefact owes it is the measurement, not an edit.
+**1. `SYNC-HAZARD-PRESENT-AFTER-WRITE`** — one per frame. `src/backends/rhi/src/access.cpp`'s
+`Present` row was `{Stage::None, AccessFlags::None, ImageUse::Presentable, …}`, on the argument that
+the semaphore the submit signals orders the transition against the presentation engine. It does not:
+a barrier whose `dstStageMask` is `NONE` makes its layout-transition write available to nothing, so
+the signal's first scope does not cover it (syncval reports `write_barriers: 0`). **The row's stage
+is now `Stage::AllCommands`** — the signal operation's own first scope — with still no access bits.
 
-**2. `SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ`** — one per frame, and **not
-fixed by anything this sample can reach.** The frame's first barrier transitions the acquired image
-out of `ImageUse::Undefined` at the transfer stage. Two things were tried and measured:
+**2. `SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ`** — one per frame. The acquired
+image was imported as an ordinary `ImageUse::Undefined` texture, so its first transition — a write —
+had a source stage of `NONE` and did not chain to the acquire semaphore's wait, whatever stage that
+wait named. Widening the wait alone, or importing the image as `Presentable`, measured no change,
+because neither gave the barrier a source stage. The graph now has
+**`RenderGraph::import_swapchain_texture`**, which records the presentation engine's outstanding read
+at **`rhi::kPresentAcquireStage`** (colour-attachment output). The executor waits `wait_acquire` at
+that same constant, so the first barrier's source stage and the wait's second scope always meet.
+Work in the same submit that never touches the swapchain image still runs ahead of the acquire.
 
-- widening the acquire semaphore's wait stage (`SubmitInfo::wait_binary_stage` defaults to
-  `ColorAttachmentOutput`, which is right only for a frame whose first touch of the swapchain image
-  is a render pass, and this one's is a copy) — syncval's `read_barriers` widened to every stage and
-  **the hazard did not move**;
-- importing the swapchain image as `ImageUse::Presentable` rather than `Undefined` — **no change**.
-
-So the acquire boundary needs a decision the graph does not currently have a way to express, which is
-section 1's to make. The default is still worth changing on its own merits and is named here so the
-next reader does not re-derive it.
-
-**What this means for the frame:** the picture is correct — it is read back off the device and
-committed — and the hazards are about *ordering guarantees the barriers do not state*, not about
-wrong pixels. `rhi-and-render-graph`'s own rule is that "a frame that renders but trips validation is
-not a frame that works", which is exactly why this is a gap and not a footnote.
+**What pins it:** `unit.render_graph` asserts both derived barriers with no device
+(`test_barriers.cpp`, "a swapchain image's two boundary transitions chain to presentation's
+semaphores"); `unit.rhi`'s access-table cases pin the `Present` row and the shared wait stage; and
+**`smoke.ship_present`** runs this sample's own `present_card` for six frames through every desktop
+display server the binary has, with synchronisation validation on, and requires zero errors. On a
+host with no display or no Vulkan device each leg says why it did not run and checks nothing.
 
 ---
 

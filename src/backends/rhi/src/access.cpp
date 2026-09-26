@@ -72,11 +72,16 @@ constexpr AccessInfo kAccessTable[kAccessCount] = {
     // --- Host and presentation -------------------------------------------------------------------
     {Stage::Host, AccessFlags::HostRead, ImageUse::Undefined, false, false, true, "HostRead"},
 
-    // Present carries no stage and no access on purpose. The transition to the presentable layout
-    // is ordered against the presentation engine by the semaphore the submit signals, not by a
-    // destination stage — naming one here would be a barrier that claims to synchronise work the
-    // command buffer does not contain.
-    {Stage::None, AccessFlags::None, ImageUse::Presentable, false, true, false, "Present"},
+    // Present carries no ACCESS — nothing in the command buffer reads the image afterwards — but
+    // it does carry a STAGE, and M11.d measured why. The layout transition to the presentable
+    // state is a write, and the semaphore the submit signals orders only what happens-before its
+    // own first scope. A barrier whose destination stage is NONE makes that write available to
+    // nothing, so the signal does not cover it and the presentation engine can read the image
+    // while the transition is still in flight: synchronisation validation reports
+    // SYNC-HAZARD-PRESENT-AFTER-WRITE once per frame (samples/11-ship, both platform legs).
+    // AllCommands is what the signal operation's own first scope is, so the transition is ordered
+    // before it. Regression cases: test_access.cpp, test_barriers.cpp and smoke.ship_present.
+    {Stage::AllCommands, AccessFlags::None, ImageUse::Presentable, false, true, false, "Present"},
 };
 
 static_assert(sizeof(kAccessTable) / sizeof(kAccessTable[0]) == kAccessCount,

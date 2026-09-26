@@ -198,6 +198,15 @@ ResourceId RenderGraph::import_texture(const TextureRequest& request, rhi::Textu
     return static_cast<ResourceId>(resources_.size() - 1);
 }
 
+ResourceId RenderGraph::import_swapchain_texture(const TextureRequest& request,
+                                                 rhi::TextureHandle texture) noexcept {
+    const ResourceId id = import_texture(request, texture, rhi::ImageUse::Undefined);
+    if (id != kInvalidResource) {
+        resources_[id].initial_read_stage = rhi::kPresentAcquireStage;
+    }
+    return id;
+}
+
 ResourceId RenderGraph::import_buffer(const BufferRequest& request, rhi::BufferHandle buffer,
                                       rhi::QueueOwner owner) noexcept {
     ResourceInfo info;

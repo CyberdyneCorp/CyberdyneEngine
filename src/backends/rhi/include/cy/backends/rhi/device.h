@@ -21,6 +21,7 @@
 // above this. And a barrier: `barrier_recorder()` below needs a key only the graph's executor can
 // construct.
 
+#include <cy/backends/rhi/access.h>
 #include <cy/backends/rhi/barrier.h>
 #include <cy/backends/rhi/capabilities.h>
 #include <cy/backends/rhi/command_buffer.h>
@@ -55,7 +56,10 @@ struct SubmitInfo {
     /// Presentation's own synchronisation, which is binary rather than timeline because the
     /// presentation engine signals it. Null handles when a submit does not touch the swapchain.
     SemaphoreHandle wait_binary;
-    Stage wait_binary_stage = Stage::ColorAttachmentOutput;
+    /// `kPresentAcquireStage`, which the render graph also uses as the source stage of the first
+    /// barrier on an acquired image — the two have to agree or the barrier does not chain to the
+    /// wait. See access.h.
+    Stage wait_binary_stage = kPresentAcquireStage;
     SemaphoreHandle signal_binary;
     /// Signalled when this submission completes. The frame's own fence, usually.
     FenceHandle signal_fence;

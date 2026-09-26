@@ -237,11 +237,12 @@ CY_TEST_CASE("gap 3: two reads of one image can still need a barrier") {
                 ImageUse::SampledRead);
     CY_CHECK_EQ(cy::rhi::access_info(cy::rhi::Access::FragmentStorageRead).use, ImageUse::Storage);
 
-    // And Present is the intent a derivation from the masks could not answer at all: no stage, no
-    // access bits, and its entire content is the state it leaves the image in.
+    // And Present is the intent a derivation from the masks could not answer at all: no access
+    // bits, and its entire content is the state it leaves the image in. (Its stage is every stage,
+    // so the transition is ordered before the submit's signal — test_access.cpp says why.)
     const cy::rhi::AccessInfo& present = cy::rhi::access_info(cy::rhi::Access::Present);
     CY_CHECK_FALSE(cy::rhi::any(present.access));
-    CY_CHECK_FALSE(cy::rhi::any(present.stage));
+    CY_CHECK_EQ(present.stage, cy::rhi::Stage::AllCommands);
     CY_CHECK_EQ(present.use, ImageUse::Presentable);
 }
 

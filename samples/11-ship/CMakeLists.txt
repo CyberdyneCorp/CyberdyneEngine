@@ -108,6 +108,53 @@ if(NOT CY_BUILD_TESTS)
     return()
 endif()
 
+# --- The presented frame loop, with synchronisation validation, as a test -------------------------
+#
+# `smoke.ship_present` runs `present_card` — the sample's own presentation path, unchanged — for a
+# few frames through every desktop display server this binary has, with synchronisation validation
+# on, and requires ZERO validation errors. It is the regression case for the two swapchain-boundary
+# hazards M11.d found on both legs (README.md, "The two hazards this artefact found"). A leg with no
+# display or no Vulkan device reports why and checks nothing; `render_graph`'s barrier cases pin the
+# same derivation with no device at all.
+if(CY_RENDERER_VULKAN)
+    foreach(kind IN ITEMS smoke)
+        get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_${kind})
+        get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_${kind})
+        if(NOT budget OR NOT timeout)
+            message(FATAL_ERROR
+                "samples/11-ship: the '${kind}' entry of the test taxonomy could not be read from "
+                "tests/CMakeLists.txt.")
+        endif()
+        set(CY_TEST_BUDGET_${kind} "${budget}")
+        set(CY_TEST_TIMEOUT_${kind} "${timeout}")
+    endforeach()
+
+    cy_add_test(
+        NAME ship_present
+        KIND smoke
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_present_validation.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/present.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/card.cpp"
+        DEPENDENCIES
+            cy::platform-desktop-sdl3
+            cy::platform-headless
+            cy::rendering-graph
+            cy::rhi
+            cy::rhi-null
+            cy::rhi-vulkan
+        DEFINITIONS
+            CY_SHIP_HAS_VULKAN=1)
+    target_include_directories(cy_test_smoke_ship_present PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    if(TARGET cy::platform-linux-native)
+        target_link_libraries(cy_test_smoke_ship_present PRIVATE cy::platform-linux-native)
+        target_compile_definitions(cy_test_smoke_ship_present PRIVATE
+                                   CY_SHIP_HAS_NATIVE_PLATFORM=1)
+    endif()
+endif()
+
 # --- The artefact as a test, and what it needs ---------------------------------------------------
 #
 # `ship.py` runs `cy_build` and this binary as separate processes and needs python3 to do it. Where

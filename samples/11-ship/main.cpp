@@ -376,11 +376,11 @@ int main(int argc, char** argv) {
         // EXIT 3, NOT 1, AND THE DIFFERENCE IS THE FINDING.
         //
         // `rhi-and-render-graph` is explicit that "a frame that renders but trips validation is not
-        // a frame that works", so this cannot be a zero. But it is not a failure of THIS program
-        // either: the frame drew, presented and photographed correctly, and what synchronisation
-        // validation objects to is how the RENDER GRAPH spells the two barriers at the swapchain
-        // boundary. See README.md, "The two hazards this artefact found". `ship.py` reads a 3 as a
-        // GAP — named, counted and non-zero — rather than as a run that fell over.
+        // a frame that works", so this cannot be a zero. But it is not a run that fell over
+        // either: the frame drew and presented, and what validation objects to is how it was
+        // synchronised. The two swapchain-boundary hazards M11.d found this way are fixed — see
+        // README.md, "The two hazards this artefact found" — and `smoke.ship_present` pins them.
+        // `ship.py` reads a 3 as a GAP — named, counted and non-zero.
         std::fprintf(stderr,
                      "%s: the frame tripped %u validation error(s). It drew and presented; see "
                      "samples/11-ship/README.md for what they are and whose they are.\n",

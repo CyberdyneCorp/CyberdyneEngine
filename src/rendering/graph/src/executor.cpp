@@ -578,9 +578,11 @@ Status GraphExecutor::record_and_submit(RenderGraph& graph, CompiledGraph& plan,
 
         // Presentation's binary semaphores attach to the first and last submits: the acquire is
         // waited before anything writes the swapchain image, the present is signalled when the last
-        // submit completes.
+        // submit completes. The wait stage is the one `import_swapchain_texture` records the
+        // presentation engine's read at, so the image's first transition chains to this wait.
         if (submit_index == 0) {
             info.wait_binary = options.wait_acquire;
+            info.wait_binary_stage = rhi::kPresentAcquireStage;
         }
         if (submit_index + 1 == plan.submits.size()) {
             info.signal_binary = options.signal_present;

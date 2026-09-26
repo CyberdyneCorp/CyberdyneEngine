@@ -498,13 +498,14 @@ PresentReport present_card(Platform& platform, Image& image,
             target_request.height = info.extent.height;
             target_request.extra_usage =
                 rhi::TextureUsage::TransferDestination | rhi::TextureUsage::TransferSource;
-            // `Undefined` is the honest state after an acquire: the presentation engine promises
-            // the image, not its contents, and this frame overwrites every texel of it. `ImageUse`
-            // rather than a Vulkan image layout because M11.d section 1 made it one — gap 3 — and
-            // this is the first caller outside the graph's own tests to say so.
-            const ResourceId target_id =
-                graph.import_texture(target_request, gpu.swapchain_texture(*swapchain, *index),
-                                     rhi::ImageUse::Undefined);
+            // Imported AS A SWAPCHAIN IMAGE, not as an ordinary `Undefined` texture. Its contents
+            // are undefined — the presentation engine promises the image, not what is in it — but
+            // the engine may still be reading it until the acquire semaphore signals, and only the
+            // swapchain import tells the graph so. An ordinary import made the first transition's
+            // source stage NONE, and synchronisation validation reported a
+            // SYNC-HAZARD-WRITE-AFTER-READ against PRESENT_ACQUIRE_READ on every frame.
+            const ResourceId target_id = graph.import_swapchain_texture(
+                target_request, gpu.swapchain_texture(*swapchain, *index));
 
             const bool capture_this_frame = options.capture && !captured;
             ResourceId readback_id = rendering::kInvalidResource;

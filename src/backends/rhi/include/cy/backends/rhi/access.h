@@ -74,6 +74,21 @@ enum class Access : u8 {
 
 inline constexpr u32 kAccessCount = static_cast<u32>(Access::Count);
 
+/// The stage at which a submit waits on presentation's ACQUIRE semaphore, and the stage the render
+/// graph records the presentation engine's read of an acquired swapchain image at.
+///
+/// The two are one constant because they only work together. The semaphore wait's second scope is
+/// this stage; the first barrier on the acquired image — its transition out of `Undefined`, which
+/// is a WRITE — chains to that wait only when its source stage includes this stage too. With a
+/// source stage of NONE the transition is ordered after nothing, and synchronisation validation
+/// reports SYNC-HAZARD-WRITE-AFTER-READ against PRESENT_ACQUIRE_READ once per frame whatever the
+/// wait stage is: M11.d measured both halves on samples/11-ship before this constant existed.
+///
+/// Colour-attachment output is the conventional choice: work in the same submit that never touches
+/// the swapchain image — shadows, compute, a copy into another target — runs before the image is
+/// available, and only the first stage that could write it waits.
+inline constexpr Stage kPresentAcquireStage = Stage::ColorAttachmentOutput;
+
 /// One row of the table: what an intent means to a synchronisation primitive.
 ///
 /// `use` is ImageUse::Undefined for the buffer-only intents, which is not a state a barrier would
@@ -81,11 +96,10 @@ inline constexpr u32 kAccessCount = static_cast<u32>(Access::Count);
 /// declared with a buffer-only intent is a programmer error the declaration catches.
 ///
 /// THE COLUMN IS HAND-WRITTEN AND NOT DERIVED FROM `access`, and M11.d measured why rather than
-/// assuming it: `Access::Present` carries no access bits and no stage at all — the transition is
-/// ordered against the presentation engine by the submit's semaphore — so a derivation from the
-/// mask would answer `Undefined` for the one intent whose whole content is the state it leaves the
-/// image in. One table with three columns a reviewer reads together is the right shape; a function
-/// over the mask with an exception in it is not.
+/// assuming it: `Access::Present` carries no access bits — nothing in the command buffer reads the
+/// image after it — so a derivation from the mask would answer `Undefined` for the one intent whose
+/// whole content is the state it leaves the image in. One table with three columns a reviewer
+/// reads together is the right shape; a function over the mask with an exception in it is not.
 struct AccessInfo {
     Stage stage = Stage::None;
     AccessFlags access = AccessFlags::None;
