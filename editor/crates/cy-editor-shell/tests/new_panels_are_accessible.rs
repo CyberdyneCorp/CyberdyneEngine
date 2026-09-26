@@ -94,6 +94,69 @@ impl Harness {
         }
     }
 
+    /// One frame of the default workspace through the real dock, returning the panels it drew.
+    fn dock_frame(&mut self, size: egui::Vec2) -> Vec<(String, egui::Rect)> {
+        let mut dock = cy_editor_shell::dock::to_dock_state(self.shell.workspaces.current());
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let Self {
+            editor,
+            registry,
+            scope,
+            shell,
+            specialised,
+            hierarchy,
+            history,
+            settings,
+            source_control,
+            asset_browser,
+            source_workspace,
+            diff,
+            merge_view,
+            thumbnails,
+            titles,
+            link,
+            inputs,
+            ctx,
+        } = self;
+        let mut intents: Vec<Intent> = Vec::new();
+        let mut drawn = Vec::new();
+        let mut output = ctx.run_ui(raw, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                let mut panels = Panels {
+                    editor,
+                    registry,
+                    scope,
+                    shell,
+                    specialised,
+                    hierarchy,
+                    history,
+                    settings,
+                    source_control,
+                    asset_browser,
+                    source_workspace,
+                    agent: None,
+                    diff,
+                    merge: merge_view,
+                    thumbnails,
+                    link,
+                    titles,
+                    inputs,
+                    intents: &mut intents,
+                    tab_rects: Vec::new(),
+                    panel_rects: Vec::new(),
+                };
+                egui_dock::DockArea::new(&mut dock).show_inside(ui, &mut panels);
+                drawn = panels.panel_rects;
+            });
+        });
+        // No renderer here to apply the font atlas to; egui insists that be said out loud.
+        output.textures_delta.clear();
+        drawn
+    }
+
     fn frame(&mut self, panel: &str, size: egui::Vec2, events: Vec<egui::Event>) -> FrameEvidence {
         let style = cy_editor_shell::theme::style(self.shell.theme, self.shell.metrics());
         self.ctx
@@ -155,6 +218,7 @@ impl Harness {
                     inputs,
                     intents: &mut intents,
                     tab_rects: Vec::new(),
+                    panel_rects: Vec::new(),
                 };
                 let mut key = PanelKey::new(panel).expect("a tested built-in panel");
                 panels.ui(ui, &mut key);
@@ -315,4 +379,37 @@ fn vfx_metadata_sections_are_visible_on_an_open_engine_catalogue() {
             evidence.labels
         );
     }
+}
+
+#[test]
+fn the_dock_reports_where_each_shown_panel_was_drawn() {
+    // `editor:window?panel=<kind>` crops to these rectangles, so they must name the panels the
+    // default workspace shows and lie inside the window; a panel behind another tab is absent.
+    let size = egui::vec2(1600.0, 950.0);
+    let drawn = Harness::new().dock_frame(size);
+    let window = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+    for kind in ["viewport", "hierarchy", "inspector"] {
+        let (_, rect) = drawn
+            .iter()
+            .find(|(drawn_kind, _)| drawn_kind == kind)
+            .unwrap_or_else(|| panic!("{kind} was not drawn: {drawn:?}"));
+        assert!(rect.area() > 1000.0, "{kind} has no area: {rect:?}");
+        assert!(
+            window.contains_rect(*rect),
+            "{kind} {rect:?} is outside the window"
+        );
+    }
+    for (kind, _) in &drawn {
+        assert!(
+            cy_editor_interface::shell::BUILT_IN_PANEL_KINDS.contains(&kind.as_str()),
+            "{kind} is not a built-in kind"
+        );
+    }
+    let viewport = drawn.iter().find(|(kind, _)| kind == "viewport").unwrap().1;
+    let hierarchy = drawn
+        .iter()
+        .find(|(kind, _)| kind == "hierarchy")
+        .unwrap()
+        .1;
+    assert!(!viewport.intersects(hierarchy), "two panels share pixels");
 }

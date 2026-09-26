@@ -33,12 +33,32 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
 
+    # THE AUTHORED FRAME ON LINUX'S DEVICE TOO. Since PR #14 the hosted runtime draws every opened
+    # world through `AuthoredFrame`, so the pixel assertions that prove it on Metal are the ones
+    # that prove the Linux viewport. Issue #18: nothing ran them on Vulkan.
+    if(LINUX AND CY_RENDERER_VULKAN)
+        cy_add_test(
+            NAME editor_authored_frame_vulkan
+            KIND smoke
+            SOURCES
+                "${tests_dir}/test_authored_frame.cpp"
+                "${tests_dir}/../authored_frame.cpp"
+            DEPENDENCIES
+                cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
+                cy::sample-first-light cy::scene-serialization cy::scene
+                cy::rhi-vulkan
+            DEFINITIONS
+                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
+        target_include_directories(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                   "${tests_dir}/..")
+    endif()
+
     if(APPLE AND CY_RENDERER_METAL AND CY_SHADER_SLANG)
         cy_add_test(
             NAME editor_authored_frame_metal
             KIND smoke
             SOURCES
-                "${tests_dir}/test_authored_frame_metal.cpp"
+                "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material

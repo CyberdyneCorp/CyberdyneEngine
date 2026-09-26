@@ -736,3 +736,100 @@ fn background_work_holds_a_concurrency_slot_until_it_settles() {
 
     let _ = std::fs::remove_dir_all(&sandbox);
 }
+
+/// A two-by-two window whose one drawn panel is the viewport, filling the right column.
+fn window_frame() -> cy_editor_agent::WindowFrame {
+    cy_editor_agent::WindowFrame {
+        sequence: 3,
+        width: 2,
+        height: 2,
+        pixels_per_point: 1.0,
+        rgba: vec![9; 16],
+        panels: vec![cy_editor_agent::PanelRect {
+            kind: "viewport".into(),
+            min: [1.0, 0.0],
+            max: [2.0, 2.0],
+        }],
+        kinds: vec!["viewport".into(), "hierarchy".into()],
+    }
+}
+
+#[test]
+fn the_window_is_listed_and_a_headless_session_says_why_it_cannot_read_it() {
+    let (mut editor, _) = editor_with_a_document();
+    let mut connection = session(Scope::default());
+    let listed: Vec<String> = connection
+        .resources(&editor)
+        .into_iter()
+        .map(|(uri, _, _)| uri)
+        .collect();
+    assert!(
+        listed.iter().any(|uri| uri == "editor:window"),
+        "{listed:?}"
+    );
+    assert!(
+        listed
+            .iter()
+            .any(|uri| uri == "editor:window?panel=viewport"),
+        "{listed:?}"
+    );
+
+    let refused = connection
+        .read(&mut editor, "editor:window?panel=viewport", 0)
+        .expect_err("a headless session has no window");
+    assert!(refused.because.contains("headless"), "{}", refused.because);
+    assert!(refused.remedy.unwrap().contains("--mcp"));
+    let malformed = connection
+        .read(&mut editor, "editor:window?panel=", 0)
+        .expect_err("an empty panel kind is not an address");
+    assert!(malformed.remedy.unwrap().contains("panel=viewport"));
+}
+
+#[test]
+fn a_window_capture_costs_a_render_and_a_refusal_costs_nothing() {
+    let frame = window_frame();
+    let mut connection = AgentSession::new(
+        AgentIdentity {
+            agent: "claude".to_string(),
+            session: "s-13".to_string(),
+        },
+        "look at the window",
+        Scope::default(),
+        Budget {
+            renders_per_window: 1,
+            ..Budget::default()
+        },
+        "r-1",
+        0,
+    );
+    let panel = cy_editor_agent::WindowTarget::Panel("viewport".into());
+    let hidden = cy_editor_agent::WindowTarget::Panel("hierarchy".into());
+
+    // Refused before the charge, so the one render is still available afterwards.
+    connection
+        .read_window(Some(&frame), &hidden, 0)
+        .expect_err("the hierarchy was not drawn");
+    let capture = connection
+        .read_window(Some(&frame), &panel, 0)
+        .expect("the one render the budget allows");
+    assert_eq!((capture.rect.x, capture.rect.width), (1, 1));
+    assert_eq!(capture.sequence, 3);
+    let over = connection
+        .read_window(Some(&frame), &panel, 0)
+        .expect_err("the second is over the ceiling");
+    assert!(over.remedy.unwrap().contains("1 of 1 renders"));
+
+    let summaries: Vec<&str> = connection
+        .audit_records()
+        .iter()
+        .map(|record| record.summary.as_str())
+        .collect();
+    assert!(
+        summaries.contains(&"window capture: editor:window?panel=viewport"),
+        "{summaries:?}"
+    );
+    assert!(
+        summaries.contains(&"window capture refused by budget"),
+        "{summaries:?}"
+    );
+}

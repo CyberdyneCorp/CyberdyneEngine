@@ -37,6 +37,7 @@ pub fn execute(
         AgentRequest::ReadResource { uri } => match session.read(editor, uri, now_millis) {
             Ok(Reading::Text(resource)) => AgentResponse::Content(Box::new(resource)),
             Ok(Reading::Image(observation)) => AgentResponse::Image(observation),
+            Ok(Reading::Window(capture)) => AgentResponse::Window(capture),
             Err(problem) => refused(format!("read {uri}"), &problem),
         },
         AgentRequest::Observe(viewport) => match session.observe(editor, viewport, now_millis) {

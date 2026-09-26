@@ -659,3 +659,16 @@ fn an_mcp_save_with_a_stale_fingerprint_reports_conflict_without_overwriting() {
         "an MCP call must not silently replace an external edit"
     );
 }
+
+#[test]
+fn a_headless_server_refuses_the_window_and_says_what_would_work() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let window = r#"{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"editor:window?panel=viewport"}}"#;
+    let replies = converse(&[INITIALIZE, window], &mut editor);
+    let text = match result(&replies, 1).get("content") {
+        Json::Array(items) => items[0].get("text").as_text().unwrap().to_string(),
+        other => panic!("a refusal is content: {other:?}"),
+    };
+    assert!(text.contains("headless"), "{text}");
+    assert!(text.contains("--mcp"), "{text}");
+}

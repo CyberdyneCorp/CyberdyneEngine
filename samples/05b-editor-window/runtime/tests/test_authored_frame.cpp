@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT
-#include <cy/backends/rhi-metal/backend.h>
+// The editor's authored frame on the native device this host publishes from: Metal on Apple,
+// Vulkan on Linux. One file so both backends answer to the same pixel assertions.
 #include <cy/backends/rhi/backend.h>
+#if defined(__APPLE__)
+#    include <cy/backends/rhi-metal/backend.h>
+#else
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
+#include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
@@ -200,6 +207,20 @@ Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Gpu);
 }
 
+#if defined(__APPLE__)
+constexpr const char* kBackend = "metal";
+constexpr const char* kSuite = "smoke.editor_authored_frame_metal";
+void register_backend() noexcept {
+    (void)rhi::metal::register_metal_backend();
+}
+#else
+constexpr const char* kBackend = "vulkan";
+constexpr const char* kSuite = "smoke.editor_authored_frame_vulkan";
+void register_backend() noexcept {
+    (void)rhi::vulkan::register_vulkan_backend();
+}
+#endif
+
 first_light::Camera camera() {
     first_light::Camera view;
     view.position[0] = 0.0;
@@ -232,14 +253,13 @@ usize darkened_pixels(Span<const u32> shadowed, Span<const u32> lit) noexcept {
 
 }  // namespace
 
-CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed bounds") {
-    (void)rhi::metal::register_metal_backend();
+CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed bounds") {
+    register_backend();
     rhi::DeviceDescription description;
-    description.application_name = "smoke.editor_authored_frame_metal";
+    description.application_name = kSuite;
     description.enable_validation = true;
     rhi::BackendSelection selection;
-    auto device =
-        rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
+    auto device = rhi::create_device(allocator(), kBackend, description, selection);
     CY_REQUIRE(device.has_value());
 
     {
@@ -460,10 +480,11 @@ CY_TEST_CASE("authored Metal frame renders a mesh and publishes its transformed 
 
         const std::string reference =
             "samples/05b-editor-window/project/materials/copper_clay.cygraph";
-        std::ifstream graph_file(std::string(CY_TEST_PROJECT) + "/" + reference);
-        CY_REQUIRE(graph_file.good());
-        std::string graph_source((std::istreambuf_iterator<char>(graph_file)),
-                                 std::istreambuf_iterator<char>());
+        Array<u8> graph_bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole((std::string(CY_TEST_PROJECT) + "/" + reference).c_str(),
+                                          graph_bytes));
+        std::string graph_source(reinterpret_cast<const char*>(graph_bytes.data()),
+                                 graph_bytes.size());
         std::string preview_source = graph_source;
         const usize colour_at = preview_source.find("0.720000029");
         CY_REQUIRE(colour_at != std::string::npos);

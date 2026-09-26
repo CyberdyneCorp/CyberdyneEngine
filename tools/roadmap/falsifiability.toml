@@ -1007,9 +1007,9 @@ detail = "red under mutation of 1 file(s)"
 ledger = "m11c"
 criterion = "roadmap-tiers"
 digest = "f6f94de09dc945ac"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): denoising: recorded 'working', below this milestone's exit of 'complete' … rendering-culling-and-lod: recorded 'working', below this milestone's exit of 'complete'"
+verdict = "proven"
+mutation = "lower-tiers (derived)"
+detail = "red under mutation of 3 file(s)"
 
 [[proof]]
 ledger = "m11c"

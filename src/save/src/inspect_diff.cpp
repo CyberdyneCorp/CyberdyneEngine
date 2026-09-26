@@ -64,16 +64,21 @@ Status merge_walk(Span<const T> before, Span<const T> after, KeyOf key_of, Visit
     while (i < before.size() || j < after.size()) {
         const T* left = nullptr;
         const T* right = nullptr;
+        // `present` is taken from the element each branch just addressed, never from a pointer
+        // that may be null: GCC's -Wnull-dereference cannot prove `left ? *left : *right` safe.
+        const T* present = nullptr;
         if (j == after.size() || (i < before.size() && key_of(before[i]) < key_of(after[j]))) {
             left = &before[i++];
+            present = left;
         } else if (i == before.size() || key_of(after[j]) < key_of(before[i])) {
             right = &after[j++];
+            present = right;
         } else {
             left = &before[i++];
             right = &after[j++];
+            present = left;
         }
-        const T& present = left != nullptr ? *left : *right;
-        if (Status visited = visit(left, right, present); !visited) {
+        if (Status visited = visit(left, right, *present); !visited) {
             return visited;
         }
     }

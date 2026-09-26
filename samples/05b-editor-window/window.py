@@ -65,6 +65,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -88,7 +89,7 @@ from artefact import (  # noqa: E402 — the path above has to be set first
     socket_path,
 )
 
-WORLD = "worlds/city.cyworld"
+WORLD = "worlds/city-blocks.cyworld"
 
 # The journal's format, from `cy_editor_documents::journal`. Eight magic bytes, a little-endian
 # format version, then records of a little-endian length and checksum followed by the payload.
@@ -713,7 +714,7 @@ def act_open(session: Session, journal: Path, shots: Path, report: Report) -> No
     report.did(
         "the editor opened the project's world",
         f"{session.width}x{session.height}, journal empty, {rows} outliner rows from "
-        f"worlds/city.cyworld",
+        f"{WORLD}",
     )
 
 
@@ -999,6 +1000,73 @@ def _moved_from(layout: dict | None, resting: tuple) -> bool:
         return False
     centre = layout["centre"]
     return abs(centre[0] - resting[0]) > 1.5 or abs(centre[1] - resting[1]) > 1.5
+
+
+#: The editor's colour for `Semantic::Warning` in the dark theme (`cy_editor_visual::colour`), which
+#: is what the viewport's "the runtime has stopped producing frames" band is written in.
+WARNING_INK = (0xF0, 0x91, 0x3A)
+
+#: How long the runtime is stopped for. Well past `HEARTBEAT_PATIENCE` (500 ms), so the editor
+#: must call it wedged; short enough that nothing else in the session times out.
+RUNTIME_PAUSE = 1.5
+
+
+def stalled_band(session) -> int:
+    """How many pixels of the viewport's top band are in the warning colour.
+
+    The band is drawn over the retained image only while the link is not live, so a count of zero
+    is "the editor believes the runtime is delivering frames". The strip is the middle of the
+    viewport's width: the view label on the left and the orientation gizmo on the right are
+    neither of them this colour, and are left out rather than trusted not to be.
+    """
+    left, top, right, _bottom = viewport_rect(session.width, session.height)
+    width = right - left
+    patch = session.region(left + width // 4, top, width // 2, 26)
+    return sum(1 for pixel in patch.getdata() if _is_ink(pixel, WARNING_INK))
+
+
+def act_runtime_pause(session: Session, runtime, report: Report) -> None:
+    """The runtime stops producing frames for a while, and the viewport comes back when it resumes.
+
+    THE REGRESSION FOR `smoke.editor_window`'s INTERMITTENT RED at M11.c's eleventh close. Once the
+    heartbeat stood still for `HEARTBEAT_PATIENCE`, the Linux `ViewportLink::begin_frame` returned
+    early on `Liveness::Wedged` WITHOUT POLLING THE SESSION — and polling is the only thing that
+    turns a wedged link live again. So a single half-second gap in the runtime's frames (a loaded
+    host, or a ring the editor had not yet released a slot of) froze the viewport for the rest of
+    the session while the runtime went on publishing, and act 3 then looked for a gizmo on an image
+    taken before anything was selected. Stopping the runtime by signal makes that gap happen every
+    run instead of two runs in twenty-five.
+    """
+    if runtime is None:
+        report.not_evaluated(
+            "the viewport recovers after the runtime pauses",
+            "there is no runtime process to pause",
+        )
+        return
+    expect(stalled_band(session) == 0,
+           "the viewport already says the runtime has stopped before it was paused")
+    os.kill(runtime.pid, signal.SIGSTOP)
+    try:
+        noticed = until(lambda: stalled_band(session) > 0, seconds=RUNTIME_PAUSE, poll=0.1)
+        time.sleep(max(0.0, RUNTIME_PAUSE - 0.2))
+    finally:
+        os.kill(runtime.pid, signal.SIGCONT)
+    expect(
+        noticed,
+        f"the runtime was stopped for {RUNTIME_PAUSE} s and the viewport never said so; the pause "
+        "did not reach the editor, so this act proves nothing about recovering from one",
+    )
+    resumed = time.monotonic()
+    expect(
+        until(lambda: stalled_band(session) == 0, seconds=10.0, poll=0.1),
+        "the runtime resumed and the viewport went on saying it had stopped producing frames: the "
+        "editor stopped polling the transport once it called the runtime wedged",
+    )
+    report.did(
+        "the viewport recovers after the runtime pauses",
+        f"stopped the runtime for {RUNTIME_PAUSE} s, the viewport said so, and it was live again "
+        f"{time.monotonic() - resumed:.1f} s after the runtime resumed",
+    )
 
 
 def act_undo(
@@ -1298,6 +1366,39 @@ def prepare(work: Path) -> tuple[Path, Path, Path]:
     return root, journal, shots
 
 
+def undrawn_nodes(project: Path, world: str) -> list[str]:
+    """The nodes of `world` the engine's viewport has nothing to draw for.
+
+    Since PR #14 the runtime draws a node only through a `MeshRenderer.mesh` that resolves in the
+    project; a transform-only node is deliberately not given a stand-in box. `worlds/city.cyworld`
+    is exactly that, and act 1's chroma check saw a black viewport over it on Linux (issue #18).
+    So the world this driver opens is checked here, without a display, rather than at act 1.
+    Cooked mesh references are not followed; this fixture uses `.cyprim` primitives only.
+    """
+    meshes: dict[str, str] = {}  # type id -> the field id of its `mesh`
+    mesh_type = None
+    component = None
+    name = None
+    drawn: dict[str, bool] = {}
+    for line in (project / world).read_text().splitlines():
+        words = line.split()
+        if line.startswith("type "):
+            mesh_type = words[1] if line.endswith('"MeshRenderer"') else None
+        elif line.startswith("  field ") and mesh_type is not None and '"mesh"' in words:
+            meshes[mesh_type] = words[1]
+        elif line.startswith("node "):
+            name = line.rsplit('"', 2)[-2]
+            drawn[name] = False
+            component = None
+        elif line.startswith("  component "):
+            component = words[1]
+        elif line.startswith("    field ") and name is not None and component in meshes:
+            if words[1] == meshes[component] and len(words) > 2:
+                reference = words[2].strip('"')
+                drawn[name] |= reference.endswith(".cyprim") and (project / reference).is_file()
+    return [node for node, has_mesh in drawn.items() if not has_mesh]
+
+
 def selftest() -> int:
     """The mapping's own negative case, with no display and no editor. `integration.editor_window_selftest`.
 
@@ -1337,6 +1438,13 @@ def selftest() -> int:
     # The dock this driver was measured against: the viewport panel at (301, 120)-(1236, 661).
     if abs(left - 301) > 2 or abs(top - 120) > 2:
         failures.append(f"viewport_rect puts the panel at ({left}, {top}), not (301, 120)")
+    # The world act 1 photographs must give the engine something to draw, and the check must be
+    # able to say no: the transform-only city world is its negative case.
+    project = SAMPLE / "project"
+    if undrawn := undrawn_nodes(project, WORLD):
+        failures.append(f"{WORLD} has nodes the viewport draws nothing for: {undrawn}")
+    if len(undrawn_nodes(project, "worlds/city.cyworld")) != 3:
+        failures.append("undrawn_nodes did not report the three transform-only city nodes")
     for failure in failures:
         print(f"editor-window selftest: {failure}", file=sys.stderr)
     print("editor-window selftest: FAILED" if failures else
@@ -1498,6 +1606,7 @@ def main() -> int:
         print("--- act 2: a person authors, keyboard first ---")
         rows = act_author(session, journal, shots, keyboard, report)
         act_select(session, journal, report)
+        act_runtime_pause(session, runtime, report)
         print("--- act 3: a gizmo drag, and the undo that takes it back ---")
         committed = act_drag(session, journal, shots, rows, layout_file, keyboard,
                              report)

@@ -1350,7 +1350,7 @@ jobs:
   # WHY ONE JOB, AND ONE MILESTONE ID RATHER THAN ONE JOB PER MILESTONE. The ledger has been FLAT
   # since M5: `criteria.build_plan` merges the criteria of every green milestone gate below the
   # target with the target's own and runs each distinct check ONCE. So the single command below
-  # evaluates M0 through M11.b — `just roadmap-milestone m11b --list` says 410 criteria, 383 of them
+  # evaluates M0 through M11.c — `just roadmap-milestone m11c --list` says 442 criteria, most of them
   # inherited from the rungs beneath — and a job per milestone would re-run `four-profiles` once per
   # ledger, which is exactly the multiplication the flattening removed (tools/roadmap/milestones/
   # m1.toml records that history). The id moves up ONE RUNG each time a milestone gate reaches
@@ -1391,7 +1391,7 @@ jobs:
   # Concretely, this job is red the night any of these is true: a suite in `just test-all` fails; the
   # formatting, lint, layering or specification gate fails; `tools/roadmap/status.yaml` stops
   # agreeing with openspec/specs/; a row's exit tier drops below the floor a closed milestone
-  # declared; a criterion's recipe stops existing; or a `known_gap` in any ledger from m0 to m11b
+  # declared; a criterion's recipe stops existing; or a `known_gap` in any ledger from m0 to m11c
   # starts passing and its declaration has not been deleted.
   #
   # AND WHAT IT WILL SAY ON ITS FIRST NIGHT IS NOT KNOWN HERE, WHICH IS SAID RATHER THAN GUESSED. No
@@ -1436,13 +1436,12 @@ jobs:
         run: |
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
-      # m11b, not m10: `milestone-m11a` and `milestone-m11b` reached `state = "green"` in
-      # gates.toml after this file was last touched, and `just ci-check` reported both as closed
-      # gates no workflow evaluates. One command covers them and everything below them, because the
-      # ledger is flat. `--ci` additionally runs the criteria marked `where = "ci"`, which are the
-      # ones a single workstation cannot answer and a runner matrix can.
+      # m11c: `milestone-m11c` reached `state = "green"` in gates.toml in the same commit that moved
+      # this step, as implement-m11c-image task 8.4 requires. One command covers it and everything
+      # below it, because the ledger is flat. `--ci` additionally runs the criteria marked
+      # `where = "ci"`, which are the ones a single workstation cannot answer and a runner matrix can.
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m11b --ci
+        run: just roadmap-milestone m11c --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

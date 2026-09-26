@@ -1,0 +1,36 @@
+cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+  field 6 vec3 "tint" "Per-instance base colour multiplier."
+node 0 - "set" "Pillar"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 0.8 2.4 0.8
+  component 2
+    field 4 "assets/primitives/Box.cyprim"
+    field 5 ""
+    field 6 0.72 0.22 0.9
+node 1 - "set" "Crate"
+  component 1
+    field 1 0 0 0 1
+    field 2 3 0 -2
+    field 3 1.2 1.2 1.2
+  component 2
+    field 4 "assets/primitives/Box.cyprim"
+    field 5 ""
+    field 6 0.95 0.68 0.08
+node 2 - "props" "Marker"
+  component 1
+    field 1 0 0 0 1
+    field 2 -3 0 2
+    field 3 0.6 0.6 0.6
+  component 2
+    field 4 "assets/primitives/Box.cyprim"
+    field 5 ""
+    field 6 0.08 0.8 0.78

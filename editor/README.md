@@ -99,6 +99,18 @@ overlays. Restated camera/projection and independent debug-view requests still n
 agent viewport and may report that no frame has arrived; use the registered viewport view-mode
 commands to change the focused renderer view before reading `viewport:`.
 
+`editor:window` returns what the person at the desktop sees: a PNG of the editor window as it was
+presented, including panels, an open palette, and the engine image inside the viewport. It works
+the same on Linux and macOS, because egui renders every frame to a capture texture before
+presenting it. `editor:window?panel=<kind>` crops to one dock panel (`viewport`, `hierarchy`,
+`inspector`, …) using the rectangle the dock drew in that frame. The read arrives one or more frames
+after the request and costs one render from the connection's budget. The reply's text entry states
+the window size and the rectangle, and says that the image is the editor's composition, not the
+shipping frame. A headless session, an unknown or hidden panel, and a window that presents nothing
+for 2 s are refused with a reason. No input is sent, so the machine stays usable while an agent
+looks. On Linux, `viewport:` still carries no bytes, because the engine frame arrives as a dma-buf.
+`editor:window?panel=viewport` shows the same frame as the editor displayed it.
+
 The hosted MCP verification captured the [copper cube](../docs/design/images/editor-mcp-material-before-metal.png)
 and the [green preview](../docs/design/images/editor-mcp-material-preview-metal.png) from the
 same engine scene. The plane, shadow, and camera framing stayed fixed across the two reads.

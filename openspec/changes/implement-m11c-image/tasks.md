@@ -1485,12 +1485,14 @@ work was done.
         `grep -cE '^- \[x\] [1-9]'` over that file returns **0**: the rung is scoped and nobody has
         entered it. The criterion is doing its job; the rung has not done the deliberate act it
         asks for
-- [ ] 8.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
+- [x] 8.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them. **`dependencies.md` cycle 2 is closed or re-argued by
       this rung and by no other** — it is the cycle this rung's section 2 is about, and its text
       currently ends *"Joining it is one adapter at one composition point, and it is M11's"*
-- [ ] 8.4 Move `ci.yml`'s milestone job to `m11c` in the same commit that flips the gate green. The
+- [x] 8.4 Move `ci.yml`'s milestone job to `m11c` in the same commit that flips the gate green. The
       job runs on every push to `main`, so this commit must not land before the gate is green
+      - [x] **DONE IN THE CLOSING CHANGE.** `milestone-m11c` is `state = "green"` in `gates.toml`
+        and `ci.yml`'s milestone step reads `just roadmap-milestone m11c --ci`, in one commit
       - [ ] **NOT DONE, AND CORRECTLY NOT DONE: THE GATE IS NOT GREEN.** `gates.toml` is unchanged
         at `state = "joins-on-close"` and `ci.yml`'s milestone step still reads
         `just roadmap-milestone m10`
@@ -1535,7 +1537,7 @@ work was done.
 
 ## 9. The gate
 
-- [ ] 9.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
+- [x] 9.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
       - [x] **THE STATIC ANALYSIS GATE WAS RED ON THIS RUNG'S OWN CODE, AND NO PHASE OF THIS RUNG
         EVER RAN IT.** `just quality-lint` failed with **41 clang-tidy errors in nine files**, every
         one of them written or rewritten by M11.c: `samples/12-beauty/main.cpp` and `stage.cpp`,
@@ -1614,7 +1616,7 @@ work was done.
         trees under `build/m11c-final/<profile>` — build-engine, build-editor and `test-all` in each
         of debug, dev, profile and release. That is the criterion the task names; the from-empty run
         above is the stronger claim and it is where the three stalls were seen
-- [ ] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
+- [x] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
       red. For this rung that includes the ones that are easiest to fake: unbind a texture and watch
       the material criterion go red; remove a post stage and watch the stage-list comparison go red;
       delete the GI sky composition point and watch the seam criterion go red
@@ -3708,3 +3710,54 @@ Recorded before the eleventh close's run, in substance as the owner gave it:
   identity, not only its name), recorded in `openspec/changes/implement-m11d-desktop/tasks.md`.
 - **No further gate runs for this close.** The eleventh close is one ledger run at a pinned
   commit; if its only undeclared red is `m11c:roadmap-tiers`, M11.c closes on it.
+
+### THE ELEVENTH CLOSE — ONE LEDGER AT `6323b40`, ONE RE-RUN, AND M11.c CLOSES
+
+**The ledger.** `just roadmap-milestone m11c`, one run at the pinned commit `6323b40`: **2 of 442
+criteria red**, the other 440 green.
+
+1. `m11c:roadmap-tiers` — the closing change's own forcing function, red until this commit writes
+   the three tiers. Expected.
+2. `m1:four-profiles` — in the dev row (`build/ledger-matrix/dev-default`) `just test-all` failed on
+   ONE case, `smoke.editor_window`. In the same ledger `m0:test`, which runs that case in dev, and
+   the editor-window criteria passed, so it was intermittent.
+
+**The owner's ruling.** Close M11.c on this ledger plus a re-run of `m1:four-profiles` alone, at the
+certified commit plus the flake's fix.
+
+**The flake, run down to a line.** On Linux, `ViewportLink::begin_frame`
+(`editor/crates/cy-editor-shell/src/viewport_link.rs`) read `session.liveness()` first and returned
+early when the session was Wedged. The only thing that moves a wedged session back to Live is
+`ViewportSession::poll`, which ran only inside `acquire()` — the call the early return skipped. So
+one gap of `HEARTBEAT_PATIENCE` (500 ms) in the runtime's heartbeat froze the viewport for the rest
+of the session although the runtime kept publishing, and act 3 looked for the gizmo in an image
+captured before the selection: *"nothing is drawn in the X arrow's colour within 22 px"*. **Fix:**
+`begin_frame` calls `session.poll()` every frame before it reads liveness — commit `1cc4d7e` on the
+certification tree, cherry-picked to `main` as `e20e0ad`. **Regression test:** `act_runtime_pause`
+in `samples/05b-editor-window/window.py`, after `act_select`, stops the runtime with `SIGSTOP` for
+1.5 s, requires the viewport's warning band to appear, resumes it with `SIGCONT`, and requires the
+band to clear within 10 s.
+
+**The re-run**, `m1:four-profiles` alone and evaluated the way the ledger evaluates it
+(`criteria.evaluate` over the `m11c` plan entry), on the certification tree `1cc4d7e` =
+`6323b40` + the fix, with `CY_BUILD_DIR=build/m11c-final`:
+
+- **First attempt: FAILED, and the tree was not what failed.** The debug row's `just test-all`
+  exited 0; `just test-quiet-host` then judged its busiest second at *"other processes used 2.50 of
+  24 cores (limit 2.00)"* — a desktop helper started during the run — and failed the row with its
+  `host too busy:` reason, as the criterion requires (899.6 s). That verdict measures the machine.
+- **Second attempt: OK, 1494.0 s.** All four rows built and ran `just test-all` green on a quiet
+  host (before the suite: 0.12 and 0.16 of 24 cores used by other processes), every suite at 0
+  failures, `smoke.editor_window` passed wherever it ran.
+
+**So M11.c closes.** `milestone-m11c` is green in `gates.toml`; `ci.yml`'s milestone step moves to
+`m11c` in the same commit; `denoising`, `ray-tracing-infrastructure` and `rendering-culling-and-lod`
+are Complete in `docs/roadmap/status.yaml`, their criteria evaluated green in this ledger; the
+twelve other rows stay at Working with their Complete at M11.e. `dependencies.md` cycle 2 was
+re-argued by task 9.5 and needed no further edit. 9.2's two named `[[unproven]]` entries and the
+recorded-proof drift stay as written above; the owner's ruling closes on the ledger.
+
+**What this certification does not cover.** PRs #14 (`feat/editor-fbx-textured-scene`) and #16
+(`feat/save-system-gaps`) landed on `main` AFTER the certified commit `6323b40`. They are not
+evaluated by this ledger; M11.d's ledger evaluates them.
+

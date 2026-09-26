@@ -70,6 +70,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod agent_window;
 pub mod app;
 pub mod chrome;
 pub mod dock;
