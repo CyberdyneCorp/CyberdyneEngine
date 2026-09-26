@@ -154,12 +154,29 @@ f32 karis_weight(f32 luminance) noexcept {
     return 1.0F / (1.0F + math::max(luminance, 0.0F));
 }
 
+f32 bloom_level_weight(u32 level, u32 levels, const BloomSettings& settings) noexcept {
+    if (levels == 0 || level >= levels) {
+        return 0.0F;
+    }
+    const f32 scatter = math::saturate(settings.scatter);
+    const f32 reach = std::pow(scatter, static_cast<f32>(level));
+    // The coarsest level has nothing beneath it to share with, so it keeps its whole weight.
+    return level + 1U == levels ? reach : reach * (1.0F - scatter);
+}
+
 Vec3 bloom_composite(Vec3 scene, Vec3 bloom, const BloomSettings& settings) noexcept {
-    // Energy conserving by construction: the scene is scaled down by exactly the fraction the bloom
-    // adds. "Total image energy SHALL be approximately preserved, redistributed rather than added."
+    // Only the prefiltered part moves: what the scene loses here is exactly what the chain blurred,
+    // so a frame below the threshold is untouched and a sum-preserving blur preserves the frame's.
     const f32 mix = math::saturate(settings.intensity);
-    return Vec3{math::lerp(scene.x, bloom.x, mix), math::lerp(scene.y, bloom.y, mix),
-                math::lerp(scene.z, bloom.z, mix)};
+    const Vec3 scattered = bloom_prefilter(scene, settings);
+    return Vec3{scene.x + (mix * (bloom.x - scattered.x)),
+                scene.y + (mix * (bloom.y - scattered.y)),
+                scene.z + (mix * (bloom.z - scattered.z))};
+}
+
+f32 bloom_threshold_for_exposure(f32 exposure_stops, f32 stops_above_white) noexcept {
+    // The exposure multiplies by 2^stops, so the scene luminance that reaches 1.0 is 2^-stops.
+    return std::exp2(stops_above_white - exposure_stops);
 }
 
 }  // namespace cy::rendering
