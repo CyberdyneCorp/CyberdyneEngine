@@ -4,6 +4,7 @@
 
 #include <cy/core/math/quat.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -76,6 +77,32 @@ void colour_of(u64 identity, f32 out[3]) noexcept {
     return (scale.x + scale.y + scale.z) / 3.0F;
 }
 
+/// The identities of `world`'s live nodes, sorted so that another world can be compared against
+/// them in n log n. A deleted node keeps its slot (`WorldNode::live`), so it is left out here.
+[[nodiscard]] Status live_identities(const ser::World& world, Array<u64>& out) noexcept {
+    for (const ser::WorldNode& node : world.nodes()) {
+        if (node.live) {
+            if (Status added = out.push_back(node.identity); !added) {
+                return added;
+            }
+        }
+    }
+    std::ranges::sort(out);
+    return ok();
+}
+
+/// How many of `world`'s live nodes are not among `others`.
+[[nodiscard]] u32 live_nodes_missing_from(const ser::World& world,
+                                          const Array<u64>& others) noexcept {
+    u32 missing = 0;
+    for (const ser::WorldNode& node : world.nodes()) {
+        if (node.live && !std::ranges::binary_search(others, node.identity)) {
+            missing += 1;
+        }
+    }
+    return missing;
+}
+
 }  // namespace
 
 Status WorldView::open(const char* directory, const char* asset_path,
@@ -111,7 +138,7 @@ Status WorldView::apply(Span<const u8> bytes, ser::TransactionReport& out) noexc
     return ser::apply_transaction(world_, bytes, out);
 }
 
-Status WorldView::sync(std::string_view text) noexcept {
+Expected<SyncReport, Error> WorldView::sync(std::string_view text) noexcept {
     ser::World replacement(*allocator_);
     const Expected<ser::WorldReadReport, Error> read =
         ser::read_world(text, world_.path(), replacement);
@@ -124,9 +151,20 @@ Status WorldView::sync(std::string_view text) noexcept {
     if (Expected<u32, Error> resolved = ser::resolve_against(replacement, schema_); !resolved) {
         return make_unexpected(resolved.error());
     }
+    Array<u64> before(*allocator_);
+    Array<u64> after(*allocator_);
+    if (Status listed = live_identities(world_, before); !listed) {
+        return make_unexpected(listed.error());
+    }
+    if (Status listed = live_identities(replacement, after); !listed) {
+        return make_unexpected(listed.error());
+    }
+    SyncReport report;
+    report.created = live_nodes_missing_from(replacement, before);
+    report.deleted = live_nodes_missing_from(world_, after);
     world_ = std::move(replacement);
     placed_.clear();
-    return ok();
+    return report;
 }
 
 u32 WorldView::present(first_light::Scene& scene) noexcept {

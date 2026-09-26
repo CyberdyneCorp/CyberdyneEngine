@@ -650,11 +650,17 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
 void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
     const std::string_view text(reinterpret_cast<const char*>(request.payload.data()),
                                 request.payload.size());
-    if (Status synced = host.view_world->sync(text); !synced) {
+    const Expected<SyncReport, Error> synced = host.view_world->sync(text);
+    if (!synced) {
         (void)host.bridge->send_rejected(request.request, synced.error().message,
                                          "reopen the same world in the editor and runtime");
         return;
     }
+    // A snapshot replaces transactions the editor could not forward one by one, so what it created
+    // and deleted is counted with theirs — the `world` line's "n created" is the claim that every
+    // entity the editor made exists here, whichever path brought it.
+    host.nodes_created += synced->created;
+    host.nodes_deleted += synced->deleted;
     if (host.authored_frame != nullptr) {
         if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
             !prepared) {

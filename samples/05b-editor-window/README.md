@@ -34,6 +34,9 @@ transactions and shows the cooked geometry with its full node transform on the n
 For a new empty world, the editor sends the current unsaved world when import first adds component
 declarations. The runtime can therefore resolve the new mesh and material fields immediately;
 subsequent transforms continue through the ordinary transaction stream.
+The runtime counts the nodes such a snapshot adds and removes with the ones transactions create and
+delete, so its `world` report line still says how many entities the editor made; `smoke.authoring`
+reads that line, and `editor_window_one_world` holds the count.
 
 The authored viewport uses `FrameAssembly` and `FrameRecorder` on Metal or Vulkan. It reads `.cyprim`
 sources and imported cooked mesh identities, uses mesh section material assignments, and derives
