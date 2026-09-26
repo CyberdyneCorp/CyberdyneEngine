@@ -3,6 +3,8 @@
 #include <cy/material/cook.h>
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/graph/material/lower_material.h>
+#include <cy/graph/text.h>
 #include <cy/rendering/material/text.h>
 
 #include <cstdio>
@@ -372,12 +374,51 @@ Expected<rendering::material::Profile, Error> profile_from_name(std::string_view
 
 Status cook_material(std::string_view source, const CompileOptions& options, Allocator& allocator,
                      Array<u8>& out, Array<char>& report) noexcept {
-    ParseDiagnostic diagnostic(allocator);
-    auto module = parse_material(source, allocator, diagnostic, options.passes);
+    auto module = [&]() -> Expected<Module, Error> {
+        if (source.starts_with("cygraph")) {
+            graph::NodeRegistry registry(allocator);
+            if (Status registered = graph::material::register_material_nodes(registry);
+                !registered) {
+                return make_unexpected(registered.error());
+            }
+            graph::DiagnosticSink sink(allocator);
+            auto authored = graph::parse_graph(source, &registry, allocator, sink);
+            for (const graph::Diagnostic& entry : sink.entries()) {
+                append_text(report, entry.message);
+                append_text(report, "\n");
+            }
+            if (!authored) {
+                append_text(report, authored.error().message);
+                append_text(report, "\n");
+                return make_unexpected(authored.error());
+            }
+            if (sink.errors() != 0) {
+                return make_unexpected(
+                    Error{ErrorCode::InvalidArgument, "the material graph has invalid nodes", 0});
+            }
+            MaterialGraph lowered(allocator, authored->name());
+            if (Status converted = graph::material::lower_material(*authored, lowered);
+                !converted) {
+                append_text(report, converted.error().message);
+                append_text(report, "\n");
+                return make_unexpected(converted.error());
+            }
+            return lower_graph(lowered, allocator);
+        }
+        ParseDiagnostic diagnostic(allocator);
+        auto parsed = parse_material(source, allocator, diagnostic, options.passes);
+        if (!parsed) {
+            append_count(report, "line ", diagnostic.line, ": ");
+            append_text(report, diagnostic.text());
+            append_text(report, "\n");
+        }
+        return parsed;
+    }();
     if (!module) {
-        append_count(report, "line ", diagnostic.line, ": ");
-        append_text(report, diagnostic.text());
-        append_text(report, "\n");
+        if (report.empty()) {
+            append_text(report, module.error().message);
+            append_text(report, "\n");
+        }
         return make_unexpected(module.error());
     }
     auto compiled = compile_material(module.value(), options, allocator);

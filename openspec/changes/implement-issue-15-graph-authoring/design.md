@@ -64,7 +64,11 @@ an artefact. Propagating geometry assignments from the scene into editor validat
 build descriptions remains part of task 3.2.
 The `cy_material cook` front end now accepts a repeated material-to-geometry assignment, passes
 each source set to that producer, and refuses assignments for materials missing from the cook
-inputs. Generating those assignments from saved scene assets remains part of task 3.2.
+inputs. `cy_material cook --world` now reads saved `.cyworld` assets through the engine reader,
+discovers live static mesh material references (including imported slots), and passes their
+`StaticMesh` assignment to the cook. The cook now lowers canonical `.cygraph` files through the
+registered engine graph nodes. Other geometry source kinds and their scene bindings remain in
+task 3.2.
 The editor backend now accepts a versioned material request envelope listing named geometry
 sources and passes those paths to the same compiler options used by cooking. Validate and Compile
 return the compiler's `vertex-geometry-unsupported` code for a vertex graph assigned to

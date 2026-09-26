@@ -424,6 +424,71 @@ CY_TEST_CASE("material_cook: command line assigns geometry to the named material
              std::string::npos);
 }
 
+CY_TEST_CASE("material_cook: saved world discovers graph and slot materials for engine cooking") {
+    Project project;
+    Array<u8> graph(allocator());
+    CY_REQUIRE(assets::fs::read_whole(CY_MATERIAL_GRAPH_SAMPLE, graph).has_value());
+    project.write("materials/graph.cygraph",
+                  {reinterpret_cast<const char*>(graph.data()), graph.size()});
+    project.write("materials/moving_stone.cymat",
+                  "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }");
+    project.write("worlds/materials.cyworld", R"(cyworld 1
+type 1 runtime "MeshRenderer"
+  field 1 text "mesh" ""
+  field 2 text "material" ""
+type 2 authoring "ImportedMaterialSlots"
+  field 3 text "slot_0" ""
+  field 4 text "slot_1" ""
+node 0 - "demo" "Graph"
+  component 1
+    field 1 "meshes/cube.cyprim"
+    field 2 "materials/graph.cygraph"
+  component 2
+    field 3 "materials/graph.cygraph"
+    field 4 "materials/worn_metal.cymat"
+node 1 - "demo" "Moving"
+  component 1
+    field 1 "meshes/stone.cyprim"
+    field 2 "materials/moving_stone.cymat"
+node 2 - "demo" "Unrendered"
+  component 1
+    field 1 ""
+    field 2 "materials/second.cymat"
+)");
+    const std::string log = project.path("world-cook.log");
+    const auto run = [&](std::string_view extra, std::string_view output) {
+#if defined(_WIN32)
+        const std::string command =
+            "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" + project.sources() + "\" \"" +
+            project.path(std::string(output).c_str()) + "\" --world worlds/materials.cyworld " +
+            std::string(extra) + " >\"" + log + "\" 2>&1\"";
+#else
+        const std::string command =
+            "\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" + project.sources() + "\" \"" +
+            project.path(std::string(output).c_str()) + "\" --world worlds/materials.cyworld " +
+            std::string(extra) + " >\"" + log + "\" 2>&1";
+#endif
+        // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+        const int exit = std::system(command.c_str());
+        Array<u8> bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole(log.c_str(), bytes).has_value());
+        return std::pair{exit, std::string(bytes.begin(), bytes.end())};
+    };
+
+    const auto [cooked, report] = run("", "world-supported");
+    CY_CHECK_EQ(cooked, 0);
+    CY_CHECK(report.find("material:materials/graph.cygraph") != std::string::npos);
+    CY_CHECK(report.find("material:materials/worn_metal.cymat") != std::string::npos);
+    CY_CHECK(report.find("material:materials/moving_stone.cymat") != std::string::npos);
+    CY_CHECK(report.find("material:materials/second.cymat") == std::string::npos);
+    CY_CHECK(report.find("ran 3, cached 0, rebuilt 0, failed 0") != std::string::npos);
+
+    const auto [refused, failure] =
+        run("--geometry materials/moving_stone.cymat=VirtualGeometry", "world-unsupported");
+    CY_CHECK_NE(refused, 0);
+    CY_CHECK(failure.find("vertex-geometry-unsupported (VirtualGeometry)") != std::string::npos);
+}
+
 CY_TEST_CASE("material_cook: fragment sampling in a vertex graph leaves no artefact") {
     constexpr std::string_view source = R"(
 material sampled_offset {
