@@ -72,3 +72,35 @@ reason = "FetchContent checks out the commit deps/manifest.toml pins for each de
 sources = ["deps/manifest.toml"]
 generated_by = ["cmake/dependencies.cmake"]
 digest = "d054edb23deb3625"
+
+# Build-tree files a build edge DOES produce, from MORE than the edge declares.
+#
+# `ninja -t inputs` lists what an edge DECLARES. A custom command whose program reads files it does
+# not name — SwiftPM, which decides for itself what a package compiles — produces outputs the graph
+# describes only in part, and the selector would skip a test that loads them after a change to a
+# file the edge never named. The M11.d gate caught exactly that: `#error` appended to
+# bindings/swift/Sources/CyberdyneABI/shim.c selected nothing and skipped m4:swift-reload and
+# m4:sample-artefact. An entry here is a person's trace of EVERY repository path the command reads
+# for its outputs; its `sources` are ADDED to the edge's own inputs. `generated_by` is the code that
+# decides what the command reads — the driver, the manifest and the CMake that writes the edge — and
+# `digest` pins the review over it: when any of it changes, the entry LAPSES and the outputs are
+# unknown until somebody re-reads it and writes back the digest the lapsed message prints.
+# `test_incremental_swiftpm_edges` in selftest.py proves each source here selects the tests loading
+# each output, and that every tracked file of the Swift package is declared. See
+# tools/roadmap/incremental.py, `edge_origins`.
+
+[[edge]]
+name = "the Swift reload fixture's three generations"
+outputs = ["bindings/swift/modules/libCyGame_g*.so"]
+reason = "bindings/swift/tools/cy_swift_module.py writes a one-target package under the build tree that depends on bindings/swift by path, copies each generation's *.swift from fixtures/reload/v1 and v2 into it, and runs `swift build` through swiftly. Traced with strace on build/m11d-selector-and-cache: SwiftPM reads bindings/swift/Package.swift and probes Package@swift-6.swift, Package@swift-6.3.swift and Package@swift-6.3.3.swift beside it; compiles every target CyberdyneKit depends on from Sources/ — the CyberdyneABI C target (shim.c, include/module.modulemap, the cy_abi.h copy), CyberdyneCore's generated overlay, CyberdyneKit and the CyberdyneMacros plugin; lists Tests/ and probes Plugins/ and a root module.modulemap; and swiftly looks for .swift-version up from the build tree to the repository root. So the whole package directory is declared, not a list of what exists today. bindings/swift/Package.resolved is NOT read — the resolution is the generated root package's, in the build tree — and swift-syntax, the toolchain and ~/.swiftpm are outside the repository"
+sources = ["bindings/swift", ".swift-version"]
+generated_by = ["bindings/swift/tools/cy_swift_module.py", "bindings/swift/Package.swift", "bindings/swift/CMakeLists.txt"]
+digest = "2fe33254127c25bc"
+
+[[edge]]
+name = "the 04-character game module"
+outputs = ["samples/04-character/module/libCyGame_g*.so"]
+reason = "the same driver builds generation 0 from samples/04-character/game/*.swift against bindings/swift by path, so SwiftPM reads what it reads for the reload fixture — the whole package directory and .swift-version — plus the game's own sources"
+sources = ["bindings/swift", ".swift-version", "samples/04-character/game"]
+generated_by = ["bindings/swift/tools/cy_swift_module.py", "bindings/swift/Package.swift", "samples/04-character/CMakeLists.txt"]
+digest = "9d2cea33602894e5"

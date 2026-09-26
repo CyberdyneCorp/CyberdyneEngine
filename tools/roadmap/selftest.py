@@ -2750,18 +2750,21 @@ class _FakeTree:
     def __init__(self, root: Path, current: bool = True, configured: bool = True,
                  globs_match: bool = True, exemptions: dict | None = None,
                  generated: tuple[str, ...] = (), listed: tuple[str, ...] = (),
-                 edges: dict[str, str] | None = None, cache: str = "", **graph: object) -> None:
+                 edges: dict[str, str] | None = None, cache: str = "",
+                 defines: dict[str, str] | None = None, **graph: object) -> None:
         """`generated` are build-tree paths — relative to it, or absolute outside it — that the
         save suite's objects also include, as a configure-time header is included; `listed` are
         build-tree files the save executable is built from directly, as a fetched dependency's
         source is. `edges` maps a
         build-tree output a build EDGE produces to the source it is made from. `cache` is extra
-        CMakeCache.txt text. `graph` is passed to the BuildGraph as it is, so a case can hand it
-        declared origins."""
+        CMakeCache.txt text. `defines` are further `-D NAME=value` pairs the save library's object
+        is compiled with, as a test names a build output it loads. `graph` is passed to the
+        BuildGraph as it is, so a case can hand it declared origins."""
         self.root, self.build = root, root / "build" / "dev"
         self.current, self.configured, self.globs_match = current, configured, globs_match
         self.exemptions, self.graph = exemptions, graph
         self.edges, self.cache, self.listed = edges or {}, cache, listed
+        self.defines = defines or {}
         for directory in ("src", "tests", "tools", "just"):
             (root / directory).mkdir(parents=True, exist_ok=True)
         shared = f"{root}/src/core/base/include/cy/core/base/types.h"
@@ -2788,12 +2791,17 @@ class _FakeTree:
         ]}
 
     def _compile_commands(self) -> str:
-        """With `exemptions` given, the save library's object is compiled with a definition naming
-        the repository ROOT, as the diagnostics library's is in this repository."""
-        if self.exemptions is None:
+        """The save library's object is compiled with `defines` and, with `exemptions` given, with
+        a definition naming the repository ROOT, as the diagnostics library's is in this
+        repository."""
+        defines = dict(self.defines)
+        if self.exemptions is not None:
+            defines["CY_ROOT"] = str(self.root)
+        if not defines:
             return "[]"
+        flags = " ".join(f'-D{name}=\\"{value}\\"' for name, value in defines.items())
         return json.dumps([{"output": "CMakeFiles/cy_test_unit_save.dir/save1.cpp.o",
-                            "command": f'c++ -DCY_ROOT=\\"{self.root}\\" -c save.cpp'}])
+                            "command": f"c++ {flags} -c save.cpp"}])
 
     def _test(self, name: str, label: str, command: list[str]) -> dict:
         return {"name": name, "command": command, "properties": [
@@ -3042,6 +3050,121 @@ def _check_origin_pinning(root: Path) -> None:
           "lapsed" in origin().inputs.unknown, origin().inputs.unknown)
 
 
+#: The two SwiftPM edges the M11.d gate caught, each named as its test names it: the reload
+#: fixture's first generation (`integration.swift_reload`, compiled with CY_SWIFT_MODULE_G0) and
+#: the 04-character game module (`smoke.character_sample`, CY_CHARACTER_MODULE_LIBRARY).
+SWIFTPM_OUTPUTS = ("bindings/swift/modules/libCyGame_g0.so",
+                   "samples/04-character/module/libCyGame_g0.so")
+#: What the gate appended `#error` to: the CyberdyneABI C target, which SwiftPM compiles and the
+#: custom command's DEPENDS did not name.
+SWIFTPM_SHIM = "bindings/swift/Sources/CyberdyneABI/shim.c"
+
+
+def _swiftpm_tree(root: Path, output: str, **graph: object) -> _FakeTree:
+    """A tree whose save test loads a module a SwiftPM edge produces, and whose edge declares only a
+    Swift source — as the custom commands' DEPENDS did at the gate."""
+    build = root / "build" / "dev"
+    return _FakeTree(root, defines={"CY_SWIFT_MODULE": str(build / output)},
+                     edges={output: "bindings/swift/Sources/CyberdyneKit/Module.swift"}, **graph)
+
+
+def test_incremental_swiftpm_edges(root: Path) -> None:
+    """A module SwiftPM builds is made from all SwiftPM reads, not only what its edge declares.
+
+    REGRESSION: `bindings/swift/CMakeLists.txt` and `samples/04-character/CMakeLists.txt` run
+    SwiftPM from a custom command whose DEPENDS globbed only `*.swift`, the driver and
+    `Package.swift`, while SwiftPM also compiles the CyberdyneABI C target (`shim.c`,
+    `include/module.modulemap`, the `cy_abi.h` copy). `_target_inputs` took `ninja -t inputs` as
+    the whole answer, so at the gate `#error` appended to `shim.c` selected 243 of 474 — the
+    no-change floor — and SKIPPED `m4:swift-reload` and `m4:sample-artefact` as "inputs unchanged"
+    though a fresh build failed. This is that case, against the `[[edge]]` entries
+    `incremental.toml` really declares.
+    """
+    plan = _incremental_plan(root)
+    origins = incremental_module.edge_origins()
+    for index, output in enumerate(SWIFTPM_OUTPUTS):
+        check(f"incremental: incremental.toml declares what SwiftPM reads for {output}",
+              any(origin.produces(output) for origin in origins))
+        tree = _swiftpm_tree(root / f"swiftpm-{index}", output)
+        chosen = _chosen(plan, tree, [SWIFTPM_SHIM])
+        check(f"incremental: a change to {SWIFTPM_SHIM} selects the test that loads {output}",
+              chosen["m0:save"].selected, _reason(chosen["m0:save"]))
+        check(f"incremental: a change to {SWIFTPM_SHIM} does not select a test that loads no "
+              "Swift module", not chosen["m0:render"].selected, _reason(chosen["m0:render"]))
+    _check_every_edge_source(root, plan, origins)
+    _check_swiftpm_package_covered(origins)
+    tree = _swiftpm_tree(root / "swiftpm-lapsed", SWIFTPM_OUTPUTS[0], edge_reads=lambda: (
+        incremental_module.Origin("x", (SWIFTPM_OUTPUTS[0],), incremental_module.Inputs.unknowable(
+            "the declared origin of x in incremental.toml lapsed")),))
+    chosen = _chosen(plan, tree, [])
+    check("incremental: a module whose [[edge]] declaration lapsed is unknown, and says why",
+          "lapsed" in _reason(chosen["m0:save"]), _reason(chosen["m0:save"]))
+    _check_edge_pinning(root / "edge-pinning")
+
+
+def _check_every_edge_source(root: Path, plan, origins) -> None:
+    """Every source an `[[edge]]` entry names selects the test loading each of its outputs, and with
+    nothing changed that test is skipped — the declaration adds inputs, it does not make them
+    unknown. A lapsed entry must make its outputs unknown instead."""
+    for index, origin in enumerate(origins):
+        for pattern in origin.outputs:
+            output = _example_output(pattern)
+            tree = _swiftpm_tree(root / f"edge-{index}-{len(pattern)}", output)
+            chosen = _chosen(plan, tree, [])
+            if origin.inputs.unknown:
+                print(f"     note: {origin.inputs.unknown}")
+                check(f"incremental: {output}, whose [[edge]] declaration lapsed, is unknown",
+                      _reason(chosen["m0:save"]).startswith(incremental_module.UNKNOWN),
+                      _reason(chosen["m0:save"]))
+                continue
+            check(f"incremental: with nothing changed, a test loading {output} is skipped",
+                  not chosen["m0:save"].selected, _reason(chosen["m0:save"]))
+            for source in sorted(origin.inputs.paths):
+                changed = f"{source}/x" if (record_module.REPO_ROOT / source).is_dir() else source
+                chosen = _chosen(plan, tree, [changed])
+                check(f"incremental: a change to {changed} selects the test loading {output}",
+                      _reason(chosen["m0:save"]).startswith(incremental_module.CHANGED),
+                      _reason(chosen["m0:save"]))
+
+
+def _check_swiftpm_package_covered(origins) -> None:
+    """Every tracked file of the Swift package is a declared source of both modules. SwiftPM reads
+    the manifest, probes version-specific manifests beside it, compiles Sources/ and lists Tests/,
+    so the declaration is the package directory; a file added anywhere in it is covered without a
+    new entry, and narrowing the declaration to what exists today goes red here."""
+    listing = subprocess.run(["git", "-C", str(record_module.REPO_ROOT), "ls-files", "--",
+                              "bindings/swift"],
+                             capture_output=True, text=True, check=True).stdout.split()
+    listing += ["bindings/swift/Package@swift-6.3.swift", "bindings/swift/Plugins/x.swift"]
+    for output in SWIFTPM_OUTPUTS:
+        declared = next((origin for origin in origins if origin.produces(output)), None)
+        if declared is None or declared.inputs.unknown:
+            continue
+        missed = [path for path in listing if not declared.inputs.matches([path])]
+        check(f"incremental: every file of the Swift package, and one SwiftPM only probes for, "
+              f"is a declared source of {output}", len(listing) > 2 and not missed,
+              ", ".join(missed[:5]))
+
+
+def _check_edge_pinning(root: Path) -> None:
+    """`edge_origins` over a real file: pinned by the code that decides what the edge reads."""
+    driver = write_parents(root / "tools" / "driver.py", "read('Sources')\n")
+    table = root / "incremental.toml"
+    digest = incremental_module.definition_digest(["tools/driver.py"], root)
+    write(table, f'[[edge]]\nname = "x"\noutputs = ["out/x.so"]\nsources = ["Sources"]\n'
+                 f'generated_by = ["tools/driver.py"]\ndigest = "{digest}"\n')
+    held = incremental_module.edge_origins(table, root)[0]
+    check("incremental: an [[edge]] declaration over unchanged code holds, and maps its sources",
+          not held.inputs.unknown and "Sources" in held.inputs.paths
+          and held.produces("out/x.so"), held.inputs.unknown)
+    check("incremental: [[edge]] entries are not read as configure-time origins",
+          not incremental_module.generated_origins(table, root))
+    driver.write_text("read('Sources')\nread('Package.resolved')\n", encoding="utf-8")
+    check("incremental: an [[edge]] declaration lapses when the code deciding what it reads "
+          "changes",
+          "lapsed" in incremental_module.edge_origins(table, root)[0].inputs.unknown)
+
+
 def test_incremental_globs_run_on_python_3_12(root: Path) -> None:
     """Path-criterion globs match without `PurePath.full_match`, which only exists from Python 3.13.
 
@@ -3271,6 +3394,7 @@ def main() -> int:
         test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
         test_incremental_selection(_area(root, "incremental"))
         test_incremental_generated_headers(_area(root, "incremental-generated"))
+        test_incremental_swiftpm_edges(_area(root, "incremental-swiftpm"))
         test_incremental_globs_run_on_python_3_12(root)
         if not _nested():
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))

@@ -784,7 +784,7 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       both halves: every forgery, including the renamed copy of `sh`, came back `not enforced`, and
       inside the real wrapper both the vfork stall and the spin failed with `enforced: inside
       cy_quiet_host`
-- [ ] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
+- [x] 9.8 **Incremental ledger closes.** `just roadmap-milestone <rung> --incremental
       [--changed-since <commit>]` evaluates the rung's own criteria, every earlier criterion that is
       new or edited since the base (its falsifiability digest moved, or it was not in the base's
       plan) or whose inputs a changed file belongs to, and the smoke set (`m0:build`, `m0:format`,
@@ -825,7 +825,32 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       unchanged"*, though a fresh build of that tree fails. The fix belongs in the graph (the
       DEPENDS lists name every SwiftPM input) or in the selector (a SwiftPM edge is inputs
       unknown), with a regression case proven red. The full ledger is unaffected; until this is
-      fixed an incremental close is not a close
+      fixed an incremental close is not a close.
+      **FIXED, BOTH WAYS.** *The graph*: both DEPENDS now glob every file under
+      `bindings/swift/Sources/`, so `ninja -t inputs` of each module names `shim.c`, the module map
+      and the `cy_abi.h` copy, and the build itself reruns SwiftPM — with `#error` appended to
+      `shim.c`, `ninja cy_swift_reload_fixture` on `build/m11d-selector-and-cache` now fails
+      (`shim.c:2:2: error: mutated`) where it had no work to do. `integration.swift_module_depends`
+      and `integration.character_module_depends` (`bindings/swift/tools/check_module_depends.py`)
+      read that back from the real graph; with the glob returned to `*.swift` both fail naming the
+      three files (25 of 28 sources). *The selector*: `incremental.toml` gains `[[edge]]` —
+      what a build edge's outputs are made from BEYOND what the edge declares, added to its inputs
+      and pinned like `[[generated]]` by a digest of the driver, `Package.swift` and the CMake
+      writing the edge (`edge_origins`, `_undeclared_reads` in `incremental.py`). What SwiftPM
+      reads was traced with `strace`, not guessed: it probes `Package@swift-*.swift`, compiles
+      `Sources/`, lists `Tests/`, and swiftly looks for `.swift-version` up to the repository root;
+      `bindings/swift/Package.resolved` is NOT read (the resolution is the generated root package's,
+      in the build tree). So each entry declares the whole `bindings/swift` directory and
+      `.swift-version`, plus the game sources for 04-character. `test_incremental_swiftpm_edges`
+      (`selftest.py`) is the gate's case — `shim.c` changed must select the tests loading
+      `bindings/swift/modules/libCyGame_g0.so` and `samples/04-character/module/libCyGame_g0.so` —
+      plus every declared source, a lapsed entry, the pinning, and that every tracked package file
+      is declared; red with the entries removed (4 failures), with `_undeclared_reads` deleted (8),
+      and with the sources narrowed to `Package.swift` + `Sources` (2). *Measured* on
+      `build/m11d-selector-and-cache`, `shim.c` as the one changed path: the selector as it was and
+      the DEPENDS as they were skip `m4:swift-reload` and `m4:sample-artefact` ("inputs unchanged");
+      with only the `[[edge]]` entries, or only the new DEPENDS, or both, each is selected as
+      "inputs changed: bindings/swift/Sources/CyberdyneABI/shim.c"
 - [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
       change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
       from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
