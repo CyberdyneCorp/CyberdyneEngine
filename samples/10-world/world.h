@@ -425,6 +425,10 @@ public:
     [[nodiscard]] Span<const u32> sky_indices() const noexcept { return sky_indices_.span(); }
     [[nodiscard]] Span<const StarDraw> stars() const noexcept { return star_draws_.span(); }
     [[nodiscard]] const water::OceanSurface& ocean() const noexcept { return ocean_; }
+    /// The sea's displacement model and the water's clock: what the ocean patch was built from this
+    /// frame, and what the water shading derives its caustics from. Null before `build()`.
+    [[nodiscard]] const water::DisplacementModel* ocean_model() const noexcept;
+    [[nodiscard]] f64 water_time() const noexcept;
     /// The workers the world's per-frame producers are spread over, or null when they did not
     /// start. The stage borrows them for the plant proxies.
     [[nodiscard]] jobs::JobSystem* jobs() noexcept { return jobs_started_ ? &jobs_ : nullptr; }

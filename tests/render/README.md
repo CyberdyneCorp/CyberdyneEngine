@@ -150,6 +150,28 @@ the same image bytes (`environment::sample_field_image`).
 Each was seen red under a shader mutation, regenerated and restored:
 `openspec/changes/add-cloud-shadows/evidence/falsification.txt`.
 
+## Water shading in the world frame — `render.world_water`
+
+Draws a scene of its own — a bed that shelves out of the water, a flat surface over it and an
+emissive sky ceiling whose colour is a linear ramp — with `samples/10-world`'s committed world and
+water SPIR-V and with the sample's own device half, `samples/10-world/water_surface.cpp` (compiled
+into the suite, as the shader headers are included): the refraction picture, the mirrored reflection
+picture, and the frame that samples them, in the order the stage declares them. Every pixel's eye
+ray is traced on the processor, and every water pixel is checked against src/water/'s own
+functions.
+
+| Case | Asserts |
+|---|---|
+| off, the frame before | the water drawn through world.slang's lit path, as the stage draws it with water shading off, is byte-identical to `references/world_water_off.png`, drawn from world.slang's SPIR-V at 0f1dfd1 — and with water shading on, 13 512 texels move |
+| the reflection is the sky, mirrored | with the bed unlit and no light in the column, every water pixel is Schlick's Fresnel times the ceiling's radiance where the mirrored eye ray meets it, within 2% |
+| deeper is darker, by the law | every water pixel over the bed is `water_transmittance()` times the bed plus `water_in_scatter()` times the column's light over its own path, times one minus Fresnel, within 2%; the depth bins darken and turn bluer monotonically |
+| foam only at the shore | over a column deeper than the band, bit-identical to the frame without foam; in the band's shallow half, brighter |
+| caustics move and are the surface's | two instants of the water clock differ over the bed while the frames without caustics do not; each resolved pixel is the bed scaled by the processor's own focus from the same parameter block, within 3% |
+
+Each was seen red under a mutation, regenerated and restored:
+`openspec/changes/add-water-shading/evidence/falsification.txt`. `CY_RENDER_UPDATE_GOLDEN=1 ctest -R
+render.world_water` rewrites the reference and fails, as `render.golden` does.
+
 ## The artefact's air — `render.vfx`, whose reference lives here
 
 M11.c task 6.3, `m11c:vfx-in-the-shot`. **The case is declared by `src/vfx/tests/CMakeLists.txt`

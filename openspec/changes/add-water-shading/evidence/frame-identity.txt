@@ -1,0 +1,32 @@
+# samples/10-world, Development, Vulkan, NVIDIA RTX 5060, 960x540, default seed, --seconds 24 --fps 8
+# (192 frames, one simulated day). Linux Mint 22.1, host shared with other builds (load 25-45).
+
+before   a build of `git archive 0f1dfd1` (the tree before this change), --frames
+off      this change, --no-water-shading --frames
+on       this change, --frames
+
+frame-by-frame cmp, before vs off:    192 frames, 0 differ
+authoritative take digest:            before 0x3DE89D039348ECB5, off 0x3DE89D039348ECB5, on 0x3DE89D039348ECB5
+headless (--seconds 8 --fps 8):       before 0x16783AEE1BDB22A5, after 0x16783AEE1BDB22A5
+RHI validation errors:                0 (before), 0 (off), 0 (on)
+
+render.world_water's reference `tests/render/references/world_water_off.png`
+(md5 c3f1d4490c4a20b9eb20cc9373087627) was written from `samples/10-world/shaders/world_spirv.h`
+md5 4185d07e8552444379265dc4682aab0c, which is the file at 0f1dfd1 byte for byte: this change does
+not touch world.slang or its generated headers.
+
+published: docs/design/images/water-shading-day-{on,off}.png     (frame 56: the fjord mid-morning)
+           docs/design/images/water-shading-shore-{on,off}.png   (frame 56, the shallows, 3x crop)
+           docs/design/images/water-shading-night-{on,off}.png   (frame 152: the clouds in the lake)
+
+cost (per-frame CSV, all 192 frames, same loaded host, one run each):
+  stage_submit_ms   before 5.35 mean / 4.06 median   off 5.09 / 4.34   on 6.55 / 6.12
+  frame_ms          before 10.27 / 9.50              off 10.56 / 10.25  on 11.47 / 11.12
+  The refraction pass redraws the terrain and the reflection pass redraws the sky, the terrain, the
+  stars and the plants: about 1.8 ms of submit at the median on this host.
+
+every shader for every target (build/water/dev/tools/shaders/cy_shaderc build --strict src samples):
+  samples/10-world/shaders/water.slang  waterVertex, waterFragment: vulkan-spirv = metal-msl =
+  d3d12-dxil, 4 parameters each
+  shader-set: modules=41 entry_points=62 artefacts=186 comparisons=186 disagreements=0 failures=0
+  target_refusals=0
