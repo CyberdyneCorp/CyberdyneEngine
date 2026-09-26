@@ -29,6 +29,14 @@ struct Placed {
     u32 object = 0;
 };
 
+/// What an editor snapshot changed, counted as `apply` counts a transaction's nodes.
+struct SyncReport {
+    /// Live nodes the snapshot holds that the world did not.
+    u32 created = 0;
+    /// Live nodes the world held that the snapshot does not.
+    u32 deleted = 0;
+};
+
 /// The authored world, and the frame's view of it.
 class WorldView {
 public:
@@ -56,7 +64,13 @@ public:
                                scene::serialization::TransactionReport& out) noexcept;
 
     /// Replace the in-memory world after the editor adds declarations absent from the opened file.
-    [[nodiscard]] Status sync(std::string_view text) noexcept;
+    ///
+    /// A snapshot STANDS IN FOR TRANSACTIONS the editor could not send one by one: creating the
+    /// first primitive in a world whose schema lacks `MeshRenderer.material` arrives here rather
+    /// than through `apply`. So the nodes it adds and removes are reported, or the runtime's
+    /// account of what the editor created would miss them (`smoke.authoring` counts both
+    /// primitives).
+    [[nodiscard]] Expected<SyncReport, Error> sync(std::string_view text) noexcept;
 
     /// Write the world's live nodes into `scene`'s object slots.
     ///

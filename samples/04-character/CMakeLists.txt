@@ -64,10 +64,13 @@ set(CY_CHARACTER_MODULE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/module.toml")
 # can read. This is not a target's source list: SwiftPM decides what it compiles, and this list is
 # only the DEPENDS of the custom command that invokes it. A hand-written list would go stale the first
 # time somebody added a Swift file and wondered why the game had not changed.
-# bindings/swift/CMakeLists.txt and src/core/reflect/ do the same, for the same reason.
+# bindings/swift/CMakeLists.txt and src/core/reflect/ do the same, for the same reason — and, as
+# there, the package glob takes EVERY file under Sources/, because SwiftPM compiles the CyberdyneABI
+# C target too (M11.d task 9.8). tools/roadmap/incremental.toml declares this edge under `[[edge]]`,
+# pinned by a digest of this file.
 file(GLOB CY_CHARACTER_GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/*.swift")
 file(GLOB_RECURSE CY_CHARACTER_KIT_SOURCES CONFIGURE_DEPENDS
-     "${CMAKE_SOURCE_DIR}/bindings/swift/Sources/*.swift")
+     "${CMAKE_SOURCE_DIR}/bindings/swift/Sources/*")
 
 add_custom_command(
     OUTPUT "${CY_CHARACTER_MODULE_LIBRARY}"
@@ -81,6 +84,18 @@ add_custom_command(
     VERBATIM)
 
 add_custom_target(cy_sample_character_game ALL DEPENDS "${CY_CHARACTER_MODULE_LIBRARY}")
+
+# The same check bindings/swift/ registers for the reload fixture, over this edge.
+if(CMAKE_GENERATOR STREQUAL "Ninja")
+    add_test(NAME integration.character_module_depends
+             COMMAND "${Python3_EXECUTABLE}"
+                     "${CMAKE_SOURCE_DIR}/bindings/swift/tools/check_module_depends.py"
+                     --ninja "${CMAKE_MAKE_PROGRAM}" --build-dir "${CMAKE_BINARY_DIR}"
+                     --output "${CY_CHARACTER_MODULE_LIBRARY}"
+                     --package "${CMAKE_SOURCE_DIR}/bindings/swift")
+    set_tests_properties(integration.character_module_depends
+                         PROPERTIES LABELS "integration" TIMEOUT 300)
+endif()
 
 # The host. `just run-sample` finds a sample's binary as samples/*/cy_sample_<name>, so the target
 # name is what the recipe's `character` argument means; there is no manifest to keep in step.

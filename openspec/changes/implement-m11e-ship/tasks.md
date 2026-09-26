@@ -311,7 +311,14 @@ re-reads this list against its own ledger run, deletes what it finished, and add
         read requirement by requirement**
       Under M11.c task 3.5's rule an `exempt:m11e` entry is a deferral to this rung, so every row
       above whose map needs one arrives in section 6's sweep with that partial as its reason, and
-      `m11d:core-rows-at-complete-grade` and `m11d:roadmap-tiers` stay red until the map is written
+      `m11d:core-rows-at-complete-grade` and `m11d:roadmap-tiers` stay red until the map is written.
+      **RECEIVED, M11.d task 10.4a**: M11.d's full ledger read 12 of the six core rows' 71 mapped,
+      all `ecs-core`'s, and the owner moved the Complete cells of `core-assets-and-io`,
+      `core-jobs-and-concurrency`, `core-memory-and-containers`, `engine-architecture` and
+      `core-platform-abstraction` here: `m11e.toml`'s `roadmap-tiers` expects them, the matrix
+      carries them under M11.e, and `m11d:core-rows-move-to-m11e` holds the move. Their 59 entries,
+      with the partials above as `exempt:` reasons where the code is not finished, are this item's.
+      `ecs-core`, `testing-and-quality` and `developer-workflow-and-just` stay M11.d's
 - [ ] 5b.2 **`build-and-packaging` — already received, restated so the reason travels with it.**
       M11.d task 7.6 moved the Complete cell here (`m11d:build-and-packaging-moves-to-m11e` holds
       both halves of the move) and task 4.4 above receives it: downloadable content needs a SIGNED
@@ -329,7 +336,10 @@ re-reads this list against its own ledger run, deletes what it finished, and add
       third of the three stale refusals task 4.5 found; `build-shaders` and the four `release-*`
       recipes no longer refuse. `m11d:developer-workflow-recipes` now fails naming the line, so the
       row cannot be recorded Complete over it at M11.d; if M11.d closes without the one-line fix, 4.5's
-      check receives it
+      check receives it. **M11.d fixed the label**: the recipe now refuses naming **M11.e**, whose
+      sweep implements it, and `tools/ci/test_recipes.py`'s *"a refusing recipe names a rung that
+      exists and is open"* — which is 4.5's check, run on every pull request — fails on a refusal
+      naming no rung or a rung whose gate is green. Implementing `maintenance-clean` is still here
 - [ ] 5b.5 **The shipped frame's two swapchain-boundary hazards** (M11.d section 8):
       `SYNC-HAZARD-PRESENT-AFTER-WRITE`, one per frame, removed by giving `access.cpp`'s `Present` row
       `Stage::AllCommands` (measured, then reverted, because that row is the render graph's own

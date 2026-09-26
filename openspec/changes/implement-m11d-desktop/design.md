@@ -363,6 +363,39 @@ ordinary tests, `build-and-packaging`'s distribution half is the only soft row l
 smaller than its proposal says. The prediction least likely to be overturned is gap 2 — it has no
 workaround and no equivalent, and no measurement can make that untrue.
 
+### 5.2 The demotion this rung did not predict: five of the six core rows
+
+§5 called `ecs-core`, `engine-architecture` and `core-jobs-and-concurrency` rows that "carry no named
+blocker", and warned that this meant nothing had refused them rather than that nothing was missing.
+The full ledger on `afaeb33` (tasks, *the close phase's third verdict*, item 7) measured it:
+`m11d:core-rows-at-complete-grade` read **12 of 71** requirements mapped, all twelve of them
+`ecs-core`'s.
+
+> **DECIDED — task 10.4a, by the owner after the third verdict.** Complete stays at M11.d only for
+> the row whose requirements are really mapped: **`ecs-core`** (12 of 12, each entry naming the case
+> that observes it). The Complete cells of **`core-assets-and-io`, `core-jobs-and-concurrency`,
+> `core-memory-and-containers`, `engine-architecture` and `core-platform-abstraction` move to
+> M11.e**, the way task 7.6 moved `build-and-packaging`. The reasons are the ones task 10.4 measured,
+> and none is a defect this rung could fix by writing entries alone:
+>
+> - **The four readings that found partials.** `engine-architecture`'s `Server architecture` has
+>   been partial since M2; `core-jobs-and-concurrency` has two partials (frame pacing and
+>   synchronisation points, concurrency diagnostics), `core-memory-and-containers` one (memory
+>   diagnostics: `MemoryAttributionScope` has no producer outside its own module), and
+>   `core-assets-and-io` two partials and one requirement unmet in part. By M11.c task 3.5's rule a
+>   map that needs an `exempt:m11e` entry is a deferral to M11.e, so these rows could not be
+>   Complete here even with every entry written.
+> - **`core-platform-abstraction` was never read requirement by requirement.** Its port is this
+>   rung's work and is done — the native X11 backend, the stub platform, the diff that touches no
+>   engine layer — but a Complete cell is a claim about all seven requirements, and none of them is
+>   mapped. The port's own criteria stay here; only the cell moves.
+>
+> The five rows are received by M11.e task 5b.1 and its criterion `m11e:every-requirement-maps`.
+> `m11e.toml`'s `roadmap-tiers` expects each at `complete` and `m11d.toml`'s expects none of them;
+> `m11d:core-rows-at-complete-grade` now judges `ecs-core` alone; the capability matrix and
+> `docs/ROADMAP.md`'s work tables carry the five cells under M11.e. `m11d:core-rows-move-to-m11e`
+> fails if any half of that move is undone.
+
 ## 6. Dependencies on other rungs, named rather than absorbed
 
 | Needed from | What | If it has not landed |

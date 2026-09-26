@@ -8,6 +8,7 @@
 #include <cy/test/test.h>
 
 #include <cy/backends/rhi/access.h>
+#include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/validation.h>
 
 using cy::rhi::Access;
@@ -23,10 +24,11 @@ CY_TEST_CASE("every access intent has a row, a name and a stage") {
         CY_CHECK(info.name != nullptr);
         CY_CHECK(info.name[0] != '\0');
         CY_CHECK_EQ(info.name, cy::rhi::access_name(access));
-        // Present is the one intent with no stage and no access: the transition to the presentable
-        // layout is ordered by the semaphore the submit signals, not by a destination stage.
+        // Every intent has a stage — a barrier with no destination stage orders its layout
+        // transition before nothing (M11.d, SYNC-HAZARD-PRESENT-AFTER-WRITE). Present is the one
+        // intent with no access: nothing in the command buffer reads the image after it.
+        CY_CHECK(cy::rhi::any(info.stage));
         if (access != Access::Present) {
-            CY_CHECK(cy::rhi::any(info.stage));
             CY_CHECK(cy::rhi::any(info.access));
         }
         // A row must be usable against something, or nothing could ever declare it.
@@ -110,4 +112,23 @@ CY_TEST_CASE("a zero count in a subresource range means all remaining, resolved 
     // declaration check then reports.
     const SubresourceRange past = cy::rhi::resolve_range(SubresourceRange{9, 0, 0, 0}, 4, 6);
     CY_CHECK_EQ(past.mip_count, 0);
+}
+
+CY_TEST_CASE("the present transition is ordered before the signal that hands the image back") {
+    // The submit that ends a presented frame signals presentation's semaphore at every stage, and
+    // the transition to the presentable state is covered by that signal only when the barrier's
+    // destination stage is inside its first scope. `Stage::None` here was one
+    // SYNC-HAZARD-PRESENT-AFTER-WRITE per frame on samples/11-ship's two platform legs.
+    const AccessInfo& present = cy::rhi::access_info(Access::Present);
+    CY_CHECK_EQ(present.stage, Stage::AllCommands);
+    CY_CHECK_EQ(present.access, cy::rhi::AccessFlags::None);
+    CY_CHECK_EQ(present.use, ImageUse::Presentable);
+    CY_CHECK_FALSE(present.is_write);
+}
+
+CY_TEST_CASE("the acquire wait stage is one presentation's first barrier can chain to") {
+    // The semaphore wait and the graph's first barrier on an acquired image share one constant; a
+    // wait stage no barrier names is SYNC-HAZARD-WRITE-AFTER-READ against PRESENT_ACQUIRE_READ.
+    CY_CHECK(cy::rhi::any(cy::rhi::kPresentAcquireStage));
+    CY_CHECK_EQ(cy::rhi::SubmitInfo{}.wait_binary_stage, cy::rhi::kPresentAcquireStage);
 }

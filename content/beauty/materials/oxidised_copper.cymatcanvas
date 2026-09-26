@@ -1,47 +1,67 @@
 cymatcanvas 1
 material oxidised_copper
 node 1 material.attribute
+# layout 1 0 0
 prop 1 symbol uv0
 prop 1 type float2
 node 2 material.texture_sample
+# layout 2 180 0
 prop 2 average 0.5 0.48 0.44 1
 prop 2 symbol albedo_map
 prop 2 type float4
 node 3 material.texture_sample
+# layout 3 360 0
 prop 3 average 0.7 1 0 1
 prop 3 symbol data_map
 prop 3 type float4
 node 4 material.swizzle
+# layout 4 540 0
 prop 4 swizzle xyz
 node 5 material.parameter
+# layout 5 720 0
 prop 5 default 0.95 0.92 0.88 0
 prop 5 symbol base_color
 prop 5 type float3
 node 6 material.multiply
+# layout 6 900 0
 node 7 material.swizzle
+# layout 7 1080 0
 prop 7 swizzle x
 node 8 material.parameter
+# layout 8 1260 0
 prop 8 default 0.78 0 0 0
 prop 8 symbol roughness
 prop 8 type float
 node 9 material.multiply
+# layout 9 1440 0
 node 10 material.swizzle
+# layout 10 1620 0
 prop 10 swizzle z
 node 11 material.parameter
+# layout 11 1800 0
 prop 11 default 1 0 0 0
 prop 11 symbol metallic
 prop 11 type float
 node 12 material.multiply
+# layout 12 1980 0
 node 13 material.one_minus
+# layout 13 2160 0
 node 14 material.multiply
+# layout 14 2340 0
 node 15 material.diffuse
+# layout 15 2520 0
 node 16 material.multiply
+# layout 16 2700 0
 node 17 material.specular
+# layout 17 2880 0
 node 18 material.add_closures
+# layout 18 3060 0
 node 19 material.constant
+# layout 19 3240 0
 prop 19 type float
 prop 19 value 1 0 0 0
 node 20 material.output
+# layout 20 3420 0
 link 1 out 2 uv
 link 1 out 3 uv
 link 2 out 4 value

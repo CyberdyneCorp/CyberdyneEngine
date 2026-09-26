@@ -517,6 +517,15 @@ not change**, which is a first-hand reading of them whether or not anybody calls
         were cancelled or failed before the `test` job — so an archived bundle has not been seen.
         Tick it on the first run that shows a `provenance-linux-x86_64` artefact holding a
         `.debug` file.
+        **RE-CHECKED after the third verdict, and still not observable — for a reason outside the
+        step.** The first `main` run carrying it is `afaeb33`'s (run 36245703649): every Linux and
+        macOS build leg finished by 15:17 UTC, but `build windows-x86_64`'s `Build` step was still
+        running at 18:53 UTC, almost five hours in, and `test` declares `needs: build` over the whole
+        matrix, so no `test` job — and no Linux leg's upload — has started; the run on `0f1dfd1` is
+        queued behind it. The step itself was re-read and is unchanged: path, `include-hidden-files`,
+        the `job.status` switch. What unblocks it is a `needs` edge (the Linux `test` legs waiting on
+        their own build leg rather than on Windows's) or a Windows build that finishes, and both are
+        `ci.yml` changes outside the upload step, which the close phase owns. The box stays open
       * **Not done, and not this rung's to do:** Mach-O (`dsymutil`) and
         PE/PDB are the same four checks with other spellings, which this Linux host cannot produce —
         a non-ELF input is refused by name, never treated as stripped. Both travel with the row to
@@ -811,6 +820,46 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       so the prover judges it against a build rather than a source copy with no git history.
       `falsify prove --mutate-the-tree` against `build/m11d-incremental-close`: green, red under the
       declared mutation, green again once restored — *proven against a built tree*.
+      **REOPENED BY THE GATE — THE SELECTOR SKIPS A CHANGE A TEST LOADS.** `_built_inputs`
+      (`tools/roadmap/incremental.py`) takes a build-tree file a ninja edge produces as fully
+      described by `ninja -t inputs`. The SwiftPM custom commands break that:
+      `bindings/swift/CMakeLists.txt:137` and `samples/04-character/CMakeLists.txt:72` build
+      `libCyGame_g*.so` from a DEPENDS list that globs only `*.swift`, the driver and
+      `Package.swift`, while SwiftPM also compiles the `CyberdyneABI` C target
+      (`Sources/CyberdyneABI/shim.c`, `include/module.modulemap`, the `cy_abi.h` copy) and reads
+      `Package.resolved` — none of which is in the graph. Re-measured at the close on
+      `build/m11d-records`: `#error mutated` appended to `shim.c` (one modified path, restored and
+      md5-verified) → `--incremental --list --changed-since HEAD` selects **243 of 474 — the
+      no-change floor** — and SKIPS `m4:swift-reload` and `m4:sample-artefact` as *"inputs
+      unchanged"*, though a fresh build of that tree fails. The fix belongs in the graph (the
+      DEPENDS lists name every SwiftPM input) or in the selector (a SwiftPM edge is inputs
+      unknown), with a regression case proven red. The full ledger is unaffected; until this is
+      fixed an incremental close is not a close.
+      **FIXED, BOTH WAYS.** *The graph*: both DEPENDS now glob every file under
+      `bindings/swift/Sources/`, so `ninja -t inputs` of each module names `shim.c`, the module map
+      and the `cy_abi.h` copy, and the build itself reruns SwiftPM — with `#error` appended to
+      `shim.c`, `ninja cy_swift_reload_fixture` on `build/m11d-selector-and-cache` now fails
+      (`shim.c:2:2: error: mutated`) where it had no work to do. `integration.swift_module_depends`
+      and `integration.character_module_depends` (`bindings/swift/tools/check_module_depends.py`)
+      read that back from the real graph; with the glob returned to `*.swift` both fail naming the
+      three files (25 of 28 sources). *The selector*: `incremental.toml` gains `[[edge]]` —
+      what a build edge's outputs are made from BEYOND what the edge declares, added to its inputs
+      and pinned like `[[generated]]` by a digest of the driver, `Package.swift` and the CMake
+      writing the edge (`edge_origins`, `_undeclared_reads` in `incremental.py`). What SwiftPM
+      reads was traced with `strace`, not guessed: it probes `Package@swift-*.swift`, compiles
+      `Sources/`, lists `Tests/`, and swiftly looks for `.swift-version` up to the repository root;
+      `bindings/swift/Package.resolved` is NOT read (the resolution is the generated root package's,
+      in the build tree). So each entry declares the whole `bindings/swift` directory and
+      `.swift-version`, plus the game sources for 04-character. `test_incremental_swiftpm_edges`
+      (`selftest.py`) is the gate's case — `shim.c` changed must select the tests loading
+      `bindings/swift/modules/libCyGame_g0.so` and `samples/04-character/module/libCyGame_g0.so` —
+      plus every declared source, a lapsed entry, the pinning, and that every tracked package file
+      is declared; red with the entries removed (4 failures), with `_undeclared_reads` deleted (8),
+      and with the sources narrowed to `Package.swift` + `Sources` (2). *Measured* on
+      `build/m11d-selector-and-cache`, `shim.c` as the one changed path: the selector as it was and
+      the DEPENDS as they were skip `m4:swift-reload` and `m4:sample-artefact` ("inputs unchanged");
+      with only the `[[edge]]` entries, or only the new DEPENDS, or both, each is selected as
+      "inputs changed: bindings/swift/Sources/CyberdyneABI/shim.c"
 - [x] 9.9 **Close `m11c:every-shader-reaches-every-target`, and delete its declaration in the same
       change** — 9.6's rule, applied to the one gap M11.c handed this rung. **The tree this started
       from was worse than the declaration**: `cy_shaderc build --strict src samples` measured
@@ -962,6 +1011,34 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       `m9:record-matches-plan-history`, run here, names **39** cells over six closed milestones — 12
       at M11.a and 23 at M11.b planned Complete and recorded Working, beside the four its
       declaration describes — so the declaration's text is behind its own subject
+- [x] 10.4a **Five of the six core rows' Complete cells move to M11.e — the owner's decision after
+      the third verdict (item 7).** The full ledger on `afaeb33` read `core-rows-at-complete-grade`
+      at **12 of 71**, all twelve `ecs-core`'s, and 10.4 had already said only `ecs-core` could be
+      Complete here. The owner chose the move over writing 59 entries, because four of the five rows
+      have readings with partials that need `exempt:m11e` — by M11.c task 3.5's rule a deferral to
+      M11.e, so the entries would not have made them Complete here either — and
+      `core-platform-abstraction` was never read requirement by requirement.
+      **DONE, the way 7.6 moved `build-and-packaging`, and wider**: `design.md` §5.2 records it
+      under *"DECIDED — task 10.4a"*; `m11d.toml`'s `roadmap-tiers` expects `testing-and-quality`,
+      `developer-workflow-and-just` and `ecs-core` and nothing else; `core-rows-at-complete-grade`
+      judges `ecs-core` alone (green, 12 of 12); `m11e.toml`'s `roadmap-tiers` expects
+      `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+      `engine-architecture` and `core-platform-abstraction` at complete, received by M11.e task 5b.1
+      and `m11e:every-requirement-maps`. **Unlike 7.6, the plan documents moved in the same change**,
+      because a Complete cell left under M11.d in the matrix for a row this ledger no longer expects
+      would redden `m9:record-matches-plan-history` the day this gate turns green:
+      `capability-matrix.md` carries the five **C** cells under M11.e (Complete column included), its
+      Milestone load table reads M11.d 4/4 and M11.e 21/21 and its rung table 4 rows / 58
+      requirements and 21 / 325, and `docs/ROADMAP.md`'s M11.d work table carries the five at `—`
+      with a paragraph naming the move (M11.e's `Everything else | C` row receives them).
+      `tools/roadmap/selftest.py`'s *"the four plan documents agree"* is green over it.
+      **New criterion `m11d:core-rows-move-to-m11e`**, which fails if any half is undone — m11d
+      expecting a moved row, m11e not expecting one, the audit criterion still naming one, the matrix
+      placing one under M11.d or not completing it at M11.e, `ecs-core` dropped, M11.e's receiving
+      criterion gone, or the design record missing. Watched red under each of those four kinds of
+      mutation (its declared one: M11.e's `core-platform-abstraction` line deleted), restored,
+      md5-verified. The close phase still owns `status.yaml`, and `build-and-packaging`'s **C** under
+      M11.d in the matrix is still 7.6's to move
 - [x] 10.5 **The evidence rule applied to this rung's own claims.** No golden-image tick over an
       unphotographed frame; no "parity" over a backend that compiled; NOT EVALUATED is never a pass,
       and a reported gap is the outcome this gate prefers to a green one it cannot defend
@@ -1227,3 +1304,117 @@ are unchecked** — sections 5 (MSAA and multi-view), 7.2, 7.4, 7.5, 7.6, all of
 10 — and `core-rows-at-complete-grade` at **0 of 71 requirements mapped** is the largest single
 piece of it. The three compile-and-test defects are minutes of work in files this phase may not
 touch; everything else on the list is a rung's work rather than a gate's.
+
+## The close phase's third verdict — THE FULL LEDGER ON `afaeb33`: 12 RED, M11.d DOES NOT CLOSE
+
+Task 10.1's ledger run, and nothing else changed. **No gate was flipped, no tier was written and
+`ci.yml`'s milestone step still names the rung below.** The run certified nothing, so it recorded no
+base for later incremental closes; 10.1 stays open.
+
+| | |
+|---|---|
+| command | `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11d`, alone, main clone detached at `afaeb33` |
+| window | 10:40 → 14:14 on 2026-09-26, **12 816 s** (3 h 34 min), exit 1 |
+| log | `/tmp/m11d-close-full-afaeb33.log` |
+| load | 1-min average 0.5–4 outside builds, 11–18 while `m1:four-profiles` and the sanitizer and feature-off trees compiled, ~1 by the end; no peer build, ctest or ledger ran |
+| ccache | 20 cacheable calls, **0 hits** — none of the ledger's trees uses a ccache launcher (`cy-launchers/` holds only the job-slot wrappers), so the cold matrix trees compiled from scratch |
+
+**`M11D is not closed: 12 of 469 evaluated criteria failed.`** 16 declared gaps still open (none now
+passing), 5 legitimately NOT EVALUATED. `m11d:roadmap-tiers` is the expected red. **The other 11 are
+real, except one**; each flake candidate was re-run alone twice (logs `/tmp/m11d-rerun-*.log`):
+
+1. **`m0:lint` — REAL, from #20.** `samples/05b-editor-window/runtime/tests/test_authored_frame.cpp:245`,
+   `cy_test_body_2`: `readability-function-size`, **1 164 statements against a threshold of 800**
+   (`b49bb5e`, *Open a drawable world in the Linux editor-window smoke*). Deterministic: clang-tidy on
+   that file alone reproduces it. The only clang-tidy error in the sweep.
+2. **`m0:test`, `m1:four-profiles`, `m8a:authoring-artefact`, `m8a:authoring-recipe` — ONE REAL
+   REGRESSION, four criteria.** `smoke.authoring` fails in the dev tree and the debug matrix row, and
+   `just run-authoring --no-window` fails, **every time: 2 of 2 re-runs of each**: *"the engine's
+   world never gained the two entities: 0 node(s) presented, 0 overflowed; 9 transaction(s), 28
+   field(s) applied, 1 created, 2 deleted"* (`samples/08a-authoring/authoring.py:483` expects `2
+   created`). The editor side of the session is green in all eleven steps; the runtime saw one
+   creation for the two primitives the editor made. M11.c's certified commit `6323b40` carried
+   these four criteria green, so the defect entered in `6323b40..afaeb33` — #14, #16 and #20 are
+   the editor-touching merges in that range. Not bisected here.
+3. **`m4:command-stream` — FLAKE.** `unit.gameplay_core`, *"gameplay: the registry holds the
+   strategy scenario's five thousand groups"* (`src/gameplay/tests/test_control.cpp:189`, added by
+   this rung's `11981fc`), spent **1.017 ms of CPU against the unit kind's 1 ms budget**. Green on
+   both criterion re-runs, and 40 of 40 runs of the case alone on a quiet host. Cause, as far as it
+   was taken: a case that builds 5 000 groups sits inside the unit kind's CPU budget with almost no
+   headroom, so a ledger neighbour's cache and frequency effects push it over. The owner decides
+   between making it cheaper and moving it to the integration kind; the budget is not loosened.
+4. **`m11c:shot-authored-through-the-editor` — REAL, from #14.** *"content/beauty/materials/
+   courtyard_gravel.cymatcanvas is not what the editor's canvas produces"*: the canvas output
+   changed under the committed beauty-shot materials. #14 landed after M11.c's certified commit and
+   its certification says it does not cover #14.
+5. **`m11c:the-shot-does-not-overclaim-the-editor` — REAL, from #14.** The editor now registers
+   `material.graph.{preview,read,save,status}` (`19a3f07`), so `docs/design/beauty-shot.md`'s
+   statement that the shot cannot be authored over the control socket is out of date. A record to
+   correct, and the criterion is right to go red over it.
+6. **`m11d:developer-workflow-recipes` — REAL, known.** `just/maintenance.just:22` refuses naming
+   task `2.1.5`, which is no rung on the ladder (M0's line, caught by 9.1's stricter check).
+7. **`m11d:core-rows-at-complete-grade` — REAL, known.** 12 of 71 requirements map: `ecs-core` 12
+   of 12; `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+   `engine-architecture` and `core-platform-abstraction` 0. 10.4 already says only `ecs-core` can
+   be Complete here.
+8. **`m11d:ship-sample-on-desktop` — REAL, 2 of 2 re-runs.** Both legs draw (30 frames on the RTX
+   5060, provenance read back) and both trip validation: 60 errors,
+   `SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ` and
+   `SYNC-HAZARD-PRESENT-AFTER-WRITE` — the render graph spells both swapchain-boundary barriers
+   with `Stage::None` on the presentation side (`samples/11-ship/README.md`). `--require-draw`
+   makes that GAP red, as 10.5 intended.
+
+**The gate's selector finding** is recorded under 9.8, which is reopened. It does not touch this
+verdict: this close ran the full ledger.
+
+### What the owner decides
+
+- **The six rows of `core-rows-at-complete-grade`.** Either write the 59 missing
+  `requirements-coverage.toml` entries (10.4 found partials in four of the five rows, so some need
+  `exempt:m11e`, which by M11.c task 3.5's rule keeps the row below Complete here), or move five
+  of the six Complete cells to M11.e the way 7.6 moved `build-and-packaging`: both ledgers, the
+  status record and design.md in one change. This is the one decision that is not a defect fix.
+- **The swapchain-boundary barriers.** Fix the graph's present-side stages in this rung, or move
+  `ship-sample-on-desktop`'s draw-clean claim with the RHI row to M11.d.5. The artefact does not
+  ship over validation errors.
+- **Who owns the regressions from #14 and #20** (lint, `smoke.authoring`, the two beauty-shot
+  criteria). They are in green gates below this rung, so they hold M11.c's own ledger red too.
+  Each needs a fix and a regression case, not a declaration.
+- `maintenance.just:22` names a rung or a real task, and `test_control.cpp:189` gets its headroom.
+
+Then one full `just roadmap-milestone m11d` on a quiet tree, which is 10.1.
+
+### What the owner decided — the records and the two small defects
+
+- **Item 7, the six core rows: MOVED, five of six.** Task 10.4a above: `ecs-core` stays Complete
+  here, the other five cells are M11.e's, in both ledgers, the matrix, `docs/ROADMAP.md` and
+  design.md §5.2, held by the new `m11d:core-rows-move-to-m11e`.
+- **Item 6, `maintenance.just:22`: FIXED, with the check that would have caught it on the pull
+  request that wrote it.** `maintenance-clean` now refuses naming **M11.e**, whose sweep receives it
+  (M11.e tasks 4.5 and 5b.4). `tools/ci/test_recipes.py` gained *"a refusing recipe names a rung
+  that exists and is open"*: every `just _not-implemented <recipe> <task>` in `justfile` and
+  `just/*.just` must name a rung on `record.MILESTONES` whose milestone gate in `gates.toml` is not
+  green. `m11d:developer-workflow-recipes` runs once per close; this runs in `just ci-check` on
+  every pull request. Watched red on the unfixed line (*"refuses naming task '2.1.5', which is no
+  rung on the ladder"*) and on `M3` (*"whose gate is already green"*), green on `M11.e`.
+  `developer-workflow-recipes` is green and now PROVEN (its declared mutation, `record.py` losing
+  `"m11e"`, turns it red), recorded in the falsifiability inventory.
+- **Item 3, `m4:command-stream`'s flake: MOVED TO THE INTEGRATION KIND, the unit budget
+  untouched.** *"the registry holds the strategy scenario's five thousand groups"* left
+  `unit.gameplay_core` for `integration.gameplay_scale` (`test_framework_scale.cpp`), the suite
+  M8.b made for exactly this — cases only meaningful at a population a millisecond cannot hold —
+  with the same assertions and its budget stated in its header: the integration kind's 1 s of CPU
+  against **0.44 ms** measured. Making it cheaper was tried first and is not enough: interning the
+  group name once instead of 5 000 times took it from ~0.62 to ~0.47 ms and still left **3 of 10**
+  runs over half the unit budget; the rest is the 5 000 groups themselves, which are the claim.
+  **The proof, with `CY_TEST_BUDGET_SCALE=0.5`** — the margin check the harness's own over-budget
+  message prescribes: the ledger's own binary (`build/m11c-final`, `afaeb33`) runs that case **5 of
+  5 RED alone (0.607–0.649 ms)** and the whole suite 2 of 3 red; after the move `unit.gameplay_core`
+  is **10 of 10 green** at half budget, its slowest case 0.162 ms, and `integration.gameplay_scale`
+  passes. Built in `build/m11d-records-and-small` (Development) and the Debug profile;
+  clang-format and clang-tidy clean. `m8b:`'s `just test-integration -R gameplay_scale` now runs the
+  case; `m4:command-stream` and `m11d:acceptance-scenarios` keep `unit.gameplay_core`'s index cases
+- **Task 7.5, the bundle archived by CI: NOT FINISHED, and the reason is recorded under 7.5.** The
+  upload step is correct and unchanged; no `test` job has run since it landed because `test` waits
+  on the whole build matrix and `afaeb33`'s Windows build leg ran for five hours. Freeing the Linux
+  legs from Windows is a `needs` change outside the upload step.

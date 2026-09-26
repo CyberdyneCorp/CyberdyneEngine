@@ -106,6 +106,11 @@ struct ResourceInfo {
     /// Imported resources only: what state the caller says the resource is already in.
     rhi::ImageUse initial_use = rhi::ImageUse::Undefined;
     rhi::QueueOwner initial_owner{};
+    /// Imported resources only: a READ made outside the graph that the first write or layout
+    /// transition must wait for, at the stage an external dependency makes it visible at. `None`
+    /// for an ordinary import; `rhi::kPresentAcquireStage` for a swapchain image, whose outside
+    /// reader is the presentation engine and whose ordering is the acquire semaphore's wait.
+    rhi::Stage initial_read_stage = rhi::Stage::None;
     rhi::TextureHandle imported_texture;
     rhi::BufferHandle imported_buffer;
     /// MSAA through the attachment model. On a single-sample texture a multisampled pass rendered
@@ -404,6 +409,15 @@ public:
                               rhi::ImageUse current_use, rhi::QueueOwner owner = {}) noexcept;
     ResourceId import_buffer(const BufferRequest& request, rhi::BufferHandle buffer,
                              rhi::QueueOwner owner = {}) noexcept;
+
+    /// The image `Device::acquire_next_image` just returned. Its contents are undefined, and the
+    /// presentation engine may still be READING it until the acquire semaphore is signalled — which
+    /// is what an ordinary `import_texture(..., ImageUse::Undefined)` cannot say. The graph records
+    /// that read at `rhi::kPresentAcquireStage`, the stage the executor waits on `wait_acquire` at,
+    /// so the first transition's source stage chains to the wait instead of being ordered after
+    /// nothing (SYNC-HAZARD-WRITE-AFTER-READ against PRESENT_ACQUIRE_READ, M11.d).
+    ResourceId import_swapchain_texture(const TextureRequest& request,
+                                        rhi::TextureHandle texture) noexcept;
 
     /// Declare a pass. Passes must be declared in dependency order: the scheduler treats
     /// declaration order as a topological order and asserts it, which is true whenever an author

@@ -333,6 +333,7 @@ COOK = re.compile(r"cook-configuration=(.*)$", re.MULTILINE)
 VERSIONS = re.compile(r"toolchain-version (.+)$", re.MULTILINE)
 BUILD = re.compile(r"build\s+([0-9a-f]{16,})\s+\(verified")
 CARD = re.compile(r"card\s+(\S+) (\d+)x(\d+), (\d+) directives, (\d+) bytes")
+VALIDATION_KIND = re.compile(r"\b(SYNC-HAZARD-[A-Z-]+|VUID-[A-Za-z0-9_-]+)")
 PRESENTED = re.compile(r"frames presented\s+(\d+)")
 # Anchored, because the coverage table also carries a `device class` line two rows down and an
 # unanchored `device\s+(.+)` would read whichever came first if the order ever changed.
@@ -354,16 +355,18 @@ def act_launch(tools: Tools, report: Report, platform: str, frames: int,
     text = launched.stdout
 
     # EXIT 3 IS "IT DREW AND TRIPPED VALIDATION", which is a gap rather than a fallen-over run: the
-    # frame is correct and the render graph's two barriers at the swapchain boundary are not. A gap
-    # cannot be turned back into a pass — `Report.exit_code` is derived — so recording it here is
-    # what makes this run non-zero for as long as the defect stands.
+    # frame drew and something about how it was synchronised is wrong. A gap cannot be turned back
+    # into a pass — `Report.exit_code` is derived — so recording it here is what makes this run
+    # non-zero for as long as the defect stands. The message names what the layer reported rather
+    # than a cause: the two swapchain-boundary hazards M11.d found are fixed and pinned by
+    # `smoke.ship_present` and `unit.render_graph`, so anything seen here is new.
     if launched.returncode == 3:
         errors = re.search(r"validation errors\s+(\d+)", text)
+        kinds = sorted(set(VALIDATION_KIND.findall(launched.stderr or "")))
         report.gap(f"the frame through '{platform}' trips backend validation",
-                   f"{errors.group(1) if errors else '?'} error(s): SYNC-HAZARD-WRITE-AFTER-READ "
-                   "against PRESENT_ACQUIRE_READ and SYNC-HAZARD-PRESENT-AFTER-WRITE. The render "
-                   "graph spells both swapchain-boundary barriers with Stage::None on the side "
-                   "facing the presentation engine — see samples/11-ship/README.md")
+                   f"{errors.group(1) if errors else '?'} error(s): "
+                   f"{', '.join(kinds) if kinds else 'unnamed — see the launch stderr'}. See "
+                   "samples/11-ship/README.md, 'The two hazards this artefact found'")
     elif launched.returncode != 0 and require_draw:
         raise Failed(f"the launch was asked to draw and did not:\n{text}{launched.stderr}")
     else:

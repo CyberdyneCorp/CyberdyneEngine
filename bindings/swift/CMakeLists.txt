@@ -18,6 +18,7 @@
 #   integration.swift_package        `swift test` — the package's own cases
 #   integration.swift_no_runtime     task 3.9: the engine core links no Swift runtime
 #   integration.swift_reload         a real Swift module, hot-reloaded by the engine's loader
+#   integration.swift_module_depends the SwiftPM edge names every file SwiftPM compiles (task 9.8)
 #
 # --- WHY THE SUITES ARE ABSENT RATHER THAN SKIPPING WITHOUT A TOOLCHAIN ---------------------------
 #
@@ -124,15 +125,23 @@ set(CY_SWIFT_MODULE_G2 "${CY_SWIFT_MODULE_DIR}/libCyGame_g2.so")
 # A GLOB, AND THE ONE PLACE THE RULE AGAINST THEM DOES NOT APPLY. `build-system-and-platforms`
 # forbids globbed *target sources*, because a file that silently joins or leaves a compilation is a
 # build nobody can read. This is not a target's source list: SwiftPM decides what to compile, and
-# these two lists are only the DEPENDS of the custom command that invokes it — a change to any Swift
-# file must re-run the driver, and a list written by hand would go stale the first time somebody
-# added a file to CyberdyneKit and wondered why the fixture was still last week's. src/core/reflect/
-# globs the reflection generator's own sources for exactly this reason and says so.
+# these two lists are only the DEPENDS of the custom command that invokes it — a change to any file
+# SwiftPM compiles must re-run the driver, and a list written by hand would go stale the first time
+# somebody added a file to CyberdyneKit and wondered why the fixture was still last week's.
+# src/core/reflect/ globs the reflection generator's own sources for exactly this reason and says
+# so.
+#
+# EVERY FILE UNDER Sources/, NOT ONLY THE SWIFT ONES. SwiftPM also compiles the CyberdyneABI C
+# target — shim.c, include/module.modulemap and the cy_abi.h copy — and a glob of `*.swift` left
+# them out, so `#error` appended to shim.c rebuilt nothing here while a fresh build failed (M11.d
+# task 9.8). The driver copies only a generation's `*.swift`, so the fixture globs stay as they are.
+# tools/roadmap/incremental.toml declares this edge under `[[edge]]`, pinned by a digest of this
+# file: change what it reads and re-read that entry.
 file(GLOB CY_SWIFT_FIXTURE_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reload/v1/*.swift"
      "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reload/v2/*.swift")
 file(GLOB_RECURSE CY_SWIFT_PACKAGE_SOURCES CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/Sources/*.swift")
+     "${CMAKE_CURRENT_SOURCE_DIR}/Sources/*")
 
 add_custom_command(
     OUTPUT "${CY_SWIFT_MODULE_G0}" "${CY_SWIFT_MODULE_G1}" "${CY_SWIFT_MODULE_G2}"
@@ -149,6 +158,19 @@ add_custom_command(
 
 add_custom_target(cy_swift_reload_fixture ALL
                   DEPENDS "${CY_SWIFT_MODULE_G0}" "${CY_SWIFT_MODULE_G1}" "${CY_SWIFT_MODULE_G2}")
+
+# The DEPENDS above, read back out of the graph Ninja really has: every file under Sources/ must be
+# an input of the module, or a change to it rebuilds nothing. Ninja only, because `-t inputs` is
+# Ninja's.
+if(CMAKE_GENERATOR STREQUAL "Ninja")
+    add_test(NAME integration.swift_module_depends
+             COMMAND "${Python3_EXECUTABLE}"
+                     "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_module_depends.py"
+                     --ninja "${CMAKE_MAKE_PROGRAM}" --build-dir "${CMAKE_BINARY_DIR}"
+                     --output "${CY_SWIFT_MODULE_G0}" --package "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(integration.swift_module_depends
+                         PROPERTIES LABELS "integration" TIMEOUT 300)
+endif()
 
 if(CY_BUILD_TESTS)
     # The taxonomy's budget and timeout live in tests/CMakeLists.txt and are read back out of it

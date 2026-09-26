@@ -29,8 +29,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `quiet_host.py` | Whether a criterion that runs through `just test-quiet-host` keeps its whole line inside it: nothing after the wrapped command but `\|\| exit <n>`, and `exclusive` declared. M11.c's eighth close found `m6:culling`'s second suite running after the wrapper had exited. Since the ninth close (option B) it no longer names suites that must never run bare: the harness itself enforces its stall ceiling only inside a verified `cy_quiet_host` and reports a stall anywhere else. `tools/quiet-host/README.md` has why. |
 | `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
 | `incremental.py` | Incremental closes: which criteria a change since the last green full ledger can have moved, read from the build graph, the recipes and the ledgers' digests. A criterion whose inputs cannot be read is always selected. `just roadmap-milestone <rung> --incremental`. |
-| `incremental.toml` | Hand-written, reviewed and PINNED. Compile definitions that name the repository root and are only strings — `CY_DIAG_SOURCE_ROOT` — each with the files allowed to use it and a digest of their content, so the exemption lapses the moment the code it was reviewed over changes. |
-| `roadmap.py` | The command line behind the recipes. |
+| `incremental.toml` | Hand-written, reviewed and PINNED. Compile definitions that name the repository root and are only strings — `CY_DIAG_SOURCE_ROOT` — each with the files allowed to use it and a digest of their content; and the ORIGINS of build-tree files no build edge produces (configure-time headers, fetched dependencies), each with every source it is made from and a digest of the code that generates it; and, under `[[edge]]`, what a build edge's outputs are made from BEYOND what the edge declares (the SwiftPM-built game modules), pinned the same way. Either lapses the moment the code it was reviewed over changes. || `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
 
 Everything is standard-library Python: these run on every pull request, on three platforms, and a
@@ -824,15 +823,31 @@ after re-reading them. `CY_SOURCE_DIR`, which `test_material_compile_service.cpp
 The floor of about 240 is the rung's own 27, the smoke set, and **211 criteria whose inputs cannot be
 read** — 141 multi-line shell bodies, and recipes such as `quality-requirements` or `run-sample` that
 declare nothing. Every one of those is selected, every time; narrowing that floor is a matter of
-criteria saying what they read, never of this tool guessing. The three selections above took 28.6 s
-together, most of it reading the graph the first time.
+criteria saying what they read, never of this tool guessing. Reading the graph the first time took
+89 s on a machine running three other builds (28.6 s when M11.d first measured it on a quiet one);
+each further selection over the same graph is immediate.
 
-**The trust boundary is Ninja's own.** A generator reading a file its build edge does not declare
-would make Ninja skip a rebuild too; that is a build defect, and this mode inherits it rather than
-second-guessing it. What it does not inherit is anything a test reads *at run time* by a path the
-graph cannot see — which is why a test whose working directory is the repository root, or whose
-definitions name it, is unknown rather than known.
-
+**The trust boundary is Ninja's own, for what Ninja builds — except where a person has traced an
+edge that reads more than it declares.** A generator reading a file its build edge does not declare
+would make Ninja skip a rebuild too; that is a build defect, and this mode inherits it unless
+`incremental.toml` declares the edge under `[[edge]]`. The M11.d gate found one: the two custom
+commands that run SwiftPM (`bindings/swift/CMakeLists.txt`, `samples/04-character/CMakeLists.txt`)
+declared only the Swift sources, while SwiftPM also compiles the `CyberdyneABI` C target (`shim.c`,
+its module map, the `cy_abi.h` copy), so `#error` appended to `shim.c` selected nothing and skipped
+`m4:swift-reload` and `m4:sample-artefact` though a fresh build failed. Both were fixed: the DEPENDS
+now glob every file under `Sources/`, so the build itself reruns SwiftPM on such a change, and an
+`[[edge]]` entry names each module's outputs and every repository path SwiftPM reads for them —
+traced with `strace`: the whole `bindings/swift` directory (it probes `Package@swift-*.swift` beside
+the manifest, compiles `Sources/` and lists `Tests/`) and `.swift-version`, which swiftly looks for
+up to the repository root; not `Package.resolved`, which is the generated root package's, in the
+build tree — pinned by a digest of the driver, the manifest and the CMake that writes the edge — so
+it LAPSES, and the modules are unknown, when any of that code changes. Its sources are ADDED to the
+edge's own. `test_incremental_swiftpm_edges` is the gate's case, proves every declared source
+selects each module's tests, and checks that every tracked file of the package, and a manifest
+SwiftPM only probes for, is declared. What CMake writes at configure time is outside that boundary,
+which is why it is unknown unless an origin is declared. What it does not inherit is anything a test
+reads *at run time* by a path the graph cannot see — which is why a test whose working directory is
+the repository root, or whose definitions name it, is unknown rather than known.
 **The baseline is only ever a green FULL run.** A full `roadmap-milestone <rung>` that exits 0, on a
 tree that was clean and at the same HEAD from its first criterion to its last, records that HEAD in
 `<git-common-dir>/cy-roadmap/last-green.json` — beside the object store, shared by every worktree,

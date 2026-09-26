@@ -45,7 +45,11 @@ generator run by execute_process, a PCH header) or fetched (`_deps/`) — record
 the files CMake read to write it are not edges, so a change to them moves nothing in the graph. Such a
 file makes its target UNKNOWN, unless `incremental.toml` declares its origin: every source it is made
 from, pinned by a digest of the code that generates it (`generated_origins`), so the declaration
-lapses — and the file is unknown again — the moment that code changes.
+lapses — and the file is unknown again — the moment that code changes. An edge whose command reads
+MORE than it declares — SwiftPM, run by a custom command whose DEPENDS name only some of what it
+compiles — is not described by `ninja -t inputs` either; `incremental.toml` declares what else such
+an edge's outputs are made from the same way (`edge_origins`), and those sources are added to the
+edge's own.
 
 **THE FULL LEDGER STAYS THE DEFAULT AND STAYS THE CLOSE.** `just roadmap-milestone <rung>` is
 unchanged; this mode is an explicit flag. The full flattened ledger runs nightly and at M11.e, and a
@@ -270,6 +274,10 @@ class BuildGraph:
     exemptions: Callable[[], dict[str, str]] = field(default=lambda: {})
     #: The declared origins of build-tree files no build edge produces: see `generated_origins`.
     origins: Callable[[], tuple[Origin, ...]] = field(default=lambda: generated_origins())
+    #: What build-tree files an edge DOES produce are made from beyond the edge's declared inputs:
+    #: see `edge_origins`.
+    edge_reads: Callable[[], tuple[Origin, ...]] = field(default=lambda: edge_origins())
+    _edge_declared: tuple[Origin, ...] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         # Every path a tree reports is absolute or relative to it, so both roots must be absolute
@@ -397,7 +405,9 @@ class BuildGraph:
                 inputs = inputs.union(self._object_inputs(path, files, included))
             elif where == "build" and path:
                 listed.add(path)
-        return inputs.union(self._built_inputs(target, listed, included)).union(_with_cmake(files))
+        return (inputs.union(self._built_inputs(target, listed, included))
+                .union(self._undeclared_reads({target} | listed))
+                .union(_with_cmake(files)))
 
     def _object_inputs(self, obj: str, files: set[str], included: set[str]) -> Inputs:
         """An object's headers, from the dependency log, and the paths its definitions name.
@@ -444,6 +454,18 @@ class BuildGraph:
         for header in sorted((included - listed) & outputs):
             inputs = inputs.union(self.target_inputs(header))
         return inputs.union(self._declared_origins(target, (listed | included) - outputs))
+
+    def _undeclared_reads(self, paths: set[str]) -> Inputs:
+        """What a build edge's outputs are made from BEYOND what the edge declares, for every one of
+        `paths` an `[[edge]]` entry of incremental.toml names. `ninja -t inputs` reports an edge's
+        declared inputs and nothing its command reads besides them."""
+        if self._edge_declared is None:
+            self._edge_declared = tuple(self.edge_reads())
+        inputs = Inputs()
+        for origin in self._edge_declared:
+            if any(origin.produces(path) for path in paths):
+                inputs = inputs.union(origin.inputs)
+        return inputs
 
     def _declared_origins(self, target: str, paths: set[str]) -> Inputs:
         origins: dict[str, Origin] = {}
@@ -722,12 +744,32 @@ def generated_origins(source: Path = EXEMPTIONS_FILE,
     whose `digest` pins the review. When that code changes it may read something new, so the origin
     LAPSES: the files are unknown until somebody re-reads the code and updates the digest.
     """
+    return _origins("generated", source, repo_root)
+
+
+def edge_origins(source: Path = EXEMPTIONS_FILE, repo_root: Path = REPO_ROOT) -> tuple[Origin, ...]:
+    """Each `[[edge]]` entry of `incremental.toml`, in order.
+
+    A build edge's outputs are described by `ninja -t inputs` only as far as its command reads what
+    the edge declares. A custom command that runs SwiftPM declares the Swift sources it globs, while
+    SwiftPM also compiles the package's C target, its module map and the header copy, and reads the
+    manifest's whole target layout — so a change to `shim.c` moved nothing in the graph, and the
+    tests that load the module were skipped though a fresh build of them failed. An entry names the
+    outputs and every repository path the command reads, pinned by a digest of the code that
+    decides what it reads (the driver, the manifest, the CMake that writes the edge); it LAPSES —
+    the outputs are unknown — when that code changes. Its sources are added to the edge's own, and
+    never replace them.
+    """
+    return _origins("edge", source, repo_root)
+
+
+def _origins(table: str, source: Path, repo_root: Path) -> tuple[Origin, ...]:
     try:
         with source.open("rb") as handle:
             document = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError):
         return ()
-    return tuple(_origin(entry, repo_root) for entry in document.get("generated", ()))
+    return tuple(_origin(entry, repo_root) for entry in document.get(table, ()))
 
 
 def _origin(entry: dict, repo_root: Path) -> Origin:

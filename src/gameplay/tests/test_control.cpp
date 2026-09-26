@@ -183,26 +183,10 @@ CY_TEST_CASE("gameplay: group membership changes without touching the binding") 
 // strategy tick at the scenario's scale. `controls()` now answers from two indexes, and these cases
 // hold what the indexes must never get wrong: every way a binding or a membership goes AWAY must
 // take the answer with it, and an entity in more groups than the inline capacity must still be
-// answered exactly.
+// answered exactly. The registry HOLDING five thousand groups is `integration.gameplay_scale`'s
+// case, not this suite's: building five thousand groups sat at the unit kind's 1 ms CPU budget with
+// no headroom and failed M11.d's full ledger at 1.017 ms (test_framework_scale.cpp says more).
 // ==================================================================================================
-
-CY_TEST_CASE("gameplay: the registry holds the strategy scenario's five thousand groups") {
-    ControlFixture fixture;
-    CY_REQUIRE(fixture.build());
-    auto source = fixture.control.create_source(ControlSourceKind::Human, fixture.participant,
-                                                cy::Name::intern("player"));
-    CY_REQUIRE(source.has_value());
-    GroupId last;
-    for (u32 index = 0; index < 5000; ++index) {
-        auto group = fixture.control.create_group(cy::Name::intern("squad"));
-        CY_REQUIRE(group.has_value());
-        last = *group;
-    }
-    CY_REQUIRE(fixture.control.add_to_group(last, entity(7)).has_value());
-    CY_REQUIRE(fixture.control.bind_group(*source, channels::command(), last).has_value());
-    CY_CHECK(fixture.control.controls(*source, entity(7), channels::command()));
-    CY_CHECK_EQ(fixture.control.group_size(last), 1U);
-}
 
 CY_TEST_CASE("gameplay: the control index forgets exactly what is unbound or removed") {
     ControlFixture fixture;

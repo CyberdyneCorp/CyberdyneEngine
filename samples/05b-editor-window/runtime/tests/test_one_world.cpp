@@ -219,6 +219,60 @@ CY_TEST_CASE("a live snapshot gives an initially empty world its imported mesh s
     std::filesystem::remove_all(project);
 }
 
+// A SNAPSHOT IS COUNTED LIKE THE TRANSACTIONS IT REPLACES. Regression: `RuntimeMirror` sends the
+// whole world instead of the next transaction when that transaction declares a field the runtime's
+// copy lacks — the first primitive in `samples/08a-authoring`'s world adds `MeshRenderer.material`
+// — and the runtime counted creations only from `apply`, so its report said "1 created" for the two
+// primitives the editor made and `smoke.authoring` failed.
+CY_TEST_CASE("a live snapshot reports the nodes it created and deleted") {
+    const std::filesystem::path project =
+        std::filesystem::temp_directory_path() /
+        ("cy-editor-world-sync-count-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(project / "worlds");
+    {
+        std::ofstream blank(project / "worlds/main.cyworld");
+        blank << "cyworld 1\n";
+    }
+    Registry types;
+    WorldView view(allocator());
+    const std::string directory = project.string();
+    CY_REQUIRE(view.open(directory.c_str(), "worlds/main.cyworld", types.registry));
+
+    constexpr std::string_view two =
+        "cyworld 1\n"
+        "type 1 runtime \"Transform\"\n"
+        "  field 1 vec3 \"translation\" \"\"\n"
+        "node 0 - \"\" \"Ground\"\n"
+        "  component 1\n"
+        "    field 1 0 0 0\n"
+        "node 1 - \"\" \"Ball\"\n"
+        "  component 1\n"
+        "    field 1 0 3 0\n";
+    const auto created = view.sync(two);
+    CY_REQUIRE(created);
+    CY_CHECK_EQ(created->created, 2U);
+    CY_CHECK_EQ(created->deleted, 0U);
+
+    // The same world again changes no node, which is what a drag preview's snapshot is.
+    const auto unchanged = view.sync(two);
+    CY_REQUIRE(unchanged);
+    CY_CHECK_EQ(unchanged->created, 0U);
+    CY_CHECK_EQ(unchanged->deleted, 0U);
+
+    constexpr std::string_view one =
+        "cyworld 1\n"
+        "type 1 runtime \"Transform\"\n"
+        "  field 1 vec3 \"translation\" \"\"\n"
+        "node 0 - \"\" \"Ground\"\n"
+        "  component 1\n"
+        "    field 1 0 0 0\n";
+    const auto deleted = view.sync(one);
+    CY_REQUIRE(deleted);
+    CY_CHECK_EQ(deleted->created, 0U);
+    CY_CHECK_EQ(deleted->deleted, 1U);
+    std::filesystem::remove_all(project);
+}
+
 CY_TEST_CASE("the world the editor opened is the world this runtime draws") {
     Opened opened;
     CY_REQUIRE(opened.view.loaded());

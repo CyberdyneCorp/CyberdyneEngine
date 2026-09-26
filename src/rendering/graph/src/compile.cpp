@@ -277,6 +277,9 @@ struct Compiler {
                 CellState& cell = cells[cell_base[id] + offset];
                 cell.use = info.initial_use;
                 cell.owner = info.initial_owner;
+                // A read outside the graph — the presentation engine's, for a swapchain image —
+                // joins the first write's source stage exactly as a pass's read would.
+                cell.read_stage = info.initial_read_stage;
             }
         }
         return true;

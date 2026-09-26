@@ -1576,12 +1576,13 @@ the ladder rather than requested by a task list.
 | Capability | → | Scope |
 |---|:---:|---|
 | `rhi-and-render-graph` | — | **The interface, and not the backends.** The eight gaps the Metal seed recorded are interface changes before they are backends: an opaque memory-pool class, layouts derived from the access masks, a queue-ownership query, a per-format support query, a pipeline-cache token, and secondary recording. They land here, on Vulkan and the null backend, because changing `reserve_transient_memory`'s contract after two backends are written is a migration across every pass. The row's **C** cell is M11.d.5's |
-| `core-platform-abstraction` | C | A **native** `Platform` and `DisplayServer` for one desktop platform, replacing SDL3 there and **requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`**, plus the porting surface built against a stub platform that shares no desktop assumption |
+| `core-platform-abstraction` | — | A **native** `Platform` and `DisplayServer` for one desktop platform, replacing SDL3 there and **requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`**, plus the porting surface built against a stub platform that shares no desktop assumption. The work is this rung's; the row's **C** cell moved to M11.e at the gate, below |
 | `rendering-forward-clustered` | — | MSAA and multi-view, the desktop half. The row's **C** cell stays at M11.e with the mobile pipeline differences, because a row is not Complete on the half of its scope this rung can reach |
 | `build-and-packaging` | C | Content audit, provenance and symbols |
 | `testing-and-quality` | C | The full gate set and the documentation gate |
 | `developer-workflow-and-just` | C | The release and second-platform targets, from the same recipes on every desktop |
-| `core-assets-and-io` / `core-jobs-and-concurrency` / `core-memory-and-containers` / `ecs-core` / `engine-architecture` | C | Here rather than in M11.a for one reason: the exit criterion for the native backend is that **none of `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/` changes**, which is a first-hand audit of exactly these rows whether or not anybody calls it one |
+| `ecs-core` | C | Here rather than in M11.a for one reason: the exit criterion for the native backend is that **none of `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/` changes**, which is a first-hand audit of exactly the core rows whether or not anybody calls it one |
+| `core-assets-and-io` / `core-jobs-and-concurrency` / `core-memory-and-containers` / `engine-architecture` | — | Audited here by the same diff; their **C** cells moved to M11.e at the gate, below |
 
 **Closing artefact**: `samples/11-ship` built, cooked, packaged and launched on each desktop target
 from one recipe, plus the M0 sample and the M3 golden images on the native platform backend with
@@ -1598,6 +1599,15 @@ from one recipe, plus the M0 sample and the M3 golden images on the native platf
 *Golden images matching across Vulkan, Metal and D3D12 was this rung's first exit criterion and is
 now M11.d.5's. It moved with its subject rather than staying behind, because a criterion whose
 subject has been deferred is one the milestone can satisfy vacuously.*
+
+**Five Complete cells moved to M11.e at the gate.** The full ledger on `afaeb33` read **12 of 71**
+requirements mapped across the six core rows the port audits, all twelve `ecs-core`'s. `ecs-core`
+stays Complete here; `core-assets-and-io`, `core-jobs-and-concurrency`,
+`core-memory-and-containers`, `engine-architecture` and `core-platform-abstraction` moved to M11.e
+the way `build-and-packaging` did — four of them have readings with partials that need an
+`exempt:m11e` entry, which is a deferral to M11.e, and `core-platform-abstraction` was never read
+requirement by requirement. The port's own criteria stay here; only the cells moved
+([design §5.2](../openspec/changes/implement-m11d-desktop/design.md), task 10.4a).
 
 **Risk spike**: **settle the eight RHI gaps as interface changes, on Vulkan and null, before a line
 of either backend is written** — and, before that, find out whether a hosted macOS or Windows runner
@@ -1674,11 +1684,13 @@ about it.
 
 **Why this rung is last.** Mobile is the only scope on the ladder this project cannot evaluate on
 any machine it owns, and the sweep — every row an earlier rung demoted — cannot be sized until the
-earlier rungs have run. **Four rows was the smallest count on the ladder and not the smallest rung, and it is sixteen now,
-twelve of them moved from M11.c at its gate**:
+earlier rungs have run. **Four rows was the smallest count on the ladder and not the smallest rung, and it is twenty-one now,
+twelve of them moved from M11.c at its gate and five from M11.d at its own**:
 M11.a predicts demoting `save-and-persistence` and `audio`, M11.b `ml-inference` and
-`swift-scripting`, M11.c `rendering-culling-and-lod`, M11.d `build-and-packaging`, and this rung's
-real load is whatever arrives.
+`swift-scripting`, M11.c `rendering-culling-and-lod`, M11.d `build-and-packaging` — and M11.d's gate
+moved five core rows it did not predict: `core-assets-and-io`, `core-jobs-and-concurrency`,
+`core-memory-and-containers`, `engine-architecture` and `core-platform-abstraction`, whose
+requirements were unmapped. This rung's real load is whatever arrives.
 
 **Work**
 

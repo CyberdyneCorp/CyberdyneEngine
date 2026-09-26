@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 
 
 def recipe(root: pathlib.Path, arguments: list[str], build_dir: str | None) -> str:
@@ -1088,6 +1089,51 @@ def an_authoring_session_names_one_engine_for_one_project(root: pathlib.Path) ->
     return failures
 
 
+REFUSAL = re.compile(r"\bjust\s+_not-implemented\s+(\S+)\s+(.+?)\s*$")
+RUNG_NAME = re.compile(r"\bM(\d+(?:\.[a-e](?:\.5)?|\.5)?)\b", re.IGNORECASE)
+
+
+def a_refusing_recipe_names_an_open_rung(root: pathlib.Path) -> list[str]:
+    """A recipe that refuses through `_not-implemented` names a rung that exists and is still open.
+
+    `_not-implemented` prints "not implemented (task <task>)", and that sentence is the only thing a
+    developer who ran the recipe is told about when it will work. A task that is not a rung tells
+    them to wait for nothing, and a rung whose gate is already green tells them to wait for the
+    past. Both shapes were live: the four release recipes named "M12 — build-and-packaging" when
+    the ladder ended at M11.e, `build-shaders` named M3 eight rungs after M3 closed, and
+    `maintenance-clean` named task "2.1.5" — M0's task list, no rung at all — until M11.d's full
+    ledger went red on it (`m11d:developer-workflow-recipes`). That criterion runs once per
+    milestone close; this case runs on every pull request, so the next stale refusal is caught by
+    the change that writes it rather than by a ledger a rung later.
+    """
+    roadmap = root / "tools" / "roadmap"
+    if str(roadmap) not in sys.path:
+        sys.path.insert(0, str(roadmap))
+    import plan  # noqa: E402  (tools/roadmap is not a package)
+    import record  # noqa: E402
+
+    gates = tomllib.loads((roadmap / "gates.toml").read_text(encoding="utf-8"))["gate"]
+    closed = {gate["milestone"] for gate in gates
+              if gate.get("class") == "milestone" and gate.get("state") == "green"}
+    ladder = set(record.MILESTONES)
+
+    failures = []
+    for just_file in [root / "justfile", *sorted((root / "just").glob("*.just"))]:
+        lines = just_file.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, 1):
+            refusal = None if line.lstrip().startswith("#") else REFUSAL.search(line)
+            if refusal is None:
+                continue
+            where = f"{just_file.name}:{number}: `{refusal.group(1)}` refuses naming task " \
+                    f"{refusal.group(2)!r}"
+            rungs = [plan.milestone_id(f"M{name}") for name in RUNG_NAME.findall(refusal.group(2))]
+            if not any(rung in ladder for rung in rungs):
+                failures.append(f"{where}, which is no rung on the ladder")
+            elif all(rung in closed for rung in rungs if rung in ladder):
+                failures.append(f"{where}, whose gate is already green")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1145,6 +1191,9 @@ def main() -> int:
         ),
         "an authoring session names one engine for one project": (
             an_authoring_session_names_one_engine_for_one_project
+        ),
+        "a refusing recipe names a rung that exists and is open": (
+            a_refusing_recipe_names_an_open_rung
         ),
     }
 

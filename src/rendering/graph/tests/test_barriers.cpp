@@ -298,3 +298,72 @@ CY_TEST_CASE("a depth attachment transitions once and keeps reversed-Z's compari
     // Both stages, because depth is tested before the fragment shader and written after it.
     CY_CHECK_EQ(first->dst_stage, Stage::EarlyFragmentTests | Stage::LateFragmentTests);
 }
+
+CY_TEST_CASE("a swapchain image's two boundary transitions chain to presentation's semaphores") {
+    // THE FRAME samples/11-ship PRESENTS, and the two hazards it tripped on every frame on both
+    // platform legs (M11.d). A copy writes the acquired image and a pass hands it back.
+    //
+    // Acquire side: the first transition is a write, and the presentation engine may still be
+    // reading the image until the acquire semaphore's wait. The barrier chains to that wait only
+    // when its source stage includes the wait stage; NONE is SYNC-HAZARD-WRITE-AFTER-READ against
+    // PRESENT_ACQUIRE_READ. Present side: the transition to the presentable state must be ordered
+    // before the submit's signal, whose first scope is every stage; a destination stage of NONE
+    // is SYNC-HAZARD-PRESENT-AFTER-WRITE.
+    RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
+    const ResourceId target = graph.import_swapchain_texture(
+        colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1));
+    const ResourceId staging =
+        graph.import_buffer(storage_buffer("card"), cy::rhi::BufferHandle::from_slot(1, 1));
+
+    graph.add_pass("card", cy::rhi::QueueKind::Graphics)
+        .read(staging, Access::TransferRead)
+        .write(target, Access::TransferWrite);
+    graph.add_pass("present", cy::rhi::QueueKind::Graphics)
+        .read(target, Access::Present)
+        .side_effect();
+
+    cy::Expected<CompiledGraph, cy::Error> plan = graph.compile(single_queue_options());
+    CY_REQUIRE(plan.has_value());
+    CY_REQUIRE_EQ(plan->submits.size(), 1U);
+    CY_REQUIRE_EQ(plan->submits[0].passes.size(), 2U);
+
+    const cy::rhi::BarrierBatch& copy_pre = plan->submits[0].passes[0].pre;
+    CY_REQUIRE_EQ(copy_pre.images.size(), 1U);
+    const cy::rhi::ImageBarrier& acquire = copy_pre.images[0];
+    CY_CHECK_EQ(acquire.resource, target);
+    CY_CHECK_EQ(acquire.old_use, ImageUse::Undefined);
+    CY_CHECK_EQ(acquire.new_use, ImageUse::TransferDestination);
+    CY_CHECK_EQ(acquire.src_stage, cy::rhi::kPresentAcquireStage);
+    CY_CHECK_EQ(acquire.src_access, AccessFlags::None);
+    CY_CHECK_EQ(acquire.dst_stage, Stage::Copy);
+    CY_CHECK_EQ(acquire.dst_access, AccessFlags::TransferWrite);
+
+    const cy::rhi::BarrierBatch& present_pre = plan->submits[0].passes[1].pre;
+    CY_REQUIRE_EQ(present_pre.images.size(), 1U);
+    const cy::rhi::ImageBarrier& present = present_pre.images[0];
+    CY_CHECK_EQ(present.resource, target);
+    CY_CHECK_EQ(present.old_use, ImageUse::TransferDestination);
+    CY_CHECK_EQ(present.new_use, ImageUse::Presentable);
+    CY_CHECK_EQ(present.src_stage, Stage::Copy);
+    CY_CHECK_EQ(present.src_access, AccessFlags::TransferWrite);
+    CY_CHECK_EQ(present.dst_stage, Stage::AllCommands);
+    CY_CHECK_EQ(present.dst_access, AccessFlags::None);
+}
+
+CY_TEST_CASE("an ordinary Undefined import still has no outside reader to wait for") {
+    // The swapchain import is the only one that seeds a read: an offscreen target imported as
+    // Undefined is ordered by the fence the caller already waited, and a source stage on its first
+    // transition would stall the submit's earlier work for nothing.
+    RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
+    const ResourceId target = graph.import_texture(
+        colour_target("offscreen"), cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
+    graph.add_pass("draw", cy::rhi::QueueKind::Graphics)
+        .write(target, Access::ColorAttachmentWrite);
+
+    cy::Expected<CompiledGraph, cy::Error> plan = graph.compile(single_queue_options());
+    CY_REQUIRE(plan.has_value());
+    const cy::rhi::BarrierBatch& draw_pre = plan->submits[0].passes[0].pre;
+    CY_REQUIRE_EQ(draw_pre.images.size(), 1U);
+    CY_CHECK_EQ(draw_pre.images[0].src_stage, Stage::None);
+    CY_CHECK_EQ(draw_pre.images[0].old_use, ImageUse::Undefined);
+}
