@@ -683,6 +683,9 @@ Status World::build(BuildReport& report) noexcept {
     if (Status configured = configure_weather(report); !configured) {
         return configured;
     }
+    if (Status claimed = claim_cloud_shadow(); !claimed) {
+        return claimed;
+    }
     // THE FIREWALL, OVER THE WHOLE CONFIGURATION, BEFORE A FRAME RUNS. Every producer has claimed
     // and every consumer has declared what it reads by this point, so `validate()` is the one call
     // that catches a gameplay reader of a presentation field — and it is made here rather than
@@ -1569,6 +1572,9 @@ Status World::advance(FrameCosts& costs) noexcept {
     if (Status shaded = shade_sky(false); !shaded) {
         return shaded;
     }
+    if (Status shadowed = update_cloud_shadow(step); !shadowed) {
+        return shadowed;
+    }
     costs.sky_ms = now_millis() - mark;
 
     // Terrain substrate colour is produced by the stage's device pass. `shade_terrain()` remains
@@ -1672,6 +1678,9 @@ Status World::shade_sky(bool shade_visual_dome) noexcept {
     lighting_.sun_colour =
         Vec3{lighting.sun_illuminance.x * sun_scale, lighting.sun_illuminance.y * sun_scale,
              lighting.sun_illuminance.z * sun_scale};
+    lighting_.clear_sun_colour = Vec3{lighting.clear_sun_illuminance.x * sun_scale,
+                                      lighting.clear_sun_illuminance.y * sun_scale,
+                                      lighting.clear_sun_illuminance.z * sun_scale};
     const f32 ambient_scale = 1.0F / (lighting_.exposure * 15.0F);
     lighting_.ambient =
         Vec3{lit_mean.x * ambient_scale, lit_mean.y * ambient_scale, lit_mean.z * ambient_scale};
@@ -1766,6 +1775,65 @@ Status World::shade_terrain() noexcept {
         }
     }
     return ok();
+}
+
+// ================================================================================================
+// CLOUD SHADOWS — the sky's coarse field, cast onto everything the sun lights
+// ================================================================================================
+//
+// `atmosphere-sky-and-clouds` — "Cloud shadows": "a coarse world-scale shadow representation ...
+// consumed by terrain, foliage, water, and illumination". `sky::CloudShadowField` is the engine's
+// producer, and what it marches is `cloud_field_` — the SAME `CloudField` the sky's lighting
+// integral marches for the sun and the ambient term, driven by weather's `CloudDrive` and advected
+// by each layer's wind at `seconds_`. So the shadow on the ground is the cloud the lighting sees,
+// and it moves with the wind the weather publishes rather than with a velocity this file picked.
+//
+// The field is written around the world's centre rather than the camera: the regional image then
+// keeps one origin for the whole take, and its nine tiles already cover every surface the orbit
+// can see.
+
+Status World::claim_cloud_shadow() noexcept {
+    if (!options_.cloud_shadows) {
+        return ok();
+    }
+    if (Status attached = cloud_shadow_.attach(registry_, options_.cloud_shadow_quality);
+        !attached) {
+        return attached;
+    }
+    return sky::CloudShadowField::declare_consumers(registry_);
+}
+
+Status World::update_cloud_shadow(f64 step) noexcept {
+    if (!cloud_shadow_.attached()) {
+        return ok();
+    }
+    // THE SIMULATED STEP AND NOT A WALL CLOCK. One frame of this take is minutes of weather, so a
+    // field rewritten at the lever's eight hertz of wall time would lag the clouds it shadows by
+    // kilometres; a frame's worth of simulated time always exceeds the update period, so the field
+    // is rewritten every frame and always describes the clouds this frame's sky was lit by.
+    Expected<bool, Error> updated =
+        cloud_shadow_.update(fields_, cloud_field_, celestial_.sun.direction, seconds_, centre(),
+                             static_cast<f32>(step));
+    if (!updated) {
+        return make_unexpected(updated.error());
+    }
+    const sky::CloudShadowStats& stats = cloud_shadow_.stats();
+    state_.cloud_shadow_darkest = stats.darkest;
+    state_.cloud_shadow_brightest = stats.brightest;
+    state_.cloud_shadow_mean = stats.mean;
+    return ok();
+}
+
+Expected<environment::FieldGpuImage, Error> World::cloud_shadow_image() const noexcept {
+    if (!cloud_shadow_.attached()) {
+        return fail(ErrorCode::Unavailable, "this world casts no cloud shadows");
+    }
+    return environment::build_field_image(fields_, sky::cloud_shadow_field_id(),
+                                          environment::FieldResidency::Regional);
+}
+
+f32 World::cloud_shadow_at(const WorldVec3d& at) const noexcept {
+    return cloud_shadow_.attached() ? sky::CloudShadowField::sample(fields_, at) : 1.0F;
 }
 
 Expected<environment::FieldGpuImage, Error> World::terrain_field_image(u32 index) const noexcept {

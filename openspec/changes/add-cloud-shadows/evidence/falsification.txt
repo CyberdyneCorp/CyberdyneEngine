@@ -1,0 +1,56 @@
+# Mutations applied to the shipped sources, each rebuilt (SPIR-V/MSL regenerated for shader
+# mutations), run, and restored; md5 of every touched file verified identical after restore.
+# Driver: apply -> regen -> cmake --build <suite> -> run suite binary -> restore -> regen -> md5.
+
+## render.world_cloud_shadow (samples/10-world/shaders/world.slang)
+
+== a-ignore-field: 'let direct = push.sun.rgb * sunThroughClouds(input.world);' -> 'let direct = push.sun.rgb;'
+exit 1 (RED)
+244 texels under the cloud (0 darker, worst 1.42966 from the processor's field) ...
+ERROR: CHECK_EQ( shadowed_darker, shadowed ); CHECK_LT( worst_relative, 0.01F ); CHECK_GT( cloudy_changed, 200U )
+restored, md5 identical: True
+
+== a-wrong-origin: exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:760: ERROR: CHECK_EQ( shadowed_darker, shadowed ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:761: ERROR: CHECK_LT( worst_relative, 0.01F ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:805: ERROR: CHECK_GT( cloudy_changed, 200U ) is NOT correct!
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored, md5 identical: True
+== c-off-not-one: exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:763: ERROR: CHECK_EQ( in_sun_changed, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:764: ERROR: CHECK_EQ( brighter, 0U ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:803: ERROR: CHECK_EQ( clear_on_changed, 0U ) is NOT correct!
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored, md5 identical: True
+== d-ambient-attenuated: exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:761: ERROR: CHECK_LT( worst_relative, 0.01F ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:847: ERROR: CHECK_EQ( ambient_lit, kTexels ) is NOT correct!
+tests/render/test_world_cloud_shadow.cpp:849: ERROR: CHECK_EQ( ambient_changed, 0U ) is NOT correct!
+[doctest] test cases:  3 |  1 passed | 2 failed | 0 skipped
+restored, md5 identical: True
+== d-sky-attenuated: exit 1 (RED)
+tests/render/test_world_cloud_shadow.cpp:848: ERROR: CHECK_EQ( sky_changed, 0U ) is NOT correct!
+[doctest] test cases:  3 |  2 passed | 1 failed | 0 skipped
+restored, md5 identical: True
+
+## integration.render_sky_fields (src/rendering/sky/src/cloud_shadows.cpp)
+
+== b-still-sky: cloud_density(clouds, position, time_seconds, ...) -> cloud_density(clouds, position, time_seconds * 0.0, ...)
+src/rendering/sky/tests/test_cloud_shadows.cpp:577: MESSAGE: shadow centroid (19638.6, 19959.4) -> (19638.6, 19959.4): moved (0, 0) m, the wind carried (1440, -600) m; darkest 0 / 0
+src/rendering/sky/tests/test_cloud_shadows.cpp:593: ERROR: CHECK_LT( std::fabs(moved_x - drift_x), kHalfCell ) is NOT correct!
+src/rendering/sky/tests/test_cloud_shadows.cpp:594: ERROR: CHECK_LT( std::fabs(moved_z - drift_z), kHalfCell ) is NOT correct!
+src/rendering/sky/tests/test_cloud_shadows.cpp:671: ERROR: CHECK_LT( worst, 0.02F ) is NOT correct!
+restored, md5 identical: True
+
+== e-wrong-ray: world_x + (sun.x * distance) -> world_x - (sun.x * distance)
+src/rendering/sky/tests/test_cloud_shadows.cpp:655: MESSAGE: sky and ground over 1600 points: 37 shadowed, 1554 in full sun, the sky's darkest 0.000667137, worst disagreement 1
+src/rendering/sky/tests/test_cloud_shadows.cpp:668: ERROR: CHECK_LT( worst, 0.02F ) is NOT correct!
+[doctest] test cases:    8 |    7 passed | 1 failed | 0 skipped
+restored, md5 identical: True
+
+## A defect this falsification found in the test itself
+
+The first run of b-still-sky stayed GREEN: the wind case compared the centroid's motion with
+CY_CHECK_NEAR, which is doctest's Approx with a RELATIVE epsilon, so an epsilon of 64 accepted a
+shadow that moved (0, 0) against (1440, -600). The case now compares absolute metres, and the
+second run above is red on both axes.
