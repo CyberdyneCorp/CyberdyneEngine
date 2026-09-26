@@ -211,6 +211,11 @@ The ledger-blind control is not repeated here, and that is a rule rather than an
 it exists to catch — a grep that matches the ledger declaring it — is refused *before any run*, by
 the `self-match` rule in the table below.
 
+The same three runs take a criterion that is red in the sandbox only because the copy has no `.git`
+— one that reads the repository's history, as `m11d:port-touches-no-engine-layer` does. Without the
+flag it stays `not provable here`; with it, the tree control's green is the positive control and the
+mutation goes into the working tree.
+
 **What makes it safe to point at the repository.** `--mutate-the-tree` is a flag on a command line,
 never a default and never reached by `check`. It refuses to run inside another prover. Every byte it
 overwrites is remembered first; the restore runs on the normal path, on an exception, on SIGINT and

@@ -2205,6 +2205,29 @@ def test_falsifiability_by_mutating_the_tree(root: Path) -> None:
           proof.verdict == falsify_module.REFUTED, f"{proof.verdict}: {proof.detail}")
     check("and the tree is clean after that too", not tree.dirty(), tree.dirty())
 
+    # REGRESSION: a criterion that reads git history is red in every sandbox, which has no `.git`,
+    # and green in the checkout — so `prove` answered `not provable here` even under
+    # `--mutate-the-tree`, and `m11d:port-touches-no-engine-layer` could never be proven. The tree
+    # control's green is its positive control; the mutation then goes into the working tree.
+    copy = root / "copy-without-git"
+    copy.mkdir(parents=True, exist_ok=True)
+    (copy / "subject.txt").write_bytes(before)
+    reads_history = _criterion("reads-history", "test -d .git && grep -q cySubjectToken subject.txt",
+                               falsifies={"mutate": "rename-token", "target": "subject.txt",
+                                          "token": "cySubjectToken"})
+    proof = falsify_module.prove(falsify_module.Sandbox(copy), "m0", reads_history, "", tree)
+    check("A CRITERION RED ONLY IN THE SANDBOX IS PROVEN BY MUTATING THE TREE when that is allowed",
+          proof.verdict == falsify_module.PROVEN_BY_REBUILD, f"{proof.verdict}: {proof.detail}")
+    check("and the tree is clean after that one as well", not tree.dirty(), tree.dirty())
+    # And `check`, which has no tree to mutate, must leave that proof standing: it declined to
+    # re-earn it, it did not contradict it. `test -d .git` is green in this repository.
+    in_a_checkout = _criterion("in-a-checkout", "test -d .git",
+                               falsifies={"mutate": "delete-path", "target": "subject.txt"})
+    proof = falsify_module.prove(falsify_module.Sandbox(copy), "m0", in_a_checkout)
+    check("and without a tree to mutate, that run is UNJUDGED rather than a finding",
+          proof.verdict == falsify_module.UNPROVABLE and proof.unjudged,
+          f"{proof.verdict} (unjudged={proof.unjudged}): {proof.detail}")
+
     # A RESTORE THE TOOL LOST. `forget()` drops what it remembered, which is the worst case short of
     # the process dying: the recovery is git's, and it is checked rather than assumed.
     tree.apply(mutation)
