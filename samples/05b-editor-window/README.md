@@ -76,6 +76,16 @@ transform-only, and its viewport is black. The serialization and editor tests pi
 identities. `integration.editor_window_selftest` fails if the smoke world contains a node the
 viewport cannot draw (issue #18).
 
+`smoke.editor_window_mcp` checks the same viewport through MCP instead of synthesised input.
+`mcp_window.py` starts the editor with `--mcp` and reads `editor:window?panel=viewport`, so a
+person can keep using the display while it runs. It requires four things:
+- With no runtime, the viewport shows the editor's own sunken fill.
+- An empty world shows the engine's exact black frame, not that fill.
+- `city-blocks.cyworld` shows colour.
+- `scene.translate` changes the panel, and `edit.undo` restores it.
+Run with `--world worlds/city.cyworld`, it fails at the colour check, as it did before this fix.
+`smoke.editor_window` remains the test of real keyboard and pointer input.
+
 ## Material Graph cube
 
 Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,

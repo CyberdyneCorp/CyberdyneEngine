@@ -302,6 +302,9 @@ pub struct Panels<'frame> {
     pub inputs: &'frame mut Inputs,
     /// Tab rectangles collected for selection underlines after docking interaction resolves.
     pub tab_rects: Vec<(PanelKey, egui::Rect, egui::LayerId)>,
+    /// Where each panel drawn this frame was laid out, by kind, for `editor:window?panel=<kind>`.
+    /// A panel behind another tab is not drawn and so is not here.
+    pub panel_rects: Vec<(String, egui::Rect)>,
     /// What the panels asked for, applied after the frame is drawn.
     pub intents: &'frame mut Vec<Intent>,
 }
@@ -331,6 +334,8 @@ impl egui_dock::TabViewer for Panels<'_> {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
+        self.panel_rects
+            .push((tab.kind().to_string(), ui.max_rect()));
         let padding = self.metrics().padding();
         egui::Frame::NONE
             .inner_margin(egui::Margin::same(theme::margin(padding)))

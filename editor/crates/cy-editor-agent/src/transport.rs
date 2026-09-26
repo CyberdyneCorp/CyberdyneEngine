@@ -89,6 +89,8 @@ pub enum AgentResponse {
     },
     /// An image.
     Image(Box<Observation>),
+    /// The editor window, or one panel of it, as presented. See [`crate::window`].
+    Window(Box<crate::window::WindowCapture>),
     /// Work in progress. `editor-agent-interface` requires long-running work to report through the
     /// protocol's progress facility rather than by blocking.
     Progress {

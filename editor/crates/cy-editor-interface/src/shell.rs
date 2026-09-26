@@ -38,6 +38,31 @@ use crate::palette::{Index, Origin};
 use crate::problems::Problems;
 use crate::progress::ProgressSurface;
 
+/// Every built-in panel kind, in the order the title table lists them.
+///
+/// The stable keys a layout stores. An agent reading `editor:window?panel=<kind>` is told this list
+/// when it names something else, so an unknown kind is distinguished from a hidden one.
+pub const BUILT_IN_PANEL_KINDS: [&str; 18] = [
+    "hierarchy",
+    "content-browser",
+    "viewport",
+    "inspector",
+    "script-graph",
+    "editor-materials",
+    "editor-terrain",
+    "swift-workspace",
+    "semantic-diff",
+    "semantic-merge",
+    "animation",
+    "console",
+    "profiler",
+    "problems",
+    "undo-history",
+    "settings",
+    "source-control",
+    "agent-sessions",
+];
+
 /// The title a built-in panel shows, in the engine's own vocabulary.
 ///
 /// A table rather than a derivation from the identifier, because the identifier is a stable key and
@@ -408,6 +433,14 @@ mod tests {
     use cy_editor_visual::vocabulary;
 
     use super::*;
+
+    #[test]
+    fn every_built_in_panel_kind_has_a_title_of_its_own() {
+        for kind in BUILT_IN_PANEL_KINDS {
+            let id = PanelId::new(kind).expect("a built-in panel identifier");
+            assert_ne!(panel_title(&id), kind, "{kind} falls back to its key");
+        }
+    }
 
     fn registry() -> Registry {
         let mut registry = Registry::new();

@@ -77,6 +77,7 @@ pub mod resource;
 pub mod session;
 pub mod tool;
 pub mod transport;
+pub mod window;
 
 pub use audit::{AgentAuditKind, AgentAuditRecord, PrivacyClass};
 pub use budget::{Budget, BudgetReport, Throttle};
@@ -97,3 +98,4 @@ pub use session::{
 };
 pub use tool::{ParameterDescriptor, ToolDescriptor, arguments, coerce, project, project_one};
 pub use transport::{AgentRequest, AgentResponse, AgentTransport};
+pub use window::{PanelRect, PixelRect, WindowCapture, WindowFrame, WindowTarget};

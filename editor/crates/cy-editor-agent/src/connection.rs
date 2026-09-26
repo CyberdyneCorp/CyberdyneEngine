@@ -13,9 +13,17 @@ use cy_editor_commands::Registry;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_services::Editor;
 
+use crate::window::{WINDOW_ADDRESS, WindowFrame, WindowTarget};
 use crate::{
     AgentRequest, AgentResponse, AgentSession, Confirmation, Confirmer, Decision, RefuseEverything,
 };
+
+/// How long a window read waits for the shell to deliver a presented frame before it is refused.
+///
+/// A capture normally arrives one or two frames after it is requested. A window that is minimised,
+/// or one the compositor has stopped painting, never presents, and the read is told so rather than
+/// held until its two-minute transport deadline.
+pub const WINDOW_CAPTURE_WAIT: Duration = Duration::from_secs(2);
 
 /// A request admitted to the UI-owned execution path.
 #[derive(Clone, PartialEq, Debug)]
@@ -306,6 +314,14 @@ pub struct PendingAgentConfirmation {
     pub confirmation: Confirmation,
 }
 
+/// A window read taken off the queue and parked until the shell captures a frame.
+#[derive(Clone, PartialEq, Debug)]
+struct WaitingWindowRead {
+    queued: QueuedAgentRequest,
+    target: WindowTarget,
+    refuse_at_millis: u64,
+}
+
 #[derive(Clone, PartialEq, Debug)]
 struct AwaitingConfirmation {
     queued: QueuedAgentRequest,
@@ -342,6 +358,8 @@ pub struct DesktopAgentHost {
     awaiting: BTreeMap<u64, AwaitingConfirmation>,
     approved: VecDeque<QueuedAgentRequest>,
     was_connected: bool,
+    window_reads: Vec<WaitingWindowRead>,
+    window_frame: Option<WindowFrame>,
 }
 
 impl DesktopAgentHost {
@@ -366,6 +384,30 @@ impl DesktopAgentHost {
                 .any(|pending| asks_for_viewport(&pending.request))
     }
 
+    /// Whether a window read is waiting for the shell to capture a presented frame.
+    ///
+    /// True for a read already parked by [`Self::pump`] and for one still in the transport queue, so
+    /// the shell can ask for the screenshot on the same frame the request arrives.
+    #[must_use]
+    pub fn wants_window_image(&self) -> bool {
+        !self.window_reads.is_empty()
+            || self
+                .endpoint
+                .shared
+                .service
+                .lock()
+                .expect("agent queue mutex poisoned")
+                .pending
+                .iter()
+                .any(|pending| is_window_read(&pending.request))
+    }
+
+    /// Hand over the frame the shell captured. The next [`Self::pump`] answers every parked window
+    /// read from it and then drops it, so one frame answers only the reads made before it arrived.
+    pub fn provide_window_capture(&mut self, frame: WindowFrame) {
+        self.window_frame = Some(frame);
+    }
+
     /// Build both halves. The endpoint may move to a transport thread; the host stays with Editor.
     #[must_use]
     pub fn new(session: AgentSession, capacity: usize) -> (Self, DesktopAgentEndpoint) {
@@ -384,6 +426,8 @@ impl DesktopAgentHost {
                 awaiting: BTreeMap::new(),
                 approved: VecDeque::new(),
                 was_connected: true,
+                window_reads: Vec::new(),
+                window_frame: None,
             },
             endpoint,
         )
@@ -419,7 +463,9 @@ impl DesktopAgentHost {
         }
         let count = ready.len();
         for queued in ready {
-            if self.hold_for_confirmation(editor, registry, &queued, now) {
+            if self.park_window_read(&queued, now)
+                || self.hold_for_confirmation(editor, registry, &queued, now)
+            {
                 continue;
             }
             let response = crate::execute(
@@ -432,8 +478,72 @@ impl DesktopAgentHost {
             );
             self.respond(queued.ticket, response);
         }
+        self.answer_window_reads(now);
         self.session.publish_diagnostics(editor);
         count
+    }
+
+    /// Park a window read until a frame is captured. Other requests keep flowing past it.
+    fn park_window_read(&mut self, queued: &QueuedAgentRequest, now: u64) -> bool {
+        let AgentRequest::ReadResource { uri } = &queued.request else {
+            return false;
+        };
+        match WindowTarget::parse(uri) {
+            None => false,
+            Some(Err(problem)) => {
+                self.respond(queued.ticket, refusal(format!("read {uri}"), problem));
+                true
+            }
+            Some(Ok(target)) => {
+                let wait = u64::try_from(WINDOW_CAPTURE_WAIT.as_millis()).unwrap_or(u64::MAX);
+                self.window_reads.push(WaitingWindowRead {
+                    queued: queued.clone(),
+                    target,
+                    refuse_at_millis: now.saturating_add(wait),
+                });
+                true
+            }
+        }
+    }
+
+    /// Answer parked window reads from the captured frame, or refuse the ones that waited too long.
+    fn answer_window_reads(&mut self, now: u64) {
+        if self.window_reads.is_empty() {
+            return;
+        }
+        if let Some(frame) = self.window_frame.take() {
+            for waiting in std::mem::take(&mut self.window_reads) {
+                let response = match self.session.read_window(Some(&frame), &waiting.target, now) {
+                    Ok(capture) => AgentResponse::Window(Box::new(capture)),
+                    Err(problem) => refusal(read_of(&waiting.queued), problem),
+                };
+                self.respond(waiting.queued.ticket, response);
+            }
+            return;
+        }
+        let (expired, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.window_reads)
+            .into_iter()
+            .partition(|waiting| {
+                now >= waiting.refuse_at_millis || now >= waiting.queued.deadline_millis
+            });
+        self.window_reads = waiting;
+        for waiting in expired {
+            self.respond(
+                waiting.queued.ticket,
+                AgentResponse::Refused {
+                    what: read_of(&waiting.queued),
+                    because: format!(
+                        "the editor window presented no frame within {} ms",
+                        WINDOW_CAPTURE_WAIT.as_millis()
+                    ),
+                    remedy: Some(
+                        "restore the window if it is minimised; a window that is not painted \
+                         cannot be captured"
+                            .into(),
+                    ),
+                },
+            );
+        }
     }
 
     fn observe_connection_state(&mut self) {
@@ -616,6 +726,9 @@ impl DesktopAgentHost {
         );
         self.awaiting.clear();
         self.approved.clear();
+        // Their tickets are in flight, so the service's revoke below answers them.
+        self.window_reads.clear();
+        self.window_frame = None;
         let abandoned = self
             .endpoint
             .shared
@@ -675,6 +788,25 @@ impl DesktopAgentHost {
     #[must_use]
     pub fn audit_records(&self) -> &[crate::AgentAuditRecord] {
         self.session.audit_records()
+    }
+}
+
+fn is_window_read(request: &AgentRequest) -> bool {
+    matches!(request, AgentRequest::ReadResource { uri } if uri.starts_with(WINDOW_ADDRESS))
+}
+
+fn read_of(queued: &QueuedAgentRequest) -> String {
+    match &queued.request {
+        AgentRequest::ReadResource { uri } => format!("read {uri}"),
+        _ => "read the editor window".into(),
+    }
+}
+
+fn refusal(what: String, problem: Problem) -> AgentResponse {
+    AgentResponse::Refused {
+        what,
+        because: problem.because,
+        remedy: problem.remedy,
     }
 }
 
@@ -754,6 +886,120 @@ mod tests {
             0,
         );
         DesktopAgentHost::new(session, 64)
+    }
+
+    fn window_frame() -> WindowFrame {
+        WindowFrame {
+            sequence: 1,
+            width: 2,
+            height: 1,
+            pixels_per_point: 1.0,
+            rgba: vec![7; 8],
+            panels: vec![crate::PanelRect {
+                kind: "viewport".into(),
+                min: [1.0, 0.0],
+                max: [2.0, 1.0],
+            }],
+            kinds: vec!["viewport".into()],
+        }
+    }
+
+    fn read(uri: &str) -> AgentRequest {
+        AgentRequest::ReadResource { uri: uri.into() }
+    }
+
+    fn no_wait() -> Duration {
+        Duration::from_millis(1)
+    }
+
+    #[test]
+    fn a_window_read_waits_for_a_frame_while_other_requests_are_served() {
+        let mut editor = Editor::new(Actor::human("designer"));
+        let registry = desktop_registry();
+        let (mut host, endpoint) = desktop_host();
+        let window = endpoint
+            .submit(read("editor:window"), Duration::from_secs(1))
+            .unwrap();
+        let listing = endpoint.submit(ping(), Duration::from_secs(1)).unwrap();
+        assert!(
+            host.wants_window_image(),
+            "a queued window read asks for a frame"
+        );
+
+        host.pump(&mut editor, &registry, 4);
+        assert!(matches!(
+            endpoint.wait_response(listing, no_wait()),
+            AgentResponse::Resources(_)
+        ));
+        // Parked, not answered: the wait below times out on the endpoint, not in the host.
+        assert!(matches!(
+            endpoint.wait_response(window, no_wait()),
+            AgentResponse::Refused { ref because, .. } if because.contains("deadline")
+        ));
+        assert!(host.wants_window_image());
+
+        host.provide_window_capture(window_frame());
+        host.pump(&mut editor, &registry, 4);
+        let AgentResponse::Window(capture) = endpoint.wait_response(window, no_wait()) else {
+            panic!("the parked read is answered from the frame");
+        };
+        assert_eq!((capture.window_width, capture.window_height), (2, 1));
+        assert!(!host.wants_window_image());
+    }
+
+    #[test]
+    fn one_frame_answers_every_waiting_window_read() {
+        let mut editor = Editor::new(Actor::human("designer"));
+        let registry = desktop_registry();
+        let (mut host, endpoint) = desktop_host();
+        let whole = endpoint
+            .submit(read("editor:window"), Duration::from_secs(1))
+            .unwrap();
+        let panel = endpoint
+            .submit(read("editor:window?panel=viewport"), Duration::from_secs(1))
+            .unwrap();
+        let malformed = endpoint
+            .submit(read("editor:window?zoom=2"), Duration::from_secs(1))
+            .unwrap();
+        host.provide_window_capture(window_frame());
+        host.pump(&mut editor, &registry, 4);
+
+        let AgentResponse::Window(whole) = endpoint.wait_response(whole, no_wait()) else {
+            panic!("the whole window");
+        };
+        let AgentResponse::Window(panel) = endpoint.wait_response(panel, no_wait()) else {
+            panic!("the viewport panel");
+        };
+        assert_eq!(whole.sequence, panel.sequence, "cut from the same frame");
+        assert_eq!(whole.rect.width, 2);
+        assert_eq!((panel.rect.x, panel.rect.width), (1, 1));
+        assert!(matches!(
+            endpoint.wait_response(malformed, no_wait()),
+            AgentResponse::Refused { .. }
+        ));
+    }
+
+    #[test]
+    fn a_window_that_never_presents_is_refused_with_a_reason() {
+        let mut editor = Editor::new(Actor::human("designer"));
+        let registry = desktop_registry();
+        let (mut host, endpoint) = desktop_host();
+        let window = endpoint
+            .submit(read("editor:window"), Duration::from_mins(1))
+            .unwrap();
+        host.pump(&mut editor, &registry, 4);
+        // The wait is measured on the host's clock; move the parked read past it.
+        host.window_reads[0].refuse_at_millis = 0;
+        host.pump(&mut editor, &registry, 4);
+        let AgentResponse::Refused {
+            because, remedy, ..
+        } = endpoint.wait_response(window, no_wait())
+        else {
+            panic!("refused once the wait elapsed");
+        };
+        assert!(because.contains("presented no frame"), "{because}");
+        assert!(remedy.unwrap().contains("minimised"));
+        assert!(!host.wants_window_image());
     }
 
     #[test]

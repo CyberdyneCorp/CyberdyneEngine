@@ -30,6 +30,8 @@ cy-editor-documents = { path = "../cy-editor-documents" }
 cy-editor-protocol = { path = "../cy-editor-protocol" }
 cy-editor-services = { path = "../cy-editor-services" }
 cy-editor-viewport = { path = "../cy-editor-viewport" }
+# Encodes a captured editor window as PNG and decodes it in tests. See `src/window.rs`.
+image = { workspace = true }
 
 [lints]
 workspace = true

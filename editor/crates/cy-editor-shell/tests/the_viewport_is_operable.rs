@@ -138,6 +138,7 @@ impl Harness {
                     inputs,
                     intents: &mut intents,
                     tab_rects: Vec::new(),
+                    panel_rects: Vec::new(),
                 };
                 let mut key = PanelKey::new("viewport").expect("the viewport panel");
                 panels.ui(ui, &mut key);
@@ -319,6 +320,7 @@ fn several_passes_over_one_frame_of_input_are_one_press() {
                 inputs: &mut harness.inputs,
                 intents: &mut intents,
                 tab_rects: Vec::new(),
+                panel_rects: Vec::new(),
             };
             let mut key = PanelKey::new("viewport").expect("the viewport panel");
             // Twice, in the same pass, exactly as a discarded-and-rebuilt frame does.
