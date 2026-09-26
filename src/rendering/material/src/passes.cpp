@@ -95,6 +95,9 @@ struct Scalars {
             case Op::OneMinus:
                 out.component[index] = 1.0F - a;
                 break;
+            case Op::Sin:
+                out.component[index] = std::sin(a);
+                break;
             case Op::Lerp:
                 out.component[index] = a + ((b - a) * in[2].at(index));
                 break;

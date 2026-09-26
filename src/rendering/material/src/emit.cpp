@@ -187,6 +187,8 @@ struct CallForm {
             return {"pow", nullptr};
         case Op::Saturate:
             return {"saturate", nullptr};
+        case Op::Sin:
+            return {"sin", nullptr};
         case Op::Normalize:
             return {"normalize", nullptr};
         case Op::Lerp:

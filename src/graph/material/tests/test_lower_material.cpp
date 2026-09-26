@@ -112,7 +112,7 @@ CY_TEST_CASE("graph_material: the service catalogue is deterministic and version
                (static_cast<u32>(first[offset + 3]) << 24U);
     };
     CY_CHECK_EQ(read_u32(0), 2U);
-    CY_CHECK_EQ(read_u32(4), 3U);
+    CY_CHECK_EQ(read_u32(4), 4U);
     CY_CHECK_EQ(read_u32(8), material_node_types().size());
 }
 
@@ -188,4 +188,31 @@ CY_TEST_CASE("graph_material: the pin an author wires is the port the compiler r
             ++port;
         }
     }
+}
+
+CY_TEST_CASE("graph_material: authored vector sine reaches the material IR") {
+    Canvas canvas("sway");
+    const NodeKey phase = canvas.add("material.parameter");
+    canvas.symbol(phase, "phase");
+    canvas.type_of(phase, ValueType::Vec3);
+    canvas.value(phase, "default", 0.5F, 0.25F, 0.0F, 0.0F, 0);
+    const NodeKey sine = canvas.add("material.sin");
+    canvas.wire(phase, sine, "value");
+    const NodeKey emission = canvas.add("material.emission");
+    canvas.wire(sine, emission, "colour");
+    const NodeKey output = canvas.add("material.output");
+    canvas.wire(emission, output, "surface");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("sway"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(ir.has_value());
+    bool found_sine = false;
+    for (cy::rendering::material::NodeId id = 0; id < ir.value().size(); ++id) {
+        const auto& node = ir.value().node(id);
+        found_sine = found_sine ||
+                     (node.op == cy::rendering::material::Op::Sin && node.type == ValueType::Vec3);
+    }
+    CY_CHECK(found_sine);
 }

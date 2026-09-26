@@ -71,6 +71,8 @@ enum class GraphOp : u16 {
     /// Two closures in, one out. An author adds a third closure with a second one of these.
     AddClosures,
     LayerClosures,
+    /// Sine of a scalar or vector, in radians.
+    Sin,
     Count,
 };
 

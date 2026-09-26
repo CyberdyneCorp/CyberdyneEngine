@@ -84,6 +84,7 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.output", &["surface", "opacity"], false),
     ("material.parameter", &[], false),
     ("material.saturate", &["value"], false),
+    ("material.sin", &["value"], false),
     ("material.sheen", &["colour", "weight"], true),
     (
         "material.specular",

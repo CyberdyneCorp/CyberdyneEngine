@@ -24,6 +24,7 @@ struct PortSpec {
         case GraphOp::TextureSample:
         case GraphOp::OneMinus:
         case GraphOp::Saturate:
+        case GraphOp::Sin:
         case GraphOp::Swizzle:
             return {1, false};
         case GraphOp::Multiply:
@@ -66,6 +67,8 @@ struct PortSpec {
             return Op::OneMinus;
         case GraphOp::Saturate:
             return Op::Saturate;
+        case GraphOp::Sin:
+            return Op::Sin;
         case GraphOp::Lerp:
             return Op::Lerp;
         case GraphOp::Swizzle:
@@ -157,7 +160,8 @@ struct Lowering {
         return lower_leaf(node, builder, Span<const NodeId>(operands, ports.inputs));
     }
 
-    auto made = builder.make(ir_op(node.op), node.type, node.symbol, node.value,
+    const ValueType hint = node.op == GraphOp::Sin ? ValueType::Count : node.type;
+    auto made = builder.make(ir_op(node.op), hint, node.symbol, node.value,
                              Span<const NodeId>(operands, ports.inputs));
     if (!made || !ports.weighted) {
         return made;
@@ -209,6 +213,8 @@ const char* graph_op_name(GraphOp op) noexcept {
             return "one_minus";
         case GraphOp::Saturate:
             return "saturate";
+        case GraphOp::Sin:
+            return "sin";
         case GraphOp::Lerp:
             return "lerp";
         case GraphOp::Swizzle:

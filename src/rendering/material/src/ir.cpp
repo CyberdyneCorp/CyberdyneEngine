@@ -54,6 +54,7 @@ constexpr OpInfo kOps[] = {
     {"closure_scale", 2, false, true, false},
     {"closure_add", kVariadic, true, true, false},
     {"closure_layer", 2, false, true, false},
+    {"sin", 1, false, false, false},
 };
 
 static_assert(sizeof(kOps) / sizeof(kOps[0]) == static_cast<usize>(Op::Count),
@@ -754,6 +755,7 @@ namespace {
         case Op::Saturate:
         case Op::OneMinus:
         case Op::Normalize:
+        case Op::Sin:
             if (Status checked = require(is_numeric(types[0]), "this operand may not be a closure");
                 !checked) {
                 return make_unexpected(checked.error());

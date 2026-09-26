@@ -215,6 +215,9 @@ struct Binding {
     if (text == "saturate") {
         return Op::Saturate;
     }
+    if (text == "sin") {
+        return Op::Sin;
+    }
     if (text == "normalize") {
         return Op::Normalize;
     }

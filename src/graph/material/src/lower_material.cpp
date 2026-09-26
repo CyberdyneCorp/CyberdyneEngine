@@ -63,6 +63,7 @@ constexpr NodeSpec kPalette[] = {
     {22, "material.subsurface", GraphOp::Subsurface, {"colour", "weight"}, 2, true},
     {23, "material.add_closures", GraphOp::AddClosures, {"a", "b"}, 2, true},
     {24, "material.layer_closures", GraphOp::LayerClosures, {"top", "base"}, 2, true},
+    {26, "material.sin", GraphOp::Sin, {"value"}, 1, false},
 };
 
 constexpr NodeTypeId kOutputIdentity = 25;
@@ -415,7 +416,7 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
     if (Status status = u32_value(2); !status) {
         return status;  // schema
     }
-    if (Status status = u32_value(3); !status) {
+    if (Status status = u32_value(4); !status) {
         return status;  // catalogue version
     }
     const auto types = material_node_types();

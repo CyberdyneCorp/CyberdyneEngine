@@ -152,6 +152,9 @@ enum class Op : u16 {
     /// (top, base): the top attenuates the base. Not commutative — that is the whole content.
     ClosureLayer,
 
+    /// Sine of a numeric value, in radians. Appended to preserve existing operation identities.
+    Sin,
+
     Count,
 };
 

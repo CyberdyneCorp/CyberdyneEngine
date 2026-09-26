@@ -436,6 +436,9 @@ therefore contains asset identities rather than display paths.
 
 Schema-1 catalogues remain readable. Their combined textual constraint is migrated into the schema-2
 shape when decoded, so reconnecting an older runtime does not discard the graph being authored.
+The engine catalogue includes `material.sin`, a typed scalar/vector sine node shared with the
+text material front end. It is available for authored material arithmetic; vertex-stage outputs
+and displaced rendering are still tracked by issue #15.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 
