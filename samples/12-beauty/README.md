@@ -6,6 +6,7 @@
 > just capture-beauty-shot                          # the picture, the before/after and the manifest
 > just capture-beauty-shot --video                  # ... and the turntable
 > just capture-beauty-shot --regenerate-textures    # ... regenerating the source images first
+> just capture-ambient-occlusion                    # the shot with ambient occlusion off and on
 > just measure-beauty-mip-chain                     # does the shot read its cooked mip chain?
 > just capture-beauty-bloom                         # the same shot with and without bloom
 > ```
@@ -94,11 +95,32 @@ list names `Bloom` at step 9, before exposure.
 
 The full list is in the provenance, and the short version is: no anti-aliasing stage (the frame is
 supersampled and the manifest says three post stages, none of them temporal), no global illumination
-pass, no ambient occlusion pass, procedural geometry, and a normal map and an occlusion
-channel sampled by the FRAME because the compiled-material closure vocabulary has no term for either.
+pass, no ambient occlusion pass in the published frame (it is `--ambient-occlusion on`, at the end
+of this file), procedural geometry, and a normal map and an occlusion channel sampled by the FRAME
+because the compiled-material closure vocabulary has no term for either.
 
 **The air is the one thing in this frame that is not content.** Three ember emitters are authored in
 `embers.cpp` — node by node, on `cy::vfx`'s shipping node library and through its shipping compiler
 — because there is no on-disk VFX asset format in this tree to author them into, and no VFX graph
 editor to author them with. What the field proves is the runtime, not an authoring path, and the
 provenance says so where the rest of this list is.
+
+## Ambient occlusion, off and on
+
+`--ambient-occlusion on|off` is the setting, off by default. On, the program records the frame's
+own `DepthPrepass` stage from its own buffers (`record_prepass`, drawing `sceneVertex` with
+`scenePrepassFragment`, which writes the geometric normal octahedrally), switches
+`PostChainConfig::ambient_occlusion` on, hands the stage to `occlusion::AmbientOcclusionPass`, and
+shades with `sceneFragmentOccluded` against the prepass depth — tested, not written. The term
+multiplies the sky term only; `sceneFragment`, the entry point the published frame is drawn with, is
+unchanged in what it computes. The radius (1.5 m) and power (1.5) are content, in `shot.cyshot`.
+
+| Ambient occlusion off | Ambient occlusion on |
+|---|---|
+| ![](../../docs/design/images/ambient-occlusion-off.png) | ![](../../docs/design/images/ambient-occlusion-on.png) |
+
+![Off, on, and the difference amplified eight times](../../docs/design/images/ambient-occlusion-detail.png)
+
+`just capture-ambient-occlusion` writes `docs/design/images/ambient-occlusion-{off,on,detail}.png`
+and `ambient-occlusion-on.manifest`, and `tools/docs/compare_ambient_occlusion.py` fails it unless
+the off picture is `m11c-beauty-shot.png`'s pixels exactly and no pixel got brighter.

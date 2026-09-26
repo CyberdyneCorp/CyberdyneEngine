@@ -68,10 +68,29 @@ this whole record dishonest."* So:
   in this tree records it — there is no temporal resolve shader under `src/rendering/` at all. The
   frame is drawn at twice the published resolution and box-filtered down, which is supersampling.
   The manifest says `post-stages 3` and names all three; none of them is temporal.
-- **There is no global illumination and no ambient occlusion pass.** `cy::rendering-gi` is not linked
-  by this program. The ambient term is the sky's own mean radiance, weighted by how much of the sky
-  the shading normal faces and by an occlusion channel the material's data texture carries. A pillar
-  does not darken the ground it stands on except where the shadow map says so.
+- **There is no global illumination pass, and the published frame has no ambient occlusion pass.**
+  `cy::rendering-gi` is not linked by this program. The ambient term is the sky's own mean radiance,
+  weighted by how much of the sky the shading normal faces and by an occlusion channel the
+  material's data texture carries. In `m11c-beauty-shot.png` a pillar does not darken the ground it
+  stands on except where the shadow map says so.
+- **Ambient occlusion is a setting of this program, off in the published frame.**
+  `--ambient-occlusion on` adds the frame's depth and normal prepass and the post chain's ambient
+  occlusion stage (`src/rendering/occlusion/`), and multiplies the SKY term — never the sun — by the
+  term. `just capture-ambient-occlusion` photographs both and requires the setting off to be this
+  file's picture pixel for pixel:
+
+  ![Ambient occlusion on](images/ambient-occlusion-on.png)
+
+  ![Off, on, and the difference amplified eight times](images/ambient-occlusion-detail.png)
+
+  The detail is a 384x200 window at the foot of a plinth, doubled with nearest-neighbour sampling:
+  off, on, and a third panel that is not a rendered image — the difference, off minus on, times
+  eight. Measured on the capture: 8.3 % of pixels change, the mean luma falls by 0.26 of 255 and
+  the largest fall is 25.8; no pixel gets brighter. The effect is small in this frame because a
+  15.5-degree sun at about 100 000 lux carries most of the light and the term touches only the sky
+  term; it is where the sun does not reach — the shadowed faces of the plinths and the ground at
+  their feet — that it is visible. `images/ambient-occlusion-on.manifest` is the frame with the
+  stage, built from its own report.
 - **The normal map and the occlusion are sampled by the FRAME, not by the material.** `CySurface` is
   `{ CyClosure closures; float opacity; float3 preview; }` and `CyClosure` is five terms — diffuse,
   specular, emission, roughness, weight. **There is no normal term and no occlusion term in the

@@ -99,6 +99,7 @@ cy_add_module(
         cy::import
         cy::rendering-assembly
         cy::rendering-graph
+        cy::rendering-occlusion
         cy::rendering-particles
         cy::rendering-pipeline
         cy::rendering-sky
