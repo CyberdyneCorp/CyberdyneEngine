@@ -345,9 +345,13 @@ const MATERIAL_NODES: &[&str] = &[
     "material.layer_closures",
     "material.lerp",
     "material.multiply",
+    "material.noise",
+    "material.normal",
+    "material.object_position",
     "material.one_minus",
     "material.output",
     "material.parameter",
+    "material.procedural_wind",
     "material.saturate",
     "material.sheen",
     "material.sin",
@@ -356,8 +360,12 @@ const MATERIAL_NODES: &[&str] = &[
     "material.subtract",
     "material.swizzle",
     "material.texture_sample",
+    "material.time",
     "material.transmission",
+    "material.uv0",
+    "material.vertex_color",
     "material.vertex_output",
+    "material.world_position",
 ];
 
 /// `pose.*`: the vocabulary `lower_pose.cpp` and `locomotion.cpp` register.

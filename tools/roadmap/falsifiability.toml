@@ -1110,10 +1110,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "the-shot-does-not-overclaim-the-editor"
-digest = "f4d33ba04e4ff1ff"
+digest = "c5610a4291425bd4"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'honestly missing' in docs/design/beauty-shot.md (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
