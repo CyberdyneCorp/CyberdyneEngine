@@ -63,6 +63,8 @@ namespace cy::graph::material {
 /// Manifest-assigned identities for the material catalogue. Zero means the name is not a material
 /// node in this schema. These values are persisted by authored graphs and never derived from names.
 [[nodiscard]] NodeTypeId material_node_type_id(std::string_view type) noexcept;
+/// Stage bits published with each node: surface=1, vertex=2. Zero means an unknown type.
+[[nodiscard]] u8 material_node_stage_mask(std::string_view type) noexcept;
 [[nodiscard]] PinId material_node_pin_id(std::string_view type, std::string_view pin,
                                          PinDirection direction) noexcept;
 

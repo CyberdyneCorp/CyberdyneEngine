@@ -48,6 +48,10 @@ use super::graph::{
 
 /// The interchange's own version, written on its first line.
 pub const INTERCHANGE_VERSION: u32 = 1;
+/// Engine material catalogue bit for surface graph nodes.
+pub const SURFACE_STAGE: u8 = 1;
+/// Engine material catalogue bit for vertex graph nodes.
+pub const VERTEX_STAGE: u8 = 2;
 
 /// The pin type a numeric material pin carries.
 ///
@@ -293,10 +297,10 @@ fn decode_property(reader: &mut Reader<'_>, schema: u32) -> Result<Property> {
 pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
     let mut reader = Reader::new(bytes);
     let schema = reader.u32()?;
-    if !matches!(schema, 1 | 2) {
+    if !matches!(schema, 1..=3) {
         return Err(Problem::new(
             "read the material catalogue",
-            format!("schema {schema} is not supported; this editor supports schemas 1 and 2"),
+            format!("schema {schema} is not supported; this editor supports schemas 1 to 3"),
         ));
     }
     let _catalogue_version = reader.u32()?;
@@ -306,6 +310,16 @@ pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
         let identity = reader.u32()?;
         let node_schema = reader.u32()?;
         let name = reader.text()?;
+        let stage_mask = if schema >= 3 { reader.u8()? } else { 0 };
+        if schema >= 3
+            && name.starts_with("material.")
+            && (stage_mask == 0 || stage_mask & !(SURFACE_STAGE | VERTEX_STAGE) != 0)
+        {
+            return Err(Problem::new(
+                "read the material catalogue",
+                format!("node {name} has an invalid stage mask {stage_mask}"),
+            ));
+        }
         let pin_count = reader.u32()?;
         let pins = (0..pin_count)
             .map(|_| decode_pin(&mut reader))
@@ -315,7 +329,9 @@ pub fn catalogue_from_service(bytes: &[u8]) -> Result<Vec<NodeType>> {
             .map(|_| decode_property(&mut reader, schema))
             .collect::<Result<Vec<_>>>()?;
         nodes.push(
-            NodeType::identified(identity, node_schema, name, pins).with_properties(properties),
+            NodeType::identified(identity, node_schema, name, pins)
+                .with_properties(properties)
+                .with_stage_mask(stage_mask),
         );
     }
     if !reader.is_empty() {
@@ -761,6 +777,43 @@ mod tests {
         assert_eq!(property.stage, "fragment");
         assert_eq!(property.domain, "material");
         assert_eq!(property.required_capabilities, 1);
+        assert_eq!(decoded[0].stage_mask, 0);
+    }
+
+    #[test]
+    fn schema_three_preserves_engine_node_stage_compatibility() {
+        let mut bytes = Writer::new();
+        bytes.u32(3);
+        bytes.u32(5);
+        bytes.u32(2);
+        for (identity, name, stages) in [
+            (25, "material.output", SURFACE_STAGE),
+            (26, "material.sin", SURFACE_STAGE | VERTEX_STAGE),
+        ] {
+            bytes.u32(identity);
+            bytes.u32(1);
+            bytes.text(name);
+            bytes.u8(stages);
+            bytes.u32(0);
+            bytes.u32(0);
+        }
+        let decoded = catalogue_from_service(&bytes.finish()).expect("schema 3 decodes");
+        assert!(decoded[0].supports_stage(SURFACE_STAGE));
+        assert!(!decoded[0].supports_stage(VERTEX_STAGE));
+        assert!(decoded[1].supports_stage(SURFACE_STAGE));
+        assert!(decoded[1].supports_stage(VERTEX_STAGE));
+
+        let mut invalid = Writer::new();
+        invalid.u32(3);
+        invalid.u32(5);
+        invalid.u32(1);
+        invalid.u32(26);
+        invalid.u32(1);
+        invalid.text("material.sin");
+        invalid.u8(0);
+        invalid.u32(0);
+        invalid.u32(0);
+        assert!(catalogue_from_service(&invalid.finish()).is_err());
     }
 
     /// THE CROSS-LANGUAGE JOIN, AND IT IS READ RATHER THAN COPIED.

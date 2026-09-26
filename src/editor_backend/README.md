@@ -7,10 +7,10 @@ material compiler, renderer, Metal, or VFX implementation.
 The first vertical slice supports:
 
 - `capabilities.get` — operation discovery and first-slice target feature bits;
-- `material.catalogue.get` — deterministic schema-2 envelope/catalogue-version-4 node, pin and
+- `material.catalogue.get` — deterministic schema-3 envelope/catalogue-version-5 node, pin and
   typed-property catalogue with manifest identities, typed constraints, enum choices, asset-kind
-  filters, semantic/stage/domain metadata and required target-capability bits. Schema 1 remains
-  readable by the editor for compatibility;
+  filters, semantic/stage/domain metadata, required target-capability bits, and engine-owned node
+  stage masks (`surface`, `vertex`, or both). Schemas 1 and 2 remain readable by the editor;
 - `vfx.catalogue.get` (when `CY_VFX` is enabled) — schema-2 catalogue generated from the VFX
   compiler's registered node types, typed pins, property descriptors, and registered data-interface
   names for sample controls. The editor requests it after the material

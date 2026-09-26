@@ -98,6 +98,17 @@ CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero 
     CY_CHECK_EQ(identities.size(), material_node_types().size());
 }
 
+CY_TEST_CASE("graph_material: stage compatibility comes from the engine palette") {
+    using cy::graph::material::material_node_stage_mask;
+    CY_CHECK_EQ(material_node_stage_mask("material.output"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.diffuse"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.texture_sample"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.custom"), 1U);
+    CY_CHECK_EQ(material_node_stage_mask("material.sin"), 3U);
+    CY_CHECK_EQ(material_node_stage_mask("material.attribute"), 3U);
+    CY_CHECK_EQ(material_node_stage_mask("material.unknown"), 0U);
+}
+
 CY_TEST_CASE("graph_material: the service catalogue is deterministic and versioned") {
     cy::Array<u8> first(allocator());
     cy::Array<u8> second(allocator());
@@ -111,8 +122,8 @@ CY_TEST_CASE("graph_material: the service catalogue is deterministic and version
                (static_cast<u32>(first[offset + 2]) << 16U) |
                (static_cast<u32>(first[offset + 3]) << 24U);
     };
-    CY_CHECK_EQ(read_u32(0), 2U);
-    CY_CHECK_EQ(read_u32(4), 4U);
+    CY_CHECK_EQ(read_u32(0), 3U);
+    CY_CHECK_EQ(read_u32(4), 5U);
     CY_CHECK_EQ(read_u32(8), material_node_types().size());
 }
 

@@ -12,7 +12,9 @@ use cy_editor_interface::specialised::graph::{
     GraphCanvas, Layout as GraphLayout, NodeKey, Pin, PinDirection, Property, PropertyKind,
     Severity,
 };
-use cy_editor_interface::specialised::material::{canvas_interchange, load_canvas_interchange};
+use cy_editor_interface::specialised::material::{
+    SURFACE_STAGE, canvas_interchange, load_canvas_interchange,
+};
 use cy_editor_services::primitives::material_of;
 use cy_editor_services::{
     AssetCatalogueService, Editor, MaterialCatalogueState, MaterialDiagnosticSeverity,
@@ -406,13 +408,7 @@ fn palette(
     ui.add_space(shell.metrics().gap() * 0.5);
 
     let query = filter.trim().to_ascii_lowercase();
-    let names: Vec<String> = canvas
-        .catalogue()
-        .type_names()
-        .into_iter()
-        .filter(|name| matches_filter(name, &query))
-        .map(ToOwned::to_owned)
-        .collect();
+    let names = palette_names(canvas, &query, SURFACE_STAGE);
     egui::ScrollArea::vertical().show(ui, |ui| {
         for name in names {
             let Some(node_type) = canvas.catalogue().get(&name) else {
@@ -453,6 +449,22 @@ fn palette(
         },
     );
     action
+}
+
+fn palette_names(canvas: &GraphCanvas, query: &str, stage: u8) -> Vec<String> {
+    canvas
+        .catalogue()
+        .type_names()
+        .into_iter()
+        .filter(|name| {
+            matches_filter(name, query)
+                && canvas
+                    .catalogue()
+                    .get(name)
+                    .is_some_and(|node| node.supports_stage(stage))
+        })
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -1428,6 +1440,7 @@ fn display_index(index: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
+    use cy_editor_interface::specialised::material::VERTEX_STAGE;
 
     use super::*;
 
@@ -1487,6 +1500,30 @@ mod tests {
     #[test]
     fn display_labels_with_spaces_are_searchable() {
         assert!(matches_filter("material.add_closures", "add closures"));
+    }
+
+    #[test]
+    fn material_palette_uses_engine_stage_compatibility() {
+        let catalogue = Catalogue::new(vec![
+            NodeType::identified(1, 1, "material.output".into(), vec![])
+                .with_stage_mask(SURFACE_STAGE),
+            NodeType::identified(2, 1, "material.offset".into(), vec![])
+                .with_stage_mask(VERTEX_STAGE),
+            NodeType::identified(3, 1, "material.sin".into(), vec![])
+                .with_stage_mask(SURFACE_STAGE | VERTEX_STAGE),
+        ])
+        .unwrap();
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(catalogue);
+
+        assert_eq!(
+            palette_names(&canvas, "", SURFACE_STAGE),
+            ["material.output", "material.sin"]
+        );
+        assert_eq!(
+            palette_names(&canvas, "", VERTEX_STAGE),
+            ["material.offset", "material.sin"]
+        );
     }
 
     #[test]

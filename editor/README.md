@@ -427,15 +427,17 @@ yet). The editor runtime resolves this authoring reference by name and draws its
 ## Catalogue-driven material properties
 
 The Material Graph does not identify node names to decide which widgets to draw. Catalogue schema
-2 describes each property by stable identity, kind, typed default, numeric constraints, enum
+3 describes each property by stable identity, kind, typed default, numeric constraints, enum
 choices, required asset kind, semantic role, compiler/runtime stage, graph domain and target
-capabilities. The shared graph canvas validates authored literals before mutation and retains values
-by node and property identity across compatible catalogue refreshes. Texture controls query the
-project asset catalogue for stable identities whose kind is `texture`; the compiled dependency list
-therefore contains asset identities rather than display paths.
+capabilities. It also carries each node's engine-owned surface/vertex stage mask; the surface
+palette hides vertex-only nodes. The shared graph canvas validates authored literals before
+mutation and retains values by node and property identity across compatible catalogue refreshes.
+Texture controls query the project asset catalogue for stable identities whose kind is `texture`;
+the compiled dependency list therefore contains asset identities rather than display paths.
 
-Schema-1 catalogues remain readable. Their combined textual constraint is migrated into the schema-2
-shape when decoded, so reconnecting an older runtime does not discard the graph being authored.
+Schema-1 and schema-2 catalogues remain readable. Schema 1's combined textual constraint is
+migrated into the typed property shape, and older catalogues leave stage compatibility unrestricted,
+so reconnecting an older runtime does not discard the graph being authored.
 The engine catalogue includes `material.sin`, a typed scalar/vector sine node shared with the
 text material front end. It is available for authored material arithmetic; vertex-stage outputs
 and displaced rendering are still tracked by issue #15.

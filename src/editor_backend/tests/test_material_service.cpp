@@ -135,8 +135,8 @@ CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
     CY_REQUIRE(present);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 12U);
-    CY_CHECK_EQ(read_u32(event.payload), 2U);
-    CY_CHECK_EQ(read_u32(event.payload + 4), 4U);
+    CY_CHECK_EQ(read_u32(event.payload), 3U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 5U);
     CY_CHECK_EQ(read_u32(event.payload + 8), 26U);
     api->service_close(&host, session);
 }

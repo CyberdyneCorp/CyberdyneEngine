@@ -379,6 +379,22 @@ NodeTypeId material_node_type_id(std::string_view type) noexcept {
     return spec != nullptr ? spec->identity : kInvalidNodeTypeId;
 }
 
+u8 material_node_stage_mask(std::string_view type) noexcept {
+    constexpr u8 surface = 1U;
+    constexpr u8 vertex = 2U;
+    if (type == kOutputType) {
+        return surface;
+    }
+    const NodeSpec* spec = spec_for(type);
+    if (spec == nullptr) {
+        return 0;
+    }
+    if (spec->closure || spec->op == GraphOp::TextureSample || spec->op == GraphOp::Custom) {
+        return surface;
+    }
+    return surface | vertex;
+}
+
 Status encode_material_catalogue(Array<u8>& out) noexcept {
     const auto u8_value = [&](u8 value) { return out.push_back(value); };
     const auto u32_value = [&](u32 value) -> Status {
@@ -413,10 +429,10 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
     };
 
     out.clear();
-    if (Status status = u32_value(2); !status) {
+    if (Status status = u32_value(3); !status) {
         return status;  // schema
     }
-    if (Status status = u32_value(4); !status) {
+    if (Status status = u32_value(5); !status) {
         return status;  // catalogue version
     }
     const auto types = material_node_types();
@@ -431,6 +447,9 @@ Status encode_material_catalogue(Array<u8>& out) noexcept {
             return status;  // node schema version
         }
         if (Status status = text(type); !status) {
+            return status;
+        }
+        if (Status status = u8_value(material_node_stage_mask(type)); !status) {
             return status;
         }
         PinDesc storage[kMaxPins];
