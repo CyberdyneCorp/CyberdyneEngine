@@ -43,6 +43,7 @@ use crate::observe::{Observation, ViewportRequest, observe};
 use crate::recording::{RecordedInvocation, Recording};
 use crate::resource::{Resource, ResourceKind, Resources};
 use crate::tool::{ToolDescriptor, project};
+use crate::window::{WINDOW_ADDRESS, WindowCapture, WindowFrame, WindowTarget};
 use cy_editor_viewport::viewmode::{ALL_VIEW_MODES, ViewMode};
 
 /// Who is connected.
@@ -131,6 +132,8 @@ pub enum Reading {
     Text(Resource),
     /// Something it can only show.
     Image(Box<Observation>),
+    /// The editor window, or one panel of it, as presented.
+    Window(Box<WindowCapture>),
 }
 
 /// One agent's connection to the editor.
@@ -493,6 +496,21 @@ impl AgentSession {
                 .to_string(),
         ));
         listing.push((
+            WINDOW_ADDRESS.to_string(),
+            ResourceKind::Viewport,
+            "The desktop editor window as the person sees it: every panel, the palette, and the \
+             engine image inside the viewport. The editor's composition, not the shipping frame. \
+             Costs one of this connection's renders; refused when there is no window."
+                .to_string(),
+        ));
+        listing.push((
+            format!("{WINDOW_ADDRESS}?panel=viewport"),
+            ResourceKind::Viewport,
+            "One dock panel of the window, cropped to where the editor drew it in that frame. Any \
+             panel kind may be named after `panel=`; a panel that is not shown is refused."
+                .to_string(),
+        ));
+        listing.push((
             "viewport:Normals".to_string(),
             ResourceKind::Viewport,
             "A debug visualisation. Any of the engine's view modes may be named after the colon; \
@@ -537,6 +555,14 @@ impl AgentSession {
     /// `cy_editor_viewport::viewmode::ViewMode::engine_name` gives, so a caller that read the
     /// `viewport.view-mode.*` commands already knows them.
     pub fn read(&mut self, editor: &mut Editor, uri: &str, now_millis: u64) -> Result<Reading> {
+        if let Some(target) = WindowTarget::parse(uri) {
+            // A desktop host answers window reads itself, from the frame its shell captured. Reaching
+            // here means there is no window, which is a headless session.
+            let target = target?;
+            return self
+                .read_window(None, &target, now_millis)
+                .map(|capture| Reading::Window(Box::new(capture)));
+        }
         let Some(rest) = uri.strip_prefix("viewport:") else {
             return self
                 .read_resource(editor, uri, now_millis)
@@ -568,6 +594,56 @@ impl AgentSession {
         }
         self.observe(editor, &request, now_millis)
             .map(|observation| Reading::Image(Box::new(observation)))
+    }
+
+    /// Read the editor window from a frame the desktop shell captured.
+    ///
+    /// `frame` is `None` in a headless session, which has no window to read. A refusal is decided
+    /// before the budget is charged, so asking for a hidden panel costs nothing; an answered read is
+    /// charged and audited exactly like a viewport observation.
+    pub fn read_window(
+        &mut self,
+        frame: Option<&WindowFrame>,
+        target: &WindowTarget,
+        now_millis: u64,
+    ) -> Result<WindowCapture> {
+        if self.revoked {
+            return Err(Problem::new(
+                "read the editor window",
+                "this connection's access has been revoked",
+            )
+            .with_remedy("open a new connection; the human at the interface decides"));
+        }
+        let Some(frame) = frame else {
+            return Err(Problem::new(
+                "read the editor window",
+                "this session is headless, so there is no window to capture",
+            )
+            .with_remedy(
+                "run the editor with --mcp and without --headless to read editor:window; \
+                 viewport: reads the engine's image",
+            ));
+        };
+        let capture = frame.capture(target)?;
+        if let Err(problem) = self.spending.charge_render(now_millis) {
+            self.audit(
+                AgentAuditKind::Refusal,
+                PrivacyClass::Public,
+                "window capture refused by budget",
+            );
+            return Err(problem);
+        }
+        self.audit(
+            AgentAuditKind::RenderRequest,
+            PrivacyClass::ProjectMetadata,
+            format!("window capture: {}", capture.uri()),
+        );
+        self.audit(
+            AgentAuditKind::Cost,
+            PrivacyClass::Public,
+            "charged one render for a window capture",
+        );
+        Ok(capture)
     }
 
     /// Stake a claim on the objects this connection is about to work on.

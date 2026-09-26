@@ -700,6 +700,7 @@ dependencies = [
  "cy-editor-protocol",
  "cy-editor-services",
  "cy-editor-viewport",
+ "image",
 ]
 
 [[package]]

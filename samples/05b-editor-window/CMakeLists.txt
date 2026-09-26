@@ -146,4 +146,20 @@ set_tests_properties(smoke.editor_window PROPERTIES
                      LABELS "smoke" TIMEOUT "${CY_WINDOW_TIMEOUT}"
                      SKIP_RETURN_CODE 3
                      RUN_SERIAL TRUE)
+
+# THE SAME VIEWPORT, PROVED WITHOUT INPUT. `mcp_window.py` reads the window through the editor's
+# `editor:window` MCP resource and moves an entity with the registered commands, so it neither sends
+# nor needs keyboard or pointer events and a person can keep using the display while it runs. It
+# checks both an empty world (the engine's black frame, not the editor's own fill) and a drawable
+# one (colour, a move, and its undo). `window.py` remains the proof of real input. Issue #18.
+add_test(NAME smoke.editor_window_mcp
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mcp_window.py"
+                 --build --profile "${CY_WINDOW_PROFILE}"
+                 --runtime "$<TARGET_FILE:cy_editor_window_runtime>"
+                 --work "${CMAKE_CURRENT_BINARY_DIR}/mcp-session"
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(smoke.editor_window_mcp PROPERTIES
+                     LABELS "smoke" TIMEOUT "${CY_WINDOW_TIMEOUT}"
+                     SKIP_RETURN_CODE 3
+                     RUN_SERIAL TRUE)
 endif()

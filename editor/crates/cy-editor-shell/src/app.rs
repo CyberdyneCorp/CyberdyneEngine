@@ -97,6 +97,10 @@ pub struct EditorWindow {
     source_workspace: SourceWorkspaceViewModel,
     last_auto_reload_generation: u32,
     agent: Option<cy_editor_agent::DesktopAgentHost>,
+    /// Screenshots of this window requested for the agent's `editor:window` reads.
+    agent_window: crate::agent_window::AgentWindow,
+    /// The panels the dock drew in the last frame, by kind, for a window capture's crop.
+    drawn_panels: Vec<(String, egui::Rect)>,
     diff: DiffViewModel,
     merge_view: MergeViewModel,
     thumbnails: Thumbnails,
@@ -185,6 +189,8 @@ impl EditorWindow {
             source_workspace: SourceWorkspaceViewModel::new(),
             last_auto_reload_generation: 0,
             agent: None,
+            agent_window: crate::agent_window::AgentWindow::default(),
+            drawn_panels: Vec::new(),
             diff: DiffViewModel::new(),
             merge_view: MergeViewModel::new(),
             thumbnails: Thumbnails::new(THUMBNAIL_CACHE),
@@ -806,6 +812,7 @@ impl EditorWindow {
                     dock,
                     link,
                     inputs,
+                    drawn_panels,
                     ..
                 } = self;
                 let mut panels = Panels {
@@ -829,6 +836,7 @@ impl EditorWindow {
                     inputs,
                     intents,
                     tab_rects: Vec::new(),
+                    panel_rects: Vec::new(),
                 };
                 egui_dock::DockArea::new(dock)
                     .style(style)
@@ -837,6 +845,7 @@ impl EditorWindow {
                     .show_add_buttons(false)
                     .show_inside(ui, &mut panels);
                 dock::paint_tab_selection(ui.ctx(), dock, &panels.tab_rects, panels.shell.theme);
+                *drawn_panels = std::mem::take(&mut panels.panel_rects);
             });
     }
 
@@ -903,6 +912,10 @@ impl eframe::App for EditorWindow {
 
         // 1 and 2: the editor's housekeeping, then the engine's newest frame.
         self.editor.pump();
+        if let Some(agent) = self.agent.as_mut() {
+            // Before this frame's agent pump, so a delivered screenshot answers the reads waiting on it.
+            self.agent_window.receive(ctx, agent);
+        }
         crate::panels::finish_material_save(&mut self.editor, &mut self.inputs);
         self.finish_imports();
         self.sync_material_catalogue();
@@ -991,6 +1004,7 @@ impl eframe::App for EditorWindow {
         // a saturated client cannot turn the window into its worker thread.
         if let Some(agent) = self.agent.as_mut() {
             agent.pump(&mut self.editor, &self.registry, 4);
+            self.agent_window.request(ctx, agent, &self.drawn_panels);
         }
 
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));

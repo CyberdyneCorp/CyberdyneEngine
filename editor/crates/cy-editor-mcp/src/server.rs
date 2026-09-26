@@ -461,6 +461,7 @@ fn render(response: &AgentResponse) -> Result<Json> {
             ])]),
         )]),
         AgentResponse::Image(observation) => image_result(observation),
+        AgentResponse::Window(capture) => window_result(capture),
         AgentResponse::Outcome { summary, values } => {
             let mut lines = summary.clone();
             for (name, value) in values {
@@ -533,6 +534,29 @@ fn image_result(observation: &Observation) -> Json {
         ]),
     };
     Json::object([("contents", Json::Array(vec![entry]))])
+}
+
+/// A window read: the PNG, and a text entry saying what it is and where it was cut from.
+///
+/// The description travels as a second content entry rather than being folded into the blob's
+/// metadata, because a client that shows only text still learns that this is the editor's
+/// composition and not the shipping frame.
+fn window_result(capture: &cy_editor_agent::WindowCapture) -> Json {
+    Json::object([(
+        "contents",
+        Json::Array(vec![
+            Json::object([
+                ("uri", Json::text(capture.uri())),
+                ("mimeType", Json::text("image/png")),
+                ("blob", Json::text(base64(&capture.png))),
+            ]),
+            Json::object([
+                ("uri", Json::text(capture.uri())),
+                ("mimeType", Json::text("text/plain")),
+                ("text", Json::text(capture.describe())),
+            ]),
+        ]),
+    )])
 }
 
 /// The address an observation came back from.
@@ -847,4 +871,42 @@ pub fn serve<R: BufRead, W: Write>(
     }
     server.connection.closed();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_window_capture_is_a_png_blob_with_its_description() {
+        let capture = cy_editor_agent::WindowCapture {
+            png: vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+            window_width: 1600,
+            window_height: 950,
+            rect: cy_editor_agent::PixelRect {
+                x: 301,
+                y: 120,
+                width: 935,
+                height: 541,
+            },
+            panel: Some("viewport".into()),
+            sequence: 4,
+        };
+        let json = render(&AgentResponse::Window(Box::new(capture))).expect("renders");
+        let Json::Array(entries) = json.get("contents") else {
+            panic!("contents is an array: {json:?}");
+        };
+        assert_eq!(
+            entries[0].get("uri").as_text(),
+            Some("editor:window?panel=viewport")
+        );
+        assert_eq!(entries[0].get("mimeType").as_text(), Some("image/png"));
+        assert_eq!(entries[0].get("blob").as_text(), Some("iVBORw0KGgo="));
+        let described = entries[1].get("text").as_text().expect("a description");
+        assert!(
+            described.contains("935x541 at (301, 120) of a 1600x950 window"),
+            "{described}"
+        );
+        assert!(described.contains("not the shipping frame"), "{described}");
+    }
 }
