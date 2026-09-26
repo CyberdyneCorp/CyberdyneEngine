@@ -383,6 +383,8 @@ public:
     [[nodiscard]] Expected<NodeId, Error> parameter(Name name) noexcept;
     [[nodiscard]] Expected<NodeId, Error> attribute(Name semantic, ValueType type) noexcept;
     [[nodiscard]] Expected<NodeId, Error> field(Name field_name, ValueType type) noexcept;
+    /// Convert a scalar distance in metres to a world-space offset along the mesh normal.
+    [[nodiscard]] Expected<NodeId, Error> normal_displacement(NodeId amount) noexcept;
     [[nodiscard]] Expected<NodeId, Error> texture_sample(Name texture, NodeId uv) noexcept;
 
     // --- The general constructor ------------------------------------------------------------

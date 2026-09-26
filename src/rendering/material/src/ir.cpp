@@ -432,6 +432,18 @@ Expected<NodeId, Error> Builder::field(Name field_name, ValueType type) noexcept
     return make(Op::Field, type, field_name, Immediate{}, {});
 }
 
+Expected<NodeId, Error> Builder::normal_displacement(NodeId amount) noexcept {
+    if (amount >= module_.nodes_.size() || module_.nodes_[amount].type != ValueType::Float) {
+        return fail(ErrorCode::InvalidArgument, "vertex displacement must be a scalar distance");
+    }
+    auto normal = attribute(Name::intern("normal"), ValueType::Vec3);
+    if (!normal) {
+        return make_unexpected(normal.error());
+    }
+    const NodeId operands[] = {*normal, amount};
+    return make(Op::Mul, {operands, 2});
+}
+
 Expected<NodeId, Error> Builder::texture_sample(Name texture, NodeId uv) noexcept {
     if (module_.find_texture(texture) == nullptr) {
         return make_unexpected(

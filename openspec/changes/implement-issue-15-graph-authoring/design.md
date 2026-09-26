@@ -26,6 +26,8 @@ The existing material graph gains an explicit vertex stage and typed outputs for
 The `material.vertex_output` graph node now accepts scalar normal displacement as well as a
 float3 world-space offset. Graph lowering combines them as `offset + normal * displacement` in
 the existing typed vertex root; tests confirm the normal reaches visible and shadow vertex programs.
+The text front end accepts the same scalar displacement assignment and graph/text cook identities
+match when both offset and displacement are present.
 Custom interpolants and previous-frame evaluation remain open.
 
 The material IR first carries a typed `float3` world-space vertex offset root beside its surface

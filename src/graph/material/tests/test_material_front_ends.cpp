@@ -102,8 +102,12 @@ CY_TEST_CASE("graph_material: normal displacement reaches visible and shadow ver
     const auto amount = canvas.add("material.constant");
     canvas.type_of(amount, ValueType::Float);
     canvas.value(amount, "value", 0.25F, 0.0F, 0.0F, 0.0F, 0);
+    const auto offset = canvas.add("material.constant");
+    canvas.type_of(offset, ValueType::Vec3);
+    canvas.value(offset, "value", 0.0F, 0.1F, 0.0F, 0.0F, 0);
     const auto output = canvas.add("material.vertex_output");
     canvas.wire(amount, output, "displacement");
+    canvas.wire(offset, output, "offset");
     CY_REQUIRE(canvas.good());
 
     MaterialGraph lowered(allocator(), Name::intern("raised"));
@@ -113,6 +117,15 @@ CY_TEST_CASE("graph_material: normal displacement reaches visible and shadow ver
     CompileOptions options;
     auto compiled = cy::rendering::material::compile_material(*ir, options, allocator());
     CY_REQUIRE(compiled.has_value());
+    cy::rendering::material::ParseDiagnostic diagnostic(allocator());
+    auto from_text = cy::rendering::material::parse_material(
+        "material raised { vertex_displacement = 0.25; "
+        "vertex_offset = (0.0, 0.1, 0.0); }",
+        allocator(), diagnostic);
+    CY_REQUIRE(from_text.has_value());
+    auto text_program = cy::rendering::material::compile_material(*from_text, options, allocator());
+    CY_REQUIRE(text_program.has_value());
+    CY_CHECK_EQ(compiled->cook_key(), text_program->cook_key());
     const cy::rendering::material::CompiledProgram* visible = nullptr;
     const cy::rendering::material::CompiledProgram* shadow = nullptr;
     for (const auto& program : compiled->programs()) {
@@ -135,6 +148,11 @@ CY_TEST_CASE("graph_material: normal displacement reaches visible and shadow ver
     CY_CHECK(shadow_source.find("ctx.attributes.normal") != std::string_view::npos);
     CY_CHECK(visible_source.find("0.25") != std::string_view::npos);
     CY_CHECK(shadow_source.find("0.25") != std::string_view::npos);
+
+    auto invalid = cy::rendering::material::parse_material(
+        "material raised { vertex_displacement = (0.0, 0.25, 0.0); }", allocator(), diagnostic);
+    CY_CHECK_FALSE(invalid.has_value());
+    CY_CHECK(std::string_view(diagnostic.text()).find("scalar distance") != std::string_view::npos);
 }
 
 CY_TEST_CASE("graph_material: animated procedural wind has one graph and text cook identity") {

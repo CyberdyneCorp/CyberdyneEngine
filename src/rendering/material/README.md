@@ -91,7 +91,9 @@ The engine material catalogue assigns `material.vertex_output` a stable identity
 vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
 Its `displacement` pin accepts a scalar distance along the `normal` attribute. Graph lowering
 combines both pins into the single world-space offset root, so visible and shadow variants evaluate
-the same expression. A vector wired to `displacement` is rejected before compilation.
+the same expression. The text front end accepts `vertex_displacement = <scalar>;` and produces
+the same cook identity even when that assignment precedes `vertex_offset`. A vector displacement
+is rejected before compilation.
 `material.world_position` lowers to the engine's `position` attribute, in camera-relative world
 coordinates; `material.object_position` retains mesh-local coordinates. Both are float3 inputs.
 `material.time` is a scalar engine input. The first-light hosted renderer writes elapsed seconds into the

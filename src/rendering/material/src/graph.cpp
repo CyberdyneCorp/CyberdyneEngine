@@ -227,15 +227,7 @@ struct Lowering {
     if (amount == kInvalidNode) {
         return fail(ErrorCode::InvalidArgument, "vertex displacement source is unavailable");
     }
-    if (builder.node(amount).type != ValueType::Float) {
-        return fail(ErrorCode::InvalidArgument, "vertex displacement must be a scalar distance");
-    }
-    auto normal = builder.attribute(Name::intern("normal"), ValueType::Vec3);
-    if (!normal) {
-        return make_unexpected(normal.error());
-    }
-    const NodeId operands[] = {*normal, amount};
-    auto displaced = builder.make(Op::Mul, {operands, 2});
+    auto displaced = builder.normal_displacement(amount);
     if (!displaced) {
         return make_unexpected(displaced.error());
     }

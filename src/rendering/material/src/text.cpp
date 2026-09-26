@@ -326,6 +326,8 @@ private:
     Builder* builder_ = nullptr;
     BuilderPolicy policy_;
     Array<Binding> bindings_;
+    NodeId vertex_offset_ = kInvalidNode;
+    NodeId vertex_displacement_ = kInvalidNode;
     /// The annotations `@microdetail` and friends collected for the next `let`.
     NodeFlags pending_ = NodeFlags::None;
 };
@@ -508,7 +510,8 @@ Status Parser::parse_statement() noexcept {
     if (keyword.text == "let") {
         return parse_let();
     }
-    if (keyword.text == "surface" || keyword.text == "opacity" || keyword.text == "vertex_offset") {
+    if (keyword.text == "surface" || keyword.text == "opacity" || keyword.text == "vertex_offset" ||
+        keyword.text == "vertex_displacement") {
         if (Status expected = expect_symbol('=', "an output is assigned"); !expected) {
             return expected;
         }
@@ -516,16 +519,22 @@ Status Parser::parse_statement() noexcept {
         if (!value) {
             return make_unexpected(value.error());
         }
+        if (keyword.text == "vertex_offset" || keyword.text == "vertex_displacement") {
+            const bool displacement = keyword.text == "vertex_displacement";
+            const ValueType expected = displacement ? ValueType::Float : ValueType::Vec3;
+            if (builder_->node(*value).type != expected) {
+                return make_unexpected(
+                    report(keyword, displacement ? "vertex displacement must be a scalar distance"
+                                                 : "the vertex offset output must be a float3"));
+            }
+            (displacement ? vertex_displacement_ : vertex_offset_) = *value;
+            return expect_symbol(';', "a statement ends with a semicolon");
+        }
         const bool surface = keyword.text == "surface";
-        const bool vertex_offset = keyword.text == "vertex_offset";
-        const Status set = surface         ? builder_->set_surface(value.value())
-                           : vertex_offset ? builder_->set_vertex_offset(value.value())
-                                           : builder_->set_opacity(value.value());
+        const Status set = surface ? builder_->set_surface(*value) : builder_->set_opacity(*value);
         if (!set) {
             return make_unexpected(report(keyword, surface ? "the surface output must be a closure"
-                                                   : vertex_offset
-                                                       ? "the vertex offset output must be a float3"
-                                                       : "the opacity output must be a float"));
+                                                           : "the opacity output must be a float"));
         }
         return expect_symbol(';', "a statement ends with a semicolon");
     }
@@ -862,6 +871,28 @@ Expected<Module, Error> Parser::run() noexcept {
     }
     if (Status expected = expect_symbol('}', "a material's body is braced"); !expected) {
         return make_unexpected(expected.error());
+    }
+    NodeId offset = vertex_offset_;
+    if (vertex_displacement_ != kInvalidNode) {
+        auto displaced = builder.normal_displacement(vertex_displacement_);
+        if (!displaced) {
+            return make_unexpected(displaced.error());
+        }
+        if (offset == kInvalidNode) {
+            offset = *displaced;
+        } else {
+            const NodeId operands[] = {offset, *displaced};
+            auto combined = builder.make(Op::Add, {operands, 2});
+            if (!combined) {
+                return make_unexpected(combined.error());
+            }
+            offset = *combined;
+        }
+    }
+    if (offset != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(offset); !set) {
+            return make_unexpected(set.error());
+        }
     }
     return builder.finish();
 }
