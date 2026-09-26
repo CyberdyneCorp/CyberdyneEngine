@@ -148,8 +148,24 @@ def _glob_matches(path: str, pattern: str) -> bool:
     """A path criterion is satisfied by a FILE or a DIRECTORY matching its glob, so a change to a file
     under a matching directory is a change to what it reads."""
     candidate = PurePosixPath(path)
-    return any(ancestor.full_match(pattern) for ancestor in (candidate, *candidate.parents)
+    matcher = _glob_regex(pattern)
+    return any(matcher.fullmatch(str(ancestor)) for ancestor in (candidate, *candidate.parents)
                if str(ancestor) != ".")
+
+
+def _glob_regex(pattern: str) -> "re.Pattern[str]":
+    """`PurePath.full_match` semantics without it: that method arrived in Python 3.13, and CI runs 3.12.
+    `**` spans any number of whole segments (including none), `*` and `?` stay within one segment."""
+    parts: list[str] = []
+    segments = pattern.split("/")
+    for index, segment in enumerate(segments):
+        last = index == len(segments) - 1
+        if segment == "**":
+            parts.append("(?:[^/]+/)*" if not last else "(?:[^/]+(?:/[^/]+)*)?")
+            continue
+        text = "".join("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c) for c in segment)
+        parts.append(text if last else text + "/")
+    return re.compile("".join(parts))
 
 
 def _is_cmake_file(path: str) -> bool:

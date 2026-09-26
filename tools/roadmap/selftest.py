@@ -2867,6 +2867,27 @@ def _reason(choice: incremental_module.Choice) -> str:
     return choice.reasons[0]
 
 
+def test_incremental_globs_run_on_python_3_12(root: Path) -> None:
+    """Path-criterion globs match without `PurePath.full_match`, which only exists from Python 3.13.
+
+    REGRESSION: incremental.py called `full_match`, and CI's roadmap-status job (Python 3.12) failed with
+    AttributeError on every run. The matcher is now a regex with the same semantics; these cases pin
+    them, and the source must not reach for the 3.13-only method again.
+    """
+    import incremental
+
+    cases = [("src/save/a.cpp", "src/save/**", True), ("src/save", "src/save/**", True),
+             ("src/save/x/y.h", "src/**/*.h", True), ("src/y.h", "src/**/*.h", True),
+             ("docs/a.md", "src/**", False), ("samples/12/README.md", "samples/*/README.md", True),
+             ("samples/12/x/README.md", "samples/*/README.md", False), ("a/b.c", "a/?.c", True),
+             ("a/bb.c", "a/?.c", False)]
+    for path, pattern, expected in cases:
+        got = bool(incremental._glob_regex(pattern).fullmatch(path))
+        check(f"glob {pattern!r} {'matches' if expected else 'does not match'} {path!r}", got == expected)
+    source = (Path(incremental.__file__)).read_text(encoding="utf-8")
+    check("incremental.py does not call the Python 3.13-only full_match", ".full_match(" not in source)
+
+
 def test_incremental_selection(root: Path) -> None:
     """`roadmap milestone <rung> --incremental`: what a change since a green ledger can have moved.
 
@@ -3074,6 +3095,7 @@ def main() -> int:
         test_scheduler_over_the_real_ledgers(_area(root, "scheduler-corpus"))
         test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
         test_incremental_selection(_area(root, "incremental"))
+        test_incremental_globs_run_on_python_3_12(root)
         if not _nested():
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
             test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
