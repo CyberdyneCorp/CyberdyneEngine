@@ -148,6 +148,10 @@ compiles vertex offsets and interpolants for its static meshes, including visibl
 shadow passes. Its first-light material preview still lacks an environment-field provider, while
 the authored scene binds the weather-owned `wind` field. Other field names receive an explicit
 refusal. The procedural wind node remains a separate operation.
+The first-light shader assembler now accepts the typed `wind` read and supplies the mesh's
+camera-relative position to both vertex and fragment material contexts. Publishing that program
+still refuses it until the first-light renderer binds the Engine field image and its separate
+camera-to-image constants; the scene preview path already supplies those resources.
 
 The field path must use `environment::build_deterministic_field_image` for the weather-owned
 `environment::fields::kWind` declaration, retain the image origin, and pass coordinates made local

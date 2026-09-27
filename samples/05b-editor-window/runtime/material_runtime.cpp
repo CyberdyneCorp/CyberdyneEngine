@@ -113,8 +113,11 @@ struct StandardLibrary {
                                                std::string_view source) noexcept {
     for (const Node& node : program.module.nodes()) {
         if (node.op == Op::Field) {
-            return fail(ErrorCode::Unsupported,
-                        "the first-light viewport has no environment-field provider");
+            if (node.symbol != Name::intern("wind") || node.type != ValueType::Vec3) {
+                return fail(ErrorCode::Unsupported,
+                            "the first-light viewport has no binding for this environment field");
+            }
+            continue;
         }
         if (node.op != Op::Attribute) {
             continue;
@@ -286,6 +289,9 @@ EditorVertexOutput editorMaterialVertexBase(EditorVertexInput input)
             "    CyMaterialContext ctx;\n"
             "    ctx.params = cyMaterialParameters;\n"
             "    ctx.attributes = cyZeroAttributes();\n");
+        if (report->fields > 0) {
+            writer.text("    ctx.fieldPosition = output.positionRelativeToCamera;\n");
+        }
         if (Status attributes = append_attribute_bindings(program, writer, "output"); !attributes) {
             return attributes;
         }
@@ -341,6 +347,9 @@ float4 editorMaterialFragment(EditorVertexOutput input) : SV_Target
     ctx.params = cyMaterialParameters;
     ctx.attributes = cyZeroAttributes();
 )");
+    if (report->fields > 0) {
+        writer.text("    ctx.fieldPosition = input.positionRelativeToCamera;\n");
+    }
     if (Status attributes = append_attribute_bindings(program, writer, "input"); !attributes) {
         return attributes;
     }
@@ -944,6 +953,12 @@ Status MetalMaterialRuntime::publish(
     if (primary == nullptr || primary->absent) {
         return fail(ErrorCode::InvalidArgument,
                     "the compiled material has no primary high-quality program");
+    }
+    for (const Node& node : primary->module.nodes()) {
+        if (node.op == Op::Field) {
+            return fail(ErrorCode::Unsupported,
+                        "the first-light viewport has no environment-field provider");
+        }
     }
 
     Array<char> unit(*allocator_);

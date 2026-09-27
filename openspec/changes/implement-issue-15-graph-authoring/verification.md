@@ -208,3 +208,11 @@ four assertions fail before the change. The authored frame now binds an Engine w
 field bindings moved to a separate per-frame buffer so the material parameter layout stays stable;
 `smoke.material_slang` passes 10 cases and 140 assertions, including the typed wind probe. The
 authored scene's headless test compiles the wind material to MSL and draws it on the null device.
+
+The hosted material mesh's shader assembler now carries the camera-relative field position in
+vertex and fragment contexts for a typed `wind` graph. The focused
+`the hosted material shader gives typed wind a camera-relative field position` regression passed;
+the full `smoke.editor_material_metal` suite passed 12 cases and 99 assertions on this host. Removing
+the vertex field-position assignment made the focused case fail 2 of 10 assertions; restoring it
+returned the test to green. Native image cases still stop at the Metal availability check, and
+`MetalMaterialRuntime::publish` refuses field graphs until the first-light renderer has a provider.

@@ -422,6 +422,31 @@ CY_TEST_CASE("the hosted material shader samples engine time in vertex and fragm
     CY_CHECK(shader.find(binding, evaluation) != std::string_view::npos);
 }
 
+CY_TEST_CASE("the hosted material shader gives typed wind a camera-relative field position") {
+    constexpr std::string_view source =
+        "material wind_sway { field wind : float3; vertex_offset = wind; "
+        "surface = diffuse(wind); opacity = 1.0; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("import cy.field;") != std::string_view::npos);
+    const usize vertex_position =
+        shader.find("ctx.fieldPosition = output.positionRelativeToCamera");
+    const usize vertex_evaluation =
+        shader.find("let materialVertex = cy_material_wind_sway_primary_high_vertex(ctx)");
+    CY_REQUIRE_NE(vertex_position, std::string_view::npos);
+    CY_REQUIRE_NE(vertex_evaluation, std::string_view::npos);
+    CY_CHECK_LT(vertex_position, vertex_evaluation);
+    CY_CHECK(shader.find("ctx.fieldPosition = input.positionRelativeToCamera") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("cyFieldSampleScene(binding.slot, at.x, at.y, at.z)") !=
+             std::string_view::npos);
+}
+
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
     if (!device.native_metal()) {
