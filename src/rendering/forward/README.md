@@ -87,6 +87,18 @@ because the opaque pass would sample an image nothing wrote. The feature derives
 prepass, whose normal lifts the trace off its surface. `src/rendering/contact_shadows/` is the
 producer.
 
+## A third, after the tone curve: selection outlines
+
+`FramePassKind::SelectionOutlines` sits after the post-process and before the interface: an outline
+is display-referred, so it is drawn where the colour a game asks for is the colour in the output,
+and the interface is drawn over it. The frame hands `ScreenSpaceStageInputs` to
+`FrameDescription::selection_outlines_stage` with `target` set to the colour the chain ended in — the
+output, when post-processing tonemapped into it — and `draw_instances` set to the frame's draw
+records, because the producer draws the marked objects again and must declare that read. Its last
+pass reads and writes the target, so the interface loads the outlined colour. `build()` refuses the
+feature without a producer, and without the depth prepass: a marked surface is found hidden by
+comparing it with the prepass depth. `src/rendering/selection/` is the producer.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in

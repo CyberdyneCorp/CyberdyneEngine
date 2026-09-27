@@ -552,3 +552,109 @@ CY_TEST_CASE(
     CY_REQUIRE_FALSE(graph.status().has_value());
     CY_CHECK(std::strstr(graph.status().error().message, "virtual geometry") != nullptr);
 }
+
+// --- Selection outlines' stage ---------------------------------------------------------------
+
+namespace {
+
+/// A stand-in for `selection::OutlinePass`: it records what the frame handed it and declares the
+/// two passes the real producer does — a mask drawn from the frame's own draw records, and a
+/// composite that reads the prepass depth and reads and writes the stage's target.
+struct OutlineProducer {
+    cy::rendering::ScreenSpaceStageInputs seen{};
+    cy::rendering::PassId composite = kInvalidPass;
+    bool refuse = false;
+};
+
+cy::rendering::PassId declare_outlines(RenderGraph& graph,
+                                       const cy::rendering::ScreenSpaceStageInputs& inputs,
+                                       void* user) noexcept {
+    auto* producer = static_cast<OutlineProducer*>(user);
+    producer->seen = inputs;
+    if (producer->refuse) {
+        return kInvalidPass;
+    }
+    cy::rendering::TextureRequest request;
+    request.name = "selection mask";
+    request.format = cy::rhi::Format::R32Uint;
+    request.width = inputs.width;
+    request.height = inputs.height;
+    const cy::rendering::ResourceId mask = graph.create_texture(request);
+    cy::rendering::PassBuilder draw =
+        graph.add_pass("selection mask", cy::rhi::QueueKind::Graphics);
+    draw.write(mask, cy::rhi::Access::ColorAttachmentWrite);
+    if (inputs.draw_instances != kInvalidResource) {
+        draw.read(inputs.draw_instances, cy::rhi::Access::VertexStorageRead);
+    }
+    producer->composite = graph.add_pass("selection composite", cy::rhi::QueueKind::Graphics)
+                              .read(mask, cy::rhi::Access::FragmentSampledRead)
+                              .read(inputs.depth, cy::rhi::Access::FragmentSampledRead)
+                              .use(inputs.target, cy::rhi::Access::ColorAttachmentReadWrite)
+                              .id();
+    return draw.id();
+}
+
+}  // namespace
+
+CY_TEST_CASE("selection outlines sit over the tonemapped colour and under the interface") {
+    // Off, the stage does not exist — the frame every caller before it built.
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    FrameDescription description = make_description();
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_CHECK_FALSE(declared(plain_frame, FramePassKind::SelectionOutlines));
+
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    OutlineProducer producer;
+    description.features.selection_outlines = true;
+    description.selection_outlines_stage =
+        cy::rendering::FrameStageDeclaration{&declare_outlines, &producer};
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_REQUIRE(declared(frame, FramePassKind::SelectionOutlines));
+    // After the tone curve, so the colour a game asks for is the colour on screen, and before the
+    // interface, which draws over the world and its outlines alike.
+    CY_CHECK_LT(position_of(frame, FramePassKind::PostProcess),
+                position_of(frame, FramePassKind::SelectionOutlines));
+    CY_CHECK_LT(position_of(frame, FramePassKind::SelectionOutlines),
+                position_of(frame, FramePassKind::UiAndDebug));
+
+    // Handed the colour the chain ended in — the output the post-process tonemapped into — the
+    // single-sample prepass depth, and the draw records its mask draws index.
+    CY_CHECK_EQ(producer.seen.target, frame.resources().output);
+    CY_CHECK_EQ(producer.seen.depth, frame.resources().depth);
+    CY_CHECK_EQ(producer.seen.draw_instances, frame.resources().draw_instances);
+    CY_CHECK_EQ(producer.seen.width, description.width);
+    CY_CHECK_EQ(producer.seen.height, description.height);
+    // The stage is recorded by its first pass, and its last pass — the composite — is declared
+    // before the interface's, so the interface loads the outlined colour.
+    CY_REQUIRE_NE(producer.composite, kInvalidPass);
+    CY_CHECK_LT(frame.pass_of(FramePassKind::SelectionOutlines), producer.composite);
+    CY_CHECK_LT(producer.composite, frame.pass_of(FramePassKind::UiAndDebug));
+    CY_CHECK(graph.compile(compile_options()).has_value());
+}
+
+CY_TEST_CASE("selection outlines without a producer or a prepass are refused") {
+    FrameDescription description = make_description();
+    description.features.selection_outlines = true;
+    RenderGraph unproduced(allocator());
+    ForwardFrame unproduced_frame(allocator());
+    CY_CHECK_FALSE(unproduced_frame.build(unproduced, description).has_value());
+
+    OutlineProducer producer;
+    description.selection_outlines_stage =
+        cy::rendering::FrameStageDeclaration{&declare_outlines, &producer};
+    description.features.depth_prepass = false;
+    RenderGraph no_prepass(allocator());
+    ForwardFrame no_prepass_frame(allocator());
+    const cy::Status refused = no_prepass_frame.build(no_prepass, description);
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK(std::strstr(refused.error().message, "prepass") != nullptr);
+
+    // A producer that refuses fails the frame rather than leaving the outlines out.
+    description.features.depth_prepass = true;
+    producer.refuse = true;
+    RenderGraph refusing(allocator());
+    ForwardFrame refusing_frame(allocator());
+    CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
+}
