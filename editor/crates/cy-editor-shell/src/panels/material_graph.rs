@@ -530,6 +530,29 @@ pub(super) fn graph_properties(
     assets: &AssetCatalogueService,
     problem: &mut Option<String>,
 ) {
+    graph_properties_with(
+        ui,
+        canvas,
+        assets,
+        problem,
+        |canvas, key, property, value| {
+            canvas.set_property_by_identity(key, property.identity, value)
+        },
+    );
+}
+
+pub(super) fn graph_properties_with(
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    assets: &AssetCatalogueService,
+    problem: &mut Option<String>,
+    mut apply: impl FnMut(
+        &mut GraphCanvas,
+        NodeKey,
+        &Property,
+        String,
+    ) -> cy_editor_core::problem::Result<()>,
+) {
     let Some(key) = canvas.selection().first().copied() else {
         return;
     };
@@ -552,7 +575,7 @@ pub(super) fn graph_properties(
             .map_or_else(|| property.default.clone(), ToOwned::to_owned);
         let changed = property_control(ui, &property, &mut value, assets);
         if changed {
-            match canvas.set_property_by_identity(key, property.identity, value) {
+            match apply(canvas, key, &property, value) {
                 Ok(()) => *problem = None,
                 Err(refused) => *problem = Some(refused.to_string()),
             }

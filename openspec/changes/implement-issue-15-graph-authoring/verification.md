@@ -33,7 +33,13 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Desktop path:** `saved_palette_additions_use_the_same_commands_as_mcp` checks that adding a node to a saved system stage or module queues `vfx.node.add` or `vfx.module.node.add` with the open asset reference, stage, type, and coordinates, without mutating the canvas directly. A new draft still receives a local node.
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_palette_additions_use_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
 - **Red mutation:** temporarily make `add_palette_node` always call `canvas.add`. The test failed because the saved canvas gained a node instead of queuing the typed command. Restoring command routing made it pass. The mutation is not committed.
-- **Remaining work:** connection, movement, removal, and property gestures still need individual typed command routing and undo parity.
+- **Remaining work:** connection, movement, and removal gestures still need individual typed command routing and undo parity.
+
+## Desktop VFX property command parity
+
+- **Desktop path:** `saved_vfx_property_edits_use_the_same_commands_as_mcp` checks that editing a property on a saved system stage or module queues `vfx.node.property.set` or `vfx.module.node.property.set` with the selected node, engine property name, and new value. The saved canvas stays unchanged until the command executes; a new draft updates locally.
+- **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_vfx_property_edits_use_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
+- **Red mutation:** temporarily make `edit_node_property` write directly to a saved canvas. The test failed because the local property changed from `1` to `3` before a command was queued. Restoring command routing made it pass. The mutation is not committed.
 
 ## Vertex material save and history through MCP
 

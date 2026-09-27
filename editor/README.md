@@ -587,8 +587,10 @@ connections, and property changes require the live engine VFX catalogue; an unav
 or unknown node, pin, or property is refused by name.
 Clicking a palette node in a saved, unchanged system stage or module uses its matching
 `vfx.node.add` or `vfx.module.node.add` command, creating one undo entry and the same result as MCP.
+Editing a node property in that state uses `vfx.node.property.set` or
+`vfx.module.node.property.set` with the engine catalogue's property name.
 If the open canvas has unsaved edits, palette insertion stays in that draft until Save so those
-edits are preserved.
+edits are preserved; property edits follow the same rule.
 The panel's **Remove emitter** control retains the other emitters' stage graphs and selects
 the next available emitter; the edit is recorded in document history for a saved draft.
 `vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and

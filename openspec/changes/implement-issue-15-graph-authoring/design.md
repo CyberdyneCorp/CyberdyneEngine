@@ -23,7 +23,9 @@ individual undo step; remaining canvas and system controls still need typed desk
 Palette insertion into a clean saved system stage or module now invokes `vfx.node.add` or
 `vfx.module.node.add`, sharing the MCP path and one undo entry. A canvas with unsaved gestures
 keeps palette insertion local until Save, preserving those pending edits. Connection, movement,
-removal, and property gestures still need the same per-action routing.
+and removal gestures still need the same per-action routing. Editing a property on a clean saved
+canvas now invokes `vfx.node.property.set` or `vfx.module.node.property.set`; property changes on
+an unsaved canvas remain local until Save.
 The saved system's parameter, event-channel, particle-attribute, and emitter-capacity controls now
 send their matching typed commands too. Attaching a saved module uses `vfx.module.attach` against
 the committed system path. Unsaved systems still stage metadata locally until their first Save.

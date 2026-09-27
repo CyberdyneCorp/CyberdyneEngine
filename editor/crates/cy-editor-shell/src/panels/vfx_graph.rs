@@ -7,7 +7,7 @@ use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::SpecialisedEditors;
-use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey};
+use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey, Property};
 use cy_editor_interface::specialised::vfx::{
     Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument,
 };
@@ -137,11 +137,21 @@ fn canvas_area(
                     actions.saved,
                     actions.intents,
                 );
-                material_graph::graph_properties(
+                material_graph::graph_properties_with(
                     ui,
                     canvas,
                     assets,
                     &mut inputs.vfx_property_problem,
+                    |canvas, key, property, value| {
+                        edit_node_property(
+                            canvas,
+                            actions.saved,
+                            actions.intents,
+                            key,
+                            property,
+                            value,
+                        )
+                    },
                 );
             },
         );
@@ -1645,6 +1655,45 @@ fn palette_add_intent(saved: &SavedCanvas, node_type: &str, at: Layout) -> Inten
     }
 }
 
+fn edit_node_property(
+    canvas: &mut GraphCanvas,
+    saved: Option<&SavedCanvas>,
+    intents: &mut Vec<Intent>,
+    key: NodeKey,
+    property: &Property,
+    value: String,
+) -> Result<()> {
+    let Some(saved) = saved else {
+        return canvas.set_property_by_identity(key, property.identity, value);
+    };
+    let arguments = Arguments::new()
+        .with(
+            "node",
+            Value::Int(i64::try_from(key.ordinal()).unwrap_or(i64::MAX)),
+        )
+        .with("property", Value::Text(property.name.clone()))
+        .with("value", Value::Text(value));
+    let intent = match saved {
+        SavedCanvas::Stage {
+            reference,
+            emitter,
+            stage,
+        } => Intent::Invoke(
+            "vfx.node.property.set".into(),
+            arguments
+                .with("reference", Value::Text(reference.clone()))
+                .with("emitter", Value::Text(emitter.clone()))
+                .with("stage", Value::Text(stage.label().to_ascii_lowercase())),
+        ),
+        SavedCanvas::Module { reference } => Intent::Invoke(
+            "vfx.module.node.property.set".into(),
+            arguments.with("reference", Value::Text(reference.clone())),
+        ),
+    };
+    intents.push(intent);
+    Ok(())
+}
+
 fn add_palette_node(
     canvas: &mut GraphCanvas,
     saved: Option<&SavedCanvas>,
@@ -1707,7 +1756,7 @@ fn palette(
 mod tests {
     use super::*;
     use cy_editor_core::codec::Writer;
-    use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
+    use cy_editor_interface::specialised::graph::{Catalogue, NodeType, PropertyKind};
     use cy_editor_interface::specialised::vfx::StageGraph;
 
     #[test]
@@ -1751,6 +1800,92 @@ mod tests {
 
         add_palette_node(&mut canvas, None, &mut intents, "vfx.constant", at).unwrap();
         assert_eq!(canvas.nodes().count(), 1);
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn saved_vfx_property_edits_use_the_same_commands_as_mcp() {
+        let property = Property {
+            identity: 7,
+            name: "value".into(),
+            kind: PropertyKind::Scalar,
+            default: "1".into(),
+            constraint: String::new(),
+            tooltip: "Constant value".into(),
+            minimum: None,
+            maximum: None,
+            step: None,
+            choices: Vec::new(),
+            asset_kind: String::new(),
+            semantic: String::new(),
+            stage: "spawn".into(),
+            domain: "vfx".into(),
+            required_capabilities: 0,
+            vector_lanes: 0,
+        };
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(
+            Catalogue::new(vec![
+                NodeType::new("vfx.constant", Vec::new()).with_properties(vec![property.clone()]),
+            ])
+            .unwrap(),
+        );
+        let node = canvas.add("vfx.constant", Layout::default()).unwrap();
+        canvas
+            .set_property_by_identity(node, property.identity, "1")
+            .unwrap();
+        let mut intents = Vec::new();
+        let stage = SavedCanvas::Stage {
+            reference: "effects/sparks.cyvfxdoc".into(),
+            emitter: "embers".into(),
+            stage: Stage::Spawn,
+        };
+        edit_node_property(
+            &mut canvas,
+            Some(&stage),
+            &mut intents,
+            node,
+            &property,
+            "3".into(),
+        )
+        .unwrap();
+        assert_eq!(canvas.property_value(node, &property), Some("1"));
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved property edit must invoke a command");
+        };
+        assert_eq!(command, "vfx.node.property.set");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("emitter"), Some("embers"));
+        assert_eq!(arguments.text("stage"), Some("spawn"));
+        assert_eq!(arguments.get("node"), Some(&Value::Int(1)));
+        assert_eq!(arguments.text("property"), Some("value"));
+        assert_eq!(arguments.text("value"), Some("3"));
+
+        let module = SavedCanvas::Module {
+            reference: "effects/shared.cyvfxmodule".into(),
+        };
+        edit_node_property(
+            &mut canvas,
+            Some(&module),
+            &mut intents,
+            node,
+            &property,
+            "4".into(),
+        )
+        .unwrap();
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved module property edit must invoke a command");
+        };
+        assert_eq!(command, "vfx.module.node.property.set");
+        assert_eq!(
+            arguments.text("reference"),
+            Some("effects/shared.cyvfxmodule")
+        );
+        assert_eq!(arguments.text("value"), Some("4"));
+        assert_eq!(canvas.property_value(node, &property), Some("1"));
+
+        edit_node_property(&mut canvas, None, &mut intents, node, &property, "5".into()).unwrap();
+        assert_eq!(canvas.property_value(node, &property), Some("5"));
         assert!(intents.is_empty());
     }
 
