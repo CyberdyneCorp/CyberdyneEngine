@@ -167,6 +167,9 @@ fn canvas_area(
                 &mut material_graph::CanvasFeedback {
                     link_problem: &mut inputs.vfx_link_problem,
                     node_alerts: actions.node_alerts,
+                    on_connect: Some(&mut |canvas, connection| {
+                        connect_nodes(canvas, actions.saved, actions.intents, connection)
+                    }),
                 },
             );
         });
@@ -1694,6 +1697,59 @@ fn edit_node_property(
     Ok(())
 }
 
+fn connect_nodes(
+    canvas: &mut GraphCanvas,
+    saved: Option<&SavedCanvas>,
+    intents: &mut Vec<Intent>,
+    connection: &material_graph::GraphConnection,
+) -> Result<()> {
+    let Some(saved) = saved else {
+        return canvas.connect_identified(
+            connection.from,
+            connection.from_pin,
+            connection.to,
+            connection.to_pin,
+        );
+    };
+    let mut checked = canvas.clone();
+    checked.connect_identified(
+        connection.from,
+        connection.from_pin,
+        connection.to,
+        connection.to_pin,
+    )?;
+    let arguments = Arguments::new()
+        .with(
+            "from",
+            Value::Int(i64::try_from(connection.from.ordinal()).unwrap_or(i64::MAX)),
+        )
+        .with("from_pin", Value::Text(connection.from_name.clone()))
+        .with(
+            "to",
+            Value::Int(i64::try_from(connection.to.ordinal()).unwrap_or(i64::MAX)),
+        )
+        .with("to_pin", Value::Text(connection.to_name.clone()));
+    let intent = match saved {
+        SavedCanvas::Stage {
+            reference,
+            emitter,
+            stage,
+        } => Intent::Invoke(
+            "vfx.node.connect".into(),
+            arguments
+                .with("reference", Value::Text(reference.clone()))
+                .with("emitter", Value::Text(emitter.clone()))
+                .with("stage", Value::Text(stage.label().to_ascii_lowercase())),
+        ),
+        SavedCanvas::Module { reference } => Intent::Invoke(
+            "vfx.module.node.connect".into(),
+            arguments.with("reference", Value::Text(reference.clone())),
+        ),
+    };
+    intents.push(intent);
+    Ok(())
+}
+
 fn add_palette_node(
     canvas: &mut GraphCanvas,
     saved: Option<&SavedCanvas>,
@@ -1756,7 +1812,9 @@ fn palette(
 mod tests {
     use super::*;
     use cy_editor_core::codec::Writer;
-    use cy_editor_interface::specialised::graph::{Catalogue, NodeType, PropertyKind};
+    use cy_editor_interface::specialised::graph::{
+        Catalogue, NodeType, Pin, PinDirection, PropertyKind,
+    };
     use cy_editor_interface::specialised::vfx::StageGraph;
 
     #[test]
@@ -1886,6 +1944,79 @@ mod tests {
 
         edit_node_property(&mut canvas, None, &mut intents, node, &property, "5".into()).unwrap();
         assert_eq!(canvas.property_value(node, &property), Some("5"));
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn saved_vfx_pin_connections_use_the_same_commands_as_mcp() {
+        let mut output = Pin::new("out", PinDirection::Output, "value");
+        output.identity = 41;
+        let mut input = Pin::new("value", PinDirection::Input, "value");
+        input.identity = 73;
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(
+            Catalogue::new(vec![
+                NodeType::new("vfx.constant", vec![output]),
+                NodeType::new("vfx.spawn_count", vec![input]),
+            ])
+            .unwrap(),
+        );
+        let from = canvas.add("vfx.constant", Layout::default()).unwrap();
+        let to = canvas.add("vfx.spawn_count", Layout::default()).unwrap();
+        let connection = material_graph::GraphConnection {
+            from,
+            from_pin: 41,
+            from_name: "out".into(),
+            to,
+            to_pin: 73,
+            to_name: "value".into(),
+        };
+        let stage = SavedCanvas::Stage {
+            reference: "effects/sparks.cyvfxdoc".into(),
+            emitter: "embers".into(),
+            stage: Stage::Spawn,
+        };
+        let mut intents = Vec::new();
+        connect_nodes(&mut canvas, Some(&stage), &mut intents, &connection).unwrap();
+        assert_eq!(canvas.links().count(), 0);
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved connection must invoke a command");
+        };
+        assert_eq!(command, "vfx.node.connect");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("emitter"), Some("embers"));
+        assert_eq!(arguments.text("stage"), Some("spawn"));
+        assert_eq!(arguments.get("from"), Some(&Value::Int(1)));
+        assert_eq!(arguments.text("from_pin"), Some("out"));
+        assert_eq!(arguments.get("to"), Some(&Value::Int(2)));
+        assert_eq!(arguments.text("to_pin"), Some("value"));
+        let invalid = material_graph::GraphConnection {
+            from,
+            from_pin: 41,
+            from_name: "out".into(),
+            to,
+            to_pin: 999,
+            to_name: "missing".into(),
+        };
+        assert!(connect_nodes(&mut canvas, Some(&stage), &mut intents, &invalid).is_err());
+        assert!(intents.is_empty());
+
+        let module = SavedCanvas::Module {
+            reference: "effects/shared.cyvfxmodule".into(),
+        };
+        connect_nodes(&mut canvas, Some(&module), &mut intents, &connection).unwrap();
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved module connection must invoke a command");
+        };
+        assert_eq!(command, "vfx.module.node.connect");
+        assert_eq!(
+            arguments.text("reference"),
+            Some("effects/shared.cyvfxmodule")
+        );
+        assert_eq!(canvas.links().count(), 0);
+
+        connect_nodes(&mut canvas, None, &mut intents, &connection).unwrap();
+        assert_eq!(canvas.links().count(), 1);
         assert!(intents.is_empty());
     }
 

@@ -112,6 +112,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 &mut CanvasFeedback {
                     link_problem: &mut panels.inputs.material_link_problem,
                     node_alerts: &[],
+                    on_connect: None,
                 },
             );
         });
@@ -793,9 +794,22 @@ fn select_backend_location(canvas: &mut GraphCanvas, node: u64) {
     }
 }
 
+type ConnectionHandler<'a> =
+    dyn FnMut(&mut GraphCanvas, &GraphConnection) -> cy_editor_core::problem::Result<()> + 'a;
+
 pub(super) struct CanvasFeedback<'a> {
     pub link_problem: &'a mut Option<String>,
     pub node_alerts: &'a [(u64, String)],
+    pub on_connect: Option<&'a mut ConnectionHandler<'a>>,
+}
+
+pub(super) struct GraphConnection {
+    pub from: NodeKey,
+    pub from_pin: u32,
+    pub from_name: String,
+    pub to: NodeKey,
+    pub to_pin: u32,
+    pub to_name: String,
 }
 
 pub(super) fn draw_canvas(
@@ -861,7 +875,13 @@ pub(super) fn draw_canvas(
     }
     let pin_action = interact_with_pins(ui, shell, &cards, pending_source.as_ref());
     if let Some(pin) = pin_action {
-        apply_pin_action(canvas, pending_source, feedback.link_problem, pin);
+        apply_pin_action(
+            canvas,
+            pending_source,
+            feedback.link_problem,
+            feedback.on_connect.take(),
+            pin,
+        );
     } else if background.clicked() {
         *pending_source = None;
     }
@@ -1139,6 +1159,7 @@ fn apply_pin_action(
     canvas: &mut GraphCanvas,
     pending: &mut Option<(u64, u32, String, String)>,
     problem: &mut Option<String>,
+    on_connect: Option<&mut ConnectionHandler<'_>>,
     action: PinAction,
 ) {
     match action.pin.direction {
@@ -1168,7 +1189,25 @@ fn apply_pin_action(
                 return;
             };
             let from = NodeKey::new(source.0).expect("a pending graph node is never zero");
-            match canvas.connect_identified(from, source.1, action.node, action.pin.identity) {
+            let connection = GraphConnection {
+                from,
+                from_pin: source.1,
+                from_name: source.2,
+                to: action.node,
+                to_pin: action.pin.identity,
+                to_name: action.pin.name,
+            };
+            let result = if let Some(connect) = on_connect {
+                connect(canvas, &connection)
+            } else {
+                canvas.connect_identified(
+                    connection.from,
+                    connection.from_pin,
+                    connection.to,
+                    connection.to_pin,
+                )
+            };
+            match result {
                 Ok(()) => *problem = None,
                 Err(refused) => *problem = Some(refused.to_string()),
             }
@@ -1661,6 +1700,7 @@ mod tests {
             &mut canvas,
             &mut pending,
             &mut problem,
+            None,
             PinAction {
                 node: source,
                 pin: identified_pin(41, "out", PinDirection::Output, "value"),
@@ -1670,6 +1710,7 @@ mod tests {
             &mut canvas,
             &mut pending,
             &mut problem,
+            None,
             PinAction {
                 node: sink,
                 pin: identified_pin(73, "in", PinDirection::Input, "value"),
@@ -1683,6 +1724,40 @@ mod tests {
     }
 
     #[test]
+    fn pin_action_can_route_a_connection_without_mutating_the_canvas() {
+        let (mut canvas, source, sink) = connection_canvas("value");
+        let mut pending = None;
+        let mut problem = None;
+        apply_pin_action(
+            &mut canvas,
+            &mut pending,
+            &mut problem,
+            None,
+            PinAction {
+                node: source,
+                pin: identified_pin(41, "out", PinDirection::Output, "value"),
+            },
+        );
+        let mut routed = None;
+        apply_pin_action(
+            &mut canvas,
+            &mut pending,
+            &mut problem,
+            Some(&mut |_, connection| {
+                routed = Some((connection.from, connection.from_name.clone(), connection.to));
+                Ok(())
+            }),
+            PinAction {
+                node: sink,
+                pin: identified_pin(73, "in", PinDirection::Input, "value"),
+            },
+        );
+        assert_eq!(routed, Some((source, "out".into(), sink)));
+        assert_eq!(canvas.links().count(), 0);
+        assert!(problem.is_none());
+    }
+
+    #[test]
     fn incompatible_pin_action_is_visible_and_non_mutating() {
         let (mut canvas, source, sink) = connection_canvas("colour");
         let mut pending = None;
@@ -1691,6 +1766,7 @@ mod tests {
             &mut canvas,
             &mut pending,
             &mut problem,
+            None,
             PinAction {
                 node: source,
                 pin: identified_pin(41, "out", PinDirection::Output, "value"),
@@ -1700,6 +1776,7 @@ mod tests {
             &mut canvas,
             &mut pending,
             &mut problem,
+            None,
             PinAction {
                 node: sink,
                 pin: identified_pin(73, "in", PinDirection::Input, "colour"),
