@@ -86,24 +86,37 @@ public struct ActionState: Equatable, Sendable {
 
 /// Pointer buttons, as CY_INPUT_BUTTON_* bits.
 public struct PointerButtons: OptionSet, Hashable, Sendable {
+    /// The CY_INPUT_BUTTON_* bits, as the engine reports them.
     public let rawValue: UInt32
+    /// Buttons from raw CY_INPUT_BUTTON_* bits.
     public init(rawValue: UInt32) { self.rawValue = rawValue }
 
+    /// The primary button.
     public static let left = PointerButtons(rawValue: CY_INPUT_BUTTON_LEFT)
+    /// The secondary button.
     public static let right = PointerButtons(rawValue: CY_INPUT_BUTTON_RIGHT)
+    /// The middle button or wheel press.
     public static let middle = PointerButtons(rawValue: CY_INPUT_BUTTON_MIDDLE)
+    /// The first extra button, usually "back".
     public static let extra1 = PointerButtons(rawValue: CY_INPUT_BUTTON_EXTRA1)
+    /// The second extra button, usually "forward".
     public static let extra2 = PointerButtons(rawValue: CY_INPUT_BUTTON_EXTRA2)
 }
 
 /// Modifier keys, as CY_INPUT_MOD_* bits.
 public struct Modifiers: OptionSet, Hashable, Sendable {
+    /// The CY_INPUT_MOD_* bits, as the engine reports them.
     public let rawValue: UInt32
+    /// Modifiers from raw CY_INPUT_MOD_* bits.
     public init(rawValue: UInt32) { self.rawValue = rawValue }
 
+    /// Either Shift key.
     public static let shift = Modifiers(rawValue: CY_INPUT_MOD_SHIFT)
+    /// Either Control key.
     public static let ctrl = Modifiers(rawValue: CY_INPUT_MOD_CTRL)
+    /// Either Alt (Option) key.
     public static let alt = Modifiers(rawValue: CY_INPUT_MOD_ALT)
+    /// Either Super key: Command on macOS, Windows elsewhere.
     public static let `super` = Modifiers(rawValue: CY_INPUT_MOD_SUPER)
 }
 

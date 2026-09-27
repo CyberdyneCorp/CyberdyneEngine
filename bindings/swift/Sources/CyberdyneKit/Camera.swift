@@ -168,6 +168,7 @@ public struct CameraTarget: Equatable, Sendable {
         case entity(CyEntity)
     }
 
+    /// What the camera frames and orbits.
     public var focus: Focus
     /// Radians about world +Y.
     public var yaw: Float
@@ -178,6 +179,7 @@ public struct CameraTarget: Equatable, Sendable {
     /// Seconds to blend there; zero is a cut.
     public var blendSeconds: Float
 
+    /// A target on `focus`; the angles, distance and blend default to zero.
     public init(
         focus: Focus, yaw: Float = 0, pitch: Float = 0, distance: Float = 0,
         blendSeconds: Float = 0
