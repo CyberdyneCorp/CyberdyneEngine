@@ -177,6 +177,24 @@ struct AtmosphereTables {
                                           Vec3 view_direction, Vec3 sun_direction,
                                           u32 steps = 32) noexcept;
 
+/// The sky, integrated THE WAY THE AERIAL PERSPECTIVE TABLE INTEGRATES THE AIR: the same source
+/// terms from the same tables, each step taken exactly for a source and an extinction that are
+/// constant across it, on steps that grow as the square of the distance out.
+///
+/// WHY A SECOND QUADRATURE OF THE SAME INTEGRAL. `sky_radiance_tabulated()` takes uniform steps
+/// and weights each by the transmittance at its far end. Over a horizon path of eight hundred
+/// kilometres in sixteen steps, a step near the ground is optically thick in blue, and that
+/// weighting drops most of the light the first fifty kilometres scatter: measured against this
+/// function, its horizon is a third too dark in blue. `AerialPerspectiveTable` resolves the same
+/// air with slices a few hundred metres thick near the eye, so the two disagreed at the horizon by
+/// exactly that bias — distant terrain fading into a sky bluer than the one drawn behind it.
+/// A frame that draws its sky beside aerial perspective draws it with THIS, and the two are then
+/// one model evaluated with one step rule. `sky_radiance_tabulated()` is left as it is because the
+/// lighting integral and every existing capture are built on it.
+[[nodiscard]] Vec3 sky_radiance_aerial(const Atmosphere& atmosphere, const AtmosphereTables& tables,
+                                       Vec3 view_position, Vec3 view_direction, Vec3 sun_direction,
+                                       u32 steps = 32) noexcept;
+
 /// The sunlight reaching a point, read from the transmittance table instead of ray marched. What a
 /// renderer calls once a frame for the directional light's colour.
 [[nodiscard]] Vec3 sun_illuminance_tabulated(const Atmosphere& atmosphere,
@@ -256,6 +274,13 @@ public:
                                                                   Vec3 sun_direction,
                                                                   u32 row_budget) noexcept;
 
+    /// The same tables, integrated by `sky_radiance_aerial()`: the clear sky a frame draws beside
+    /// `AerialPerspectiveTable`. A full rebuild's rows are spread over `jobs` when one is given,
+    /// each row written to its own slots, so the table is the serial one bit for bit.
+    [[nodiscard]] Expected<SkyViewUpdate, Error> update_aerial(
+        const Atmosphere& atmosphere, const AtmosphereTables& tables, Vec3 view_position,
+        Vec3 sun_direction, u32 row_budget, jobs::JobSystem* jobs = nullptr) noexcept;
+
     [[nodiscard]] Vec3 sample(Vec3 direction) const noexcept;
 
     [[nodiscard]] const IncrementalSkyStats& stats() const noexcept { return stats_; }
@@ -271,14 +296,17 @@ private:
         bool skip = false;
     };
 
-    [[nodiscard]] UpdatePlan plan_update(const Atmosphere& atmosphere, Vec3 view_position,
-                                         Vec3 sun) noexcept;
+    /// Which integral a row is filled with. A table is rebuilt in full when it changes, because a
+    /// table half of one and half of another answers neither.
+    enum class Integrand : u8 { Marched, Tabulated, Aerial };
+
+    [[nodiscard]] UpdatePlan plan_update(const Atmosphere& atmosphere, Vec3 view_position, Vec3 sun,
+                                         Integrand integrand) noexcept;
     void integrate_row(const Atmosphere& atmosphere, const AtmosphereTables* tables,
-                       Vec3 view_position, Vec3 sun, u32 row) noexcept;
-    [[nodiscard]] Expected<SkyViewUpdate, Error> update_common(const Atmosphere& atmosphere,
-                                                               const AtmosphereTables* tables,
-                                                               Vec3 view_position, Vec3 sun_in,
-                                                               u32 row_budget) noexcept;
+                       Integrand integrand, Vec3 view_position, Vec3 sun, u32 row) noexcept;
+    [[nodiscard]] Expected<SkyViewUpdate, Error> update_common(
+        const Atmosphere& atmosphere, const AtmosphereTables* tables, Integrand integrand,
+        Vec3 view_position, Vec3 sun_in, u32 row_budget, jobs::JobSystem* jobs) noexcept;
 
     Array<Vec3> radiance_;
     /// The sun each row was last integrated with. This is the whole of the incremental mechanism:
@@ -290,6 +318,7 @@ private:
     Atmosphere last_atmosphere_;
     IncrementalSkyStats stats_;
     SkyTableQuality quality_ = SkyTableQuality::Medium;
+    Integrand last_integrand_ = Integrand::Marched;
     bool built_ = false;
 };
 
@@ -333,22 +362,80 @@ public:
 
     [[nodiscard]] Status configure(const FroxelVolume& volume) noexcept;
 
+    /// Rebuild the volume for this camera and sun.
+    ///
+    /// With `jobs`, the froxel columns are integrated on its workers. Every column is a pure
+    /// function of its own ray written to its own slots, so the table is bit-identical to the
+    /// serial one; a job system that will not take the work leaves it on this thread.
     [[nodiscard]] Status update(const Atmosphere& atmosphere, const AtmosphereTables& tables,
-                                Vec3 view_position, const View& view, Vec3 sun_direction) noexcept;
+                                Vec3 view_position, const View& view, Vec3 sun_direction,
+                                jobs::JobSystem* jobs = nullptr) noexcept;
 
     /// What survives and what is added, for a pixel at `uv` in [0,1]^2 and a surface at
     /// `view_depth` metres along the forward axis.
     [[nodiscard]] AerialPerspective sample(Vec2 uv, f32 view_depth) const noexcept;
 
+    /// What survives and what is added for a surface at `offset` metres from the camera, in the
+    /// world axes the table's `View` was given — THE DEVICE'S SAMPLER, on the processor.
+    ///
+    /// `cy/aerial_perspective.slang` performs this arithmetic on `pack_aerial_perspective()`'s
+    /// words, and a test compares the two. It differs from `sample()` in DEPTH: `sample()` returns
+    /// the froxel whose far edge contains the surface, which is right for a volume that is
+    /// integrated front to back and wrong for a surface, because a surface a metre from the eye
+    /// would receive the first slice's full attenuation. This interpolates linearly in depth
+    /// between the slices' far edges, from an implicit slice at the eye where nothing has been
+    /// attenuated yet, so a near surface is left almost exactly as it was lit.
+    [[nodiscard]] AerialPerspective sample_at(Vec3 offset) const noexcept;
+
     [[nodiscard]] const FroxelVolume& volume() const noexcept { return volume_; }
+    /// The camera the volume was last built for.
+    [[nodiscard]] const View& view() const noexcept { return view_; }
     [[nodiscard]] bool built() const noexcept { return built_; }
     [[nodiscard]] u64 froxels() const noexcept;
+    /// The stored values, slice-major then row-major, as `pack_aerial_perspective()` lays them out.
+    [[nodiscard]] Span<const Vec3> transmittances() const noexcept { return transmittance_.span(); }
+    [[nodiscard]] Span<const Vec3> in_scatterings() const noexcept { return in_scattering_.span(); }
 
 private:
+    void integrate_column(const Atmosphere& atmosphere, const AtmosphereTables& tables,
+                          Vec3 view_position, Vec3 sun, u32 x, u32 y) noexcept;
+
     Array<Vec3> transmittance_;
     Array<Vec3> in_scattering_;
     FroxelVolume volume_;
+    View view_;
     bool built_ = false;
 };
+
+// ================================================================================================
+// AERIAL PERSPECTIVE ON A DEVICE
+// ================================================================================================
+//
+// The froxel table leaves the processor as one array of float4 words, read by
+// `src/rendering/shaders/cy/aerial_perspective.slang`. The layout is defined HERE, once, and the
+// shader module restates it; `AerialPerspectiveTable::sample_at()` is the same sampler on the
+// processor, so a frame's shader and this module cannot disagree about what a word means without a
+// test noticing.
+//
+//   word 0   forward.xyz, enabled (1 or 0)
+//   word 1   right.xyz,   tan of half the horizontal field of view
+//   word 2   up.xyz,      tan of half the vertical field of view
+//   word 3   width, height, depth (as floats), the slice distribution's exponent
+//   word 4   near plane, far plane, radiance scale, 0
+//   then     two words per froxel, slice-major then row-major: transmittance.rgb, 0 and
+//            in-scattering.rgb multiplied by the radiance scale, 0
+//
+// THE RADIANCE SCALE is the frame's own: in-scattering is stored in nits, and a frame that divides
+// its sky by an exposure before drawing it must divide the light the air adds to a surface by the
+// same number, or distant terrain fades toward a sky that is not the one drawn above it.
+
+/// Float4 words before the first froxel.
+inline constexpr u32 kAerialPerspectiveHeaderWords = 5;
+
+/// The words a device sampler reads for `table`, with in-scattering multiplied by
+/// `radiance_scale`. An unbuilt table packs the header alone, with `enabled` zero — which is also
+/// what a frame with aerial perspective off binds, so the device leaves every surface unchanged.
+[[nodiscard]] Status pack_aerial_perspective(const AerialPerspectiveTable& table,
+                                             f32 radiance_scale, Array<Vec4>& out) noexcept;
 
 }  // namespace cy::rendering::sky
