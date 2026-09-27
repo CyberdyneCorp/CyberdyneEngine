@@ -21,7 +21,7 @@
 
 ## 3. Vertex-stage material graphs
 
-- [ ] 3.1 Add stage-aware material catalogue nodes and outputs for offset, custom interpolants, and displacement, including time, geometry attributes, noise, wind, and math.
+- [x] 3.1 Add stage-aware material catalogue nodes and outputs for offset, custom interpolants, and displacement, including time, geometry attributes, noise, wind, and math.
 - [ ] 3.2 Compile vertex expressions and report geometry-source variants; refuse unsupported paths in editor and cook with tests.
 - [ ] 3.3 Apply offset consistently to visible geometry, shadows, and motion vectors; compare with CPU-displaced reference geometry.
 - [ ] 3.4 Preview vertex graphs on the material mesh and scene, and add transaction/MCP parity tests.

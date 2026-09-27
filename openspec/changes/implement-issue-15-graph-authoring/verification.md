@@ -209,6 +209,14 @@ field bindings moved to a separate per-frame buffer so the material parameter la
 `smoke.material_slang` passes 10 cases and 140 assertions, including the typed wind probe. The
 authored scene's headless test compiles the wind material to MSL and draws it on the null device.
 
+Task 3.1 audit: the Engine material catalogue publishes separate surface and vertex roots, a
+named interpolant output, scalar normal displacement, typed position/normal/UV/colour/time inputs,
+noise, procedural wind, field sampling, and shared numeric math. The editor consumes the Engine
+stage mask. Graph/text lowering, typed field Slang compilation, and the scene and material-mesh
+shader tests cover these nodes. `unit.graph_material`, `integration.graph_material`, and
+`smoke.material_slang` passed locally; the editor-interface material filter passed 10 tests.
+The native image and pass-consistency acceptance remains in tasks 3.3 and 3.4.
+
 The hosted material mesh's shader assembler now carries the camera-relative field position in
 vertex and fragment contexts for a typed `wind` graph. The focused
 `the hosted material shader gives typed wind a camera-relative field position` regression passed;
