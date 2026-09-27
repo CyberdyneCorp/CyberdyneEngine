@@ -18,6 +18,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 ASSERTIONS = re.compile(r"\[doctest\] assertions:\s*(\d+)\s*\|")
 CASES = re.compile(r"\[doctest\] test cases:\s*(\d+)\s*\|")
+CARGO_PASSED = re.compile(r"test result: ok\.\s*(\d+) passed;")
 
 
 @dataclass(frozen=True)
@@ -238,8 +239,12 @@ CRITERIA = (
 def probe_result(probe: Probe, result: subprocess.CompletedProcess[str]) -> tuple[bool, str]:
     if result.returncode != 0:
         return False, f"exit {result.returncode}"
+    output = result.stdout + result.stderr
+    if probe.command[0] == "cargo" and sum(
+        int(match.group(1)) for match in CARGO_PASSED.finditer(output)
+    ) == 0:
+        return False, "Cargo filter selected no tests"
     if probe.min_assertions:
-        output = result.stdout + result.stderr
         cases = CASES.search(output)
         assertions = ASSERTIONS.search(output)
         if cases is None or int(cases.group(1)) != 1 or assertions is None:

@@ -58,6 +58,27 @@ class AcceptanceLedgerTests(unittest.TestCase):
         self.assertFalse(ledger.probe_result(probe, skipped)[0])
         self.assertEqual(ledger.probe_result(probe, passed), (True, "passed"))
 
+    def test_cargo_filter_must_execute_a_test(self) -> None:
+        probe = ledger.Probe("editor history", ("cargo", "test", "missing_case"))
+        empty = subprocess.CompletedProcess(
+            args=probe.command,
+            returncode=0,
+            stdout="test result: ok. 0 passed; 0 failed; 8 filtered out\n",
+            stderr="",
+        )
+        passed = subprocess.CompletedProcess(
+            args=probe.command,
+            returncode=0,
+            stdout="test result: ok. 0 passed; 0 failed; 8 filtered out\n"
+            "test result: ok. 1 passed; 0 failed; 0 filtered out\n",
+            stderr="",
+        )
+        self.assertEqual(
+            ledger.probe_result(probe, empty),
+            (False, "Cargo filter selected no tests"),
+        )
+        self.assertEqual(ledger.probe_result(probe, passed), (True, "passed"))
+
 
 if __name__ == "__main__":
     unittest.main()

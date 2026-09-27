@@ -12,7 +12,12 @@ availability assertions, repeatable editor/MCP authoring of the exact two-emitte
 virtual-geometry scene discovery, and unsaved VFX gesture history are open. The final
 regression/documentation audit is also open. These gaps stay visible in the
 runner rather than being inferred from neighbouring green tests.
-The runner's three unit tests passed. Temporarily bypassing its native assertion-count check
+The runner's four unit tests passed. It also rejects a successful Cargo invocation whose filter
+selected no tests; a matching unit test proves that guard. The palette, recook, and diagnostic
+criteria verified through the runner on 2026-09-27, while the other six correctly remain open.
+Removing the Cargo selection guard made `test_cargo_filter_must_execute_a_test` fail because an
+empty filter was reported as passed; restoring the guard returned all four runner tests to green.
+Temporarily bypassing its native assertion-count check
 made two unit tests fail, then restoration passed; this guards against a false green on null
 devices. The cognitive-complexity skill could not score these Python functions locally because
 `complexipy` is not installed; syntax parsing and focused tests passed.
