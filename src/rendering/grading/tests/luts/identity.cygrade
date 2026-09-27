@@ -1,0 +1,5 @@
+# src/rendering/grading/tests/luts/identity.cygrade — neutral controls and an identity cube. Bakes to
+# the identity table, so render.grading requires the frame to be the ungraded frame byte for byte.
+cygrade 1
+name Identity
+cube identity.cube

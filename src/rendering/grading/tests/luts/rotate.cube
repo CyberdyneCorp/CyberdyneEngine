@@ -1,0 +1,15 @@
+# src/rendering/grading/tests/luts/rotate.cube — red takes green's value, green blue's, blue red's.
+# A permutation, so the graded frame's expected pixel is the ungraded pixel with its channels
+# rotated; rotate.cygrade reads it in the linear encoding, where it is exact between lattice points.
+TITLE "rotate channels"
+LUT_3D_SIZE 2
+DOMAIN_MIN 0.0 0.0 0.0
+DOMAIN_MAX 1.0 1.0 1.0
+0.000000 0.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 0.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 0.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 0.000000
+1.000000 1.000000 1.000000
