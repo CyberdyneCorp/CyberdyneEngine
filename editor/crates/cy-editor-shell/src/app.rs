@@ -640,7 +640,7 @@ impl EditorWindow {
             self.perform(action);
             return;
         }
-        if matches!(id, "edit.undo" | "edit.redo") {
+        if matches!(id, "edit.undo" | "edit.redo") || id.starts_with("material.node.") {
             self.settle_material_save();
             self.track_open_material();
         }

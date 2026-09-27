@@ -85,6 +85,8 @@ fn registry() -> Registry {
     let mut registry = Registry::new();
     cy_editor_services::builtin::register(&mut registry)
         .expect("the built-in commands satisfy their own metadata");
+    cy_editor_interface::specialised::material_authoring_commands::register(&mut registry)
+        .expect("material graph commands satisfy their metadata");
     cy_editor_interface::specialised::vfx_authoring_commands::register(&mut registry)
         .expect("VFX graph commands satisfy their metadata");
     registry
@@ -134,6 +136,15 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
     let mut material = Writer::new();
     material.u32(1);
     material.u32(1);
+    material.u32(1);
+    material.u32(42);
+    material.u32(3);
+    material.text("material.constant");
+    material.u32(1);
+    material.u32(9);
+    material.u8(1);
+    material.text("out");
+    material.text("value");
     material.u32(0);
     let mut vfx = Writer::new();
     vfx.u32(1);
@@ -514,6 +525,108 @@ fn material_graph_call(id: u32, name: &str, reference: &str, source: &str) -> St
     .render()
 }
 
+#[test]
+fn material_node_add_uses_engine_catalogue_and_undoes_over_mcp() {
+    let sandbox = Sandbox::new("material-node-add");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
+    let reference = "game/sway.cygraph";
+    let source = "cymatcanvas 1\nmaterial sway\n";
+    let graph = "cygraph 1\ngraph \"sway\" version 1\ncapability\ndeterministic true\n";
+    let save = material_graph_call(2, "material.graph.save", reference, source);
+    assert_eq!(
+        result(&converse(&[INITIALIZE, &save], &mut editor), 1).get("isError"),
+        &Json::Bool(false)
+    );
+    reply_material_author(&mut runtime_reader, &mut runtime_writer, graph);
+    wait_for_material_source(&mut editor, reference, source);
+
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"material.node.add","arguments":{"reference":"game/sway.cygraph","node_type":"material.unknown","x":12,"y":30}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&refused, 1).get("isError"), &Json::Bool(true));
+    let add = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"material.node.add","arguments":{"reference":"game/sway.cygraph","node_type":"material.constant","x":12,"y":30}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&add, 1).get("isError"), &Json::Bool(false));
+    reply_material_author(&mut runtime_reader, &mut runtime_writer, graph);
+    let added = "cymatcanvas 1\nmaterial sway\nnode 1 material.constant\n# layout 1 12 30\n";
+    wait_for_material_source(&mut editor, reference, added);
+    let undo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undo, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/sway.cymatcanvas")).unwrap(),
+        source
+    );
+    let redo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redo, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/sway.cymatcanvas")).unwrap(),
+        added
+    );
+}
+
+fn reply_material_author(
+    runtime_reader: &mut std::io::PipeReader,
+    runtime_writer: &mut std::io::PipeWriter,
+    graph: &str,
+) {
+    let request = material_request(runtime_reader, "material.author");
+    let mut payload = Writer::new();
+    payload.u32(1);
+    payload.u8(1);
+    payload.text(graph);
+    write_frame(
+        runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: payload.finish(),
+        }
+        .encode(),
+    )
+    .unwrap();
+}
+
+fn wait_for_material_source(editor: &mut Editor, reference: &str, expected: &str) {
+    let source_path = editor
+        .project
+        .root()
+        .join(reference)
+        .with_extension("cymatcanvas");
+    for _ in 0..100 {
+        editor.pump();
+        if std::fs::read_to_string(&source_path).ok().as_deref() == Some(expected) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("material canvas was not saved: {}", source_path.display());
+}
+
 fn material_request(
     reader: &mut std::io::PipeReader,
     expected: &str,
@@ -543,7 +656,7 @@ fn material_request_with_payload(
                 Message::ServiceRequest { operation, .. } => {
                     panic!("unexpected material request: {operation}")
                 }
-                Message::SyncWorld { .. } => None,
+                Message::SyncWorld { .. } | Message::Apply { .. } => None,
                 other => panic!("unexpected message while waiting for {expected}: {other:?}"),
             }
         })

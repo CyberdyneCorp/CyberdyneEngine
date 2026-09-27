@@ -446,6 +446,11 @@ pub trait ProjectHost {
     /// Report the latest engine material request and transient preview state.
     fn material_graph_status(&self) -> String;
 
+    /// Current engine-owned material node catalogue for graph edit commands.
+    fn material_catalogue(&self) -> Option<Vec<u8>> {
+        None
+    }
+
     /// Read a project VFX authoring document, without compiling or changing it.
     fn vfx_document_read(&self, reference: &str) -> Result<String>;
 

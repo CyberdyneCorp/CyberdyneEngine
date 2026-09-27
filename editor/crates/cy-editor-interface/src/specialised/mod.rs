@@ -41,6 +41,7 @@
 
 pub mod graph;
 pub mod material;
+pub mod material_authoring_commands;
 pub mod painting;
 pub mod timeline;
 pub mod vfx;

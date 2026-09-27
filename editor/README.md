@@ -483,6 +483,10 @@ Inspector fields form one undo step; undo and redo restore both graph files and 
 When that save comes from the open Material Graph, undo and redo also reload its canvas from the
 project source. Undoing a newly created graph clears the canvas; an unrelated history step leaves
 unsaved canvas edits alone.
+On an unchanged saved canvas, adding a node from the desktop palette invokes `material.node.add`.
+The same command is available over MCP, validates the node against the engine's material catalogue,
+and asks the engine to author the result as one undoable save. A new or unsaved canvas keeps local
+edits until Save. Other material graph gestures still need registered edit commands under #15.
 The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
 and shadow passes. A graph requiring an unbound environment field is refused before replacing the
 last valid preview. The actual wind-field binding remains part of issue #15.

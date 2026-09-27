@@ -131,3 +131,11 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Red mutation:** before material history synchronization, the test failed after undo because the canvas still had one node although the saved graph file had been removed.
 - **Green commands:** the focused regression, 99 shell unit tests, 167 service unit tests, all-target shell/service Clippy, Rust formatting, and strict OpenSpec validation passed locally.
 - **Scope:** this covers the Save transaction and open-canvas history synchronization. Individual material edit commands and MCP parity remain in task 3.4.
+
+## Material node placement parity
+
+- **Command:** `material.node.add` reads the saved editable canvas, validates the node against the engine catalogue, places it with the shared canvas model, and requests engine authoring. The saved desktop palette invokes this command when its canvas still matches the project source.
+- **Wire regression:** `material_node_add_uses_engine_catalogue_and_undoes_over_mcp` saves an empty canvas, refuses an unknown type, adds an engine-catalogue node, receives the engine's authored result, then checks undo and redo of the editable source. `saved_material_palette_node_uses_the_shared_edit_command` verifies desktop intent routing and local draft behavior.
+- **Red mutation:** removing the material command registration from the MCP test registry made the wire case fail at the successful add assertion (`isError` became true). Restoring registration made it pass.
+- **Green commands:** 152 interface unit tests, 100 shell unit tests, all their integration suites, 29 MCP wire tests, all-target Clippy for the affected crates, and Rust formatting passed locally.
+- **Scope:** node placement now has desktop and MCP parity for saved graphs. Connect, move, remove, property edits, and unsaved draft transactions remain in task 3.4.

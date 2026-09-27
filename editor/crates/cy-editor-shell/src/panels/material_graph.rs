@@ -84,10 +84,12 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     panels.shell,
                     canvas,
                     panels.inputs,
+                    panels.intents,
                     PaletteBackendState {
                         catalogue: state,
                         request: &request_state,
                         preview: &preview_state,
+                        project_root: &project_root,
                     },
                     &panels.editor.asset_catalogue,
                 );
@@ -290,6 +292,7 @@ fn palette(
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
     inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
     backend: PaletteBackendState<'_>,
     assets: &AssetCatalogueService,
 ) -> Option<PaletteAction> {
@@ -359,13 +362,17 @@ fn palette(
             let identity = node_type.identity;
             let label = display_name(&name);
             let response = ui
-                .button(format!("＋ {label}"))
+                .add_enabled(!pending, egui::Button::new(format!("＋ {label}")))
                 .on_hover_text(format!("{name} · NodeTypeId {identity}"));
             if response.clicked() {
                 let index = canvas.nodes().count();
                 let column = index % 3;
                 let row = index / 3;
-                let _ = canvas.add(
+                add_palette_node(
+                    canvas,
+                    inputs,
+                    intents,
+                    backend.project_root,
                     &name,
                     GraphLayout {
                         x: 28.0 + display_index(column) * (NODE_WIDTH + 34.0),
@@ -409,11 +416,43 @@ fn palette_names(canvas: &GraphCanvas, query: &str, stage: u8) -> Vec<String> {
         .collect()
 }
 
+fn add_palette_node(
+    canvas: &mut GraphCanvas,
+    inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
+    project_root: &std::path::Path,
+    node_type: &str,
+    at: GraphLayout,
+) {
+    let saved = inputs
+        .material_open_reference
+        .as_ref()
+        .is_some_and(|reference| {
+            let path = project_root.join(reference).with_extension("cymatcanvas");
+            canvas_interchange(&inputs.material_name, canvas).is_ok_and(|source| {
+                std::fs::read_to_string(path).ok().as_deref() == Some(source.as_str())
+            })
+        });
+    if saved && let Some(reference) = inputs.material_open_reference.as_ref() {
+        intents.push(Intent::Invoke(
+            "material.node.add".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.clone()))
+                .with("node_type", Value::Text(node_type.into()))
+                .with("x", Value::Float(at.x))
+                .with("y", Value::Float(at.y)),
+        ));
+    } else if let Err(problem) = canvas.add(node_type, at) {
+        inputs.material_link_problem = Some(problem.to_string());
+    }
+}
+
 #[derive(Clone, Copy)]
 struct PaletteBackendState<'a> {
     catalogue: MaterialCatalogueState,
     request: &'a MaterialRequestState,
     preview: &'a MaterialPreviewState,
+    project_root: &'a std::path::Path,
 }
 
 fn material_preview_status(
@@ -1514,6 +1553,62 @@ mod tests {
                 .unwrap()
                 .starts_with("cymatcanvas 1\n")
         );
+    }
+
+    #[test]
+    fn saved_material_palette_node_uses_the_shared_edit_command() {
+        let root = std::env::temp_dir().join(format!("cy-material-node-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("materials")).unwrap();
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(
+            Catalogue::new(vec![NodeType::identified(
+                1,
+                1,
+                "material.constant".into(),
+                vec![],
+            )])
+            .unwrap(),
+        );
+        let mut inputs = super::super::Inputs {
+            material_name: "sway".into(),
+            material_open_reference: Some("materials/sway.cygraph".into()),
+            ..Default::default()
+        };
+        std::fs::write(
+            root.join("materials/sway.cymatcanvas"),
+            canvas_interchange(&inputs.material_name, &canvas).unwrap(),
+        )
+        .unwrap();
+        let mut intents = Vec::new();
+        let at = GraphLayout { x: 12.0, y: 30.0 };
+        add_palette_node(
+            &mut canvas,
+            &mut inputs,
+            &mut intents,
+            &root,
+            "material.constant",
+            at,
+        );
+        let Some(Intent::Invoke(command, arguments)) = intents.first() else {
+            panic!("saved node placement must use the registry");
+        };
+        assert_eq!(command, "material.node.add");
+        assert_eq!(arguments.text("node_type"), Some("material.constant"));
+        assert_eq!(canvas.nodes().count(), 0);
+
+        std::fs::remove_file(root.join("materials/sway.cymatcanvas")).unwrap();
+        add_palette_node(
+            &mut canvas,
+            &mut inputs,
+            &mut intents,
+            &root,
+            "material.constant",
+            at,
+        );
+        assert_eq!(canvas.nodes().count(), 1);
+        assert_eq!(intents.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
