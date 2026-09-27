@@ -160,6 +160,14 @@ CRITERIA = (
         "displacement", "Vertex displacement, shadow and motion match CPU geometry",
         (
             Probe(
+                "committed sine sway scene",
+                native(
+                    "cy_test_smoke_editor_authored_frame_metal",
+                    "committed sine sway material cooks and renders in its authored scene",
+                ),
+                10,
+            ),
+            Probe(
                 "native pixel comparison",
                 native(
                     "cy_test_smoke_editor_authored_frame_metal",

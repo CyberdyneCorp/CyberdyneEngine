@@ -470,8 +470,10 @@ The `displacement` pin accepts a scalar distance in metres; the engine combines 
 connected `offset` as `offset + normal * displacement` for visible and shadow vertex programs.
 The typed `wind` field node samples the Engine weather field in the authored scene and hosted
 material mesh previews. The material mesh renderer refreshes its weather image when the camera
-moves outside the preview region; other field names receive a named refusal. Native pixel proof
-and remaining custom-interpolant acceptance work are tracked by issue #15.
+moves outside the preview region; other field names receive a named refusal. The sample project
+includes `materials/issue15_sway.cymatcanvas` and its Engine-authored `.cygraph` beside
+`worlds/issue15-sway.cyworld` for opening the time and sine vertex graph in a scene. Native pixel
+proof for displacement, shadow, and motion remains tracked by issue #15.
 When an opened graph is assigned to a mesh in the active scene, including an imported material
 slot, Validate and Compile send `StaticMesh` to the Engine material compiler. A material assigned
 to a terrain layer sends `Terrain`; a material used by both requests both variants. The editor
@@ -496,7 +498,7 @@ incomplete graphs editable without asking the engine to author them. The canonic
 validates the complete graph through the engine.
 The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
 and shadow passes. A graph requiring an unbound environment field is refused before replacing the
-last valid preview. The actual wind-field binding remains part of issue #15.
+last valid preview. The Engine weather wind field is bound for scene and material-mesh previews.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 

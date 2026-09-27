@@ -146,6 +146,22 @@ shows the graph-colored Cube and its shadow on the Plane. The
 [node capture](../../docs/design/images/editor-material-graph-nodes-metal.png) shows the
 reopened four-node source and a successful engine compile.
 
+## Vertex graph sine sway
+
+Open `project/worlds/issue15-sway.cyworld` to see the **Sine Sway Cube** above a shadow receiver.
+Its material is `project/materials/issue15_sway.cygraph`, authored by the Engine from the adjacent
+`issue15_sway.cymatcanvas`. In the Material Graph panel, select the cube, open its graph, and choose
+the **Vertex** stage. The Time node feeds Sin, which scales an upward offset into Vertex Output;
+the Surface stage supplies the cube's diffuse colour. The authored scene reads Engine time for
+the offset and uses the graph's vertex function for visible, depth, and shadow passes.
+
+Launch the live editor with `just run-editor-live --project samples/05b-editor-window/project
+--world worlds/issue15-sway.cyworld`. The committed graph and world also cook through
+`cy_material cook samples/05b-editor-window/project <artefact-dir> --world
+worlds/issue15-sway.cyworld`. The `committed sine sway material cooks and renders in its authored
+scene` test compiles that exact graph and submits the saved scene on the null renderer. The native
+pixel comparison with CPU displaced geometry remains a separate acceptance check.
+
 ## VFX graph draft
 
 `project/effects/issue15_two_emitters.cyvfxdoc` is an editable VFX draft with separate CPU and GPU

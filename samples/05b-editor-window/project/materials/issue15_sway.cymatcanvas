@@ -1,0 +1,25 @@
+cymatcanvas 1
+material issue15_sway
+node 1 material.constant
+prop 1 type float3
+prop 1 value 0.7 0.5 0.2 0
+node 2 material.constant
+prop 2 type float
+prop 2 value 1 0 0 0
+node 3 material.diffuse
+node 4 material.output
+node 5 material.time
+node 6 material.sin
+node 7 material.constant
+prop 7 type float3
+prop 7 value 0 0.4 0 0
+node 8 material.multiply
+node 9 material.vertex_output
+link 1 out 3 colour
+link 2 out 3 weight
+link 2 out 4 opacity
+link 3 out 4 surface
+link 5 out 6 value
+link 7 out 8 a
+link 6 out 8 b
+link 8 out 9 offset

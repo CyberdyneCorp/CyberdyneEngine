@@ -728,6 +728,56 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
 #endif
 }
 
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("committed sine sway material cooks and renders in its authored scene") {
+    const std::string project = std::string(CY_TEST_PROJECT) + "/samples/05b-editor-window/project";
+    Array<u8> graph_bytes(allocator());
+    CY_REQUIRE(
+        assets::fs::read_whole((project + "/materials/issue15_sway.cygraph").c_str(), graph_bytes));
+    const std::string_view graph(reinterpret_cast<const char*>(graph_bytes.data()),
+                                 graph_bytes.size());
+    auto compiled = compile_scene_graph_material(graph, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*program, unit));
+    CY_CHECK(std::string_view(unit.data(), unit.size()).find("sin(") != std::string_view::npos);
+
+    Array<u8> world_bytes(allocator());
+    CY_REQUIRE(
+        assets::fs::read_whole((project + "/worlds/issue15-sway.cyworld").c_str(), world_bytes));
+    ser::World world(allocator());
+    CY_REQUIRE(ser::read_world(
+        std::string_view(reinterpret_cast<const char*>(world_bytes.data()), world_bytes.size()),
+        "worlds/issue15-sway.cyworld", world));
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    ser::AuthoringSchema schema(allocator());
+    CY_REQUIRE(ser::build_authoring_schema(types, schema));
+    CY_REQUIRE(ser::resolve_against(world, schema));
+
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "issue 15 committed sway scene";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(160, 90, project.c_str()));
+        CY_REQUIRE(frame.render(world, camera(), true, nullptr, 0.2F));
+        bool bound_pipeline = false;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            bound_pipeline |= command.kind == rhi::null::CommandKind::BindGraphicsPipeline;
+        }
+        CY_CHECK(bound_pipeline);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif
+
 CY_TEST_CASE("authored scene graph lowers an interpolant into its forward fragment") {
     auto colour = graph_diffuse_colour(kSceneInterpolantGraph, allocator(), true);
     CY_REQUIRE(colour.has_value());
