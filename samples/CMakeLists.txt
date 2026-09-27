@@ -164,3 +164,8 @@ add_subdirectory(11-ship)
 # device and writes nothing without one, so it has no CTest entry; what is gated automatically is
 # everything underneath it.
 add_subdirectory(12-beauty)
+# Not a milestone artefact: the picture a strategy game's selection makes — a squad selected by a drag
+# box, an enemy hovered, a unit behind a building — marked from gameplay as components and outlined
+# by the engine's `SelectionOutlines` stage. Like every capture here it needs a graphics device and
+# has no CTest entry; `render.selection_outlines` is the suite.
+add_subdirectory(13-rts-selection)
