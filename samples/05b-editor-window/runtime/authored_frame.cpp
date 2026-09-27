@@ -1485,6 +1485,45 @@ void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
 }
 
+void AuthoredFrame::record_motion_capture(Readback& motion) noexcept {
+    if (motion.output == kInvalidResource || motion.buffer.is_null()) {
+        return;
+    }
+    BufferRequest request;
+    request.name = "editor motion capture";
+    request.size = u64{motion.row_length} * motion.height * sizeof(u32);
+    request.extra_usage = rhi::BufferUsage::TransferDestination;
+    const ResourceId destination = graph_.import_buffer(request, motion.buffer);
+    graph_.add_pass("editor motion capture", rhi::QueueKind::Graphics)
+        .read(motion.output, rhi::Access::TransferRead)
+        .write(destination, rhi::Access::TransferWrite)
+        .record(&AuthoredFrame::readback, &motion);
+    graph_.add_pass("editor motion capture host", rhi::QueueKind::Graphics)
+        .read(destination, rhi::Access::HostRead)
+        .side_effect();
+}
+
+Status AuthoredFrame::copy_motion_readback(const Readback& motion) noexcept {
+    if (motion.output == kInvalidResource || motion.buffer.is_null()) {
+        motion_texels_.clear();
+        return ok();
+    }
+    if (Status resized = motion_texels_.resize(usize{motion.width} * motion.height); !resized) {
+        return resized;
+    }
+    const void* mapped = device_->buffer_mapped_pointer(motion.buffer);
+    if (mapped == nullptr) {
+        return fail(ErrorCode::Internal, "authored frame: motion readback not mapped");
+    }
+    const auto* rows = static_cast<const u8*>(mapped);
+    for (u32 row = 0; row < motion.height; ++row) {
+        std::memcpy(motion_texels_.data() + usize{row} * motion.width,
+                    rows + usize{row} * motion.row_length * sizeof(u32),
+                    usize{motion.width} * sizeof(u32));
+    }
+    return ok();
+}
+
 Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera,
                              bool editor_lighting, const vfx::SimulationWorld* preview,
                              std::optional<f32> time_seconds) noexcept {
@@ -1852,41 +1891,14 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
         .side_effect();
     Readback motion{assembly_.resources().velocity, motion_readback_, width_, height_,
                     motion_row_length_};
-    if (motion.output != kInvalidResource && !motion.buffer.is_null()) {
-        BufferRequest motion_request;
-        motion_request.name = "editor motion capture";
-        motion_request.size = u64{motion_row_length_} * height_ * sizeof(u32);
-        motion_request.extra_usage = rhi::BufferUsage::TransferDestination;
-        const ResourceId motion_destination = graph_.import_buffer(motion_request, motion.buffer);
-        graph_.add_pass("editor motion capture", rhi::QueueKind::Graphics)
-            .read(motion.output, rhi::Access::TransferRead)
-            .write(motion_destination, rhi::Access::TransferWrite)
-            .record(&AuthoredFrame::readback, &motion);
-        graph_.add_pass("editor motion capture host", rhi::QueueKind::Graphics)
-            .read(motion_destination, rhi::Access::HostRead)
-            .side_effect();
-    }
+    record_motion_capture(motion);
     GraphExecutor executor(*allocator_, *device_);
     Status executed = assembly_.execute(executor, graph_, report);
     if (executed) {
         executed = device_->wait_idle();
     }
-    if (executed && motion.output != kInvalidResource && !motion.buffer.is_null()) {
-        if (Status resized = motion_texels_.resize(usize{width_} * height_); !resized) {
-            executed = resized;
-        } else if (const void* mapped = device_->buffer_mapped_pointer(motion.buffer);
-                   mapped == nullptr) {
-            executed = fail(ErrorCode::Internal, "authored frame: motion readback not mapped");
-        } else {
-            const auto* rows = static_cast<const u8*>(mapped);
-            for (u32 row = 0; row < height_; ++row) {
-                std::memcpy(motion_texels_.data() + usize{row} * width_,
-                            rows + usize{row} * motion_row_length_ * sizeof(u32),
-                            usize{width_} * sizeof(u32));
-            }
-        }
-    } else if (motion.output == kInvalidResource) {
-        motion_texels_.clear();
+    if (executed) {
+        executed = copy_motion_readback(motion);
     }
     if (executed) {
         if (Status status = pixels_.resize(usize{width_} * height_); !status) {

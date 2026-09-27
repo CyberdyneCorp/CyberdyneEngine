@@ -102,6 +102,7 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Green commands:** `build/dev/cy_test_smoke_editor_authored_frame_metal --test-case='authored scene compiles a surface beside its vertex graph,authored frame refuses nonfinite material animation time' --no-skip` — shader compilation, source assertions, finite-time refusal, and a null-RHI command-log check of the opt-in motion copy passed on macOS.
 - **Red mutations:** temporarily evaluate the previous position at current time in `material_runtime.cpp`; the compile test failed its previous-time assertion (25/26 passed). Temporarily omit the motion copy callback; the null-RHI test failed because only one texture copy occurred instead of two (7/8 passed). Both mutations were restored.
 - **Native pixel status:** the local RHI selected its null fallback, so the two-frame image and motion comparisons did not execute here. Task 3.3 remains open pending a native Metal or Vulkan run.
+- **Complexity:** the cognitive-complexity skill measured the changed authored-frame functions after extracting motion capture: `capture` 32, `initialize` 25, `render` 15, `record_motion_capture` 1, and `copy_motion_readback` 4. All are within the systems target of 25–35 for inherently branchy frame setup.
 
 ## Two-emitter sample image
 

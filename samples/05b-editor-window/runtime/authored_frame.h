@@ -133,6 +133,8 @@ private:
                                                    Span<const u32> materials) noexcept;
     [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera, bool editor_lighting,
                                  std::optional<f32> time_seconds) noexcept;
+    void record_motion_capture(Readback& motion) noexcept;
+    [[nodiscard]] Status copy_motion_readback(const Readback& motion) noexcept;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     [[nodiscard]] Status prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
                                      Vec3 eye) noexcept;
