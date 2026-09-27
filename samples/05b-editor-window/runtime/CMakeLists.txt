@@ -61,9 +61,11 @@ cy_add_module(
         overlay.cpp
         pick_wire.cpp
         script_runtime.cpp
+        wind_field_preview.cpp
         world_view.cpp
     PRIVATE_DEPENDENCIES
         cy::rendering-pipeline
+        cy::weather
         cy::import
         cy::core-assets
         cy::sample-first-light

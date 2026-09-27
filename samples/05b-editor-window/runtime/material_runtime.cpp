@@ -561,10 +561,16 @@ SceneMaterialEvaluation sceneMaterialEvaluate(CyInstanceTransform instance, floa
     ctx.params = cyMaterialParameters;
     ctx.attributes = cyZeroAttributes();
 )");
+    if (declared->fields > 0) {
+        writer.text("    ctx.fieldPosition = relative;\n");
+    }
     for (const Node& node : program.module.nodes()) {
         if (node.op == Op::Field) {
-            return fail(ErrorCode::Unsupported,
-                        "the authored scene has no environment-field vertex binding");
+            if (node.symbol != Name::intern("wind") || node.type != ValueType::Vec3) {
+                return fail(ErrorCode::Unsupported,
+                            "the authored scene has no binding for this environment field");
+            }
+            continue;
         }
         if (node.op != Op::Attribute) {
             continue;
@@ -697,6 +703,9 @@ float4 cySceneMaterialFragment(CySceneForwardVertex input) : SV_Target
     ctx.params = cyMaterialParameters;
     ctx.attributes = cyZeroAttributes();
 )");
+    if (declared->fields > 0) {
+        writer.text("    ctx.fieldPosition = input.relativePosition;\n");
+    }
     for (const Node& node : program.module.nodes()) {
         if (node.op != Op::Attribute) {
             continue;

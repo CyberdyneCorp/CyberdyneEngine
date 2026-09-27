@@ -138,28 +138,29 @@ The engine material IR now includes a typed three-dimensional value-noise operat
 both the graph palette and `noise(position)` text syntax. Slang compiles it in a vertex expression;
 the node rejects non-float3 coordinates. A typed procedural wind operation samples three
 decorrelated noise channels at an animated coordinate and returns a float3 vector; both graph and
-text front ends lower to the same IR operation. This is not an `environment-fields` sample. A
-binding to the engine-owned wind field remains in task 3.1. The typed RGB vertex-colour node reads
+text front ends lower to the same IR operation. This is not an `environment-fields` sample; a
+separate typed field node reads the engine-owned wind. The typed RGB vertex-colour node reads
 `color0` from an added RGBA mesh stream in the first-light compiled-material preview, including
 shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
-Environment-field wind binding remains in task 3.1, and discovery of non-static scene geometry
-sources remains in task 3.2. The authored scene frame now compiles vertex offsets and interpolants
-for its static meshes, including visible, depth, and shadow passes. Its first-light material
-preview still lacks an environment-field provider, and the authored scene rejects `Op::Field` for
-that reason. The procedural wind node cannot stand in for the engine wind field.
+Discovery of non-static scene geometry sources remains in task 3.2. The authored scene frame now
+compiles vertex offsets and interpolants for its static meshes, including visible, depth, and
+shadow passes. Its first-light material preview still lacks an environment-field provider, while
+the authored scene binds the weather-owned `wind` field. Other field names receive an explicit
+refusal. The procedural wind node remains a separate operation.
 
 The field path must use `environment::build_deterministic_field_image` for the weather-owned
 `environment::fields::kWind` declaration, retain the image origin, and pass coordinates made local
 with `environment::image_local` before GPU sampling. The generated material prelude now imports
 `cy.field`, selects the IR field's typed components from the sampler's float4 result, and carries
-one bindless slot and camera-to-image offset per field. The authored frame needs a field buffer
-and descriptor binding that is shared by its visible, depth, and shadow vertex programs. The Engine
-frame now declares `cy.field`'s set 0 binding 3 and writes caller-supplied field-image buffers into
-its bounded table every frame. The authored frame still needs a weather-owned image provider, its
-origin and material parameter upload before enabling `Op::Field`. Validation
-must refuse an unbound wind field before a preview or cook succeeds. A regression must compare
-several positions, including different vertical cells, against `sample_field_image` on the CPU.
+one bindless slot and camera-to-image offset per field. The Engine frame declares `cy.field`'s set 0
+binding 3 and writes caller-supplied field-image buffers into its bounded table every frame. The
+authored frame now runs one deterministic clear-weather tick around the viewed scene, binds its
+weather-owned wind image, and uploads the image origin through a separate per-frame material field
+buffer. This keeps camera motion out of the material's authored parameter layout. The editor
+refreshes that image when the viewport camera leaves the preview region and rejects unbound field
+names during preview. A headless regression compares several image positions
+and vertical cells against the WeatherSystem's `FieldStore`; native pixel evidence remains open.
 The GPU buffer has no world origin in its words: `FieldGpuImage::origin_x` and `origin_z` are kept
 separately so large world coordinates can be subtracted in f64 before sampling. A material shader
 therefore needs each bound field's origin relative to the current camera, plus the vertex's

@@ -33,6 +33,14 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
 
+    cy_add_test(
+        NAME editor_wind_field_preview
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_wind_field_preview.cpp"
+            "${tests_dir}/../wind_field_preview.cpp"
+        DEPENDENCIES cy::weather cy::environment)
+
     # THE AUTHORED FRAME ON LINUX'S DEVICE TOO. Since PR #14 the hosted runtime draws every opened
     # world through `AuthoredFrame`, so the pixel assertions that prove it on Metal are the ones
     # that prove the Linux viewport. Issue #18: nothing ran them on Vulkan.
@@ -44,11 +52,13 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
                 "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader
+                cy::weather
                 cy::rhi-vulkan cy::rhi-null
             DEFINITIONS
                 "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
@@ -71,11 +81,13 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
                 "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader cy::shader-slang
+                cy::weather
                 cy::rhi-metal cy::rhi-null
             DEFINITIONS
                 "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\""

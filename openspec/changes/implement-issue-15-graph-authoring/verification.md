@@ -22,8 +22,7 @@ The Engine frame now carries `cy.field`'s storage-buffer table at set 0 binding 
 buffer, refuses duplicate, missing and out-of-range entries, then destroys the buffer and confirms
 the next descriptor update fails. That last control would pass incorrectly if binding 3 were not
 written. The focused case passed 10 assertions and the full `integration.render_pipeline` suite
-passed 14 cases and 174 assertions on macOS. Authored wind preview and CPU/GPU value comparison
-remain open.
+passed 14 cases and 174 assertions on macOS. Native CPU/GPU value and pixel comparison remain open.
 Removing the binding-3 write loop made that focused regression fail (8/10 assertions passed);
 restoring the loop returned it to green. The mutation is not committed.
 
@@ -117,8 +116,8 @@ restoring the loop returned it to green. The mutation is not committed.
 - **Wire path:** `vertex_material_canvas_previews_over_mcp_without_saving` sends the editable vertex canvas through `material.graph.preview`, observes the hosted `material.preview.set` request and completed response, and verifies that preview creates no project graph asset. The desktop panel submits the same canvas through `Editor::preview_material_graph` when its semantic graph content changes.
 - **Scene compilation:** `authored scene compiles a surface beside its vertex graph` compiles the authored vertex expression for visible, depth, and shadow passes. The hosted mesh pixel case `a compiled vertex offset moves the hosted Metal material mesh` exists, but its pixel assertions require a native Metal device.
 - **Green commands:** the focused MCP test passed (1/1), and the authored scene compilation case passed (26/26 assertions) on 2026-09-27. The local hosted mesh case selected the null RHI and executed only its availability assertion. Task 3.4 remains open for a native preview image and individual material canvas transaction parity.
-- **Preview refusal regression:** `authored scene preview refuses an unbound vertex environment field` first accepts a valid graph, then submits a typed `wind` field to the vertex output. The engine now refuses it before changing the preview and renders the previously accepted material. The focused null-RHI case passed 13/13 assertions on 2026-09-27.
-- **Red mutation:** before the preview preflight called `compile_scene_graph_material` and `assemble_scene_material_vertex_unit`, the focused case failed because `preview()` accepted the unbound field. The subsequent read of the nonexistent error also tripped the test harness. With preflight restored, it passes.
+- **Weather wind regression:** `authored scene binds weather wind for a vertex field graph` refuses an unbound `moisture` field, accepts typed `wind`, compiles that scene program to MSL, and renders it on the null device through the authored frame, including a camera move that refreshes the field image. The focused case passed 19 assertions on 2026-09-27. `editor weather publishes the wind image sampled by a scene material` runs the real WeatherSystem and compares its deterministic field image with `FieldStore` at two world origins, three heights, and three horizontal positions: 84 assertions passed. Native pixel evidence remains open because the local Metal device is unavailable.
+- **Red mutation:** shifting the field image origin by 256 m after publication made the WeatherSystem agreement test fail 54 of 80 assertions; restoring the origin returned it to green. This detects a coordinate error even when the image buffer itself is valid.
 - **Complexity:** the cognitive-complexity skill measured `AuthoredFrame::preview` at 9, within the systems target.
 
 ## Assigned geometry at material authoring
@@ -198,12 +197,14 @@ command-history tests above.
 An exploratory typed wind-field shader probe compiled but failed all four assertions for a real
 `cy.field` import, a bindless slot, a spatial sample, and a float3 result. It was removed after the
 red run: the field image keeps its world origin outside the GPU words, so a shader-only change
-would sample the wrong location. Task 3.1 remains open until a per-field camera-relative origin
-and the same field snapshot across visible, shadow, and motion passes are bound and tested.
+would sample the wrong location. The current authored scene now supplies the origin and one field
+snapshot to visible, depth, and shadow programs; native rendering verification remains open.
 
 The first task 3.1 implementation now generates typed field reads through `cy.field` with a
 bindless slot and camera-to-image offset. The focused `typed vertex fields sample the engine field
 table at the authored position` case compiles the generated vertex program through Slang; all 19
 assertions pass, and the full `smoke.material_slang` suite passes. The prior scalar fallback made
-four assertions fail before the change. Engine field image creation and viewport binding remain
-open and are still refused by the authored frame.
+four assertions fail before the change. The authored frame now binds an Engine wind image. The
+field bindings moved to a separate per-frame buffer so the material parameter layout stays stable;
+`smoke.material_slang` passes 10 cases and 140 assertions, including the typed wind probe. The
+authored scene's headless test compiles the wind material to MSL and draws it on the null device.

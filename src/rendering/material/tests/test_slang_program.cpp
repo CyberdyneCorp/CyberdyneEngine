@@ -301,7 +301,7 @@ CY_TEST_CASE("sine noise wind and colour compile in a generated vertex offset") 
     std::string source(prelude.data(), prelude.size());
     source.append(generated->view());
     source += R"(
-[[vk::binding(1, 3)]] RWStructuredBuffer<float4> cyMaterialProbeOutput;
+[[vk::binding(2, 3)]] RWStructuredBuffer<float4> cyMaterialProbeOutput;
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
@@ -506,7 +506,10 @@ void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
 }
 )";
     CY_CHECK(text.find("import cy.field;") != std::string_view::npos);
-    CY_CHECK(text.find("CyMaterialFieldBinding fields[1];") != std::string_view::npos);
+    CY_CHECK(text.find("CyMaterialFieldBinding bindings[1];") != std::string_view::npos);
+    CY_CHECK(text.find("ConstantBuffer<CyMaterialFieldParameters> cyMaterialFields;") !=
+             std::string_view::npos);
+    CY_CHECK(text.find("cyMaterialFields.bindings[field]") != std::string_view::npos);
     CY_CHECK(text.find("float3 at = ctx.fieldPosition + binding.cameraToImage;") !=
              std::string_view::npos);
     CY_CHECK(text.find("cyFieldSampleScene(binding.slot, at.x, at.y, at.z).value") !=

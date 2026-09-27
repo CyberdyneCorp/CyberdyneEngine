@@ -51,7 +51,9 @@
 //  * **A field sample needs a provider.** The emitted field expression selects the IR's scalar or
 //    vector width from the float4 returned by `cy.field`. Each material field binding contains a
 //    bindless scene slot and a per-view offset from camera-relative coordinates to the field
-//    image's local coordinates. A host must populate those bindings and the context's
+//    image's local coordinates. They occupy a separate field parameter buffer so an authored
+//    material layout remains stable while the camera moves. A host must populate that buffer and
+//    the context's
 //    `fieldPosition`; compiling this translation unit alone does not provide field data.
 //  * **The probe entry point is a compute shader, not the frame's fragment shader.** What this
 //    module proves is that the generated program COMPILES and reflects; wiring a compiled material

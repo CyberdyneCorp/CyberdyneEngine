@@ -10,6 +10,7 @@
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/pipeline/material_textures.h>
 #include <cy/servers/render/server.h>
+#include <cy/world/coordinates.h>
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include <cy/rendering/particles/particle_renderer.h>
 #    include <cy/vfx/runtime.h>
@@ -30,6 +31,8 @@ class SimulationWorld;
 }
 
 namespace cy::sample::editor_window {
+
+class WindFieldPreview;
 
 /// The subset of a compiled material the authored frame's standard-material path can represent.
 struct GraphColour {
@@ -122,7 +125,8 @@ private:
     [[nodiscard]] Status create_materials() noexcept;
     [[nodiscard]] Status create_material_variant_layout() noexcept;
     [[nodiscard]] Status prepare_graph_variant(u32 slot, std::string_view source) noexcept;
-    [[nodiscard]] Status bind_graph_variants() noexcept;
+    [[nodiscard]] Status ensure_wind_field() noexcept;
+    [[nodiscard]] Status bind_graph_variants(u32 frame_slot) noexcept;
     void release_graph_variant(MaterialVariant& variant) noexcept;
     [[nodiscard]] Status build_instances(const scene::serialization::World& world, Vec3 eye,
                                          bool editor_lighting = true) noexcept;
@@ -192,7 +196,10 @@ private:
     std::vector<CameraMarker> camera_markers_;
     std::vector<std::pair<std::string, u32>> material_slots_;
     std::vector<MaterialVariant> material_variants_;
+    std::unique_ptr<WindFieldPreview> wind_;
     std::optional<std::pair<std::string, std::string>> preview_graph_;
+    world::WorldVec3d field_camera_;
+    rhi::BufferHandle wind_buffer_;
     rhi::DescriptorSetLayoutHandle material_set_layout_;
     rhi::PipelineLayoutHandle material_pipeline_layout_;
     std::vector<std::pair<AssetId, render::TextureHandle>> texture_handles_;

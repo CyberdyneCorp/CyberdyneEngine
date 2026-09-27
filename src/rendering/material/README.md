@@ -115,13 +115,14 @@ and `noise(position)` text form lower to the same IR operation and engine Slang 
 `material.procedural_wind` accepts a float3 coordinate and elapsed seconds, returning a smooth
 float3 vector with components in `[-1, 1]`. The node and
 `procedural_wind(position, time_seconds)` text form share that IR operation; authors scale the
-vector to control displacement amplitude. It does not read the engine's `environment-fields` wind;
-that binding remains an issue #15 requirement.
+vector to control displacement amplitude. It is distinct from the Engine's weather-owned wind
+field, which `material.field` samples.
 Generated `material.field` expressions now sample the engine's `cy.field` bindless table and select
 their declared scalar or vector width. Each material field binding stores a scene slot and the
 per-view offset from camera-relative vertex coordinates to that field image's local coordinates.
-The authored editor viewport still refuses field graphs until it has an Engine field image and
-populates those bindings for visible, shadow, and previous-frame evaluation.
+Field bindings live in a separate per-frame uniform buffer so camera motion does not rewrite the
+material's authored parameter layout. The authored scene viewport binds the weather-owned `wind`
+field image and uses the same binding for visible, shadow, and previous-frame evaluation.
 `material.vertex_color` lowers to the typed `color0` RGB attribute. The first-light compiled-material
 mesh supplies per-vertex linear RGBA data; the generated sample assigns distinct RGB colours by
 face, and a vertex without authored colour defaults to white. RGB reaches vertex and fragment

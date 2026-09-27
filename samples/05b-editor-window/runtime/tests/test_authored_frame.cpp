@@ -773,7 +773,7 @@ CY_TEST_CASE("authored frame refuses nonfinite material animation time") {
 }
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
-CY_TEST_CASE("authored scene preview refuses an unbound vertex environment field") {
+CY_TEST_CASE("authored scene binds weather wind for a vertex field graph") {
     (void)rhi::null::register_null_backend();
     rhi::DeviceDescription description;
     description.application_name = "editor field preview validation";
@@ -800,11 +800,22 @@ CY_TEST_CASE("authored scene preview refuses an unbound vertex environment field
         const std::string graph_source(reinterpret_cast<const char*>(graph_bytes.data()),
                                        graph_bytes.size());
         CY_REQUIRE(frame.preview(reference, graph_source));
-        const Status refused = frame.preview(reference, field_graph);
+        std::string unbound = field_graph;
+        const usize symbol = unbound.find("= \"wind\"");
+        CY_REQUIRE_NE(symbol, std::string::npos);
+        unbound.replace(symbol, std::string_view("= \"wind\"").size(), "= \"moisture\"");
+        const Status refused = frame.preview(reference, unbound);
         CY_REQUIRE_FALSE(refused.has_value());
         CY_CHECK_EQ(refused.error().code, ErrorCode::Unsupported);
-        CY_CHECK(std::string_view(refused.error().message).find("environment-field") !=
-                 std::string_view::npos);
+        CY_REQUIRE(frame.preview(reference, field_graph));
+        auto compiled = compile_scene_graph_material(field_graph, allocator());
+        CY_REQUIRE(compiled.has_value());
+        const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                             rendering::material::QualityTier::High);
+        CY_REQUIRE(program != nullptr);
+        auto msl = compile_scene_material_vertices(*program, allocator(), shader::Target::Msl);
+        CY_REQUIRE(msl.has_value());
+        CY_CHECK_FALSE(msl->visible.bytes().empty());
         ser::World world(allocator());
         CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", world).has_value());
         reflect::TypeRegistry types;
@@ -813,6 +824,9 @@ CY_TEST_CASE("authored scene preview refuses an unbound vertex environment field
         CY_REQUIRE(ser::build_authoring_schema(types, schema));
         CY_REQUIRE(ser::resolve_against(world, schema).has_value());
         CY_REQUIRE(frame.render(world, camera()));
+        auto moved = camera();
+        moved.position[0] += 1024.0;
+        CY_REQUIRE(frame.render(world, moved));
     }
     rhi::destroy_device(allocator(), *device);
 }

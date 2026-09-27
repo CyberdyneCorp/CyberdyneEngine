@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "authored_frame.h"
 #include "material_runtime.h"
+#include "wind_field_preview.h"
 
 #include <cy/core/assets/cooked.h>
 #include <cy/core/assets/file.h>
@@ -39,6 +40,18 @@ constexpr u32 kVfxCapacity = 4096;
 constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
+
+/// `CyMaterialFieldBinding` in the generated Slang prelude: a scalar followed by a float3. The
+/// buffer is separate from the material's authored parameter block so field origin changes do not
+/// depend on the graph compiler's parameter layout.
+struct alignas(16) SceneFieldBinding {
+    u32 slot = 0;
+    u32 padding[3] = {};
+    f32 camera_to_image[3] = {};
+    f32 trailing_padding = 0.0F;
+};
+static_assert(sizeof(SceneFieldBinding) == 32);
+static_assert(offsetof(SceneFieldBinding, camera_to_image) == 16);
 
 }  // namespace
 
@@ -347,6 +360,8 @@ struct AuthoredFrame::MaterialVariant {
     rhi::GraphicsPipelineHandle shadow_pipeline;
     rhi::BufferHandle parameters;
     rhi::BufferHandle previous_transform;
+    rhi::BufferHandle field_parameters[rhi::kMaxFramesInFlight];
+    bool has_wind = false;
     rhi::DescriptorSetHandle descriptor_set;
 };
 
@@ -372,6 +387,8 @@ Status AuthoredFrame::create_material_variant_layout() noexcept {
         {0, rhi::DescriptorKind::UniformBuffer, 1,
          rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
         {1, rhi::DescriptorKind::UniformBuffer, 1, rhi::ShaderStage::Vertex, false},
+        {2, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
     };
     rhi::DescriptorSetLayoutDescription set;
     set.name = "editor scene material parameters";
@@ -417,6 +434,11 @@ void AuthoredFrame::release_graph_variant(MaterialVariant& variant) noexcept {
     if (!variant.previous_transform.is_null()) {
         device_->destroy_buffer(variant.previous_transform);
     }
+    for (rhi::BufferHandle buffer : variant.field_parameters) {
+        if (!buffer.is_null()) {
+            device_->destroy_buffer(buffer);
+        }
+    }
     variant = {};
 }
 
@@ -453,6 +475,9 @@ AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
     for (MaterialVariant& variant : material_variants_) {
         release_graph_variant(variant);
+    }
+    if (!wind_buffer_.is_null()) {
+        device_->destroy_buffer(wind_buffer_);
     }
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     vfx_renderer_.shutdown();
@@ -819,6 +844,46 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
     return slot;
 }
 
+Status AuthoredFrame::ensure_wind_field() noexcept {
+    if (wind_ != nullptr && wind_->covers(field_camera_)) {
+        return ok();
+    }
+    if (device_->descriptor_model() != rhi::DescriptorModel::Bindless) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene wind graphs require bindless environment fields");
+    }
+    auto preview = std::make_unique<WindFieldPreview>(*allocator_);
+    if (Status prepared = preview->initialize(field_camera_); !prepared) {
+        return prepared;
+    }
+    const auto words = preview->image().words.span();
+    rhi::BufferDescription buffer;
+    buffer.name = "editor weather wind field image";
+    buffer.size = words.size() * sizeof(u32);
+    buffer.usage = rhi::BufferUsage::Storage;
+    buffer.memory = rhi::MemoryUse::Upload;
+    auto created = device_->create_buffer(buffer);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    void* mapped = device_->buffer_mapped_pointer(*created);
+    if (mapped == nullptr) {
+        device_->destroy_buffer(*created);
+        return fail(ErrorCode::Internal, "authored scene wind image is not mapped");
+    }
+    std::memcpy(mapped, words.data(), buffer.size);
+    if (!wind_buffer_.is_null()) {
+        if (Status idle = device_->wait_idle(); !idle) {
+            device_->destroy_buffer(*created);
+            return idle;
+        }
+        device_->destroy_buffer(wind_buffer_);
+    }
+    wind_buffer_ = *created;
+    wind_ = std::move(preview);
+    return ok();
+}
+
 Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) noexcept {
     const auto previous = std::ranges::find_if(
         material_variants_,
@@ -840,6 +905,23 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     if (program == nullptr || program->vertex_source.text.empty()) {
         return fail(ErrorCode::InvalidArgument, "authored scene material has no vertex expression");
     }
+    bool has_wind = false;
+    for (const auto& field : program->module.nodes()) {
+        if (field.op != rendering::material::Op::Field) {
+            continue;
+        }
+        if (field.symbol != Name::intern("wind") ||
+            field.type != rendering::material::ValueType::Vec3) {
+            return fail(ErrorCode::Unsupported,
+                        "authored scene material requests an unbound environment field");
+        }
+        has_wind = true;
+    }
+    if (has_wind) {
+        if (Status prepared = ensure_wind_field(); !prepared) {
+            return prepared;
+        }
+    }
     auto stages = compile_scene_material_vertices(
         *program, *allocator_,
         format == rhi::ShaderFormat::Msl ? shader::Target::Msl : shader::Target::SpirV);
@@ -848,6 +930,7 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     }
     MaterialVariant variant;
     variant.slot = slot;
+    variant.has_wind = has_wind;
     const auto create_shader = [&](const char* name, const char* entry, rhi::ShaderStage stage,
                                    const shader::TargetArtefact& artefact,
                                    rhi::ShaderModuleHandle& out) -> Status {
@@ -949,6 +1032,16 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
         return make_unexpected(previous_buffer.error());
     }
     variant.previous_transform = *previous_buffer;
+    buffer.name = "editor scene field parameters";
+    buffer.size = sizeof(SceneFieldBinding);
+    for (u32 index = 0; index < device_->frames_in_flight(); ++index) {
+        auto field_buffer = device_->create_buffer(buffer);
+        if (!field_buffer) {
+            release_graph_variant(variant);
+            return make_unexpected(field_buffer.error());
+        }
+        variant.field_parameters[index] = *field_buffer;
+    }
     auto* mapped_previous = device_->buffer_mapped_pointer(variant.previous_transform);
     if (mapped_previous == nullptr) {
         release_graph_variant(variant);
@@ -991,14 +1084,32 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     return ok();
 }
 
-Status AuthoredFrame::bind_graph_variants() noexcept {
+Status AuthoredFrame::bind_graph_variants(u32 frame_slot) noexcept {
     for (MaterialVariant& variant : material_variants_) {
+        rhi::BufferHandle field_buffer = variant.field_parameters[frame_slot];
+        auto* field_bytes = static_cast<u8*>(device_->buffer_mapped_pointer(field_buffer));
+        if (field_bytes == nullptr) {
+            return fail(ErrorCode::Internal, "authored scene field parameters are not mapped");
+        }
+        SceneFieldBinding field_binding;
+        if (variant.has_wind) {
+            if (wind_ == nullptr) {
+                return fail(ErrorCode::Unavailable, "authored scene has no wind field image");
+            }
+            field_binding.slot = 0;
+            const f32 camera_to_image[3] = {
+                static_cast<f32>(field_camera_.x - wind_->image().origin_x),
+                static_cast<f32>(field_camera_.y),
+                static_cast<f32>(field_camera_.z - wind_->image().origin_z)};
+            std::memcpy(field_binding.camera_to_image, camera_to_image, sizeof(camera_to_image));
+        }
+        std::memcpy(field_bytes, &field_binding, sizeof(field_binding));
         auto set = device_->allocate_descriptor_set(material_set_layout_, true);
         if (!set) {
             return make_unexpected(set.error());
         }
         variant.descriptor_set = *set;
-        rhi::DescriptorWrite writes[2];
+        rhi::DescriptorWrite writes[3];
         writes[0].binding = 0;
         writes[0].kind = rhi::DescriptorKind::UniformBuffer;
         writes[0].buffer = variant.parameters;
@@ -1007,6 +1118,10 @@ Status AuthoredFrame::bind_graph_variants() noexcept {
         writes[1].kind = rhi::DescriptorKind::UniformBuffer;
         writes[1].buffer = variant.previous_transform;
         writes[1].buffer_range = 3U * sizeof(Vec4);
+        writes[2].binding = 2;
+        writes[2].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[2].buffer = field_buffer;
+        writes[2].buffer_range = sizeof(SceneFieldBinding);
         if (Status status = device_->update_descriptor_set(variant.descriptor_set, writes);
             !status) {
             return status;
@@ -1557,8 +1672,20 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     }
     const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
                    static_cast<f32>(camera.position[2])};
+    field_camera_ = world::WorldVec3d{camera.position[0], camera.position[1], camera.position[2]};
+    if (wind_ != nullptr && !wind_->covers(field_camera_)) {
+        if (Status refreshed = ensure_wind_field(); !refreshed) {
+            return refreshed;
+        }
+    }
     if (Status status = build_instances(world, eye, editor_lighting); !status) {
         return status;
+    }
+    if (!wind_buffer_.is_null()) {
+        const EnvironmentFieldSlot field{0, wind_buffer_};
+        if (Status bound = bindings_.set_environment_fields({&field, 1}); !bound) {
+            return bound;
+        }
     }
     MaterialTextureSlot resident[kMaterialTextureSlots];
     const usize count =
@@ -1586,7 +1713,7 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (!begun) {
         return make_unexpected(begun.error());
     }
-    if (Status status = bind_graph_variants(); !status) {
+    if (Status status = bind_graph_variants(*begun); !status) {
         (void)device_->end_frame();
         return status;
     }
