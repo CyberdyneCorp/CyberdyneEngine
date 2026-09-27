@@ -222,7 +222,7 @@ pub struct CyServiceEvent {
     pub payload_size: u64,
 }
 
-/// `CyBehaviourVTable` — 56 bytes, 8-byte aligned.
+/// `CyBehaviourVTable` — 64 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyBehaviourVTable {
@@ -246,6 +246,8 @@ pub struct CyBehaviourVTable {
     >,
     /// `void*` at byte 48.
     pub user_data: *mut ::std::ffi::c_void,
+    /// `void(*)(CyInstance, float, void*)` at byte 56.
+    pub frame_update: Option<unsafe extern "C" fn(CyInstance, f32, *mut ::std::ffi::c_void)>,
 }
 
 /// `CyBorrow` — 16 bytes, 8-byte aligned.
@@ -256,6 +258,356 @@ pub struct CyBorrow {
     pub data: *mut ::std::ffi::c_void,
     /// `uint64_t` at byte 8.
     pub epoch: u64,
+}
+
+/// `CyPose` — 28 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyPose {
+    /// `float[3]` at byte 0.
+    pub position: [f32; 3],
+    /// `float[4]` at byte 12.
+    pub rotation: [f32; 4],
+}
+
+/// `CyRay` — 28 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyRay {
+    /// `float[3]` at byte 0.
+    pub origin: [f32; 3],
+    /// `float[3]` at byte 12.
+    pub direction: [f32; 3],
+    /// `float` at byte 24.
+    pub max_distance: f32,
+}
+
+/// `CyTime` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyTime {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub phase: u32,
+    /// `uint64_t` at byte 8.
+    pub tick: u64,
+    /// `double` at byte 16.
+    pub fixed_delta: f64,
+    /// `double` at byte 24.
+    pub frame_delta: f64,
+    /// `double` at byte 32.
+    pub interpolation: f64,
+    /// `uint32_t` at byte 40.
+    pub flags: u32,
+    /// `uint32_t` at byte 44.
+    pub reserved: u32,
+}
+
+/// `CyInputAction`, the ABI's alias for `uint32_t`.
+pub type CyInputAction = u32;
+
+/// `CyInputContext`, the ABI's alias for `uint64_t`.
+pub type CyInputContext = u64;
+
+/// `CyInputActionState` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyInputActionState {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float[3]` at byte 8.
+    pub value: [f32; 3],
+    /// `uint16_t` at byte 20.
+    pub press_count: u16,
+    /// `uint16_t` at byte 22.
+    pub release_count: u16,
+    /// `uint64_t` at byte 24.
+    pub tick: u64,
+}
+
+/// `CyInputPointer` — 48 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyInputPointer {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `uint32_t` at byte 8.
+    pub buttons: u32,
+    /// `uint32_t` at byte 12.
+    pub buttons_pressed: u32,
+    /// `uint32_t` at byte 16.
+    pub buttons_released: u32,
+    /// `float[2]` at byte 20.
+    pub position: [f32; 2],
+    /// `float[2]` at byte 28.
+    pub delta: [f32; 2],
+    /// `float[2]` at byte 36.
+    pub wheel: [f32; 2],
+    /// `uint32_t` at byte 44.
+    pub reserved: u32,
+}
+
+/// `CyCamera`, the ABI's alias for `uint64_t`.
+pub type CyCamera = u64;
+
+/// `CyCameraView` — 68 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyCameraView {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `CyPose` at byte 8.
+    pub pose: CyPose,
+    /// `float` at byte 36.
+    pub vertical_fov: f32,
+    /// `float` at byte 40.
+    pub ortho_height: f32,
+    /// `float` at byte 44.
+    pub near_plane: f32,
+    /// `float` at byte 48.
+    pub far_plane: f32,
+    /// `float[4]` at byte 52.
+    pub viewport: [f32; 4],
+}
+
+/// `CyScreenPoint` — 16 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyScreenPoint {
+    /// `float[2]` at byte 0.
+    pub position: [f32; 2],
+    /// `float` at byte 8.
+    pub depth: f32,
+    /// `uint32_t` at byte 12.
+    pub flags: u32,
+}
+
+/// `CyCameraTarget` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyCameraTarget {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `CyEntity` at byte 8.
+    pub entity: CyEntity,
+    /// `float[3]` at byte 16.
+    pub position: [f32; 3],
+    /// `float` at byte 28.
+    pub yaw: f32,
+    /// `float` at byte 32.
+    pub pitch: f32,
+    /// `float` at byte 36.
+    pub distance: f32,
+    /// `float` at byte 40.
+    pub blend_seconds: f32,
+    /// `uint32_t` at byte 44.
+    pub reserved: u32,
+}
+
+/// `CyShape` — 24 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyShape {
+    /// `uint32_t` at byte 0.
+    pub kind: u32,
+    /// `float` at byte 4.
+    pub radius: f32,
+    /// `float` at byte 8.
+    pub half_height: f32,
+    /// `float[3]` at byte 12.
+    pub half_extents: [f32; 3],
+}
+
+/// `CyQueryFilter` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyQueryFilter {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub layer: u32,
+    /// `uint32_t` at byte 8.
+    pub mask: u32,
+    /// `uint32_t` at byte 12.
+    pub flags: u32,
+    /// `const CyEntity*` at byte 16.
+    pub ignore: *const CyEntity,
+    /// `uint32_t` at byte 24.
+    pub ignore_count: u32,
+    /// `uint32_t` at byte 28.
+    pub reserved: u32,
+}
+
+/// `CyPhysicsHit` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyPhysicsHit {
+    /// `uint32_t` at byte 0.
+    pub flags: u32,
+    /// `uint32_t` at byte 4.
+    pub reserved: u32,
+    /// `CyEntity` at byte 8.
+    pub entity: CyEntity,
+    /// `float[3]` at byte 16.
+    pub point: [f32; 3],
+    /// `float[3]` at byte 28.
+    pub normal: [f32; 3],
+    /// `float` at byte 40.
+    pub distance: f32,
+    /// `float` at byte 44.
+    pub fraction: f32,
+}
+
+/// `CyNavQuery`, the ABI's alias for `uint64_t`.
+pub type CyNavQuery = u64;
+
+/// `CyNavPathRequest` — 64 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyNavPathRequest {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub world: u32,
+    /// `float[3]` at byte 8.
+    pub start: [f32; 3],
+    /// `float[3]` at byte 20.
+    pub end: [f32; 3],
+    /// `float[3]` at byte 32.
+    pub extents: [f32; 3],
+    /// `uint32_t` at byte 44.
+    pub node_budget: u32,
+    /// `uint64_t` at byte 48.
+    pub area_mask: u64,
+    /// `uint64_t` at byte 56.
+    pub capabilities: u64,
+}
+
+/// `CyNavPathResult` — 24 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyNavPathResult {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `uint32_t` at byte 8.
+    pub point_count: u32,
+    /// `uint32_t` at byte 12.
+    pub state: u32,
+    /// `float` at byte 16.
+    pub cost: f32,
+    /// `float` at byte 20.
+    pub length: f32,
+}
+
+/// `CyNavAgentParams` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyNavAgentParams {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub world: u32,
+    /// `float` at byte 8.
+    pub radius: f32,
+    /// `float` at byte 12.
+    pub height: f32,
+    /// `float` at byte 16.
+    pub max_speed: f32,
+    /// `float` at byte 20.
+    pub max_acceleration: f32,
+    /// `float` at byte 24.
+    pub arrival_distance: f32,
+    /// `uint32_t` at byte 28.
+    pub priority: u32,
+    /// `uint64_t` at byte 32.
+    pub area_mask: u64,
+    /// `uint64_t` at byte 40.
+    pub capabilities: u64,
+}
+
+/// `CyNavAgentState` — 56 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyNavAgentState {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub status: u32,
+    /// `uint32_t` at byte 8.
+    pub flags: u32,
+    /// `uint32_t` at byte 12.
+    pub reserved: u32,
+    /// `float[3]` at byte 16.
+    pub position: [f32; 3],
+    /// `float[3]` at byte 28.
+    pub velocity: [f32; 3],
+    /// `float[3]` at byte 40.
+    pub target: [f32; 3],
+    /// `float` at byte 52.
+    pub remaining_distance: f32,
+}
+
+/// `CyAudioCue`, the ABI's alias for `uint64_t`.
+pub type CyAudioCue = u64;
+
+/// `CyAudioBus`, the ABI's alias for `uint64_t`.
+pub type CyAudioBus = u64;
+
+/// `CyAudioVoice`, the ABI's alias for `uint64_t`.
+pub type CyAudioVoice = u64;
+
+/// `CyAudioPlay` — 56 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyAudioPlay {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `CyAudioCue` at byte 8.
+    pub cue: CyAudioCue,
+    /// `CyEntity` at byte 16.
+    pub attach_to: CyEntity,
+    /// `CyAudioBus` at byte 24.
+    pub bus: CyAudioBus,
+    /// `float[3]` at byte 32.
+    pub position: [f32; 3],
+    /// `float` at byte 44.
+    pub volume: f32,
+    /// `float` at byte 48.
+    pub pitch: f32,
+    /// `float` at byte 52.
+    pub fade_in_seconds: f32,
+}
+
+/// `CyPrefab`, the ABI's alias for `uint64_t`.
+pub type CyPrefab = u64;
+
+/// `CySpawnParams` — 56 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CySpawnParams {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `CyEntity` at byte 8.
+    pub parent: CyEntity,
+    /// `CyPose` at byte 16.
+    pub pose: CyPose,
+    /// `float[3]` at byte 44.
+    pub scale: [f32; 3],
 }
 
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
@@ -272,7 +624,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 360 bytes, 8-byte aligned.
+/// `CyInterface` — 664 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -399,6 +751,164 @@ pub struct CyInterface {
     pub service_poll: Option<
         unsafe extern "C" fn(CyEngine, CyServiceSession, *mut CyServiceEvent, *mut bool) -> i32,
     >,
+    /// `CyResult(*)(CyEngine, CyTime*)` at byte 360.
+    pub time_get: Option<unsafe extern "C" fn(CyEngine, *mut CyTime) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyInputAction*)` at byte 368.
+    pub input_find_action: Option<
+        unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyInputAction) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputAction, CyInputActionState*)` at byte 376.
+    pub input_action_state:
+        Option<unsafe extern "C" fn(CyEngine, u32, CyInputAction, *mut CyInputActionState) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, const char*, CyInputActionState*)` at byte 384.
+    pub input_action_state_by_name: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            u32,
+            *const ::std::ffi::c_char,
+            *mut CyInputActionState,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputPointer*)` at byte 392.
+    pub input_pointer: Option<unsafe extern "C" fn(CyEngine, u32, *mut CyInputPointer) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, uint32_t*)` at byte 400.
+    pub input_modifiers: Option<unsafe extern "C" fn(CyEngine, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyInputContext*)` at byte 408.
+    pub input_find_context: Option<
+        unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyInputContext) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputContext, int32_t)` at byte 416.
+    pub input_push_context: Option<unsafe extern "C" fn(CyEngine, u32, CyInputContext, i32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputContext)` at byte 424.
+    pub input_pop_context: Option<unsafe extern "C" fn(CyEngine, u32, CyInputContext) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera*)` at byte 432.
+    pub camera_active: Option<unsafe extern "C" fn(CyEngine, *mut CyCamera) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, CyCameraView*)` at byte 440.
+    pub camera_view: Option<unsafe extern "C" fn(CyEngine, CyCamera, *mut CyCameraView) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, const float*, CyRay*)` at byte 448.
+    pub camera_screen_to_ray:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *const f32, *mut CyRay) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, const float*, uint32_t, CyScreenPoint*)` at byte 456.
+    pub camera_world_to_screen: Option<
+        unsafe extern "C" fn(CyEngine, CyCamera, *const f32, u32, *mut CyScreenPoint) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyCamera, const CyCameraTarget*)` at byte 464.
+    pub camera_set_target:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *const CyCameraTarget) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, const CyPose*)` at byte 472.
+    pub camera_set_pose: Option<unsafe extern "C" fn(CyEngine, CyCamera, *const CyPose) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera)` at byte 480.
+    pub camera_clear_pose: Option<unsafe extern "C" fn(CyEngine, CyCamera) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyRay*, const CyQueryFilter*, CyPhysicsHit*, bool*)` at byte 488.
+    pub physics_raycast: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const CyRay,
+            *const CyQueryFilter,
+            *mut CyPhysicsHit,
+            *mut bool,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const CyRay*, const CyQueryFilter*, CyPhysicsHit*, uint32_t, uint32_t*)` at byte 496.
+    pub physics_raycast_all: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const CyRay,
+            *const CyQueryFilter,
+            *mut CyPhysicsHit,
+            u32,
+            *mut u32,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const CyShape*, const CyPose*, const float*, float, const CyQueryFilter*, CyPhysicsHit*, bool*)` at byte 504.
+    pub physics_shape_cast: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const CyShape,
+            *const CyPose,
+            *const f32,
+            f32,
+            *const CyQueryFilter,
+            *mut CyPhysicsHit,
+            *mut bool,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const CyShape*, const CyPose*, const CyQueryFilter*, CyEntity*, uint32_t, uint32_t*)` at byte 512.
+    pub physics_overlap: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const CyShape,
+            *const CyPose,
+            *const CyQueryFilter,
+            *mut CyEntity,
+            u32,
+            *mut u32,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const CyNavPathRequest*, float*, uint32_t, CyNavPathResult*)` at byte 520.
+    pub nav_find_path: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const CyNavPathRequest,
+            *mut f32,
+            u32,
+            *mut CyNavPathResult,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const CyNavPathRequest*, CyNavQuery*)` at byte 528.
+    pub nav_request_path:
+        Option<unsafe extern "C" fn(CyEngine, *const CyNavPathRequest, *mut CyNavQuery) -> i32>,
+    /// `CyResult(*)(CyEngine, CyNavQuery, float*, uint32_t, CyNavPathResult*)` at byte 536.
+    pub nav_poll_path: Option<
+        unsafe extern "C" fn(CyEngine, CyNavQuery, *mut f32, u32, *mut CyNavPathResult) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyNavQuery)` at byte 544.
+    pub nav_cancel_path: Option<unsafe extern "C" fn(CyEngine, CyNavQuery) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const CyNavAgentParams*)` at byte 552.
+    pub nav_agent_configure:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const CyNavAgentParams) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const float*)` at byte 560.
+    pub nav_agent_move_to: Option<unsafe extern "C" fn(CyEngine, CyEntity, *const f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity)` at byte 568.
+    pub nav_agent_stop: Option<unsafe extern "C" fn(CyEngine, CyEntity) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, CyNavAgentState*)` at byte 576.
+    pub nav_agent_state:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyNavAgentState) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyAudioCue*)` at byte 584.
+    pub audio_find_cue:
+        Option<unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyAudioCue) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyAudioPlay*, CyAudioVoice*)` at byte 592.
+    pub audio_play:
+        Option<unsafe extern "C" fn(CyEngine, *const CyAudioPlay, *mut CyAudioVoice) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAudioVoice, float)` at byte 600.
+    pub audio_stop: Option<unsafe extern "C" fn(CyEngine, CyAudioVoice, f32) -> i32>,
+    /// `bool(*)(CyEngine, CyAudioVoice)` at byte 608.
+    pub audio_voice_playing: Option<unsafe extern "C" fn(CyEngine, CyAudioVoice) -> bool>,
+    /// `CyResult(*)(CyEngine, const char*, CyAudioBus*)` at byte 616.
+    pub audio_find_bus:
+        Option<unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyAudioBus) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAudioBus, float, float)` at byte 624.
+    pub audio_set_bus_volume: Option<unsafe extern "C" fn(CyEngine, CyAudioBus, f32, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyPrefab*)` at byte 632.
+    pub spawn_resolve:
+        Option<unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyPrefab) -> i32>,
+    /// `CyResult(*)(CyEngine, CyPrefab, const CySpawnParams*, CyEntity*)` at byte 640.
+    pub spawn_instantiate: Option<
+        unsafe extern "C" fn(CyEngine, CyPrefab, *const CySpawnParams, *mut CyEntity) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyPrefab, CyEntity, const CyPose*, uint32_t, CyEntity*)` at byte 648.
+    pub spawn_instantiate_many: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            CyPrefab,
+            CyEntity,
+            *const CyPose,
+            u32,
+            *mut CyEntity,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyEntity)` at byte 656.
+    pub spawn_destroy: Option<unsafe extern "C" fn(CyEngine, CyEntity) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -484,5 +994,43 @@ impl CyInterface {
         service_submit: None,
         service_cancel: None,
         service_poll: None,
+        time_get: None,
+        input_find_action: None,
+        input_action_state: None,
+        input_action_state_by_name: None,
+        input_pointer: None,
+        input_modifiers: None,
+        input_find_context: None,
+        input_push_context: None,
+        input_pop_context: None,
+        camera_active: None,
+        camera_view: None,
+        camera_screen_to_ray: None,
+        camera_world_to_screen: None,
+        camera_set_target: None,
+        camera_set_pose: None,
+        camera_clear_pose: None,
+        physics_raycast: None,
+        physics_raycast_all: None,
+        physics_shape_cast: None,
+        physics_overlap: None,
+        nav_find_path: None,
+        nav_request_path: None,
+        nav_poll_path: None,
+        nav_cancel_path: None,
+        nav_agent_configure: None,
+        nav_agent_move_to: None,
+        nav_agent_stop: None,
+        nav_agent_state: None,
+        audio_find_cue: None,
+        audio_play: None,
+        audio_stop: None,
+        audio_voice_playing: None,
+        audio_find_bus: None,
+        audio_set_bus_volume: None,
+        spawn_resolve: None,
+        spawn_instantiate: None,
+        spawn_instantiate_many: None,
+        spawn_destroy: None,
     };
 }

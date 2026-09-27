@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 2u
+#define CY_ABI_MINOR 3u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -376,6 +376,16 @@ typedef struct CyBehaviourVTable {
 
     /* Passed back to every entry above. The module's own; the engine never interprets it. */
     void* user_data;
+
+    /* --- Appended at 1.3 ---------------------------------------------------------------------
+     *
+     * One variable-rate frame. `dt` is the frame's delta in seconds. Called during
+     * CY_PHASE_FRAME_UPDATE, after the frame's fixed steps, which is the only phase in which the
+     * presentation entries (pointer, camera reads) answer. Null when the behaviour has no frame
+     * callback, and the engine then never schedules it for one: `swift-scripting`'s "Unimplemented
+     * callback costs nothing". A module compiled before 1.3 has a shorter `struct_size`, so the
+     * engine's copy leaves this null — see `register_behaviour`. */
+    void (*frame_update)(CyInstance self, float dt, void* user_data);
 } CyBehaviourVTable;
 
 /* --- Borrowed pointers -------------------------------------------------------------------------
@@ -391,6 +401,365 @@ typedef struct CyBorrow {
     void* data;     /* null when the entity does not have that component */
     uint64_t epoch; /* the world's structural epoch when this borrow was taken */
 } CyBorrow;
+
+/* === 1.3: THE GAME SERVICES ======================================================================
+ *
+ * WHY THESE EXIST. Up to 1.2 the table carried only the engine-neutral core, and a game reached
+ * input, physics, cameras, navigation and audio through components a C++ host carried across for it
+ * (samples/04-character/game/Contract.swift says so in as many words). An RTS cannot be written
+ * that way: selecting a unit is a pointer read, a camera ray and a physics query in one frame, and
+ * ordering it is a path request and a crowd move. So the servers' gameplay-facing verbs are
+ * appended here, each as values in and values or caller-owned buffers out.
+ *
+ * --- THE RULES EVERY 1.3 ENTRY FOLLOWS, STATED ONCE -------------------------------------------
+ *
+ *  * NO ENGINE POINTER ESCAPES. Every result is a value, a struct the caller owns, or a buffer
+ *    the caller supplied. Every service handle below (`CyAudioVoice`, `CyNavQuery` and the rest)
+ *    is an integer the engine resolves and generation-checks, never an address. Strings passed in
+ *    are borrowed for the call.
+ *  * ERRORS ARE `CyResult`. CY_RESULT_INVALID_ARGUMENT for a null engine, a null required pointer
+ *    or a malformed struct; CY_RESULT_PERMISSION_DENIED for a call in a phase its entry does not
+ *    allow; CY_RESULT_UNAVAILABLE when the embedder bound no backend for that service, or the
+ *    service cannot answer now; CY_RESULT_NOT_FOUND for an unknown name or a stale handle. The
+ *    out-parameter is left untouched on failure unless the entry says otherwise.
+ *  * `struct_size` IS SET BY THE CALLER on every struct that has one, in and out. The engine reads
+ *    (or writes) only the prefix both sides know, so a module compiled against 1.3 keeps working
+ *    when these structs grow. Zero means "the size this header declares". Structs WITHOUT a
+ *    `struct_size` are passed in arrays; they are fixed forever and grow only by a new struct and a
+ *    new entry.
+ *  * PHASES. Each entry names the phases it may be called in — `N` (CY_PHASE_NONE: module
+ *    initialisation, a frame boundary, a tool), `F` (CY_PHASE_FIXED_UPDATE), `U`
+ *    (CY_PHASE_FRAME_UPDATE) — and refuses the others with CY_RESULT_PERMISSION_DENIED in EVERY
+ *    build, because the check is a comparison and a rule that holds in two configurations is not a
+ *    rule. `time_get` reports the current phase.
+ *  * DETERMINISM. Anything callable in `F` answers from simulation state only: the same inputs,
+ *    the same tick and the same world give the same answer, bit for bit, with every multi-result
+ *    list in a stated total order. Device state (the pointer, modifier keys) and presentation
+ *    state (the camera) are therefore NOT callable in `F`; a game turns them into simulation input
+ *    by writing a command during `U`.
+ *  * THREADS. The game thread, unless an entry says otherwise. The physics queries and
+ *    `nav_find_path` are also safe from a job worker running inside an `F` or `U` stage, because
+ *    both are const queries over state nothing mutates during that stage.
+ *  * RELOAD. Service handles are engine state, so they stay valid across a module hot reload. They
+ *    do not survive the world or level that issued them; afterwards they answer NOT_FOUND. */
+
+/* The update phase the engine is in. Not a stage: behaviours have no stage, and several stages
+ * share one phase. CY_STAGE_PRE_SIMULATION to CY_STAGE_POST_SIMULATION and `fixed_update` run in
+ * FIXED_UPDATE; CY_STAGE_FRAME to CY_STAGE_UI and `frame_update` in FRAME_UPDATE; everything else,
+ * including CY_STAGE_RENDER, is NONE. */
+typedef enum CyPhase {
+    CY_PHASE_NONE = 0,
+    CY_PHASE_FIXED_UPDATE = 1,
+    CY_PHASE_FRAME_UPDATE = 2
+} CyPhase;
+
+/* A position and an orientation. `rotation` is a unit quaternion, x y z w. An all-zero quaternion
+ * is read as the identity, so a zeroed struct is a valid pose at the origin. */
+typedef struct CyPose {
+    float position[3];
+    float rotation[4];
+} CyPose;
+
+/* A ray. `direction` is expected to be unit length, so distances are metres. */
+typedef struct CyRay {
+    float origin[3];
+    float direction[3];
+    float max_distance;
+} CyRay;
+
+/* --- 1.3: time ------------------------------------------------------------------------------- */
+
+/* The tick being simulated is a resimulation (rollback or replay catch-up). Presentation side
+ * effects — audio, camera writes — issued during it are accepted and dropped. */
+#define CY_TIME_RESIMULATING 0x1u
+/* The simulation is paused; frames still run. */
+#define CY_TIME_PAUSED 0x2u
+
+typedef struct CyTime {
+    uint32_t struct_size;
+    uint32_t phase; /* CyPhase */
+    /* In F, the tick being simulated. Otherwise the last committed tick. */
+    uint64_t tick;
+    double fixed_delta; /* seconds per fixed step */
+    /* Seconds since the previous frame. ZERO IN F, so a fixed step cannot come to depend on it. */
+    double frame_delta;
+    /* How far between the last committed tick and the next the frame is, in [0, 1). Zero in F. */
+    double interpolation;
+    uint32_t flags; /* CY_TIME_* */
+    uint32_t reserved;
+} CyTime;
+
+/* --- 1.3: input -------------------------------------------------------------------------------
+ *
+ * Actions are read from the state the input server RESOLVED FOR A TICK — the same state the
+ * committed command frame was built from — so an `F` read replays exactly. The pointer and the
+ * modifier keys are device state and are `U` only. */
+
+/* A declared action's dense runtime index. Resolve once by name; it is stable for the process. */
+typedef uint32_t CyInputAction;
+#define CY_INPUT_ACTION_INVALID ((CyInputAction)0xFFFFFFFFu)
+
+/* A registered mapping context. Zero is null. */
+typedef uint64_t CyInputContext;
+#define CY_INPUT_CONTEXT_NULL ((CyInputContext)0)
+
+#define CY_INPUT_ACTION_PRESSED 0x1u       /* actuated at the end of the tick */
+#define CY_INPUT_ACTION_JUST_PRESSED 0x2u  /* went down at least once during the tick */
+#define CY_INPUT_ACTION_JUST_RELEASED 0x4u /* came up at least once during the tick */
+#define CY_INPUT_ACTION_TRIGGERED 0x8u     /* the action's trigger fired during the tick */
+#define CY_INPUT_ACTION_SYNTHETIC 0x10u    /* the value came from injection or replay */
+
+typedef struct CyInputActionState {
+    uint32_t struct_size;
+    uint32_t flags; /* CY_INPUT_ACTION_* */
+    /* Digital: x is 0 or 1. One axis: x. Two axes: x y. Three: x y z. */
+    float value[3];
+    /* Transitions during the tick. A press and a release inside one tick are 1 and 1. */
+    uint16_t press_count;
+    uint16_t release_count;
+    uint64_t tick; /* the tick this state was resolved for */
+} CyInputActionState;
+
+#define CY_INPUT_BUTTON_LEFT 0x1u
+#define CY_INPUT_BUTTON_RIGHT 0x2u
+#define CY_INPUT_BUTTON_MIDDLE 0x4u
+#define CY_INPUT_BUTTON_EXTRA1 0x8u
+#define CY_INPUT_BUTTON_EXTRA2 0x10u
+
+#define CY_INPUT_POINTER_PRESENT 0x1u   /* the user has a pointing device */
+#define CY_INPUT_POINTER_IN_WINDOW 0x2u /* the pointer is inside the window's client area */
+#define CY_INPUT_POINTER_OVER_UI 0x4u   /* an interface layer holds pointer focus */
+
+typedef struct CyInputPointer {
+    uint32_t struct_size;
+    uint32_t flags;            /* CY_INPUT_POINTER_* */
+    uint32_t buttons;          /* CY_INPUT_BUTTON_* held now */
+    uint32_t buttons_pressed;  /* went down since the previous frame update */
+    uint32_t buttons_released; /* came up since the previous frame update */
+    float position[2];         /* window pixels, origin top-left, +y down */
+    float delta[2];            /* pixels moved since the previous frame update */
+    float wheel[2];            /* notches since the previous frame update; x horizontal */
+    uint32_t reserved;
+} CyInputPointer;
+
+#define CY_INPUT_MOD_SHIFT 0x1u
+#define CY_INPUT_MOD_CTRL 0x2u
+#define CY_INPUT_MOD_ALT 0x4u
+#define CY_INPUT_MOD_SUPER 0x8u
+
+/* --- 1.3: camera ------------------------------------------------------------------------------
+ *
+ * The camera is presentation. Reading it is `U` only; writing it is allowed in `F` too because
+ * nothing in the simulation reads it back. */
+
+/* A camera rig. Zero is null. */
+typedef uint64_t CyCamera;
+#define CY_CAMERA_NULL ((CyCamera)0)
+
+#define CY_CAMERA_VIEW_ORTHOGRAPHIC 0x1u
+
+typedef struct CyCameraView {
+    uint32_t struct_size;
+    uint32_t flags;     /* CY_CAMERA_VIEW_* */
+    CyPose pose;        /* the evaluated camera, world space */
+    float vertical_fov; /* radians; zero when orthographic */
+    float ortho_height; /* metres; zero when perspective */
+    float near_plane;   /* metres */
+    float far_plane;    /* metres */
+    float viewport[4];  /* x, y, width, height in window pixels */
+} CyCameraView;
+
+#define CY_SCREEN_POINT_ON_SCREEN 0x1u /* inside the viewport and in front of the near plane */
+#define CY_SCREEN_POINT_BEHIND 0x2u    /* behind the camera; `position` is mirrored and unusable */
+
+/* Passed in arrays, so fixed forever: no `struct_size`. */
+typedef struct CyScreenPoint {
+    float position[2]; /* window pixels, the same space `camera_screen_to_ray` takes */
+    float depth;       /* metres along the camera's forward axis; negative behind */
+    uint32_t flags;    /* CY_SCREEN_POINT_* */
+} CyScreenPoint;
+
+#define CY_CAMERA_TARGET_FOLLOW_ENTITY 0x1u /* frame `entity`; otherwise frame `position` */
+
+/* What an RTS camera is told: a focus, an angle round it and a distance from it. The rig decides
+ * where that puts the camera; `camera_set_pose` bypasses the rig entirely. */
+typedef struct CyCameraTarget {
+    uint32_t struct_size;
+    uint32_t flags; /* CY_CAMERA_TARGET_* */
+    CyEntity entity;
+    float position[3];   /* the focus point, world space, when not following an entity */
+    float yaw;           /* radians about world +Y */
+    float pitch;         /* radians; negative looks down */
+    float distance;      /* metres from the focus */
+    float blend_seconds; /* zero is a cut */
+    uint32_t reserved;
+} CyCameraTarget;
+
+/* --- 1.3: physics queries ------------------------------------------------------------------ */
+
+typedef enum CyShapeKind {
+    CY_SHAPE_SPHERE = 0,
+    CY_SHAPE_CAPSULE = 1,
+    CY_SHAPE_BOX = 2
+} CyShapeKind;
+
+/* A query shape. Local +Y is a capsule's axis. */
+typedef struct CyShape {
+    uint32_t kind;         /* CyShapeKind */
+    float radius;          /* sphere and capsule */
+    float half_height;     /* capsule: half the cylindrical section, excluding the caps */
+    float half_extents[3]; /* box */
+} CyShape;
+
+/* The defaults are the zero bits: triggers excluded, back faces culled, every motion type hit. */
+#define CY_QUERY_INCLUDE_TRIGGERS 0x1u
+#define CY_QUERY_HIT_BACK_FACES 0x2u
+#define CY_QUERY_SKIP_STATIC 0x4u
+#define CY_QUERY_SKIP_KINEMATIC 0x8u
+#define CY_QUERY_SKIP_DYNAMIC 0x10u
+
+/* The querying "collider": its layer, the layers it hits, and bodies to skip. Filtered mutually and
+ * through the project's collision matrix, exactly as a contact is. A null filter is layer 0, every
+ * layer, no flags, nothing ignored. */
+typedef struct CyQueryFilter {
+    uint32_t struct_size;
+    uint32_t layer;         /* 0 to 31 */
+    uint32_t mask;          /* a bit per layer; 0xFFFFFFFF hits everything */
+    uint32_t flags;         /* CY_QUERY_* */
+    const CyEntity* ignore; /* borrowed for the call; the bodies of these entities are skipped */
+    uint32_t ignore_count;
+    uint32_t reserved;
+} CyQueryFilter;
+
+#define CY_HIT_TRIGGER 0x1u             /* the body is a sensor */
+#define CY_HIT_STARTED_PENETRATING 0x2u /* a sweep that overlapped at its start */
+
+/* Passed in arrays, so fixed forever: no `struct_size`. */
+typedef struct CyPhysicsHit {
+    uint32_t flags; /* CY_HIT_* */
+    uint32_t reserved;
+    CyEntity entity; /* the entity that owns the body; CY_ENTITY_NULL for a body with none */
+    float point[3];  /* world space */
+    float normal[3]; /* unit, out of the surface hit */
+    float distance;  /* metres travelled before the hit */
+    float fraction;  /* distance / max_distance */
+} CyPhysicsHit;
+
+/* --- 1.3: navigation ------------------------------------------------------------------------ */
+
+/* An asynchronous path request. Zero is null. */
+typedef uint64_t CyNavQuery;
+#define CY_NAV_QUERY_NULL ((CyNavQuery)0)
+
+/* `cy::navigation::NavPathStatus`, value for value. */
+typedef enum CyNavPathStatus {
+    CY_NAV_PATH_STATUS_IDLE = 0,
+    CY_NAV_PATH_STATUS_COMPUTING = 1,
+    CY_NAV_PATH_STATUS_FOLLOWING = 2,
+    CY_NAV_PATH_STATUS_ARRIVED = 3,
+    CY_NAV_PATH_STATUS_FAILED = 4
+} CyNavPathStatus;
+
+/* `cy::navigation::QueryState`, value for value. */
+typedef enum CyNavQueryState {
+    CY_NAV_QUERY_PENDING = 0,
+    CY_NAV_QUERY_READY = 1,
+    CY_NAV_QUERY_CONSUMED = 2,
+    CY_NAV_QUERY_CANCELLED = 3
+} CyNavQueryState;
+
+/* Zero means "the default" for every field after the endpoints, so a zeroed request is valid. */
+typedef struct CyNavPathRequest {
+    uint32_t struct_size;
+    uint32_t world; /* the navigation world; 0 is the default one */
+    float start[3];
+    float end[3];
+    float extents[3];      /* half-extents the endpoints are snapped within; zero: the default */
+    uint32_t node_budget;  /* A* expansions before the best partial result; zero: the default */
+    uint64_t area_mask;    /* traversable area types; zero: all of them */
+    uint64_t capabilities; /* off-mesh link capabilities; zero: all of them */
+} CyNavPathRequest;
+
+#define CY_NAV_PATH_FOUND 0x1u
+#define CY_NAV_PATH_PARTIAL 0x2u /* ends at the reachable point closest to the target */
+#define CY_NAV_PATH_BUDGET_EXCEEDED 0x4u
+
+typedef struct CyNavPathResult {
+    uint32_t struct_size;
+    uint32_t flags;       /* CY_NAV_PATH_* */
+    uint32_t point_count; /* points in the whole straightened path, which may exceed the buffer */
+    uint32_t state;       /* CyNavQueryState; READY for a synchronous query */
+    float cost;           /* the search's path cost */
+    float length;         /* metres along the straightened path */
+} CyNavPathResult;
+
+/* The agent parameters `navigation` names. Zero means "the default" for every field. */
+typedef struct CyNavAgentParams {
+    uint32_t struct_size;
+    uint32_t world;
+    float radius;
+    float height;
+    float max_speed;
+    float max_acceleration;
+    float arrival_distance;
+    uint32_t priority; /* higher yields less */
+    uint64_t area_mask;
+    uint64_t capabilities;
+} CyNavAgentParams;
+
+/* Set for the one tick after the agent arrived or failed. */
+#define CY_NAV_AGENT_EVENT 0x1u
+
+typedef struct CyNavAgentState {
+    uint32_t struct_size;
+    uint32_t status; /* CyNavPathStatus */
+    uint32_t flags;  /* CY_NAV_AGENT_* */
+    uint32_t reserved;
+    float position[3];
+    float velocity[3];
+    float target[3];
+    float remaining_distance; /* metres along the path still to go; zero when idle */
+} CyNavAgentState;
+
+/* --- 1.3: audio ------------------------------------------------------------------------------
+ *
+ * Audio is presentation: it never feeds back into the simulation, so it is callable in every phase,
+ * and a voice handle is not simulation state — a fixed step must not branch on one. */
+
+typedef uint64_t CyAudioCue;   /* an authored cue or clip; zero is null */
+typedef uint64_t CyAudioBus;   /* a bus of the mix graph; zero is null */
+typedef uint64_t CyAudioVoice; /* one playing instance; zero is null */
+
+#define CY_AUDIO_PLAY_LOOP 0x1u
+#define CY_AUDIO_PLAY_SPATIAL 0x2u /* positional at `position`; otherwise non-spatial */
+#define CY_AUDIO_PLAY_ATTACH 0x4u  /* follow `attach_to`, with `position` as the offset */
+
+/* Zero means "as authored" for `bus`, `volume` and `pitch`, so a zeroed request plays the cue. */
+typedef struct CyAudioPlay {
+    uint32_t struct_size;
+    uint32_t flags; /* CY_AUDIO_PLAY_* */
+    CyAudioCue cue;
+    CyEntity attach_to;
+    CyAudioBus bus;
+    float position[3];
+    float volume; /* linear gain */
+    float pitch;  /* playback-rate ratio */
+    float fade_in_seconds;
+} CyAudioPlay;
+
+/* --- 1.3: spawning ---------------------------------------------------------------------------- */
+
+/* A resolved prefab or scene asset. Zero is null. */
+typedef uint64_t CyPrefab;
+#define CY_PREFAB_NULL ((CyPrefab)0)
+
+typedef struct CySpawnParams {
+    uint32_t struct_size;
+    uint32_t flags;  /* none yet; zero */
+    CyEntity parent; /* CY_ENTITY_NULL makes the instance a root */
+    CyPose pose;     /* relative to `parent` */
+    float scale[3];  /* all zero is read as one */
+} CySpawnParams;
 
 /* --- The interface table -----------------------------------------------------------------------
  *
@@ -568,6 +937,173 @@ typedef struct CyInterface {
     /* Non-blocking. `out_has_event` is false when no event is ready; that is not an error. */
     CyResult (*service_poll)(CyEngine engine, CyServiceSession session, CyServiceEvent* out_event,
                              bool* out_has_event);
+
+    /* --- 1.3: the game services --------------------------------------------------------------
+     *
+     * The rules every entry below follows — ownership, errors, `struct_size`, phases, determinism,
+     * threads — are stated once above `CyPhase`. Each entry adds only what is its own; `[N F U]`
+     * lists the phases it answers in. */
+
+    /* --- 1.3: time --- */
+
+    /* [N F U] The clock and the current phase. Never refused by phase: it is how a caller learns
+     * which phase it is in. Deterministic in F, where `frame_delta` and `interpolation` are zero.
+     */
+    CyResult (*time_get)(CyEngine engine, CyTime* out_time);
+
+    /* --- 1.3: input --- */
+
+    /* [N F U] The action declared under `name`, or NOT_FOUND. The index is stable for the process,
+     * so resolve once and keep it. */
+    CyResult (*input_find_action)(CyEngine engine, const char* name, CyInputAction* out_action);
+    /* [N F U] One action's state for one input user, as resolved for the current tick (in F) or
+     * the last resolved tick (otherwise). Deterministic in F: it is the state the committed command
+     * frame was built from. OUT_OF_RANGE for a user the server does not have. */
+    CyResult (*input_action_state)(CyEngine engine, uint32_t user, CyInputAction action,
+                                   CyInputActionState* out_state);
+    /* [N F U] The same by name: `input_find_action` and `input_action_state` in one call. The name
+     * lookup is a hash, not a scan, but a per-tick caller should still resolve once. */
+    CyResult (*input_action_state_by_name)(CyEngine engine, uint32_t user, const char* name,
+                                           CyInputActionState* out_state);
+    /* [N U] The user's pointer, in window pixels, with edges since the previous frame update.
+     * Device state: PERMISSION_DENIED in F. A user with no pointer answers OK with
+     * CY_INPUT_POINTER_PRESENT clear and everything else zero. */
+    CyResult (*input_pointer)(CyEngine engine, uint32_t user, CyInputPointer* out_pointer);
+    /* [N U] The CY_INPUT_MOD_* keys held now by the user's keyboard. Device state: denied in F. */
+    CyResult (*input_modifiers)(CyEngine engine, uint32_t user, uint32_t* out_modifiers);
+    /* [N F U] The mapping context registered under `name`, or NOT_FOUND. */
+    CyResult (*input_find_context)(CyEngine engine, const char* name, CyInputContext* out_context);
+    /* [N F U] Push a context onto the user's stack at `priority`; higher wins. It takes effect at
+     * the next tick's resolution, never mid-tick, so a push in F is replayed identically.
+     * ALREADY_EXISTS when that context is already on the user's stack. */
+    CyResult (*input_push_context)(CyEngine engine, uint32_t user, CyInputContext context,
+                                   int32_t priority);
+    /* [N F U] Remove a context wherever it sits on the stack; NOT_FOUND when it is not there.
+     * Switching context is a pop and a push. */
+    CyResult (*input_pop_context)(CyEngine engine, uint32_t user, CyInputContext context);
+
+    /* --- 1.3: camera --- */
+
+    /* [N U] The camera of the primary view, or UNAVAILABLE when there is none. */
+    CyResult (*camera_active)(CyEngine engine, CyCamera* out_camera);
+    /* [N U] That camera as last evaluated: pose, projection and viewport. */
+    CyResult (*camera_view)(CyEngine engine, CyCamera camera, CyCameraView* out_view);
+    /* [N U] The world ray under `screen_xy` (two floats, window pixels), from the near plane to
+     * the far plane — `max_distance` is set to that span. Feed it to `physics_raycast` to pick. */
+    CyResult (*camera_screen_to_ray)(CyEngine engine, CyCamera camera, const float* screen_xy,
+                                     CyRay* out_ray);
+    /* [N U] Project `count` world points (`count * 3` floats) into `out_points`, which has room
+     * for `count`. One call for a whole selection box's worth of units. */
+    CyResult (*camera_world_to_screen)(CyEngine engine, CyCamera camera, const float* points_xyz,
+                                       uint32_t count, CyScreenPoint* out_points);
+    /* [N F U] Point the camera's rig at a focus. Presentation only; ignored while resimulating. */
+    CyResult (*camera_set_target)(CyEngine engine, CyCamera camera, const CyCameraTarget* target);
+    /* [N F U] Override the rig with an explicit pose until `camera_clear_pose`. */
+    CyResult (*camera_set_pose)(CyEngine engine, CyCamera camera, const CyPose* pose);
+    /* [N F U] Hand the camera back to its rig. OK when no override was set. */
+    CyResult (*camera_clear_pose)(CyEngine engine, CyCamera camera);
+
+    /* --- 1.3: physics queries ---
+     *
+     * All four are const queries over the last completed physics step. UNAVAILABLE while the step
+     * itself is running (CY_STAGE_PHYSICS), because the world is mid-solve. Safe from a job worker.
+     * Deterministic in F: hits are ordered by distance, then by entity, then by body creation
+     * order, so equal distances never come back in a different order. */
+
+    /* [N F U] The nearest hit. `*out_has_hit` is false, and the call OK, when nothing is hit. */
+    CyResult (*physics_raycast)(CyEngine engine, const CyRay* ray, const CyQueryFilter* filter,
+                                CyPhysicsHit* out_hit, bool* out_has_hit);
+    /* [N F U] Every hit, nearest first. The sizing pattern `world_chunks` uses: `*out_count` is
+     * always the total; a null buffer asks for it; a buffer too small is filled with the nearest
+     * `capacity` hits and answers BUFFER_TOO_SMALL. */
+    CyResult (*physics_raycast_all)(CyEngine engine, const CyRay* ray, const CyQueryFilter* filter,
+                                    CyPhysicsHit* out_hits, uint32_t capacity, uint32_t* out_count);
+    /* [N F U] Sweep `shape` from `start` along `direction` (three floats, unit) for up to
+     * `max_distance` metres; the first hit. The orientation is kept for the whole sweep. */
+    CyResult (*physics_shape_cast)(CyEngine engine, const CyShape* shape, const CyPose* start,
+                                   const float* direction, float max_distance,
+                                   const CyQueryFilter* filter, CyPhysicsHit* out_hit,
+                                   bool* out_has_hit);
+    /* [N F U] Every entity whose body overlaps `shape` at `pose`, ordered by entity value, each
+     * entity once. The same sizing pattern as `physics_raycast_all`. */
+    CyResult (*physics_overlap)(CyEngine engine, const CyShape* shape, const CyPose* pose,
+                                const CyQueryFilter* filter, CyEntity* out_entities,
+                                uint32_t capacity, uint32_t* out_count);
+
+    /* --- 1.3: navigation --- */
+
+    /* [N F U] A path now. Writes up to `capacity` points (`capacity * 3` floats) of the
+     * straightened path into `out_points_xyz` and fills `out_result`, whose `point_count` is the
+     * whole path's; BUFFER_TOO_SMALL when it did not fit, having written the first `capacity`. A
+     * path that cannot be found is OK with CY_NAV_PATH_FOUND clear, not an error. Deterministic;
+     * safe from a job worker. */
+    CyResult (*nav_find_path)(CyEngine engine, const CyNavPathRequest* request,
+                              float* out_points_xyz, uint32_t capacity,
+                              CyNavPathResult* out_result);
+    /* [F] Queue a path search. It completes a fixed number of ticks later, whatever the load,
+     * which is what makes completion deterministic. */
+    CyResult (*nav_request_path)(CyEngine engine, const CyNavPathRequest* request,
+                                 CyNavQuery* out_query);
+    /* [F] A queued search's state. PENDING: nothing written. READY: the path is written as
+     * `nav_find_path` writes it and the query is consumed — unless the buffer was too small, which
+     * answers BUFFER_TOO_SMALL, writes nothing and leaves it READY so the caller can retry with
+     * `point_count`. CANCELLED: retired. A consumed or unknown query is NOT_FOUND. */
+    CyResult (*nav_poll_path)(CyEngine engine, CyNavQuery query, float* out_points_xyz,
+                              uint32_t capacity, CyNavPathResult* out_result);
+    /* [F] Cancel a queued search. NOT_FOUND once it was consumed. */
+    CyResult (*nav_cancel_path)(CyEngine engine, CyNavQuery query);
+    /* [N F] Make `entity` a crowd agent with these parameters, or update the ones it has.
+     * Structural the first time: it adds the agent component. */
+    CyResult (*nav_agent_configure)(CyEngine engine, CyEntity entity,
+                                    const CyNavAgentParams* params);
+    /* [F] Send an agent to `target_xyz` (three floats): a path is requested, the crowd steers it
+     * along the path with avoidance, and the status moves COMPUTING, FOLLOWING, then ARRIVED or
+     * FAILED. NOT_FOUND when `entity` is not an agent. */
+    CyResult (*nav_agent_move_to)(CyEngine engine, CyEntity entity, const float* target_xyz);
+    /* [F] Stop an agent where it is; its status becomes IDLE. */
+    CyResult (*nav_agent_stop)(CyEngine engine, CyEntity entity);
+    /* [N F U] An agent's status, motion and target. CY_NAV_AGENT_EVENT is set for the one tick
+     * after it arrived or failed, so "has it arrived" is a flag test and not a distance guess. */
+    CyResult (*nav_agent_state)(CyEngine engine, CyEntity entity, CyNavAgentState* out_state);
+
+    /* --- 1.3: audio --- */
+
+    /* [N F U] The cue authored under `name`, or NOT_FOUND. */
+    CyResult (*audio_find_cue)(CyEngine engine, const char* name, CyAudioCue* out_cue);
+    /* [N F U] Start a voice. `out_voice` may be null for fire-and-forget. While resimulating, this
+     * is OK, plays nothing and writes a null voice. Voice exhaustion is not an error: the mixer's
+     * priority rules decide, and a voice that lost is reported by `audio_voice_playing`. */
+    CyResult (*audio_play)(CyEngine engine, const CyAudioPlay* play, CyAudioVoice* out_voice);
+    /* [N F U] Stop a voice, fading over `fade_out_seconds` (zero: now). A voice that already ended
+     * is OK: stopping is idempotent. */
+    CyResult (*audio_stop)(CyEngine engine, CyAudioVoice voice, float fade_out_seconds);
+    /* [N F U] Whether the voice is still audible. False for a null or ended voice. */
+    bool (*audio_voice_playing)(CyEngine engine, CyAudioVoice voice);
+    /* [N F U] The bus authored under `name` (e.g. "Music", "SFX"), or NOT_FOUND. */
+    CyResult (*audio_find_bus)(CyEngine engine, const char* name, CyAudioBus* out_bus);
+    /* [N F U] Set a bus's linear gain, ramping over `fade_seconds`. OUT_OF_RANGE below zero. */
+    CyResult (*audio_set_bus_volume)(CyEngine engine, CyAudioBus bus, float volume,
+                                     float fade_seconds);
+
+    /* --- 1.3: spawning --- */
+
+    /* [N F U] Resolve a prefab or scene asset by its content path. In N it may load the asset; in F
+     * and U the asset must already be resident, and UNAVAILABLE says it is not — preload it at N.
+     */
+    CyResult (*spawn_resolve)(CyEngine engine, const char* asset, CyPrefab* out_prefab);
+    /* [N F] Instantiate a prefab under `params->parent` at `params->pose`, returning its root.
+     * Structural. The whole instance exists when this returns and its behaviours' `create` has
+     * run; tree callbacks follow at the next pump. Deterministic in F: the same calls in the same
+     * order produce the same entities. */
+    CyResult (*spawn_instantiate)(CyEngine engine, CyPrefab prefab, const CySpawnParams* params,
+                                  CyEntity* out_root);
+    /* [N F] `count` instances under `parent`, one per pose, in one batch. `out_roots` has room for
+     * `count`. The batch is created at once or not at all. */
+    CyResult (*spawn_instantiate_many)(CyEngine engine, CyPrefab prefab, CyEntity parent,
+                                       const CyPose* poses, uint32_t count, CyEntity* out_roots);
+    /* [N F] Destroy `root` and its whole subtree, children first, running each node's exit and
+     * destroy callbacks. NOT_FOUND for an entity that is not alive. */
+    CyResult (*spawn_destroy)(CyEngine engine, CyEntity root);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -644,7 +1180,7 @@ CY_ABI_STATIC_ASSERT(sizeof(CyVarPayload) == 16, "CyVarPayload is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyVar) == 32, "CyVar is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyFieldDesc) == 24, "CyFieldDesc is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentTypeDesc) == 32, "CyComponentTypeDesc is 32 bytes");
-CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 56, "CyBehaviourVTable is 56 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 64, "CyBehaviourVTable is 64 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyBorrow) == 16, "CyBorrow is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentInfo) == 24, "CyComponentInfo is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyChunk) == 40, "CyChunk is 40 bytes");
@@ -652,6 +1188,24 @@ CY_ABI_STATIC_ASSERT(sizeof(CyServiceRequest) == 40, "CyServiceRequest is 40 byt
 CY_ABI_STATIC_ASSERT(sizeof(CyServiceEvent) == 40, "CyServiceEvent is 40 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyInterfaceHeader) == 16, "CyInterfaceHeader is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyModuleInit) == 40, "CyModuleInit is 40 bytes");
+/* 1.3 */
+CY_ABI_STATIC_ASSERT(sizeof(CyPose) == 28, "CyPose is 28 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyRay) == 28, "CyRay is 28 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyTime) == 48, "CyTime is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyInputActionState) == 32, "CyInputActionState is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyInputPointer) == 48, "CyInputPointer is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyCameraView) == 68, "CyCameraView is 68 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyScreenPoint) == 16, "CyScreenPoint is 16 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyCameraTarget) == 48, "CyCameraTarget is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyShape) == 24, "CyShape is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyQueryFilter) == 32, "CyQueryFilter is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyPhysicsHit) == 48, "CyPhysicsHit is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyNavPathRequest) == 64, "CyNavPathRequest is 64 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyNavPathResult) == 24, "CyNavPathResult is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyNavAgentParams) == 48, "CyNavAgentParams is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyNavAgentState) == 56, "CyNavAgentState is 56 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyAudioPlay) == 56, "CyAudioPlay is 56 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CySpawnParams) == 56, "CySpawnParams is 56 bytes");
 
 #ifdef __cplusplus
 }
