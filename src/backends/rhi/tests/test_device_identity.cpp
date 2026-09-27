@@ -17,6 +17,24 @@ CY_TEST_CASE("a software device is labelled from its identity even when its flag
         DeviceClass::Paravirtual);
 }
 
+CY_TEST_CASE("a paravirtual device that forwards its host's vendor is not labelled hardware") {
+    using namespace cy::rhi;
+    // Mesa's Venus driver reports the host GPU inside its own name and passes the host's PCI vendor
+    // through, so a vendor-first classifier reads a guest's virtual GPU as the host's hardware.
+    CY_CHECK_EQ(classify_device_identity("Virtio-GPU Venus (NVIDIA GeForce RTX 5060)", 0x10DEU,
+                                         BackendKind::Vulkan)
+                    .classification,
+                DeviceClass::Paravirtual);
+    CY_CHECK_EQ(
+        classify_device_identity("SVGA3D; build: RELEASE; LLVM;", 0x15ADU, BackendKind::Vulkan)
+            .classification,
+        DeviceClass::Paravirtual);
+    CY_CHECK_EQ(
+        classify_device_identity("Parallels Display Adapter (WDDM)", 0x1AB8U, BackendKind::D3D12)
+            .classification,
+        DeviceClass::Paravirtual);
+}
+
 CY_TEST_CASE("a device report names the device that answered, its vendor and its class") {
     using namespace cy::rhi;
     const DeviceIdentity nvidia =

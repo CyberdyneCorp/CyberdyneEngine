@@ -63,6 +63,10 @@ carries where each stands as data.
 - `include/cy/backends/rhi/barrier.h` — the invariant, expressed as a passkey.
 - `include/cy/backends/rhi/device.h` — resources, frames in flight, submission, the transient pool
   the render graph places into, and the GPU memory report that feeds the engine's own budget tree.
+- `include/cy/backends/rhi/device_identity.h` — a device's class (hardware, software,
+  paravirtual, null, unknown) comes from its reported name and vendor, never from a flag it sets
+  about itself. Paravirtual names are checked before the vendor table because Mesa's Venus
+  forwards the host GPU's vendor ID; an identity nothing matches is `unknown`, never hardware.
 - `null/include/cy/backends/rhi/null/null_device.h` — why the null backend is not a set of empty
   functions, and what its command log is for.
 - `vulkan/src/vulkan_instance.cpp` — queue selection by capability, the 1.3 baseline, why
