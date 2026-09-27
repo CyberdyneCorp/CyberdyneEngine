@@ -450,6 +450,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "bloom";
         case FramePassKind::PostProcess:
             return "post-process";
+        case FramePassKind::SelectionOutlines:
+            return "selection outlines";
         case FramePassKind::UiAndDebug:
             return "ui and debug";
         case FramePassKind::Composite:
@@ -490,6 +492,7 @@ void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& 
     inputs.depth = resources_.depth;
     inputs.normal_roughness = resources_.normal_roughness;
     inputs.target = target;
+    inputs.draw_instances = resources_.draw_instances;
     inputs.width = state.description->width;
     inputs.height = state.description->height;
     const PassId first = producer.declare(graph, inputs, producer.user);
@@ -650,6 +653,14 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
         state.current_color = resources_.output;
     }
 
+    // Selection outlines, over the tonemapped colour and under the interface. The producer's last
+    // pass reads and writes the colour the chain ended in, so the interface below loads its result.
+    if (features.selection_outlines) {
+        declare_produced_stage(graph, state, description.selection_outlines_stage,
+                               FramePassKind::SelectionOutlines, "selection outlines",
+                               state.current_color);
+    }
+
     // 12. UI and debug, drawn after tonemapping.
     if (features.ui) {
         PassBuilder builder = graph.add_pass("ui and debug", QueueKind::Graphics);
@@ -734,6 +745,20 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
                                      !valid(description.contact_shadows_target))) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: contact shadows need their producer's stage and target");
+    }
+    // THE OUTLINE STAGE HAS NO SINGLE-PASS STAND-IN EITHER, and it reads the prepass depth: a
+    // marked surface is "hidden" where the scene's depth is nearer than its own, and a frame with
+    // no prepass has no single-sample depth to ask.
+    if (features.selection_outlines) {
+        if (description.selection_outlines_stage.declare == nullptr) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: selection outlines need their producer's stage");
+        }
+        if (!features.depth_prepass) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: selection outlines compare marked surfaces with the depth "
+                        "prepass, and this frame has none");
+        }
     }
     prepass_mode_ = select_prepass_mode(description.features);
     // A prepass mode that names targets nothing will fill is the failure the derivation exists to

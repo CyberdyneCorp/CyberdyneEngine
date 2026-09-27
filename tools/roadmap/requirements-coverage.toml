@@ -762,8 +762,9 @@ note = "the generated inspector and viewport consume the same semantic X/Y/Z axi
 [[coverage]]
 row = "editor-visual-language"
 requirement = "Selection appearance"
-evidence = "rust:cy-editor-visual::selection::tests::the_shipped_appearances_pass_their_own_check"
-note = "The appearance validator enforces the thin gold editor outline, distinct dashed gameplay selection, legibility on bright content and rejection of glow, bloom, excessive width and unrelated hues."
+evidence = "test:render.selection_outlines"
+case = "(c) colour and width follow the API"
+note = "THE OUTLINE DRAWN, NOT ONLY DESCRIBED. `src/rendering/selection/` draws a selection in the engine's own frame: the marked objects are drawn again into a mask and an edge pass composites a solid outline AFTER the tone curve and before the interface, so it does not bloom and exposure does not scale it. The named case renders `pipeline_test::FrameScene` on a Vulkan device and requires every pixel of a selected unit's ring to be the requested colour byte for byte and the ring exactly as wide as requested (two and five pixels, gold and blue) — the same width and brightness whatever the scene behind it, which is the bright-surface scenario. `(b) unmarked objects are untouched` holds the selected unit's own visible surface unchanged (the outline does not obscure the material) and every pixel beyond the width unchanged; `(a) outline pixels lie on the marked silhouettes, within the width, and nowhere else` compares every pixel with the host reference. Distinct editor and gameplay selections are two marks with two colours in one `HighlightSet`, drawn in one pass. The appearance RULES — the thin gold editor outline, the distinct dashed gameplay selection, and the rejection of glow, bloom, excessive width and unrelated hues — stay with `rust:cy-editor-visual::selection::tests::the_shipped_appearances_pass_their_own_check`. Each frame case was proved red by a mutation. NOT YET: the editor viewport does not yet request its selection through this stage, and identifiability among hundreds of objects is not measured."
 
 [[coverage]]
 row = "editor-visual-language"

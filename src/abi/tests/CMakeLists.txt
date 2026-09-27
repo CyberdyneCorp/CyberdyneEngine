@@ -12,6 +12,9 @@
 #                     the reload sequence, which opens real shared libraries from disk. It is an
 #                     integration test because dlopen is, not because it is slow: the whole suite is
 #                     a few milliseconds.
+#   unit.abi_selection
+#                     the engine's selection component found by name and written from bytes through
+#                     the table, as `CyberdyneKit.SelectionHighlight` does it.
 #   integration.abi_live_reload
 #                     the same sequence performed against a runtime that never stops ticking — M5's
 #                     task 1.1. It publishes generations into a staging directory under the build
@@ -158,6 +161,14 @@ function(cy_abi_declare_tests)
         KIND integration
         SOURCES "${tests_dir}/test_inspector.cpp"
         DEPENDENCIES cy::abi cy::scene)
+
+    # The engine's selection component, found by name and written from bytes through the table —
+    # the path `CyberdyneKit.SelectionHighlight` takes. In-process and arithmetic, so unit.
+    cy_add_test(
+        NAME abi_selection
+        KIND unit
+        SOURCES "${tests_dir}/test_selection.cpp"
+        DEPENDENCIES cy::abi cy::rendering-selection)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_abi_declare_tests)

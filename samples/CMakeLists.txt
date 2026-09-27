@@ -172,3 +172,9 @@ add_subdirectory(12-beauty)
 # adapters and carries nothing across; its test drives it with synthetic input and a negative
 # control. Declares nothing without Swift, like 04-character.
 add_subdirectory(13-rts-api)
+
+# Not a milestone artefact: the picture a strategy game's selection makes — a squad selected by a drag
+# box, an enemy hovered, a unit behind a building — marked from gameplay as components and outlined
+# by the engine's `SelectionOutlines` stage. Like every capture here it needs a graphics device and
+# has no CTest entry; `render.selection_outlines` is the suite.
+add_subdirectory(13-rts-selection)

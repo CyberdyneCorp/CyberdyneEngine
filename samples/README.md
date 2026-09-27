@@ -11,6 +11,7 @@ narrative.
 | `11-ship/` | M11.d | One project **built, cooked, packaged, installed and launched from a single recipe** — the first packaged project here, and the first thing in this repository ever to present a frame to a **window**. It is **not a game**: `m11b:the-game-exists` is red and a packaging proof does not close it. `just run-ship` |
 | `12-beauty/` | M11.c | Photographs a committed scene through the engine's own assembled frame with three materials authored on the editor's node-graph canvas, compiled by the material compiler at capture time and bound as BC7 and BC5 blocks — the first frame here in which a **material** decided a pixel. `just capture-beauty-shot` |
 | `13-rts-api/` | `add-swift-game-api` | An RTS unit written **only in Swift** over ABI 1.3: a camera panned by keys and the screen edge, a unit picked under the pointer by a camera ray and a physics raycast, sent to a clicked ground point by navigation, heard arriving, and built from a prefab. The host binds six adapters and carries nothing; `integration.rts_api_sample` drives it with synthetic input. `just run-sample rts-api` |
+| `13-rts-selection/` | — | A strategy game's selection drawn by the engine: a squad selected by a drag box, an enemy under the cursor and a unit behind a building, marked as `SelectionHighlight` components on their entities and outlined by the frame's `SelectionOutlines` stage. `cy_sample_rts_selection --out <dir>` |
 
 Run one with `just run-sample <name>`; `--headless` runs it under the headless display server, which
 is how the smoke test runs it in CI.

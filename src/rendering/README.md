@@ -10,6 +10,7 @@ and `rendering-culling-and-lod`.
 |---|---|---|
 | `graph/` | `cy::rendering-graph` | the render graph: barriers, aliasing, scheduling and semaphores, derived from declared reads and writes |
 | `contact_shadows/` | `cy::rendering-contact-shadows` | screen-space contact shadows on the device: a short trace toward the directional light through the prepass depth, into a target the forward pass reads as an addition to the shadow map's visibility, through `FrameStageDeclaration` |
+| `selection/` | `cy::rendering-selection` | selection outlines and unit highlights: the marked objects drawn again into a mask with the frame's own geometry, and an edge pass over the tonemapped colour at `SelectionOutlines`, with the gameplay component that marks an entity |
 | `occlusion/` | `cy::rendering-occlusion` | ground-truth ambient occlusion on the device: the horizon search, the shared denoiser's cascade, and the target the forward pass samples through `FrameStageDeclaration` |
 | `light_probes/` | `cy::rendering-light-probes` | an irradiance volume in the frame: `gi::IrradianceVolume`'s probes as a texture the forward pass samples in place of the flat ambient, and the view-block words that place it |
 | `assembly/` | `cy::rendering-assembly` | **the frame**: one view of one world, culled, sorted, clustered, declared as passes and executed. M8.b task 11.2 — the module that links the eight M7's closing gate found were linked by nothing but their own tests |

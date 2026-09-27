@@ -94,6 +94,10 @@ struct FrameFeatures {
     bool bloom = false;
     /// Levels requested of the chain; `bloom_level_count` clamps it to what the extent can hold.
     u32 bloom_levels = 6;
+    /// Selection outlines and unit highlights over the tonemapped colour — `SelectionOutlines`.
+    /// Off by default, and absent when off. Needs the depth prepass: occluded parts are found by
+    /// comparing each marked surface with the depth the prepass left.
+    bool selection_outlines = false;
     bool ui = true;
     /// Virtual geometry's hardware rasteriser: a stage after the depth prepass that writes the
     /// visibility target and the frame's own depth. Off by default, and a caller turns it on by
@@ -143,6 +147,14 @@ enum class FramePassKind : u8 {
     /// passes, one callback — `ForwardFrame::bloom()` says which step a pass is.
     Bloom,
     PostProcess,
+    /// Selection outlines and unit highlights, drawn over the tonemapped colour: a mask of the
+    /// objects a game marked and an edge pass that composites their outlines. Declared by its
+    /// producer (`src/rendering/selection/`) through `FrameStageDeclaration`, as the contact
+    /// shadows are. NOT ONE OF THE SPECIFICATION'S THIRTEEN: it is display-referred like the
+    /// interface, so it sits after the tone curve — an outline that bloomed, or that exposure
+    /// scaled, would not be the colour the game asked for — and before the interface, which is
+    /// drawn over the world and its outlines alike.
+    SelectionOutlines,
     UiAndDebug,
     /// The blit that puts the last colour the frame produced into `output`. Declared ONLY when the
     /// composite did not already write the output directly — with post-processing on, tonemapping
@@ -197,6 +209,10 @@ struct ScreenSpaceStageInputs {
     ResourceId target = kInvalidResource;
     u32 width = 0;
     u32 height = 0;
+    /// The frame's `GpuDrawInstance` records, for a stage that draws the frame's own geometry
+    /// again — the selection mask — and must declare the read. Invalid when the frame has none.
+    /// Appended, so a brace-initialised caller written before it keeps its meaning.
+    ResourceId draw_instances = kInvalidResource;
 };
 
 /// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
@@ -299,6 +315,10 @@ struct FrameDescription {
     /// producer, `build()` refuses rather than declaring a pass nothing records.
     ResourceId contact_shadows_target = kInvalidResource;
     FrameStageDeclaration contact_shadows_stage;
+    /// The producer that declares the selection outline stage: its `target` is the colour the
+    /// post chain ended in — the output, when post-processing tonemapped into it — which its last
+    /// pass reads and writes. Like the contact shadows, there is no single-pass fallback.
+    FrameStageDeclaration selection_outlines_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;
