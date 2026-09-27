@@ -106,10 +106,13 @@ struct DrawPipelineSelection {
     rhi::GraphicsPipelineHandle pipeline;
     rhi::PipelineLayoutHandle layout;
     rhi::DescriptorSetHandle material_set;
+    /// 0 keeps the pass default (shadow 1, depth 2, forward 3). A graph vertex program may
+    /// request three streams in depth or shadow when its offset reads normal or UV.
+    u8 vertex_streams = 0;
 };
 
 /// Return false to use the frame's standard pipeline. A true result must fill non-null pipeline
-/// and layout handles that match this pass's attachments and vertex streams.
+/// and layout handles that match this pass's attachments and requested vertex streams.
 using DrawPipelineFn = bool (*)(FramePipelineKind kind, const render::DrawItem& item,
                                 const GpuDrawInstance& instance, void* user,
                                 DrawPipelineSelection& out) noexcept;

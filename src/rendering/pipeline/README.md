@@ -61,8 +61,9 @@ and feature flags are decisions `cy::rendering-arbiter` and the post chain alrea
 a pipeline for an individual draw in the depth, opaque, transparent, or shadow pass. A false answer
 uses the standard pipeline. A selected pipeline and layout must already exist, match that pass's
 attachments and vertex streams, and accept the frame's sets 0–2. An optional set 3 binds compiled
-material parameters. The recorder never compiles a pipeline while recording. The null-backend
-integration test checks that an opaque material draw binds a selected prepared pipeline. The
+material parameters. A selected depth or shadow vertex program can request the normal and UV
+streams when its offset expression reads them. The recorder never compiles a pipeline while
+recording. Null-backend integration tests check the selected pipeline and extra depth streams. The
 authored scene's compiled graph variants and previous-frame displacement are still being wired to
 this selection point under issue #15.
 

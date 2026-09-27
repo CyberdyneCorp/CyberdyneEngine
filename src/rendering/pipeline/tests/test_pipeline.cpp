@@ -105,6 +105,28 @@ u32 bindings_of(Span<const rhi::null::RecordedCommand> commands,
     return count;
 }
 
+bool choose_depth_with_uv(FramePipelineKind kind, const render::DrawItem&,
+                          const rendering::GpuDrawInstance&, void* user,
+                          DrawPipelineSelection& out) noexcept {
+    if (kind != FramePipelineKind::Depth) {
+        return false;
+    }
+    const auto& probe = *static_cast<const PipelineProbe*>(user);
+    out.pipeline = probe.pipelines->pipeline(FramePipelineKind::Depth);
+    out.layout = probe.pipelines->layout();
+    out.vertex_streams = 3;
+    return true;
+}
+
+u32 three_stream_bindings(Span<const rhi::null::RecordedCommand> commands) noexcept {
+    u32 count = 0;
+    for (const auto& command : commands) {
+        count +=
+            command.kind == rhi::null::CommandKind::BindVertexBuffers && command.b == 3U ? 1U : 0U;
+    }
+    return count;
+}
+
 }  // namespace
 
 CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks does not") {
@@ -146,6 +168,25 @@ CY_TEST_CASE("a prepared material pipeline can be selected for each opaque draw"
     CY_CHECK_GT(probe.opaque_draws, 0U);
     CY_CHECK_LT(probe.last_material, scene.assembly().materials().capacity());
     CY_CHECK_GT(bindings_of(rhi::null::command_log(fixture.device()), variant), standard_bindings);
+}
+
+CY_TEST_CASE("a depth material variant can read the UV stream") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
+    rendering::assembly::AssemblyReport report;
+
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    const u32 standard = three_stream_bindings(rhi::null::command_log(fixture.device()));
+    PipelineProbe probe{&scene.pipelines()};
+    recorder.set_draw_pipeline(&choose_depth_with_uv, &probe);
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK_GT(scene.recorded().prepass_draws, 0U);
+    CY_CHECK_GT(three_stream_bindings(rhi::null::command_log(fixture.device())), standard);
 }
 
 CY_TEST_CASE(

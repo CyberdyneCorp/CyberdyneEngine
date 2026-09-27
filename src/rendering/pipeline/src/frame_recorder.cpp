@@ -153,7 +153,8 @@ struct DrawBindingState {
     if (!recorder.draw_pipeline()(kind, item, instance, recorder.draw_pipeline_user(), candidate)) {
         return true;
     }
-    if (candidate.pipeline.is_null() || candidate.layout.is_null()) {
+    if (candidate.pipeline.is_null() || candidate.layout.is_null() ||
+        candidate.vertex_streams > kForwardPassStreamCount) {
         return false;
     }
     selected = candidate;
@@ -211,6 +212,7 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     }
     commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(geometry.streams, stream_count),
                                  Span<const u64>(offsets, stream_count));
+    usize bound_streams = stream_count;
 
     rhi::BufferHandle bound_indices;
     for (u32 offset = 0; offset < range.count; ++offset) {
@@ -229,6 +231,14 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
                                   selected)) {
             ++recorder.mutable_report().skipped_draws;
             continue;
+        }
+        const usize wanted_streams =
+            selected.vertex_streams == 0 ? stream_count : selected.vertex_streams;
+        if (wanted_streams != bound_streams) {
+            commands.bind_vertex_buffers(
+                0, Span<const rhi::BufferHandle>(geometry.streams, wanted_streams),
+                Span<const u64>(offsets, wanted_streams));
+            bound_streams = wanted_streams;
         }
         bind_draw_pipeline(recorder, commands, selected, bound);
         const DrawPush push{index};
