@@ -144,6 +144,12 @@ add_subdirectory(post)
 # chain's settings and the denoiser's configuration, so it is read after all three.
 add_subdirectory(occlusion)
 
+# SCREEN-SPACE CONTACT SHADOWS. `virtual-shadows`' "Contact and traced refinement": a short trace
+# toward the directional light through the prepass depth, into a target the forward pass reads as an
+# addition to the shadow map's visibility. It names the forward frame's stage-declaration seam as
+# occlusion/ does, so it is read after forward/.
+add_subdirectory(contact_shadows)
+
 # THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
 # this directory were linked by nothing but their own test binaries and nothing in the tree built a
 # frame out of them. This one does — it is the only module here that consumes another module's

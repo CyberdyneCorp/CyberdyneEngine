@@ -24,9 +24,10 @@ import struct
 import sys
 
 HEADER = """#pragma once
+// SPDX-License-Identifier: MIT
 // Compiled SPIR-V for the world's shading. GENERATED — do not edit by hand.
 //
-// Produced by samples/10-world/shaders/embed_spirv.py from world.slang; that
+// Produced by samples/10-world/shaders/embed_spirv.py from {source}; that
 // file's header comment carries the exact slangc invocations. Checked in rather than compiled by
 // the build because this artefact must exist in a build with NO shader compiler at all — which is
 // every Profile and Shipping build, and any build configured with -DCY_SHADER_SLANG=OFF.
@@ -44,7 +45,9 @@ def main(argv: list[str]) -> int:
         return 2
 
     out = pathlib.Path(argv[1])
-    body = [HEADER]
+    # world_spirv.h comes from world.slang, water_spirv.h from water.slang: the header names its own.
+    source = out.name.removesuffix("_spirv.h") + ".slang"
+    body = [HEADER.replace("{source}", source)]
     for pair in argv[2:]:
         name, _, path = pair.partition("=")
         data = pathlib.Path(path).read_bytes()

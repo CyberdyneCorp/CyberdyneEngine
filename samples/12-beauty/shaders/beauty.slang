@@ -52,6 +52,7 @@
 import cy.material;
 import cy.brdf;
 import cy.packing;
+import cy.shadow;
 
 // THIS FILE IS A PIXEL STAGE, SO IT SAYS SO BEFORE THE MATERIAL IS INCLUDED. The generated prelude's
 // `cy_material_sample` takes the IMPLICIT level of detail only under `CY_MATERIAL_PIXEL_STAGE`, and
@@ -99,6 +100,14 @@ struct BeautyFrame
     /// baked once against the shot's own camera and the moving camera is expressed as an offset
     /// from it, which is what lets a video cost one vertex buffer rather than two hundred and forty.
     float4 eye;
+    /// SOFT SHADOWS, read only by `sceneFragmentSoft`: `cy.shadow`'s `PcssShape` — x the penumbra
+    /// UV per unit of light-space depth, y and z the smallest and largest kernel in UV, w the
+    /// blocker search's taps. APPENDED, so every entry point that predates it reads the block it
+    /// always read.
+    float4 softShadow;
+    /// x: the filter's taps. y: 1 when the ambient occlusion term is bound and read. z: 1 when the
+    /// contact term is. w: unused.
+    uint4 softControl;
 };
 
 [[vk::binding(0, 2)]]
@@ -204,14 +213,70 @@ float sunVisibility(float3 relativePosition, float3 geometricNormal)
     return total / 9.0;
 }
 
+/// The shadow map as `cy.shadow`'s soft filter reads it: the stored depth of the nearest texel,
+/// loaded rather than compared. The comparison sampler above stays the hard filter's.
+struct BeautyShadowMap : IShadowDepthSource
+{
+    float storedDepth(float2 uv)
+    {
+        uint width;
+        uint height;
+        shadowMap.GetDimensions(width, height);
+        let texel = clamp(int2(floor(uv * float2(width, height))), int2(0, 0),
+                          int2(int(width) - 1, int(height) - 1));
+        return shadowMap.Load(int3(texel, 0));
+    }
+};
+
+/// Percentage-closer soft shadows over the sun's map, with the lookup `sunVisibility` makes: the
+/// same normal offset, the same bias, and a kernel sized by the sun's angular radius instead of a
+/// fixed 3x3.
+float softSunVisibility(float3 relativePosition, float3 geometricNormal, float2 pixel)
+{
+    float3 offset = relativePosition + (geometricNormal * frame.ambient.w);
+    float4 lightClip = transform(frame.sunToClip0, frame.sunToClip1, frame.sunToClip2,
+                                 frame.sunToClip3, float4(offset, 1.0));
+    if (lightClip.w <= 0.0)
+    {
+        return 1.0;
+    }
+    float3 projected = lightClip.xyz / lightClip.w;
+    float2 uv = (projected.xy * float2(0.5, 0.5)) + float2(0.5, 0.5);
+    if (any(uv < 0.0) || any(uv > 1.0))
+    {
+        return 1.0;
+    }
+    PcssShape shape;
+    shape.penumbraPerDepth = frame.softShadow.x;
+    shape.minRadius = frame.softShadow.y;
+    shape.maxRadius = frame.softShadow.z;
+    shape.blockerTaps = int(max(frame.softShadow.w, 1.0));
+    shape.filterTaps = int(max(frame.softControl.x, 1u));
+    BeautyShadowMap map;
+    return pcssVisibility(map, uv, projected.z + frame.sunDirection.w, shape,
+                          shadowDiscRotation(pixel));
+}
+
 /// THE AMBIENT OCCLUSION TERM, `occlusion::AmbientOcclusionPass`'s target: rgb the bent normal,
 /// a the visibility. Read only by `sceneFragmentOccluded`, so a frame with the setting off binds
 /// nothing here and draws with `sceneFragment` — the entry point the frame always had.
 [[vk::binding(2, 1)]] Texture2D<float4> ambientOcclusion;
 
+/// THE CONTACT TERM, `contact_shadows::ContactShadowPass`'s target: visibility in `.r`. Read only by
+/// `sceneFragmentSoft`, and only when `softControl.z` says it was written.
+[[vk::binding(3, 1)]] Texture2D<float4> contactShadows;
+
 /// The surface's shading, with the ambient term's visibility supplied by the caller: 1 for
-/// `sceneFragment`, the ambient occlusion term for `sceneFragmentOccluded`.
+/// `sceneFragment`, the ambient occlusion term for `sceneFragmentOccluded`. The sun's visibility is
+/// the hard 3x3 filter's unless the caller supplies its own — `sceneFragmentSoft` does.
 float4 shadeScene(SceneVarying input, float ambientVisibility)
+{
+    return shadeSceneWithSun(input, ambientVisibility, -1.0);
+}
+
+/// `shadeScene`, with the sun's visibility supplied; a negative `sunOverride` computes the hard
+/// filter's as `sceneFragment` always has.
+float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunOverride)
 {
     // THE MATERIAL PROGRAM, CALLED. Everything above this line is the frame's; everything the
     // surface says is the authored graph's, lowered by `compile_material` and emitted by the
@@ -252,7 +317,8 @@ float4 shadeScene(SceneVarying input, float ambientVisibility)
     float3 view = normalize(frame.eye.xyz - input.relativePosition);
     float3 light = normalize(frame.sunDirection.xyz);
     float normalDotLight = saturate(dot(shadingNormal, light));
-    float visibility = sunVisibility(input.relativePosition, geometricNormal);
+    float visibility = sunOverride < 0.0 ? sunVisibility(input.relativePosition, geometricNormal)
+                                         : sunOverride;
 
     float3 f0 = computeF0(surface.albedo, surface.metallic);
     float3 diffuse = diffuseLambert(surface.albedo * (1.0 - surface.metallic));
@@ -296,6 +362,29 @@ float4 sceneFragmentOccluded(SceneVarying input) : SV_Target
 {
     let visibility = ambientOcclusion.Load(int3(int2(input.position.xy), 0)).a;
     return shadeScene(input, visibility);
+}
+
+/// SOFT AND CONTACT SHADOWS: the sun through `cy.shadow`'s percentage-closer soft filter, darkened
+/// further by the contact term where it found an occluder — the darker of the two, because the
+/// term is an addition to the map's answer and not a replacement for it — and the sky term through
+/// the ambient occlusion term when that setting is on as well. Drawn against the prepass depth, as
+/// `sceneFragmentOccluded` is.
+[shader("fragment")]
+float4 sceneFragmentSoft(SceneVarying input) : SV_Target
+{
+    let pixel = int2(input.position.xy);
+    float3 geometricNormal = normalize(input.normal);
+    float sun = softSunVisibility(input.relativePosition, geometricNormal, input.position.xy);
+    if (frame.softControl.z != 0u)
+    {
+        sun = min(sun, contactShadows.Load(int3(pixel, 0)).r);
+    }
+    float ambient = 1.0;
+    if (frame.softControl.y != 0u)
+    {
+        ambient = ambientOcclusion.Load(int3(pixel, 0)).a;
+    }
+    return shadeSceneWithSun(input, ambient, sun);
 }
 
 /// THE DEPTH AND NORMAL PREPASS the ambient occlusion stage reads, drawn with `sceneVertex` so its

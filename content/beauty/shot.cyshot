@@ -50,6 +50,14 @@ sky seed 0x5EEDB107
 ambient-occlusion radius 1.5
 ambient-occlusion power 1.5
 
+# Soft and contact shadows, read only when a run passes `--soft-shadows on`. The sun's angular
+# radius is the sun's — half of its 0.53-degree disc — and is all the penumbra is sized by; the
+# contact trace reaches 35 cm toward the sun and treats 20 cm behind a depth sample as inside it.
+# The published M11.c frame is the setting off.
+soft-shadows sun-angular-radius 0.004625
+soft-shadows contact-length 0.35
+soft-shadows contact-thickness 0.2
+
 # --- The grade --------------------------------------------------------------------------------
 #
 # Read by the resolve, not by this file's shading: `cy/fullscreen.slang`'s tonemapping resolve

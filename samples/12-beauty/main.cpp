@@ -211,6 +211,13 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cy_sample_beauty: --ambient-occlusion is `on` or `off`\n");
         return 1;
     }
+    // SOFT AND CONTACT SHADOWS. Off by default, which is the published M11.c frame; `on` is what
+    // `just capture-soft-shadows` photographs beside it.
+    const std::string soft_shadows = option(argc, argv, "--soft-shadows", "off");
+    if (soft_shadows != "on" && soft_shadows != "off") {
+        std::fprintf(stderr, "cy_sample_beauty: --soft-shadows is `on` or `off`\n");
+        return 1;
+    }
     // A CONTROL, not a quality setting: `--albedo-levels 1` photographs the shot with level 0 of
     // every albedo map's cooked chain and nothing beneath it. See `Stage::limit_albedo_levels`.
     const u32 albedo_levels = option_number(argc, argv, "--albedo-levels", 0);
@@ -277,6 +284,10 @@ int main(int argc, char** argv) {
     std::printf("occlusion     %s, radius %.2f m, power %.2f\n", occlusion.c_str(),
                 static_cast<double>(shot.occlusion_radius),
                 static_cast<double>(shot.occlusion_power));
+    stage.set_soft_shadows(soft_shadows == "on", shot);
+    std::printf("soft shadows  %s, sun angular radius %.5f rad, contact reach %.2f m\n",
+                soft_shadows.c_str(), static_cast<double>(shot.sun_angular_radius),
+                static_cast<double>(shot.contact_length));
     stage.limit_albedo_levels(albedo_levels);
     if (bloom) {
         stage.enable_bloom(shot);

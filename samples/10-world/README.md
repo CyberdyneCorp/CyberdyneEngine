@@ -82,7 +82,8 @@ Shipping build does not need a shader compiler.
 
 The geometry path is still deliberately small. It uses this sample's terrain, dome, ocean, and
 foliage proxy streams rather than the renderer's mesh/material tables. It has no temporal
-anti-aliasing, virtual geometry, GPU grass expansion, underwater pass, caustics, or reflections.
+anti-aliasing, virtual geometry, GPU grass expansion or underwater pass; what the water does is in
+"Water shading" below.
 The cloud producer is a seeded layered density march over dome vertices rather than the full
 per-pixel spherical-shell march, and foliage wind response remains CPU work. The frame is assembled by
 `rendering::assembly` and resolved by `rendering::pipeline` through exposure, tone mapping, and
@@ -257,6 +258,50 @@ cloud, and foam work because there is no device to consume it. The same 64-frame
 separately as headless evidence. Save, replay, lockstep, PCG, and gameplay state do not depend on the
 visual buffers.
 
+## Water shading
+
+![the fjord, mid-morning, with water shading](../../docs/design/images/water-shading-day-on.png)
+![the same frame without it](../../docs/design/images/water-shading-day-off.png)
+
+The sea is drawn by `shaders/water.slang` rather than by the Lambert path the land uses. Two
+pictures are drawn first, both with world.slang's own pipeline, in passes `Stage::declare_water`
+declares into the render graph before the assembled frame:
+
+* **the refraction** — the terrain alone, from the frame's camera. Under every water pixel it holds
+  the bed, and its depth says where the bed is;
+* **the reflection** — the sky, the terrain, the stars and the plants mirrored in the sea level by
+  `mirrored_rows()`, whose near plane is moved onto the water so nothing under it is drawn.
+
+The water run of the opaque pass then reads both. Its colour is the bed seen through Beer-Lambert
+over the path from the surface to the bed plus the column's in-scatter — extinction and in-scatter
+are `water::WaterOptics` through src/water/'s own `water_in_scatter()`, so the shallows go green-gold
+and the channel deep blue with nothing painted — mixed by Schlick's Fresnel (F0 from
+`build_closure()`) with the mirrored world. A glance at the far bank puts its reflection in the
+water; at night the clouds are in the lake. Along the shore the water foams where the column is
+under 1.2 m, and on the shallow bed the sun is focused by the reciprocal of the Jacobian
+`1 + D (1 - 1/n) laplacian(h)`, with the analytic Laplacian of the sixteen trains of the ocean's own
+model that curve its surface most, at the water's own clock — the surface-derived caustic tier —
+band-limited by each pixel's footprint so that a distant shallow does not turn to moire.
+
+![the shallows](../../docs/design/images/water-shading-shore-on.png)
+![the clouds in the lake at night](../../docs/design/images/water-shading-night-on.png)
+
+`--no-water-shading` draws the frame as it was before: 192 of 192 frames of a day compare
+byte-identical against a build of the tree before the change, and the authoritative digest does not
+move (`openspec/changes/add-water-shading/evidence/`). The two passes cost about 1.8 ms of
+`stage_submit_ms` at the median on the loaded Linux host they were measured on.
+`render.world_water` draws with `water_spirv.h` and this directory's `water_surface.cpp` on a
+device and holds the absorption law, the reflected sky, the foam band and the caustics to the pixel.
+
+**What is not built.** The shader is this sample's, as world.slang is: `material-compiler` has no
+water node, so this is not the "water surface closure in the material system" `water` asks for. The
+reflection is a planar mirror of the one sea-level body, not the illumination hierarchy the
+requirement names (screen tracing escalating to world tracing, cached radiance far away). There is
+no underwater pass, and only the surface-derived caustic tier exists. The shoreline foam is an
+instantaneous function of the column's depth; `water::FoamField`, the persistent advected field, is
+still not drawn. `water_msl.h` is generated from the same source and compiled, not run, on this
+host.
+
 ## Reading order
 
 `world.h` first — its header comment is the map. Then `world.cpp`, which is one function per module
@@ -280,6 +325,7 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--still <path>` | write one frame a second time, for the committed image |
 | `--budget <path>` | write the per-frame, per-producer cost as a CSV, including field publication and device-stage bands |
 | `--budget-ms <ms>` | fail when the worst frame exceeds the threshold, a required visual dispatch is absent, or a rendered frame has no manifest |
+| `--no-water-shading` | draw the sea through the land's lit path, as before water shading existed; the frame is byte-identical to that build's |
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
 | `--no-cloud-shadows` | attenuate the sun once, at the viewer, as before cloud shadows existed; the frame is byte-identical to that build's |
 | `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
