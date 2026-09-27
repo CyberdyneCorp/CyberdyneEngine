@@ -358,6 +358,7 @@ fn module_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 module.name,
                 module.stage.label()
             ));
+            module_stage_controls(panels, ui);
             module_input_controls(panels, ui);
             module_dependency_controls(panels, ui);
             module_attachment_controls(panels, ui);
@@ -420,6 +421,27 @@ fn module_toolbar(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     });
 }
 
+fn module_stage_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
+    let current = panels.specialised.active_vfx_module().unwrap().stage;
+    let mut selected = current;
+    ui.horizontal(|ui| {
+        ui.label("Compatible stage");
+        egui::ComboBox::from_id_salt("open-vfx-module-stage")
+            .selected_text(current.label())
+            .show_ui(ui, |ui| {
+                for stage in Stage::ALL {
+                    ui.selectable_value(&mut selected, stage, stage.label());
+                }
+            });
+    });
+    if selected != current {
+        let arguments = Arguments::new().with("stage", Value::Text(selected.label().into()));
+        edit_module_metadata(panels, "vfx.module.stage.set", arguments, |module| {
+            module.stage = selected;
+        });
+    }
+}
+
 fn module_input_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let inputs = panels
         .specialised
@@ -431,11 +453,10 @@ fn module_input_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(format!("Input {}: {}", input.name, input.kind));
             if ui.button("Remove").clicked() {
-                let result = panels.specialised.edit_vfx_module_metadata(|module| {
+                let arguments = Arguments::new().with("name", Value::Text(input.name));
+                edit_module_metadata(panels, "vfx.module.input.remove", arguments, |module| {
                     module.inputs.remove(index);
-                    Ok(())
                 });
-                panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
             }
         });
     }
@@ -452,11 +473,12 @@ fn module_input_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 name: panels.inputs.vfx_module_input_name.clone(),
                 kind: panels.inputs.vfx_module_input_kind.clone(),
             };
-            let result = panels.specialised.edit_vfx_module_metadata(|module| {
+            let arguments = Arguments::new()
+                .with("name", Value::Text(input.name.clone()))
+                .with("kind", Value::Text(input.kind.clone()));
+            edit_module_metadata(panels, "vfx.module.input.add", arguments, |module| {
                 module.inputs.push(input);
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
 }
@@ -472,11 +494,15 @@ fn module_dependency_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(format!("Depends on {dependency}"));
             if ui.button("Remove").clicked() {
-                let result = panels.specialised.edit_vfx_module_metadata(|module| {
-                    module.dependencies.remove(index);
-                    Ok(())
-                });
-                panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+                let arguments = Arguments::new().with("name", Value::Text(dependency));
+                edit_module_metadata(
+                    panels,
+                    "vfx.module.dependency.remove",
+                    arguments,
+                    |module| {
+                        module.dependencies.remove(index);
+                    },
+                );
             }
         });
     }
@@ -485,13 +511,45 @@ fn module_dependency_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         ui.text_edit_singleline(&mut panels.inputs.vfx_module_dependency_name);
         if ui.button("Add dependency").clicked() {
             let name = panels.inputs.vfx_module_dependency_name.clone();
-            let result = panels.specialised.edit_vfx_module_metadata(|module| {
+            let arguments = Arguments::new().with("name", Value::Text(name.clone()));
+            edit_module_metadata(panels, "vfx.module.dependency.add", arguments, |module| {
                 module.dependencies.push(name);
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
+}
+
+fn edit_module_metadata(
+    panels: &mut Panels<'_>,
+    command: &str,
+    arguments: Arguments,
+    edit_draft: impl FnOnce(&mut VfxModule),
+) {
+    if let Some(intent) =
+        saved_module_edit_intent(panels.saved_vfx_module_reference, command, arguments)
+    {
+        panels.intents.push(intent);
+        panels.inputs.vfx_document_problem = None;
+        return;
+    }
+    let result = panels.specialised.edit_vfx_module_metadata(|module| {
+        edit_draft(module);
+        Ok(())
+    });
+    panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+}
+
+fn saved_module_edit_intent(
+    reference: Option<&str>,
+    command: &str,
+    arguments: Arguments,
+) -> Option<Intent> {
+    reference.map(|reference| {
+        Intent::Invoke(
+            command.into(),
+            arguments.with("reference", Value::Text(reference.into())),
+        )
+    })
 }
 
 fn module_attachment_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -1441,6 +1499,29 @@ mod tests {
     use cy_editor_core::codec::Writer;
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
     use cy_editor_interface::specialised::vfx::StageGraph;
+
+    #[test]
+    fn saved_module_controls_route_to_mcp_commands_at_the_open_asset_path() {
+        let reference = "effects/open.cyvfxmodule";
+        for command in [
+            "vfx.module.stage.set",
+            "vfx.module.input.add",
+            "vfx.module.input.remove",
+            "vfx.module.dependency.add",
+            "vfx.module.dependency.remove",
+        ] {
+            let arguments = Arguments::new().with("name", Value::Text("drag".into()));
+            let Some(Intent::Invoke(actual, arguments)) =
+                saved_module_edit_intent(Some(reference), command, arguments)
+            else {
+                panic!("saved module edit did not produce a command");
+            };
+            assert_eq!(actual, command);
+            assert_eq!(arguments.text("reference"), Some(reference));
+            assert_eq!(arguments.text("name"), Some("drag"));
+        }
+        assert!(saved_module_edit_intent(None, "vfx.module.input.add", Arguments::new()).is_none());
+    }
 
     #[test]
     fn removing_an_open_emitter_preserves_the_other_stage_draft() {

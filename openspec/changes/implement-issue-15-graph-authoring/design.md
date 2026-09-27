@@ -15,6 +15,11 @@ Reusable modules have a separate versioned `.cyvfxmodule` source contract: compa
 Saved module stage changes now use `vfx.module.stage.set` through that command registry, with MCP
 undo/redo and invalid-stage refusal coverage. A new module stages edits until its first Save
 chooses a project path; typed desktop-command parity remains open.
+The desktop's compatible-stage, host-input, and dependency controls now send their corresponding
+typed commands for the committed path of the open module. The editable Save/Open path field does
+not retarget those controls. A new unsaved module still edits its local draft, and saved edits
+refresh the open canvas from the project source before the next frame. Each typed command is an
+individual undo step; remaining canvas and system controls still need typed desktop parity.
 
 After a system or module has its first saved project path, the desktop journals each changed UI
 frame through `vfx.document.save` or `vfx.module.save` before applying other frame intents. The

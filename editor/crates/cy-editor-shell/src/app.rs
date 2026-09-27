@@ -1134,6 +1134,7 @@ impl EditorWindow {
                     scope,
                     shell,
                     specialised,
+                    vfx_module_committed,
                     hierarchy,
                     history,
                     settings,
@@ -1157,6 +1158,9 @@ impl EditorWindow {
                     scope,
                     shell,
                     specialised,
+                    saved_vfx_module_reference: vfx_module_committed.as_ref().and_then(
+                        |(reference, source)| source.as_ref().map(|_| reference.as_str()),
+                    ),
                     hierarchy,
                     history,
                     settings,
@@ -1746,6 +1750,7 @@ mod tests {
     fn vfx_test_window(root: &std::path::Path) -> EditorWindow {
         let mut registry = Registry::new();
         cy_editor_services::builtin::register(&mut registry).unwrap();
+        cy_editor_interface::specialised::vfx_authoring_commands::register(&mut registry).unwrap();
         let editor = Editor::new(Actor::human("designer")).with_project(ProjectService::new(root));
         let mut window = EditorWindow::new(editor, registry, Scope::unrestricted()).unwrap();
         let mut catalogue = Writer::new();
@@ -2061,6 +2066,92 @@ mod tests {
         assert_eq!(
             author.specialised.active_vfx_module().unwrap().name,
             "shared_drag"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn typed_saved_module_metadata_edits_refresh_and_undo_individually() {
+        use cy_editor_interface::specialised::vfx::Stage;
+        use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+        let root = scratch("vfx-module-typed-metadata-history");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut window = vfx_test_window(&root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        let module = VfxModule::new("shared_drag", Stage::Update).unwrap();
+        let original = module.encode_text().unwrap();
+        window.specialised.start_vfx_module(module).unwrap();
+        let reference = "effects/shared_drag.cyvfxmodule";
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(original.clone())),
+        )]);
+
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.input.add".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("name", Value::Text("drag".into()))
+                .with("kind", Value::Text("float".into())),
+        )]);
+        window.refresh_vfx_sources();
+        let with_input = window.editor.project.read_source(reference).unwrap();
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().inputs.len(),
+            1
+        );
+        let mut journaled = Vec::new();
+        window.journal_vfx_edits(&mut journaled).unwrap();
+        assert!(journaled.is_empty());
+
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.dependency.add".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("name", Value::Text("shared_noise".into())),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().dependencies,
+            ["shared_noise"]
+        );
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.stage.set".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("stage", Value::Text("Spawn".into())),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().stage,
+            Stage::Spawn
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.specialised.active_vfx_module().unwrap().stage,
+            Stage::Update
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            with_input
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            original
+        );
+        assert!(
+            window
+                .specialised
+                .active_vfx_module()
+                .unwrap()
+                .inputs
+                .is_empty()
         );
         std::fs::remove_dir_all(root).unwrap();
     }
