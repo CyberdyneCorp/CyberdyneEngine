@@ -98,7 +98,9 @@ cy_add_module(
     PRIVATE_DEPENDENCIES
         cy::import
         cy::rendering-assembly
+        cy::rendering-contact-shadows
         cy::rendering-graph
+        cy::rendering-lighting
         cy::rendering-occlusion
         cy::rendering-particles
         cy::rendering-pipeline

@@ -75,6 +75,18 @@ leaving the stage out. `FrameDescription::ambient_occlusion_target` lets the pro
 target, because the forward pass samples it through a texture-table slot. Without a producer the
 stage is the one pass it always was. `src/rendering/occlusion/` is the producer.
 
+## A second produced stage: contact shadows
+
+`FramePassKind::ContactShadows` is one of stage 4's screen-space passes, after ambient occlusion and
+before the opaque pass that reads it. It is `virtual-shadows`' "Contact and traced refinement" and
+not one of the specification's thirteen, and it is declared the way ambient occlusion is: the frame
+hands `ScreenSpaceStageInputs` to `FrameDescription::contact_shadows_stage` and reads the imported
+`contact_shadows_target` in the opaque pass. Unlike ambient occlusion there is no single-pass
+fallback — `build()` refuses `FrameFeatures::contact_shadows` without a producer and a target,
+because the opaque pass would sample an image nothing wrote. The feature derives the `DepthNormal`
+prepass, whose normal lifts the trace off its surface. `src/rendering/contact_shadows/` is the
+producer.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in

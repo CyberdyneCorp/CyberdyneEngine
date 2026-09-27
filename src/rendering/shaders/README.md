@@ -20,7 +20,7 @@ may not appear above the backends.
 | `cy/brdf.slang` | GGX, Smith height-correlated visibility, Schlick Fresnel, Lambert |
 | `cy/light.slang` | punctual light evaluation in physical units, camera-relative |
 | `cy/cluster.slang` | the cluster grid and its exponential depth slicing |
-| `cy/shadow.slang` | shadow sampling, with the sample count as a specialization constant |
+| `cy/shadow.slang` | shadow sampling, with the sample count as a specialization constant, and percentage-closer soft shadows — blocker search, directional penumbra, variable filter — over any `IShadowDepthSource` |
 | `cy/material.slang` | the material interface: one method, returning a `Surface` |
 | `cy/tonemap.slang` | Reinhard and the ACES filmic approximation, with exposure separated |
 | `cy/color.slang` | the exact sRGB transfer function, and Rec. 709 luminance |

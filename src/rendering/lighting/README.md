@@ -15,6 +15,7 @@ tasks 4.4.1 and 4.4.2; M7 task 10.3.
 | `shadow_atlas.h` | tile sizing with hysteresis, allocation with retention, cross-frame caching, and the reported shortfall |
 | `cascades.h` | split distances, bounding-sphere stabilisation, texel snapping, the transition band and the distant fade |
 | `filtering.h` | the sample counts a specialization constant takes, and the three-term bias |
+| `soft_shadows.h` | percentage-closer soft shadows for a directional light: the shape derived from the light's angular radius and the map's footprint, the frame words, and the C++ twin of `cy/shadow.slang`'s blocker search and filter that `integration.render_soft_shadows` measures a penumbra with |
 | `area.h` | linearly transformed cosines for rect, disc, sphere and tube lights: the fitted table, the closed-form spherical-polygon integral with its horizon clip, and the representative-point fallback |
 | `decals.h` | the projected oriented box, its two fades, reoriented normal blending, and a decal budget the **arbiter** sets whose eviction is deterministic and reported |
 | `light_functions.h` | cookies for the three light types, projected in light space, scrolled without touching a shadow map |

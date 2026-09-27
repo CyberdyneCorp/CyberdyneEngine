@@ -168,6 +168,9 @@ public:
     [[nodiscard]] const BloomRenderer& bloom() const noexcept { return bloom_; }
     [[nodiscard]] const FramePipelines& pipelines() const noexcept { return pipelines_; }
     [[nodiscard]] FrameAssembly& assembly() noexcept { return assembly_; }
+    /// The layer's recorder, for a hook that gives the frame a stage the scene does not — a
+    /// directional shadow map, whose targets the recorder must know before it hands out sinks.
+    [[nodiscard]] FrameRecorder& recorder() noexcept { return recorder_; }
     /// The frame's set 0 texture table, for a hook that owns a texture the frame samples.
     [[nodiscard]] Status set_frame_textures(Span<const MaterialTextureSlot> slots) noexcept {
         return bindings_.set_material_textures(slots);
