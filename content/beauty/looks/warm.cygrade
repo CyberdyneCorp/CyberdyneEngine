@@ -1,0 +1,16 @@
+# content/beauty/looks/warm.cygrade — the beauty shot's warm look, from the parametric controls
+# alone. `cy_sample_beauty --look content/beauty/looks/warm.cygrade` applies it at step 12 of the
+# post chain, after the tone curve; `just capture-beauty-grading` photographs it beside the ungraded
+# frame and the cool look.
+#
+# Late sun on stone: the white balance pulled toward 4 600 K, a little red gain and blue cut in the
+# highlights, the blacks lifted warm by a hair, and a touch more contrast and colour to carry it.
+cygrade 1
+name Warm
+temperature 4600
+tint 0.02
+lift 0.012 0.004 -0.004
+gain 1.03 1.0 0.94
+highlights-gain 1.03 1.0 0.95
+contrast 1.06
+saturation 1.08

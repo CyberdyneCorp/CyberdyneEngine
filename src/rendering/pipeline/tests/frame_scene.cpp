@@ -529,6 +529,13 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         }
     }
 
+    if (hooks_.after_assemble != nullptr) {
+        if (Status hooked = hooks_.after_assemble(graph_, assembly_.resources(), hooks_.user);
+            !hooked) {
+            return hooked;
+        }
+    }
+
     Readback readback;
     readback.output = assembly_.resources().output;
     readback.buffer = readback_;

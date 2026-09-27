@@ -92,4 +92,9 @@ struct GradingSettings {
 /// cost, and the function `tests/test_grading.cpp` compares against `apply_grading()`.
 [[nodiscard]] Vec3 sample_grading_lut(const Vec3* lut, u32 size, Vec3 colour) noexcept;
 
+/// Trilinear lookup into a `size`³ table, x fastest, at a point already in the table's index
+/// encoding — [0, 1] on each axis, clamped. What every table in this module is sampled with,
+/// whichever encoding put the point there.
+[[nodiscard]] Vec3 sample_lut_encoded(const Vec3* lut, u32 size, Vec3 encoded) noexcept;
+
 }  // namespace cy::rendering

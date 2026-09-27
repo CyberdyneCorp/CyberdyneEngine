@@ -174,6 +174,13 @@ add_subdirectory(particles)
 # is read after both.
 add_subdirectory(light_probes)
 
+# EXPOSURE AND COLOUR GRADING ON THE DEVICE. `rendering-post-processing`'s steps 6, 10, 11 and 12:
+# the luminance histogram and its adaptation as compute dispatches, and the graded resolve — exposure,
+# the tone curve and one lookup into a baked grading table — as the frame's post-process callback.
+# It names the forward frame's resources and the post chain's arithmetic; its device suite renders
+# pipeline/'s scene, so it is read after pipeline/.
+add_subdirectory(grading)
+
 # THE ARROW FROM A BONE MATRIX TO A MOVED VERTEX. M8.d. Before this module the engine could describe
 # a skin, bound it, store its blend shapes and publish its pose, and could not move one vertex:
 # there was no skinning shader in the tree and no CPU skinning either. It sits beside gpu_culling/ in

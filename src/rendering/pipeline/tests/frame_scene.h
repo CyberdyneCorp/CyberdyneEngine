@@ -111,6 +111,10 @@ struct FrameSceneHooks {
     Status (*before_upload)(FrameUpload& upload, void* user) noexcept = nullptr;
     /// Move one box before it is placed. The floor slab is box 0 and is not offered.
     void (*place_box)(u32 which, Vec3& centre, f32& half, void* user) noexcept = nullptr;
+    /// After the upload, before the capture passes and `execute`: where a pass that reads what the
+    /// frame produced — `render.grading`'s metering chain — is declared.
+    Status (*after_assemble)(RenderGraph& graph, const FrameResources& resources,
+                             void* user) noexcept = nullptr;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.

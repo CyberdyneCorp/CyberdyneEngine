@@ -10,6 +10,7 @@
 > just measure-beauty-mip-chain                     # does the shot read its cooked mip chain?
 > just capture-beauty-bloom                         # the same shot with and without bloom
 > just capture-soft-shadows                         # the shot with soft and contact shadows off and on
+> just capture-beauty-grading                       # the shot ungraded, warm and cool
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -57,6 +58,7 @@ four.
 | `stage.cpp` | the device: the cook, the uploads, the descriptor sets, the shadow map, the frame, and the two readbacks |
 | `shaders/beauty.slang` | five entry points and the one thing it decides that the material cannot — which attributes the material sees, and what the engine's light loop does with the surface it returns |
 | `main.cpp` | the command line, the sidecar check, and the turntable. `--albedo-levels 1` is a CONTROL: level 0 of every albedo map's cooked chain and nothing beneath it |
+| `make_cool_look.py` | writes `content/beauty/looks/cool.cube` from the formula in its docstring |
 | `measure_mip_chain.py` | `just measure-beauty-mip-chain`'s judge: the full chain rendered twice must agree, and against albedo level 0 alone must DIFFER and be the less aliased |
 
 ## Three things in here that were found by looking at a picture
@@ -147,3 +149,25 @@ composes with it.
 `just capture-soft-shadows` writes `docs/design/images/soft-shadows-beauty-{off,on,detail}.png` and
 `soft-shadows-beauty-on.manifest`, and `tools/docs/compare_soft_shadows.py` fails it unless the off
 picture is `m11c-beauty-shot.png`'s pixels exactly.
+
+## Colour grading, ungraded, warm and cool
+
+`--look <file.cygrade>` grades the frame at step 12 of the post chain — after the tone curve, on
+display-referred colour — through `grading::GradingRenderer`'s resolve in place of the frame's own:
+the same exposure (the shot's stops), the same curve, then one lookup into a 33³ table baked from the
+look. Two looks are committed in `content/beauty/looks/`: **warm** is the parametric controls alone
+(white balance toward 4 600 K, gain, lift, contrast, saturation); **cool** is a slightly cool white
+balance and `cool.cube`, an exported-style creative LUT in sRGB encoding written by
+`make_cool_look.py`, baked together into one table. Without a look the frame is the one M11.c
+published, and `just capture-beauty-grading` fails unless `grading-beauty-none.png` is
+`m11c-beauty-shot.png`'s pixels exactly (`tools/docs/compare_grading.py`).
+
+| Ungraded | Warm | Cool |
+|---|---|---|
+| ![](../../docs/design/images/grading-beauty-none.png) | ![](../../docs/design/images/grading-beauty-warm.png) | ![](../../docs/design/images/grading-beauty-cool.png) |
+
+![Ungraded, warm and cool, side by side](../../docs/design/images/grading-beauty-triptych.png)
+
+`docs/design/images/grading-beauty-{warm,cool}.manifest` are the graded frames' provenance; their
+post-stage lists name `ColourGrading` at step 12, after `Tonemap`.
+

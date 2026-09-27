@@ -1,0 +1,5 @@
+# src/rendering/grading/tests/luts/rotate.cygrade — the channel rotation, read in the linear encoding.
+cygrade 1
+name Rotate channels
+cube rotate.cube
+cube-encoding linear

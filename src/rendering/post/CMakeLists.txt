@@ -29,6 +29,8 @@ cy_add_module(
         src/effects.cpp
         src/exposure.cpp
         src/grading.cpp
+        src/look.cpp
+        src/lut.cpp
         src/quality.cpp
         src/temporal_binding.cpp
         src/tonemap.cpp

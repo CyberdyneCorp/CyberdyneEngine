@@ -34,6 +34,7 @@ function(cy_render_post_declare_tests)
             "${tests_dir}/test_effects.cpp"
             "${tests_dir}/test_exposure.cpp"
             "${tests_dir}/test_grading.cpp"
+            "${tests_dir}/test_lut.cpp"
             "${tests_dir}/test_temporal_binding.cpp"
         DEPENDENCIES cy::rendering-post)
 

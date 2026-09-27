@@ -13,6 +13,7 @@
 //                    --frames <dir> --frames-count <n>   a turntable, for the video
 //                    [--width 1920] [--height 1080] [--supersample 2]
 //                    [--bloom]                      the shot's bloom grade in the post chain
+//                    [--look <file.cygrade>]        a committed look, graded after the tone curve
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -227,6 +228,9 @@ int main(int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         bloom = bloom || std::strcmp(argv[index], "--bloom") == 0;
     }
+    // No look unless one is named: the published still is ungraded, and `just
+    // capture-beauty-grading` photographs it beside the warm and the cool look.
+    const std::string look = option(argc, argv, "--look", "");
 
     std::string problem;
     auto parsed = Shot::read(shot_path.c_str(), problem);
@@ -291,6 +295,9 @@ int main(int argc, char** argv) {
     stage.limit_albedo_levels(albedo_levels);
     if (bloom) {
         stage.enable_bloom(shot);
+    }
+    if (!look.empty()) {
+        stage.enable_grading(look.c_str());
     }
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
