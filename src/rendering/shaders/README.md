@@ -36,6 +36,7 @@ may not appear above the backends.
 | `cy/terrain_shade.slang` | the four substrate samples a terrain vertex takes, and the colour they produce |
 | `cy/cloud_shadow.slang` | the cloud shadow field read as an attenuation of direct sunlight |
 | `cy/aerial_perspective.slang` | the atmosphere's aerial perspective table (`sky::pack_aerial_perspective()`'s words) sampled for a surface: transmittance and in-scattering, interpolated in depth from the eye |
+| `cy/volumetric_fog.slang` | `fog::FogPass`'s froxel volume read for a surface through any texture source: transmittance and in-scattering, interpolated in depth from the eye, exactly the identity over an empty volume |
 
 **The last three are M11.a's, and they are why `m10:fields-sampled-on-a-device` is closed.** That
 criterion measured the number of modules in this directory that sampled an environment field at
@@ -52,6 +53,14 @@ density: what it reads is `sky::AerialPerspectiveTable`, integrated on the proce
 atmosphere and tables as the sky, and `sky::AerialPerspectiveTable::sample_at()` is the same
 sampler on the processor. `samples/10-world`'s lit fragment path imports it, and
 `render.world_aerial_perspective` compares what that path draws with `sample_at()` texel for texel.
+
+**`cy/volumetric_fog.slang` is `add-volumetric-fog`'s.** The same shape as the aerial perspective
+sampler — the fog's froxel geometry is that table's — over a texture rather than a buffer, and
+written against `ICyFogVolumeSource` so each consumer supplies its own texel fetch: `cy/frame.slang`
+through a slot of the global table, `samples/12-beauty` through a binding of its own. Its
+interpolation is `a + (b - a) t` rather than the intrinsic, so an empty volume returns a surface's
+radiance bit for bit; `render.volumetric_fog` requires that frame byte-identical to the frame with
+fog off, and `fog_at` in `src/rendering/fog/` is the same lookup on the processor.
 
 **Every module here is compiled by something.** `smoke.material_slang`'s last case compiles
 `cy.field`, `cy.terrain_shade` and `cy.cloud_shadow` through the engine's own Slang front end against

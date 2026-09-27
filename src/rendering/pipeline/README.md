@@ -136,6 +136,16 @@ The five `frame.slang` entries that read the block were regenerated for the long
 fragment and the fullscreen resolve and temporal entries came out byte-identical.
 `render.light_probes` renders this module's scene with it.
 
+## Volumetric fog — `FrameViewData::volumetric_fog_control`
+
+One word appended after `probe_volume_params` (the block is 528 bytes), defaulted to "none". A caller
+that runs `fog::FogPass` names its volume at a slot of set 0's texture table and writes the slot into
+`.x`; `cy/frame.slang`'s forward fragment then multiplies its colour by the transmittance between
+the surface and the eye and adds the in-scattering, through `cy/volumetric_fog.slang`, which reads
+the volume texel by texel. The entries that read the block were regenerated for the longer one.
+`render.volumetric_fog` pins the frame with the slot unset to a reference rendered by the pre-change
+SPIR-V, and with an empty volume bound to the frame with none.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same

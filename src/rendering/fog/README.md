@@ -118,5 +118,6 @@ Temporal reprojection and a filter pass (above). Indirect light from the radianc
 term is the frame's own ambient radiance, and `rendering-global-illumination`'s radiance cache is not
 read. Punctual and spot lights in the medium: only the directional sun is marched, so the
 requirement's spot-light shaft scenario is met by the sun's. Arbitrary density functions: the height
-fog is the one density function. Fog on transparent surfaces and particles, which the transparent
-pass does not read.
+fog is the one density function. Particles and trails, which are drawn by their own shaders and
+read no volume; the frame's transparent surfaces are drawn by the same forward fragment as its
+opaque ones and are seen through the fog, their in-scattering blended with their alpha.
