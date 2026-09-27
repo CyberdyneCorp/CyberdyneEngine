@@ -22,7 +22,7 @@ Neither can write a barrier, because there is nowhere in either interface for on
 
 The consequence is what makes the pass order testable: a pass with no callback still declares its
 resources, and the graph still derives every barrier around it. So a frame is built, compiled and
-asserted on with no device, no shaders and no draws, which is exactly what `unit.forward_frame` does.
+asserted on with no device, no shaders and no draws, which is exactly what `unit.render_forward` does.
 
 ## Two things that are derived rather than set
 
@@ -129,5 +129,5 @@ decal read the lists of the sky above it and drew nothing, which is how it was f
 ## Why the sort exists twice
 
 `render::sort_draws` (layer 2) is a comparison sort over the total order `(key, stable_id, surface)`
-and is obviously correct. `radix_sort_draws` here is linear. `unit.forward_frame` sorts one list both
+and is obviously correct. `radix_sort_draws` here is linear. `unit.render_forward` sorts one list both
 ways and asserts the results are byte-identical, which is a stronger statement than either alone.

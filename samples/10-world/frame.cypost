@@ -27,3 +27,20 @@
 exposure-stops = 0.35
 contrast = 1.0
 saturation = 1.0
+
+# THE VALLEY HAZE, read only with `--fog`. Not a grade but the air, kept beside the grade because it
+# is the other thing about this shot that is content rather than code. Every number is a quantity a
+# weather report or a droplet table states, and none of them is a colour or a distance to fade over:
+#
+#   fog-visibility    the meteorological visibility at sea level, metres. Koschmieder's law turns it
+#                     into the extinction, sigma_t = 3.912 / V. 1.5 km is what WMO calls mist — a
+#                     morning after a clear, still night — rather than fog, which is under 1 km.
+#   fog-scale-height  metres over which the density falls by e above sea level. A radiation mist is
+#                     a layer tens of metres deep that the night's cooling mixed; 60 m puts it in the
+#                     valleys and leaves the ridges standing out of it.
+#   fog-albedo        single-scattering albedo of the droplets: they absorb almost nothing.
+#   fog-anisotropy    the Henyey-Greenstein g of droplets a few microns across: strongly forward.
+fog-visibility = 1500
+fog-scale-height = 60
+fog-albedo = 0.95
+fog-anisotropy = 0.7

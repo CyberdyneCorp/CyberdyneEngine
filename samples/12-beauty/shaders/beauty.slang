@@ -54,6 +54,7 @@ import cy.brdf;
 import cy.decal;
 import cy.packing;
 import cy.shadow;
+import cy.volumetric_fog;
 
 // THIS FILE IS A PIXEL STAGE, SO IT SAYS SO BEFORE THE MATERIAL IS INCLUDED. The generated prelude's
 // `cy_material_sample` takes the IMPLICIT level of detail only under `CY_MATERIAL_PIXEL_STAGE`, and
@@ -114,6 +115,11 @@ struct BeautyFrame
     /// this file reads none — the lists are always the table's, because this program binds no
     /// cluster buffers. APPENDED, like `softShadow`.
     uint4 decalControl;
+    /// VOLUMETRIC FOG, read by every scene and sky entry point: x is 1 when `fog::FogPass`'s volume
+    /// is bound at (set 1, binding 4) and every fragment is seen through it, and 0 — the published
+    /// frame — when it is not, which leaves every fragment exactly as it was. APPENDED, for the
+    /// reason `softShadow` gives. yzw: unused.
+    uint4 fogControl;
 };
 
 [[vk::binding(0, 2)]]
@@ -315,6 +321,31 @@ void applyDecals(inout Surface surface, inout float3 shadingNormal, float3 geome
     shadingNormal = decalled.normal;
 }
 
+/// THE FOG VOLUME, `fog::FogPass`'s target: `cy.volumetric_fog`'s layout, read texel by texel —
+/// the lookup interpolates the columns and the slices itself.
+[[vk::binding(4, 1)]] Texture2D<float4> fogVolume;
+
+struct BeautyFogVolume : ICyFogVolumeSource
+{
+    float4 texel(int2 coordinate)
+    {
+        return fogVolume.Load(int3(coordinate, 0));
+    }
+};
+
+/// A fragment's radiance as the eye receives it through the fog: attenuated by what the medium
+/// between transmits and added to by what it scatters toward the eye. `relativePosition` is in
+/// the space the geometry is baked into, which is the space the volume's columns start from.
+float4 throughFog(float4 shaded, float3 relativePosition)
+{
+    if (frame.fogControl.x == 0u)
+    {
+        return shaded;
+    }
+    BeautyFogVolume volume;
+    return float4(cyApplyFog(volume, shaded.rgb, relativePosition), shaded.a);
+}
+
 /// The surface's shading, with the ambient term's visibility supplied by the caller: 1 for
 /// `sceneFragment`, the ambient occlusion term for `sceneFragmentOccluded`. The sun's visibility is
 /// the hard 3x3 filter's unless the caller supplies its own — `sceneFragmentSoft` does.
@@ -409,7 +440,7 @@ float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunO
 [shader("fragment")]
 float4 sceneFragment(SceneVarying input) : SV_Target
 {
-    return shadeScene(input, 1.0);
+    return throughFog(shadeScene(input, 1.0), input.relativePosition);
 }
 
 /// The same surface with the ambient occlusion term applied to its sky light. The target is the
@@ -418,7 +449,7 @@ float4 sceneFragment(SceneVarying input) : SV_Target
 float4 sceneFragmentOccluded(SceneVarying input) : SV_Target
 {
     let visibility = ambientOcclusion.Load(int3(int2(input.position.xy), 0)).a;
-    return shadeScene(input, visibility);
+    return throughFog(shadeScene(input, visibility), input.relativePosition);
 }
 
 /// SOFT AND CONTACT SHADOWS: the sun through `cy.shadow`'s percentage-closer soft filter, darkened
@@ -441,7 +472,7 @@ float4 sceneFragmentSoft(SceneVarying input) : SV_Target
     {
         ambient = ambientOcclusion.Load(int3(pixel, 0)).a;
     }
-    return shadeSceneWithSun(input, ambient, sun);
+    return throughFog(shadeSceneWithSun(input, ambient, sun), input.relativePosition);
 }
 
 /// THE DEPTH AND NORMAL PREPASS the ambient occlusion stage reads, drawn with `sceneVertex` so its
@@ -465,6 +496,9 @@ struct SkyVarying
 {
     float4 position : SV_Position;
     float3 radiance : TEXCOORD0;
+    /// The dome's point, camera-relative, for the fog in front of it: the lookup clamps it to the
+    /// volume's far plane, so the sky is seen through the fog the volume holds and none beyond.
+    float3 relativePosition : TEXCOORD1;
 };
 
 [shader("vertex")]
@@ -474,11 +508,12 @@ SkyVarying skyVertex(float3 position : POSITION, float3 radiance : COLOR0)
     output.position = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
                                 frame.viewProjection3, float4(position, 1.0));
     output.radiance = radiance;
+    output.relativePosition = position;
     return output;
 }
 
 [shader("fragment")]
 float4 skyFragment(SkyVarying input) : SV_Target
 {
-    return float4(input.radiance, 1.0);
+    return throughFog(float4(input.radiance, 1.0), input.relativePosition);
 }

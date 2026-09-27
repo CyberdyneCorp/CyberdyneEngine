@@ -150,6 +150,12 @@ add_subdirectory(occlusion)
 # occlusion/ does, so it is read after forward/.
 add_subdirectory(contact_shadows)
 
+# VOLUMETRIC FOG AND LIGHT SHAFTS. `rendering-post-processing`'s "Volumetric fog": a froxel volume
+# filled with a height fog and authored volumes, lit by the sun through the shadow map, integrated
+# front to back into a texture the forward pass applies to every surface. It names the forward
+# frame's stage-declaration seam and the post chain's froxel arithmetic, so it is read after both.
+add_subdirectory(fog)
+
 # THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
 # this directory were linked by nothing but their own test binaries and nothing in the tree built a
 # frame out of them. This one does — it is the only module here that consumes another module's

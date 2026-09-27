@@ -17,7 +17,7 @@
 // `radix_sort_draws` below is the same order, produced by a stable least-significant-digit radix
 // sort. It exists because the requirement names a radix sort and because a comparison sort over a
 // hundred thousand draws costs a frame's budget in cache misses. It is the fast path and the
-// reference is the check: `unit.forward_frame` sorts one list both ways and asserts the results are
+// reference is the check: `unit.render_forward` sorts one list both ways and asserts the results are
 // byte-identical, which is a stronger statement than either implementation alone.
 //
 // THE RADIX PASSES ARE OVER THE WHOLE TRIPLE, not over the key. A radix sort over the key alone is
@@ -165,7 +165,7 @@ struct DrawSortScratch {
                                       Array<u32>& scratch) noexcept;
 
 /// Sort a span of items in place, through that permutation. Identical output to
-/// `render::sort_draws`, which is what `unit.forward_frame` asserts by sorting one list both ways.
+/// `render::sort_draws`, which is what `unit.render_forward` asserts by sorting one list both ways.
 [[nodiscard]] Status radix_sort_draws(Span<render::DrawItem> draws,
                                       DrawSortScratch& scratch) noexcept;
 

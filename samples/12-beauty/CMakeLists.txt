@@ -101,6 +101,7 @@ cy_add_module(
         cy::rendering-contact-shadows
         cy::rendering-depth-of-field
         cy::rendering-decals
+        cy::rendering-fog
         cy::rendering-grading
         cy::rendering-graph
         cy::rendering-lighting

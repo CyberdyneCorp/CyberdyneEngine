@@ -106,6 +106,7 @@ import cy.light;
 import cy.material;
 import cy.packing;
 import cy.shadow;
+import cy.volumetric_fog;
 
 // --- The per-view block -------------------------------------------------------------------------
 
@@ -205,6 +206,10 @@ public struct CyFrameData
     /// decals and is the frame as it was. y: the texture's rows. z: `kCyDecalListsInTable` and
     /// `kCyDecalWalkAll`. w: reserved.
     public uint4 decalControl;
+    /// Volumetric fog, appended for the reason `materialTextures` gives. x: the frame texture slot
+    /// of `fog::FogPass`'s volume, or `kCyNoMaterialTexture` — the default, which draws every
+    /// surface as it was lit. yzw: reserved.
+    public uint4 volumetricFogControl;
 };
 
 /// `softShadowControl.x`'s bits. `cy::rendering::pipeline::kSoftShadowPcss` and
@@ -870,6 +875,25 @@ void applyFrameDecals(inout Surface surface, inout float3 normal, float3 relativ
     normal = decalled.normal;
 }
 
+// --- Volumetric fog -----------------------------------------------------------------------------
+//
+// `fog::FogPass`'s volume, read texel by texel out of the frame's texture table: the lookup
+// `cy.volumetric_fog` makes interpolates the columns and the slices itself, so the table's sampler
+// never filters a texel of it.
+
+struct CyFrameFogVolume : ICyFogVolumeSource
+{
+    uint slot;
+    float4 texel(int2 coordinate)
+    {
+#if defined(CY_FRAME_METAL)
+        return cyFrameGlobals.textures[slot].Load(int3(coordinate, 0));
+#else
+        return cyMaterialTextures[slot].Load(int3(coordinate, 0));
+#endif
+    }
+};
+
 [shader("fragment")]
 public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
@@ -915,5 +939,14 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     }
     color += surface.emission;
     color += ambient;
+    // THE FOG BETWEEN THE EYE AND THE SURFACE, last: what the medium transmits of the surface's
+    // radiance and what it scatters toward the eye on the way. With no volume slot the colour is
+    // the frame's as it was.
+    if (cyFrame.volumetricFogControl.x != kCyNoMaterialTexture)
+    {
+        CyFrameFogVolume fog;
+        fog.slot = cyFrame.volumetricFogControl.x;
+        color = cyApplyFog(fog, color, input.relativePosition);
+    }
     return float4(color, surface.opacity);
 }

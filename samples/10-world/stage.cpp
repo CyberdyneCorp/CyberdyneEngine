@@ -10,6 +10,7 @@
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/decals/decal_table.h>
+#include <cy/rendering/fog/fog_pass.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/pipeline/frame_bindings.h>
@@ -113,6 +114,21 @@ constexpr f32 kFieldOfView = 0.95F;
     volume.far_plane = kSkyRadius;
     volume.depth_exponent = 2.0F;
     return volume;
+}
+
+/// The volumetric fog volume: the aerial perspective volume's reach and distribution at three times
+/// its resolution across the frame and twice along it, because what it stores is not smooth — a
+/// valley's haze ends at the valley's walls — and four sub-steps a slice.
+[[nodiscard]] cy::rendering::fog::FogSettings fog_settings() noexcept {
+    cy::rendering::fog::FogSettings settings;
+    settings.volume.width = 96;
+    settings.volume.height = 54;
+    settings.volume.depth = 64;
+    settings.volume.near_plane = kNearPlane;
+    settings.volume.far_plane = kSkyRadius;
+    settings.volume.depth_exponent = 2.0F;
+    settings.steps_per_slice = 4;
+    return settings;
 }
 
 [[nodiscard]] u64 aerial_words(const cy::rendering::FroxelVolume& volume) noexcept {
@@ -648,6 +664,9 @@ struct Stage::Device {
     /// The marker, and the words it packed into, kept so a frame does not allocate for them.
     cy::rendering::DecalInstance marker;
     Array<u32> decal_words;
+    /// THE FOG, with `--fog`: the march writes `aerial_table`'s layout with the atmosphere's table
+    /// composited in, and binding 2 names its buffer instead. See `Stage::set_fog`.
+    cy::rendering::fog::FogPass fog;
 
     // --- THE ATMOSPHERE, INTEGRATED FOR THIS CAMERA. `atmosphere-sky-and-clouds`, "Aerial
     // perspective". Both are built from the world's own `Atmosphere` and `AtmosphereTables` — the
@@ -1175,6 +1194,28 @@ Status Stage::upload_cloud_shadow(const World& world) noexcept {
     return upload_bytes(device, device_->cloud_shadow_placement, &placement, sizeof(placement));
 }
 
+/// The camera basis both froxel volumes are built in — the atmosphere's table and the fog's — so
+/// the fog's march can read the air out of the table along its own rays. The frustum is symmetric,
+/// so which way `right` points does not matter as long as both are built and sampled with the same
+/// one.
+[[nodiscard]] cy::rendering::sky::AerialPerspectiveTable::View
+volume_view(const WorldVec3d& eye, const WorldVec3d& target, u32 width, u32 height) noexcept {
+    const Vec3 forward =
+        normalised(Vec3{static_cast<f32>(target.x - eye.x), static_cast<f32>(target.y - eye.y),
+                        static_cast<f32>(target.z - eye.z)});
+    cy::rendering::sky::AerialPerspectiveTable::View view;
+    view.forward = forward;
+    // Any axis the camera is not looking along will do for the reference; this orbit never looks
+    // straight down, but a basis that collapsed if it did would put the whole table on one ray.
+    const Vec3 reference =
+        std::fabs(forward.y) < 0.99F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{1.0F, 0.0F, 0.0F};
+    view.right = normalised(cross(forward, reference));
+    view.up = cross(view.right, forward);
+    view.tan_half_fov_y = std::tan(kFieldOfView * 0.5F);
+    view.tan_half_fov_x = view.tan_half_fov_y * (static_cast<f32>(width) / static_cast<f32>(height));
+    return view;
+}
+
 Status Stage::update_aerial_perspective(const World& world, const WorldVec3d& eye,
                                         const WorldVec3d& target, StageReport& out) noexcept {
     namespace sky = cy::rendering::sky;
@@ -1203,20 +1244,7 @@ Status Stage::update_aerial_perspective(const World& world, const WorldVec3d& ey
     const f32 altitude = static_cast<f32>(eye.y) > 1.0F ? static_cast<f32>(eye.y) : 1.0F;
     const Vec3 view_position = sky::ground_position(atmosphere, altitude);
     const Vec3 sun = world.sun_direction();
-    const Vec3 forward =
-        normalised(Vec3{static_cast<f32>(target.x - eye.x), static_cast<f32>(target.y - eye.y),
-                        static_cast<f32>(target.z - eye.z)});
-    sky::AerialPerspectiveTable::View view;
-    view.forward = forward;
-    // Any axis the camera is not looking along will do for the reference; this orbit never looks
-    // straight down, but a basis that collapsed if it did would put the whole table on one ray.
-    const Vec3 reference =
-        std::fabs(forward.y) < 0.99F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{1.0F, 0.0F, 0.0F};
-    view.right = normalised(cross(forward, reference));
-    view.up = cross(view.right, forward);
-    view.tan_half_fov_y = std::tan(kFieldOfView * 0.5F);
-    view.tan_half_fov_x =
-        view.tan_half_fov_y * (static_cast<f32>(width_) / static_cast<f32>(height_));
+    const sky::AerialPerspectiveTable::View view = volume_view(eye, target, width_, height_);
 
     // THE CLEAR SKY THE DOME IS DRAWN WITH, from the same tables the volume reads: rebuilt in full,
     // because this take moves the sun five degrees a frame and a row budget would draw a sky
@@ -1530,7 +1558,39 @@ Status Stage::stage_world(const World& world) noexcept {
         }
         std::memset(mapped, 0, static_cast<usize>(dynamic_bytes[index]));
     }
-    return create_visual_pipelines();
+    if (Status made = create_visual_pipelines(); !made) {
+        return made;
+    }
+    return fog_ ? create_fog(world) : ok();
+}
+
+Status Stage::create_fog(const World& world) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    cy::rendering::fog::FogPassDescription description;
+    description.settings = fog_settings();
+    description.target = cy::rendering::fog::FogTarget::AerialTable;
+    if (Status made = device_->fog.create(*allocator_, device, description); !made) {
+        return made;
+    }
+    // THE MEDIUM IS THE GRADE FILE'S, AND ITS FLOOR IS THE WORLD'S: a haze of the committed
+    // meteorological visibility at sea level, thinning by e every committed scale height above
+    // it, so it lies in the valleys and the hills stand out of it.
+    cy::rendering::fog::FogMedium medium;
+    medium.height.extinction =
+        cy::rendering::fog::extinction_for_visibility(fog_visibility_metres_);
+    medium.height.base_height = static_cast<f32>(world.options().sea_level);
+    medium.height.scale_height = fog_scale_height_;
+    medium.height.albedo = Vec3{fog_albedo_, fog_albedo_, fog_albedo_};
+    medium.height.anisotropy = fog_anisotropy_;
+    device_->fog.set_medium(medium);
+    // Binding 2 names the fog's table from now on: it IS the aerial perspective table, with the
+    // fog in it.
+    rhi::DescriptorWrite write;
+    write.binding = 2;
+    write.kind = rhi::DescriptorKind::StorageBuffer;
+    write.buffer = device_->fog.target_buffer();
+    return device.update_descriptor_set(device_->world_set,
+                                        Span<const rhi::DescriptorWrite>(&write, 1));
 }
 
 // ================================================================================================
@@ -1918,7 +1978,8 @@ struct Stage::WaterFrame {
     DrawState refraction;
     DrawState reflection;
     WaterTargets targets;
-    cy::rendering::FrameResourceRead reads[3];
+    /// The opaque pass's reads: the three water pictures, and the fog table when there is one.
+    cy::rendering::FrameResourceRead reads[4];
 };
 
 Status Stage::declare_water(const World& world, cy::rendering::RenderGraph& graph,
@@ -1980,6 +2041,10 @@ Status Stage::declare_water(const World& world, cy::rendering::RenderGraph& grap
         auto builder = graph.add_pass(pass.name, QueueKind::Graphics);
         for (const ResourceId input : vertex_inputs) {
             builder.read(input, Access::VertexAttributeRead);
+        }
+        // Both pictures are drawn with the lit path, which reads the fog table at binding 2.
+        if (fog_table_ != kInvalidResource) {
+            builder.read(fog_table_, Access::FragmentStorageRead);
         }
         builder.write(pass.state->color, Access::ColorAttachmentWrite)
             .write(pass.state->depth, Access::DepthStencilAttachmentWrite)
@@ -2255,6 +2320,43 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
 
     const ResourceId visual_inputs[4] = {terrain_vertices, terrain_colours, dynamic_vertices,
                                          dynamic_colours};
+    // THE FOG, declared before the water's pictures and the frame, because both draw with the lit
+    // path and the lit path reads its table. `rendering-post-processing`'s "Volumetric fog",
+    // composited with the atmosphere's own table: the march reads the air out of `aerial_table`
+    // along its rays and writes both media into one table of the same layout, which binding 2
+    // names. This world has no directional shadow map, so the medium is lit unshadowed.
+    fog_table_ = kInvalidResource;
+    if (fog_) {
+        cy::rendering::fog::FogFrame fog;
+        const cy::rendering::sky::AerialPerspectiveTable::View basis =
+            volume_view(eye, target, width_, height_);
+        fog.view.eye = relative_eye;
+        fog.view.forward = basis.forward;
+        fog.view.right = basis.right;
+        fog.view.up = basis.up;
+        fog.view.tan_half_fov_x = basis.tan_half_fov_x;
+        fog.view.tan_half_fov_y = basis.tan_half_fov_y;
+        // The lit path's own light, in its own units: the sun after the atmosphere and the clouds
+        // over the viewer, and the sky's ambient.
+        fog.light.to_sun = normalised(lighting.sun_travel) * -1.0F;
+        fog.light.sun_illuminance = lighting.sun_colour;
+        fog.light.ambient_radiance = lighting.ambient;
+        fog.air = import_buffer("world aerial perspective", device_->aerial_table,
+                                rhi::BufferUsage::Storage);
+        if (Status set = device_->fog.set_frame(fog); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        cy::rendering::ScreenSpaceStageInputs inputs;
+        inputs.target = device_->fog.import_target(graph);
+        inputs.width = width_;
+        inputs.height = height_;
+        if (device_->fog.declare(graph, inputs) == cy::rendering::kInvalidPass) {
+            (void)device.end_frame();
+            return fail(ErrorCode::InvalidArgument, "the fog march refused its inputs");
+        }
+        fog_table_ = inputs.target;
+    }
     // THE WATER'S TWO PICTURES, declared before the frame so the graph schedules them first. Both
     // are drawn from copies of the runs above; the frame's own run 2 is then drawn with the water
     // pipeline, which samples them. Off, none of this exists and the frame is the one before.
@@ -2289,9 +2391,13 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     FrameSinks sinks;
     sinks.passes[static_cast<usize>(FramePassKind::Opaque)] = cy::rendering::FramePassCallback{
         &record_draw, &state, Span<const ResourceId>(visual_inputs, 4)};
-    if (water_shading_) {
+    usize opaque_reads = water_shading_ ? 3U : 0U;
+    if (fog_table_ != kInvalidResource) {
+        water_frame.reads[opaque_reads++] = {fog_table_, Access::FragmentStorageRead};
+    }
+    if (opaque_reads != 0U) {
         sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =
-            Span<const cy::rendering::FrameResourceRead>(water_frame.reads, 3);
+            Span<const cy::rendering::FrameResourceRead>(water_frame.reads, opaque_reads);
     }
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
@@ -2606,6 +2712,14 @@ Status Stage::read_grade(const char* path) noexcept {
             grade_contrast_ = static_cast<f32>(value);
         } else if (std::strcmp(key, "saturation") == 0) {
             grade_saturation_ = static_cast<f32>(value);
+        } else if (std::strcmp(key, "fog-visibility") == 0) {
+            fog_visibility_metres_ = static_cast<f32>(value);
+        } else if (std::strcmp(key, "fog-scale-height") == 0) {
+            fog_scale_height_ = static_cast<f32>(value);
+        } else if (std::strcmp(key, "fog-albedo") == 0) {
+            fog_albedo_ = static_cast<f32>(value);
+        } else if (std::strcmp(key, "fog-anisotropy") == 0) {
+            fog_anisotropy_ = static_cast<f32>(value);
         }
     }
     (void)std::fclose(file);

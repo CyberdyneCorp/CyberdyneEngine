@@ -240,6 +240,9 @@ struct AssemblyView {
     /// (`contact_shadows::ContactShadowPass::import_target`). Read only with
     /// `AssemblyDescription::contact_shadows`.
     ResourceId contact_shadows = kInvalidResource;
+    /// The volumetric fog volume's storage, imported by its producer
+    /// (`fog::FogPass::import_target`). Read only when the post chain enables volumetric fog.
+    ResourceId volumetric_fog = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport
     /// both invalidate history and neither is a camera that moved fast.
     bool cut = false;
@@ -284,6 +287,9 @@ struct FrameSinks {
     /// Required when `post.depth_of_field` puts the stage in the chain; the frame refuses to build
     /// without it.
     FrameStageDeclaration depth_of_field;
+    /// The producer that declares the volumetric fog stage. Required when the post chain enables
+    /// volumetric fog; the frame refuses to build without it.
+    FrameStageDeclaration volumetric_fog;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than

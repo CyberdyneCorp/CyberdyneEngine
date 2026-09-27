@@ -138,6 +138,22 @@ void read_depth_of_field(Shot& shot, std::string_view field, std::string_view& r
     }
 }
 
+void read_fog(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "visibility") {
+        shot.fog_visibility_metres = to_float(take(rest));
+    } else if (field == "base-height") {
+        shot.fog_base_height = to_float(take(rest));
+    } else if (field == "scale-height") {
+        shot.fog_scale_height = to_float(take(rest));
+    } else if (field == "albedo") {
+        shot.fog_albedo = to_float(take(rest));
+    } else if (field == "anisotropy") {
+        shot.fog_anisotropy = to_float(take(rest));
+    } else if (field == "far") {
+        shot.fog_far_metres = to_float(take(rest));
+    }
+}
+
 void read_material(Shot& shot, std::string_view& rest) {
     const std::string_view key = take(rest);
     const std::string_view field = take(rest);
@@ -348,6 +364,8 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
         } else if (keyword == "depth-of-field") {
             const std::string_view field = take(line);
             read_depth_of_field(shot, field, line);
+        } else if (keyword == "fog") {
+            read_fog(shot, take(line), line);
         } else if (keyword == "material") {
             read_material(shot, line);
         } else if (keyword == "mesh") {

@@ -37,7 +37,8 @@ set(CY_SHADER_STDLIB_MODULES
     cy/shadow.slang
     cy/terrain_shade.slang
     cy/tonemap.slang
-    cy/view.slang)
+    cy/view.slang
+    cy/volumetric_fog.slang)
 
 set(cy_shader_stage_dir "${CMAKE_BINARY_DIR}/shaders")
 set(cy_shader_staged "")

@@ -304,6 +304,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features = FrameFeatures{};
     features.depth_prepass = description_.depth_prepass;
     features.ambient_occlusion = config.ambient_occlusion;
+    features.volumetric_fog = config.volumetric_fog;
     features.contact_shadows = description_.contact_shadows;
     features.selection_outlines = description_.selection_outlines;
     features.screen_space_reflections = config.screen_space_reflections;
@@ -739,6 +740,8 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.contact_shadows_stage = sinks.contact_shadows;
     description.selection_outlines_stage = sinks.selection_outlines;
     description.depth_of_field_stage = sinks.depth_of_field;
+    description.volumetric_fog_target = view.volumetric_fog;
+    description.volumetric_fog_stage = sinks.volumetric_fog;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =

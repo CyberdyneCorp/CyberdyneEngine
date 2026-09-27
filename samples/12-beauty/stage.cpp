@@ -17,6 +17,7 @@
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/contact_shadows/contact_pass.h>
 #include <cy/rendering/depth_of_field/dof_pass.h>
+#include <cy/rendering/fog/fog_pass.h>
 #include <cy/rendering/grading/grading_renderer.h>
 #include <cy/rendering/grading/look_file.h>
 #include <cy/rendering/graph/executor.h>
@@ -148,9 +149,12 @@ struct FrameConstants {
     /// `BeautyFrame::decalControl`: the decal table's slot in the material table — or none, the
     /// default and the frame M11.c published — its rows, and `kDecalListsInTable`.
     u32 decal_control[4] = {0xFFFFFFFFU, 0, 0, 0};
+    /// `BeautyFrame::fogControl`. x: 1 when the fog volume is bound and every fragment is seen
+    /// through it.
+    u32 fog_control[4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 240, "BeautyFrame is fifteen 16-byte rows");
+static_assert(sizeof(FrameConstants) == 256, "BeautyFrame is sixteen 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -235,6 +239,8 @@ struct Stage::Device {
     std::vector<rendering::decals::DecalMaterial> decal_materials;
     std::vector<u32> decal_order;
     rendering::FrameResourceRead decal_read;
+    /// The fog volume, created only when the run asked for fog. See `Stage::set_fog`.
+    rendering::fog::FogPass fog;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -320,6 +326,19 @@ void Stage::enable_bloom(const Shot& shot) noexcept {
     bloom_.scatter = shot.bloom_scatter;
     bloom_.mip_count = shot.bloom_levels;
     bloom_enabled_ = true;
+}
+
+void Stage::set_fog(bool enabled, const Shot& shot) noexcept {
+    fog_enabled_ = enabled && shot.fog_visibility_metres > 0.0F;
+    fog_medium_ = rendering::fog::FogMedium{};
+    fog_medium_.height.extinction =
+        fog_enabled_ ? rendering::fog::extinction_for_visibility(shot.fog_visibility_metres)
+                     : 0.0F;
+    fog_medium_.height.base_height = shot.fog_base_height;
+    fog_medium_.height.scale_height = shot.fog_scale_height;
+    fog_medium_.height.albedo = Vec3{shot.fog_albedo, shot.fog_albedo, shot.fog_albedo};
+    fog_medium_.height.anisotropy = shot.fog_anisotropy;
+    fog_far_metres_ = shot.fog_far_metres;
 }
 
 Status Stage::open(u32 width, u32 height, u32 supersample) noexcept {
@@ -1061,16 +1080,19 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
 
     // Binding 2 is the ambient occlusion term and binding 3 the contact term. Declared whatever the
     // run asked for, and written only when an entry point that reads them is drawn with: a binding
-    // no bound pipeline uses needs no descriptor.
-    const rhi::DescriptorBinding shadow_bindings[4] = {
+    // no bound pipeline uses needs no descriptor. Binding 4 is the fog volume, which EVERY scene
+    // and sky entry point names, so it always holds a view — a material's when the fog is off, and
+    // `fogControl.x` then says not to read it.
+    const rhi::DescriptorBinding shadow_bindings[5] = {
         {0, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {1, rhi::DescriptorKind::Sampler, 1, rhi::ShaderStage::Fragment, false},
         {2, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {3, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
+        {4, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
     };
     rhi::DescriptorSetLayoutDescription shadow;
     shadow.name = "beauty shadow";
-    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 4);
+    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 5);
     auto shadow_layout = device.create_descriptor_set_layout(shadow);
     if (!shadow_layout) {
         return make_unexpected(shadow_layout.error());
@@ -1202,7 +1224,7 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         return make_unexpected(shadow_set.error());
     }
     device_->shadow_set = *shadow_set;
-    rhi::DescriptorWrite shadow_writes[2];
+    rhi::DescriptorWrite shadow_writes[3];
     shadow_writes[0].binding = 0;
     shadow_writes[0].kind = rhi::DescriptorKind::SampledTexture;
     shadow_writes[0].texture_view = device_->shadow_view;
@@ -1214,8 +1236,12 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     shadow_writes[1].binding = 1;
     shadow_writes[1].kind = rhi::DescriptorKind::Sampler;
     shadow_writes[1].sampler = device_->shadow_sampler;
+    shadow_writes[2].binding = 4;
+    shadow_writes[2].kind = rhi::DescriptorKind::SampledTexture;
+    shadow_writes[2].texture_view = device_->views[0];
+    shadow_writes[2].use = rhi::ImageUse::SampledRead;
     if (Status written = device.update_descriptor_set(
-            device_->shadow_set, Span<const rhi::DescriptorWrite>(shadow_writes, 2));
+            device_->shadow_set, Span<const rhi::DescriptorWrite>(shadow_writes, 3));
         !written) {
         return written;
     }
@@ -2111,6 +2137,9 @@ Status Stage::create_frame() noexcept {
     // DEPTH OF FIELD, ONLY WHEN A FOCUS TARGET WAS NAMED: step 7, before bloom. It reads the depth
     // the opaque pass writes — the frame's own, with or without the prepass.
     description.post.depth_of_field = dof_enabled_;
+    // FOG, ONLY WHEN ASKED FOR: step 3, declared at the frame's own `VolumetricFog` stage. Off,
+    // neither the pass nor its volume exists.
+    description.post.volumetric_fog = fog_enabled_;
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -2195,6 +2224,11 @@ Status Stage::create_frame() noexcept {
             return made;
         }
     }
+    if (fog_enabled_) {
+        if (Status made = create_fog(); !made) {
+            return made;
+        }
+    }
     device_->frame_ready = true;
     return ok();
 }
@@ -2272,6 +2306,34 @@ Status Stage::create_contact() noexcept {
     writes[1].texture_view = device_->views[0];
     return device.update_descriptor_set(
         device_->shadow_set, Span<const rhi::DescriptorWrite>(writes, ambient_occlusion_ ? 1 : 2));
+}
+
+/// THE FROXEL VOLUME: 160 by 90 columns — twelve pixels a column at the published 1920 — and 96
+/// slices out to the shot's `fog far`, four sub-steps a slice, so a shaft between two columns 1.9
+/// m apart is several froxels wide wherever the camera sees one.
+Status Stage::create_fog() noexcept {
+    rhi::Device& device = *device_->handle.value();
+    rendering::fog::FogPassDescription description;
+    description.settings.volume.width = 160;
+    description.settings.volume.height = 90;
+    description.settings.volume.depth = 96;
+    description.settings.volume.near_plane = 0.0F;
+    description.settings.volume.far_plane = fog_far_metres_;
+    description.settings.volume.depth_exponent = 2.0F;
+    description.settings.steps_per_slice = 4;
+    if (Status made = device_->fog.create(*allocator_, device, description); !made) {
+        return made;
+    }
+    device_->fog.set_medium(fog_medium_);
+    // The volume is the pass's own and outlives every frame, so the set that names it is written
+    // once — before any command buffer has bound it.
+    rhi::DescriptorWrite write;
+    write.binding = 4;
+    write.kind = rhi::DescriptorKind::SampledTexture;
+    write.texture_view = device_->fog.target_view();
+    write.use = rhi::ImageUse::SampledRead;
+    return device.update_descriptor_set(device_->shadow_set,
+                                        Span<const rhi::DescriptorWrite>(&write, 1));
 }
 
 /// The graded resolve and the look's table. The table is baked on the host from the `.cygrade` and
@@ -2410,6 +2472,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         constants.decal_control[1] = device_->decal_table.rows();
         constants.decal_control[2] = rendering::decals::kDecalListsInTable;
     }
+    constants.fog_control[0] = fog_enabled_ ? 1U : 0U;
     void* mapped = device.buffer_mapped_pointer(device_->frame_constants);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "the frame constants are not mapped");
@@ -2532,6 +2595,39 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         }
         view.contact_shadows = device_->contact.import_target(graph);
         sinks.contact_shadows = device_->contact.stage();
+    }
+    if (fog_enabled_) {
+        // THE SAME SUN, THE SAME MAP, THE SAME SKY TERM the surfaces are shaded with: the fog is
+        // lit consistently with what it hangs in front of. The map was drawn by `prepare_shadow`
+        // and is imported in the state it left it in.
+        cy::rendering::TextureRequest shadow_request;
+        shadow_request.name = "beauty sun shadow";
+        shadow_request.format = kDepthFormat;
+        shadow_request.width = kShadowExtent;
+        shadow_request.height = kShadowExtent;
+        rendering::fog::FogFrame fog;
+        fog.shadow_resource =
+            graph.import_texture(shadow_request, device_->shadow, device_->shadow_layout);
+        fog.view = rendering::fog::fog_view_from(camera, fov_y, aspect, eye, shot.camera_position);
+        fog.light.to_sun = sun_direction_;
+        fog.light.sun_illuminance = sun_illuminance_;
+        fog.light.ambient_radiance = sky_irradiance_;
+        Mat4 sun_to_clip = Mat4::identity();
+        for (u32 row = 0; row < 4; ++row) {
+            for (u32 column = 0; column < 4; ++column) {
+                sun_to_clip.at(row, column) = constants.sun_to_clip[row][column];
+            }
+        }
+        fog.shadow.enabled = true;
+        fog.shadow.relative_to_uv = rendering::fog::shadow_uv_rows(sun_to_clip, false);
+        fog.shadow.bias = shot.shadow_bias;
+        fog.shadow.extent = kShadowExtent;
+        if (Status set = device_->fog.set_frame(fog); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        view.volumetric_fog = device_->fog.import_target(graph);
+        sinks.volumetric_fog = device_->fog.stage();
     }
     if (has_prepass()) {
         sinks.passes[static_cast<usize>(FramePassKind::DepthPrepass)] =
