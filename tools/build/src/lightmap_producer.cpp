@@ -56,6 +56,7 @@ namespace cy::build {
 namespace {
 
 namespace bake = rendering::lightmap_bake;
+namespace gi = rendering::gi;
 
 [[nodiscard]] f32 number(const text::Line& line, usize index) {
     return std::strtof(std::string(line.word(index)).c_str(), nullptr);

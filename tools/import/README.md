@@ -152,6 +152,29 @@ accept schema 1 and 2. It exists because the
 editor's `asset.import` command has to know WHICH sub-assets an import produced, and a tool boundary
 crossed by prose is a source of bugs rather than an interface.
 
+## What M11.e added: the unwrap is cached (#36, stage 1)
+
+`rendering-global-illumination`'s "UV2 and chart packing" asks that "WHEN a mesh is reimported
+without geometry changes THEN the cached UV2 unwrap SHALL be reused". Two layers do it, and only the
+second is new:
+
+* **An unchanged source runs no importer.** Its derivation key hits the cook cache, or its build
+  graph node is not run, so no unwrap runs either. That was already true and nothing said so;
+  `import_pipeline`'s "an unchanged reimport runs no unwrap, nor does one that moved no geometry"
+  and `build_content`'s "a level bakes to a cooked lightmap, and an unchanged level bakes nothing"
+  now read it off `uv2_unwrap_count()`, the count of xatlas runs.
+* **A changed source with unchanged geometry copies the previous unwrap.** A material renamed or a
+  generator string rewritten changes the source's bytes and re-runs the importer; `finish_mesh` now
+  unwraps through `Uv2Cache::process()`, keyed by `uv2_geometry_key` — every attribute array the
+  unwrap reads or carries, the sections and every `Uv2Options` field — so that import copies the
+  unwrap byte for byte instead of running xatlas. The cache is process-wide and bounded (256
+  entries, oldest dropped), which covers an editor session and one `cy_build` run; across processes
+  the source key is what reuses the work. `src/unwrap_cache.cpp` names no xatlas symbol.
+
+Packing several meshes' UV2 into shared atlases is not here: it is the bake's, and
+`src/rendering/lightmap_bake/atlas.h` places one rectangle per object so each mesh keeps the UV2
+this importer gave it.
+
 ## What it deliberately does not do
 
 * **It links no simplification library or block encoder.** meshoptimizer and the BC7/ASTC encoders

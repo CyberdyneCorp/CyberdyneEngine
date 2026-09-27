@@ -26,12 +26,11 @@
 // "the bake SHALL additionally produce seeds for the dynamic caches... so a level in Hybrid mode is
 // plausible before convergence", and it is what makes `Baked` and `Hybrid` real modes here.
 //
-// NOT HERE, AND NOT CLAIMED: lightmap atlases. UV2 unwrapping, chart packing, border dilation and
-// the atlas format are a cook-side pipeline that `asset-import-pipeline` and the texture cook own,
-// and none of it exists at M7. `rendering-global-illumination` is at **Working** for this milestone
-// and the lightmap rows are what the remaining distance to Complete is made of. A `Lightmap` source
-// enumerator exists and `exclusion_for()` handles it correctly, so a lightmap that arrives later
-// slots into the resolve without changing it — but nothing in this module produces one today.
+// NOT HERE: lightmap atlases, which M11.e built one module up. `src/rendering/lightmap_bake/` packs
+// a level's UV2 charts into shared pages and path traces every texel through THIS `PathTracer`,
+// over a triangle `SceneTracer` of its own, and seeds the caches below from the same run; the frame
+// samples the result through `src/rendering/lightmaps/`. This module stays headless and knows none
+// of it: a lightmap reaches the resolve as `RadianceSource::Lightmap`, through `exclusion_for()`.
 
 #include <cy/core/base/error.h>
 #include <cy/core/base/expected.h>
