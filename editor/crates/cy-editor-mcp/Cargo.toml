@@ -44,6 +44,7 @@ cy-editor-viewport = { path = "../cy-editor-viewport" }
 # interface.
 [dev-dependencies]
 cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-interface = { path = "../cy-editor-interface" }
 cy-editor-protocol = { path = "../cy-editor-protocol" }
 
 [lints]

@@ -251,6 +251,8 @@ pub struct NodeType {
     pub pins: Vec<Pin>,
     /// Properties rendered generically by clients.
     pub properties: Vec<Property>,
+    /// Domain-defined stage bits; zero means the catalogue did not restrict this node.
+    pub stage_mask: u8,
 }
 
 impl NodeType {
@@ -262,6 +264,7 @@ impl NodeType {
             name: name.into(),
             pins,
             properties: Vec::new(),
+            stage_mask: 0,
         }
     }
 
@@ -273,6 +276,7 @@ impl NodeType {
             name,
             pins,
             properties: Vec::new(),
+            stage_mask: 0,
         }
     }
 
@@ -281,6 +285,18 @@ impl NodeType {
     pub fn with_properties(mut self, properties: Vec<Property>) -> Self {
         self.properties = properties;
         self
+    }
+
+    /// Attach stage compatibility supplied by the engine catalogue.
+    #[must_use]
+    pub fn with_stage_mask(mut self, stage_mask: u8) -> Self {
+        self.stage_mask = stage_mask;
+        self
+    }
+
+    /// Whether a node may be authored in the given domain-defined stage.
+    pub fn supports_stage(&self, stage: u8) -> bool {
+        self.stage_mask == 0 || self.stage_mask & stage != 0
     }
 
     /// The pin of this name and direction, if the type has one.
@@ -740,6 +756,38 @@ impl GraphCanvas {
     /// Every wire, in `(to, to_pin, from, from_pin)` order.
     pub fn links(&self) -> impl Iterator<Item = &Link> {
         self.links.iter()
+    }
+
+    /// Remove one exact wire while keeping its endpoint nodes and other wires intact.
+    pub fn disconnect(
+        &mut self,
+        from: NodeKey,
+        from_pin: &str,
+        to: NodeKey,
+        to_pin: &str,
+    ) -> Result<()> {
+        let link = self
+            .links
+            .iter()
+            .find(|link| {
+                link.from == from
+                    && link.from_pin == from_pin
+                    && link.to == to
+                    && link.to_pin == to_pin
+            })
+            .cloned()
+            .ok_or_else(|| {
+                Problem::new(
+                    "disconnect graph nodes",
+                    format!(
+                        "no wire connects node {} {from_pin} to node {} {to_pin}",
+                        from.ordinal(),
+                        to.ordinal()
+                    ),
+                )
+            })?;
+        self.links.remove(&link);
+        Ok(())
     }
 
     /// Remove a node and every wire that touched it.

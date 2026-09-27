@@ -39,7 +39,8 @@ function(cy_material_cook_declare_tests)
         SOURCES "${tests_dir}/test_material_cook.cpp"
         DEPENDENCIES cy::material-cook cy::build-graph)
     target_compile_definitions(cy_test_integration_material_cook
-                               PRIVATE CY_MATERIAL_BINARY="$<TARGET_FILE:cy_material>")
+                               PRIVATE CY_MATERIAL_BINARY="$<TARGET_FILE:cy_material>"
+                                       CY_MATERIAL_GRAPH_SAMPLE="${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project/materials/copper_clay.cygraph")
     add_dependencies(cy_test_integration_material_cook cy_material)
 endfunction()
 
