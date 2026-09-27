@@ -143,10 +143,20 @@ binding to the engine-owned wind field remains in task 3.1. The typed RGB vertex
 `color0` from an added RGBA mesh stream in the first-light compiled-material preview, including
 shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
-Environment-field wind binding and the remaining scene geometry sources remain in task 3.1.
-The authored scene frame still uses the standard material path. It now rejects offset and
-interpolant outputs with a named missing-pass error before that path can flatten them to a diffuse
-colour; the first-light preview and authored scene frame will be unified under task 3.4.
+Environment-field wind binding remains in task 3.1, and discovery of non-static scene geometry
+sources remains in task 3.2. The authored scene frame now compiles vertex offsets and interpolants
+for its static meshes, including visible, depth, and shadow passes. Its first-light material
+preview still lacks an environment-field provider, and the authored scene rejects `Op::Field` for
+that reason. The procedural wind node cannot stand in for the engine wind field.
+
+The field path must use `environment::build_deterministic_field_image` for the weather-owned
+`environment::fields::kWind` declaration, retain the image origin, and pass coordinates made local
+with `environment::image_local` before GPU sampling. The vertex shader must read the Vec3 result
+through `cy.field`'s sampler; the current generated `cy_field_sample` accessor reads one scalar
+from `CyMaterialParams` and cannot supply spatial wind. The authored frame needs a field buffer
+and descriptor binding that is shared by its visible, depth, and shadow vertex programs. Validation
+must refuse an unbound wind field before a preview or cook succeeds. A regression must compare
+several positions, including different vertical cells, against `sample_field_image` on the CPU.
 
 ### Authored scene pipeline integration (open)
 

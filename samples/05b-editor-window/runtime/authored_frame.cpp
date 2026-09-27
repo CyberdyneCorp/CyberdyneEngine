@@ -426,6 +426,25 @@ Status AuthoredFrame::preview(std::string_view reference,
     if (!colour) {
         return make_unexpected(colour.error());
     }
+    if (colour->vertex) {
+        auto compiled = compile_scene_graph_material(canonical_graph, *allocator_);
+        if (!compiled) {
+            return make_unexpected(compiled.error());
+        }
+        const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                             rendering::material::QualityTier::High);
+        if (program == nullptr || program->vertex_source.text.empty()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "authored scene preview has no vertex expression");
+        }
+        Array<char> unit(*allocator_);
+        const bool argument_buffer =
+            device_->capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
+        if (Status assembled = assemble_scene_material_vertex_unit(*program, unit, argument_buffer);
+            !assembled) {
+            return assembled;
+        }
+    }
     preview_graph_ = std::make_pair(std::string(reference), std::string(canonical_graph));
     return ok();
 }

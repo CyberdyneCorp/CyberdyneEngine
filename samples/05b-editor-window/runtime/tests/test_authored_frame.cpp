@@ -764,6 +764,50 @@ CY_TEST_CASE("authored frame refuses nonfinite material animation time") {
 }
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("authored scene preview refuses an unbound vertex environment field") {
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "editor field preview validation";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(64, 64, CY_TEST_PROJECT));
+        const std::string field_graph =
+            edited(kSurfaceVertexGraph,
+                   "node 5 \"material.constant\" v1 {\n"
+                   "    prop \"type\" : \"name\" = \"float3\"\n"
+                   "    prop \"value\" : \"vec4\" = (0, 0.25, 0, 0, 0)\n}\n",
+                   "node 5 \"material.field\" v1 {\n"
+                   "    prop \"symbol\" : \"name\" = \"wind\"\n"
+                   "    prop \"type\" : \"name\" = \"float3\"\n}\n",
+                   Occurrence::First);
+        constexpr std::string_view reference =
+            "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+        Array<u8> graph_bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole(
+            (std::string(CY_TEST_PROJECT) + "/" + std::string(reference)).c_str(), graph_bytes));
+        const std::string graph_source(reinterpret_cast<const char*>(graph_bytes.data()),
+                                       graph_bytes.size());
+        CY_REQUIRE(frame.preview(reference, graph_source));
+        const Status refused = frame.preview(reference, field_graph);
+        CY_REQUIRE_FALSE(refused.has_value());
+        CY_CHECK_EQ(refused.error().code, ErrorCode::Unsupported);
+        CY_CHECK(std::string_view(refused.error().message).find("environment-field") !=
+                 std::string_view::npos);
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", world).has_value());
+        reflect::TypeRegistry types;
+        CY_REQUIRE(reflect::register_scene_types(types));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(types, schema));
+        CY_REQUIRE(ser::resolve_against(world, schema).has_value());
+        CY_REQUIRE(frame.render(world, camera()));
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+
 CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph material") {
     (void)rhi::null::register_null_backend();
     rhi::DeviceDescription description;

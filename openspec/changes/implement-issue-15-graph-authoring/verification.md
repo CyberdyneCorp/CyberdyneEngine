@@ -81,6 +81,15 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Regression red:** with the scene mesh assigned, the material save created a second `Sync material properties` history entry after its file transaction. The strengthened wire test failed because one undo left both graph files in place. Moving property sync inside the save transaction made one undo restore the files and fields together.
 - **Remaining work:** material canvas gestures still need individual transaction/MCP parity, tracked by task 3.4.
 
+## Vertex material preview on mesh and scene
+
+- **Wire path:** `vertex_material_canvas_previews_over_mcp_without_saving` sends the editable vertex canvas through `material.graph.preview`, observes the hosted `material.preview.set` request and completed response, and verifies that preview creates no project graph asset. The desktop panel submits the same canvas through `Editor::preview_material_graph` when its semantic graph content changes.
+- **Scene compilation:** `authored scene compiles a surface beside its vertex graph` compiles the authored vertex expression for visible, depth, and shadow passes. The hosted mesh pixel case `a compiled vertex offset moves the hosted Metal material mesh` exists, but its pixel assertions require a native Metal device.
+- **Green commands:** the focused MCP test passed (1/1), and the authored scene compilation case passed (26/26 assertions) on 2026-09-27. The local hosted mesh case selected the null RHI and executed only its availability assertion. Task 3.4 remains open for a native preview image and individual material canvas transaction parity.
+- **Preview refusal regression:** `authored scene preview refuses an unbound vertex environment field` first accepts a valid graph, then submits a typed `wind` field to the vertex output. The engine now refuses it before changing the preview and renders the previously accepted material. The focused null-RHI case passed 13/13 assertions on 2026-09-27.
+- **Red mutation:** before the preview preflight called `compile_scene_graph_material` and `assemble_scene_material_vertex_unit`, the focused case failed because `preview()` accepted the unbound field. The subsequent read of the nonexistent error also tripped the test harness. With preflight restored, it passes.
+- **Complexity:** the cognitive-complexity skill measured `AuthoredFrame::preview` at 9, within the systems target.
+
 ## Assigned geometry at material authoring
 
 - **Service:** `editor_backend: material authoring refuses unsupported assigned geometry` sends a vertex graph with a `VirtualGeometry` assignment to `material.author` and checks the compiler's named `vertex-geometry-unsupported` refusal. The same case checks that a `StaticMesh` assignment is authored.

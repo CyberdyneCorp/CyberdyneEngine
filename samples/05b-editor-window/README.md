@@ -130,6 +130,9 @@ graph to the surface graph. The scene mesh currently supplies position, normal, 
 graph requiring vertex colour, UV1, or an environment field is refused with a named reason. To regenerate a canonical graph outside the editor, run `cy_material author
 project/materials/copper_clay.cymatcanvas --graph
 project/materials/copper_clay.cygraph` from this sample directory.
+The preview checks the compiled vertex source and its scene bindings before replacing the current
+graph. An unbound environment field is refused immediately, and the last valid preview remains in
+the viewport.
 
 The [live scene capture](../../docs/design/images/editor-material-graph-scene-metal.png)
 shows the graph-colored Cube and its shadow on the Plane. The
