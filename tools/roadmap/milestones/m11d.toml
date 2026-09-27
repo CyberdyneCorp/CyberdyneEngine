@@ -76,6 +76,17 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE NATIVE PLATFORM BACKEND IS THIS RUNG'S OWN CODE, so the mutation is there rather than carried
+# from M11.c's allocator. `X11DisplayServer::create_surface` passes a Vulkan handle and an X11 window
+# number through `NativeSurface::handle` as a `void*`, and each of the two casts carries an earned
+# `performance-no-int-to-ptr` suppression. Renaming the marker makes both real findings fire on
+# shipping lines, and `WarningsAsErrors: '*'` turns them into the recipe's exit status.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with two platform implementations in it — including the platform/SDL rule, which is the rule this rung's whole claim is about: the engine layers may not know which platform backend they are on"
