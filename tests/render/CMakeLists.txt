@@ -266,6 +266,19 @@ function(cy_render_declare_tests)
         DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
     target_include_directories(cy_test_render_world_water
                                PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
+
+    # AERIAL PERSPECTIVE IN THE WORLD FRAME. `atmosphere-sky-and-clouds` — "Aerial perspective".
+    # The same pipeline's committed SPIR-V, a dome coloured from the atmosphere's clear sky and
+    # flat walls at known distances: the device applies the processor's table texel for texel, a
+    # near wall keeps its colour, a far one meets the sky beside it, a changed atmosphere moves the
+    # sky and the distance together, and with the table off the frame is the frame before.
+    cy_add_test(
+        NAME world_aerial_perspective
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_world_aerial_perspective.cpp"
+        DEPENDENCIES cy::rendering-graph cy::rendering-sky cy::rhi cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_render_world_aerial_perspective
+                               PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
 endfunction()
 
 cy_render_declare_tests()

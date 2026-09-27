@@ -37,6 +37,16 @@ cy_add_module(
         src/manifest.cpp
         src/module.cpp
         src/var.cpp
+        # ABI 1.3's game services (`add-swift-game-api`): one thunk file per group, so the change's
+        # implementers edit disjoint files. None of them names a server; see cy/abi/game/services.h.
+        src/game/services.cpp
+        src/game/time_thunks.cpp
+        src/game/input_thunks.cpp
+        src/game/camera_thunks.cpp
+        src/game/physics_thunks.cpp
+        src/game/navigation_thunks.cpp
+        src/game/audio_thunks.cpp
+        src/game/spawn_thunks.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation
     # (M5 task 1.1). PRIVATE would be wrong only if the header exposed it, and it does not: the

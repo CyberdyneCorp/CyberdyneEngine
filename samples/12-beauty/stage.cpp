@@ -16,6 +16,8 @@
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/contact_shadows/contact_pass.h>
+#include <cy/rendering/grading/grading_renderer.h>
+#include <cy/rendering/grading/look_file.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/lighting/soft_shadows.h>
@@ -195,6 +197,8 @@ struct Stage::Device {
     FrameBindings bindings;
     /// Bloom's recorder, initialised only when the capture asked for bloom.
     BloomRenderer bloom;
+    /// The graded resolve, initialised only when the capture asked for a look.
+    rendering::grading::GradingRenderer grading;
 
     // THE AIR. `field` owns the cooked system and the simulation world; `air` owns the sprite
     // pipeline and the ring the frame draws from. Both are members rather than locals because the
@@ -267,6 +271,7 @@ Stage::~Stage() {
             device_->contact.destroy();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
+            device_->grading.shutdown();
             device_->pipelines.shutdown();
         }
         delete device_;
@@ -2010,6 +2015,9 @@ Status Stage::create_frame() noexcept {
     // passes; off, neither the passes nor their targets exist and the frame is M11.c's.
     description.post.bloom = bloom_enabled_;
     description.bloom = bloom_;
+    // GRADING, ONLY WHEN A LOOK WAS NAMED: step 12, after the tone curve. The manifest then names
+    // `ColourGrading`; without a look the chain is the one M11.c published.
+    description.post.colour_grading = look_path_ != nullptr;
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -2030,6 +2038,11 @@ Status Stage::create_frame() noexcept {
             return made;
         }
         device_->bloom.set_settings(bloom_);
+    }
+    if (look_path_ != nullptr) {
+        if (Status made = create_grading(device); !made) {
+            return made;
+        }
     }
 
     Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
@@ -2111,6 +2124,29 @@ Status Stage::create_contact() noexcept {
     writes[1].texture_view = device_->views[0];
     return device.update_descriptor_set(
         device_->shadow_set, Span<const rhi::DescriptorWrite>(writes, ambient_occlusion_ ? 1 : 2));
+}
+
+/// The graded resolve and the look's table. The table is baked on the host from the `.cygrade` and
+/// the `.cube` it names — `rendering-post-processing`'s "baked into a 3D LUT" — and uploaded once.
+Status Stage::create_grading(rhi::Device& device) noexcept {
+    rendering::grading::GradingRendererDescription description;
+    description.output_format = device_->pipelines.setup().output_format;
+    if (Status made = device_->grading.initialize(device, *allocator_, description); !made) {
+        return made;
+    }
+    rendering::Look look;
+    Array<Vec3> table(*allocator_);
+    if (Status loaded = rendering::grading::load_look(look_path_, *allocator_, look, table);
+        !loaded) {
+        return loaded;
+    }
+    bool applied = false;
+    if (Status set = device_->grading.set_lut(table.span(), look.lut_size, applied); !set) {
+        return set;
+    }
+    std::printf("look          %s: \"%s\", %u^3 table%s\n", look_path_, look.name, look.lut_size,
+                applied ? "" : " — the identity, so the lookup is not applied");
+    return ok();
 }
 
 Status Stage::create_occlusion() noexcept {
@@ -2356,6 +2392,14 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         cy::rendering::FramePassCallback{&record_air, &air};
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
+    if (look_path_ != nullptr) {
+        // THE GRADED RESOLVE IN PLACE OF THE FRAME'S: the same exposure — the shot's stops — and
+        // the same curve, then the look's one lookup.
+        device_->grading.set_manual_stops(shot.exposure_stops);
+        (void)device_->grading.import_state(graph);
+        sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
+            device_->grading.post_process();
+    }
     if (bloom_enabled_) {
         sinks.passes[static_cast<usize>(FramePassKind::Bloom)] =
             device_->bloom.sink(device_->assembly.frame().bloom());
@@ -2381,6 +2425,13 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     // What the post chain left for exposure: the scene colour, or the bloomed one.
     resolve.scene = resources.post_source;
     resolve.output = resources.output;
+    if (look_path_ != nullptr) {
+        if (Status declared = device_->grading.declare_metering(graph, resources, width_, height_);
+            !declared) {
+            (void)device.end_frame();
+            return declared;
+        }
+    }
 
     // THE EXPOSURE IS CONTENT. `content/beauty/shot.cyshot` carries it and the resolve divides by
     // it before the tone curve; a number typed here would be a grade nobody could change without a

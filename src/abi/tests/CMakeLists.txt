@@ -86,6 +86,16 @@ function(cy_abi_declare_tests)
         set(CY_TEST_TIMEOUT_${kind} "${timeout}")
     endforeach()
 
+    # ABI 1.3's game-service thunks (`add-swift-game-api`) are tested here, against fake backends,
+    # one file per service group so the change's implementers edit disjoint files. A group's file is
+    # compiled when it exists; test_game_services.cpp — the shared rules — always is.
+    set(game_sources "${tests_dir}/test_game_services.cpp")
+    foreach(group IN ITEMS time input camera physics navigation audio spawn)
+        if(EXISTS "${tests_dir}/test_game_${group}.cpp")
+            list(APPEND game_sources "${tests_dir}/test_game_${group}.cpp")
+        endif()
+    endforeach()
+
     cy_add_test(
         NAME abi
         KIND unit
@@ -93,6 +103,7 @@ function(cy_abi_declare_tests)
             "${tests_dir}/test_interface.cpp"
             "${tests_dir}/test_layout.cpp"
             "${tests_dir}/test_manifest.cpp"
+            ${game_sources}
         DEPENDENCIES cy::abi)
 
     # The module paths are compiled in rather than searched for at run time: a test that guessed a

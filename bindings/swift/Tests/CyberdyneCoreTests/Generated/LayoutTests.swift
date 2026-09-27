@@ -98,7 +98,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testBehaviourVTableLayout() {
-        XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.size, 56, "CyBehaviourVTable size")
+        XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.size, 64, "CyBehaviourVTable size")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.alignment, 8, "CyBehaviourVTable alignment")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.struct_size), 0, "CyBehaviourVTable.struct_size offset")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.schema_version), 4, "CyBehaviourVTable.schema_version offset")
@@ -108,6 +108,7 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.serialize), 32, "CyBehaviourVTable.serialize offset")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.deserialize), 40, "CyBehaviourVTable.deserialize offset")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.user_data), 48, "CyBehaviourVTable.user_data offset")
+        XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.frame_update), 56, "CyBehaviourVTable.frame_update offset")
     }
 
     func testBorrowLayout() {
@@ -115,6 +116,203 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyBorrow>.alignment, 8, "CyBorrow alignment")
         XCTAssertEqual(MemoryLayout<CyBorrow>.offset(of: \CyBorrow.data), 0, "CyBorrow.data offset")
         XCTAssertEqual(MemoryLayout<CyBorrow>.offset(of: \CyBorrow.epoch), 8, "CyBorrow.epoch offset")
+    }
+
+    func testPoseLayout() {
+        XCTAssertEqual(MemoryLayout<CyPose>.size, 28, "CyPose size")
+        XCTAssertEqual(MemoryLayout<CyPose>.alignment, 4, "CyPose alignment")
+        XCTAssertEqual(MemoryLayout<CyPose>.offset(of: \CyPose.position), 0, "CyPose.position offset")
+        XCTAssertEqual(MemoryLayout<CyPose>.offset(of: \CyPose.rotation), 12, "CyPose.rotation offset")
+    }
+
+    func testRayLayout() {
+        XCTAssertEqual(MemoryLayout<CyRay>.size, 28, "CyRay size")
+        XCTAssertEqual(MemoryLayout<CyRay>.alignment, 4, "CyRay alignment")
+        XCTAssertEqual(MemoryLayout<CyRay>.offset(of: \CyRay.origin), 0, "CyRay.origin offset")
+        XCTAssertEqual(MemoryLayout<CyRay>.offset(of: \CyRay.direction), 12, "CyRay.direction offset")
+        XCTAssertEqual(MemoryLayout<CyRay>.offset(of: \CyRay.max_distance), 24, "CyRay.max_distance offset")
+    }
+
+    func testTimeLayout() {
+        XCTAssertEqual(MemoryLayout<CyTime>.size, 48, "CyTime size")
+        XCTAssertEqual(MemoryLayout<CyTime>.alignment, 8, "CyTime alignment")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.struct_size), 0, "CyTime.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.phase), 4, "CyTime.phase offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.tick), 8, "CyTime.tick offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.fixed_delta), 16, "CyTime.fixed_delta offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.frame_delta), 24, "CyTime.frame_delta offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.interpolation), 32, "CyTime.interpolation offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.flags), 40, "CyTime.flags offset")
+        XCTAssertEqual(MemoryLayout<CyTime>.offset(of: \CyTime.reserved), 44, "CyTime.reserved offset")
+    }
+
+    func testInputActionStateLayout() {
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.size, 32, "CyInputActionState size")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.alignment, 8, "CyInputActionState alignment")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.offset(of: \CyInputActionState.struct_size), 0, "CyInputActionState.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.offset(of: \CyInputActionState.flags), 4, "CyInputActionState.flags offset")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.offset(of: \CyInputActionState.value), 8, "CyInputActionState.value offset")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.offset(of: \CyInputActionState.press_count), 20, "CyInputActionState.press_count offset")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.offset(of: \CyInputActionState.release_count), 22, "CyInputActionState.release_count offset")
+        XCTAssertEqual(MemoryLayout<CyInputActionState>.offset(of: \CyInputActionState.tick), 24, "CyInputActionState.tick offset")
+    }
+
+    func testInputPointerLayout() {
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.size, 48, "CyInputPointer size")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.alignment, 4, "CyInputPointer alignment")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.struct_size), 0, "CyInputPointer.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.flags), 4, "CyInputPointer.flags offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.buttons), 8, "CyInputPointer.buttons offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.buttons_pressed), 12, "CyInputPointer.buttons_pressed offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.buttons_released), 16, "CyInputPointer.buttons_released offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.position), 20, "CyInputPointer.position offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.delta), 28, "CyInputPointer.delta offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.wheel), 36, "CyInputPointer.wheel offset")
+        XCTAssertEqual(MemoryLayout<CyInputPointer>.offset(of: \CyInputPointer.reserved), 44, "CyInputPointer.reserved offset")
+    }
+
+    func testCameraViewLayout() {
+        XCTAssertEqual(MemoryLayout<CyCameraView>.size, 68, "CyCameraView size")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.alignment, 4, "CyCameraView alignment")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.struct_size), 0, "CyCameraView.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.flags), 4, "CyCameraView.flags offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.pose), 8, "CyCameraView.pose offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.vertical_fov), 36, "CyCameraView.vertical_fov offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.ortho_height), 40, "CyCameraView.ortho_height offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.near_plane), 44, "CyCameraView.near_plane offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.far_plane), 48, "CyCameraView.far_plane offset")
+        XCTAssertEqual(MemoryLayout<CyCameraView>.offset(of: \CyCameraView.viewport), 52, "CyCameraView.viewport offset")
+    }
+
+    func testScreenPointLayout() {
+        XCTAssertEqual(MemoryLayout<CyScreenPoint>.size, 16, "CyScreenPoint size")
+        XCTAssertEqual(MemoryLayout<CyScreenPoint>.alignment, 4, "CyScreenPoint alignment")
+        XCTAssertEqual(MemoryLayout<CyScreenPoint>.offset(of: \CyScreenPoint.position), 0, "CyScreenPoint.position offset")
+        XCTAssertEqual(MemoryLayout<CyScreenPoint>.offset(of: \CyScreenPoint.depth), 8, "CyScreenPoint.depth offset")
+        XCTAssertEqual(MemoryLayout<CyScreenPoint>.offset(of: \CyScreenPoint.flags), 12, "CyScreenPoint.flags offset")
+    }
+
+    func testCameraTargetLayout() {
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.size, 48, "CyCameraTarget size")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.alignment, 8, "CyCameraTarget alignment")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.struct_size), 0, "CyCameraTarget.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.flags), 4, "CyCameraTarget.flags offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.entity), 8, "CyCameraTarget.entity offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.position), 16, "CyCameraTarget.position offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.yaw), 28, "CyCameraTarget.yaw offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.pitch), 32, "CyCameraTarget.pitch offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.distance), 36, "CyCameraTarget.distance offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.blend_seconds), 40, "CyCameraTarget.blend_seconds offset")
+        XCTAssertEqual(MemoryLayout<CyCameraTarget>.offset(of: \CyCameraTarget.reserved), 44, "CyCameraTarget.reserved offset")
+    }
+
+    func testShapeLayout() {
+        XCTAssertEqual(MemoryLayout<CyShape>.size, 24, "CyShape size")
+        XCTAssertEqual(MemoryLayout<CyShape>.alignment, 4, "CyShape alignment")
+        XCTAssertEqual(MemoryLayout<CyShape>.offset(of: \CyShape.kind), 0, "CyShape.kind offset")
+        XCTAssertEqual(MemoryLayout<CyShape>.offset(of: \CyShape.radius), 4, "CyShape.radius offset")
+        XCTAssertEqual(MemoryLayout<CyShape>.offset(of: \CyShape.half_height), 8, "CyShape.half_height offset")
+        XCTAssertEqual(MemoryLayout<CyShape>.offset(of: \CyShape.half_extents), 12, "CyShape.half_extents offset")
+    }
+
+    func testQueryFilterLayout() {
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.size, 32, "CyQueryFilter size")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.alignment, 8, "CyQueryFilter alignment")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.struct_size), 0, "CyQueryFilter.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.layer), 4, "CyQueryFilter.layer offset")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.mask), 8, "CyQueryFilter.mask offset")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.flags), 12, "CyQueryFilter.flags offset")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.ignore), 16, "CyQueryFilter.ignore offset")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.ignore_count), 24, "CyQueryFilter.ignore_count offset")
+        XCTAssertEqual(MemoryLayout<CyQueryFilter>.offset(of: \CyQueryFilter.reserved), 28, "CyQueryFilter.reserved offset")
+    }
+
+    func testPhysicsHitLayout() {
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.size, 48, "CyPhysicsHit size")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.alignment, 8, "CyPhysicsHit alignment")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.flags), 0, "CyPhysicsHit.flags offset")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.reserved), 4, "CyPhysicsHit.reserved offset")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.entity), 8, "CyPhysicsHit.entity offset")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.point), 16, "CyPhysicsHit.point offset")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.normal), 28, "CyPhysicsHit.normal offset")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.distance), 40, "CyPhysicsHit.distance offset")
+        XCTAssertEqual(MemoryLayout<CyPhysicsHit>.offset(of: \CyPhysicsHit.fraction), 44, "CyPhysicsHit.fraction offset")
+    }
+
+    func testNavPathRequestLayout() {
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.size, 64, "CyNavPathRequest size")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.alignment, 8, "CyNavPathRequest alignment")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.struct_size), 0, "CyNavPathRequest.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.world), 4, "CyNavPathRequest.world offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.start), 8, "CyNavPathRequest.start offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.end), 20, "CyNavPathRequest.end offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.extents), 32, "CyNavPathRequest.extents offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.node_budget), 44, "CyNavPathRequest.node_budget offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.area_mask), 48, "CyNavPathRequest.area_mask offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathRequest>.offset(of: \CyNavPathRequest.capabilities), 56, "CyNavPathRequest.capabilities offset")
+    }
+
+    func testNavPathResultLayout() {
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.size, 24, "CyNavPathResult size")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.alignment, 4, "CyNavPathResult alignment")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.offset(of: \CyNavPathResult.struct_size), 0, "CyNavPathResult.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.offset(of: \CyNavPathResult.flags), 4, "CyNavPathResult.flags offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.offset(of: \CyNavPathResult.point_count), 8, "CyNavPathResult.point_count offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.offset(of: \CyNavPathResult.state), 12, "CyNavPathResult.state offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.offset(of: \CyNavPathResult.cost), 16, "CyNavPathResult.cost offset")
+        XCTAssertEqual(MemoryLayout<CyNavPathResult>.offset(of: \CyNavPathResult.length), 20, "CyNavPathResult.length offset")
+    }
+
+    func testNavAgentParamsLayout() {
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.size, 48, "CyNavAgentParams size")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.alignment, 8, "CyNavAgentParams alignment")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.struct_size), 0, "CyNavAgentParams.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.world), 4, "CyNavAgentParams.world offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.radius), 8, "CyNavAgentParams.radius offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.height), 12, "CyNavAgentParams.height offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.max_speed), 16, "CyNavAgentParams.max_speed offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.max_acceleration), 20, "CyNavAgentParams.max_acceleration offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.arrival_distance), 24, "CyNavAgentParams.arrival_distance offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.priority), 28, "CyNavAgentParams.priority offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.area_mask), 32, "CyNavAgentParams.area_mask offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentParams>.offset(of: \CyNavAgentParams.capabilities), 40, "CyNavAgentParams.capabilities offset")
+    }
+
+    func testNavAgentStateLayout() {
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.size, 56, "CyNavAgentState size")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.alignment, 4, "CyNavAgentState alignment")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.struct_size), 0, "CyNavAgentState.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.status), 4, "CyNavAgentState.status offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.flags), 8, "CyNavAgentState.flags offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.reserved), 12, "CyNavAgentState.reserved offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.position), 16, "CyNavAgentState.position offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.velocity), 28, "CyNavAgentState.velocity offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.target), 40, "CyNavAgentState.target offset")
+        XCTAssertEqual(MemoryLayout<CyNavAgentState>.offset(of: \CyNavAgentState.remaining_distance), 52, "CyNavAgentState.remaining_distance offset")
+    }
+
+    func testAudioPlayLayout() {
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.size, 56, "CyAudioPlay size")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.alignment, 8, "CyAudioPlay alignment")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.struct_size), 0, "CyAudioPlay.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.flags), 4, "CyAudioPlay.flags offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.cue), 8, "CyAudioPlay.cue offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.attach_to), 16, "CyAudioPlay.attach_to offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.bus), 24, "CyAudioPlay.bus offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.position), 32, "CyAudioPlay.position offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.volume), 44, "CyAudioPlay.volume offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.pitch), 48, "CyAudioPlay.pitch offset")
+        XCTAssertEqual(MemoryLayout<CyAudioPlay>.offset(of: \CyAudioPlay.fade_in_seconds), 52, "CyAudioPlay.fade_in_seconds offset")
+    }
+
+    func testSpawnParamsLayout() {
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.size, 56, "CySpawnParams size")
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.alignment, 8, "CySpawnParams alignment")
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.offset(of: \CySpawnParams.struct_size), 0, "CySpawnParams.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.offset(of: \CySpawnParams.flags), 4, "CySpawnParams.flags offset")
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.offset(of: \CySpawnParams.parent), 8, "CySpawnParams.parent offset")
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.offset(of: \CySpawnParams.pose), 16, "CySpawnParams.pose offset")
+        XCTAssertEqual(MemoryLayout<CySpawnParams>.offset(of: \CySpawnParams.scale), 44, "CySpawnParams.scale offset")
     }
 
     func testInterfaceHeaderLayout() {
@@ -127,7 +325,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 360, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 664, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -173,6 +371,44 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.service_submit), 336, "CyInterface.service_submit offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.service_cancel), 344, "CyInterface.service_cancel offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.service_poll), 352, "CyInterface.service_poll offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.time_get), 360, "CyInterface.time_get offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_find_action), 368, "CyInterface.input_find_action offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_action_state), 376, "CyInterface.input_action_state offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_action_state_by_name), 384, "CyInterface.input_action_state_by_name offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_pointer), 392, "CyInterface.input_pointer offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_modifiers), 400, "CyInterface.input_modifiers offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_find_context), 408, "CyInterface.input_find_context offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_push_context), 416, "CyInterface.input_push_context offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_pop_context), 424, "CyInterface.input_pop_context offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_active), 432, "CyInterface.camera_active offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_view), 440, "CyInterface.camera_view offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_screen_to_ray), 448, "CyInterface.camera_screen_to_ray offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_world_to_screen), 456, "CyInterface.camera_world_to_screen offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_set_target), 464, "CyInterface.camera_set_target offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_set_pose), 472, "CyInterface.camera_set_pose offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.camera_clear_pose), 480, "CyInterface.camera_clear_pose offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.physics_raycast), 488, "CyInterface.physics_raycast offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.physics_raycast_all), 496, "CyInterface.physics_raycast_all offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.physics_shape_cast), 504, "CyInterface.physics_shape_cast offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.physics_overlap), 512, "CyInterface.physics_overlap offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_find_path), 520, "CyInterface.nav_find_path offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_request_path), 528, "CyInterface.nav_request_path offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_poll_path), 536, "CyInterface.nav_poll_path offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_cancel_path), 544, "CyInterface.nav_cancel_path offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_agent_configure), 552, "CyInterface.nav_agent_configure offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_agent_move_to), 560, "CyInterface.nav_agent_move_to offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_agent_stop), 568, "CyInterface.nav_agent_stop offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.nav_agent_state), 576, "CyInterface.nav_agent_state offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_find_cue), 584, "CyInterface.audio_find_cue offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_play), 592, "CyInterface.audio_play offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_stop), 600, "CyInterface.audio_stop offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_voice_playing), 608, "CyInterface.audio_voice_playing offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_find_bus), 616, "CyInterface.audio_find_bus offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_set_bus_volume), 624, "CyInterface.audio_set_bus_volume offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_resolve), 632, "CyInterface.spawn_resolve offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_instantiate), 640, "CyInterface.spawn_instantiate offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_instantiate_many), 648, "CyInterface.spawn_instantiate_many offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_destroy), 656, "CyInterface.spawn_destroy offset")
     }
 
     func testModuleInitLayout() {
@@ -190,7 +426,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 360,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 664,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -236,8 +472,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 43)
+        XCTAssertEqual(ABI.entryNames.count, 81)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "service_poll")
+        XCTAssertEqual(ABI.entryNames.last, "spawn_destroy")
     }
 }

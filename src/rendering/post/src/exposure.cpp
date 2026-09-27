@@ -31,14 +31,14 @@ const char* exposure_mode_name(ExposureMode mode) noexcept {
     return "Unknown";
 }
 
-f32 ev100_from_camera(const CameraExposure& camera) noexcept {
+f32 ev100_from_camera(const CameraControls& camera) noexcept {
     const f32 aperture = math::max(camera.aperture, 0.5F);
     const f32 shutter = math::max(camera.shutter_seconds, 1e-6F);
     const f32 iso = math::max(camera.iso, 1.0F);
     return std::log2((aperture * aperture) / shutter * 100.0F / iso);
 }
 
-f32 exposure_multiplier(f32 ev100) noexcept {
+f32 multiplier_for_ev100(f32 ev100) noexcept {
     // The reciprocal of the maximum luminance the exposure admits. A project that publishes this to
     // shaders gets emissive values in physical units for free, which is the second half of the
     // requirement and the reason this is a function rather than a line inside the tonemap pass.
@@ -51,6 +51,36 @@ f32 ev100_from_luminance(f32 luminance) noexcept {
 
 f32 luminance_for_ev100(f32 ev100) noexcept {
     return std::exp2(ev100) * kCalibration / 100.0F;
+}
+
+f32 exposure_stops_for_ev100(f32 ev100) noexcept {
+    return -ev100 - std::log2(kSaturation);
+}
+
+f32 ev100_for_exposure_stops(f32 stops) noexcept {
+    return -stops - std::log2(kSaturation);
+}
+
+f32 metering_luminance(f32 red, f32 green, f32 blue) noexcept {
+    return (0.2126F * red) + (0.7152F * green) + (0.0722F * blue);
+}
+
+u32 luminance_histogram_bin(f32 luminance, u32 bin_count, f32 min_ev, f32 max_ev) noexcept {
+    if (bin_count == 0) {
+        return 0;
+    }
+    const f32 span = math::max(max_ev - min_ev, 1e-6F);
+    const f32 position = (ev100_from_luminance(luminance) - min_ev) / span;
+    const f32 scaled =
+        math::clamp(position * static_cast<f32>(bin_count), 0.0F, static_cast<f32>(bin_count - 1U));
+    return static_cast<u32>(scaled);
+}
+
+f32 adaptation_seconds(f32 speed, f32 remaining) noexcept {
+    if (speed <= 0.0F) {
+        return INFINITY;
+    }
+    return -std::log(math::clamp(remaining, 1e-6F, 1.0F)) / speed;
 }
 
 f32 ExposureCompensationCurve::at(f32 metered) const noexcept {

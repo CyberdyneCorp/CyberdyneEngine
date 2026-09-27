@@ -424,57 +424,68 @@ namespace {
         }
     }
 
+    // A corner of the taut path: emit it and restart the scan from it. A corner at the apex's own
+    // position — a vertex several consecutive portals share — moves the apex on without a point.
+    const auto turn = [&](Vec3 corner, usize corner_index, usize& index) noexcept -> Status {
+        if (distance3(corner, apex) >= 1e-6f) {
+            PathPoint point;
+            point.position = corner;
+            point.poly = owner[corner_index];
+            if (Status pushed = out.push_back(point); !pushed) {
+                return pushed;
+            }
+        }
+        apex = corner;
+        left = corner;
+        right = corner;
+        apex_index = corner_index;
+        left_index = corner_index;
+        right_index = corner_index;
+        index = corner_index;
+        return ok();
+    };
+
     for (usize index = 1; index < left_side.size(); ++index) {
         const Vec3 candidate_left = left_side[index];
         const Vec3 candidate_right = right_side[index];
 
+        // Every side test reads `triarea2`'s sign as "positive is left", the convention
+        // `portal_sides()` orders the portals by: the right side tightens by swinging left, the
+        // left side by swinging right.
+        //
         // Tighten the right side, unless doing so would cross the left one — in which case the left
         // vertex is a corner of the taut path and the scan restarts from it.
-        if (triarea2(apex, right, candidate_right) <= 0.0f) {
-            if (distance_xz(apex, right) < 1e-6f || triarea2(apex, left, candidate_right) > 0.0f) {
+        if (triarea2(apex, right, candidate_right) >= 0.0f) {
+            if (distance_xz(apex, right) < 1e-6f || triarea2(apex, left, candidate_right) < 0.0f) {
                 right = candidate_right;
                 right_index = index;
             } else {
-                PathPoint point;
-                point.position = left;
-                point.poly = owner[left_index];
-                if (Status pushed = out.push_back(point); !pushed) {
-                    return pushed;
+                if (Status turned = turn(left, left_index, index); !turned) {
+                    return turned;
                 }
-                apex = left;
-                apex_index = left_index;
-                right = apex;
-                left = apex;
-                right_index = apex_index;
-                left_index = apex_index;
-                index = apex_index;
                 continue;
             }
         }
 
-        if (triarea2(apex, left, candidate_left) >= 0.0f) {
-            if (distance_xz(apex, left) < 1e-6f || triarea2(apex, right, candidate_left) < 0.0f) {
+        // The mirror image: tighten the left side unless it would cross the right one.
+        if (triarea2(apex, left, candidate_left) <= 0.0f) {
+            if (distance_xz(apex, left) < 1e-6f || triarea2(apex, right, candidate_left) > 0.0f) {
                 left = candidate_left;
                 left_index = index;
             } else {
-                PathPoint point;
-                point.position = right;
-                point.poly = owner[right_index];
-                if (Status pushed = out.push_back(point); !pushed) {
-                    return pushed;
+                if (Status turned = turn(right, right_index, index); !turned) {
+                    return turned;
                 }
-                apex = right;
-                apex_index = right_index;
-                right = apex;
-                left = apex;
-                right_index = apex_index;
-                left_index = apex_index;
-                index = apex_index;
                 continue;
             }
         }
     }
 
+    // The last portal is the degenerate (end, end); when the funnel collapsed onto it, the scan
+    // has already emitted `end` as a corner.
+    if (apex_index + 1 == left_side.size()) {
+        return ok();
+    }
     PathPoint point;
     point.position = end;
     point.poly = polys[last];

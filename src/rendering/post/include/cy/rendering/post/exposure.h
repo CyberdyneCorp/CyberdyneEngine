@@ -14,7 +14,7 @@
 //
 // EXPOSURE IS ALSO PUBLISHED TO SHADERS. "Exposure SHALL be applied as a scalar multiply before
 // tonemapping and SHALL also be published to shaders so emissive values can be expressed in
-// physical units." That is what `exposure_multiplier()` is for: the same number reaches the
+// physical units." That is what `multiplier_for_ev100()` is for: the same number reaches the
 // multiply and the material constant buffer, from one function, so an emissive surface authored in
 // nits is the same brightness whichever path evaluates it.
 
@@ -35,7 +35,15 @@ enum class ExposureMode : u8 {
 [[nodiscard]] const char* exposure_mode_name(ExposureMode mode) noexcept;
 
 /// A physical camera's three controls.
-struct CameraExposure {
+///
+/// NOT `CameraExposure`, and neither is `multiplier_for_ev100` `exposure_multiplier`: those two
+/// names are `lighting/units.h`'s, in this same namespace. While both modules defined them, any
+/// binary linking this file's object and `units.cpp`'s failed with a duplicate
+/// `exposure_multiplier(float)`, and any source including both headers failed on the struct — which
+/// nothing did until the graded resolve's suite linked the pipeline scene beside the metering.
+/// render.grading's `the post chain's exposure and the lighting module's link together and agree`
+/// is the regression case.
+struct CameraControls {
     /// f-number.
     f32 aperture = 4.0F;
     /// Seconds.
@@ -45,15 +53,39 @@ struct CameraExposure {
 
 /// EV100 from the three controls. The standard relation, written once so that a project that
 /// changes one control gets the exposure change a photographer expects.
-[[nodiscard]] f32 ev100_from_camera(const CameraExposure& camera) noexcept;
+[[nodiscard]] f32 ev100_from_camera(const CameraControls& camera) noexcept;
 
-/// The scalar the scene colour is multiplied by. Published to shaders as well as applied.
-[[nodiscard]] f32 exposure_multiplier(f32 ev100) noexcept;
+/// The scalar the scene colour is multiplied by: `1 / (1.2 · 2^EV100)`, the value
+/// `lighting/units.h`'s `exposure_multiplier` also computes. Published to shaders as well as
+/// applied.
+[[nodiscard]] f32 multiplier_for_ev100(f32 ev100) noexcept;
 
 /// EV100 for an average scene luminance in cd/m². The inverse of `luminance_for_ev100`.
 [[nodiscard]] f32 ev100_from_luminance(f32 luminance) noexcept;
 
 [[nodiscard]] f32 luminance_for_ev100(f32 ev100) noexcept;
+
+/// The stops `cy/fullscreen.slang`'s resolve multiplies the scene by — `exp2(stops)` — for an
+/// EV100: the base-two logarithm of `multiplier_for_ev100`. The frame's globals carry stops, so
+/// this is how a physical exposure reaches a resolve that predates it without the resolve changing.
+[[nodiscard]] f32 exposure_stops_for_ev100(f32 ev100) noexcept;
+
+/// The inverse of `exposure_stops_for_ev100`.
+[[nodiscard]] f32 ev100_for_exposure_stops(f32 stops) noexcept;
+
+/// Rec. 709 luminance of a linear colour: what the metering reads from each pixel.
+[[nodiscard]] f32 metering_luminance(f32 red, f32 green, f32 blue) noexcept;
+
+/// The bin of a `bin_count`-bin histogram, log-spaced in EV100 between `min_ev` and `max_ev`, that
+/// a luminance lands in. Below the range is bin 0 and above it the last bin, so every pixel is
+/// counted. The host twin of the metering shader's binning, written once so the two cannot drift.
+[[nodiscard]] u32 luminance_histogram_bin(f32 luminance, u32 bin_count, f32 min_ev,
+                                          f32 max_ev) noexcept;
+
+/// The seconds `adapt_ev100` takes at `speed` EV per second to close all but `remaining` of a gap
+/// (0.05 is "within five per cent"). The adaptation is exponential, so this is its stated time
+/// constant turned into a deadline: `-ln(remaining) / speed`. Infinite for a zero speed.
+[[nodiscard]] f32 adaptation_seconds(f32 speed, f32 remaining) noexcept;
 
 /// A compensation curve keyed on measured luminance: EV added at a given metered EV. Four control
 /// points is enough for the shape projects actually author — darker at night, flatter in daylight —
@@ -105,7 +137,7 @@ struct LuminanceHistogram {
 struct ExposureState {
     ExposureMode mode = ExposureMode::Automatic;
     f32 manual_ev100 = 12.0F;
-    CameraExposure camera;
+    CameraControls camera;
     AutoExposureSettings automatic;
     /// The value in force. Adapts toward the metered target under `Automatic`.
     f32 current_ev100 = 12.0F;
@@ -113,7 +145,7 @@ struct ExposureState {
     /// Advance one frame. `histogram` is ignored outside `Automatic`.
     void update(const LuminanceHistogram& histogram, f32 delta_seconds) noexcept;
 
-    [[nodiscard]] f32 multiplier() const noexcept { return exposure_multiplier(current_ev100); }
+    [[nodiscard]] f32 multiplier() const noexcept { return multiplier_for_ev100(current_ev100); }
 };
 
 }  // namespace cy::rendering

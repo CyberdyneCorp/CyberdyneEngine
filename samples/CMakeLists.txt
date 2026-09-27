@@ -164,6 +164,15 @@ add_subdirectory(11-ship)
 # device and writes nothing without one, so it has no CTest entry; what is gated automatically is
 # everything underneath it.
 add_subdirectory(12-beauty)
+
+# ABI 1.3's proof. samples/13-rts-api is an RTS whose every decision is Swift calling the engine
+# through the game-service entries `add-swift-game-api` appended: a camera panned by keys and the
+# screen edge, a unit picked under the pointer with a camera ray and a physics raycast, sent to a
+# clicked ground point by navigation, heard arriving, and built from a prefab. Its host binds six
+# adapters and carries nothing across; its test drives it with synthetic input and a negative
+# control. Declares nothing without Swift, like 04-character.
+add_subdirectory(13-rts-api)
+
 # Not a milestone artefact: the picture a strategy game's selection makes — a squad selected by a drag
 # box, an enemy hovered, a unit behind a building — marked from gameplay as components and outlined
 # by the engine's `SelectionOutlines` stage. Like every capture here it needs a graphics device and

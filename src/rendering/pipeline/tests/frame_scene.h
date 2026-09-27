@@ -114,6 +114,10 @@ struct FrameSceneHooks {
     /// The stable identity a box's draws carry — an entity's bits, for a caller that marks boxes
     /// through the ECS. Absent, box `which` is `900 + which`, as it always was.
     u64 (*stable_id)(u32 which, void* user) noexcept = nullptr;
+    /// After the upload, before the capture passes and `execute`: where a pass that reads what the
+    /// frame produced — `render.grading`'s metering chain — is declared.
+    Status (*after_assemble)(RenderGraph& graph, const FrameResources& resources,
+                             void* user) noexcept = nullptr;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.

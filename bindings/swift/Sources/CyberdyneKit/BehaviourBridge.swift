@@ -1,7 +1,7 @@
 // BehaviourBridge.swift — a Swift class, as a `CyBehaviourVTable`. Tasks 3.2, 3.5, 3.7.
 //
 // This is the file where Swift stops. Everything above it is a class with lifecycle methods;
-// everything below is five C function pointers and an opaque `void*`, which is what the engine
+// everything below is six C function pointers and an opaque `void*`, which is what the engine
 // stores and hands back.
 //
 // --- THE OWNERSHIP RULE, IN ONE PARAGRAPH ---------------------------------------------------------
@@ -115,6 +115,10 @@ private func makeVTable(_ record: BehaviourRegistration) -> CyBehaviourVTable {
     vtable.create = behaviourCreate
     vtable.destroy = behaviourDestroy
     vtable.fixed_update = behaviourFixedUpdate
+    // ABI 1.3: a class that did not write `onUpdate` registers no frame callback, and the engine
+    // then never schedules it for a frame — `swift-scripting`'s "Unimplemented callback costs
+    // nothing", decided here rather than by a call that returns at once.
+    vtable.frame_update = record.callbacks.contains(.update) ? behaviourFrameUpdate : nil
     vtable.serialize = behaviourSerialize
     vtable.deserialize = behaviourDeserialize
     // Retained for the life of the image. See the header comment; there is no later safe release.
@@ -174,6 +178,20 @@ private let behaviourFixedUpdate:
                 try object.onFixedUpdate(Double(delta))
             } catch {
                 record.report(error, in: "onFixedUpdate", on: object)
+            }
+        }
+
+/// `frame_update`, ABI 1.3: one variable-rate frame, dispatched to `onUpdate` during the frame-update
+/// phase — the phase in which the pointer and the camera answer.
+private let behaviourFrameUpdate:
+    @convention(c) (CyInstance?, Float, UnsafeMutableRawPointer?)
+        -> Void = { raw, delta, userData in
+            guard let record = registration(userData), let object = instance(raw) else { return }
+            guard object.isEnabled, record.callbacks.contains(.update) else { return }
+            do {
+                try object.onUpdate(Double(delta))
+            } catch {
+                record.report(error, in: "onUpdate", on: object)
             }
         }
 
@@ -259,7 +277,7 @@ extension CyResult {
     var rawValue32: Int32 { Int32(bitPattern: UInt32(rawValue)) }
 }
 
-// --- The tree callbacks, which the ABI cannot drive yet ----------------------------------------------
+// --- The tree callbacks the ABI cannot drive yet ----------------------------------------------
 
 extension Behaviour {
     /// Drive one lifecycle callback by hand, with the same guarantees the engine's own thunks give:
@@ -267,9 +285,10 @@ extension Behaviour {
     /// and a thrown error disables the instance rather than escaping into C.
     ///
     /// WHY THIS IS PUBLIC AND WHY IT IS NOT A WORKAROUND. `CyBehaviourVTable` carries `create`,
-    /// `destroy`, `fixed_update`, `serialize` and `deserialize`. The tree callbacks
+    /// `destroy`, `fixed_update`, `serialize`, `deserialize` and — since ABI 1.3 — `frame_update`,
+    /// which the engine dispatches to `onUpdate`. The other tree callbacks
     /// `scene-graph-and-nodes` defines — `onEnterTree`, `onReady`, `onEnable`, `onDisable`,
-    /// `onUpdate`, `onExitTree` — need scene and frame entries that ABI 1.0's table does not have.
+    /// `onExitTree` — need scene entries that the table does not have yet.
     /// They are part of the model, they are recorded in `behaviourCallbacks`, and this is the one
     /// place that dispatches them. When those entries are APPENDED to `CyInterface` — the only legal
     /// way to grow it — the new thunks call exactly this, and nothing in a game changes.

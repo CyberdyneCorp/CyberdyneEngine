@@ -205,8 +205,13 @@ public:
     /// Destroy one instance through the vtable of the generation that created it.
     [[nodiscard]] Status destroy(u32 slot) noexcept;
 
-    /// One fixed tick over every live instance, each through its own generation's vtable.
+    /// One fixed tick over every live instance, each through its own generation's vtable. Runs in
+    /// CY_PHASE_FIXED_UPDATE and records `dt` as the host clock's fixed delta.
     void fixed_update(f32 dt) noexcept;
+
+    /// One variable-rate frame over every live instance that registered a `frame_update` (ABI 1.3).
+    /// Runs in CY_PHASE_FRAME_UPDATE and records `dt` as the host clock's frame delta.
+    void frame_update(f32 dt) noexcept;
 
     /// THE RELOAD. `library_path` MUST be a different file from the current one — see the header
     /// comment, item 3. Returns a report; on failure the previous generation is still live and

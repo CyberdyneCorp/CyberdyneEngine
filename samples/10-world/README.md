@@ -141,6 +141,44 @@ and its ground shadows are two reconstructions. Marching `CloudField` in the dom
 the step that would make them one. Metal's `world_msl.h` is regenerated from the same source and
 not run on this host; D3D12 builds no path for this sample (see the change's design).
 
+## Aerial perspective
+
+![distant terrain and forest with aerial perspective](../../docs/design/images/aerial-perspective-on.png)
+![the same frame before](../../docs/design/images/aerial-perspective-off.png)
+![dusk: the far hills take the horizon's colour](../../docs/design/images/aerial-perspective-dusk-on.png)
+![the same dusk before](../../docs/design/images/aerial-perspective-dusk-off.png)
+
+`atmosphere-sky-and-clouds`' aerial perspective is **the sky's own atmosphere, applied to every lit
+surface**. Every frame the stage integrates `sky::AerialPerspectiveTable` for its camera — 32 by 18
+froxels and 32 slices out to the dome — from the world's `Atmosphere` and `AtmosphereTables`, the
+ones the sky lighting is composed from, on the world's workers. The lit fragment path in
+`shaders/world.slang` (terrain, foliage, and the sea with `--no-water-shading`) multiplies each fragment by the transmittance
+between it and the eye and adds the in-scattered light through `cy/aerial_perspective.slang`,
+divided by the same exposure as the sky. There is no fog colour and no fog distance anywhere.
+
+**The dome is that atmosphere too.** With aerial perspective on, the dome's clear sky is
+`sky::IncrementalSkyView::update_aerial` over the same tables, and the device cloud pass composes
+its clouds over it instead of over the stand-in gradient. Without that, the terrain would fade toward
+a colour the sky beside it did not have. The world is a kilometre and a half across, so on a clear
+day the air adds a few per cent to the far hills and the forest behind them rather than hiding them:
+that is what the atmosphere does at that distance. `render.world_aerial_perspective` uses walls
+hundreds of kilometres away to show the large-scale half, where the distant surface meets the sky at
+the horizon.
+
+The clear-sky table and the volume cost 1.4 ms of `stage_build_ms` a frame on the world's four
+workers, printed as the take's summary line. `--no-aerial-perspective` draws the frame as it was
+before: 192 of 192 frames of a day compare byte-identical against the build before this change, and
+the authoritative digest does not move (`openspec/changes/add-aerial-perspective/evidence/`). A
+headless run builds no table.
+
+The dome's band below the horizon, past the world's edge, is now the planet's ground seen through
+the air — grey-brown at a ground albedo of 0.1 — where the stand-in drew more blue sky.
+
+**Not applied:** the shaded sea — `shaders/water.slang`, the default since water shading — reads
+no table, so its surface is not attenuated by the air in front of it; the dome's clouds are composed over the atmosphere's sky but are not attenuated by
+the air in front of them (the requirement's "and to volumetric media"), and the engine's forward
+frame (`cy/frame.slang`) reads no table.
+
 ## The three tasks this artefact answers
 
 **7.1 — the world.** Above. Run it and read the report it prints; every number in it is read back
@@ -328,6 +366,7 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--no-water-shading` | draw the sea through the land's lit path, as before water shading existed; the frame is byte-identical to that build's |
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
 | `--no-cloud-shadows` | attenuate the sun once, at the viewer, as before cloud shadows existed; the frame is byte-identical to that build's |
+| `--no-aerial-perspective` | no air between the surfaces and the eye, and the stand-in clear sky, as before aerial perspective existed; the frame is byte-identical to that build's |
 | `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
 | `--quiet-wait-s <s>` | how long `--quiet-host` waits for a quiet host before failing. Default 600 |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |

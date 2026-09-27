@@ -287,3 +287,7 @@ add_subdirectory(abi)
 # to the transport-neutral dispatcher registered on `cy::abi::Host`. Neither compiler nor renderer
 # links back to the editor.
 add_subdirectory(editor_backend)
+
+# The game-service adapters, above the ABI and above the subsystems they adapt: each implements one
+# `cy::abi::game` backend over the server that owns its verbs (`add-swift-game-api`).
+add_subdirectory(game_backend)

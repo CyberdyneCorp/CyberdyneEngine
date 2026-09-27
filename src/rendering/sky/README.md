@@ -188,8 +188,25 @@ granularities because a cell that changed and a state that changed fail differen
   environment-field binding and draws no world, so it reads nothing; and the sample's device sky
   dome is a seeded stand-in density, not `CloudField`, so the dome's clouds and the ground's
   shadows are two reconstructions in that one picture even though the engine's sky and field agree.
-  `Aerial perspective` is still `exempt:m11e`: `aerial_perspective()` and the froxel table are built
-  from the same `Atmosphere` as the sky and applied to no opaque surface anywhere in the tree.
+* **AERIAL PERSPECTIVE IS APPLIED BY THE SAME FRAME, FROM THE SAME ATMOSPHERE.** `samples/10-world`
+  integrates `AerialPerspectiveTable` for its own camera every frame from the world's `Atmosphere`
+  and `AtmosphereTables`, packs it with `pack_aerial_perspective()`, and its lit path samples it
+  through `cy/aerial_perspective.slang`; the dome's clear sky is `IncrementalSkyView::
+  update_aerial` over the same tables, divided by the same exposure. `sample_at()` is the device
+  sampler on the processor — interpolated in depth from the eye, so a surface a few metres away is
+  left as it was lit, where `sample()` would hand it the first slice's whole haze. `update()` takes
+  an optional job system and returns the serial table bit for bit. The dome's sky is
+  `sky_radiance_aerial()`, which shares the table's step rule — each step integrated exactly for a
+  constant source and extinction — because `sky_radiance_tabulated()`'s sixteen far-end-weighted
+  steps lose a third of the horizon's blue, and a wall 800 km out was 0.17 away from the sky above
+  it until the two were one quadrature. `sky_radiance_tabulated()` is unchanged: the lighting
+  integral and every capture are built on it. Evidence:
+  `render.world_aerial_perspective` (the sample's SPIR-V on a device: the table applied texel for
+  texel, a near wall unchanged, a wall 800 km out meeting the sky at the horizon, a changed
+  atmosphere moving both together, and off bit-identical to the frame before) and three cases in
+  `integration.render_sky_tables`. NOT APPLIED: the engine's forward frame (`cy/frame.slang`), and
+  the sample's device clouds, which are composed over the atmosphere's sky but not attenuated by the
+  air in front of them — the requirement's "and to volumetric media".
 * **The lighting integral's cloud term is a hemispherical mean.** `compose_sky_lighting()` measures
   the clouds' effect over twelve probes and applies one attenuation plus one addition. It is right in
   magnitude — thicker cover gives less irradiance — and wrong in DIRECTION: a cloud bank on one

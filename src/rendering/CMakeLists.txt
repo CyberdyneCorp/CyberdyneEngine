@@ -174,6 +174,13 @@ add_subdirectory(particles)
 # is read after both.
 add_subdirectory(light_probes)
 
+# EXPOSURE AND COLOUR GRADING ON THE DEVICE. `rendering-post-processing`'s steps 6, 10, 11 and 12:
+# the luminance histogram and its adaptation as compute dispatches, and the graded resolve — exposure,
+# the tone curve and one lookup into a baked grading table — as the frame's post-process callback.
+# It names the forward frame's resources and the post chain's arithmetic; its device suite renders
+# pipeline/'s scene, so it is read after pipeline/.
+add_subdirectory(grading)
+
 # SELECTION OUTLINES AND UNIT HIGHLIGHTS. The engine's half of `editor-viewport-and-gizmos`' "selection
 # outlines, highlight rendering, and overlays": a mask of what a game marked and an edge pass over the
 # tonemapped colour, declared through the forward frame's stage seam. It draws through the pipeline

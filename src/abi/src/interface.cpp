@@ -23,6 +23,8 @@
 
 #include <cstring>
 
+#include "game/thunks.h"
+
 namespace {
 
 using cy::abi::from_abi;
@@ -962,6 +964,52 @@ const CyInterface kInterface = {
     &abi_service_submit,
     &abi_service_cancel,
     &abi_service_poll,
+
+    // --- 1.3: the game services, one file per group under src/abi/src/game/ ---------------------
+    &cy::abi::game::time_get,
+
+    &cy::abi::game::input_find_action,
+    &cy::abi::game::input_action_state,
+    &cy::abi::game::input_action_state_by_name,
+    &cy::abi::game::input_pointer,
+    &cy::abi::game::input_modifiers,
+    &cy::abi::game::input_find_context,
+    &cy::abi::game::input_push_context,
+    &cy::abi::game::input_pop_context,
+
+    &cy::abi::game::camera_active,
+    &cy::abi::game::camera_view,
+    &cy::abi::game::camera_screen_to_ray,
+    &cy::abi::game::camera_world_to_screen,
+    &cy::abi::game::camera_set_target,
+    &cy::abi::game::camera_set_pose,
+    &cy::abi::game::camera_clear_pose,
+
+    &cy::abi::game::physics_raycast,
+    &cy::abi::game::physics_raycast_all,
+    &cy::abi::game::physics_shape_cast,
+    &cy::abi::game::physics_overlap,
+
+    &cy::abi::game::nav_find_path,
+    &cy::abi::game::nav_request_path,
+    &cy::abi::game::nav_poll_path,
+    &cy::abi::game::nav_cancel_path,
+    &cy::abi::game::nav_agent_configure,
+    &cy::abi::game::nav_agent_move_to,
+    &cy::abi::game::nav_agent_stop,
+    &cy::abi::game::nav_agent_state,
+
+    &cy::abi::game::audio_find_cue,
+    &cy::abi::game::audio_play,
+    &cy::abi::game::audio_stop,
+    &cy::abi::game::audio_voice_playing,
+    &cy::abi::game::audio_find_bus,
+    &cy::abi::game::audio_set_bus_volume,
+
+    &cy::abi::game::spawn_resolve,
+    &cy::abi::game::spawn_instantiate,
+    &cy::abi::game::spawn_instantiate_many,
+    &cy::abi::game::spawn_destroy,
 };
 
 }  // namespace
@@ -980,7 +1028,7 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.2 and the module requires a later minor");
+                              "this engine exports ABI 1.3 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

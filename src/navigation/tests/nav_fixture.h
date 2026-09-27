@@ -12,14 +12,14 @@
 
 namespace cy::navigation::testing {
 
-/// A tile of `cells` x `cells` quads spanning one `tile_size` square at `coord`, at height `y`.
-///
-/// Winding is counter-clockwise seen from above, which is what makes `NavMesh::add_tile`'s
-/// opposite-winding edge match find the internal adjacency: the quad to the east traverses the
-/// shared edge in the opposite direction.
-[[nodiscard]] inline NavTileData grid_tile(Allocator& allocator, TileCoord coord, f32 tile_size,
-                                           u32 cells, f32 y = 0.0F,
-                                           AreaType area = kAreaGround) noexcept {
+/// A tile of `cells` x `cells` quads like `grid_tile` below, keeping only the quads for which
+/// `walkable(row, column)` holds; a missing quad is a hole in the mesh, which is
+/// how a test carves an obstacle or an L-shaped corridor out of an otherwise regular grid.
+template <typename Walkable>
+[[nodiscard]] inline NavTileData grid_tile_where(Allocator& allocator, TileCoord coord,
+                                                 f32 tile_size, u32 cells, Walkable walkable,
+                                                 f32 y = 0.0F,
+                                                 AreaType area = kAreaGround) noexcept {
     NavTileData data(allocator);
     data.coord = coord;
 
@@ -41,6 +41,9 @@ namespace cy::navigation::testing {
     };
     for (u32 row = 0; row < cells; ++row) {
         for (u32 column = 0; column < cells; ++column) {
+            if (!walkable(row, column)) {
+                continue;
+            }
             NavPoly poly;
             poly.first_corner = static_cast<u32>(data.corners().size());
             poly.corner_count = 4;
@@ -58,6 +61,18 @@ namespace cy::navigation::testing {
     }
     data.finalise();
     return data;
+}
+
+/// A tile of `cells` x `cells` quads spanning one `tile_size` square at `coord`, at height `y`.
+///
+/// Winding is counter-clockwise seen from above, which is what makes `NavMesh::add_tile`'s
+/// opposite-winding edge match find the internal adjacency: the quad to the east traverses the
+/// shared edge in the opposite direction.
+[[nodiscard]] inline NavTileData grid_tile(Allocator& allocator, TileCoord coord, f32 tile_size,
+                                           u32 cells, f32 y = 0.0F,
+                                           AreaType area = kAreaGround) noexcept {
+    return grid_tile_where(
+        allocator, coord, tile_size, cells, [](u32, u32) noexcept { return true; }, y, area);
 }
 
 /// One tile published into a fresh mesh. The default shape: 8 m square, four quads a side.

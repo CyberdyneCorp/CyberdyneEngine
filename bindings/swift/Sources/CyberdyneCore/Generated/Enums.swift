@@ -93,6 +93,37 @@ public enum SystemStage: UInt32, Sendable, CaseIterable {
     case render = 7
 }
 
+/// `CyPhase`: the update phase an ABI 1.3 entry is called in.
+public enum Phase: UInt32, Sendable, CaseIterable {
+    case none = 0
+    case fixedUpdate = 1
+    case frameUpdate = 2
+}
+
+/// `CyShapeKind`: the shapes a physics query sweeps or overlaps.
+public enum ShapeKind: UInt32, Sendable, CaseIterable {
+    case sphere = 0
+    case capsule = 1
+    case box = 2
+}
+
+/// `CyNavPathStatus`: where a crowd agent is on its way to a target.
+public enum NavPathStatus: UInt32, Sendable, CaseIterable {
+    case idle = 0
+    case computing = 1
+    case following = 2
+    case arrived = 3
+    case failed = 4
+}
+
+/// `CyNavQueryState`: an asynchronous path search's state.
+public enum NavQueryState: UInt32, Sendable, CaseIterable {
+    case pending = 0
+    case ready = 1
+    case consumed = 2
+    case cancelled = 3
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

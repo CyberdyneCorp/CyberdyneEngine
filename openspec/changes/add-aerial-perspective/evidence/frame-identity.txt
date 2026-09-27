@@ -1,0 +1,51 @@
+# samples/10-world, Development, Vulkan, NVIDIA GeForce RTX 5060, 960x540, default seed,
+# --seconds 24 --fps 8 (192 frames, one simulated day). Host shared with other builds.
+
+before   base 1fe6446 build of cy_sample_world (this tree's changes stashed), --frames
+off      this change, --no-aerial-perspective --frames
+on       this change, --frames
+
+frame-by-frame cmp, before vs off:    192 frames, 0 differ
+frame-by-frame cmp, before vs on:     192 frames, 192 differ
+authoritative take digest:            before 0x3DE89D039348ECB5, off 0x3DE89D039348ECB5,
+                                      on 0x3DE89D039348ECB5
+RHI validation errors:                0 (off), 0 (on)
+cloud agreement (device against the processor's reference, on the warm-up frame):
+                                      off worst 0.00000246, on worst 0.00001080 (relative above one)
+
+THE FIRST OFF BUILD WAS NOT IDENTICAL, AND WHY. With the cloud pass choosing its clear sky by a
+select (`atmosphereSky > 0.5 ? loaded : standInClear(direction)`), 3 of 192 frames differed from
+before in one or two pixels by one 8-bit step (frames 98, 102, 103, dusk sky). The base build is
+deterministic — two takes of it compare 192 of 192 — and restoring only the committed
+world_visual_spirv.h made the off take identical again, so the difference was the recompiled cloud
+pass. With a branch instead of a select, the stand-in path is the arithmetic it was, and the off take
+is identical frame for frame (above).
+
+first published from this take, before the rebase (frame 60 and frame 100), and replaced by the
+re-run below:
+  mean absolute change over the lower half of the frame (sea on the lit path), 8-bit:
+  frame 60 3.35, frame 100 2.58
+
+cost, 192-frame take with --budget-ms (only for the summary), on this loaded host:
+  on   the atmosphere integrated for the camera (clear sky table 64x32 at 32 steps, aerial
+       perspective volume 32x18x32, both on the world's four workers): 1.4 ms mean of
+       stage_build_ms
+  off  0.0 ms
+
+RE-RUN ON THE REBASED TREE (base 29e733d6, with water shading, soft and contact shadows merged).
+Water shading is on by default there, so the sea is drawn by shaders/water.slang, which reads no
+aerial perspective table; its two pictures are drawn with world.slang and do.
+
+before   origin/main 29e733d6 build of cy_sample_world, --frames
+off      this change rebased onto it, --no-aerial-perspective --frames
+on       this change rebased onto it, --frames
+
+frame-by-frame cmp, before vs off:    192 frames, 0 differ
+frame-by-frame cmp, before vs on:     192 frames, 192 differ
+authoritative take digest:            0x3DE89D039348ECB5 in all three
+RHI validation errors:                0 (before), 0 (off), 0 (on)
+mean absolute change over the lower half of the frame, 8-bit: frame 60 2.75, frame 100 1.91
+
+published from this re-run (off is the before build's frame, byte for byte):
+  docs/design/images/aerial-perspective-{on,off}.png          frame 60, morning
+  docs/design/images/aerial-perspective-dusk-{on,off}.png     frame 100, dusk

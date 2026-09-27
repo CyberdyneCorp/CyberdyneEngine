@@ -941,6 +941,60 @@ capture-beauty-bloom *args:
     python3 tools/docs/collect_beauty_shot.py docs/design/images/bloom-beauty-off.png \
         docs/design/images/bloom-beauty-on.png
 
+# THE BEAUTY SHOT UNGRADED AND UNDER ITS TWO LOOKS: the same scene, the same compiled programs and the
+# same settled embers, photographed without a look and with `content/beauty/looks/warm.cygrade`
+# (the parametric controls alone) and `cool.cygrade` (a white balance and an exported-style `.cube`,
+# baked into one table). Grading runs at step 12, after the tone curve. tools/docs/compare_grading.py
+# fails the recipe unless the ungraded picture is M11.c's published pixels exactly and each look moves
+# the frame's balance the way its name says. Needs a graphics device, and says so and writes nothing
+# without one.
+# Photograph the beauty shot ungraded, warm and cool. Usage: just capture-beauty-grading [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-grading *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-grading: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-grading"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    echo "==> capture     ungraded"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+        --still docs/design/images/grading-beauty-none.png ${rest}
+    for look in warm cool; do
+        echo "==> capture     ${look}"
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --look "content/beauty/looks/${look}.cygrade" \
+            --still "docs/design/images/grading-beauty-${look}.png" \
+            --manifest "docs/design/images/grading-beauty-${look}.manifest" ${rest}
+    done
+
+    echo "==> compare     ungraded against M11.c's still, and each look's balance"
+    python3 tools/docs/compare_grading.py \
+        --none docs/design/images/grading-beauty-none.png \
+        --warm docs/design/images/grading-beauty-warm.png \
+        --cool docs/design/images/grading-beauty-cool.png \
+        --reference docs/design/images/m11c-beauty-shot.png \
+        --triptych docs/design/images/grading-beauty-triptych.png
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/grading-beauty-none.png \
+        docs/design/images/grading-beauty-warm.png docs/design/images/grading-beauty-cool.png
+
 # DOES THE SHOT READ ITS COOKED MIP CHAIN? M11.c task 3.8, measured on the artefact.
 #
 # The shot photographed three times from the same compiled programs: twice with every cooked chain
