@@ -281,6 +281,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
     features.motion_blur = config.motion_blur;
     features.bloom = config.bloom;
+    features.depth_of_field = config.depth_of_field;
     features.bloom_levels = description_.bloom.mip_count;
     features.post_process = chain.count != 0;
     return ok();
@@ -678,6 +679,7 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.contact_shadows_target = view.contact_shadows;
     description.contact_shadows_stage = sinks.contact_shadows;
     description.selection_outlines_stage = sinks.selection_outlines;
+    description.depth_of_field_stage = sinks.depth_of_field;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =

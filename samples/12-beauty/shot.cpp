@@ -126,6 +126,18 @@ void read_bloom(Shot& shot, std::string_view field, std::string_view& rest) {
     }
 }
 
+void read_depth_of_field(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "f-number") {
+        shot.dof_f_number = to_float(take(rest));
+    } else if (field == "focus") {
+        std::string name(take(rest));
+        const f32 x = to_float(take(rest));
+        const f32 y = to_float(take(rest));
+        const f32 z = to_float(take(rest));
+        shot.focus_targets.emplace_back(std::move(name), Vec3{x, y, z});
+    }
+}
+
 void read_material(Shot& shot, std::string_view& rest) {
     const std::string_view key = take(rest);
     const std::string_view field = take(rest);
@@ -252,6 +264,9 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             shot.exposure_stops = to_float(take(line));
         } else if (keyword == "bloom") {
             read_bloom(shot, take(line), line);
+        } else if (keyword == "depth-of-field") {
+            const std::string_view field = take(line);
+            read_depth_of_field(shot, field, line);
         } else if (keyword == "material") {
             read_material(shot, line);
         } else if (keyword == "mesh") {
@@ -315,6 +330,15 @@ const ShotMaterial* Shot::material(std::string_view key) const noexcept {
     for (const ShotMaterial& material : materials) {
         if (material.key == key) {
             return &material;
+        }
+    }
+    return nullptr;
+}
+
+const Vec3* Shot::focus_target(std::string_view name) const noexcept {
+    for (const auto& [key, position] : focus_targets) {
+        if (key == name) {
+            return &position;
         }
     }
     return nullptr;

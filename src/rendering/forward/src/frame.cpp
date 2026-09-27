@@ -446,6 +446,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "resolve";
         case FramePassKind::Temporal:
             return "temporal";
+        case FramePassKind::DepthOfField:
+            return "depth of field";
         case FramePassKind::Bloom:
             return "bloom";
         case FramePassKind::PostProcess:
@@ -484,7 +486,8 @@ void ForwardFrame::stage(FramePassKind kind, const char* name, PassId pass) noex
 
 void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& state,
                                           const FrameStageDeclaration& producer, FramePassKind kind,
-                                          const char* name, ResourceId target) noexcept {
+                                          const char* name, ResourceId target,
+                                          ResourceId source) noexcept {
     if (!status_) {
         return;
     }
@@ -493,6 +496,7 @@ void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& 
     inputs.normal_roughness = resources_.normal_roughness;
     inputs.target = target;
     inputs.draw_instances = resources_.draw_instances;
+    inputs.source = source;
     inputs.width = state.description->width;
     inputs.height = state.description->height;
     const PassId first = producer.declare(graph, inputs, producer.user);
@@ -624,6 +628,23 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
         attach(builder, description, FramePassKind::Temporal);
         stage(FramePassKind::Temporal, "temporal", builder.id());
         state.current_color = resources_.temporal_history;
+    }
+
+    // 7 of the post chain. Depth of field: after the temporal resolve, so it blurs a converged
+    // image rather than a jittered one, and before bloom, so a defocused highlight blooms as the
+    // disc it became. The producer reads the colour so far and writes a new full-resolution one.
+    if (features.depth_of_field) {
+        TextureRequest request;
+        request.name = "depth of field";
+        request.format = description.color_format;
+        request.width = description.width;
+        request.height = description.height;
+        request.extra_usage = rhi::TextureUsage::Storage;
+        resources_.depth_of_field = graph.create_texture(request);
+        declare_produced_stage(graph, state, description.depth_of_field_stage,
+                               FramePassKind::DepthOfField, "depth of field",
+                               resources_.depth_of_field, state.current_color);
+        state.current_color = resources_.depth_of_field;
     }
 
     // Bloom: scene-referred, after the temporal resolve and before the exposure the post-process
@@ -758,6 +779,19 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
             return fail(ErrorCode::InvalidArgument,
                         "forward frame: selection outlines compare marked surfaces with the depth "
                         "prepass, and this frame has none");
+        }
+    }
+    // DEPTH OF FIELD HAS NO SINGLE-PASS STAND-IN, and it reads the single-sample depth: with MSAA
+    // that is the prepass's resolve, which a frame without the prepass does not declare.
+    if (features.depth_of_field) {
+        if (description.depth_of_field_stage.declare == nullptr) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: depth of field needs its producer's stage");
+        }
+        if (samples > 1 && !features.depth_prepass) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: depth of field reads the single-sample depth, which a "
+                        "multisampled frame has only after the depth prepass's resolve");
         }
     }
     prepass_mode_ = select_prepass_mode(description.features);

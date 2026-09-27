@@ -16,6 +16,7 @@
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/contact_shadows/contact_pass.h>
+#include <cy/rendering/depth_of_field/dof_pass.h>
 #include <cy/rendering/grading/grading_renderer.h>
 #include <cy/rendering/grading/look_file.h>
 #include <cy/rendering/graph/executor.h>
@@ -76,6 +77,8 @@ constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
 constexpr rhi::Format kDepthFormat = rhi::Format::D32Sfloat;
 constexpr u32 kShadowExtent = 2048;
 constexpr f32 kFarPlane = 400.0F;
+/// The width of the full-frame sensor the shot's horizontal field of view is quoted for.
+constexpr f32 kSensorWidthMm = 36.0F;
 
 [[nodiscard]] f64 now_millis() noexcept {
     return std::chrono::duration<f64, std::milli>(
@@ -216,6 +219,8 @@ struct Stage::Device {
     /// The contact trace, created only when the run asked for soft shadows. See
     /// `Stage::set_soft_shadows`.
     rendering::contact_shadows::ContactShadowPass contact;
+    /// The depth of field gather, created only when the run named a focus target.
+    rendering::depth_of_field::DepthOfFieldPass dof;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -269,6 +274,7 @@ Stage::~Stage() {
             device_->trails.shutdown();
             device_->occlusion.destroy();
             device_->contact.destroy();
+            device_->dof.destroy();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->grading.shutdown();
@@ -2018,6 +2024,9 @@ Status Stage::create_frame() noexcept {
     // GRADING, ONLY WHEN A LOOK WAS NAMED: step 12, after the tone curve. The manifest then names
     // `ColourGrading`; without a look the chain is the one M11.c published.
     description.post.colour_grading = look_path_ != nullptr;
+    // DEPTH OF FIELD, ONLY WHEN A FOCUS TARGET WAS NAMED: step 7, before bloom. It reads the depth
+    // the opaque pass writes — the frame's own, with or without the prepass.
+    description.post.depth_of_field = dof_enabled_;
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -2095,8 +2104,32 @@ Status Stage::create_frame() noexcept {
             return made;
         }
     }
+    if (dof_enabled_) {
+        if (Status made = device_->dof.create(
+                device, rendering::depth_of_field::DepthOfFieldPassDescription{width_, height_});
+            !made) {
+            return made;
+        }
+    }
     device_->frame_ready = true;
     return ok();
+}
+
+Status Stage::set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection, Vec3 eye_world,
+                                 Vec3 target_world) noexcept {
+    // THE CAMERA'S OWN LENS. The shot's field of view is horizontal on a full-frame sensor, 36 mm
+    // wide; the sensor height this image's aspect crops from it and the vertical field of view
+    // give the focal length, so the circle of confusion is computed for the lens the projection
+    // draws with. Autofocus on a target is its distance along the view axis.
+    rendering::depth_of_field::DofSettings settings;
+    settings.lens.sensor_height_mm = kSensorWidthMm / aspect;
+    settings.lens.focal_length_mm = rendering::depth_of_field::focal_length_for_field_of_view(
+        fov_y, settings.lens.sensor_height_mm);
+    settings.lens.aperture = dof_f_number_;
+    const Vec3 forward = normalise(subtract(target_world, eye_world));
+    settings.lens.focus_distance = dot3(subtract(dof_focus_, eye_world), forward);
+    device_->dof.set_settings(settings);
+    return device_->dof.set_view(rendering::depth_of_field::DofView{projection, width_, height_});
 }
 
 Status Stage::create_contact() noexcept {
@@ -2403,6 +2436,14 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     if (bloom_enabled_) {
         sinks.passes[static_cast<usize>(FramePassKind::Bloom)] =
             device_->bloom.sink(device_->assembly.frame().bloom());
+    }
+    if (dof_enabled_) {
+        if (Status set = set_depth_of_field(fov_y, aspect, projection, eye_world, target_world);
+            !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        sinks.depth_of_field = device_->dof.stage();
     }
 
     cy::rendering::SpatialIndex index(*allocator_);

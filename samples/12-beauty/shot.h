@@ -62,6 +62,7 @@
 #include <cy/backends/rhi/handles.h>
 #include <cy/backends/rhi/pipeline.h>
 #include <cy/core/base/expected.h>
+#include <cy/core/math/matrix.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
@@ -187,6 +188,13 @@ struct Shot {
     f32 bloom_scatter = 0.7F;
     u32 bloom_levels = 6;
 
+    /// Depth of field, when a run names a focus target (`--depth-of-field <name>`). The lens is the
+    /// camera's own — the focal length its field of view implies on a full-frame sensor 36 mm wide
+    /// — and the f-number is content; the focus distance is the named target's distance along the
+    /// view axis, which is what autofocus on an entity measures. The published still has none.
+    f32 dof_f_number = 1.4F;
+    std::vector<std::pair<std::string, Vec3>> focus_targets;
+
     std::vector<ShotMaterial> materials;
     std::vector<std::pair<std::string, std::string>> meshes;
     std::vector<Instance> instances;
@@ -195,6 +203,8 @@ struct Shot {
     [[nodiscard]] static Expected<Shot, Error> read(const char* path, std::string& problem);
 
     [[nodiscard]] const ShotMaterial* material(std::string_view key) const noexcept;
+    /// A named focus target, or null.
+    [[nodiscard]] const Vec3* focus_target(std::string_view name) const noexcept;
 };
 
 /// What one run measured and produced.
@@ -305,6 +315,15 @@ public:
     /// bakes to the identity is recognised and draws that frame too.
     void enable_grading(const char* look_path) noexcept { look_path_ = look_path; }
 
+    /// Put depth of field into the frame's post chain at step 7, focused on `focus_world` with the
+    /// shot's f-number, through `depth_of_field::DepthOfFieldPass`. Call it before `stage_shot`.
+    /// Off by default, and off is the frame M11.c published.
+    void enable_depth_of_field(const Shot& shot, Vec3 focus_world) noexcept {
+        dof_enabled_ = true;
+        dof_f_number_ = shot.dof_f_number;
+        dof_focus_ = focus_world;
+    }
+
     /// Draw ONE frame and write BOTH images out of it.
     ///
     /// `png_path` is the tonemapped 8-bit image the resolve wrote; `linear_path` is the linear HDR
@@ -334,6 +353,9 @@ private:
     [[nodiscard]] Status create_frame() noexcept;
     [[nodiscard]] Status create_occlusion() noexcept;
     [[nodiscard]] Status create_contact() noexcept;
+    /// This frame's lens for the depth of field pass: the camera's, focused on the named target.
+    [[nodiscard]] Status set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection,
+                                            Vec3 eye_world, Vec3 target_world) noexcept;
     /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
     /// reads it.
     [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
@@ -369,6 +391,9 @@ private:
     rendering::BloomSettings bloom_{};
     bool bloom_enabled_ = false;
     const char* look_path_ = nullptr;
+    bool dof_enabled_ = false;
+    f32 dof_f_number_ = 1.4F;
+    Vec3 dof_focus_{0.0F, 0.0F, 0.0F};
     bool available_ = false;
     Array<u32> pixels_;
 };

@@ -181,6 +181,12 @@ add_subdirectory(light_probes)
 # pipeline/'s scene, so it is read after pipeline/.
 add_subdirectory(grading)
 
+# DEPTH OF FIELD ON THE DEVICE. `rendering-post-processing`'s step 7: the physical circle of confusion
+# the post chain derives, gathered as separate near and far fields at half resolution and composited
+# before bloom, through the forward frame's stage seam. Its device suite renders pipeline/'s scene, so
+# it is read after pipeline/.
+add_subdirectory(depth_of_field)
+
 # SELECTION OUTLINES AND UNIT HIGHLIGHTS. The engine's half of `editor-viewport-and-gizmos`' "selection
 # outlines, highlight rendering, and overlays": a mask of what a game marked and an edge pass over the
 # tonemapped colour, declared through the forward frame's stage seam. It draws through the pipeline
