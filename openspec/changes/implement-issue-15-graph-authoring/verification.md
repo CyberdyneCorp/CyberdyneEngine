@@ -2,6 +2,13 @@
 
 This ledger records executable evidence for issue #15. It is incomplete until every acceptance criterion has a green check and a recorded red mutation.
 
+## Vertex geometry variants and unsupported paths
+
+- **Compiler:** `material_lowering: named geometry variants reject unsupported vertex paths` compiles a vertex graph for static and skinned meshes, checks the two reported variants, and verifies the `vertex-geometry-unsupported` diagnostic for virtual geometry. It also checks an unknown geometry source.
+- **Editor service:** `editor_backend: assigned geometry paths use the material compiler's refusal` submits the source names through the editor service and checks that the unsupported path returns the compiler diagnostic.
+- **Green command:** `ctest --test-dir build/dev -R '^(unit\.material|unit\.editor_backend)$' --output-on-failure` — 2/2 passed on macOS.
+- **Remaining evidence:** a rendered displaced mesh, shadow, and motion-vector comparison against CPU-displaced geometry is tracked by task 3.3.
+
 ## Two-emitter sample image
 
 - **Source:** `samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc`.
