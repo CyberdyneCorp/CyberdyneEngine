@@ -2,6 +2,20 @@
 
 This ledger records executable evidence for issue #15. It is incomplete until every acceptance criterion has a green check and a recorded red mutation.
 
+Run `python3 tools/issue15_acceptance.py --list` to inspect the nine issue criteria or
+`python3 tools/issue15_acceptance.py` to execute their current probes. The runner exits nonzero
+while any criterion is unverified. Native image probes require an executed test and enough
+assertions to exclude the null-device availability branch; a successful doctest exit alone does
+not count as pixel evidence. `python3 tools/test_issue15_acceptance.py` checks this guard. On this
+Mac, the full ledger verified three of nine criteria: both native image probes ran only two
+availability assertions, virtual-geometry scene discovery and unsaved VFX gesture history are
+open, and the final regression/documentation audit is still open. These gaps stay visible in the
+runner rather than being inferred from neighbouring green tests.
+The runner's three unit tests passed. Temporarily bypassing its native assertion-count check
+made two unit tests fail, then restoration passed; this guards against a false green on null
+devices. The cognitive-complexity skill could not score these Python functions locally because
+`complexipy` is not installed; syntax parsing and focused tests passed.
+
 ## VFX palette and compiler registry
 
 - **Open:** `vfx_editor_opens_on_the_shared_canvas_from_backend_nodes` opens `Domain::VfxGraph` using a backend-supplied catalogue and edits it on the shared canvas.
