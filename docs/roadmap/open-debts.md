@@ -8,7 +8,7 @@ a view over records that are already maintained for their own reasons rather tha
 place to keep up to date, because a hand-written list of unfinished work goes stale exactly
 when it matters most — at the moment a milestone closes and somebody adds to it.
 
-Closed milestones: M0, M1, M2, M3, M4, M5, M5.5, M6, M7, M8.a, M8.b, M8.c, M9, M10, M11.a, M11.b, M11.c.
+Closed milestones: M0, M1, M2, M3, M4, M5, M5.5, M6, M7, M8.a, M8.b, M8.c, M9, M10, M11.a, M11.b, M11.c, M11.d.
 
 ## 1. Declared gaps
 
@@ -110,6 +110,8 @@ so this document states the finding and moves nothing.
 | M11.b | `the-game-drawn` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
 | M11.b | `the-game-exists` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/ |
 | M11.b | `the-game-is-playable` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/ |
+| M11.d | `lint` | — nobody | red against a built tree | red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/… |
+| M11.d | `ship-sample-on-desktop` | — nobody | red against a built tree | red unmutated against the build tree build/m11d-records (exit 1): override: CY_BUILD_DIR=build/m11d-records … A GAP IS NOT A PASS. This run returns 1 because something it claims was not satisfied. |
 
 ## 3. Behind the plan
 
@@ -123,9 +125,9 @@ rather than accept a claim, and each one is a piece of work the plan still expec
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | complete | **working** | M11.b |
 | [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | complete | **working** | M11.b |
 | [`audio`](../../openspec/specs/audio/spec.md) | complete | **working** | M11.a |
+| [`build-and-packaging`](../../openspec/specs/build-and-packaging/spec.md) | complete | **working** | M11.d |
 | [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | working | **seed** | M4 |
 | [`camera-system`](../../openspec/specs/camera-system/spec.md) | complete | **working** | M11.b |
-| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | working | **seed** | M6 |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | complete | **working** | M11.b |
 | [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | complete | **working** | M11.b |
 | [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | complete | **working** | M11.b |
@@ -150,7 +152,6 @@ rather than accept a claim, and each one is a piece of work the plan still expec
 | [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | complete | **working** | M11.a |
 | [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | complete | **working** | M11.b |
 | [`terrain`](../../openspec/specs/terrain/spec.md) | complete | **working** | M11.a |
-| [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | working | **seed** | M3 |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | complete | **working** | M11.b |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | working | **seed** | M8.b |
 | [`ui-system`](../../openspec/specs/ui-system/spec.md) | complete | **working** | M11.b |

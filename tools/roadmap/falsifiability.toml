@@ -1110,10 +1110,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "the-shot-does-not-overclaim-the-editor"
-digest = "f4d33ba04e4ff1ff"
+digest = "c5610a4291425bd4"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'honestly missing' in docs/design/beauty-shot.md (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -1351,9 +1351,9 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11d-records (e
 ledger = "m11d"
 criterion = "roadmap-tiers"
 digest = "3525ebf59d1a6c2a"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): developer-workflow-and-just: recorded 'seed', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
+verdict = "proven"
+mutation = "lower-tiers (derived)"
+detail = "red under mutation of 3 file(s)"
 
 [[proof]]
 ledger = "m11d"

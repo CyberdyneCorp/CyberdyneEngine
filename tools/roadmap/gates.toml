@@ -1208,7 +1208,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m11d"
 class = "milestone"
 milestone = "m11d"
-state = "joins-on-close"
+state = "green"
 
 # --- The gate the insertion adds -------------------------------------------------------------------
 #

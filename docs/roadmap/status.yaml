@@ -11,6 +11,22 @@
 # The planned path of each capability through the milestone ladder is in
 # capability-matrix.md; this file records what is actually true today.
 
+# --- M11.d's tiers: three rows completed, each read by a criterion green in the full ledger ----------
+#
+#   testing-and-quality          seed -> complete     M0 -> M11D. The full gate set and the documentation
+#                                gate run (`m11d:full-gate-set`, `m11d:documentation-gate`), and the
+#                                three acceptance scenarios exist (`m11d:acceptance-scenarios`).
+#   developer-workflow-and-just  seed -> complete     M0 -> M11D. Every category of the recipe surface does
+#                                something and the release recipes stop refusing
+#                                (`m11d:developer-workflow-recipes`, `m11d:release-recipes-stop-refusing`).
+#   ecs-core                     working -> complete  M2 -> M11D. 12 of 12 requirements map
+#                                (`m11d:core-rows-at-complete-grade`), and the native port changed
+#                                nothing under src/ecs/ (`m11d:port-touches-no-engine-layer`).
+#
+# All five criteria were evaluated green in M11.d's full ledger at 1fe6446. The other rows M11.d was
+# written to complete moved before the close: `rhi-and-render-graph` to M11.d.5, `build-and-packaging`
+# and five core rows to M11.e (openspec/changes/implement-m11d-desktop/tasks.md, 7.6 and 10.4a).
+
 # --- M11.c's tiers: three rows completed, and only the three with no exemption ---------------------
 #
 #   denoising                   working -> complete  M7 -> M11C. 6 of 6 requirements answered with no
@@ -391,9 +407,9 @@ capabilities:
     milestone: M4
     change: implement-m4-playable
   ecs-core:
-    tier: working
-    milestone: M2
-    change: implement-m2-world
+    tier: complete
+    milestone: M11D
+    change: implement-m11d-desktop
   scene-graph-and-nodes:
     tier: complete
     milestone: M5
@@ -647,13 +663,13 @@ capabilities:
     milestone: M0
     change: implement-m0-ground
   developer-workflow-and-just:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
+    tier: complete
+    milestone: M11D
+    change: implement-m11d-desktop
   testing-and-quality:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
+    tier: complete
+    milestone: M11D
+    change: implement-m11d-desktop
   diagnostics-profiling-and-crash:
     tier: complete
     milestone: M10
