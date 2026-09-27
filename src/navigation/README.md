@@ -128,6 +128,20 @@ accumulate. `tests/test_streaming.cpp` is what makes the four checkable.
 navigation payload. Both are wiring into `cy::world`, and both are named in this milestone's
 handover.
 
+## The funnel
+
+`straighten()` pulls a corridor taut with the simple stupid funnel. Every side test in it reads
+`triarea2`'s sign as **positive is left** (counter-clockwise in the XZ plane), and `portal_sides()`
+orders each portal's endpoints by the same convention; the two must agree, and a funnel whose tests
+disagree with its portals still pulls a path along one cell row straight — both signs agree there —
+while walking every diagonal as a staircase of portal corners. `unit.navigation`'s funnel cases pin
+the convention with diagonal and off-axis paths in both directions, a path around an obstacle and
+one through an L-shaped corridor.
+
+The path is taut **within the corridor it is given**. On a grid of quads, A\* may return a staircase
+of cells that does not contain the straight line between two points, and over that corridor the taut
+path legitimately bends at a cell corner. A vertex shared by consecutive portals is emitted once.
+
 ## Suites
 
 | Suite | Kind | What it holds |

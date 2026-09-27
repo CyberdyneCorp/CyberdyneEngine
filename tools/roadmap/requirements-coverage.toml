@@ -86,7 +86,7 @@ row = "navigation"
 requirement = "Path smoothing"
 evidence = "test:unit.navigation"
 case = "A* crosses a tile boundary and the funnel pulls the path straight"
-note = "The corridor crosses multiple polygons and a tile boundary but the produced point path is exactly its two endpoints, so deleting the funnel reduction leaves extra corners. The rounding case separately keeps endpoints while applying simplification and a corner radius."
+note = "The corridor crosses multiple polygons and a tile boundary but the produced point path is exactly its two endpoints, so deleting the funnel reduction leaves extra corners. The rounding case separately keeps endpoints while applying simplification and a corner radius. Companion funnel cases pull diagonal and off-axis paths across a quad grid to their two endpoints in both directions, bend around a carved obstacle only at its corners, and turn an L-shaped corridor at exactly its inner corner, so a side test with the wrong sign returns portal corners instead."
 
 [[coverage]]
 row = "navigation"
