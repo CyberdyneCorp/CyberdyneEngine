@@ -257,6 +257,18 @@ struct alignas(16) FrameViewData {
     /// `cy.shadow`'s `PcssShape`: x penumbra UV per unit of light-space depth, y smallest kernel
     /// (UV), z largest kernel (UV). w: unused.
     f32 soft_shadow_shape[4] = {};
+    /// The irradiance volume. x: the set 0 texture slot holding the volume's packed probes
+    /// (`gi::IrradianceVolume::pack_texels`), or `kNoMaterialTexture` — the default, and the flat
+    /// ambient every caller that predates the field draws. yzw: probes along x, y and z.
+    /// `light_probes::write_probe_volume` fills this and the two fields after it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 probe_volume_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// xyz: probe (0, 0, 0), camera-relative. w: probe spacing in metres.
+    f32 probe_volume_origin[4] = {0.0F, 0.0F, 0.0F, 1.0F};
+    /// x: the stored coefficients' scale. y: a query's normal offset, z: the visibility slack, in
+    /// metres. w: reserved.
+    f32 probe_volume_params[4] = {1.0F, 0.0F, 1.0F, 0.0F};
 };
 
 /// `soft_shadow_control[0]`'s bits, `cy/frame.slang`'s `kCySoftShadowPcss` and
@@ -264,10 +276,13 @@ struct alignas(16) FrameViewData {
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 464, "CyFrameData's std140 block is 464 bytes");
+static_assert(sizeof(FrameViewData) == 512, "CyFrameData's std140 block is 512 bytes");
 static_assert(offsetof(FrameViewData, soft_shadow_control) == 432);
 static_assert(offsetof(FrameViewData, soft_shadow_shape) == 448);
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);
+static_assert(offsetof(FrameViewData, probe_volume_control) == 464);
+static_assert(offsetof(FrameViewData, probe_volume_origin) == 480);
+static_assert(offsetof(FrameViewData, probe_volume_params) == 496);
 static_assert(offsetof(FrameViewData, material_textures) == 320);
 static_assert(offsetof(FrameViewData, shadow_to_clip) == 336);
 static_assert(offsetof(FrameViewData, shadow_control) == 400);
