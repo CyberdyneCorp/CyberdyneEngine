@@ -576,12 +576,15 @@ SELFTEST_CASES = (
     ("- run: clang-tidy -p build/dev src/core/base/src/error.cpp", "runs clang-tidy directly"),
     ("- run: openspec validate --specs --strict", "runs openspec directly"),
     ("- run: ./scripts/build.sh", "is neither a recipe nor a tool install"),
+    ("- run: python3 samples/05b-editor-window/test_mcp_window.py",
+     "is neither a recipe nor a tool install"),
     ("- run: just build-engine && ninja -C build/dev", "runs ninja directly"),
     ("- run: just build-everything", "invokes recipe 'build-everything', which does not exist"),
 )
 
 SELFTEST_LEGAL = (
     "- run: just build-all",
+    "- run: just test-editor-mcp-client",
     "- run: npm install -g @fission-ai/openspec",
     "- run: |\n          sudo apt-get update\n          sudo apt-get install -y ninja-build",
 )

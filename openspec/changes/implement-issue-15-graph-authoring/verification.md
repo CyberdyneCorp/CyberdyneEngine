@@ -47,6 +47,11 @@ second mutation timeout; restoration passed all three cases. A real editor-only 
 dependency-free tests. No new screenshot or
 native displacement proof is claimed from this attempt.
 
+The quality job initially refused the direct Python test command under `just ci-check`:
+workflow commands must call recipes. `just test-editor-mcp-client` now runs the same three tests,
+and the workflow calls that recipe. A `check_workflows.py --selftest` fixture rejects the original
+direct command and accepts the recipe, so this CI regression is covered by a negative case.
+
 ## VFX palette and compiler registry
 
 - **Open:** `vfx_editor_opens_on_the_shared_canvas_from_backend_nodes` opens `Domain::VfxGraph` using a backend-supplied catalogue and edits it on the shared canvas.
