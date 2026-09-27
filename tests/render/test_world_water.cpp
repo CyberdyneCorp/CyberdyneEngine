@@ -518,7 +518,8 @@ public:
                 device_.destroy_shader_module(module);
             }
         }
-        for (rhi::BufferHandle buffer : {vertices_, colours_, field_, placement_, readback_}) {
+        for (rhi::BufferHandle buffer :
+             {vertices_, colours_, field_, placement_, readback_, aerial_off_}) {
             if (!buffer.is_null()) {
                 device_.destroy_buffer(buffer);
             }
@@ -550,6 +551,7 @@ private:
     rhi::BufferHandle field_;
     rhi::BufferHandle placement_;
     rhi::BufferHandle readback_;
+    rhi::BufferHandle aerial_off_;
     sample::WaterSurface surface_;
     sample::WaterParams params_;
 };
@@ -592,10 +594,11 @@ cy::Status WaterScene::prepare() noexcept {
         *entry.handle = *created;
     }
 
-    // Set 0 exactly as the stage makes it: the cloud shadow field and its placement, here saying
-    // "off" — this suite is about the water, and full sun is the sun it reasons about.
-    rhi::DescriptorBinding bindings[2] = {};
-    for (u32 index = 0; index < 2; ++index) {
+    // Set 0 exactly as the stage makes it: the cloud shadow field, its placement and the aerial
+    // perspective table, all saying "off" — this suite is about the water, and full sun with no
+    // air in front of it is the light it reasons about.
+    rhi::DescriptorBinding bindings[3] = {};
+    for (u32 index = 0; index < 3; ++index) {
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
@@ -603,7 +606,7 @@ cy::Status WaterScene::prepare() noexcept {
     }
     rhi::DescriptorSetLayoutDescription set_description;
     set_description.name = "world cloud shadow";
-    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 2);
+    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 3);
     auto set_layout = device_.create_descriptor_set_layout(set_description);
     if (!set_layout) {
         return cy::make_unexpected(set_layout.error());
@@ -663,7 +666,10 @@ cy::Status WaterScene::prepare() noexcept {
                             rhi::MemoryUse::Upload);
     auto readback = buffer("scene readback", static_cast<u64>(kTexels) * 4 * sizeof(u16),
                            rhi::BufferUsage::TransferDestination, rhi::MemoryUse::Readback);
-    if (!vertices || !colours || !field || !placement || !readback) {
+    // `sky::pack_aerial_perspective()`'s header with its `enabled` word zero: five float4s.
+    auto aerial_off = buffer("aerial perspective off", sizeof(f32) * 5 * 4,
+                             rhi::BufferUsage::Storage, rhi::MemoryUse::Upload);
+    if (!vertices || !colours || !field || !placement || !readback || !aerial_off) {
         return cy::fail(cy::ErrorCode::OutOfMemory, "a water scene buffer did not allocate");
     }
     vertices_ = *vertices;
@@ -671,7 +677,9 @@ cy::Status WaterScene::prepare() noexcept {
     field_ = *field;
     placement_ = *placement;
     readback_ = *readback;
+    aerial_off_ = *aerial_off;
     std::memset(device_.buffer_mapped_pointer(field_), 0, 16 * sizeof(u32));
+    std::memset(device_.buffer_mapped_pointer(aerial_off_), 0, sizeof(f32) * 5 * 4);
     std::memset(device_.buffer_mapped_pointer(placement_), 0, 4 * sizeof(f32));
 
     auto set = device_.allocate_descriptor_set(set_layout_, false);
@@ -679,14 +687,17 @@ cy::Status WaterScene::prepare() noexcept {
         return cy::make_unexpected(set.error());
     }
     set_ = *set;
-    rhi::DescriptorWrite writes[2] = {};
+    rhi::DescriptorWrite writes[3] = {};
     writes[0].binding = 0;
     writes[0].kind = rhi::DescriptorKind::StorageBuffer;
     writes[0].buffer = field_;
     writes[1].binding = 1;
     writes[1].kind = rhi::DescriptorKind::StorageBuffer;
     writes[1].buffer = placement_;
-    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 2));
+    writes[2].binding = 2;
+    writes[2].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[2].buffer = aerial_off_;
+    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 3));
 }
 
 void WaterScene::write_geometry(f32 sky) noexcept {

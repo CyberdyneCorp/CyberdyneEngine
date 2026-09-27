@@ -1,0 +1,260 @@
+# Mutations applied to the shipped sources, each rebuilt (SPIR-V/MSL regenerated for shader
+# mutations with the pinned Slang 2026.9.2), run, and restored; md5 of every touched file verified
+# identical after restore. Driver: apply -> regen -> cmake --build <suite> -> run -> restore -> regen
+# -> md5. Suites: render.world_aerial_perspective (the sample's committed world SPIR-V on a Vulkan
+# device, RTX 5060), integration.render_sky_tables, and samples/10-world's own cloud agreement
+# check for the visual shader.
+#
+# d-off-not-exact was first run as `lit * 0.999` and stayed GREEN: 0.1% of a wall lit at 0.22 is
+# under half a unit in the last place of the half-float target after the tone map, so no texel can
+# change. That is a mutation below the target's resolution, not a defect the suite misses; it was
+# rerun as `lit * 0.99`, below, and is RED. The first run's record is kept.
+
+== a-table-ignored: samples/10-world/shaders/world.slang: 'return cyApplyAerialPerspective(table, lit, world - push.eye.xyz);' -> 'return lit;'
+exit 1 (RED)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.145212 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.145212 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.145212 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.145212 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.145212 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.171065; a wall six metres out moved by at most 0 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:944: ERROR: CHECK_LT( worst_error, 0.01F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:948: ERROR: CHECK_EQ( approaching, static_cast<u32>(std::size(distances)) ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:950: ERROR: CHECK_LT( last_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.45874,0.45874,0.45874 against sky 0.567395,0.602679,0.597345, worst gap 0.156982; without aerial perspective the worst gap is 0.156982
+tests/render/test_world_aerial_perspective.cpp:982: ERROR: CHECK_LT( with.worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x6387458b6322: sky 0.567395,0.602679,0.597345 wall 0.45874,0.45874,0.45874, worst gap 0.156982
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x6387458b633b: sky 0.450864,0.496072,0.527527 wall 0.45874,0.45874,0.45874, worst gap 0.0778809
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x6387458b6353: sky 0.508395,0.457806,0.349103 wall 0.47998,0.47998,0.47998, worst gap 0.144531
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x6387458b633b: the sky moved by up to 0.116531, the wall's move differs from it by at most 0.116531
+tests/render/test_world_aerial_perspective.cpp:1041: ERROR: CHECK_LT( disagreement, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1042: ERROR: CHECK_LT( seams[index].worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x6387458b6353: the sky moved by up to 0.248242, the wall's move differs from it by at most 0.269482
+tests/render/test_world_aerial_perspective.cpp:1041: ERROR: CHECK_LT( disagreement, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1042: ERROR: CHECK_LT( seams[index].worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 0; with it on, 0 of 7520 sky texels and 0 surface texels changed
+tests/render/test_world_aerial_perspective.cpp:1098: ERROR: CHECK_GT( surface_changed, 2000U ) is NOT correct!
+[doctest] test cases:  4 |  0 passed | 4 failed | 0 skipped
+restored (world.slang md5 e04631b66d26b92238b8c2c9848ce98c, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== b-tuned-fog: src/rendering/shaders/cy/aerial_perspective.slang: 'return radiance * air.transmittance + air.inScattering;' -> 'return radiance * air.transmittance + float3(0.35, 0.42, 0.5) * (1.0 - air.transmittance);'
+exit 1 (RED)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.144968 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.139671 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.0913004 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.0414536 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.0383401 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.0708802; a wall six metres out moved by at most 0.000244141 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:944: ERROR: CHECK_LT( worst_error, 0.01F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:950: ERROR: CHECK_LT( last_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.532397,0.572266,0.606445 against sky 0.567395,0.602679,0.597345, worst gap 0.0488281; without aerial perspective the worst gap is 0.156982
+tests/render/test_world_aerial_perspective.cpp:982: ERROR: CHECK_LT( with.worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x60e8ead43322: sky 0.567395,0.602679,0.597345 wall 0.532397,0.572266,0.606445, worst gap 0.0488281
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x60e8ead4333b: sky 0.450864,0.496072,0.527527 wall 0.538196,0.57373,0.606445, worst gap 0.10083
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x60e8ead43353: sky 0.508395,0.457806,0.349103 wall 0.534326,0.572424,0.606445, worst gap 0.270996
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x60e8ead4333b: the sky moved by up to 0.116531, the wall's move differs from it by at most 0.12233
+tests/render/test_world_aerial_perspective.cpp:1041: ERROR: CHECK_LT( disagreement, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1042: ERROR: CHECK_LT( seams[index].worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x60e8ead43353: the sky moved by up to 0.248242, the wall's move differs from it by at most 0.248242
+tests/render/test_world_aerial_perspective.cpp:1041: ERROR: CHECK_LT( disagreement, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1042: ERROR: CHECK_LT( seams[index].worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 0; with it on, 0 of 7520 sky texels and 7840 surface texels changed
+[doctest] test cases:  4 |  1 passed | 3 failed | 0 skipped
+restored (aerial_perspective.slang md5 4e58c0bb2a83509e13249c7971b6f854, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== c-nearest-slice: src/rendering/shaders/cy/aerial_perspective.slang: 'result.transmittance = lerp(nearT, farT, fraction);\n    result.inScattering = lerp(nearS, farS, fraction);' -> 'result.transmittance = farT;\n    result.inScattering = farS;'
+exit 1 (RED)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.144274 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.137943 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.0718115 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.0080561 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.00903699 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.00842148; a wall six metres out moved by at most 0.00292969 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:946: ERROR: CHECK_LT( near_change, 1.0e-3F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.56969,0.597522,0.597034 against sky 0.567395,0.602679,0.597345, worst gap 0.00537109; without aerial perspective the worst gap is 0.156982
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5d244718c322: sky 0.567395,0.602679,0.597345 wall 0.56969,0.597522,0.597034, worst gap 0.00537109
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5d244718c33b: sky 0.450864,0.496072,0.527527 wall 0.454666,0.497354,0.528296, worst gap 0.00415039
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5d244718c353: sky 0.508395,0.457806,0.349103 wall 0.509509,0.454114,0.351562, worst gap 0.00488281
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x5d244718c33b: the sky moved by up to 0.116531, the wall's move differs from it by at most 0.00643921
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x5d244718c353: the sky moved by up to 0.248242, the wall's move differs from it by at most 0.00277102
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 0; with it on, 0 of 7520 sky texels and 7840 surface texels changed
+[doctest] test cases:  4 |  3 passed | 1 failed | 0 skipped
+restored (aerial_perspective.slang md5 4e58c0bb2a83509e13249c7971b6f854, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== d-off-not-exact: samples/10-world/shaders/world.slang: 'if (!cyAerialPerspectiveEnabled(table))\n    {\n        return lit;' -> 'if (!cyAerialPerspectiveEnabled(table))\n    {\n        return lit * 0.999;'
+exit 0 (GREEN)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.144968 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.138574 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.078585 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.00765149 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.00903699 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.00048846; a wall six metres out moved by at most 0.000244141 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.56969,0.597522,0.597034 against sky 0.567395,0.602679,0.597345, worst gap 0.00537109; without aerial perspective the worst gap is 0.156982
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x56601968c322: sky 0.567395,0.602679,0.597345 wall 0.56969,0.597522,0.597034, worst gap 0.00537109
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x56601968c33b: sky 0.450864,0.496072,0.527527 wall 0.454666,0.497354,0.528296, worst gap 0.00415039
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x56601968c353: sky 0.508395,0.457806,0.349103 wall 0.509515,0.454114,0.351562, worst gap 0.00488281
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x56601968c33b: the sky moved by up to 0.116531, the wall's move differs from it by at most 0.00643921
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x56601968c353: the sky moved by up to 0.248242, the wall's move differs from it by at most 0.00277102
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 0; with it on, 0 of 7520 sky texels and 7840 surface texels changed
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+restored (world.slang md5 e04631b66d26b92238b8c2c9848ce98c, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== e-sky-hazed: samples/10-world/shaders/world.slang: 'return float4(tonemap(input.color), 1.0);' -> 'return float4(tonemap(throughAir(input.color, input.world)), 1.0);'
+exit 1 (RED)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.144968 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.138574 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.078585 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.00765149 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.00903699 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.00048846; a wall six metres out moved by at most 0.000244141 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.56969,0.597522,0.597034 against sky 0.586066,0.605048,0.601202, worst gap 0.0175781; without aerial perspective the worst gap is 0.156982
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5f485e80f322: sky 0.586066,0.605048,0.601202 wall 0.56969,0.597522,0.597034, worst gap 0.0175781
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5f485e80f33b: sky 0.46633,0.508365,0.535724 wall 0.454666,0.497354,0.528296, worst gap 0.0124512
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5f485e80f353: sky 0.524814,0.464615,0.359891 wall 0.509515,0.454114,0.351562, worst gap 0.0175781
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x5f485e80f33b: the sky moved by up to 0.119736, the wall's move differs from it by at most 0.0047119
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x5f485e80f353: the sky moved by up to 0.241312, the wall's move differs from it by at most 0.00415957
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 0; with it on, 7520 of 7520 sky texels and 7840 surface texels changed
+tests/render/test_world_aerial_perspective.cpp:1096: ERROR: CHECK_EQ( sky_changed, 0U ) is NOT correct!
+[doctest] test cases:  4 |  3 passed | 1 failed | 0 skipped
+restored (world.slang md5 e04631b66d26b92238b8c2c9848ce98c, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== f-scattering-doubled: src/rendering/shaders/cy/aerial_perspective.slang: 'result.inScattering = lerp(nearS, farS, fraction);' -> 'result.inScattering = 2.0 * lerp(nearS, farS, fraction);'
+exit 1 (RED)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.144968 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.126675 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.0657634 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.125307 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.127257 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.126861; a wall six metres out moved by at most 0.000244141 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:944: ERROR: CHECK_LT( worst_error, 0.01F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:948: ERROR: CHECK_EQ( approaching, static_cast<u32>(std::size(distances)) ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:950: ERROR: CHECK_LT( last_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.689252,0.720026,0.720636 against sky 0.567395,0.602679,0.597345, worst gap 0.124512; without aerial perspective the worst gap is 0.156982
+tests/render/test_world_aerial_perspective.cpp:982: ERROR: CHECK_LT( with.worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5591fd58d322: sky 0.567395,0.602679,0.597345 wall 0.689252,0.720026,0.720636, worst gap 0.124512
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5591fd58d33b: sky 0.450864,0.496072,0.527527 wall 0.574451,0.622986,0.655029, worst gap 0.12793
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x5591fd58d353: sky 0.508395,0.457806,0.349103 wall 0.626123,0.574902,0.461002, worst gap 0.119629
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x5591fd58d33b: the sky moved by up to 0.116531, the wall's move differs from it by at most 0.00956723
+tests/render/test_world_aerial_perspective.cpp:1042: ERROR: CHECK_LT( seams[index].worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x5591fd58d353: the sky moved by up to 0.248242, the wall's move differs from it by at most 0.0113922
+tests/render/test_world_aerial_perspective.cpp:1042: ERROR: CHECK_LT( seams[index].worst_gap, 0.03F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 0; with it on, 0 of 7520 sky texels and 7840 surface texels changed
+[doctest] test cases:  4 |  1 passed | 3 failed | 0 skipped
+restored (aerial_perspective.slang md5 4e58c0bb2a83509e13249c7971b6f854, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== g-visual-ignores-atmosphere: samples/10-world/shaders/world_visual.slang: 'if (visual.atmosphereSky > 0.5)' -> 'if (visual.atmosphereSky > 1.5)'
+exit 1 (RED)
+the stage did not open: cloud device shading exceeds the CPU-reference tolerance
+restored (world_visual.slang md5 6f9a84cee2b8f4ea6c672a9e149707b2, world_visual_spirv.h md5 0848a61280aa2b94c0fdd7cb2254bd38, world_visual_msl.h md5 a59e9472f428fb5fa6dd107e2e4e0288: identical)
+
+Traceback (most recent call last):
+  File "/tmp/claude-1000/-home-leonardo-work-CyberdyneEngine/5da028c9-b834-4bc7-aa29-8c7363926ee3/scratchpad/aerial/mutate.py", line 109, in <module>
+    main()
+    ~~~~^^
+  File "/tmp/claude-1000/-home-leonardo-work-CyberdyneEngine/5da028c9-b834-4bc7-aa29-8c7363926ee3/scratchpad/aerial/mutate.py", line 84, in main
+    build(target)
+    ~~~~~^^^^^^^^
+  File "/tmp/claude-1000/-home-leonardo-work-CyberdyneEngine/5da028c9-b834-4bc7-aa29-8c7363926ee3/scratchpad/aerial/mutate.py", line 67, in build
+    subprocess.run(['cmake', '--build', str(BUILD), '--parallel', '4', '--target',
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    pathlib.Path(target).name], cwd=ROOT, check=True, capture_output=True)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/leonardo/anaconda3/lib/python3.13/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+## the rerun: d strengthened, and the three processor mutations
+
+== d-off-not-exact: samples/10-world/shaders/world.slang: 'if (!cyAerialPerspectiveEnabled(table))\n    {\n        return lit;' -> 'if (!cyAerialPerspectiveEnabled(table))\n    {\n        return lit * 0.99;'
+exit 1 (RED)
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 6 m: mean gap to the sky along the horizon 0.144968 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 2000 m: mean gap to the sky along the horizon 0.138574 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 30000 m: mean gap to the sky along the horizon 0.078585 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 300000 m: mean gap to the sky along the horizon 0.00765149 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:926: MESSAGE: wall at 800000 m: mean gap to the sky along the horizon 0.00903699 over 160 texels
+tests/render/test_world_aerial_perspective.cpp:937: MESSAGE: 76800 wall texels, worst difference from the processor's table 0.00048846; a wall six metres out moved by at most 0.00195312 with aerial perspective on; 0 validation errors
+tests/render/test_world_aerial_perspective.cpp:946: ERROR: CHECK_LT( near_change, 1.0e-3F ) is NOT correct!
+tests/render/test_world_aerial_perspective.cpp:977: MESSAGE: the seam over 80 columns: wall 0.56969,0.597522,0.597034 against sky 0.567395,0.602679,0.597345, worst gap 0.00537109; without aerial perspective the worst gap is 0.158691
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x576c53e5c322: sky 0.567395,0.602679,0.597345 wall 0.56969,0.597522,0.597034, worst gap 0.00537109
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x576c53e5c33b: sky 0.450864,0.496072,0.527527 wall 0.454666,0.497354,0.528296, worst gap 0.00415039
+tests/render/test_world_aerial_perspective.cpp:1023: MESSAGE: 0x576c53e5c353: sky 0.508395,0.457806,0.349103 wall 0.509515,0.454114,0.351562, worst gap 0.00488281
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x576c53e5c33b: the sky moved by up to 0.116531, the wall's move differs from it by at most 0.00643921
+tests/render/test_world_aerial_perspective.cpp:1038: MESSAGE: 0x576c53e5c353: the sky moved by up to 0.248242, the wall's move differs from it by at most 0.00277102
+tests/render/test_world_aerial_perspective.cpp:1091: MESSAGE: texels differing from the frame before aerial perspective with it off: 7840; with it on, 0 of 7520 sky texels and 7840 surface texels changed
+tests/render/test_world_aerial_perspective.cpp:1094: ERROR: CHECK_EQ( off_changed, 0U ) is NOT correct!
+[doctest] test cases:  4 |  2 passed | 2 failed | 0 skipped
+restored (world.slang md5 e04631b66d26b92238b8c2c9848ce98c, world_spirv.h md5 d4732ee95f6319da5fdba33b986ff4fa, world_msl.h md5 6b85a0dddc9edd86097e866f036a0097: identical)
+
+== h-cpu-nearest-slice: src/rendering/sky/src/tables.cpp: 'result.transmittance = lerp(near_t, far_t, tap.fraction);' -> 'result.transmittance = lerp(near_t, far_t, 1.0F);'
+exit 1 (RED)
+src/rendering/sky/tests/test_sky_tables.cpp:92: MESSAGE: transmittance table against the march: worst relative difference 4.54815%
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 1689.14 nits with the table, 1345.69 without — multiple scattering is 20.3329% of it
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 992.414 nits with the table, 672.29 without — multiple scattering is 32.2571% of it
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 2763.81 nits with the table, 1874.24 without — multiple scattering is 32.1864% of it
+src/rendering/sky/tests/test_sky_tables.cpp:189: MESSAGE: midnight sky: marched 0 nits, tabulated at most 1.44262e-05 nits (the defect this replaces measured 2 679)
+src/rendering/sky/tests/test_sky_tables.cpp:203: MESSAGE: daylight zenith: isotropic constant 1407.57 nits, table 1376.52
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 1 of 16 rows: 7.21649% of a rebuild per update, worst error 35.6148% of the brightest sky, worst staleness 40.0469 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 3 of 16 rows: 19.5876% of a rebuild per update, worst error 18.9911% of the brightest sky, worst staleness 16.5575 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 8 of 16 rows: 50.5155% of a rebuild per update, worst error 7.28987% of the brightest sky, worst staleness 6.67449 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:360: MESSAGE: worst departure from a linear blend inside one column: 1.66511e-05%
+src/rendering/sky/tests/test_sky_tables.cpp:402: MESSAGE: aerial perspective at 8 km: transmittance 0.865897 against 0.873029, in-scattering 931.196 against 610.067 (x1.52638)
+src/rendering/sky/tests/test_sky_tables.cpp:436: MESSAGE: in-scattering at the far plane is 36.866% of the sky's radiance in the same direction
+src/rendering/sky/tests/test_sky_tables.cpp:492: MESSAGE: two metres out: surface transmittance 0.999241, in-scattering 0.668835 nits; the first slice (to 20.5303 m) holds 0.999252 and 6.88014
+src/rendering/sky/tests/test_sky_tables.cpp:496: ERROR: CHECK_GT( near_surface.transmittance.z, 0.9999F ) is NOT correct!
+src/rendering/sky/tests/test_sky_tables.cpp:498: ERROR: CHECK_LT( near_froxel.transmittance.z, near_surface.transmittance.z ) is NOT correct!
+src/rendering/sky/tests/test_sky_tables.cpp:517: MESSAGE: at the slices' far edges the samplers differ by at most 0.00100457%
+src/rendering/sky/tests/test_sky_tables.cpp:570: MESSAGE: 4608 froxels, 0 differing
+src/rendering/sky/tests/test_sky_tables.cpp:675: MESSAGE: ground to orbit: ground zenith 2971.31 nits, worst step between samples 6.28084% of it, final zenith 0 nits
+[doctest] test cases:   10 |    9 passed | 1 failed | 0 skipped
+restored (tables.cpp md5 8bccb83987a92d10c8816ce77afbe8df: identical)
+
+== i-parallel-drops-a-row: src/rendering/sky/src/tables.cpp: 'jobs::parallel_for(*jobs, volume_.height, 1, rows, "aerial perspective table")' -> 'jobs::parallel_for(*jobs, volume_.height - 1U, 1, rows, "aerial perspective table")'
+exit 1 (RED)
+src/rendering/sky/tests/test_sky_tables.cpp:92: MESSAGE: transmittance table against the march: worst relative difference 4.54815%
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 1689.14 nits with the table, 1345.69 without — multiple scattering is 20.3329% of it
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 992.414 nits with the table, 672.29 without — multiple scattering is 32.2571% of it
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 2763.81 nits with the table, 1874.24 without — multiple scattering is 32.1864% of it
+src/rendering/sky/tests/test_sky_tables.cpp:189: MESSAGE: midnight sky: marched 0 nits, tabulated at most 1.44262e-05 nits (the defect this replaces measured 2 679)
+src/rendering/sky/tests/test_sky_tables.cpp:203: MESSAGE: daylight zenith: isotropic constant 1407.57 nits, table 1376.52
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 1 of 16 rows: 7.21649% of a rebuild per update, worst error 35.6148% of the brightest sky, worst staleness 40.0469 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 3 of 16 rows: 19.5876% of a rebuild per update, worst error 18.9911% of the brightest sky, worst staleness 16.5575 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 8 of 16 rows: 50.5155% of a rebuild per update, worst error 7.28987% of the brightest sky, worst staleness 6.67449 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:360: MESSAGE: worst departure from a linear blend inside one column: 1.66511e-05%
+src/rendering/sky/tests/test_sky_tables.cpp:402: MESSAGE: aerial perspective at 8 km: transmittance 0.865897 against 0.873029, in-scattering 931.196 against 610.067 (x1.52638)
+src/rendering/sky/tests/test_sky_tables.cpp:436: MESSAGE: in-scattering at the far plane is 36.866% of the sky's radiance in the same direction
+src/rendering/sky/tests/test_sky_tables.cpp:492: MESSAGE: two metres out: surface transmittance 0.999926, in-scattering 0.668835 nits; the first slice (to 20.5303 m) holds 0.999252 and 6.88014
+src/rendering/sky/tests/test_sky_tables.cpp:517: MESSAGE: at the slices' far edges the samplers differ by at most 0.00100457%
+src/rendering/sky/tests/test_sky_tables.cpp:570: MESSAGE: 4608 froxels, 512 differing
+src/rendering/sky/tests/test_sky_tables.cpp:572: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+src/rendering/sky/tests/test_sky_tables.cpp:675: MESSAGE: ground to orbit: ground zenith 2971.31 nits, worst step between samples 6.28084% of it, final zenith 0 nits
+[doctest] test cases:   10 |    9 passed | 1 failed | 0 skipped
+restored (tables.cpp md5 8bccb83987a92d10c8816ce77afbe8df: identical)
+
+== j-pack-scale-dropped: src/rendering/sky/src/tables.cpp: 'const Vec3 s = in_scattering[index] * radiance_scale;' -> 'const Vec3 s = in_scattering[index];'
+exit 1 (RED)
+src/rendering/sky/tests/test_sky_tables.cpp:92: MESSAGE: transmittance table against the march: worst relative difference 4.54815%
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 1689.14 nits with the table, 1345.69 without — multiple scattering is 20.3329% of it
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 992.414 nits with the table, 672.29 without — multiple scattering is 32.2571% of it
+src/rendering/sky/tests/test_sky_tables.cpp:144: MESSAGE: 2763.81 nits with the table, 1874.24 without — multiple scattering is 32.1864% of it
+src/rendering/sky/tests/test_sky_tables.cpp:189: MESSAGE: midnight sky: marched 0 nits, tabulated at most 1.44262e-05 nits (the defect this replaces measured 2 679)
+src/rendering/sky/tests/test_sky_tables.cpp:203: MESSAGE: daylight zenith: isotropic constant 1407.57 nits, table 1376.52
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 1 of 16 rows: 7.21649% of a rebuild per update, worst error 35.6148% of the brightest sky, worst staleness 40.0469 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 3 of 16 rows: 19.5876% of a rebuild per update, worst error 18.9911% of the brightest sky, worst staleness 16.5575 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:276: MESSAGE: budget 8 of 16 rows: 50.5155% of a rebuild per update, worst error 7.28987% of the brightest sky, worst staleness 6.67449 degrees of sun movement
+src/rendering/sky/tests/test_sky_tables.cpp:360: MESSAGE: worst departure from a linear blend inside one column: 1.66511e-05%
+src/rendering/sky/tests/test_sky_tables.cpp:402: MESSAGE: aerial perspective at 8 km: transmittance 0.865897 against 0.873029, in-scattering 931.196 against 610.067 (x1.52638)
+src/rendering/sky/tests/test_sky_tables.cpp:436: MESSAGE: in-scattering at the far plane is 36.866% of the sky's radiance in the same direction
+src/rendering/sky/tests/test_sky_tables.cpp:492: MESSAGE: two metres out: surface transmittance 0.999926, in-scattering 0.668835 nits; the first slice (to 20.5303 m) holds 0.999252 and 6.88014
+src/rendering/sky/tests/test_sky_tables.cpp:517: MESSAGE: at the slices' far edges the samplers differ by at most 0.00100457%
+src/rendering/sky/tests/test_sky_tables.cpp:570: MESSAGE: 4608 froxels, 0 differing
+src/rendering/sky/tests/test_sky_tables.cpp:611: ERROR: CHECK( (Vec3{packed_s.x, packed_s.y, packed_s.z}) == s * kScale ) is NOT correct!
+src/rendering/sky/tests/test_sky_tables.cpp:675: MESSAGE: ground to orbit: ground zenith 2971.31 nits, worst step between samples 6.28084% of it, final zenith 0 nits
+[doctest] test cases:   10 |    9 passed | 1 failed | 0 skipped
+restored (tables.cpp md5 8bccb83987a92d10c8816ce77afbe8df: identical)
+
+
+AFTER THE REBASE ONTO 29e733d6 (water shading merged). render.world_water draws with world.slang's
+committed SPIR-V too, so its set 0 gained the table binding, switched off. Mutation: that suite's
+layout and write restored to two bindings. Result: VUID-VkGraphicsPipelineCreateInfo-layout-07988
+("uses descriptor slot [Set 0 Binding 2] ... but was not declared in the pipeline layout"), then
+SIGSEGV in the first case; 1 failed, 4 skipped. Restored (md5 verified): 5 of 5 cases, 49 of 49
+assertions, and its off case still byte-identical to references/world_water_off.png.

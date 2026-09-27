@@ -2903,13 +2903,12 @@ note = "THREE OF THE FOUR REQUIRED DIAGNOSTICS EXIST AND THE SCENARIO NEEDS THE 
 
 # --- atmosphere-sky-and-clouds ----------------------------------------------------------------------
 #
-# THIRTEEN OF THIRTEEN — TWELVE CASES AND ONE EXEMPTION. M11.c task 5.1 read `Cloud shadows` and
-# `Aerial perspective` against the frame rather than against the model and found both satisfied as
-# LIBRARIES that no frame calls, and its post-gate judgement made both `exempt:m11e`. `Cloud
-# shadows` is a case again since `add-cloud-shadows`: `samples/10-world`'s lit fragment path samples
-# the field per fragment, and `render.world_cloud_shadow` draws with that path's committed SPIR-V
-# and reads the pixels back. `Aerial perspective` is still applied to no opaque surface and stays
-# `exempt:m11e` with what would observe it.
+# THIRTEEN OF THIRTEEN, ALL CASES. M11.c task 5.1 read `Cloud shadows` and `Aerial perspective`
+# against the frame rather than against the model and found both satisfied as LIBRARIES that no
+# frame calls, and its post-gate judgement made both `exempt:m11e`. Both are cases again, each
+# against `samples/10-world`'s lit fragment path and its committed SPIR-V drawn on a device: `Cloud
+# shadows` since `add-cloud-shadows` (`render.world_cloud_shadow`), `Aerial perspective` since
+# `add-aerial-perspective` (`render.world_aerial_perspective`).
 #
 # What follows is the text written when every entry was a case, kept because it is still true of
 # the eleven. Every one of them was a CASE rather than a deferral. That is not a
@@ -2951,8 +2950,9 @@ note = "the requirement's opening sentence, COUNTED rather than described: four 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
 requirement = "Aerial perspective"
-evidence = "exempt:m11e"
-note = "THE MODEL IS BUILT AND APPLIED TO NOTHING. The prohibition half is answered and stays answered: `unit.render_sky`'s `atmosphere: aerial perspective comes from the same model as the sky` decides it on the signature — `sky::aerial_perspective()` takes the same `Atmosphere` the sky does and there is no second parameter set — `atmosphere: a stylised distance override is declared and reaches the physical model` is the declared override, and `sky tables: aerial perspective is the atmosphere's, in the engine's froxel volume` delivers it into the engine's own volume. What the requirement's FIRST sentence asks is that the attenuation be `applied to opaque shading and to volumetric media consistently`, and its scenario is `WHEN distant terrain is rendered THEN its attenuation SHALL come from the atmosphere`. M11.c task 5.1 measured that no frame, sample or shader applies either the function or the froxel table to geometry: `aerial_perspective` has no caller outside `src/rendering/sky/` and its tests, and `grep -rni aerial` over `samples/`, `src/rendering/shaders`, `forward`, `pipeline` and `assembly` finds nothing. A case over the model answers the model, not the frame. WHAT WOULD OBSERVE IT: the forward frame's lit path sampling the aerial-perspective froxel table for opaque surfaces, and a golden case in which a distant surface's colour moves when the ATMOSPHERE changes. Closing rung M11.e, with the row; recorded at M11.c task 5.1 and moved from a test entry to this exemption by the post-gate judgement (task 9.4a)."
+evidence = "test:render.world_aerial_perspective"
+case = "world aerial perspective: at the horizon the distant surface meets the sky"
+note = "DISTANCE IS THE ATMOSPHERE'S, IN A FRAME. `samples/10-world` integrates `sky::AerialPerspectiveTable` every frame for its own camera from the world's `Atmosphere` and `AtmosphereTables` — the ones its sky lighting is composed from — and its one lit fragment path (terrain, foliage, and the sea when water shading is off) multiplies every fragment by the table's transmittance and adds its in-scattering through `cy/aerial_perspective.slang`, divided by the same exposure as the sky; with it on, the dome's clear sky is `sky::IncrementalSkyView::update_aerial` over the same tables. This case draws with that path's COMMITTED SPIR-V (`samples/10-world/shaders/world_spirv.h`) a dome coloured from that clear sky and a lit wall 800 km out whose top edge is the horizon, and requires every column's topmost wall texel to be within 0.03 of the sky texel above it after the shader's tone map — and more than 0.1 apart with aerial perspective off, so the comparison can fail. The requirement's neighbouring sentences are decided in the same suite and one other: `world aerial perspective: the device applies the atmosphere's table` (every wall texel at 6 m to 800 km is `lit * T + S` from the processor's `sample_at()` within 0.01; a wall at 6 m moves by under 0.001; walls further out approach the sky monotonically along the horizon), `world aerial perspective: a changed atmosphere moves the sky and the distance together` (eight times the aerosol, and a 6-degree sun, each move the sky and the distant wall by the same amount and leave them meeting — the 'not separately tuned' scenario as a measurement), `world aerial perspective: off, the frame is the frame before, and the sky is untouched` (bit-identical to the world's shaders pinned at 1fe6446 in `tests/render/world_before_aerial_perspective_spirv.h`); `integration.render_sky_tables`' `sky tables: a surface's aerial perspective is interpolated in depth from the eye`, `sky tables: the aerial perspective table integrated on workers is the serial bits` and `sky tables: the aerial perspective words are the layout the device sampler reads`; `unit.render_sky`'s `atmosphere: a stylised distance override is declared and reaches the physical model` (the declared override). NOT BUILT, and recorded rather than mapped: the shaded sea (`shaders/water.slang`, the default since `add-water-shading`) reads no table, so its surface is not attenuated by the air in front of it; the engine forward frame (`cy/frame.slang`) draws no world and reads no table; the sample's device clouds are composed over the atmosphere's clear sky but not attenuated by the air in front of them, which is the requirement's 'and to volumetric media consistently'. KIND render: the suite skips, loudly, on a machine with no Vulkan device."
 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
