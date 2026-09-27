@@ -1051,6 +1051,59 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
 }
 #endif
 
+// The saved issue 15 world must produce a visible native frame when opened directly.
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native pixels") {
+    register_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "committed editor sine sway scene";
+    description.enable_validation = true;
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), kBackend, description, selection);
+    CY_REQUIRE(device.has_value());
+    if ((*device)->capabilities().backend() != kNativeBackend) {
+        std::fprintf(stderr, "no %s device: selected '%s' because %s\n", kBackend,
+                     selection.selected, selection.reason);
+        CY_CHECK(selection.fell_back);
+        rhi::destroy_device(allocator(), *device);
+        return;
+    }
+
+    const std::string project = std::string(CY_TEST_PROJECT) + "/samples/05b-editor-window/project";
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    ser::AuthoringSchema schema(allocator());
+    CY_REQUIRE(ser::build_authoring_schema(types, schema));
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(192, 128, project.c_str()));
+        constexpr std::string_view reference = "worlds/issue15-sway.cyworld";
+        Array<u8> bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole((project + "/" + std::string(reference)).c_str(), bytes));
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(
+            std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), reference,
+            world));
+        CY_REQUIRE(ser::resolve_against(world, schema));
+        CY_REQUIRE(frame.prepare_world(world));
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(world, view, true, nullptr, 0.2F));
+        Array<render::GpuInstance> instances(allocator());
+        Array<render::DrawItem> draws(allocator());
+        CY_REQUIRE(frame.publish(view, instances, draws));
+        const usize visible = std::count_if(frame.pixels().begin(), frame.pixels().end(),
+                                            [](u32 pixel) { return (pixel & 0x00FF'FFFFU) != 0; });
+        std::fprintf(stderr,
+                     "issue15-sway: %zu mesh instance(s), %zu draw(s), %zu nonblack pixel(s)\n",
+                     instances.size(), draws.size(), visible);
+        CY_CHECK_GE(instances.size(), 2U);
+        CY_CHECK_GE(draws.size(), 2U);
+        CY_CHECK_GT(visible, 100U);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif
+
 // One device and one frame for every stage: the stages run in this order against the same frame,
 // so each one also shows the frame carries nothing over from the scene before it.
 CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed bounds") {

@@ -282,3 +282,7 @@ The prior PR run's Linux ARM build caught `-Werror=class-memaccess` in
 individually. The existing null-frame regression also checks all four default tint values after
 reading the previous transform; its focused run passed 58 assertions. Linux CI must still confirm
 the GCC diagnostic is gone.
+
+## Native black viewport investigation (2026-09-27)
+
+The editor launched on the user's Apple M3 Pro with Metal, loaded `worlds/issue15-sway.cyworld`, and attached to the hosted viewport. The viewport stayed black after framing the cube. The saved world has two MeshRenderer nodes with existing primitive assets. A native frame test reported two mesh instances and two published draws in both the material-graph control world and the issue 15 sway world. It captured 8,676 nonblack pixels for the control and zero for the sway world. A direct-open native pixel regression now checks the sway world without relying on a preceding render. That regression builds but remains unverified on Metal because this workspace selects the null renderer; its two availability assertions do not count as pixel evidence. A later diagnostic that constructed multiple frames on one device failed initialization, so its control pixel counts are inconclusive.
