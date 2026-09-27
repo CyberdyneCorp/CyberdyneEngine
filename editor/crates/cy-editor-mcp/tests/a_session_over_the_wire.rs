@@ -134,8 +134,8 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
     editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
 
     let mut vfx = Writer::new();
-    vfx.u32(1);
-    vfx.u32(1);
+    vfx.u32(2);
+    vfx.u32(2);
     vfx.u32(4);
     for (identity, name, pin, direction, property) in [
         (1001, "vfx.constant", "out", 1, "value"),
@@ -159,8 +159,22 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
             vfx.u8(0);
             vfx.text(property);
             vfx.text(if property == "value" { "0" } else { "" });
-            vfx.text("");
             vfx.text(property);
+            vfx.text(if property == "value" {
+                "vfx-literal"
+            } else {
+                "identifier"
+            });
+            vfx.text("");
+            vfx.u32(0);
+            vfx.text("compile");
+            vfx.text("vfx");
+            vfx.u64(0);
+            vfx.u8(0);
+            vfx.u8(0);
+            for _ in 0..3 {
+                vfx.f64(0.0);
+            }
         }
     }
     for (operation, payload) in [
@@ -1479,9 +1493,25 @@ fn committed_two_emitter_sample_can_be_authored_through_mcp_commands() {
         }
     }
 
-    let actual =
-        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
-            .unwrap();
+    let saved_source = std::fs::read_to_string(sandbox.0.join(reference)).unwrap();
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.node.property.set","arguments":{"reference":"game/issue15_two_emitters.cyvfxdoc","emitter":"CpuEmitter","stage":"initialise","node":1,"property":"value","value":"1 2 3 4 5"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&refused, 1).get("isError"), &Json::Bool(true));
+    assert!(
+        result(&refused, 1)
+            .render()
+            .contains("one to four numeric components")
+    );
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join(reference)).unwrap(),
+        saved_source
+    );
+    let actual = VfxDocument::decode_text(&saved_source).unwrap();
     let expected = VfxDocument::decode_text(include_str!(
         "../../../../samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc"
     ))
