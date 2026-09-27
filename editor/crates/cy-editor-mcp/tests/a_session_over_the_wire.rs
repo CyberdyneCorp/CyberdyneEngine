@@ -621,7 +621,13 @@ fn vertex_material_canvas_saves_and_undoes_over_mcp() {
     assert_eq!(std::fs::read_to_string(&graph_path).unwrap(), graph);
     assert_eq!(std::fs::read_to_string(&canvas_path).unwrap(), source);
     assert_eq!(
-        editor.documents.get(document_id).unwrap().history().entries().len(),
+        editor
+            .documents
+            .get(document_id)
+            .unwrap()
+            .history()
+            .entries()
+            .len(),
         2,
         "the graph save and generated property sync share one undo entry"
     );

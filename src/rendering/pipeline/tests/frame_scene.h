@@ -164,6 +164,7 @@ public:
     [[nodiscard]] const particles::ParticleReport& particle_report() const noexcept {
         return effect_.report();
     }
+    [[nodiscard]] FrameRecorder& recorder() noexcept { return recorder_; }
     [[nodiscard]] const FrameRecorder& recorder() const noexcept { return recorder_; }
     [[nodiscard]] const BloomRenderer& bloom() const noexcept { return bloom_; }
     [[nodiscard]] const FramePipelines& pipelines() const noexcept { return pipelines_; }

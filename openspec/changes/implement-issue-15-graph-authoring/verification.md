@@ -41,7 +41,7 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Service:** `editor_backend: material authoring refuses unsupported assigned geometry` sends a vertex graph with a `VirtualGeometry` assignment to `material.author` and checks the compiler's named `vertex-geometry-unsupported` refusal. The same case checks that a `StaticMesh` assignment is authored.
 - **Green command:** `build/dev/cy_test_unit_editor_backend --test-case='editor_backend: material authoring refuses unsupported assigned geometry' --no-skip` — 1 case, 12 assertions passed on macOS.
 - **Regression red:** before the author path called `compile_material` for assigned geometry, the new test received a completed author response instead of the refusal. The check now runs before the canonical graph is returned.
-- **Scope:** scene discovery currently supplies static meshes. Other geometry source assignments remain part of task 3.2.
+- **Scope:** desktop and MCP save now pass assigned static-mesh geometry to authoring. Other geometry source assignments remain part of task 3.2.
 
 ## Vertex geometry variants and unsupported paths
 
@@ -49,7 +49,7 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Editor service:** `editor_backend: assigned geometry paths use the material compiler's refusal` submits the source names through the editor service and checks that the unsupported path returns the compiler diagnostic.
 - **Green command:** `ctest --test-dir build/dev -R '^(integration\.material_lowering|unit\.editor_backend)$' --output-on-failure` — both suites passed on macOS. The targeted compiler case ran with 15/15 assertions.
 - **Red mutation:** in `src/rendering/material/src/compiler.cpp`, temporarily allow `VirtualGeometry` through `check_geometry_paths`. The targeted compiler case failed its refusal, diagnostic, and named-path assertions (12/15 passed). Restoring the refusal made all 15 assertions pass. The mutation is not committed.
-- **Remaining work:** the material author/save path currently bypasses `compile_material` and does not carry assigned geometry sources. Task 3.2 stays open until that path rejects unsupported vertex geometry. A rendered displaced mesh, shadow, and motion-vector comparison against CPU-displaced geometry is tracked by task 3.3.
+- **Remaining work:** author/save now checks geometry sources supplied by the editor, but scene discovery only identifies static-mesh assignments. Task 3.2 stays open for other geometry sources. A rendered displaced mesh, shadow, and motion-vector comparison against CPU-displaced geometry is tracked by task 3.3.
 
 ## Two-emitter sample image
 
