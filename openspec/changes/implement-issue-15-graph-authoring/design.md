@@ -165,7 +165,8 @@ null framebuffer cannot be mistaken for a failed Metal rendering result. A devic
 still required for the issue's visual acceptance criterion.
 An MCP wire test submits an editable vertex canvas, accepts the engine authoring response, reads
 the saved source, and checks undo and redo of both the canonical graph and canvas files. Scene and
-preview-mesh vertex pixels still need device-backed verification.
+preview-mesh vertex pixels still need device-backed verification. A separate wire test previews
+the same vertex canvas without writing either asset file or adding an undo transaction.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for

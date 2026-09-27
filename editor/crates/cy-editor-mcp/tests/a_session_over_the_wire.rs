@@ -17,6 +17,7 @@ use cy_editor_core::codec::Writer;
 use cy_editor_mcp::json::{Json, parse};
 use cy_editor_mcp::{McpServer, PROTOCOL_VERSION, serve};
 use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
+use cy_editor_services::backend::MaterialRequestState;
 use cy_editor_services::editor::Editor;
 use cy_editor_services::notifications::NotificationService;
 use cy_editor_services::project::ProjectService;
@@ -491,6 +492,53 @@ fn vertex_material_sources() -> (String, String) {
     (source, graph)
 }
 
+fn material_graph_call(id: u32, name: &str, reference: &str, source: &str) -> String {
+    Json::object([
+        ("jsonrpc", Json::text("2.0")),
+        ("id", Json::Number(f64::from(id))),
+        ("method", Json::text("tools/call")),
+        (
+            "params",
+            Json::object([
+                ("name", Json::text(name)),
+                (
+                    "arguments",
+                    Json::object([
+                        ("reference", Json::text(reference)),
+                        ("source", Json::text(source)),
+                    ]),
+                ),
+            ]),
+        ),
+    ])
+    .render()
+}
+
+fn material_request(
+    reader: &mut std::io::PipeReader,
+    expected: &str,
+) -> cy_editor_protocol::RequestId {
+    (0..4)
+        .find_map(|_| {
+            let message = Message::decode(&read_frame(reader).unwrap().unwrap()).unwrap();
+            match message {
+                Message::ServiceRequest {
+                    request, operation, ..
+                } if operation == expected => Some(request),
+                Message::ServiceRequest { operation, .. }
+                    if operation == "vfx.authoring-capabilities.get" =>
+                {
+                    None
+                }
+                Message::ServiceRequest { operation, .. } => {
+                    panic!("unexpected material request: {operation}")
+                }
+                other => panic!("unexpected message while waiting for {expected}: {other:?}"),
+            }
+        })
+        .unwrap_or_else(|| panic!("the MCP call must request {expected} from the engine"))
+}
+
 #[test]
 fn vertex_material_canvas_saves_and_undoes_over_mcp() {
     let sandbox = Sandbox::new("vertex-material-wire");
@@ -501,44 +549,10 @@ fn vertex_material_canvas_saves_and_undoes_over_mcp() {
         Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
     editor.open_document("worlds/city.cyworld").unwrap();
     let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
-    let save = Json::object([
-        ("jsonrpc", Json::text("2.0")),
-        ("id", Json::Number(2.0)),
-        ("method", Json::text("tools/call")),
-        (
-            "params",
-            Json::object([
-                ("name", Json::text("material.graph.save")),
-                (
-                    "arguments",
-                    Json::object([
-                        ("reference", Json::text(reference)),
-                        ("source", Json::text(source.clone())),
-                    ]),
-                ),
-            ]),
-        ),
-    ])
-    .render();
+    let save = material_graph_call(2, "material.graph.save", reference, &source);
     let replies = converse(&[INITIALIZE, &save], &mut editor);
     assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
-    let request = (0..4)
-        .find_map(|_| {
-            let message =
-                Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
-            match message {
-                Message::ServiceRequest {
-                    request, operation, ..
-                } if operation == "material.author" => Some(request),
-                Message::ServiceRequest { operation, .. }
-                    if operation == "vfx.authoring-capabilities.get" =>
-                {
-                    None
-                }
-                other => panic!("unexpected request while saving a material: {other:?}"),
-            }
-        })
-        .expect("the MCP save must ask the engine to author the graph");
+    let request = material_request(&mut runtime_reader, "material.author");
     let mut payload = Writer::new();
     payload.u32(1);
     payload.u8(1);
@@ -595,6 +609,68 @@ fn vertex_material_canvas_saves_and_undoes_over_mcp() {
     assert_eq!(result(&redo, 1).get("isError"), &Json::Bool(false));
     assert_eq!(std::fs::read_to_string(&graph_path).unwrap(), graph);
     assert_eq!(std::fs::read_to_string(&canvas_path).unwrap(), source);
+}
+
+#[test]
+fn vertex_material_canvas_previews_over_mcp_without_saving() {
+    let sandbox = Sandbox::new("vertex-material-preview-wire");
+    let reference = "game/sway.cygraph";
+    let (source, _) = vertex_material_sources();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    let document = editor.open_document("worlds/city.cyworld").unwrap();
+    let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
+    let preview = material_graph_call(2, "material.graph.preview", reference, &source);
+    let replies = converse(&[INITIALIZE, &preview], &mut editor);
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    let request = material_request(&mut runtime_reader, "material.preview.set");
+    let mut payload = Writer::new();
+    payload.u32(1);
+    payload.u8(1);
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: payload.finish(),
+        }
+        .encode(),
+    )
+    .unwrap();
+    for _ in 0..100 {
+        editor.pump();
+        if matches!(
+            editor.backend.material_request_state(),
+            MaterialRequestState::Previewed { .. }
+        ) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(matches!(
+        editor.backend.material_request_state(),
+        MaterialRequestState::Previewed { .. }
+    ));
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"material.graph.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert!(status[1].render().contains("previewed"));
+    assert!(!sandbox.0.join(reference).exists());
+    assert!(!sandbox.0.join("game/sway.cymatcanvas").exists());
+    assert!(
+        editor
+            .documents
+            .get(document)
+            .unwrap()
+            .history()
+            .entries()
+            .is_empty()
+    );
 }
 
 #[test]
