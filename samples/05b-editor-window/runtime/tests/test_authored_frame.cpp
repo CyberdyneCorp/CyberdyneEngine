@@ -748,15 +748,26 @@ CY_TEST_CASE("committed sine sway material cooks and renders in its authored sce
     Array<u8> world_bytes(allocator());
     CY_REQUIRE(
         assets::fs::read_whole((project + "/worlds/issue15-sway.cyworld").c_str(), world_bytes));
+    const std::string_view world_source(reinterpret_cast<const char*>(world_bytes.data()),
+                                        world_bytes.size());
     ser::World world(allocator());
-    CY_REQUIRE(ser::read_world(
-        std::string_view(reinterpret_cast<const char*>(world_bytes.data()), world_bytes.size()),
-        "worlds/issue15-sway.cyworld", world));
+    CY_REQUIRE(ser::read_world(world_source, "worlds/issue15-sway.cyworld", world));
+    std::string unassigned(world_source);
+    constexpr std::string_view assignment = "field 5 \"materials/issue15_sway.cygraph\"";
+    const usize at = unassigned.find(assignment);
+    CY_REQUIRE_NE(at, std::string::npos);
+    if (at == std::string::npos) {
+        return;
+    }
+    unassigned.replace(at, assignment.size(), "field 5 \"\"");
+    ser::World baseline(allocator());
+    CY_REQUIRE(ser::read_world(unassigned, "worlds/issue15-sway.cyworld", baseline));
     reflect::TypeRegistry types;
     CY_REQUIRE(reflect::register_scene_types(types));
     ser::AuthoringSchema schema(allocator());
     CY_REQUIRE(ser::build_authoring_schema(types, schema));
     CY_REQUIRE(ser::resolve_against(world, schema));
+    CY_REQUIRE(ser::resolve_against(baseline, schema));
 
     (void)rhi::null::register_null_backend();
     rhi::DeviceDescription description;
@@ -767,12 +778,23 @@ CY_TEST_CASE("committed sine sway material cooks and renders in its authored sce
     {
         AuthoredFrame frame(allocator(), **device);
         CY_REQUIRE(frame.initialize(160, 90, project.c_str()));
-        CY_REQUIRE(frame.render(world, camera(), true, nullptr, 0.2F));
-        bool bound_pipeline = false;
+        CY_REQUIRE(frame.render(baseline, camera(), true, nullptr, 0.2F));
+        std::vector<u64> standard;
         for (const auto& command : rhi::null::command_log(**device)) {
-            bound_pipeline |= command.kind == rhi::null::CommandKind::BindGraphicsPipeline;
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline) {
+                standard.push_back(command.handle_bits);
+            }
         }
-        CY_CHECK(bound_pipeline);
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, camera(), true, nullptr, 0.2F));
+        usize graph_pipelines = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                ++graph_pipelines;
+            }
+        }
+        CY_CHECK_GE(graph_pipelines, 2U);
     }
     rhi::destroy_device(allocator(), *device);
 }
