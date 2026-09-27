@@ -114,7 +114,9 @@ and uses the same generated function for its shadow pass. The Metal image test c
 offset against moving the same mesh on the CPU. The authored scene frame also accepts an optional
 time value for deterministic vertex-animation previews; without it, the frame uses elapsed time.
 Its temporal test compares two frames of sine displacement with the same mesh translated on the
-CPU, checking both the final image and the prepass motion texture. Motion readback is enabled only
+CPU across a 0.2-second step, checking both the final image and the prepass motion texture. The
+material animation delta retains that full step so its previous-position evaluation matches the
+previous visible frame. Motion readback is enabled only
 for that inspection; ordinary editor frames do not allocate or copy it. The pixel comparison
 requires a native device.
 

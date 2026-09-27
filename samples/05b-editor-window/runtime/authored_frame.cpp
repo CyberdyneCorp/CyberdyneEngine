@@ -1842,9 +1842,10 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
     const auto now = std::chrono::steady_clock::now();
     globals.time_seconds =
         time_seconds.value_or(std::chrono::duration<f32>(now - time_origin_).count());
-    globals.delta_seconds =
-        has_frame_time_ ? std::clamp(globals.time_seconds - previous_frame_time_, 0.0F, 0.1F)
-                        : 0.0F;
+    // Vertex motion reconstructs the prior animation sample from this exact elapsed time.
+    // Clamping it makes the depth pass disagree with the previous visible frame after a slow
+    // frame or an explicit editor time step.
+    globals.delta_seconds = has_frame_time_ ? globals.time_seconds - previous_frame_time_ : 0.0F;
     previous_frame_time_ = globals.time_seconds;
     has_frame_time_ = true;
     globals.exposure_stops = -16.0F;

@@ -610,11 +610,11 @@ void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSch
         "samples/05b-editor-window/project/materials/copper_clay.cygraph";
     const std::string assigned = assigned_vertex_shadow_scene();
     const std::string raised = assigned;
-    constexpr f32 second_time = 0.05F;
-    constexpr f32 cpu_offset = 0.19991669F;  // 4 * sin(0.05)
+    constexpr f32 second_time = 0.2F;        // Above the old 0.1 s motion clamp.
+    constexpr f32 cpu_offset = 0.79467732F;  // 4 * sin(0.2)
     const std::string graph_moved = assigned;
     const std::string cpu_moved =
-        edited(raised, "    field 2 0 0 0\n", "    field 2 0 0.19991669 0\n", Occurrence::First);
+        edited(raised, "    field 2 0 0 0\n", "    field 2 0 0.79467732 0\n", Occurrence::First);
     ser::World graph_before(allocator());
     ser::World cpu_before(allocator());
     ser::World graph_after(allocator());
