@@ -10,10 +10,6 @@
 # recipe that tried to would be reimplementing incremental logic, which the workflow specification
 # forbids.
 
-# Verify the editor MCP capture client's timeout and reply framing without a device.
-test-editor-mcp-client:
-    @cd "{{root}}" && python3 samples/05b-editor-window/test_mcp_window.py
-
 # Run a command on a QUIET HOST, or fail saying the host was not. Usage: just test-quiet-host [--profile <p>] [--wait-s <n>] -- <command...>
 #
 # M11.c's seventh close. The harness's stall ceiling is a wall-clock assertion, and three successive

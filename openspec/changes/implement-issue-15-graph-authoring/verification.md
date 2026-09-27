@@ -48,7 +48,7 @@ dependency-free tests. No new screenshot or
 native displacement proof is claimed from this attempt.
 
 The quality job initially refused the direct Python test command under `just ci-check`:
-workflow commands must call recipes. `just test-editor-mcp-client` now runs the same three tests,
+workflow commands must call recipes. `just quality-editor-mcp-client` now runs the same three tests,
 and the workflow calls that recipe. A `check_workflows.py --selftest` fixture rejects the original
 direct command and accepts the recipe, so this CI regression is covered by a negative case.
 

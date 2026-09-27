@@ -584,7 +584,7 @@ SELFTEST_CASES = (
 
 SELFTEST_LEGAL = (
     "- run: just build-all",
-    "- run: just test-editor-mcp-client",
+    "- run: just quality-editor-mcp-client",
     "- run: npm install -g @fission-ai/openspec",
     "- run: |\n          sudo apt-get update\n          sudo apt-get install -y ninja-build",
 )

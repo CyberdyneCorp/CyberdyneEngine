@@ -984,7 +984,7 @@ jobs:
       - name: The workflow itself
         run: just ci-check
       - name: Editor MCP capture client timeouts
-        run: just test-editor-mcp-client
+        run: just quality-editor-mcp-client
       # clang-tidy needs the flags every file is compiled with, so the build comes first.
       - name: Configure and build for the compile database
         run: just build-engine
