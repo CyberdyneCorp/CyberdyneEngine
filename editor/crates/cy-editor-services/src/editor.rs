@@ -472,9 +472,25 @@ impl Editor {
             Ok(property_sync)
         });
         self.graph_save_status = match outcome {
-            Ok(Ok(_)) => format!("saved: {reference}"),
-            Ok(Err(problem)) => format!("saved: {reference}; property sync failed: {problem}"),
-            Err(problem) => format!("failed: {problem}"),
+            Ok(Ok(_)) => {
+                self.notifications
+                    .post(Notification::info(format!("Saved {reference}")));
+                format!("saved: {reference}")
+            }
+            Ok(Err(problem)) => {
+                self.notifications.post(Notification::error(
+                    "Material saved; scene properties could not be synced",
+                    Problem::new("sync graph properties", problem.clone()),
+                ));
+                format!("saved: {reference}; property sync failed: {problem}")
+            }
+            Err(problem) => {
+                self.notifications.post(Notification::error(
+                    "Material save failed",
+                    Problem::new("save material graph", problem.clone()),
+                ));
+                format!("failed: {problem}")
+            }
         };
     }
 

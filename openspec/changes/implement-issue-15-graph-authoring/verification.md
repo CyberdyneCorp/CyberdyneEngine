@@ -80,6 +80,8 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Red mutation:** in `editor/crates/cy-editor-services/src/editor.rs`, temporarily omit the material save transaction's `document.commit()`. The wire test failed when `edit.undo` returned an MCP error. Restoring the commit made it pass. The mutation is not committed.
 - **Regression red:** with the scene mesh assigned, the material save created a second `Sync material properties` history entry after its file transaction. The strengthened wire test failed because one undo left both graph files in place. Moving property sync inside the save transaction made one undo restore the files and fields together.
 - **Remaining work:** material canvas gestures still need individual transaction/MCP parity, tracked by task 3.4.
+- **Desktop parity regression:** the desktop Save button now queues `material.graph.save`, the same registered command as MCP. `desktop_material_save_uses_the_mcp_command_and_undo_path` checks the queued reference and editable canvas. `desktop_material_save_and_mcp_share_one_undoable_transaction` drives the command through the desktop window, answers the engine author request, checks both files and the success notification, then undoes and redoes the graph. The focused shell tests passed 2/2 and the MCP save test passed 1/1 on 2026-09-27.
+- **Red mutation:** before routing the desktop action through the registered command, its focused test failed because no command intent was queued. The old desktop writer persisted both files outside the project history; the command path now owns the save and property sync transaction. All 99 shell unit tests and all-target shell/services Clippy passed after the change.
 
 ## Vertex material preview on mesh and scene
 

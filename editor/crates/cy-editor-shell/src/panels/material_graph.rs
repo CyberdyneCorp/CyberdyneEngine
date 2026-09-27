@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use cy_editor_commands::Arguments;
+use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::specialised::graph::{
     GraphCanvas, Layout as GraphLayout, NodeKey, Pin, PinDirection, Property, PropertyKind,
@@ -23,7 +25,7 @@ use cy_editor_services::{
 use cy_editor_visual::colour::{Semantic, Surface};
 use cy_editor_visual::density::TextRole;
 
-use super::{Panels, nothing_here, secondary, status};
+use super::{Intent, Panels, nothing_here, secondary, status};
 use crate::theme;
 
 const PALETTE_WIDTH: f32 = 220.0;
@@ -63,22 +65,13 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let canvas = session
         .graph
         .expect("the material domain is declared as a graph surface");
-    if let Some(reference) = &selected_graph {
-        ui.horizontal(|ui| {
-            ui.label(format!("Selected material: {reference}"));
-            if ui.button("Open graph").clicked() {
-                match open_selected_graph(&project_root, reference, canvas) {
-                    Ok(name) => {
-                        panels.inputs.material_name = name;
-                        panels.inputs.material_open_reference = Some(reference.clone());
-                        panels.inputs.material_preview_source = None;
-                        panels.inputs.material_property_problem = None;
-                    }
-                    Err(problem) => panels.inputs.material_property_problem = Some(problem),
-                }
-            }
-        });
-    }
+    selected_graph_control(
+        ui,
+        panels.inputs,
+        canvas,
+        selected_graph.as_deref(),
+        &project_root,
+    );
     let available = ui.available_size();
     let mut action = None;
     ui.horizontal(|ui| {
@@ -119,7 +112,14 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         });
     });
     let had_action = action.is_some();
-    handle_palette_action(panels.editor, panels.inputs, canvas, action, geometry);
+    handle_palette_action(
+        panels.editor,
+        panels.inputs,
+        panels.intents,
+        canvas,
+        action,
+        geometry,
+    );
     if !had_action
         && panels.editor.runtime.is_connected()
         && state == MaterialCatalogueState::Ready
@@ -129,9 +129,34 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     }
 }
 
+fn selected_graph_control(
+    ui: &mut egui::Ui,
+    inputs: &mut super::Inputs,
+    canvas: &mut GraphCanvas,
+    reference: Option<&str>,
+    project_root: &std::path::Path,
+) {
+    let Some(reference) = reference else { return };
+    ui.horizontal(|ui| {
+        ui.label(format!("Selected material: {reference}"));
+        if ui.button("Open graph").clicked() {
+            match open_selected_graph(project_root, reference, canvas) {
+                Ok(name) => {
+                    inputs.material_name = name;
+                    inputs.material_open_reference = Some(reference.into());
+                    inputs.material_preview_source = None;
+                    inputs.material_property_problem = None;
+                }
+                Err(problem) => inputs.material_property_problem = Some(problem),
+            }
+        }
+    });
+}
+
 fn handle_palette_action(
     editor: &mut Editor,
     inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
     canvas: &GraphCanvas,
     action: Option<PaletteAction>,
     geometry: Option<&str>,
@@ -142,20 +167,13 @@ fn handle_palette_action(
                 .material_open_reference
                 .clone()
                 .unwrap_or_else(|| format!("materials/{}.cygraph", inputs.material_name));
-            match canvas_interchange(&inputs.material_name, canvas).and_then(|source| {
-                let sources: Vec<&str> = editor
-                    .assigned_material_geometry(Some(&reference))
-                    .into_iter()
-                    .collect();
-                let request = editor.request_material_for_geometry(
-                    MaterialOperation::Author,
-                    source.as_bytes().to_vec(),
-                    &sources,
-                )?;
-                inputs.material_save = Some((request.as_u64(), reference, source));
-                Ok(())
-            }) {
-                Ok(()) => {}
+            match canvas_interchange(&inputs.material_name, canvas) {
+                Ok(source) => {
+                    let arguments = Arguments::new()
+                        .with("reference", Value::Text(reference))
+                        .with("source", Value::Text(source));
+                    intents.push(Intent::Invoke("material.graph.save".into(), arguments));
+                }
                 Err(problem) => {
                     editor
                         .notifications
@@ -240,107 +258,6 @@ fn open_selected_graph(
     }
     let text = std::fs::read_to_string(root.join(source)).map_err(|error| error.to_string())?;
     load_canvas_interchange(&text, canvas).map_err(|problem| problem.to_string())
-}
-
-pub(crate) fn finish_save(editor: &mut Editor, inputs: &mut super::Inputs) {
-    let Some((request, _, _)) = inputs.material_save.as_ref() else {
-        return;
-    };
-    let result = match editor.backend.material_request_state() {
-        MaterialRequestState::Authored {
-            request: done,
-            graph,
-        } if done.as_u64() == *request => Some(Ok(graph.clone())),
-        MaterialRequestState::Failed {
-            request: Some(done),
-            ..
-        } if done.as_u64() == *request => Some(Err(
-            "the engine rejected this graph; see Problems".to_owned()
-        )),
-        MaterialRequestState::Cancelled { request: done } if done.as_u64() == *request => {
-            Some(Err("the graph save was cancelled".to_owned()))
-        }
-        _ => None,
-    };
-    let Some(result) = result else { return };
-    let (_, reference, source) = inputs.material_save.take().expect("pending save");
-    let previous = std::fs::read_to_string(
-        editor
-            .project
-            .root()
-            .join(std::path::Path::new(&reference).with_extension("cymatcanvas")),
-    )
-    .ok();
-    let outcome =
-        result.and_then(|graph| save_graph(editor.project.root(), &reference, &source, &graph));
-    match outcome {
-        Ok(()) => {
-            inputs.material_open_reference = Some(reference.clone());
-            editor
-                .notifications
-                .post(cy_editor_services::Notification::info(format!(
-                    "Saved {reference}"
-                )));
-            if let Err(message) =
-                super::material_parameters::sync(editor, &reference, previous.as_deref())
-            {
-                editor
-                    .notifications
-                    .post(cy_editor_services::Notification::error(
-                        "Material saved; scene properties could not be synced",
-                        cy_editor_core::problem::Problem::new("sync graph properties", message),
-                    ));
-            }
-        }
-        Err(message) => editor
-            .notifications
-            .post(cy_editor_services::Notification::error(
-                "Material save failed",
-                cy_editor_core::problem::Problem::new("save material graph", message),
-            )),
-    }
-}
-
-fn save_graph(
-    root: &std::path::Path,
-    reference: &str,
-    source: &str,
-    graph: &str,
-) -> Result<(), String> {
-    let path = std::path::Path::new(reference);
-    if path
-        .extension()
-        .is_none_or(|extension| extension != "cygraph")
-        || !path
-            .components()
-            .all(|part| matches!(part, std::path::Component::Normal(_)))
-    {
-        return Err("material graph path must be a project-relative .cygraph".into());
-    }
-    let graph_path = root.join(path);
-    let source_path = graph_path.with_extension("cymatcanvas");
-    let parent = graph_path
-        .parent()
-        .ok_or("material graph has no directory")?;
-    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let graph_stage = graph_path.with_extension("cygraph.tmp");
-    let source_stage = source_path.with_extension("cymatcanvas.tmp");
-    std::fs::write(&graph_stage, graph).map_err(|error| error.to_string())?;
-    std::fs::write(&source_stage, source).map_err(|error| error.to_string())?;
-    let previous_source = std::fs::read(&source_path).ok();
-    std::fs::rename(&source_stage, &source_path).map_err(|error| error.to_string())?;
-    if let Err(error) = std::fs::rename(&graph_stage, &graph_path) {
-        match previous_source {
-            Some(bytes) => {
-                let _ = std::fs::write(&source_path, bytes);
-            }
-            None => {
-                let _ = std::fs::remove_file(&source_path);
-            }
-        }
-        return Err(error.to_string());
-    }
-    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1570,6 +1487,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn desktop_material_save_uses_the_mcp_command_and_undo_path() {
+        let mut editor = Editor::default();
+        let mut inputs = super::super::Inputs {
+            material_name: "sway".into(),
+            ..Default::default()
+        };
+        let canvas = GraphCanvas::new(1);
+        let mut intents = Vec::new();
+        handle_palette_action(
+            &mut editor,
+            &mut inputs,
+            &mut intents,
+            &canvas,
+            Some(PaletteAction::Save),
+            None,
+        );
+        let Some(Intent::Invoke(command, arguments)) = intents.first() else {
+            panic!("desktop save must use the registered material graph command");
+        };
+        assert_eq!(command, "material.graph.save");
+        assert_eq!(arguments.text("reference"), Some("materials/sway.cygraph"));
+        assert!(
+            arguments
+                .text("source")
+                .unwrap()
+                .starts_with("cymatcanvas 1\n")
+        );
+    }
+
+    #[test]
     fn active_scene_meshes_supply_static_geometry_for_primary_and_imported_slots() {
         use cy_editor_core::Actor;
         use cy_editor_documents::operation::Operation;
@@ -1634,29 +1581,6 @@ mod tests {
             None
         );
         assert_eq!(editor.assigned_material_geometry(None), None);
-    }
-
-    #[test]
-    fn graph_save_writes_both_formats_and_rejects_paths_outside_project() {
-        let root = std::env::temp_dir().join(format!("cy-material-save-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        save_graph(
-            &root,
-            "materials/paint.cygraph",
-            "cymatcanvas 1\n",
-            "cygraph 1\n",
-        )
-        .expect("save material assets");
-        assert_eq!(
-            std::fs::read_to_string(root.join("materials/paint.cygraph")).unwrap(),
-            "cygraph 1\n"
-        );
-        assert_eq!(
-            std::fs::read_to_string(root.join("materials/paint.cymatcanvas")).unwrap(),
-            "cymatcanvas 1\n"
-        );
-        assert!(save_graph(&root, "../outside.cygraph", "", "").is_err());
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -476,14 +476,13 @@ editor backend also accepts named geometry-source requests and reports the compi
 successful Compile result lists the named geometry
 sources whose variants were produced. Propagating non-static assignments from scene assets
 and build descriptions remains part of issue #15.
-Save and `material.graph.save` over MCP also send an active scene's static-mesh assignment. The
-engine refuses unsupported vertex paths before authoring the canonical graph. Saving a graph and
-syncing its generated Inspector fields form one undo step; undo and redo restore both graph files
-and the scene fields together.
-The authored scene frame currently accepts only its standard constant-colour graph subset;
-`material.vertex_output` and `material.vertex_interpolant` report the missing vertex-stage pass
-explicitly. The hosted compiled-material preview supports both outputs, but the authored scene
-frame does not yet bind compiled material variants.
+The desktop Save button and `material.graph.save` over MCP invoke the same registered command.
+Both send an active scene's static-mesh assignment to the engine, which refuses unsupported
+vertex paths before authoring the canonical graph. Saving a graph and syncing its generated
+Inspector fields form one undo step; undo and redo restore both graph files and scene fields.
+The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
+and shadow passes. A graph requiring an unbound environment field is refused before replacing the
+last valid preview. The actual wind-field binding remains part of issue #15.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 

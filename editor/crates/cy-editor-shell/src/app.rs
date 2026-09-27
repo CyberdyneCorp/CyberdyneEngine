@@ -632,6 +632,11 @@ impl EditorWindow {
             .invoke(id, &self.scope, &mut self.editor, arguments)
         {
             Ok(outcome) => {
+                if id == "material.graph.save"
+                    && let Some(reference) = arguments.text("reference")
+                {
+                    self.inputs.material_open_reference = Some(reference.into());
+                }
                 if id == "vfx.document.save"
                     && let (Some(reference), Some(source)) =
                         (arguments.text("reference"), arguments.text("source"))
@@ -1322,7 +1327,6 @@ impl eframe::App for EditorWindow {
             // Before this frame's agent pump, so a delivered screenshot answers the reads waiting on it.
             self.agent_window.receive(ctx, agent);
         }
-        crate::panels::finish_material_save(&mut self.editor, &mut self.inputs);
         self.finish_imports();
         self.sync_material_catalogue();
         self.sync_vfx_catalogue();
@@ -1775,6 +1779,83 @@ mod tests {
                 .get("vfx.backend_only")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn desktop_material_save_and_mcp_share_one_undoable_transaction() {
+        let root = scratch("material-command-save");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+        let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let mut window = window();
+        window.editor.project = ProjectService::new(&root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        window.editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+        let reference = "materials/sway.cygraph";
+        let source = "cymatcanvas 1\nmaterial sway\n";
+        let graph = "cygraph 1\ngraph \"sway\" version 1\ncapability\ndeterministic true\n";
+        let mut notifications = window.editor.notifications.cursor();
+        window.apply(vec![Intent::Invoke(
+            "material.graph.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(source.into())),
+        )]);
+        assert_eq!(
+            window.inputs.material_open_reference.as_deref(),
+            Some(reference)
+        );
+        let submitted =
+            Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request, operation, ..
+        } = submitted
+        else {
+            panic!("desktop save did not request engine authoring");
+        };
+        assert_eq!(operation, "material.author");
+        let mut payload = Writer::new();
+        payload.u32(1);
+        payload.u8(1);
+        payload.text(graph);
+        write_frame(
+            &mut runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: payload.finish(),
+            }
+            .encode(),
+        )
+        .unwrap();
+        let graph_path = root.join(reference);
+        for _ in 0..100 {
+            window.editor.pump();
+            if graph_path.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(std::fs::read_to_string(&graph_path).unwrap(), graph);
+        assert!(
+            window
+                .editor
+                .notifications
+                .drain_from(&mut notifications)
+                .iter()
+                .any(|notification| notification.message == format!("Saved {reference}"))
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("materials/sway.cymatcanvas")).unwrap(),
+            source
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert!(!graph_path.exists());
+        window.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
+        assert_eq!(std::fs::read_to_string(graph_path).unwrap(), graph);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn add_vfx_declarations(draft: &mut cy_editor_interface::specialised::vfx::VfxDocument) {

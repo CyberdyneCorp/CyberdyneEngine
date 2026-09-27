@@ -30,7 +30,6 @@ mod history;
 mod inspector;
 mod material_graph;
 use cy_editor_services::material_parameters;
-pub(crate) use material_graph::finish_save as finish_material_save;
 mod pending;
 mod semantic_merge;
 mod settings;
@@ -178,8 +177,6 @@ pub struct Inputs {
     pub material_open_reference: Option<String>,
     /// Last semantic graph submitted for live scene preview.
     pub material_preview_source: Option<(String, String)>,
-    /// Authored graph waiting for its request-correlated canonical result.
-    pub material_save: Option<(u64, String, String)>,
     /// Search text for the engine-owned VFX node palette.
     pub vfx_filter: String,
     /// Selected output pin for a VFX connection gesture.
@@ -328,7 +325,6 @@ impl Default for Inputs {
             material_name: "editor_preview".into(),
             material_open_reference: None,
             material_preview_source: None,
-            material_save: None,
             vfx_filter: String::new(),
             vfx_link_source: None,
             vfx_link_problem: None,
