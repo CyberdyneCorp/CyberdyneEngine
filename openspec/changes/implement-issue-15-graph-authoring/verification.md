@@ -35,6 +35,18 @@ passed 14 cases and 174 assertions on macOS. Native CPU/GPU value and pixel comp
 Removing the binding-3 write loop made that focused regression fail (8/10 assertions passed);
 restoring the loop returned it to green. The mutation is not committed.
 
+An MCP attempt to capture the new sine-sway scene could not provide native image evidence on this
+host: the editor-window runtime logged `MTLCreateSystemDefaultDevice returned no device`, selected
+the null backend, and did not open its viewport sockets. The editor-only `editor:window` request
+also supplied no reply. That exposed a separate capture-client bug: `Mcp.call` used a blocking
+`readline()` inside a nominal timeout. It now reads available pipe bytes up to a deadline, retaining
+partial JSON across reads. `test_mcp_window.py` passed three no-reply, partial-reply, and buffered-
+reply cases. Replacing the bounded read with `readline()` made the test process exceed its one-
+second mutation timeout; restoration passed all three cases. A real editor-only request returned
+`resources/read had no answer within 3 s` instead of hanging. The quality CI job runs these
+dependency-free tests. No new screenshot or
+native displacement proof is claimed from this attempt.
+
 ## VFX palette and compiler registry
 
 - **Open:** `vfx_editor_opens_on_the_shared_canvas_from_backend_nodes` opens `Domain::VfxGraph` using a backend-supplied catalogue and edits it on the shared canvas.

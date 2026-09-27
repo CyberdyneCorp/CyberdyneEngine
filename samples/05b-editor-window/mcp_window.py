@@ -30,6 +30,7 @@ import base64
 import io
 import json
 import os
+import select
 import subprocess
 import sys
 import time
@@ -63,6 +64,19 @@ class Mcp:
     def __init__(self, process: subprocess.Popen) -> None:
         self.process = process
         self.next_id = 0
+        self.pending = b""
+
+    def reply_line(self, deadline: float) -> bytes | None:
+        while b"\n" not in self.pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
+                return None
+            chunk = os.read(self.process.stdout.fileno(), 65536)
+            if not chunk:
+                raise Failed("the editor closed its MCP stream")
+            self.pending += chunk
+        line, self.pending = self.pending.split(b"\n", 1)
+        return line
 
     def call(self, method: str, params: dict | None = None, seconds: float = 30.0) -> dict:
         self.next_id += 1
@@ -73,12 +87,12 @@ class Mcp:
         self.process.stdin.flush()
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            line = self.process.stdout.readline()
-            if not line:
-                raise Failed(f"the editor closed its MCP stream during {method}")
+            line = self.reply_line(deadline)
+            if line is None:
+                break
             try:
                 reply = json.loads(line)
-            except json.JSONDecodeError:
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 continue  # the editor's own log lines share the stream's terminal, not its protocol
             if reply.get("id") == self.next_id:
                 if "error" in reply:

@@ -85,7 +85,9 @@ viewport cannot draw (issue #18).
 
 `smoke.editor_window_mcp` checks the same viewport through MCP instead of synthesised input.
 `mcp_window.py` starts the editor with `--mcp` and reads `editor:window?panel=viewport`, so a
-person can keep using the display while it runs. It requires four things:
+person can keep using the display while it runs. Its MCP client bounds each reply wait, including
+an absent or incomplete JSON line; `test_mcp_window.py` checks these timeout cases without a
+display. It requires four things:
 - With no runtime, the viewport shows the editor's own sunken fill.
 - An empty world shows the engine's exact black frame, not that fill.
 - `city-blocks.cyworld` shows colour.
