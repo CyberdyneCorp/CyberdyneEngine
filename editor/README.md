@@ -469,15 +469,16 @@ Its generated mesh assigns a different colour to each face axis for a visible pr
 The `displacement` pin accepts a scalar distance in metres; the engine combines it with any
 connected `offset` as `offset + normal * displacement` for visible and shadow vertex programs.
 The actual `environment-fields` wind binding and custom interpolants are tracked by issue #15.
-When an opened graph is assigned to any mesh in the active scene, including an imported material
-slot, Validate and Compile send that `StaticMesh` assignment to the Engine material compiler. The
-editor backend also accepts named geometry-source requests and reports the compiler's
+When an opened graph is assigned to a mesh in the active scene, including an imported material
+slot, Validate and Compile send `StaticMesh` to the Engine material compiler. A material assigned
+to a terrain layer sends `Terrain`; a material used by both requests both variants. The editor
+backend also accepts named geometry-source requests and reports the compiler's
 `vertex-geometry-unsupported` diagnostic for a vertex graph assigned to `VirtualGeometry`. A
 successful Compile result lists the named geometry
-sources whose variants were produced. Propagating non-static assignments from scene assets
+sources whose variants were produced. Discovering virtual-geometry assignments from scene assets
 and build descriptions remains part of issue #15.
 The desktop Save button and `material.graph.save` over MCP invoke the same registered command.
-Both send an active scene's static-mesh assignment to the engine, which refuses unsupported
+Both send the active scene's mesh and terrain assignments to the engine, which refuses unsupported
 vertex paths before authoring the canonical graph. Saving a graph and syncing its generated
 Inspector fields form one undo step; undo and redo restore both graph files and scene fields.
 When that save comes from the open Material Graph, undo and redo also reload its canvas from the

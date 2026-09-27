@@ -324,18 +324,48 @@ impl Editor {
         self.request_material(operation, material_geometry_payload(canvas, geometry)?)
     }
 
-    /// Geometry sources currently assigned to a material in the active scene.
-    pub fn assigned_material_geometry(&self, reference: Option<&str>) -> Option<&'static str> {
-        let reference = reference?;
-        let document = self.documents.get(self.workspace.active()?)?;
+    /// Distinct geometry sources assigned to a material in the active scene.
+    pub fn assigned_material_geometry(&self, reference: Option<&str>) -> Vec<&'static str> {
+        let Some(reference) = reference else {
+            return Vec::new();
+        };
+        let Some(document) = self
+            .workspace
+            .active()
+            .and_then(|id| self.documents.get(id))
+        else {
+            return Vec::new();
+        };
+        let mut sources = Vec::new();
         // The authored scene renderer currently loads MeshRenderer assets as static meshes.
-        document.content().nodes().find_map(|node| {
-            (mesh_of(document, node).is_some()
+        if document.content().nodes().any(|node| {
+            mesh_of(document, node).is_some()
                 && material_slots_of(document, node)
                     .iter()
-                    .any(|material| material == reference))
-            .then_some("StaticMesh")
-        })
+                    .any(|material| material == reference)
+        }) {
+            sources.push("StaticMesh");
+        }
+        let schema = document.schema();
+        if let (Some(terrain), Some(layer)) = (
+            schema.type_named("TerrainAuthoring"),
+            schema.type_named("TerrainMaterialLayer"),
+        ) && let Some(material) = layer.field_named("material")
+            && document.content().nodes().any(|node| {
+                let Some(parent) = document.content().node(node).and_then(|item| item.parent)
+                else {
+                    return false;
+                };
+                document.content().has_component(parent, terrain.id)
+                    && matches!(
+                        document.content().field(node, layer.id, material.id),
+                        Some(cy_editor_core::value::Value::Text(asset)) if asset == reference
+                    )
+            })
+        {
+            sources.push("Terrain");
+        }
+        sources
     }
 
     /// Ask the engine to compile an editable VFX document.
@@ -1385,10 +1415,7 @@ impl cy_editor_commands::ProjectHost for Editor {
                 "no scene document is active for undo history",
             )
         })?;
-        let sources: Vec<&str> = self
-            .assigned_material_geometry(Some(reference))
-            .into_iter()
-            .collect();
+        let sources = self.assigned_material_geometry(Some(reference));
         let request = self.request_material_for_geometry(
             MaterialOperation::Author,
             source.as_bytes().to_vec(),
@@ -1746,7 +1773,10 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::{MaterialBinding, create_mesh_instance};
+    use cy_editor_core::value::{Value, ValueKind};
     use cy_editor_protocol::FrameId;
+    use cy_editor_viewport::gizmo::Transform3;
     use cy_editor_viewport::picking::PickCandidate;
 
     #[test]
@@ -1770,6 +1800,82 @@ mod tests {
             material_geometry_payload(canvas.clone(), &["StaticMesh\nmaterial forged"]).is_err()
         );
         assert!(material_geometry_payload(canvas, &[""]).is_err());
+    }
+
+    #[test]
+    fn assigned_material_geometry_includes_meshes_and_terrain_layers() {
+        let mut editor = Editor::default();
+        let id = editor.open_document("worlds/materials.cyworld").unwrap();
+        editor
+            .documents
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Assign material", Actor::human("designer"), |document| {
+                let mesh = create_mesh_instance(
+                    document,
+                    None,
+                    "meshes/box.cyprim",
+                    Transform3::default(),
+                )?;
+                let binding = MaterialBinding::of_schema(document.schema()).unwrap();
+                document.record(
+                    cy_editor_documents::operation::Operation::SetAssetReference {
+                        node: mesh,
+                        component: binding.component,
+                        field: binding.material,
+                        before: String::new(),
+                        after: "materials/shared.cygraph".into(),
+                    },
+                )?;
+
+                let terrain = document
+                    .schema_mut()
+                    .declare_type("TerrainAuthoring", false);
+                let layer = document
+                    .schema_mut()
+                    .declare_type("TerrainMaterialLayer", true);
+                let material = document.schema_mut().declare_field(
+                    layer,
+                    "material",
+                    ValueKind::Text,
+                    "Terrain layer material",
+                )?;
+                let root = document.create_node(None)?;
+                document.add_component(root, terrain, vec![])?;
+                let child = document.create_node(Some(root))?;
+                document.add_component(
+                    child,
+                    layer,
+                    vec![(material, Value::Text("materials/shared.cygraph".into()))],
+                )?;
+                let terrain_only = document.create_node(Some(root))?;
+                document.add_component(
+                    terrain_only,
+                    layer,
+                    vec![(material, Value::Text("materials/terrain.cygraph".into()))],
+                )?;
+                let orphan = document.create_node(None)?;
+                document.add_component(
+                    orphan,
+                    layer,
+                    vec![(material, Value::Text("materials/orphan.cygraph".into()))],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let geometry = editor.assigned_material_geometry(Some("materials/shared.cygraph"));
+        assert_eq!(geometry, ["StaticMesh", "Terrain"]);
+        let payload = material_geometry_payload(b"cymatcanvas 1\n".to_vec(), &geometry).unwrap();
+        assert!(payload.starts_with(b"cymatrequest 1\ngeometry StaticMesh,Terrain\n"));
+        assert_eq!(
+            editor.assigned_material_geometry(Some("materials/terrain.cygraph")),
+            ["Terrain"]
+        );
+        assert!(
+            editor
+                .assigned_material_geometry(Some("materials/orphan.cygraph"))
+                .is_empty()
+        );
     }
 
     #[test]

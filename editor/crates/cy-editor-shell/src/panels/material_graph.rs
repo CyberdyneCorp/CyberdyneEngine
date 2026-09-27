@@ -124,7 +124,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         panels.intents,
         canvas,
         action,
-        geometry,
+        &geometry,
     );
     if !had_action
         && panels.editor.runtime.is_connected()
@@ -259,7 +259,7 @@ fn handle_palette_action(
     intents: &mut Vec<Intent>,
     canvas: &GraphCanvas,
     action: Option<PaletteAction>,
-    geometry: Option<&str>,
+    geometry: &[&str],
 ) {
     match action {
         Some(PaletteAction::Save) => {
@@ -285,9 +285,8 @@ fn handle_palette_action(
             }
         }
         Some(PaletteAction::Request(operation)) => {
-            let sources: Vec<&str> = geometry.into_iter().collect();
             match canvas_interchange(&inputs.material_name, canvas).and_then(|payload| {
-                editor.request_material_for_geometry(operation, payload.into_bytes(), &sources)
+                editor.request_material_for_geometry(operation, payload.into_bytes(), geometry)
             }) {
                 Ok(_) => {}
                 Err(problem) => {
@@ -1896,7 +1895,7 @@ mod tests {
             &mut intents,
             &canvas,
             Some(PaletteAction::Save),
-            None,
+            &[],
         );
         let Some(Intent::Invoke(command, arguments)) = intents.first() else {
             panic!("desktop save must use the registered material graph command");
@@ -2081,17 +2080,17 @@ mod tests {
 
         assert_eq!(
             editor.assigned_material_geometry(Some("materials/sway.cygraph")),
-            Some("StaticMesh")
+            ["StaticMesh"]
         );
         assert_eq!(
             editor.assigned_material_geometry(Some("materials/secondary.cygraph")),
-            Some("StaticMesh")
+            ["StaticMesh"]
         );
         assert_eq!(
             editor.assigned_material_geometry(Some("materials/missing.cygraph")),
-            None
+            Vec::<&str>::new()
         );
-        assert_eq!(editor.assigned_material_geometry(None), None);
+        assert!(editor.assigned_material_geometry(None).is_empty());
     }
 
     #[test]
