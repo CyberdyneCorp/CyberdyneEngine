@@ -2257,6 +2257,64 @@ mod tests {
     }
 
     #[test]
+    fn typed_saved_emitter_settings_and_interface_edits_undo_individually() {
+        let root = scratch("vfx-system-typed-emitter-history");
+        let (mut window, original) = saved_vfx_system_window(&root);
+        let reference = "effects/sparks.cyvfxdoc";
+        window.apply(vec![Intent::Invoke(
+            "vfx.emitter.configure".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into()))
+                .with("target", Value::Text("gpu".into()))
+                .with("renderer", Value::Text("Sprite".into())),
+        )]);
+        window.refresh_vfx_sources();
+        let configured = window.editor.project.read_source(reference).unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.interface.bind".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into()))
+                .with("interface", Value::Text("collision".into())),
+        )]);
+        window.refresh_vfx_sources();
+        let bound = window.editor.project.read_source(reference).unwrap();
+        assert_eq!(
+            window.specialised.vfx_document().unwrap().emitters[0].interfaces,
+            ["collision"]
+        );
+        window.apply(vec![Intent::Invoke(
+            "vfx.emitter.remove".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into())),
+        )]);
+        window.refresh_vfx_sources();
+        assert!(
+            window
+                .specialised
+                .vfx_document()
+                .unwrap()
+                .emitters
+                .is_empty()
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(window.editor.project.read_source(reference).unwrap(), bound);
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            configured
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            original
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn typed_saved_module_metadata_edits_refresh_and_undo_individually() {
         use cy_editor_interface::specialised::vfx::Stage;
         use cy_editor_interface::specialised::vfx_module::VfxModule;

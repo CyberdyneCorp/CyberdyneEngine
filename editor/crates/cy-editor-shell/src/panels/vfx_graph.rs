@@ -1392,12 +1392,12 @@ fn interface_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter_index:
             ui.horizontal(|ui| {
                 ui.label(name);
                 if ui.button("Remove").clicked() {
-                    let result = panels.specialised.edit_vfx_metadata(|document| {
+                    let arguments = Arguments::new()
+                        .with("emitter", Value::Text(emitter.name.clone()))
+                        .with("interface", Value::Text(name.clone()));
+                    edit_document_metadata(panels, "vfx.interface.unbind", arguments, |document| {
                         document.emitters[emitter_index].interfaces.remove(index);
-                        Ok(())
                     });
-                    panels.inputs.vfx_document_problem =
-                        result.err().map(|error| error.to_string());
                 }
             });
         });
@@ -1429,11 +1429,12 @@ fn interface_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter_index:
             }
         });
     if let Some(name) = selected {
-        let result = panels.specialised.edit_vfx_metadata(|document| {
+        let arguments = Arguments::new()
+            .with("emitter", Value::Text(emitter.name))
+            .with("interface", Value::Text(name.clone()));
+        edit_document_metadata(panels, "vfx.interface.bind", arguments, |document| {
             document.emitters[emitter_index].interfaces.push(name);
-            Ok(())
         });
-        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
     }
 }
 
@@ -1462,8 +1463,18 @@ fn current_emitter_settings(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         remove = ui.button("Remove emitter").clicked();
     });
     if remove {
-        let result = remove_open_emitter(panels.specialised, index);
-        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        let arguments = Arguments::new().with("emitter", Value::Text(emitter.name.clone()));
+        if let Some(intent) = saved_asset_edit_intent(
+            panels.saved_vfx_document_reference,
+            "vfx.emitter.remove",
+            arguments,
+        ) {
+            panels.intents.push(intent);
+            panels.inputs.vfx_document_problem = None;
+        } else {
+            let result = remove_open_emitter(panels.specialised, index);
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
         return;
     }
     let target = if path == 1 {
@@ -1472,10 +1483,26 @@ fn current_emitter_settings(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         SimulationPath::GpuPreferred
     };
     if renderer != emitter.renderer || target != emitter.path {
-        let result = panels
-            .specialised
-            .set_vfx_emitter_settings(index, target, renderer);
-        panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        let arguments = Arguments::new()
+            .with("emitter", Value::Text(emitter.name))
+            .with(
+                "target",
+                Value::Text(if path == 1 { "cpu" } else { "gpu" }.into()),
+            )
+            .with("renderer", Value::Text(renderer.clone()));
+        if let Some(intent) = saved_asset_edit_intent(
+            panels.saved_vfx_document_reference,
+            "vfx.emitter.configure",
+            arguments,
+        ) {
+            panels.intents.push(intent);
+            panels.inputs.vfx_document_problem = None;
+        } else {
+            let result = panels
+                .specialised
+                .set_vfx_emitter_settings(index, target, renderer);
+            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+        }
     }
 }
 
@@ -1638,6 +1665,19 @@ mod tests {
         let arguments = parameter_arguments(&parameter);
         assert_eq!(arguments.get("values"), Some(&Value::Vec4(parameter.value)));
         assert_eq!(arguments.get("exposed"), Some(&Value::Bool(true)));
+        for command in [
+            "vfx.interface.bind",
+            "vfx.interface.unbind",
+            "vfx.emitter.configure",
+            "vfx.emitter.remove",
+        ] {
+            let intent = saved_asset_edit_intent(Some(reference), command, Arguments::new());
+            let Some(Intent::Invoke(actual, arguments)) = intent else {
+                panic!("saved hierarchy edit did not produce a command");
+            };
+            assert_eq!(actual, command);
+            assert_eq!(arguments.text("reference"), Some(reference));
+        }
     }
 
     #[test]
