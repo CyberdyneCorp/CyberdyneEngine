@@ -135,6 +135,49 @@ void record_extensions(FrameRecorder& recorder, const PassContext& context, Fram
     }
 }
 
+struct DrawBindingState {
+    rhi::GraphicsPipelineHandle pipeline;
+    rhi::PipelineLayoutHandle layout;
+    rhi::DescriptorSetHandle material_set;
+};
+
+[[nodiscard]] bool select_draw_pipeline(FrameRecorder& recorder, FramePipelineKind kind,
+                                        const render::DrawItem& item,
+                                        const GpuDrawInstance& instance,
+                                        DrawPipelineSelection& selected) noexcept {
+    selected = {recorder.pipelines()->pipeline(kind), recorder.pipelines()->layout(), {}};
+    if (recorder.draw_pipeline() == nullptr) {
+        return true;
+    }
+    DrawPipelineSelection candidate;
+    if (!recorder.draw_pipeline()(kind, item, instance, recorder.draw_pipeline_user(), candidate)) {
+        return true;
+    }
+    if (candidate.pipeline.is_null() || candidate.layout.is_null()) {
+        return false;
+    }
+    selected = candidate;
+    return true;
+}
+
+void bind_draw_pipeline(FrameRecorder& recorder, rhi::CommandBuffer& commands,
+                        const DrawPipelineSelection& selected, DrawBindingState& bound) noexcept {
+    if (!(selected.pipeline == bound.pipeline)) {
+        commands.bind_graphics_pipeline(selected.pipeline);
+        bound.pipeline = selected.pipeline;
+    }
+    if (!(selected.layout == bound.layout)) {
+        commands.bind_descriptor_sets(selected.layout, 0, recorder.bindings()->sets());
+        bound.layout = selected.layout;
+        bound.material_set = {};
+    }
+    if (!selected.material_set.is_null() && !(selected.material_set == bound.material_set)) {
+        commands.bind_descriptor_sets(
+            selected.layout, 3, Span<const rhi::DescriptorSetHandle>(&selected.material_set, 1));
+        bound.material_set = selected.material_set;
+    }
+}
+
 /// One geometry pass: bind the state, walk the layer, draw what has geometry.
 void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipelineKind pipeline,
                 render::SortLayer layer, u32& counter) noexcept {
@@ -145,7 +188,7 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
         return;
     }
     rhi::CommandBuffer& commands = *context.commands;
-    commands.bind_graphics_pipeline(recorder.pipelines()->pipeline(pipeline));
+    DrawBindingState bound{{}, recorder.pipelines()->layout(), {}};
 
     // TWO STREAMS FOR THE DEPTH PASS, NOT ONE — position and the packed normal.
     //
@@ -181,8 +224,15 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
             ++recorder.mutable_report().skipped_draws;
             continue;
         }
+        DrawPipelineSelection selected;
+        if (!select_draw_pipeline(recorder, pipeline, range.items[index], range.instances[index],
+                                  selected)) {
+            ++recorder.mutable_report().skipped_draws;
+            continue;
+        }
+        bind_draw_pipeline(recorder, commands, selected, bound);
         const DrawPush push{index};
-        commands.push_constants(recorder.pipelines()->layout(),
+        commands.push_constants(selected.layout,
                                 rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
                                 Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(push)));
         if (draw.indices.is_null()) {

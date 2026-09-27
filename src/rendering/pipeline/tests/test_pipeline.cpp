@@ -73,6 +73,38 @@ private:
     return count;
 }
 
+struct PipelineProbe {
+    const FramePipelines* pipelines = nullptr;
+    u32 opaque_draws = 0;
+    u32 last_material = 0;
+};
+
+bool choose_opaque_variant(FramePipelineKind kind, const render::DrawItem&,
+                           const rendering::GpuDrawInstance& instance, void* user,
+                           DrawPipelineSelection& out) noexcept {
+    if (kind != FramePipelineKind::Opaque) {
+        return false;
+    }
+    auto& probe = *static_cast<PipelineProbe*>(user);
+    ++probe.opaque_draws;
+    probe.last_material = instance.material;
+    out.pipeline = probe.pipelines->pipeline(FramePipelineKind::Transparent);
+    out.layout = probe.pipelines->layout();
+    return true;
+}
+
+u32 bindings_of(Span<const rhi::null::RecordedCommand> commands,
+                rhi::GraphicsPipelineHandle pipeline) noexcept {
+    u32 count = 0;
+    for (const auto& command : commands) {
+        count += command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                         command.handle_bits == pipeline.bits()
+                     ? 1U
+                     : 0U;
+    }
+    return count;
+}
+
 }  // namespace
 
 CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks does not") {
@@ -90,6 +122,30 @@ CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks 
     // Six stages: Prepare, DepthPrepass, Opaque, Transparent, Temporal, PostProcess.
     auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
     CY_CHECK_EQ(attached_callbacks(recorder.sinks()), 6U);
+}
+
+CY_TEST_CASE("a prepared material pipeline can be selected for each opaque draw") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
+    const auto variant = scene.pipelines().pipeline(FramePipelineKind::Transparent);
+    CY_REQUIRE_FALSE(variant.is_null());
+
+    rendering::assembly::AssemblyReport report;
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    const u32 standard_bindings = bindings_of(rhi::null::command_log(fixture.device()), variant);
+
+    PipelineProbe probe{&scene.pipelines()};
+    recorder.set_draw_pipeline(&choose_opaque_variant, &probe);
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK_EQ(probe.opaque_draws, scene.recorded().opaque_draws);
+    CY_CHECK_GT(probe.opaque_draws, 0U);
+    CY_CHECK_LT(probe.last_material, scene.assembly().materials().capacity());
+    CY_CHECK_GT(bindings_of(rhi::null::command_log(fixture.device()), variant), standard_bindings);
 }
 
 CY_TEST_CASE(
