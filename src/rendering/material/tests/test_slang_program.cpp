@@ -22,6 +22,7 @@
 #include <cy/backends/shader/source.h>
 #include <cy/core/assets/vfs.h>
 #include <cy/core/memory/scope.h>
+#include <cy/rendering/material/emit.h>
 #include <cy/rendering/material/slang_program.h>
 #include <cy/rendering/material/text.h>
 #include <cy/test/test.h>
