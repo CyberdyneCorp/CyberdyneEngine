@@ -157,6 +157,12 @@ from `CyMaterialParams` and cannot supply spatial wind. The authored frame needs
 and descriptor binding that is shared by its visible, depth, and shadow vertex programs. Validation
 must refuse an unbound wind field before a preview or cook succeeds. A regression must compare
 several positions, including different vertical cells, against `sample_field_image` on the CPU.
+The GPU buffer has no world origin in its words: `FieldGpuImage::origin_x` and `origin_z` are kept
+separately so large world coordinates can be subtracted in f64 before sampling. A material shader
+therefore needs each bound field's origin relative to the current camera, plus the vertex's
+camera-relative position; it cannot treat a material parameter as the field value or use one
+unqualified position for fields with different origins. The same field table and coordinate
+transform must be used at current and previous frame times for motion vectors.
 
 ### Authored scene pipeline integration (open)
 

@@ -247,11 +247,14 @@ impl Harness {
                     || node.supports_action(egui::accesskit::Action::Focus)
             })
             .count();
+        let click_targets = click_targets(&update);
         output.textures_delta.clear();
         FrameEvidence {
             labels,
             actionable,
             shapes,
+            click_targets,
+            intents,
         }
     }
 }
@@ -294,6 +297,36 @@ struct FrameEvidence {
     labels: Vec<String>,
     actionable: usize,
     shapes: usize,
+    click_targets: Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)>,
+    intents: Vec<Intent>,
+}
+
+fn click_targets(
+    update: &egui::accesskit::TreeUpdate,
+) -> Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)> {
+    update
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.supports_action(egui::accesskit::Action::Click))
+        .filter_map(|(id, node)| {
+            node.label()
+                .map(|label| (label.to_owned(), update.tree_id, *id))
+        })
+        .collect()
+}
+
+fn click_named(evidence: &FrameEvidence, label: &str) -> egui::Event {
+    let (_, target_tree, target_node) = evidence
+        .click_targets
+        .iter()
+        .find(|(name, _, _)| name == label)
+        .unwrap_or_else(|| panic!("{label} has no click target: {:?}", evidence.click_targets));
+    egui::Event::AccessKitActionRequest(egui::accesskit::ActionRequest {
+        action: egui::accesskit::Action::Click,
+        target_tree: *target_tree,
+        target_node: *target_node,
+        data: None,
+    })
 }
 
 fn tab_event() -> egui::Event {
@@ -383,6 +416,44 @@ fn vfx_metadata_sections_are_visible_on_an_open_engine_catalogue() {
             evidence.labels
         );
     }
+}
+
+#[test]
+fn vfx_creation_buttons_route_through_saved_commands() {
+    let mut harness = Harness::new();
+    let size = egui::vec2(900.0, 700.0);
+    let initial = harness.frame("editor-vfx-graph", size, Vec::new());
+    let created = harness.frame(
+        "editor-vfx-graph",
+        size,
+        vec![click_named(&initial, "New VFX system")],
+    );
+    assert_eq!(
+        created.intents,
+        [Intent::CreateVfxDocument(
+            harness.inputs.vfx_system_name.clone(),
+            harness.inputs.vfx_reference.clone(),
+        )]
+    );
+
+    let opened = harness.frame(
+        "editor-vfx-graph",
+        size,
+        vec![click_named(&created, "Reusable VFX module")],
+    );
+    let module = harness.frame(
+        "editor-vfx-graph",
+        size,
+        vec![click_named(&opened, "Create module")],
+    );
+    assert_eq!(
+        module.intents,
+        [Intent::CreateVfxModule(
+            harness.inputs.vfx_module_name.clone(),
+            harness.inputs.vfx_module_stage,
+            harness.inputs.vfx_module_reference.clone(),
+        )]
+    );
 }
 
 #[test]

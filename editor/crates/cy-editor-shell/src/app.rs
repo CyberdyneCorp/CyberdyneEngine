@@ -3123,6 +3123,17 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    fn start_unsaved_vfx_module(
+        window: &mut EditorWindow,
+        name: &str,
+        stage: cy_editor_interface::specialised::vfx::Stage,
+    ) {
+        let module =
+            cy_editor_interface::specialised::vfx_module::VfxModule::new(name, stage).unwrap();
+        window.specialised.start_vfx_module(module).unwrap();
+        window.vfx_module_committed = None;
+    }
+
     #[test]
     fn switching_vfx_modules_preserves_unsaved_graph_edits() {
         use cy_editor_interface::specialised::graph::Layout;
@@ -3142,10 +3153,7 @@ mod tests {
                 .with("source", Value::Text(other.encode_text().unwrap())),
         )]);
 
-        window
-            .specialised
-            .start_vfx_module(VfxModule::new("first", Stage::Update).unwrap())
-            .unwrap();
+        start_unsaved_vfx_module(&mut window, "first", Stage::Update);
         window.apply(vec![Intent::OpenVfxModule(
             "effects/other.cyvfxmodule".into(),
         )]);
@@ -3223,11 +3231,7 @@ mod tests {
             window.specialised.active_vfx_module().unwrap().name,
             "other"
         );
-        window
-            .specialised
-            .start_vfx_module(VfxModule::new("new", Stage::Spawn).unwrap())
-            .unwrap();
-        window.vfx_module_committed = None;
+        start_unsaved_vfx_module(&mut window, "new", Stage::Spawn);
         window.apply(vec![Intent::DiscardVfxModuleChanges]);
         assert!(window.specialised.active_vfx_module().is_none());
         std::fs::remove_dir_all(root).unwrap();

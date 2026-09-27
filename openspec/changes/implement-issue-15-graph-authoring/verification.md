@@ -179,3 +179,14 @@ The Create module button similarly invokes `vfx.module.create` at the selected A
 shell regression covers saved creation, undo and redo of both source and open module, and refusal
 to overwrite an existing module. Switching to another module still preserves unsaved edits until
 the author saves or discards them.
+
+The headless egui accessibility regression clicks both desktop creation buttons and checks their
+exact saved-command intents and project paths. Mutating either button's name argument made that
+test fail; restoring each argument made it pass. This covers the UI wiring in addition to the
+command-history tests above.
+
+An exploratory typed wind-field shader probe compiled but failed all four assertions for a real
+`cy.field` import, a bindless slot, a spatial sample, and a float3 result. It was removed after the
+red run: the field image keeps its world origin outside the GPU words, so a shader-only change
+would sample the wrong location. Task 3.1 remains open until a per-field camera-relative origin
+and the same field snapshot across visible, shadow, and motion passes are bound and tested.
