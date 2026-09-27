@@ -7,14 +7,18 @@ Run `python3 tools/issue15_acceptance.py --list` to inspect the nine issue crite
 while any criterion is unverified. Native image probes require an executed test and enough
 assertions to exclude the null-device availability branch; a successful doctest exit alone does
 not count as pixel evidence. `python3 tools/test_issue15_acceptance.py` checks this guard. On this
-Mac, the full ledger verified three of nine criteria: both native image probes ran only two
-availability assertions, repeatable editor/MCP authoring of the exact two-emitter sample,
-virtual-geometry scene discovery, and unsaved VFX gesture history are open. The final
+Mac, the full ledger verified four of nine criteria: both native image probes ran only two
+availability assertions, and native images of the two-emitter sample and displaced material,
+along with virtual-geometry scene discovery, are open. The final
 regression/documentation audit is also open. These gaps stay visible in the
 runner rather than being inferred from neighbouring green tests.
 The runner's four unit tests passed. It also rejects a successful Cargo invocation whose filter
 selected no tests; a matching unit test proves that guard. The palette, recook, and diagnostic
-criteria verified through the runner on 2026-09-27, while the other six correctly remain open.
+criteria verified through the runner on 2026-09-27. The history criterion also verifies: desktop
+system creation, system and module gesture history, VFX system and module MCP edits, and desktop,
+MCP, and draft material history. The desktop's New VFX actions first create saved assets through
+registered commands, so ordinary user gestures have an undoable project path immediately. The
+remaining five criteria stay open.
 Removing the Cargo selection guard made `test_cargo_filter_must_execute_a_test` fail because an
 empty filter was reported as passed; restoring the guard returned all four runner tests to green.
 Temporarily bypassing its native assertion-count check

@@ -199,8 +199,40 @@ CRITERIA = (
         "history", "Both editors support undo/redo and MCP command parity",
         (
             Probe(
+                "desktop VFX creation history",
+                cargo(
+                    "cy-editor-shell",
+                    "desktop_vfx_creation_uses_saved_history_and_refuses_overwrite",
+                ),
+            ),
+            Probe(
+                "desktop VFX gesture history",
+                cargo(
+                    "cy-editor-shell",
+                    "saved_vfx_canvas_edit_is_journaled_and_undoable_without_manual_save",
+                ),
+            ),
+            Probe(
+                "desktop VFX module history",
+                cargo(
+                    "cy-editor-shell",
+                    "saved_vfx_module_edits_are_journaled_once_per_changed_frame",
+                ),
+            ),
+            Probe(
                 "VFX wire edits",
                 cargo("cy-editor-mcp", "vfx_stage_wire_and_property_round_trip_over_mcp"),
+            ),
+            Probe(
+                "VFX module wire edits",
+                cargo("cy-editor-mcp", "vfx_module_canvas_round_trips_over_mcp"),
+            ),
+            Probe(
+                "desktop material history",
+                cargo(
+                    "cy-editor-shell",
+                    "desktop_material_save_and_mcp_share_one_undoable_transaction",
+                ),
             ),
             Probe(
                 "material wire edits",
@@ -215,8 +247,6 @@ CRITERIA = (
             ),
         ),
         "Remove node-connect command registration; the corresponding MCP edit test fails.",
-        "Record individual undo steps for unsaved VFX graph gestures and verify desktop/MCP "
-        "parity.",
     ),
     Criterion(
         "regressions", "Each discovered bug has a failing regression before its fix",

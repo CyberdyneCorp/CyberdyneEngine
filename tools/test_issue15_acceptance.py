@@ -22,7 +22,7 @@ class AcceptanceLedgerTests(unittest.TestCase):
         open_proofs = {item.key for item in ledger.CRITERIA if item.gap}
         self.assertEqual(
             open_proofs,
-            {"displacement", "unsupported", "history", "regressions", "docs"},
+            {"displacement", "unsupported", "regressions", "docs"},
         )
 
     def test_native_availability_check_does_not_count_as_pixel_evidence(self) -> None:
