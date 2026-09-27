@@ -177,6 +177,8 @@ pub struct Inputs {
     pub material_open_reference: Option<String>,
     /// Last semantic graph submitted for live scene preview.
     pub material_preview_source: Option<(String, String)>,
+    /// Saved material node drag awaiting one history command at pointer release.
+    pub material_drag: Option<material_graph::MaterialDragState>,
     /// Search text for the engine-owned VFX node palette.
     pub vfx_filter: String,
     /// Selected output pin for a VFX connection gesture.
@@ -325,6 +327,7 @@ impl Default for Inputs {
             material_name: "editor_preview".into(),
             material_open_reference: None,
             material_preview_source: None,
+            material_drag: None,
             vfx_filter: String::new(),
             vfx_link_source: None,
             vfx_link_problem: None,

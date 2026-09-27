@@ -5,9 +5,11 @@
 //! selection, layout, links, type checking, and diagnostics remain in `GraphCanvas`; material code
 //! contributes no second graph model.
 
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
 use cy_editor_commands::Arguments;
+use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::specialised::graph::{
@@ -32,6 +34,13 @@ const PALETTE_WIDTH: f32 = 220.0;
 const NODE_WIDTH: f32 = 190.0;
 const NODE_HEADER: f32 = 48.0;
 const PIN_ROW: f32 = 18.0;
+
+/// One saved-canvas drag; only its final position becomes a project transaction.
+pub struct MaterialDragState {
+    reference: String,
+    node: NodeKey,
+    initial: GraphLayout,
+}
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let selected_graph = selected_material_graph(panels.editor);
@@ -74,6 +83,12 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     );
     let available = ui.available_size();
     let mut action = None;
+    let backend = PaletteBackendState {
+        catalogue: state,
+        request: &request_state,
+        preview: &preview_state,
+        project_root: &project_root,
+    };
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
             egui::vec2(PALETTE_WIDTH.min(available.x * 0.38), available.y),
@@ -85,31 +100,20 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     canvas,
                     panels.inputs,
                     panels.intents,
-                    PaletteBackendState {
-                        catalogue: state,
-                        request: &request_state,
-                        preview: &preview_state,
-                        project_root: &project_root,
-                    },
+                    backend,
                     &panels.editor.asset_catalogue,
                 );
             },
         );
         ui.separator();
         ui.allocate_ui(egui::vec2(ui.available_width(), available.y), |ui| {
-            draw_canvas(
+            draw_material_canvas(
                 ui,
                 panels.shell,
                 canvas,
-                state,
-                "Empty material graph\nChoose a node from the engine catalogue",
-                &mut panels.inputs.material_link_source,
-                &mut CanvasFeedback {
-                    link_problem: &mut panels.inputs.material_link_problem,
-                    node_alerts: &[],
-                    on_connect: None,
-                    on_move: None,
-                },
+                panels.inputs,
+                panels.intents,
+                backend,
             );
         });
     });
@@ -131,6 +135,69 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     }
 }
 
+fn draw_material_canvas(
+    ui: &mut egui::Ui,
+    shell: &cy_editor_interface::shell::Shell,
+    canvas: &mut GraphCanvas,
+    inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
+    backend: PaletteBackendState<'_>,
+) {
+    let saved_reference = saved_canvas_is_current(canvas, inputs, backend.project_root)
+        .then(|| inputs.material_open_reference.clone())
+        .flatten();
+    let pending = matches!(backend.request, MaterialRequestState::Pending { .. });
+    let queued = RefCell::new(Vec::new());
+    let move_seen = Cell::new(false);
+    let mut connect = |canvas: &mut GraphCanvas, link: &GraphConnection| -> Result<()> {
+        if let Some(reference) = saved_reference.as_ref() {
+            if pending {
+                return Err(Problem::new(
+                    "connect material nodes",
+                    "engine authoring is pending",
+                ));
+            }
+            let mut candidate = canvas.clone();
+            candidate.connect_identified(link.from, link.from_pin, link.to, link.to_pin)?;
+            queued
+                .borrow_mut()
+                .push(material_connect_intent(reference, link));
+            Ok(())
+        } else {
+            canvas.connect_identified(link.from, link.from_pin, link.to, link.to_pin)
+        }
+    };
+    let mut move_node = |canvas: &mut GraphCanvas, movement: GraphMovement| {
+        move_seen.set(true);
+        move_material_node_gesture(
+            canvas,
+            saved_reference.as_deref(),
+            &mut inputs.material_drag,
+            pending,
+            &queued,
+            movement,
+        )
+    };
+    draw_canvas(
+        ui,
+        shell,
+        canvas,
+        backend.catalogue,
+        "Empty material graph\nChoose a node from the engine catalogue",
+        &mut inputs.material_link_source,
+        &mut CanvasFeedback {
+            link_problem: &mut inputs.material_link_problem,
+            node_alerts: &[],
+            on_connect: Some(&mut connect),
+            on_move: Some(&mut move_node),
+        },
+    );
+    if !move_seen.get() {
+        inputs.material_drag = None;
+    }
+    intents.extend(queued.into_inner());
+}
+
 fn selected_graph_control(
     ui: &mut egui::Ui,
     inputs: &mut super::Inputs,
@@ -148,6 +215,7 @@ fn selected_graph_control(
                     inputs.material_open_reference = Some(reference.into());
                     inputs.material_preview_source = None;
                     inputs.material_property_problem = None;
+                    inputs.material_drag = None;
                 }
                 Err(problem) => inputs.material_property_problem = Some(problem),
             }
@@ -330,7 +398,7 @@ fn palette(
     });
     material_request_status(ui, shell, canvas, backend.request);
     material_preview_status(ui, shell, backend.preview);
-    graph_properties(ui, canvas, assets, &mut inputs.material_property_problem);
+    material_edit_controls(ui, canvas, inputs, intents, backend, assets);
     ui.horizontal(|ui| {
         ui.label("Stage");
         egui::ComboBox::from_id_salt("material-palette-stage")
@@ -416,6 +484,128 @@ fn palette_names(canvas: &GraphCanvas, query: &str, stage: u8) -> Vec<String> {
         .collect()
 }
 
+fn material_edit_controls(
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
+    backend: PaletteBackendState<'_>,
+    assets: &AssetCatalogueService,
+) {
+    let saved = saved_canvas_is_current(canvas, inputs, backend.project_root);
+    let pending = matches!(backend.request, MaterialRequestState::Pending { .. });
+    ui.add_enabled_ui(!pending, |ui| {
+        graph_properties_with(
+            ui,
+            canvas,
+            assets,
+            &mut inputs.material_property_problem,
+            |canvas, key, property, value| {
+                if saved && let Some(reference) = inputs.material_open_reference.as_ref() {
+                    property.validate_literal(&value)?;
+                    intents.push(Intent::Invoke(
+                        "material.node.property.set".into(),
+                        Arguments::new()
+                            .with("reference", Value::Text(reference.clone()))
+                            .with(
+                                "node",
+                                Value::Int(i64::try_from(key.ordinal()).unwrap_or(i64::MAX)),
+                            )
+                            .with("property", Value::Text(property.name.clone()))
+                            .with("value", Value::Text(value)),
+                    ));
+                    Ok(())
+                } else {
+                    canvas.set_property_by_identity(key, property.identity, value)
+                }
+            },
+        );
+    });
+    selected_node_remove_control(ui, canvas, inputs, intents, saved, pending);
+    link_disconnect_controls(ui, canvas, inputs, intents, saved, pending);
+}
+
+fn selected_node_remove_control(
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
+    saved: bool,
+    pending: bool,
+) {
+    let Some(node) = canvas.selection().first().copied() else {
+        return;
+    };
+    if !ui
+        .add_enabled(!pending, egui::Button::new("Remove selected node"))
+        .clicked()
+    {
+        return;
+    }
+    if saved && let Some(reference) = inputs.material_open_reference.as_ref() {
+        intents.push(Intent::Invoke(
+            "material.node.remove".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.clone()))
+                .with(
+                    "node",
+                    Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
+                ),
+        ));
+    } else if let Err(problem) = canvas.remove(node) {
+        inputs.material_link_problem = Some(problem.to_string());
+    }
+}
+
+fn link_disconnect_controls(
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
+    saved: bool,
+    pending: bool,
+) {
+    let links: Vec<_> = canvas.links().cloned().collect();
+    for link in links {
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "{}:{} → {}:{}",
+                link.from.ordinal(),
+                link.from_pin,
+                link.to.ordinal(),
+                link.to_pin
+            ));
+            if !ui
+                .add_enabled(!pending, egui::Button::new("Disconnect"))
+                .clicked()
+            {
+                return;
+            }
+            if saved && let Some(reference) = inputs.material_open_reference.as_ref() {
+                intents.push(Intent::Invoke(
+                    "material.node.disconnect".into(),
+                    Arguments::new()
+                        .with("reference", Value::Text(reference.clone()))
+                        .with(
+                            "from",
+                            Value::Int(i64::try_from(link.from.ordinal()).unwrap_or(i64::MAX)),
+                        )
+                        .with("from_pin", Value::Text(link.from_pin.clone()))
+                        .with(
+                            "to",
+                            Value::Int(i64::try_from(link.to.ordinal()).unwrap_or(i64::MAX)),
+                        )
+                        .with("to_pin", Value::Text(link.to_pin.clone())),
+                ));
+            } else if let Err(problem) =
+                canvas.disconnect(link.from, &link.from_pin, link.to, &link.to_pin)
+            {
+                inputs.material_link_problem = Some(problem.to_string());
+            }
+        });
+    }
+}
+
 fn add_palette_node(
     canvas: &mut GraphCanvas,
     inputs: &mut super::Inputs,
@@ -424,15 +614,7 @@ fn add_palette_node(
     node_type: &str,
     at: GraphLayout,
 ) {
-    let saved = inputs
-        .material_open_reference
-        .as_ref()
-        .is_some_and(|reference| {
-            let path = project_root.join(reference).with_extension("cymatcanvas");
-            canvas_interchange(&inputs.material_name, canvas).is_ok_and(|source| {
-                std::fs::read_to_string(path).ok().as_deref() == Some(source.as_str())
-            })
-        });
+    let saved = saved_canvas_is_current(canvas, inputs, project_root);
     if saved && let Some(reference) = inputs.material_open_reference.as_ref() {
         intents.push(Intent::Invoke(
             "material.node.add".into(),
@@ -445,6 +627,101 @@ fn add_palette_node(
     } else if let Err(problem) = canvas.add(node_type, at) {
         inputs.material_link_problem = Some(problem.to_string());
     }
+}
+
+fn material_connect_intent(reference: &str, link: &GraphConnection) -> Intent {
+    Intent::Invoke(
+        "material.node.connect".into(),
+        Arguments::new()
+            .with("reference", Value::Text(reference.into()))
+            .with(
+                "from",
+                Value::Int(i64::try_from(link.from.ordinal()).unwrap_or(i64::MAX)),
+            )
+            .with("from_pin", Value::Text(link.from_name.clone()))
+            .with(
+                "to",
+                Value::Int(i64::try_from(link.to.ordinal()).unwrap_or(i64::MAX)),
+            )
+            .with("to_pin", Value::Text(link.to_name.clone())),
+    )
+}
+
+fn move_material_node_gesture(
+    canvas: &mut GraphCanvas,
+    saved_reference: Option<&str>,
+    drag: &mut Option<MaterialDragState>,
+    pending: bool,
+    queued: &RefCell<Vec<Intent>>,
+    movement: GraphMovement,
+) -> Result<()> {
+    if !movement.finished {
+        if pending && saved_reference.is_some() {
+            return Err(Problem::new(
+                "move a material node",
+                "engine authoring is pending",
+            ));
+        }
+        if drag.is_none()
+            && let Some(reference) = saved_reference
+        {
+            let initial = canvas.layout_of(movement.node).ok_or_else(|| {
+                Problem::new(
+                    "move a material node",
+                    "the selected node has no canvas layout",
+                )
+            })?;
+            *drag = Some(MaterialDragState {
+                reference: reference.into(),
+                node: movement.node,
+                initial,
+            });
+        }
+        return canvas.move_to(movement.node, movement.at);
+    }
+    let Some(state) = drag.take() else {
+        return Ok(());
+    };
+    if state.node != movement.node {
+        *drag = Some(state);
+        return Ok(());
+    }
+    let at = canvas.layout_of(state.node).ok_or_else(|| {
+        Problem::new(
+            "move a material node",
+            "the dragged node has no canvas layout",
+        )
+    })?;
+    if at != state.initial {
+        queued.borrow_mut().push(Intent::Invoke(
+            "material.node.move".into(),
+            Arguments::new()
+                .with("reference", Value::Text(state.reference))
+                .with(
+                    "node",
+                    Value::Int(i64::try_from(state.node.ordinal()).unwrap_or(i64::MAX)),
+                )
+                .with("x", Value::Float(at.x))
+                .with("y", Value::Float(at.y)),
+        ));
+    }
+    Ok(())
+}
+
+fn saved_canvas_is_current(
+    canvas: &GraphCanvas,
+    inputs: &super::Inputs,
+    project_root: &std::path::Path,
+) -> bool {
+    inputs
+        .material_open_reference
+        .as_ref()
+        .is_some_and(|reference| {
+            let path = project_root.join(reference).with_extension("cymatcanvas");
+            canvas_interchange(&inputs.material_name, canvas).is_ok_and(|source| {
+                std::fs::read_to_string(path).ok().as_deref() == Some(source.as_str())
+            })
+        })
 }
 
 #[derive(Clone, Copy)]
@@ -479,23 +756,6 @@ fn material_preview_status(
         egui::RichText::new(text)
             .color(theme::role(shell.theme, role))
             .size(shell.metrics().text(TextRole::Secondary)),
-    );
-}
-
-pub(super) fn graph_properties(
-    ui: &mut egui::Ui,
-    canvas: &mut GraphCanvas,
-    assets: &AssetCatalogueService,
-    problem: &mut Option<String>,
-) {
-    graph_properties_with(
-        ui,
-        canvas,
-        assets,
-        problem,
-        |canvas, key, property, value| {
-            canvas.set_property_by_identity(key, property.identity, value)
-        },
     );
 }
 
@@ -1609,6 +1869,62 @@ mod tests {
         assert_eq!(canvas.nodes().count(), 1);
         assert_eq!(intents.len(), 1);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn saved_material_drag_queues_one_move_on_release() {
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(
+            Catalogue::new(vec![NodeType::identified(
+                1,
+                1,
+                "material.constant".into(),
+                vec![],
+            )])
+            .unwrap(),
+        );
+        let node = canvas
+            .add("material.constant", GraphLayout { x: 12.0, y: 30.0 })
+            .unwrap();
+        let queued = RefCell::new(Vec::new());
+        let mut drag = None;
+        let moved = GraphLayout { x: 15.0, y: 40.0 };
+        move_material_node_gesture(
+            &mut canvas,
+            Some("materials/sway.cygraph"),
+            &mut drag,
+            false,
+            &queued,
+            GraphMovement {
+                node,
+                at: moved,
+                finished: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(canvas.layout_of(node), Some(moved));
+        assert!(queued.borrow().is_empty());
+        move_material_node_gesture(
+            &mut canvas,
+            None,
+            &mut drag,
+            false,
+            &queued,
+            GraphMovement {
+                node,
+                at: moved,
+                finished: true,
+            },
+        )
+        .unwrap();
+        let queued = queued.into_inner();
+        let Some(Intent::Invoke(command, arguments)) = queued.first() else {
+            panic!("a saved drag must queue a command");
+        };
+        assert_eq!(queued.len(), 1);
+        assert_eq!(command, "material.node.move");
+        assert_eq!(arguments.text("reference"), Some("materials/sway.cygraph"));
+        assert_eq!(arguments.get("x").and_then(Value::as_float), Some(15.0));
     }
 
     #[test]

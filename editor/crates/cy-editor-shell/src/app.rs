@@ -851,6 +851,7 @@ impl EditorWindow {
             self.inputs.material_open_reference = None;
         }
         self.inputs.material_preview_source = None;
+        self.inputs.material_drag = None;
         self.material_committed = Some((reference, current));
         Ok(())
     }

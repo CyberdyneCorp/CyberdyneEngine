@@ -133,19 +133,6 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
     let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
     editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
 
-    let mut material = Writer::new();
-    material.u32(1);
-    material.u32(1);
-    material.u32(1);
-    material.u32(42);
-    material.u32(3);
-    material.text("material.constant");
-    material.u32(1);
-    material.u32(9);
-    material.u8(1);
-    material.text("out");
-    material.text("value");
-    material.u32(0);
     let mut vfx = Writer::new();
     vfx.u32(1);
     vfx.u32(1);
@@ -175,7 +162,7 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
         }
     }
     for (operation, payload) in [
-        ("material.catalogue.get", material.finish()),
+        ("material.catalogue.get", material_edit_catalogue()),
         ("vfx.catalogue.get", vfx.finish()),
     ] {
         assert!(editor.backend.maintain(&editor.runtime).is_none());
@@ -219,6 +206,38 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
     }
     assert!(editor.backend.vfx_catalogue().is_some());
     (runtime_reader, runtime_writer)
+}
+
+fn material_edit_catalogue() -> Vec<u8> {
+    let mut material = Writer::new();
+    material.u32(1);
+    material.u32(1);
+    material.u32(2);
+    material.u32(42);
+    material.u32(3);
+    material.text("material.constant");
+    material.u32(1);
+    material.u32(9);
+    material.u8(1);
+    material.text("out");
+    material.text("value");
+    material.u32(1);
+    material.u32(2);
+    material.u8(2);
+    material.text("value");
+    material.text("0");
+    material.text("");
+    material.text("Constant value");
+    material.u32(43);
+    material.u32(3);
+    material.text("material.sink");
+    material.u32(1);
+    material.u32(10);
+    material.u8(0);
+    material.text("in");
+    material.text("value");
+    material.u32(0);
+    material.finish()
 }
 
 /// The `result` of the nth reply.
@@ -586,6 +605,154 @@ fn material_node_add_uses_engine_catalogue_and_undoes_over_mcp() {
         std::fs::read_to_string(sandbox.0.join("game/sway.cymatcanvas")).unwrap(),
         added
     );
+}
+
+#[test]
+fn material_node_edits_round_trip_as_individual_mcp_transactions() {
+    let sandbox = Sandbox::new("material-node-edits");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
+    let reference = "game/sway.cygraph";
+    let initial = "cymatcanvas 1\nmaterial sway\n";
+    let graph = "cygraph 1\ngraph \"sway\" version 1\ncapability\ndeterministic true\n";
+    let save = material_graph_call(2, "material.graph.save", reference, initial);
+    assert_eq!(
+        result(&converse(&[INITIALIZE, &save], &mut editor), 1).get("isError"),
+        &Json::Bool(false)
+    );
+    reply_material_author(&mut runtime_reader, &mut runtime_writer, graph);
+    wait_for_material_source(&mut editor, reference, initial);
+
+    let edits = [
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"material.node.add","arguments":{"reference":"game/sway.cygraph","node_type":"material.constant","x":12,"y":30}}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"material.node.add","arguments":{"reference":"game/sway.cygraph","node_type":"material.sink","x":90,"y":30}}}"#,
+        r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"material.node.connect","arguments":{"reference":"game/sway.cygraph","from":1,"from_pin":"out","to":2,"to_pin":"in"}}}"#,
+        r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"material.node.move","arguments":{"reference":"game/sway.cygraph","node":1,"x":15,"y":40}}}"#,
+        r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"material.node.property.set","arguments":{"reference":"game/sway.cygraph","node":1,"property":"value","value":"0.5"}}}"#,
+        r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"material.node.disconnect","arguments":{"reference":"game/sway.cygraph","from":1,"from_pin":"out","to":2,"to_pin":"in"}}}"#,
+        r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"material.node.remove","arguments":{"reference":"game/sway.cygraph","node":2}}}"#,
+    ];
+    let mut source = initial.to_owned();
+    let mut sources = Vec::new();
+    for edit in edits {
+        source = invoke_material_edit(
+            &mut editor,
+            &mut runtime_reader,
+            &mut runtime_writer,
+            graph,
+            reference,
+            edit,
+            &source,
+        );
+        sources.push(source.clone());
+    }
+    assert!(sources[1].contains("node 2 material.sink"));
+    assert!(sources[2].contains("link 1 out 2 in"));
+    assert!(sources[3].contains("# layout 1 15 40"));
+    assert!(sources[4].contains("prop 1 value 0.5"));
+    assert!(!sources[5].contains("link 1 out 2 in"));
+    assert!(!sources[6].contains("node 2 material.sink"));
+    assert_eq!(
+        editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap()
+            .history()
+            .entries()
+            .len(),
+        8,
+        "the first save and seven node gestures each record one undo entry"
+    );
+    assert_material_property_refusal_preserves_history(&mut editor, &sandbox.0, &sources[6]);
+    let undo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undo, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/sway.cymatcanvas")).unwrap(),
+        sources[5]
+    );
+    let redo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redo, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/sway.cymatcanvas")).unwrap(),
+        sources[6]
+    );
+}
+
+fn assert_material_property_refusal_preserves_history(
+    editor: &mut Editor,
+    root: &std::path::Path,
+    source: &str,
+) {
+    let invalid = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"material.node.property.set","arguments":{"reference":"game/sway.cygraph","node":1,"property":"value","value":"not-a-number"}}}"#,
+        ],
+        editor,
+    );
+    assert_eq!(result(&invalid, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(
+        std::fs::read_to_string(root.join("game/sway.cymatcanvas")).unwrap(),
+        source
+    );
+    assert_eq!(
+        editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap()
+            .history()
+            .entries()
+            .len(),
+        8,
+        "a refused property edit must not add a transaction"
+    );
+}
+
+fn invoke_material_edit(
+    editor: &mut Editor,
+    runtime_reader: &mut std::io::PipeReader,
+    runtime_writer: &mut std::io::PipeWriter,
+    graph: &str,
+    reference: &str,
+    call: &str,
+    before: &str,
+) -> String {
+    let replies = converse(&[INITIALIZE, call], editor);
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    reply_material_author(runtime_reader, runtime_writer, graph);
+    wait_for_material_source_change(editor, reference, before)
+}
+
+fn wait_for_material_source_change(editor: &mut Editor, reference: &str, before: &str) -> String {
+    let source_path = editor
+        .project
+        .root()
+        .join(reference)
+        .with_extension("cymatcanvas");
+    for _ in 0..100 {
+        editor.pump();
+        if let Ok(source) = std::fs::read_to_string(&source_path)
+            && source != before
+        {
+            return source;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("material canvas did not change: {}", source_path.display());
 }
 
 fn reply_material_author(
