@@ -171,6 +171,11 @@ def _documented(lines: list[str], index: int) -> bool:
         if stripped.startswith("#"):  # an `#if` between the comment and the declaration is fine
             cursor -= 1
             continue
+        # A Swift attribute (`@discardableResult`, `@MainActor`) is part of the declaration it
+        # precedes, so the comment above it documents that declaration.
+        if stripped.startswith("@"):
+            cursor -= 1
+            continue
         if stripped.endswith("*/") or stripped.startswith("//"):
             match = DOC_MARKER.match(stripped)
             return bool(match and match.group("text"))

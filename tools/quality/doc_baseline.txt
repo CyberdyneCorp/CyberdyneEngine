@@ -3,7 +3,7 @@
 # shrink: a line here that has since been documented, renamed or deleted FAILS the gate.
 #
 # Regenerate with `just quality-docs --update`, and only when you have just documented
-# something. Backlog at last write: 540 of 2472 public symbols.
+# something. Backlog at last write: 533 of 2830 public symbols.
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::afterReload
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::create
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::destroy
@@ -17,7 +17,6 @@ bindings/swift/Sources/CyberdyneKit/Behaviour.swift::migrate
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::rawValue
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::ready
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::update
-bindings/swift/Sources/CyberdyneKit/BehaviourBridge.swift::register
 bindings/swift/Sources/CyberdyneKit/Components.swift::add
 bindings/swift/Sources/CyberdyneKit/Components.swift::destroy
 bindings/swift/Sources/CyberdyneKit/Components.swift::find
@@ -32,12 +31,9 @@ bindings/swift/Sources/CyberdyneKit/Components.swift::setVec3
 bindings/swift/Sources/CyberdyneKit/Components.swift::size
 bindings/swift/Sources/CyberdyneKit/Components.swift::type
 bindings/swift/Sources/CyberdyneKit/Components.swift::vec3
-bindings/swift/Sources/CyberdyneKit/Concurrency.swift::GameActor
 bindings/swift/Sources/CyberdyneKit/Concurrency.swift::shared
 bindings/swift/Sources/CyberdyneKit/Diagnostics.swift::error
 bindings/swift/Sources/CyberdyneKit/Diagnostics.swift::warning
-bindings/swift/Sources/CyberdyneKit/Export.swift::Export
-bindings/swift/Sources/CyberdyneKit/Export.swift::Node
 bindings/swift/Sources/CyberdyneKit/Export.swift::assign
 bindings/swift/Sources/CyberdyneKit/Export.swift::exportedConstraint
 bindings/swift/Sources/CyberdyneKit/Export.swift::exportedValue
@@ -46,9 +42,6 @@ bindings/swift/Sources/CyberdyneKit/Export.swift::path
 bindings/swift/Sources/CyberdyneKit/Export.swift::projectedValue
 bindings/swift/Sources/CyberdyneKit/Export.swift::wrappedValue
 bindings/swift/Sources/CyberdyneKit/Macros.swift::Behaviour
-bindings/swift/Sources/CyberdyneKit/Macros.swift::Component
-bindings/swift/Sources/CyberdyneKit/Macros.swift::GameModule
-bindings/swift/Sources/CyberdyneKit/Macros.swift::System
 bindings/swift/Sources/CyberdyneKit/Module.swift::initialize
 bindings/swift/Sources/CyberdyneKit/Module.swift::shutdown
 bindings/swift/Sources/CyberdyneKit/Systems.swift::Mode

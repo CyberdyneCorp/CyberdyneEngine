@@ -133,6 +133,21 @@ CASES: tuple[Case, ...] = (
          says=("without a documentation comment", "m11d_probe"),
          edit=("src/ecs/include/cy/ecs/system.h", "\nnamespace cy::ecs {",
                "\nnamespace cy::ecs {\n\n[[nodiscard]] int m11d_probe(int value) noexcept;\n")),
+    # Regression. `_documented` stopped at any line that was not a comment or `#if`, so a Swift
+    # attribute between the comment and the declaration read as "undocumented": every documented
+    # `@discardableResult public static func` in the overlay failed the gate. The first case is the
+    # fix; the second holds that an attribute is skipped, not taken for documentation.
+    Case("doc-swift-attribute", "doc",
+         "a documented Swift declaration carrying an attribute is documented",
+         expect=0, says=("public symbols documented",),
+         edit=("bindings/swift/Sources/CyberdyneKit/M11dProbe.swift", "",
+               "/// Doubles `value`.\n@discardableResult\n"
+               "public func m11dProbe(_ value: Int) -> Int { value * 2 }\n")),
+    Case("doc-swift-attribute-alone", "doc",
+         "an attribute with no comment above it is not documentation",
+         says=("without a documentation comment", "m11dProbe"),
+         edit=("bindings/swift/Sources/CyberdyneKit/M11dProbe.swift", "",
+               "@discardableResult\npublic func m11dProbe(_ value: Int) -> Int { value * 2 }\n")),
     Case("spelling-typo", "spelling",
          "a misspelling in documentation, which is the requirement in one word",
          says=("misspelling", "recieve"),
