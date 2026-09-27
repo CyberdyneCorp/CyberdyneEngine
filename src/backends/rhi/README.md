@@ -67,6 +67,8 @@ carries where each stands as data.
   paravirtual, null, unknown) comes from its reported name and vendor, never from a flag it sets
   about itself. Paravirtual names are checked before the vendor table because Mesa's Venus
   forwards the host GPU's vendor ID; an identity nothing matches is `unknown`, never hardware.
+- `include/cy/backends/rhi/backend.h` — the fallback chain. A request for `vulkan`, `metal` or
+  `d3d12` that this build left out falls back with a reason naming the `CY_RENDERER_*` option.
 - `null/include/cy/backends/rhi/null/null_device.h` — why the null backend is not a set of empty
   functions, and what its command log is for.
 - `vulkan/src/vulkan_instance.cpp` — queue selection by capability, the 1.3 baseline, why

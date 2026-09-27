@@ -7,6 +7,8 @@
 
 #include <cy/test/test.h>
 
+#include <cstring>
+
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/validation.h>
@@ -386,6 +388,35 @@ CY_TEST_CASE("the backend registry falls back to null, and says that it did") {
     // the device alone.
     CY_CHECK(selection.reason[0] != '\0');
     cy::rhi::destroy_device(allocator, *device);
+}
+
+CY_TEST_CASE("a backend this build left out is refused naming the option that builds it") {
+    CY_REQUIRE(cy::rhi::null::register_null_backend().has_value());
+    cy::Allocator& allocator = cy::system_allocator(cy::MemoryDomain::Gpu);
+    struct Request {
+        const char* backend;
+        const char* option;
+    };
+    constexpr Request kRequests[] = {{"metal", "CY_RENDERER_METAL"},
+                                     {"d3d12", "CY_RENDERER_D3D12"},
+                                     {"vulkan", "CY_RENDERER_VULKAN"}};
+    int judged = 0;
+    for (const Request& request : kRequests) {
+        if (cy::rhi::find_backend(request.backend) != nullptr) {
+            continue;  // registered in this binary; there is no refusal to read
+        }
+        cy::rhi::BackendSelection selection;
+        cy::rhi::DeviceDescription description;
+        cy::Expected<cy::rhi::Device*, cy::Error> device =
+            cy::rhi::create_device(allocator, request.backend, description, selection);
+        CY_REQUIRE(device.has_value());
+        CY_CHECK(selection.fell_back);
+        CY_CHECK(std::strstr(selection.reason, request.option) != nullptr);
+        cy::rhi::destroy_device(allocator, *device);
+        ++judged;
+    }
+    // unit.rhi links no real backend, so at least one request is always judged here.
+    CY_CHECK_GT(judged, 0);
 }
 
 CY_TEST_CASE("the global texture table is nameable in a pipeline layout and is the device's own") {
