@@ -641,12 +641,22 @@ fn vertex_material_canvas_saves_and_undoes_over_mcp() {
     assert_eq!(result(&read, 1).get("isError"), &Json::Bool(false));
     assert!(read[1].render().contains("material.vertex_output"));
 
+    assert_material_save_undo_redo(&mut editor, &graph_path, &canvas_path, &graph, &source);
+}
+
+fn assert_material_save_undo_redo(
+    editor: &mut Editor,
+    graph_path: &std::path::Path,
+    canvas_path: &std::path::Path,
+    graph: &str,
+    source: &str,
+) {
     let undo = converse(
         &[
             INITIALIZE,
             r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(result(&undo, 1).get("isError"), &Json::Bool(false));
     assert!(!graph_path.exists());
@@ -656,11 +666,11 @@ fn vertex_material_canvas_saves_and_undoes_over_mcp() {
             INITIALIZE,
             r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(result(&redo, 1).get("isError"), &Json::Bool(false));
-    assert_eq!(std::fs::read_to_string(&graph_path).unwrap(), graph);
-    assert_eq!(std::fs::read_to_string(&canvas_path).unwrap(), source);
+    assert_eq!(std::fs::read_to_string(graph_path).unwrap(), graph);
+    assert_eq!(std::fs::read_to_string(canvas_path).unwrap(), source);
 }
 
 #[test]

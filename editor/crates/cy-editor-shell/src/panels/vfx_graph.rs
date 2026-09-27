@@ -71,6 +71,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         || "Editable emitter stage draft".to_owned(),
         |module| format!("Reusable module {} · {}", module.name, module.stage.label()),
     );
+    let saved_canvas = saved_canvas(panels);
     let session = match panels.specialised.open(Domain::VfxGraph) {
         Ok(session) => session,
         Err(problem) => {
@@ -98,9 +99,19 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         state,
         &panels.editor.asset_catalogue,
         panels.inputs,
-        &node_alerts,
+        &mut CanvasActions {
+            saved: saved_canvas.as_ref(),
+            intents: panels.intents,
+            node_alerts: &node_alerts,
+        },
     );
     auto_compile(panels);
+}
+
+struct CanvasActions<'a> {
+    saved: Option<&'a SavedCanvas>,
+    intents: &'a mut Vec<Intent>,
+    node_alerts: &'a [(u64, String)],
 }
 
 fn canvas_area(
@@ -110,7 +121,7 @@ fn canvas_area(
     state: MaterialCatalogueState,
     assets: &AssetCatalogueService,
     inputs: &mut Inputs,
-    node_alerts: &[(u64, String)],
+    actions: &mut CanvasActions<'_>,
 ) {
     let available = ui.available_size();
     ui.horizontal(|ui| {
@@ -118,7 +129,14 @@ fn canvas_area(
             egui::vec2(220.0_f32.min(available.x * 0.38), available.y),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                palette(ui, shell, canvas, &mut inputs.vfx_filter);
+                palette(
+                    ui,
+                    shell,
+                    canvas,
+                    &mut inputs.vfx_filter,
+                    actions.saved,
+                    actions.intents,
+                );
                 material_graph::graph_properties(
                     ui,
                     canvas,
@@ -138,7 +156,7 @@ fn canvas_area(
                 &mut inputs.vfx_link_source,
                 &mut material_graph::CanvasFeedback {
                     link_problem: &mut inputs.vfx_link_problem,
-                    node_alerts,
+                    node_alerts: actions.node_alerts,
                 },
             );
         });
@@ -1558,11 +1576,97 @@ fn target_picker(ui: &mut egui::Ui, capabilities: &VfxAuthoringCapabilities, cur
         });
 }
 
+enum SavedCanvas {
+    Stage {
+        reference: String,
+        emitter: String,
+        stage: Stage,
+    },
+    Module {
+        reference: String,
+    },
+}
+
+fn saved_canvas(panels: &Panels<'_>) -> Option<SavedCanvas> {
+    if panels.specialised.active_vfx_module().is_some() {
+        let reference = panels.saved_vfx_module_reference?;
+        let open = panels
+            .specialised
+            .vfx_module_snapshot()
+            .ok()??
+            .encode_text()
+            .ok()?;
+        let committed = panels.editor.project.read_source(reference).ok()?;
+        return (open == committed).then(|| SavedCanvas::Module {
+            reference: reference.into(),
+        });
+    }
+    let (index, stage) = panels.specialised.active_vfx_stage()?;
+    let reference = panels.saved_vfx_document_reference?;
+    let open = panels
+        .specialised
+        .vfx_document_snapshot()
+        .ok()??
+        .encode_text()
+        .ok()?;
+    let committed = panels.editor.project.read_source(reference).ok()?;
+    if open != committed {
+        return None;
+    }
+    let emitter = panels.specialised.vfx_document()?.emitters.get(index)?;
+    Some(SavedCanvas::Stage {
+        reference: reference.into(),
+        emitter: emitter.name.clone(),
+        stage,
+    })
+}
+
+fn palette_add_intent(saved: &SavedCanvas, node_type: &str, at: Layout) -> Intent {
+    let arguments = Arguments::new()
+        .with("node_type", Value::Text(node_type.into()))
+        .with("x", Value::Float(at.x))
+        .with("y", Value::Float(at.y));
+    match saved {
+        SavedCanvas::Stage {
+            reference,
+            emitter,
+            stage,
+        } => Intent::Invoke(
+            "vfx.node.add".into(),
+            arguments
+                .with("reference", Value::Text(reference.clone()))
+                .with("emitter", Value::Text(emitter.clone()))
+                .with("stage", Value::Text(stage.label().to_ascii_lowercase())),
+        ),
+        SavedCanvas::Module { reference } => Intent::Invoke(
+            "vfx.module.node.add".into(),
+            arguments.with("reference", Value::Text(reference.clone())),
+        ),
+    }
+}
+
+fn add_palette_node(
+    canvas: &mut GraphCanvas,
+    saved: Option<&SavedCanvas>,
+    intents: &mut Vec<Intent>,
+    node_type: &str,
+    at: Layout,
+) -> Result<()> {
+    if let Some(saved) = saved {
+        intents.push(palette_add_intent(saved, node_type, at));
+    } else {
+        canvas.add(node_type, at)?;
+    }
+    Ok(())
+}
+
 fn palette(
     ui: &mut egui::Ui,
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
     filter: &mut String,
+    saved: Option<&SavedCanvas>,
+    intents: &mut Vec<Intent>,
 ) {
     ui.heading("Engine catalogue");
     ui.label(secondary(
@@ -1589,13 +1693,11 @@ fn palette(
                 let index = canvas.nodes().count();
                 let column = index % 3;
                 let row = index / 3;
-                let _ = canvas.add(
-                    &name,
-                    Layout {
-                        x: 28.0 + f32::from(u16::try_from(column).unwrap_or(u16::MAX)) * 224.0,
-                        y: 34.0 + f32::from(u16::try_from(row).unwrap_or(u16::MAX)) * 150.0,
-                    },
-                );
+                let at = Layout {
+                    x: 28.0 + f32::from(u16::try_from(column).unwrap_or(u16::MAX)) * 224.0,
+                    y: 34.0 + f32::from(u16::try_from(row).unwrap_or(u16::MAX)) * 150.0,
+                };
+                let _ = add_palette_node(canvas, saved, intents, &name, at);
             }
         }
     });
@@ -1607,6 +1709,50 @@ mod tests {
     use cy_editor_core::codec::Writer;
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
     use cy_editor_interface::specialised::vfx::StageGraph;
+
+    #[test]
+    fn saved_palette_additions_use_the_same_commands_as_mcp() {
+        let at = Layout { x: 28.0, y: 34.0 };
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(Catalogue::new(vec![NodeType::new("vfx.constant", Vec::new())]).unwrap());
+        let mut intents = Vec::new();
+        let stage = SavedCanvas::Stage {
+            reference: "effects/sparks.cyvfxdoc".into(),
+            emitter: "embers".into(),
+            stage: Stage::Spawn,
+        };
+        add_palette_node(&mut canvas, Some(&stage), &mut intents, "vfx.constant", at).unwrap();
+        assert_eq!(canvas.nodes().count(), 0);
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved stage insertion must invoke a command");
+        };
+        assert_eq!(command, "vfx.node.add");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("emitter"), Some("embers"));
+        assert_eq!(arguments.text("stage"), Some("spawn"));
+        assert_eq!(arguments.text("node_type"), Some("vfx.constant"));
+        assert_eq!(arguments.get("x"), Some(&Value::Float(28.0)));
+        assert_eq!(arguments.get("y"), Some(&Value::Float(34.0)));
+
+        let module = SavedCanvas::Module {
+            reference: "effects/shared.cyvfxmodule".into(),
+        };
+        add_palette_node(&mut canvas, Some(&module), &mut intents, "vfx.constant", at).unwrap();
+        assert_eq!(canvas.nodes().count(), 0);
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved module insertion must invoke a command");
+        };
+        assert_eq!(command, "vfx.module.node.add");
+        assert_eq!(
+            arguments.text("reference"),
+            Some("effects/shared.cyvfxmodule")
+        );
+        assert_eq!(arguments.text("node_type"), Some("vfx.constant"));
+
+        add_palette_node(&mut canvas, None, &mut intents, "vfx.constant", at).unwrap();
+        assert_eq!(canvas.nodes().count(), 1);
+        assert!(intents.is_empty());
+    }
 
     #[test]
     fn saved_module_controls_route_to_mcp_commands_at_the_open_asset_path() {

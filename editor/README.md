@@ -585,6 +585,10 @@ The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.emitte
 applies one edit, and saves through the same undoable document transaction. Node placement,
 connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
 or unknown node, pin, or property is refused by name.
+Clicking a palette node in a saved, unchanged system stage or module uses its matching
+`vfx.node.add` or `vfx.module.node.add` command, creating one undo entry and the same result as MCP.
+If the open canvas has unsaved edits, palette insertion stays in that draft until Save so those
+edits are preserved.
 The panel's **Remove emitter** control retains the other emitters' stage graphs and selects
 the next available emitter; the edit is recorded in document history for a saved draft.
 `vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and
