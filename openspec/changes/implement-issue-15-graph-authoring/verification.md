@@ -168,3 +168,9 @@ devices. The cognitive-complexity skill could not score these Python functions l
 - **Wire regression:** `material_node_edits_round_trip_as_individual_mcp_transactions` makes seven saved-graph gestures over MCP, checks their canvas facts and seven separate undo entries, refuses an invalid scalar property without changing source or history, and checks undo/redo of removal. `saved_material_drag_queues_one_move_on_release` checks the desktop drag boundary.
 - **Red mutation:** removing `material.node.connect` registration made the MCP sequence fail on the connect call (`isError` changed to true); restoring registration made the sequence pass.
 - **Scope:** source-only draft gesture history is recorded above. Native material preview-mesh evidence remains open under task 3.4.
+
+## Desktop VFX creation history
+
+The New VFX system button now invokes the same `vfx.document.create` command used by MCP and
+opens the saved source. The shell regression covers create, undo removing the source and closing
+the canvas, redo restoring both, and refusal to overwrite an existing source.

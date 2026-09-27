@@ -384,6 +384,9 @@ impl EditorWindow {
                     }
                 }
                 Intent::OpenVfxDocument(reference) => self.open_vfx_document(&reference),
+                Intent::CreateVfxDocument(name, reference) => {
+                    self.create_vfx_document(&name, &reference);
+                }
                 Intent::OpenVfxModule(reference) => self.open_vfx_module(&reference),
                 Intent::CreateVfxModule(name, stage) => self.create_vfx_module(name, stage),
                 Intent::DiscardVfxModuleChanges => self.discard_vfx_module_changes(),
@@ -469,7 +472,7 @@ impl EditorWindow {
 
     /// Journal edits made directly on the shared canvas or its metadata controls. Once an asset
     /// has a project path, each changed UI frame is an undoable project edit just like an MCP
-    /// command. A new draft still needs its first explicit Save to choose that path.
+    /// command. An unsaved module draft still needs its first explicit Save to choose that path.
     fn journal_vfx_edits(&self, intents: &mut Vec<Intent>) -> cy_editor_core::problem::Result<()> {
         let mut journaled = Vec::new();
         for (committed, snapshot, command) in [
@@ -997,6 +1000,29 @@ impl EditorWindow {
                 .editor
                 .notifications
                 .post(Notification::error(problem.what.clone(), problem)),
+        }
+    }
+
+    fn create_vfx_document(&mut self, name: &str, reference: &str) {
+        let arguments = Arguments::new()
+            .with("name", Value::Text(name.into()))
+            .with("reference", Value::Text(reference.into()));
+        match self.registry.invoke(
+            "vfx.document.create",
+            &self.scope,
+            &mut self.editor,
+            &arguments,
+        ) {
+            Ok(_) => {
+                self.inputs.vfx_document_problem = None;
+                self.open_vfx_document(reference);
+            }
+            Err(problem) => {
+                self.inputs.vfx_document_problem = Some(problem.to_string());
+                self.editor
+                    .notifications
+                    .post(Notification::error(problem.what.clone(), problem));
+            }
         }
     }
 
@@ -2282,6 +2308,43 @@ mod tests {
             [1.0_f32, 2.0, 3.0, 0.0].map(f32::to_bits)
         );
         assert_eq!(document.channels[0].max_events_per_frame, 128);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn desktop_vfx_creation_uses_saved_history_and_refuses_overwrite() {
+        let root = scratch("vfx-desktop-create-history");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut window = vfx_test_window(&root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        let reference = "effects/sparks.cyvfxdoc";
+
+        window.apply(vec![Intent::CreateVfxDocument(
+            "sparks".into(),
+            reference.into(),
+        )]);
+        let created = window.editor.project.read_source(reference).unwrap();
+        assert_eq!(window.specialised.vfx_document().unwrap().name, "sparks");
+        assert_eq!(window.inputs.vfx_reference, reference);
+
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert!(!window.editor.project.source_exists(reference));
+        assert!(window.specialised.vfx_document().is_none());
+        window.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            created
+        );
+        assert_eq!(window.specialised.vfx_document().unwrap().name, "sparks");
+
+        window.create_vfx_document("replacement", reference);
+        assert!(window.inputs.vfx_document_problem.is_some());
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            created
+        );
+        assert_eq!(window.specialised.vfx_document().unwrap().name, "sparks");
         std::fs::remove_dir_all(root).unwrap();
     }
 

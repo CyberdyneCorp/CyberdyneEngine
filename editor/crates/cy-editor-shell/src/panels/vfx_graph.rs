@@ -857,9 +857,10 @@ fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             ui.label("System");
             ui.text_edit_singleline(&mut panels.inputs.vfx_system_name);
             if ui.button("New VFX system").clicked() {
-                let result = VfxDocument::new(panels.inputs.vfx_system_name.clone())
-                    .and_then(|document| panels.specialised.start_vfx_document(document));
-                panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
+                panels.intents.push(Intent::CreateVfxDocument(
+                    panels.inputs.vfx_system_name.clone(),
+                    panels.inputs.vfx_reference.clone(),
+                ));
             }
         });
         return;

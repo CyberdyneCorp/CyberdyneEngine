@@ -66,6 +66,8 @@ pub enum Intent {
     OpenAsset(String),
     /// Open an editable VFX authoring document through its registered read command.
     OpenVfxDocument(String),
+    /// Create and open a saved VFX system through the registered command.
+    CreateVfxDocument(String, String),
     /// Open a separately saved VFX module through its registered read command.
     OpenVfxModule(String),
     /// Create a new reusable VFX module after checking the current draft.

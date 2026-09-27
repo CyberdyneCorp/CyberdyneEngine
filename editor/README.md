@@ -570,7 +570,8 @@ the golden names. What is on the far end is `cy::gameplay::PlaySession`, and wha
 
 The VFX Graph tab loads the engine's `vfx.catalogue.get` result into the same node canvas as the
 Material Graph. Its palette includes compiler-registered nodes and typed sample nodes generated
-from data-interface fields. The panel can create a system and emitters, then select each emitter's
+from data-interface fields. The panel creates a saved system at the Document path through
+`vfx.document.create`, then adds emitters and selects each emitter's
 Spawn, Initialise, Update, Event, Render, or Compute stage. Stage selection snapshots the shared
 canvas and restores the selected stage; graph-tab switches preserve the active draft. The
 renderer and CPU/GPU selectors come from `vfx.authoring-capabilities.get`; missing Decal, Light,
@@ -581,12 +582,12 @@ so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable
 authoring data; engine canonicalisation, runtime cooking, and runtime preview are tracked by
 `openspec/changes/implement-issue-15-graph-authoring/`.
-After the first save gives a draft its project path, each desktop frame that changes its VFX
+After creation gives a system its project path, each desktop frame that changes its VFX
 canvas or metadata saves one document transaction automatically. The same applies to a saved
 module. Undo and redo reload the open graph from the project source; an unchanged frame does not
 add history. Edits saved through MCP refresh the desktop graph before its next frame is drawn, so
-the next desktop transaction starts from the current project source. New drafts still use the Save
-action to choose their initial path.
+the next desktop transaction starts from the current project source. Creation requires an active
+scene document and refuses to replace an existing system at the chosen path.
 `vfx.document.create` creates an empty named system at a project path through the same undoable
 transaction. It refuses to overwrite an existing system; agents can then add CPU and GPU emitters
 and stage nodes without seeding a source file outside the editor.
