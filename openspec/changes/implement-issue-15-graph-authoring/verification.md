@@ -8,8 +8,9 @@ while any criterion is unverified. Native image probes require an executed test 
 assertions to exclude the null-device availability branch; a successful doctest exit alone does
 not count as pixel evidence. `python3 tools/test_issue15_acceptance.py` checks this guard. On this
 Mac, the full ledger verified three of nine criteria: both native image probes ran only two
-availability assertions, virtual-geometry scene discovery and unsaved VFX gesture history are
-open, and the final regression/documentation audit is still open. These gaps stay visible in the
+availability assertions, repeatable editor/MCP authoring of the exact two-emitter sample,
+virtual-geometry scene discovery, and unsaved VFX gesture history are open. The final
+regression/documentation audit is also open. These gaps stay visible in the
 runner rather than being inferred from neighbouring green tests.
 The runner's three unit tests passed. Temporarily bypassing its native assertion-count check
 made two unit tests fail, then restoration passed; this guards against a false green on null
@@ -36,6 +37,8 @@ devices. The cognitive-complexity skill could not score these Python functions l
 - **Red mutation:** in `editor/crates/cy-editor-interface/src/specialised/vfx.rs`, temporarily leave exposed parameter values in `compile_signature`. The test failed when changing `speed` from `2` to `4` altered the signature. Restoring the normalization made it pass. The mutation is not committed.
 
 ## VFX stage editing through MCP
+
+- **System creation:** `vfx_system_is_created_with_two_emitters_and_reopened_over_mcp` starts from an empty project, calls `vfx.document.create`, adds one CPU and one GPU emitter, reads the saved document, refuses an overwrite, then undoes creation through deletion and redoes the same source. A red mutation omitting the create command registration made the first MCP call fail; restoration passed. This makes system creation possible entirely over MCP. The committed image fixture still needs a repeatable command sequence that authors its exact nodes and declarations.
 
 - **Wire path:** `vfx_stage_wire_and_property_round_trip_over_mcp` adds stage nodes, edits a property, connects and moves nodes, disconnects and removes them, and checks the saved document and history through MCP. Other wire cases cover emitter, parameter, module, and preview commands.
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-mcp --test a_session_over_the_wire vfx_stage_wire_and_property_round_trip_over_mcp --quiet` — 1 targeted test passed on macOS.

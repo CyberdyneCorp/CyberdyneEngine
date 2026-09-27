@@ -587,6 +587,9 @@ module. Undo and redo reload the open graph from the project source; an unchange
 add history. Edits saved through MCP refresh the desktop graph before its next frame is drawn, so
 the next desktop transaction starts from the current project source. New drafts still use the Save
 action to choose their initial path.
+`vfx.document.create` creates an empty named system at a project path through the same undoable
+transaction. It refuses to overwrite an existing system; agents can then add CPU and GPU emitters
+and stage nodes without seeding a source file outside the editor.
 The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.emitter.remove`,
 `vfx.emitter.configure`, `vfx.interface.bind`, `vfx.interface.unbind`, `vfx.node.add`,
 `vfx.node.move`, `vfx.node.connect`, `vfx.node.disconnect`, `vfx.node.remove`,

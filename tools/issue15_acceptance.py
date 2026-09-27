@@ -73,6 +73,20 @@ CRITERIA = (
         "sample", "Two CPU/GPU emitters save, reopen, cook and render a reference image",
         (
             Probe(
+                "MCP two-emitter authoring",
+                cargo(
+                    "cy-editor-mcp",
+                    "vfx_system_is_created_with_two_emitters_and_reopened_over_mcp",
+                ),
+            ),
+            Probe(
+                "committed sample reopens",
+                cargo(
+                    "cy-editor-interface",
+                    "committed_two_emitter_sample_reopens_without_losing_stage_graphs",
+                ),
+            ),
+            Probe(
                 "engine cook",
                 native("cy_test_integration_vfx", "the editor's two-emitter VFX draft cooks*"),
                 5,
@@ -87,10 +101,19 @@ CRITERIA = (
             ),
         ),
         "Mutate a reference texel away from an image edge; the golden comparison fails.",
+        "Automate authoring this exact two-emitter sample through editor or MCP save/reopen.",
     ),
     Criterion(
         "recook", "Live parameter edits avoid a recook; graph edits request one",
         (
+            Probe(
+                "engine live parameter",
+                native(
+                    "cy_test_integration_editor_backend_compile",
+                    "editor_backend: VFX preview controls and live parameters use the engine world",
+                ),
+                10,
+            ),
             Probe(
                 "compile signature",
                 cargo(
@@ -138,7 +161,8 @@ CRITERIA = (
                 10,
             ),
         ),
-        "Remove the previous-frame displacement; the motion comparison must fail.",
+        gap="Run the native pixel comparison and record a mutation that makes its shadow or "
+        "motion comparison fail.",
     ),
     Criterion(
         "unsupported", "Editor and cook refuse an assigned unsupported vertex path",

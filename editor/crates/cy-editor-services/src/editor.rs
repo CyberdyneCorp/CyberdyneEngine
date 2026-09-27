@@ -1568,6 +1568,10 @@ impl cy_editor_commands::ProjectHost for Editor {
         Ok(())
     }
 
+    fn vfx_document_exists(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
     fn vfx_catalogue(&self) -> Option<Vec<u8>> {
         self.backend.vfx_catalogue().map(<[u8]>::to_vec)
     }

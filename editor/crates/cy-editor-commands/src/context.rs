@@ -460,6 +460,9 @@ pub trait ProjectHost {
     /// Read a project VFX authoring document, without compiling or changing it.
     fn vfx_document_read(&self, reference: &str) -> Result<String>;
 
+    /// Whether a VFX system source already exists at this project path.
+    fn vfx_document_exists(&self, reference: &str) -> bool;
+
     /// Save a versioned VFX authoring document in one undoable project transaction.
     fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()>;
 

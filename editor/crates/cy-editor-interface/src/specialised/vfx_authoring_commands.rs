@@ -16,6 +16,7 @@ use super::vfx_module::{ModuleInput, VfxModule};
 
 /// Install the same VFX actions for the command palette, scripts, and MCP projection.
 pub fn register(registry: &mut Registry) -> Result<()> {
+    registry.register(create_document())?;
     registry.register(add_emitter())?;
     registry.register(remove_emitter())?;
     registry.register(configure_emitter())?;
@@ -48,6 +49,36 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(set_module_node_property())?;
     registry.register(attach_module())?;
     Ok(())
+}
+
+fn create_document() -> Command {
+    Command::new(
+        metadata(
+            "vfx.document.create",
+            "Create VFX System",
+            "Creates a saved VFX system through the scene's undo history.",
+        )
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "System name stored in the VFX authoring document.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let name = text(arguments, "name");
+            let document = VfxDocument::new(name)?;
+            within_scope(context, reference)?;
+            let project = host(context)?;
+            if project.vfx_document_exists(reference) {
+                return Err(Problem::new(
+                    "create a VFX system",
+                    format!("{reference} already contains a system"),
+                ));
+            }
+            project.vfx_document_save(reference, &document.encode_text()?)?;
+            Ok(Outcome::new(format!("Created VFX system {name}")))
+        },
+    )
 }
 
 fn metadata(id: &str, label: &str, description: &str) -> Metadata {

@@ -1073,6 +1073,74 @@ fn vertex_material_canvas_previews_over_mcp_without_saving() {
 }
 
 #[test]
+fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
+    use cy_editor_interface::specialised::vfx::{SimulationPath, VfxDocument};
+
+    let sandbox = Sandbox::new("vfx-create-two-emitters");
+    let reference = "game/two_emitters.cyvfxdoc";
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.document.create","arguments":{"reference":"game/two_emitters.cyvfxdoc","name":"two_emitters"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/two_emitters.cyvfxdoc","name":"embers_cpu","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/two_emitters.cyvfxdoc","name":"embers_gpu","target":"gpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vfx.document.create","arguments":{"reference":"game/two_emitters.cyvfxdoc","name":"replacement"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"vfx.document.read","arguments":{"reference":"game/two_emitters.cyvfxdoc"}}}"#,
+        ],
+        &mut editor,
+    );
+    for index in 1..=3 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
+    assert_eq!(result(&replies, 4).get("isError"), &Json::Bool(true));
+    assert_eq!(result(&replies, 5).get("isError"), &Json::Bool(false));
+    let source = std::fs::read_to_string(sandbox.0.join(reference)).unwrap();
+    let saved = VfxDocument::decode_text(&source).unwrap();
+    assert_eq!(saved.emitters.len(), 2);
+    assert_eq!(saved.emitters[0].path, SimulationPath::CpuRequired);
+    assert_eq!(saved.emitters[1].path, SimulationPath::GpuPreferred);
+    assert_eq!(
+        editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap()
+            .history()
+            .entries()
+            .len(),
+        3,
+    );
+
+    for _ in 0..3 {
+        let reply = converse(
+            &[
+                INITIALIZE,
+                r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+            ],
+            &mut editor,
+        );
+        assert_eq!(result(&reply, 1).get("isError"), &Json::Bool(false));
+    }
+    assert!(!sandbox.0.join(reference).exists());
+    for _ in 0..3 {
+        let reply = converse(
+            &[
+                INITIALIZE,
+                r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+            ],
+            &mut editor,
+        );
+        assert_eq!(result(&reply, 1).get("isError"), &Json::Bool(false));
+    }
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join(reference)).unwrap(),
+        source
+    );
+}
+
+#[test]
 fn vfx_stage_wire_and_property_round_trip_over_mcp() {
     use cy_editor_interface::specialised::vfx::VfxDocument;
 
