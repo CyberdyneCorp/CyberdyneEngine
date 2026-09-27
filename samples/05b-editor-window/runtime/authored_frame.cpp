@@ -1465,9 +1465,13 @@ void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
 }
 
 Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera,
-                             bool editor_lighting, const vfx::SimulationWorld* preview) noexcept {
+                             bool editor_lighting, const vfx::SimulationWorld* preview,
+                             std::optional<f32> time_seconds) noexcept {
     if (!initialized_) {
         return fail(ErrorCode::Unavailable, "authored frame: not initialized");
+    }
+    if (time_seconds.has_value() && !std::isfinite(*time_seconds)) {
+        return fail(ErrorCode::InvalidArgument, "authored frame: time must be finite");
     }
     if (Status status = resolve_meshes(world); !status) {
         return status;
@@ -1516,7 +1520,7 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
 #else
     (void)preview;
 #endif
-    Status result = capture(*begun, camera, editor_lighting);
+    Status result = capture(*begun, camera, editor_lighting, time_seconds);
     Status ended = device_->end_frame();
     if (!result) {
         return result;
@@ -1690,8 +1694,8 @@ first_light::Camera AuthoredFrame::framing(const first_light::Camera& fallback) 
     return camera;
 }
 
-Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
-                              bool editor_lighting) noexcept {
+Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool editor_lighting,
+                              std::optional<f32> time_seconds) noexcept {
     graph_.reset();
     const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
                    static_cast<f32>(camera.position[2])};
@@ -1757,7 +1761,8 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     }
     GlobalsData globals;
     const auto now = std::chrono::steady_clock::now();
-    globals.time_seconds = std::chrono::duration<f32>(now - time_origin_).count();
+    globals.time_seconds =
+        time_seconds.value_or(std::chrono::duration<f32>(now - time_origin_).count());
     globals.delta_seconds =
         has_frame_time_ ? std::clamp(globals.time_seconds - previous_frame_time_, 0.0F, 0.1F)
                         : 0.0F;

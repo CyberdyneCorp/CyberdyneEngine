@@ -25,10 +25,12 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -541,21 +543,43 @@ void check_graph_material(AuthoredFrame& frame, const first_light::Camera& view)
 }
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+std::string assigned_vertex_shadow_scene() {
+    const std::string typed = edited(kShadowScene, "  field 4 text \"mesh\" \"\"\n",
+                                     "  field 4 text \"mesh\" \"\"\n"
+                                     "  field 11 text \"material\" \"\"\n",
+                                     Occurrence::First);
+    return edited(
+        typed, "    field 4 \"content/beauty/meshes/block.cyprim\"\n    field 9 true\n",
+        "    field 4 \"content/beauty/meshes/block.cyprim\"\n"
+        "    field 11 \"samples/05b-editor-window/project/materials/copper_clay.cygraph\"\n"
+        "    field 9 true\n",
+        Occurrence::First);
+}
+
+std::string time_vertex_graph() {
+    const std::string with_nodes = edited(kSurfaceVertexGraph, "link 1 \"out\" -> 3 \"colour\"\n",
+                                          "node 7 \"material.time\" v1 {\n}\n"
+                                          "node 8 \"material.sin\" v1 {\n}\n"
+                                          "node 9 \"material.constant\" v1 {\n"
+                                          "    prop \"type\" : \"name\" = \"float3\"\n"
+                                          "    prop \"value\" : \"vec4\" = (0, 4, 0, 0, 0)\n}\n"
+                                          "node 10 \"material.multiply\" v1 {\n}\n"
+                                          "link 1 \"out\" -> 3 \"colour\"\n",
+                                          Occurrence::First);
+    return edited(with_nodes, "link 5 \"out\" -> 6 \"offset\"\n",
+                  "link 7 \"out\" -> 8 \"value\"\n"
+                  "link 9 \"out\" -> 10 \"a\"\n"
+                  "link 8 \"out\" -> 10 \"b\"\n"
+                  "link 10 \"out\" -> 6 \"offset\"\n",
+                  Occurrence::First);
+}
+
 // The graph's vertical offset must make the same visible mesh and shadow as moving the source
 // mesh on the CPU. Previewing a zero offset keeps the surface graph and material settings equal.
 void check_graph_displacement_matches_cpu(AuthoredFrame& frame, const ser::AuthoringSchema& schema,
                                           const first_light::Camera& view) {
     const std::string reference = "samples/05b-editor-window/project/materials/copper_clay.cygraph";
-    const std::string typed = edited(kShadowScene, "  field 4 text \"mesh\" \"\"\n",
-                                     "  field 4 text \"mesh\" \"\"\n"
-                                     "  field 11 text \"material\" \"\"\n",
-                                     Occurrence::First);
-    const std::string assigned =
-        edited(typed, "    field 4 \"content/beauty/meshes/block.cyprim\"\n    field 9 true\n",
-               "    field 4 \"content/beauty/meshes/block.cyprim\"\n"
-               "    field 11 \"samples/05b-editor-window/project/materials/copper_clay.cygraph\"\n"
-               "    field 9 true\n",
-               Occurrence::First);
+    const std::string assigned = assigned_vertex_shadow_scene();
     const std::string raised =
         edited(assigned, "    field 2 0 0 0\n", "    field 2 0 0.25 0\n", Occurrence::First);
     ser::World source(allocator());
@@ -575,6 +599,52 @@ void check_graph_displacement_matches_cpu(AuthoredFrame& frame, const ser::Autho
     CY_CHECK_GT(differing_pixels(graph_pixels.span(), frame.pixels()), 100U);
     CY_REQUIRE(frame.render(cpu_displaced, view));
     CY_CHECK_LE(differing_pixels(graph_pixels.span(), frame.pixels()), 32U);
+}
+
+// The second frame's sine displacement equals the CPU's scene translation. TAA consumes the depth
+// pass's motion target, so matching the temporal image also checks the shader's previous-time
+// evaluation against the CPU reference.
+void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSchema& schema,
+                                    const first_light::Camera& view) {
+    constexpr std::string_view reference =
+        "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+    const std::string assigned = assigned_vertex_shadow_scene();
+    const std::string raised = assigned;
+    constexpr f32 second_time = 0.05F;
+    constexpr f32 cpu_offset = 0.19991669F;  // 4 * sin(0.05)
+    const std::string graph_moved = assigned;
+    const std::string cpu_moved =
+        edited(raised, "    field 2 0 0 0\n", "    field 2 0 0.19991669 0\n", Occurrence::First);
+    ser::World graph_before(allocator());
+    ser::World cpu_before(allocator());
+    ser::World graph_after(allocator());
+    ser::World cpu_after(allocator());
+    read_resolved(assigned, schema, graph_before);
+    read_resolved(raised, schema, cpu_before);
+    read_resolved(graph_moved, schema, graph_after);
+    read_resolved(cpu_moved, schema, cpu_after);
+
+    AuthoredFrame graph_frame(allocator(), device);
+    AuthoredFrame cpu_frame(allocator(), device);
+    CY_REQUIRE(graph_frame.initialize(192, 128, CY_TEST_PROJECT, true));
+    CY_REQUIRE(cpu_frame.initialize(192, 128, CY_TEST_PROJECT, true));
+    const std::string sine_graph = time_vertex_graph();
+    CY_REQUIRE(graph_frame.preview(reference, sine_graph));
+    const std::string zero_offset =
+        edited(kSurfaceVertexGraph, "(0, 0.25, 0, 0, 0)", "(0, 0, 0, 0, 0)", Occurrence::First);
+    CY_REQUIRE(cpu_frame.preview(reference, zero_offset));
+
+    CY_REQUIRE(graph_frame.render(graph_before, view, true, nullptr, 0.0F));
+    CY_REQUIRE(cpu_frame.render(cpu_before, view, true, nullptr, 0.0F));
+    CY_CHECK_LE(differing_pixels(graph_frame.pixels(), cpu_frame.pixels()), 32U);
+    Array<u32> graph_first(allocator());
+    CY_REQUIRE(graph_first.append(graph_frame.pixels()));
+
+    CY_CHECK_EQ(cpu_offset, doctest::Approx(4.0F * std::sin(second_time)));
+    CY_REQUIRE(graph_frame.render(graph_after, view, true, nullptr, second_time));
+    CY_REQUIRE(cpu_frame.render(cpu_after, view, true, nullptr, second_time));
+    CY_CHECK_GT(differing_pixels(graph_first.span(), graph_frame.pixels()), 100U);
+    CY_CHECK_LE(differing_pixels(graph_frame.pixels(), cpu_frame.pixels()), 32U);
 }
 #endif
 
@@ -624,6 +694,21 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     CY_CHECK_GT(spirv->depth.bytes().size(), 0U);
     CY_CHECK_GT(spirv->shadow.bytes().size(), 0U);
     CY_CHECK_GT(spirv->fragment.bytes().size(), 0U);
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+    auto animated = compile_scene_graph_material(time_vertex_graph(), allocator());
+    CY_REQUIRE(animated.has_value());
+    const auto* animated_program = animated->find(rendering::material::ProgramKind::Primary,
+                                                  rendering::material::QualityTier::High);
+    CY_REQUIRE(animated_program != nullptr);
+    auto animated_stages = compile_scene_material_vertices(*animated_program, allocator());
+    CY_REQUIRE(animated_stages.has_value());
+    CY_CHECK_GT(animated_stages->depth.bytes().size(), 0U);
+    Array<char> animated_unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*animated_program, animated_unit));
+    const std::string_view source(animated_unit.data(), animated_unit.size());
+    CY_CHECK(source.find("sin(") != std::string_view::npos);
+    CY_CHECK(source.find("sceneMaterialTime() - sceneMaterialDelta()") != std::string_view::npos);
+#endif
 }
 
 CY_TEST_CASE("authored scene graph lowers an interpolant into its forward fragment") {
@@ -640,6 +725,26 @@ CY_TEST_CASE("authored scene graph lowers an interpolant into its forward fragme
     CY_REQUIRE(stages.has_value());
     CY_CHECK_GT(stages->visible.bytes().size(), 0U);
     CY_CHECK_GT(stages->fragment.bytes().size(), 0U);
+}
+
+CY_TEST_CASE("authored frame refuses nonfinite material animation time") {
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "editor animation time validation";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(64, 64, CY_TEST_PROJECT));
+        ser::World empty(allocator());
+        CY_REQUIRE(ser::read_world(kEmpty, "worlds/empty.cyworld", empty).has_value());
+        const Status rendered =
+            frame.render(empty, camera(), true, nullptr, std::numeric_limits<f32>::infinity());
+        CY_REQUIRE_FALSE(rendered.has_value());
+        CY_CHECK_EQ(rendered.error().code, ErrorCode::InvalidArgument);
+    }
+    rhi::destroy_device(allocator(), *device);
 }
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
@@ -829,6 +934,7 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_graph_material(frame, view);
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
         check_graph_displacement_matches_cpu(frame, schema, view);
+        check_graph_motion_matches_cpu(**device, schema, view);
 #endif
     }
     rhi::destroy_device(allocator(), *device);

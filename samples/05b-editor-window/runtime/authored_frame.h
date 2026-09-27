@@ -72,7 +72,8 @@ public:
                                  std::string_view canonical_graph) noexcept;
     [[nodiscard]] Status render(const scene::serialization::World& world,
                                 const first_light::Camera& camera, bool editor_lighting = true,
-                                const vfx::SimulationWorld* preview = nullptr) noexcept;
+                                const vfx::SimulationWorld* preview = nullptr,
+                                std::optional<f32> time_seconds = std::nullopt) noexcept;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     [[nodiscard]] const rendering::particles::ParticleReport& vfx_particle_report() const noexcept {
         return vfx_renderer_.report();
@@ -128,8 +129,8 @@ private:
                                          const Mat4& matrix, Vec3 eye) noexcept;
     [[nodiscard]] Status update_previous_transform(u64 identity, const Mat4& matrix, Vec3 eye,
                                                    Span<const u32> materials) noexcept;
-    [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera,
-                                 bool editor_lighting) noexcept;
+    [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera, bool editor_lighting,
+                                 std::optional<f32> time_seconds) noexcept;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     [[nodiscard]] Status prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
                                      Vec3 eye) noexcept;

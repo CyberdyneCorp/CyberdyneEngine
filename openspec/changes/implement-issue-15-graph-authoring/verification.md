@@ -89,6 +89,13 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Red mutation:** in `src/rendering/material/src/compiler.cpp`, temporarily allow `VirtualGeometry` through `check_geometry_paths`. The targeted compiler case failed its refusal, diagnostic, and named-path assertions (12/15 passed). Restoring the refusal made all 15 assertions pass. The mutation is not committed.
 - **Remaining work:** author/save now checks geometry sources supplied by the editor, but scene discovery only identifies static-mesh assignments. Task 3.2 stays open for other geometry sources. A rendered displaced mesh, shadow, and motion-vector comparison against CPU-displaced geometry is tracked by task 3.3.
 
+## Authored scene vertex animation across frames
+
+- **Scene path:** the authored frame accepts a caller-supplied time for deterministic material animation. `authored scene compiles a surface beside its vertex graph` now compiles a sine/time vertex graph for visible, depth, and shadow stages and checks that previous-frame evaluation subtracts the frame delta. A two-frame native test compares the resulting temporal image with the same mesh translated on the CPU by `4 * sin(0.05)`.
+- **Green command:** `build/dev/cy_test_smoke_editor_authored_frame_metal --test-case='authored scene compiles a surface beside its vertex graph' --no-skip` — the shader compilation and source assertions passed on macOS.
+- **Red mutation:** temporarily evaluate the previous position at current time in `material_runtime.cpp`; the targeted test failed its previous-time assertion (25/26 passed). Restoring delta subtraction passed.
+- **Native pixel status:** the local RHI selected its null fallback, so the two-frame pixel comparison did not execute here. Task 3.3 remains open pending a native Metal or Vulkan run and a direct motion-target comparison.
+
 ## Two-emitter sample image
 
 - **Source:** `samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc`.

@@ -209,4 +209,4 @@ edit and scene save/reopen.
 
 ## Verification
 
-Use compiler-registry parity, service, save/reopen/cook, transaction/MCP, and live preview tests. Image tests compare VFX and displaced material output to committed references; displaced shadows and motion vectors are compared with CPU-displaced geometry. For each acceptance criterion, record a mutation that makes its ledger criterion fail.
+Use compiler-registry parity, service, save/reopen/cook, transaction/MCP, and live preview tests. Image tests compare VFX and displaced material output to committed references; displaced shadows and motion vectors are compared with CPU-displaced geometry. The authored scene render accepts an optional explicit frame time so a two-frame sine graph can be compared with the same mesh translated on the CPU at the corresponding times; ordinary editor frames still use elapsed time. For each acceptance criterion, record a mutation that makes its ledger criterion fail.
