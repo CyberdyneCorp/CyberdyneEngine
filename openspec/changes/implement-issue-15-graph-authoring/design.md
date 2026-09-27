@@ -156,8 +156,13 @@ binds those rows beside each graph material's parameters. The depth vertex evalu
 offset with previous time and placement, and the frame retains temporal history across unchanged
 scene topology. A graph edit, new mesh, or topology change cuts history. The null-RHI regression
 inspects the actual bound previous-transform buffer across object and camera motion and a graph
-edit. Native pixels, displaced shadows, and motion vectors still need image comparison against
-CPU-displaced reference geometry.
+edit. The native authored-frame test now encodes a visible and shadow comparison against a
+CPU-translated version of the same mesh and material; that comparison has not run on this sandbox
+because it has no Metal device. Motion vectors still need comparison with a CPU reference.
+The local macOS sandbox currently selects the null RHI when Metal is requested. The authored-frame
+pixel tests now check the actual selected backend before making image assertions, so its all-black
+null framebuffer cannot be mistaken for a failed Metal rendering result. A device-backed run is
+still required for the issue's visual acceptance criterion.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for

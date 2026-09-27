@@ -255,12 +255,14 @@ Allocator& allocator() noexcept {
 
 #if defined(__APPLE__)
 constexpr const char* kBackend = "metal";
+constexpr rhi::BackendKind kNativeBackend = rhi::BackendKind::Metal;
 constexpr const char* kSuite = "smoke.editor_authored_frame_metal";
 void register_backend() noexcept {
     (void)rhi::metal::register_metal_backend();
 }
 #else
 constexpr const char* kBackend = "vulkan";
+constexpr rhi::BackendKind kNativeBackend = rhi::BackendKind::Vulkan;
 constexpr const char* kSuite = "smoke.editor_authored_frame_vulkan";
 void register_backend() noexcept {
     (void)rhi::vulkan::register_vulkan_backend();
@@ -517,6 +519,44 @@ void check_graph_material(AuthoredFrame& frame, const first_light::Camera& view)
                                          : default_red - restored_red) < 1000U);
 }
 
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+// The graph's vertical offset must make the same visible mesh and shadow as moving the source
+// mesh on the CPU. Previewing a zero offset keeps the surface graph and material settings equal.
+void check_graph_displacement_matches_cpu(AuthoredFrame& frame, const ser::AuthoringSchema& schema,
+                                          const first_light::Camera& view) {
+    const std::string reference = "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+    const std::string typed = edited(kShadowScene, "  field 4 text \"mesh\" \"\"\n",
+                                     "  field 4 text \"mesh\" \"\"\n"
+                                     "  field 11 text \"material\" \"\"\n",
+                                     Occurrence::First);
+    const std::string assigned =
+        edited(typed, "    field 4 \"content/beauty/meshes/block.cyprim\"\n    field 9 true\n",
+               "    field 4 \"content/beauty/meshes/block.cyprim\"\n"
+               "    field 11 \"samples/05b-editor-window/project/materials/copper_clay.cygraph\"\n"
+               "    field 9 true\n",
+               Occurrence::First);
+    const std::string raised =
+        edited(assigned, "    field 2 0 0 0\n", "    field 2 0 0.25 0\n", Occurrence::First);
+    ser::World source(allocator());
+    ser::World cpu_displaced(allocator());
+    read_resolved(assigned, schema, source);
+    read_resolved(raised, schema, cpu_displaced);
+
+    CY_REQUIRE(frame.preview(reference, kSurfaceVertexGraph));
+    CY_REQUIRE(frame.render(source, view));
+    Array<u32> graph_pixels(allocator());
+    CY_REQUIRE(graph_pixels.append(frame.pixels()));
+
+    const std::string zero_offset =
+        edited(kSurfaceVertexGraph, "(0, 0.25, 0, 0, 0)", "(0, 0, 0, 0, 0)", Occurrence::First);
+    CY_REQUIRE(frame.preview(reference, zero_offset));
+    CY_REQUIRE(frame.render(source, view));
+    CY_CHECK_GT(differing_pixels(graph_pixels.span(), frame.pixels()), 100U);
+    CY_REQUIRE(frame.render(cpu_displaced, view));
+    CY_CHECK_LE(differing_pixels(graph_pixels.span(), frame.pixels()), 32U);
+}
+#endif
+
 }  // namespace
 
 CY_TEST_CASE("authored scene material path names unsupported vertex-stage outputs") {
@@ -707,6 +747,13 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
     rhi::BackendSelection selection;
     auto device = rhi::create_device(allocator(), kBackend, description, selection);
     CY_REQUIRE(device.has_value());
+    if ((*device)->capabilities().backend() != kNativeBackend) {
+        std::fprintf(stderr, "no %s device: selected '%s' because %s\n", kBackend,
+                     selection.selected, selection.reason);
+        CY_CHECK(selection.fell_back);
+        rhi::destroy_device(allocator(), *device);
+        return;
+    }
 
     {
         AuthoredFrame frame(allocator(), **device);
@@ -730,6 +777,9 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_directional_light(frame, schema, view);
         check_shadows(frame, schema, view);
         check_graph_material(frame, view);
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+        check_graph_displacement_matches_cpu(frame, schema, view);
+#endif
     }
     rhi::destroy_device(allocator(), *device);
 }
@@ -743,6 +793,13 @@ CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
     auto device =
         rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
     CY_REQUIRE(device.has_value());
+    if ((*device)->capabilities().backend() != rhi::BackendKind::Metal) {
+        std::fprintf(stderr, "no Metal device: selected '%s' because %s\n", selection.selected,
+                     selection.reason);
+        CY_CHECK(selection.fell_back);
+        rhi::destroy_device(allocator(), *device);
+        return;
+    }
     {
         AuthoredFrame frame(allocator(), **device);
         CY_REQUIRE(frame.initialize(640, 360, CY_TEST_PROJECT, false));
