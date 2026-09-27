@@ -101,6 +101,11 @@ return the compiler's `vertex-geometry-unsupported` code for a vertex graph assi
 graph, including imported material slots. Compile results return those named sources to the editor
 for the variant report. Discovering other scene geometry sources and feeding their assignments into
 both editor validation and the build description remains open.
+Author requests carrying assigned geometry now run the same compiler check before returning a
+canonical graph. The desktop Save action and `material.graph.save` MCP command both derive the
+active scene's static-mesh assignment. The save and generated Inspector property sync join one
+document transaction, so one undo restores both project files and scene fields. Assignments from
+other geometry sources remain open.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 

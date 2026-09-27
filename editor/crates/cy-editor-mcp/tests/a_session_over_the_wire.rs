@@ -518,13 +518,23 @@ fn material_request(
     reader: &mut std::io::PipeReader,
     expected: &str,
 ) -> cy_editor_protocol::RequestId {
+    material_request_with_payload(reader, expected).0
+}
+
+fn material_request_with_payload(
+    reader: &mut std::io::PipeReader,
+    expected: &str,
+) -> (cy_editor_protocol::RequestId, Vec<u8>) {
     (0..4)
         .find_map(|_| {
             let message = Message::decode(&read_frame(reader).unwrap().unwrap()).unwrap();
             match message {
                 Message::ServiceRequest {
-                    request, operation, ..
-                } if operation == expected => Some(request),
+                    request,
+                    operation,
+                    payload,
+                    ..
+                } if operation == expected => Some((request, payload)),
                 Message::ServiceRequest { operation, .. }
                     if operation == "vfx.authoring-capabilities.get" =>
                 {
@@ -533,6 +543,7 @@ fn material_request(
                 Message::ServiceRequest { operation, .. } => {
                     panic!("unexpected material request: {operation}")
                 }
+                Message::SyncWorld { .. } => None,
                 other => panic!("unexpected message while waiting for {expected}: {other:?}"),
             }
         })
@@ -541,18 +552,48 @@ fn material_request(
 
 #[test]
 fn vertex_material_canvas_saves_and_undoes_over_mcp() {
+    use cy_editor_documents::operation::Operation;
+    use cy_editor_services::primitives::{MaterialBinding, create_mesh_instance};
+    use cy_editor_viewport::gizmo::Transform3;
+
     let sandbox = Sandbox::new("vertex-material-wire");
     let reference = "game/sway.cygraph";
     let (source, graph) = vertex_material_sources();
 
     let mut editor =
         Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
-    editor.open_document("worlds/city.cyworld").unwrap();
+    let document_id = editor.open_document("worlds/city.cyworld").unwrap();
+    editor
+        .documents
+        .get_mut(document_id)
+        .unwrap()
+        .with_transaction("Assign material", Actor::human("designer"), |document| {
+            let node =
+                create_mesh_instance(document, None, "meshes/box.cyprim", Transform3::default())?;
+            let binding = MaterialBinding::of_schema(document.schema()).unwrap();
+            document.record(Operation::SetAssetReference {
+                node,
+                component: binding.component,
+                field: binding.material,
+                before: String::new(),
+                after: reference.into(),
+            })?;
+            Ok(())
+        })
+        .unwrap();
     let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
     let save = material_graph_call(2, "material.graph.save", reference, &source);
     let replies = converse(&[INITIALIZE, &save], &mut editor);
     assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
-    let request = material_request(&mut runtime_reader, "material.author");
+    let (request, payload) = material_request_with_payload(&mut runtime_reader, "material.author");
+    assert_eq!(
+        payload,
+        [
+            b"cymatrequest 1\ngeometry StaticMesh\n".as_slice(),
+            source.as_bytes()
+        ]
+        .concat()
+    );
     let mut payload = Writer::new();
     payload.u32(1);
     payload.u8(1);
@@ -579,6 +620,11 @@ fn vertex_material_canvas_saves_and_undoes_over_mcp() {
     }
     assert_eq!(std::fs::read_to_string(&graph_path).unwrap(), graph);
     assert_eq!(std::fs::read_to_string(&canvas_path).unwrap(), source);
+    assert_eq!(
+        editor.documents.get(document_id).unwrap().history().entries().len(),
+        2,
+        "the graph save and generated property sync share one undo entry"
+    );
     let read = converse(
         &[
             INITIALIZE,

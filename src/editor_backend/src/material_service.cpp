@@ -801,10 +801,7 @@ CyResult compile_graph(CyServiceSession_T& session,
     if (!put_u32(session.event_payload, compile ? 3 : 2) || !put_u8(session.event_payload, 1)) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
-    if (author) {
-        return author_graph_result(session, graph.value(), canonical);
-    }
-    if (!compile) {
+    if (!compile && (!author || !geometry_sources.empty())) {
         auto checked =
             cy::rendering::material::compile_material(module.value(), options, allocator);
         if (!checked) {
@@ -817,7 +814,12 @@ CyResult compile_graph(CyServiceSession_T& session,
                                        diagnostic.subject.text());
             }
         }
-        return CY_RESULT_OK;
+        if (!author) {
+            return CY_RESULT_OK;
+        }
+    }
+    if (author) {
+        return author_graph_result(session, graph.value(), canonical);
     }
     return compile_material_result(session, graph.value(), module.value(), options, preview_runtime,
                                    allocator);

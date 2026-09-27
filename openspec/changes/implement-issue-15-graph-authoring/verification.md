@@ -28,13 +28,28 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Red mutation:** temporarily omit `connect_nodes()` from `vfx_authoring_commands::register`. The same wire test failed when `vfx.node.connect` returned an MCP error. Restoring registration made the test pass. The mutation is not committed.
 - **Remaining work:** task 2.6 still tracks individual typed desktop transactions for unsaved canvas gestures and a complete desktop/MCP parity check.
 
+## Vertex material save and history through MCP
+
+- **Wire path:** `vertex_material_canvas_saves_and_undoes_over_mcp` assigns the material to a scene mesh, saves a vertex graph through `material.graph.save`, and checks that the request carries `StaticMesh`. It receives the engine-authored canonical graph, reads the editable canvas through MCP, then checks that one undo removes both project files and redo restores both.
+- **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-mcp --test a_session_over_the_wire vertex_material_canvas_saves_and_undoes_over_mcp --quiet` — 1 targeted test passed on macOS.
+- **Red mutation:** in `editor/crates/cy-editor-services/src/editor.rs`, temporarily omit the material save transaction's `document.commit()`. The wire test failed when `edit.undo` returned an MCP error. Restoring the commit made it pass. The mutation is not committed.
+- **Regression red:** with the scene mesh assigned, the material save created a second `Sync material properties` history entry after its file transaction. The strengthened wire test failed because one undo left both graph files in place. Moving property sync inside the save transaction made one undo restore the files and fields together.
+- **Remaining work:** material canvas gestures still need individual transaction/MCP parity, tracked by task 3.4.
+
+## Assigned geometry at material authoring
+
+- **Service:** `editor_backend: material authoring refuses unsupported assigned geometry` sends a vertex graph with a `VirtualGeometry` assignment to `material.author` and checks the compiler's named `vertex-geometry-unsupported` refusal. The same case checks that a `StaticMesh` assignment is authored.
+- **Green command:** `build/dev/cy_test_unit_editor_backend --test-case='editor_backend: material authoring refuses unsupported assigned geometry' --no-skip` — 1 case, 12 assertions passed on macOS.
+- **Regression red:** before the author path called `compile_material` for assigned geometry, the new test received a completed author response instead of the refusal. The check now runs before the canonical graph is returned.
+- **Scope:** scene discovery currently supplies static meshes. Other geometry source assignments remain part of task 3.2.
+
 ## Vertex geometry variants and unsupported paths
 
 - **Compiler:** `material_lowering: named geometry variants reject unsupported vertex paths` compiles a vertex graph for static and skinned meshes, checks the two reported variants, and verifies the `vertex-geometry-unsupported` diagnostic for virtual geometry. It also checks an unknown geometry source.
 - **Editor service:** `editor_backend: assigned geometry paths use the material compiler's refusal` submits the source names through the editor service and checks that the unsupported path returns the compiler diagnostic.
 - **Green command:** `ctest --test-dir build/dev -R '^(integration\.material_lowering|unit\.editor_backend)$' --output-on-failure` — both suites passed on macOS. The targeted compiler case ran with 15/15 assertions.
 - **Red mutation:** in `src/rendering/material/src/compiler.cpp`, temporarily allow `VirtualGeometry` through `check_geometry_paths`. The targeted compiler case failed its refusal, diagnostic, and named-path assertions (12/15 passed). Restoring the refusal made all 15 assertions pass. The mutation is not committed.
-- **Remaining evidence:** a rendered displaced mesh, shadow, and motion-vector comparison against CPU-displaced geometry is tracked by task 3.3.
+- **Remaining work:** the material author/save path currently bypasses `compile_material` and does not carry assigned geometry sources. Task 3.2 stays open until that path rejects unsupported vertex geometry. A rendered displaced mesh, shadow, and motion-vector comparison against CPU-displaced geometry is tracked by task 3.3.
 
 ## Two-emitter sample image
 

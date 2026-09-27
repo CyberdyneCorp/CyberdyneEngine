@@ -34,6 +34,7 @@ use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
 use crate::picking;
+use crate::primitives::{material_slots_of, mesh_of};
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
@@ -313,14 +314,28 @@ impl Editor {
         }
         if !matches!(
             operation,
-            MaterialOperation::Validate | MaterialOperation::Compile
+            MaterialOperation::Validate | MaterialOperation::Compile | MaterialOperation::Author
         ) {
             return Err(Problem::new(
                 "submit a material geometry request",
-                "geometry sources apply only to validation and compilation",
+                "geometry sources apply only to validation, compilation, and authoring",
             ));
         }
         self.request_material(operation, material_geometry_payload(canvas, geometry)?)
+    }
+
+    /// Geometry sources currently assigned to a material in the active scene.
+    pub fn assigned_material_geometry(&self, reference: Option<&str>) -> Option<&'static str> {
+        let reference = reference?;
+        let document = self.documents.get(self.workspace.active()?)?;
+        // The authored scene renderer currently loads MeshRenderer assets as static meshes.
+        document.content().nodes().find_map(|node| {
+            (mesh_of(document, node).is_some()
+                && material_slots_of(document, node)
+                    .iter()
+                    .any(|material| material == reference))
+            .then_some("StaticMesh")
+        })
     }
 
     /// Ask the engine to compile an editable VFX document.
@@ -445,14 +460,20 @@ impl Editor {
                     after: crate::material_graph::encode_pair(Some(&graph), Some(&source)),
                 })
                 .map_err(|problem| problem.to_string())?;
-            document.commit().map_err(|problem| problem.to_string())?;
-            Ok(())
+            // Generated Inspector fields belong to the same save action. Their nested
+            // transactions join this one, so one undo restores both files and scene fields.
+            let property_sync =
+                crate::material_parameters::sync(self, &reference, prior.as_deref());
+            self.documents
+                .get_mut(pending.document)
+                .expect("checked above")
+                .commit()
+                .map_err(|problem| problem.to_string())?;
+            Ok(property_sync)
         });
         self.graph_save_status = match outcome {
-            Ok(()) => match crate::material_parameters::sync(self, &reference, prior.as_deref()) {
-                Ok(_) => format!("saved: {reference}"),
-                Err(problem) => format!("saved: {reference}; property sync failed: {problem}"),
-            },
+            Ok(Ok(_)) => format!("saved: {reference}"),
+            Ok(Err(problem)) => format!("saved: {reference}; property sync failed: {problem}"),
             Err(problem) => format!("failed: {problem}"),
         };
     }
@@ -1348,8 +1369,15 @@ impl cy_editor_commands::ProjectHost for Editor {
                 "no scene document is active for undo history",
             )
         })?;
-        let request =
-            self.request_material(MaterialOperation::Author, source.as_bytes().to_vec())?;
+        let sources: Vec<&str> = self
+            .assigned_material_geometry(Some(reference))
+            .into_iter()
+            .collect();
+        let request = self.request_material_for_geometry(
+            MaterialOperation::Author,
+            source.as_bytes().to_vec(),
+            &sources,
+        )?;
         let id = request.as_u64();
         self.pending_graph_save = Some(PendingGraphSave {
             request: id,

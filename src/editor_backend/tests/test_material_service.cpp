@@ -1034,6 +1034,48 @@ CY_TEST_CASE("editor_backend: assigned geometry paths use the material compiler'
     api->service_close(&host, session);
 }
 
+CY_TEST_CASE("editor_backend: material authoring refuses unsupported assigned geometry") {
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+
+    constexpr std::string_view source =
+        "cymatrequest 1\ngeometry VirtualGeometry\n"
+        "cymatcanvas 1\n"
+        "material moving_mesh\n"
+        "node 1 material.object_position\n"
+        "node 2 material.vertex_output\n"
+        "link 1 out 2 offset\n";
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   26,
+                                   "material.author",
+                                   reinterpret_cast<const cy::u8*>(source.data()),
+                                   source.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    if (event.kind == static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED)) {
+        cy::usize cursor = 9;  // schema, diagnostic count, severity
+        CY_CHECK_EQ(read_text(event.payload, event.payload_size, cursor),
+                    "vertex-geometry-unsupported");
+    }
+    std::string supported(source);
+    supported.replace(supported.find("VirtualGeometry"), sizeof("VirtualGeometry") - 1,
+                      "StaticMesh");
+    const CyServiceRequest accepted{sizeof(CyServiceRequest),
+                                    1,
+                                    27,
+                                    "material.author",
+                                    reinterpret_cast<const cy::u8*>(supported.data()),
+                                    supported.size()};
+    const CyServiceEvent authored = submit_and_poll(*api, host, session, accepted);
+    CY_CHECK_EQ(authored.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: preview handles are generational and reload is acknowledged") {
     cy::abi::Host host(allocator());
     PreviewRuntime preview_runtime;
