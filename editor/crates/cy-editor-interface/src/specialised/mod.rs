@@ -327,7 +327,7 @@ const ABILITY_NODES: &[&str] = &[
 ///
 /// Every name below is `"material." + graph_op_name(op)` for one of the material compiler's own
 /// `GraphOp`s — which `graph.h` already describes as "the editor's palette, not the IR's opcodes" —
-/// plus the surface and vertex output roots that become the material graph's typed outputs.
+/// plus the surface, vertex offset, and interpolant roots that become typed graph outputs.
 /// `unit.graph_material` asserts that derivation on the engine's side; the contract gate compares
 /// this list against those literals.
 const MATERIAL_NODES: &[&str] = &[
@@ -364,6 +364,7 @@ const MATERIAL_NODES: &[&str] = &[
     "material.transmission",
     "material.uv0",
     "material.vertex_color",
+    "material.vertex_interpolant",
     "material.vertex_output",
     "material.world_position",
 ];

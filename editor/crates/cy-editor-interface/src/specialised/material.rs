@@ -105,7 +105,8 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.texture_sample", &["uv"], false),
     ("material.transmission", &["colour", "weight"], true),
     ("material.uv0", &[], false),
-    ("material.vertex_output", &["offset"], false),
+    ("material.vertex_interpolant", &["value"], false),
+    ("material.vertex_output", &["offset", "displacement"], false),
     ("material.vertex_color", &[], false),
     ("material.world_position", &[], false),
     ("material.procedural_wind", &["position", "time"], false),
@@ -118,7 +119,7 @@ fn takes_closures(type_name: &str) -> bool {
 
 /// The catalogue the material editor opens with: the engine's node types, with their pins.
 ///
-/// Surface and vertex output nodes represent the graph's typed roots and are not `GraphOp` values.
+/// Surface, vertex offset, and interpolant nodes represent typed graph roots.
 #[must_use]
 pub fn material_catalogue() -> Vec<NodeType> {
     MATERIAL_PINS
@@ -141,7 +142,10 @@ pub fn material_catalogue() -> Vec<NodeType> {
                     Pin::new(*pin, PinDirection::Input, data_type)
                 })
                 .collect();
-            if *name != "material.output" && *name != "material.vertex_output" {
+            if *name != "material.output"
+                && *name != "material.vertex_output"
+                && *name != "material.vertex_interpolant"
+            {
                 pins.push(Pin::new(
                     "out",
                     PinDirection::Output,
@@ -149,7 +153,7 @@ pub fn material_catalogue() -> Vec<NodeType> {
                 ));
             }
             let node = NodeType::new(*name, pins);
-            if *name == "material.vertex_output" {
+            if *name == "material.vertex_output" || *name == "material.vertex_interpolant" {
                 node.with_stage_mask(VERTEX_STAGE)
             } else {
                 node
@@ -873,10 +877,10 @@ mod tests {
                 "{name}: the editor's pins and the engine's ports disagree"
             );
         }
-        // The two output roots are not `GraphOp` values and so are not in `kPalette`.
+        // The three output roots are not `GraphOp` values and so are not in `kPalette`.
         assert_eq!(
             MATERIAL_PINS.len(),
-            engine.len() + 2,
+            engine.len() + 3,
             "the editor offers a node type the engine cannot lower, or is missing one it can"
         );
     }
