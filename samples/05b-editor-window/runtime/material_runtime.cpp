@@ -494,7 +494,16 @@ float sceneMaterialTime()
     return cyGlobalSet.data.timeSeconds;
 #endif
 }
-float3 sceneMaterialRelative(float3 modelPosition, float4 packedNormal, float2 uv)
+float sceneMaterialDelta()
+{
+#if defined(CY_FRAME_METAL)
+    return cyFrameGlobals.globals.deltaSeconds;
+#else
+    return cyGlobalSet.data.deltaSeconds;
+#endif
+}
+float3 sceneMaterialRelative(float3 modelPosition, float4 packedNormal, float2 uv,
+                             float timeSeconds)
 {
     let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
     let instance = cyFrameView.instances[draw.instanceSlot];
@@ -522,7 +531,7 @@ float3 sceneMaterialRelative(float3 modelPosition, float4 packedNormal, float2 u
         writer.text("    ctx.attributes.");
         writer.text(node.symbol.text());
         if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
-            writer.text(" = sceneMaterialTime();\n");
+            writer.text(" = timeSeconds;\n");
         } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
             writer.text(" = relative;\n");
         } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
@@ -547,7 +556,8 @@ CyForwardVertex cySceneMaterialVertex(float3 modelPosition : POSITION,
     let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
     let instance = cyFrameView.instances[draw.instanceSlot];
     CyForwardVertex output;
-    output.relativePosition = sceneMaterialRelative(modelPosition, packedNormal, uv);
+    output.relativePosition = sceneMaterialRelative(modelPosition, packedNormal, uv,
+                                                    sceneMaterialTime());
     output.position = transformToClip(output.relativePosition);
     output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     output.uv = uv;
@@ -559,7 +569,29 @@ CyShadowVertex cySceneMaterialShadowVertex(float3 modelPosition : POSITION,
                                            float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
 {
     CyShadowVertex output;
-    output.position = transformToShadowClip(sceneMaterialRelative(modelPosition, packedNormal, uv));
+    output.position = transformToShadowClip(sceneMaterialRelative(modelPosition, packedNormal, uv,
+                                                                  sceneMaterialTime()));
+    return output;
+}
+[shader("vertex")]
+CyDepthVertex cySceneMaterialDepthVertex(float3 modelPosition : POSITION,
+                                         float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
+{
+    let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
+    let instance = cyFrameView.instances[draw.instanceSlot];
+    let current = sceneMaterialRelative(modelPosition, packedNormal, uv, sceneMaterialTime());
+    let previous = sceneMaterialRelative(modelPosition, packedNormal, uv,
+                                         sceneMaterialTime() - sceneMaterialDelta());
+    let previousPoint = float4(previous, 1.0);
+    CyDepthVertex output;
+    output.position = transformToClip(current);
+    output.currentClip = output.position;
+    output.previousClip = float4(
+        dot(cyFrameView.frame.previousRelativeToClipRow0, previousPoint),
+        dot(cyFrameView.frame.previousRelativeToClipRow1, previousPoint),
+        dot(cyFrameView.frame.previousRelativeToClipRow2, previousPoint),
+        dot(cyFrameView.frame.previousRelativeToClipRow3, previousPoint));
+    output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     return output;
 }
 )");
@@ -633,6 +665,16 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
         return fail(ErrorCode::InvalidArgument,
                     "the scene material visible vertex shader did not compile to MSL");
     }
+    shader::DiagnosticLog depth_diagnostics(allocator);
+    auto depth = compile_stage("cySceneMaterialDepthVertex", depth_diagnostics);
+    if (!depth.has_value()) {
+        for (usize index = 0; index < depth_diagnostics.size(); ++index) {
+            std::fprintf(stderr, "scene material depth Slang: %s\n",
+                         depth_diagnostics.at(index).message);
+        }
+        return fail(ErrorCode::InvalidArgument,
+                    "the scene material depth vertex shader did not compile to MSL");
+    }
     shader::DiagnosticLog shadow_diagnostics(allocator);
     auto shadow = compile_stage("cySceneMaterialShadowVertex", shadow_diagnostics);
     if (!shadow.has_value()) {
@@ -644,6 +686,7 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
                     "the scene material shadow vertex shader did not compile to MSL");
     }
     SceneMaterialVertexArtefacts result(allocator);
+    result.depth = std::move(*depth);
     result.visible = std::move(*visible);
     result.shadow = std::move(*shadow);
     return result;

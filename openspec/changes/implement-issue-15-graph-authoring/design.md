@@ -138,11 +138,16 @@ layout. Pipeline states are prepared when the graph changes, before recording a 
 The frame recorder now has a per-draw prepared-pipeline selector and can bind a material's fourth
 descriptor set. A selected depth or shadow program can request the normal and UV streams in
 addition to position. Null-backend command-log tests verify both paths. The scene shader assembler
-now compiles a sine-sway vertex expression to MSL for visible and shadow entries using the frame's
-actual camera-relative transforms, engine time, and material parameter binding. This compiler
-test runs without a Metal device. The scene renderer does not yet create pipeline states from the
-returned artefacts or attach them to material draws. Its mesh currently has no vertex-colour or
-second UV stream, so those graph attributes are refused at shader assembly.
+now compiles a sine-sway vertex expression to MSL for visible, depth, and shadow entries using the
+frame's actual camera-relative transforms, engine time, and material parameter binding. Depth
+reevaluates the expression at the previous time sample for velocity. The compiler test runs
+without a Metal device. `FramePipelines` can now create caller-owned geometry variants from those
+vertex modules with the standard pass attachments, depth rules, and three vertex streams; a null
+backend regression covers all four geometry passes. The scene renderer does not yet create those
+pipeline states or attach them to material draws. Its mesh currently has no vertex-colour or second
+UV stream, so those graph attributes are refused at shader assembly. The authored frame also has
+not yet populated elapsed time or previous object transforms, so the depth shader's previous
+sample is only a compiled path until those inputs are retained.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for

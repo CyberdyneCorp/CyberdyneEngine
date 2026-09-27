@@ -92,12 +92,15 @@ material scene_sway {
     const std::string_view text(unit.data(), unit.size());
     CY_CHECK(text.find("cySceneMaterialVertex") != std::string_view::npos);
     CY_CHECK(text.find("cySceneMaterialShadowVertex") != std::string_view::npos);
+    CY_CHECK(text.find("cySceneMaterialDepthVertex") != std::string_view::npos);
     CY_CHECK(text.find("object_position = modelPosition") != std::string_view::npos);
-    CY_CHECK(text.find("time_seconds = sceneMaterialTime()") != std::string_view::npos);
+    CY_CHECK(text.find("time_seconds = timeSeconds") != std::string_view::npos);
+    CY_CHECK(text.find("sceneMaterialTime() - sceneMaterialDelta()") != std::string_view::npos);
     auto stages = compile_scene_material_vertices(*program, allocator());
     CY_REQUIRE(stages.has_value());
     CY_CHECK_GT(stages->visible.bytes().size(), 0U);
     CY_CHECK_GT(stages->shadow.bytes().size(), 0U);
+    CY_CHECK_GT(stages->depth.bytes().size(), 0U);
 }
 
 CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {

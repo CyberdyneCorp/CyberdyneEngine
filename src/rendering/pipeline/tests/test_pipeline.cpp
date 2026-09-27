@@ -15,6 +15,7 @@
 // table, a device and a render graph, and the taxonomy names all of those as what does not belong
 // in `unit`.
 
+#include "../shaders/frame_spirv.h"
 #include "frame_scene.h"
 
 #include <cy/backends/rhi/backend.h>
@@ -128,6 +129,35 @@ u32 three_stream_bindings(Span<const rhi::null::RecordedCommand> commands) noexc
 }
 
 }  // namespace
+
+CY_TEST_CASE("compiled material vertex shaders can use every scene geometry pass") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    const FramePipelines& frame = scene.pipelines();
+
+    rhi::ShaderModuleDescription description;
+    description.name = "material vertex variant";
+    description.stage = rhi::ShaderStage::Vertex;
+    description.entry_point = "main";
+    description.spirv = Span<const u32>(kFrameForwardVertexSpirv);
+    auto vertex = fixture.device().create_shader_module(description);
+    CY_REQUIRE(vertex.has_value());
+    const u32 standard_count = frame.created();
+    for (FramePipelineKind kind : {FramePipelineKind::Depth, FramePipelineKind::Opaque,
+                                   FramePipelineKind::Transparent, FramePipelineKind::Shadow}) {
+        auto variant = frame.create_vertex_variant(kind, *vertex, frame.layout());
+        CY_REQUIRE(variant.has_value());
+        CY_CHECK_FALSE(variant->is_null());
+        CY_CHECK_NE(variant->bits(), frame.pipeline(kind).bits());
+        fixture.device().destroy_graphics_pipeline(*variant);
+    }
+    CY_CHECK_EQ(frame.created(), standard_count);
+    CY_CHECK_FALSE(
+        frame.create_vertex_variant(FramePipelineKind::Resolve, *vertex, frame.layout()));
+    fixture.device().destroy_shader_module(*vertex);
+}
 
 CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks does not") {
     NullFixture fixture;

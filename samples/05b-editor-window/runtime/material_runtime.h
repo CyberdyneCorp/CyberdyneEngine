@@ -18,8 +18,9 @@ namespace cy::sample::editor_window {
 /// transforms and descriptor convention. The returned MSL is retained for scene pipeline creation.
 struct SceneMaterialVertexArtefacts {
     explicit SceneMaterialVertexArtefacts(Allocator& allocator) noexcept
-        : visible(allocator), shadow(allocator) {}
+        : depth(allocator), visible(allocator), shadow(allocator) {}
 
+    shader::TargetArtefact depth;
     shader::TargetArtefact visible;
     shader::TargetArtefact shadow;
 };
