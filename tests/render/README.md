@@ -172,6 +172,26 @@ Each was seen red under a mutation, regenerated and restored:
 `openspec/changes/add-water-shading/evidence/falsification.txt`. `CY_RENDER_UPDATE_GOLDEN=1 ctest -R
 render.world_water` rewrites the reference and fails, as `render.golden` does.
 
+## Aerial perspective in the world frame — `render.world_aerial_perspective`
+
+Draws with the same committed lit-pipeline SPIR-V, looking level along -Z from 100 m: a dome
+coloured the way `Stage::build_dynamic` colours it — `sky::IncrementalSkyView::update_aerial`'s
+clear sky times the frame's radiance scale, through the emissive path — and flat lit walls at known
+distances. The table bound at set 0, binding 2 is `sky::pack_aerial_perspective()` of an
+`AerialPerspectiveTable` integrated from the same `AtmosphereTables` as that sky.
+
+| Case | Asserts |
+|---|---|
+| the device applies the atmosphere's table | every wall texel of walls at 6 m, 2 km, 30 km, 300 km and 800 km is `lit * T + S` with T and S from `AerialPerspectiveTable::sample_at()` at that texel's surface point, within 0.01 after the tone map; the 6 m wall is within 0.001 of the same wall with aerial perspective off; along the horizon band each wall further out is closer to the sky drawn in the same direction, and the farthest is within 0.03 of it |
+| at the horizon the distant surface meets the sky | a wall 800 km out whose top edge is the horizon: every column's topmost wall texel within 0.03 of the dome texel above it — and more than 0.1 apart with aerial perspective off |
+| a changed atmosphere moves the sky and the distance together | eight times the aerosol, and a sun at 6 degrees instead of 30, each move the sky above the seam by more than 0.05 and move the wall below it by the same amount to within 0.03, and the seam still meets |
+| off is the frame before, and the sky is untouched | with the table's `enabled` word zero every texel is bit-identical to the frame drawn by the world's shaders before this change (`world_before_aerial_perspective_spirv.h`, pinned at 1fe6446); with it on, no dome texel changes and the distant wall does |
+
+Each was seen red under a shader mutation, regenerated and restored:
+`openspec/changes/add-aerial-perspective/evidence/falsification.txt`. `render.world_cloud_shadow`
+and `render.world_water` bind the table switched off, because the pipeline's set 0 now has that
+third binding.
+
 ## The artefact's air — `render.vfx`, whose reference lives here
 
 M11.c task 6.3, `m11c:vfx-in-the-shot`. **The case is declared by `src/vfx/tests/CMakeLists.txt`

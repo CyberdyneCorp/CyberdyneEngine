@@ -10,7 +10,8 @@
 //
 // WHAT IT IS: a Lambert term over a per-vertex colour. Device compute passes produce terrain, sky,
 // and water colours; the processor still produces foliage colours. This shader interpolates those
-// streams and applies one light, attenuated per fragment by the cloud shadow field.
+// streams and applies one light, attenuated per fragment by the cloud shadow field, and then the
+// atmosphere between the surface and the eye.
 //
 // ================================================================================================
 // WHY THE MATRIX IS FOUR EXPLICIT ROWS
@@ -50,6 +51,21 @@
 // byte-identical to the frame before they existed.
 //
 // ================================================================================================
+// AERIAL PERSPECTIVE IS THE SKY'S OWN ATMOSPHERE, APPLIED LAST
+// ================================================================================================
+//
+// `atmosphere-sky-and-clouds` — "Aerial perspective": distance attenuation "SHALL be produced by
+// the atmosphere model", "consistent with the sky". The lit path's radiance is multiplied by the
+// transmittance between the fragment and the eye and the in-scattered light is added, both read
+// from `sky::AerialPerspectiveTable` through `cy/aerial_perspective.slang`. That table is
+// integrated from the same `Atmosphere` and the same tables as the clear sky the dome is drawn
+// with when this is on, and its in-scattering is divided by the dome's own exposure, so a surface
+// far enough away fades into the colour of the sky beside it rather than into a tuned fog colour.
+// The emissive path is not touched: the dome already IS the sky. With the table's `enabled` word
+// zero nothing is read and `lit` is returned as it was, which keeps a frame with aerial
+// perspective off byte-identical to the frame before it existed.
+//
+// ================================================================================================
 // REGENERATING
 // ================================================================================================
 //
@@ -69,6 +85,7 @@
 //          kWorldFragmentMsl=world_fragment.metal
 //   clang-format -i world_spirv.h world_msl.h
 
+import cy.aerial_perspective;
 import cy.cloud_shadow;
 import cy.field;
 
@@ -91,7 +108,8 @@ struct WorldPush
     float4 ambient;
 };
 
-/// The cloud shadow field, and where it sits. Set 0, fragment stage only.
+/// The cloud shadow field, where it sits, and the aerial perspective table. Set 0, fragment stage
+/// only. The name is the cloud shadow's because it was the set's first occupant.
 ///
 /// DECLARED BEFORE THE PUSH BLOCK, and the order is the Metal binding rather than taste: Slang
 /// numbers Metal buffer slots in declaration order, and the Metal backend puts set N at buffer N
@@ -105,6 +123,9 @@ struct WorldCloudShadow
     /// subtraction `environment::image_local()` makes done once on the processor. z: 1 when this
     /// frame reads the field, 0 when cloud shadows are off. w: unused.
     StructuredBuffer<float4> placement;
+    /// `sky::pack_aerial_perspective()`'s words for this frame's camera, or its header alone with
+    /// the `enabled` word zero when aerial perspective is off.
+    StructuredBuffer<float4> aerial;
 };
 
 [[vk::binding(0, 0)]]
@@ -170,6 +191,18 @@ float sunThroughClouds(float3 world)
     return cyCloudShadowAtImage(image, world.x + placement.x, world.y, world.z + placement.y);
 }
 
+/// The lit radiance as the eye receives it, through the air between. See the header comment.
+float3 throughAir(float3 lit, float3 world)
+{
+    CyAerialPerspectiveTable table;
+    table.words = cloudShadow.aerial;
+    if (!cyAerialPerspectiveEnabled(table))
+    {
+        return lit;
+    }
+    return cyApplyAerialPerspective(table, lit, world - push.eye.xyz);
+}
+
 [shader("fragment")]
 float4 worldFragment(VertexOutput input) : SV_Target
 {
@@ -207,5 +240,5 @@ float4 worldFragment(VertexOutput input) : SV_Target
         lit += direct * spec;
     }
 
-    return float4(tonemap(lit), 1.0);
+    return float4(tonemap(throughAir(lit, input.world)), 1.0);
 }

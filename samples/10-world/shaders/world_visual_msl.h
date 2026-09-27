@@ -6,30 +6,31 @@
 
 namespace cy::sample::world {
 
-/// shadeTerrain.metal, 28789 bytes.
-inline constexpr char kWorldShadeTerrainMsl[] = R"cy_msl(#include <metal_stdlib>
+/// shadeTerrain.metal, 28801 bytes.
+inline constexpr char kWorldShadeTerrainMsl[] =
+    R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 46 "samples/10-world/shaders/world_visual.slang"
+#line 51 "samples/10-world/shaders/world_visual.slang"
 float3 loadFloat3_0(uint32_t device* input_0, uint address_0)
 {
 
-#line 46
+#line 51
     uint _S1 = as_type<uint>(input_0[(address_0)>>2]);
 
-#line 46
+#line 51
     uint _S2 = as_type<uint>(input_0[(address_0 + 4U)>>2]);
 
-#line 46
+#line 51
     uint _S3 = as_type<uint>(input_0[(address_0 + 8U)>>2]);
 
     return (as_type<float3>((uint3(_S1, _S2, _S3))));
 }
 
 
-#line 148 "build/release/shaders/cy/field.slang"
+#line 148 "src/rendering/shaders/cy/field.slang"
 bool cyFieldIsImage_0(uint device* image_words_0)
 {
 
@@ -310,7 +311,8 @@ bool cyFieldFindEntry_0(uint device* image_words_2, const CyFieldHeader_0 thread
 #line 294
             }
 
-#line 294
+)cy_msl"
+    R"cy_msl(#line 294
             before_0 = _S9;
 
 #line 293
@@ -612,7 +614,8 @@ float4 cyFieldDecodePoint_0(uint device* image_words_6, const CyFieldHeader_0 th
         else
         {
 
-#line 236
+)cy_msl"
+    R"cy_msl(#line 236
             break;
         }
         uint offset_0 = byteOffset_3 + index_1 * _S19;
@@ -782,8 +785,7 @@ float4 cyFieldReadPoint_0(uint device* image_words_7, const CyFieldHeader_0 thre
 
 #line 426
             payload_1 = _S22;
-)cy_msl"
-                                                R"cy_msl(
+
 #line 426
         }
 
@@ -916,7 +918,8 @@ bool cyFieldSampleLayer_0(uint device* image_words_8, const CyFieldHeader_0 thre
 #line 471
     uint dy_1 = 0U;
 
-
+)cy_msl"
+    R"cy_msl(
     for(;;)
     {
 
@@ -1221,7 +1224,8 @@ CyFieldSample_0 cyFieldSample_0(uint device* image_words_9, float x_3, float y_2
         return answer_0;
     }
 
-#line 541
+)cy_msl"
+    R"cy_msl(#line 541
     CyFieldHeader_0 _S48 = cyFieldReadHeader_0(image_words_9);
 
 #line 541
@@ -1336,7 +1340,7 @@ CyFieldSample_0 cyFieldSample_0(uint device* image_words_9, float x_3, float y_2
 }
 
 
-#line 79 "build/release/shaders/cy/terrain_shade.slang"
+#line 79 "src/rendering/shaders/cy/terrain_shade.slang"
 struct CyTerrainSubstrate_0
 {
     float waterDistanceMetres_0;
@@ -1488,24 +1492,24 @@ float3 cyTerrainShadeAtImages_0(uint device* waterDistance_words_1, uint device*
 }
 
 
-#line 51 "samples/10-world/shaders/world_visual.slang"
+#line 56 "samples/10-world/shaders/world_visual.slang"
 void storeFloat3_0(uint32_t device* output_0, uint address_1, float3 value_5)
 {
     uint3 _S64 = (as_type<uint3>((value_5)));
 
-#line 53
+#line 58
     output_0[(address_1)>>2] = as_type<uint32_t>(_S64[int(0)]);
 
-#line 53
+#line 58
     output_0[(address_1 + 4U)>>2] = as_type<uint32_t>(_S64[int(1)]);
 
-#line 53
+#line 58
     output_0[(address_1 + 8U)>>2] = as_type<uint32_t>(_S64[int(2)]);
     return;
 }
 
 
-#line 7
+#line 8
 struct VisualPush_0
 {
     uint terrainCount_0;
@@ -1523,10 +1527,13 @@ struct VisualPush_0
     float cloudCoverage_0;
     float sunHeight_0;
     float exposure_0;
-    float unusedFloat_0;
+    float atmosphereSky_0;
     float4 fieldOrigin_0;
 };
 
+)cy_msl"
+    R"cy_msl(
+#line 33
 struct VisualResources_default_0
 {
     uint32_t device* terrainVertices_0;
@@ -1542,7 +1549,7 @@ struct VisualResources_default_0
 };
 
 
-#line 28
+#line 33
 struct KernelContext_0
 {
     VisualPush_0 constant* visual_0;
@@ -1550,48 +1557,48 @@ struct KernelContext_0
 };
 
 
-#line 116
+#line 129
 [[kernel]] void shadeTerrain(uint3 index_5 [[thread_position_in_grid]], VisualPush_0 constant* visual_1 [[buffer(1)]], VisualResources_default_0 constant* resources_1 [[buffer(0)]])
 {
 
-#line 116
+#line 129
     thread KernelContext_0 kernelContext_0;
 
-#line 116
+#line 129
     (&kernelContext_0)->visual_0 = visual_1;
 
-#line 116
+#line 129
     (&kernelContext_0)->resources_0 = resources_1;
 
-#line 116
+#line 129
     uint index_6 = index_5.x;
 
     if(index_6 >= (visual_1->terrainCount_0))
     {
 
-#line 119
+#line 132
         return;
     }
 
-#line 120
+#line 133
     uint vertexAddress_0 = index_6 * 24U;
     float3 position_0 = loadFloat3_0((&kernelContext_0)->resources_0->terrainVertices_0, vertexAddress_0);
 
     float slope_2 = 1.0 - saturate(loadFloat3_0((&kernelContext_0)->resources_0->terrainVertices_0, vertexAddress_0 + 12U).y);
 
-#line 123
+#line 136
     uint device* waterDistance_words_2 = (&kernelContext_0)->resources_0->waterDistanceField_0;
 
-#line 123
+#line 136
     uint device* wetness_words_2 = (&kernelContext_0)->resources_0->wetnessField_0;
 
-#line 123
+#line 136
     uint device* snowDepth_words_2 = (&kernelContext_0)->resources_0->snowDepthField_0;
 
-#line 123
+#line 136
     uint device* vegetation_words_2 = (&kernelContext_0)->resources_0->vegetationField_0;
 
-#line 132
+#line 145
     thread CyTerrainPalette_0 palette_2;
     (&palette_2)->rock_0 = float3(0.33000001311302185, 0.31000000238418579, 0.30000001192092896);
     (&palette_2)->sand_0 = float3(0.62000000476837158, 0.56000000238418579, 0.41999998688697815);
@@ -1602,14 +1609,14 @@ struct KernelContext_0
 
     float _S65 = position_0.x + (&kernelContext_0)->visual_0->fieldOrigin_0.x;
 
-#line 140
+#line 153
     float _S66 = position_0.y;
     float _S67 = position_0.z + (&kernelContext_0)->visual_0->fieldOrigin_0.y;
 
-#line 141
+#line 154
     thread CyTerrainPalette_0 _S68 = palette_2;
 
-#line 141
+#line 154
     float3 _S69 = cyTerrainShadeAtImages_0(waterDistance_words_2, wetness_words_2, snowDepth_words_2, vegetation_words_2, &_S68, _S65, _S66, _S67, slope_2, _S66, 132.0);
     storeFloat3_0((&kernelContext_0)->resources_0->terrainColours_0, index_6 * 12U, _S69);
     return;
@@ -1617,30 +1624,31 @@ struct KernelContext_0
 
 )cy_msl";
 
-/// shadeClouds.metal, 24175 bytes.
-inline constexpr char kWorldShadeCloudsMsl[] = R"cy_msl(#include <metal_stdlib>
+/// shadeClouds.metal, 25250 bytes.
+inline constexpr char kWorldShadeCloudsMsl[] =
+    R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 46 "samples/10-world/shaders/world_visual.slang"
+#line 51 "samples/10-world/shaders/world_visual.slang"
 float3 loadFloat3_0(uint32_t device* input_0, uint address_0)
 {
 
-#line 46
+#line 51
     uint _S1 = as_type<uint>(input_0[(address_0)>>2]);
 
-#line 46
+#line 51
     uint _S2 = as_type<uint>(input_0[(address_0 + 4U)>>2]);
 
-#line 46
+#line 51
     uint _S3 = as_type<uint>(input_0[(address_0 + 8U)>>2]);
 
     return (as_type<float3>((uint3(_S1, _S2, _S3))));
 }
 
 
-#line 15 "build/release/shaders/cy/noise.slang"
+#line 15 "src/rendering/shaders/cy/noise.slang"
 uint3 hashPcg3d_0(uint3 value_0)
 {
     uint3 _S4 = value_0 * uint3(1664525U)  + uint3(1013904223U) ;
@@ -1708,7 +1716,7 @@ float valueNoise_0(float3 position_0)
 }
 
 
-#line 56 "samples/10-world/shaders/world_visual.slang"
+#line 61 "samples/10-world/shaders/world_visual.slang"
 float cloudFbm_0(float3 position_1, float3 seedOffset_0)
 {
 
@@ -1717,7 +1725,7 @@ float cloudFbm_0(float3 position_1, float3 seedOffset_0)
 }
 
 
-#line 7
+#line 8
 struct VisualPush_0
 {
     uint terrainCount_0;
@@ -1735,12 +1743,12 @@ struct VisualPush_0
     float cloudCoverage_0;
     float sunHeight_0;
     float exposure_0;
-    float unusedFloat_0;
+    float atmosphereSky_0;
     float4 fieldOrigin_0;
 };
 
 
-#line 99 "build/release/shaders/cy/field.slang"
+#line 99 "src/rendering/shaders/cy/field.slang"
 struct VisualResources_default_0
 {
     uint32_t device* terrainVertices_0;
@@ -1764,7 +1772,7 @@ struct KernelContext_0
 };
 
 
-#line 63 "samples/10-world/shaders/world_visual.slang"
+#line 68 "samples/10-world/shaders/world_visual.slang"
 float cloudDensity_0(float3 position_2, float coverage_0, float3 seedOffset_1, KernelContext_0 thread* kernelContext_0)
 {
     float heightFraction_0 = saturate((position_2.y - 900.0) / 3400.0);
@@ -1773,121 +1781,123 @@ float cloudDensity_0(float3 position_2, float coverage_0, float3 seedOffset_1, K
 
     float3 advected_0 = position_2 - float3(kernelContext_0->visual_0->timeSeconds_0 * 9.0, 0.0, kernelContext_0->visual_0->timeSeconds_0 * 2.5);
 
-#line 76
+#line 81
     return saturate((cloudFbm_0(advected_0 / float3(5200.0) , seedOffset_1) - (0.69999998807907104 - coverage_0 * 0.37999999523162842)) * 4.5) * (0.62000000476837158 + valueNoise_0(advected_0 / float3(780.0)  + seedOffset_1 + float3(71.0, 11.0, 29.0)) * 0.57999998331069946) * (smoothstep(0.0, 0.18000000715255737, heightFraction_0) * (1.0 - smoothstep(0.68000000715255737, 1.0, heightFraction_0)));
 }
 
-float3 composeClouds_0(float3 direction_0, KernelContext_0 thread* kernelContext_1)
+
+#line 95
+float3 composeClouds_0(float3 direction_0, float3 clear_0, KernelContext_0 thread* kernelContext_1)
 {
 
-#line 79
+#line 95
     float3 _S12;
 
-#line 79
+#line 95
     float3 _S13;
 
-#line 79
+#line 95
     float3 _S14;
 
-#line 79
+#line 95
     float _S15;
 
-#line 79
+#line 95
     int _S16;
 
-#line 79
+#line 95
     float transmittance_0;
 
-#line 79
+#line 95
     float3 scattering_0;
 
-#line 79
+#line 95
     float3 _S17;
 
-#line 79
+#line 95
     float _S18;
 
-#line 79
+#line 95
     float3 _S19;
 
-#line 79
+#line 95
     float _S20;
 
-#line 79
+#line 95
     float3 _S21;
 
-#line 79
+#line 95
     float _S22;
 
-#line 79
+#line 95
     float3 _S23;
 
-#line 79
+#line 95
     float _S24;
 
-#line 79
+#line 95
     float3 _S25;
 
-#line 79
+#line 95
     float _S26;
 
-#line 79
+#line 95
     float3 _S27;
 
-#line 79
+#line 95
     float _S28;
 
-#line 79
+#line 95
     float3 _S29;
 
-#line 79
+#line 95
     float _S30;
 
-#line 79
+#line 95
     float3 _S31;
 
-#line 79
+#line 95
     float _S32;
 
-#line 79
+#line 95
     float3 _S33;
 
-#line 79
+#line 95
     float _S34;
 
-#line 79
+#line 95
     float3 _S35;
 
-#line 79
+#line 95
     float _S36;
 
-#line 79
+#line 95
     float3 _S37;
 
-#line 79
+#line 95
     float _S38;
 
-    float _S39 = direction_0.y;
-    float daylight_0 = saturate(kernelContext_1->visual_0->sunHeight_0 * 3.0 + 0.25);
+    float _S39 = saturate(kernelContext_1->visual_0->sunHeight_0 * 3.0 + 0.25);
+    float _S40 = direction_0.y;
 
-    float3 clear_0 = mix(float3(0.0020000000949949, 0.00499999988824129, 0.01799999922513962), float3(0.15999999642372131, 0.43000000715255737, 0.92000001668930054), float3(daylight_0) ) * float3((0.15999999642372131 + 0.8399999737739563 * saturate(_S39 * 0.5 + 0.5))) ;
-    if(_S39 <= 0.02500000037252903)
+#line 98
+    if(_S40 <= 0.02500000037252903)
     {
 
-#line 86
+#line 99
         return clear_0;
     }
     float seed_0 = float((kernelContext_1->visual_0->cloudSeed_0) & 255U);
-    float3 _S40 = float3(seed_0 * 0.37000000476837158, seed_0 * 0.18999999761581421, seed_0 * 0.52999997138977051);
-    float3 _S41 = float3(kernelContext_1->visual_0->fieldOrigin_0.z, 0.0, kernelContext_1->visual_0->fieldOrigin_0.w);
-    float _S42 = 900.0 / _S39;
-    float _S43 = 3400.0 / (_S39 * 12.0);
+    float3 _S41 = float3(seed_0 * 0.37000000476837158, seed_0 * 0.18999999761581421, seed_0 * 0.52999997138977051);
+    float3 _S42 = float3(kernelContext_1->visual_0->fieldOrigin_0.z, 0.0, kernelContext_1->visual_0->fieldOrigin_0.w);
+    float _S43 = 900.0 / _S40;
+    float _S44 = 3400.0 / (_S40 * 12.0);
 
-#line 92
+#line 105
     for(;;)
     {
 
-#line 92
+#line 105
         for(;;)
         {
 
@@ -1895,943 +1905,986 @@ float3 composeClouds_0(float3 direction_0, KernelContext_0 thread* kernelContext
             for(;;)
             {
 
-                float3 position_3 = _S41 + direction_0 * float3((_S42 + _S43 * 0.5)) ;
+                float3 position_3 = _S42 + direction_0 * float3((_S43 + _S44 * 0.5)) ;
 
-#line 99
-                float _S44 = cloudDensity_0(position_3, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S45 = cloudDensity_0(position_3, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_0 = 1.0 - exp(- _S44 * 0.47999998927116394);
+                float extinction_0 = 1.0 - exp(- _S45 * 0.47999998927116394);
                 float heightFraction_1 = saturate((position_3.y - 900.0) / 3400.0);
                 float3 dark_0 = float3(0.14000000059604645, 0.17000000178813934, 0.2199999988079071);
 
-#line 103
+#line 116
                 _S12 = dark_0;
-                float3 bright_0 = float3(1.0, 0.93999999761581421, 0.8399999737739563) * float3((0.30000001192092896 + daylight_0 * 0.69999998807907104)) ;
+                float3 bright_0 = float3(1.0, 0.93999999761581421, 0.8399999737739563) * float3((0.30000001192092896 + _S39 * 0.69999998807907104)) ;
 
-#line 104
+#line 117
                 _S13 = bright_0;
 
-#line 104
+#line 117
                 _S14 = mix(dark_0, bright_0, float3((0.25 + heightFraction_1 * 0.75)) ) * float3(extinction_0) ;
 
 
-                float _S45 = 1.0 - extinction_0;
+                float _S46 = 1.0 - extinction_0;
 
-#line 107
-                _S15 = _S45;
-                if(_S45 < 0.01499999966472387)
+)cy_msl"
+    R"cy_msl(#line 120
+                _S15 = _S46;
+                if(_S46 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             transmittance_0 = _S15;
 
-#line 96
+#line 109
             scattering_0 = _S14;
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_4 = _S41 + direction_0 * float3((_S42 + _S43 * 1.5)) ;
+                float3 position_4 = _S42 + direction_0 * float3((_S43 + _S44 * 1.5)) ;
 
-#line 99
-                float _S46 = cloudDensity_0(position_4, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S47 = cloudDensity_0(position_4, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_1 = 1.0 - exp(- _S46 * 0.47999998927116394);
+                float extinction_1 = 1.0 - exp(- _S47 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_1 = _S14 + mix(_S12, _S13, float3((0.25 + saturate((position_4.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S15 * extinction_1)) ;
 
-#line 106
+#line 119
                 _S17 = scattering_1;
                 float transmittance_1 = _S15 * (1.0 - extinction_1);
 
-#line 107
+#line 120
                 _S18 = transmittance_1;
                 if(transmittance_1 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_1;
 
-#line 108
+#line 121
                     scattering_0 = scattering_1;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 transmittance_0 = _S15;
 
-#line 108
+#line 121
                 scattering_0 = _S14;
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_5 = _S41 + direction_0 * float3((_S42 + _S43 * 2.5)) ;
+                float3 position_5 = _S42 + direction_0 * float3((_S43 + _S44 * 2.5)) ;
 
-#line 99
-                float _S47 = cloudDensity_0(position_5, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S48 = cloudDensity_0(position_5, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_2 = 1.0 - exp(- _S47 * 0.47999998927116394);
+                float extinction_2 = 1.0 - exp(- _S48 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_2 = _S17 + mix(_S12, _S13, float3((0.25 + saturate((position_5.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S18 * extinction_2)) ;
 
-#line 106
+#line 119
                 _S19 = scattering_2;
                 float transmittance_2 = _S18 * (1.0 - extinction_2);
 
-#line 107
+#line 120
                 _S20 = transmittance_2;
                 if(transmittance_2 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_2;
 
-#line 108
+#line 121
                     scattering_0 = scattering_2;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_6 = _S41 + direction_0 * float3((_S42 + _S43 * 3.5)) ;
+                float3 position_6 = _S42 + direction_0 * float3((_S43 + _S44 * 3.5)) ;
 
-#line 99
-                float _S48 = cloudDensity_0(position_6, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S49 = cloudDensity_0(position_6, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_3 = 1.0 - exp(- _S48 * 0.47999998927116394);
+                float extinction_3 = 1.0 - exp(- _S49 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_3 = _S19 + mix(_S12, _S13, float3((0.25 + saturate((position_6.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S20 * extinction_3)) ;
 
-#line 106
+#line 119
                 _S21 = scattering_3;
                 float transmittance_3 = _S20 * (1.0 - extinction_3);
 
-#line 107
+#line 120
                 _S22 = transmittance_3;
                 if(transmittance_3 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_3;
 
-#line 108
+#line 121
                     scattering_0 = scattering_3;
-)cy_msl"
-                                               R"cy_msl(
-#line 108
+
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_7 = _S41 + direction_0 * float3((_S42 + _S43 * 4.5)) ;
+                float3 position_7 = _S42 + direction_0 * float3((_S43 + _S44 * 4.5)) ;
 
-#line 99
-                float _S49 = cloudDensity_0(position_7, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S50 = cloudDensity_0(position_7, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_4 = 1.0 - exp(- _S49 * 0.47999998927116394);
+                float extinction_4 = 1.0 - exp(- _S50 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_4 = _S21 + mix(_S12, _S13, float3((0.25 + saturate((position_7.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S22 * extinction_4)) ;
 
-#line 106
+#line 119
                 _S23 = scattering_4;
                 float transmittance_4 = _S22 * (1.0 - extinction_4);
 
-#line 107
+#line 120
                 _S24 = transmittance_4;
                 if(transmittance_4 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_4;
 
-#line 108
+#line 121
                     scattering_0 = scattering_4;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+)cy_msl"
+    R"cy_msl(#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_8 = _S41 + direction_0 * float3((_S42 + _S43 * 5.5)) ;
+                float3 position_8 = _S42 + direction_0 * float3((_S43 + _S44 * 5.5)) ;
 
-#line 99
-                float _S50 = cloudDensity_0(position_8, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S51 = cloudDensity_0(position_8, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_5 = 1.0 - exp(- _S50 * 0.47999998927116394);
+                float extinction_5 = 1.0 - exp(- _S51 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_5 = _S23 + mix(_S12, _S13, float3((0.25 + saturate((position_8.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S24 * extinction_5)) ;
 
-#line 106
+#line 119
                 _S25 = scattering_5;
                 float transmittance_5 = _S24 * (1.0 - extinction_5);
 
-#line 107
+#line 120
                 _S26 = transmittance_5;
                 if(transmittance_5 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_5;
 
-#line 108
+#line 121
                     scattering_0 = scattering_5;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_9 = _S41 + direction_0 * float3((_S42 + _S43 * 6.5)) ;
+                float3 position_9 = _S42 + direction_0 * float3((_S43 + _S44 * 6.5)) ;
 
-#line 99
-                float _S51 = cloudDensity_0(position_9, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S52 = cloudDensity_0(position_9, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_6 = 1.0 - exp(- _S51 * 0.47999998927116394);
+                float extinction_6 = 1.0 - exp(- _S52 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_6 = _S25 + mix(_S12, _S13, float3((0.25 + saturate((position_9.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S26 * extinction_6)) ;
 
-#line 106
+#line 119
                 _S27 = scattering_6;
                 float transmittance_6 = _S26 * (1.0 - extinction_6);
 
-#line 107
+#line 120
                 _S28 = transmittance_6;
                 if(transmittance_6 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_6;
 
-#line 108
+#line 121
                     scattering_0 = scattering_6;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_10 = _S41 + direction_0 * float3((_S42 + _S43 * 7.5)) ;
+                float3 position_10 = _S42 + direction_0 * float3((_S43 + _S44 * 7.5)) ;
 
-#line 99
-                float _S52 = cloudDensity_0(position_10, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S53 = cloudDensity_0(position_10, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_7 = 1.0 - exp(- _S52 * 0.47999998927116394);
+                float extinction_7 = 1.0 - exp(- _S53 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_7 = _S27 + mix(_S12, _S13, float3((0.25 + saturate((position_10.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S28 * extinction_7)) ;
 
-#line 106
+#line 119
                 _S29 = scattering_7;
                 float transmittance_7 = _S28 * (1.0 - extinction_7);
 
-#line 107
+#line 120
                 _S30 = transmittance_7;
                 if(transmittance_7 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_7;
 
-#line 108
+#line 121
                     scattering_0 = scattering_7;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_11 = _S41 + direction_0 * float3((_S42 + _S43 * 8.5)) ;
+                float3 position_11 = _S42 + direction_0 * float3((_S43 + _S44 * 8.5)) ;
 
-#line 99
-                float _S53 = cloudDensity_0(position_11, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S54 = cloudDensity_0(position_11, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_8 = 1.0 - exp(- _S53 * 0.47999998927116394);
+                float extinction_8 = 1.0 - exp(- _S54 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_8 = _S29 + mix(_S12, _S13, float3((0.25 + saturate((position_11.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S30 * extinction_8)) ;
 
-#line 106
+#line 119
                 _S31 = scattering_8;
                 float transmittance_8 = _S30 * (1.0 - extinction_8);
 
-#line 107
+#line 120
                 _S32 = transmittance_8;
                 if(transmittance_8 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_8;
 
-#line 108
+#line 121
                     scattering_0 = scattering_8;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+)cy_msl"
+    R"cy_msl(#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_12 = _S41 + direction_0 * float3((_S42 + _S43 * 9.5)) ;
+                float3 position_12 = _S42 + direction_0 * float3((_S43 + _S44 * 9.5)) ;
 
-#line 99
-                float _S54 = cloudDensity_0(position_12, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S55 = cloudDensity_0(position_12, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_9 = 1.0 - exp(- _S54 * 0.47999998927116394);
+                float extinction_9 = 1.0 - exp(- _S55 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_9 = _S31 + mix(_S12, _S13, float3((0.25 + saturate((position_12.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S32 * extinction_9)) ;
 
-#line 106
+#line 119
                 _S33 = scattering_9;
                 float transmittance_9 = _S32 * (1.0 - extinction_9);
 
-#line 107
+#line 120
                 _S34 = transmittance_9;
                 if(transmittance_9 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_9;
 
-#line 108
+#line 121
                     scattering_0 = scattering_9;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_13 = _S41 + direction_0 * float3((_S42 + _S43 * 10.5)) ;
+                float3 position_13 = _S42 + direction_0 * float3((_S43 + _S44 * 10.5)) ;
 
-#line 99
-                float _S55 = cloudDensity_0(position_13, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S56 = cloudDensity_0(position_13, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_10 = 1.0 - exp(- _S55 * 0.47999998927116394);
+                float extinction_10 = 1.0 - exp(- _S56 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_10 = _S33 + mix(_S12, _S13, float3((0.25 + saturate((position_13.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S34 * extinction_10)) ;
 
-#line 106
+#line 119
                 _S35 = scattering_10;
                 float transmittance_10 = _S34 * (1.0 - extinction_10);
 
-#line 107
+#line 120
                 _S36 = transmittance_10;
                 if(transmittance_10 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_10;
 
-#line 108
+#line 121
                     scattering_0 = scattering_10;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         for(;;)
         {
 
-#line 96
+#line 109
             for(;;)
             {
 
-                float3 position_14 = _S41 + direction_0 * float3((_S42 + _S43 * 11.5)) ;
+                float3 position_14 = _S42 + direction_0 * float3((_S43 + _S44 * 11.5)) ;
 
-#line 99
-                float _S56 = cloudDensity_0(position_14, kernelContext_1->visual_0->cloudCoverage_0, _S40, kernelContext_1);
+#line 112
+                float _S57 = cloudDensity_0(position_14, kernelContext_1->visual_0->cloudCoverage_0, _S41, kernelContext_1);
 
-                float extinction_11 = 1.0 - exp(- _S56 * 0.47999998927116394);
+                float extinction_11 = 1.0 - exp(- _S57 * 0.47999998927116394);
 
-#line 106
+#line 119
                 float3 scattering_11 = _S35 + mix(_S12, _S13, float3((0.25 + saturate((position_14.y - 900.0) / 3400.0) * 0.75)) ) * float3((_S36 * extinction_11)) ;
 
-#line 106
+#line 119
                 _S37 = scattering_11;
                 float transmittance_11 = _S36 * (1.0 - extinction_11);
 
-#line 107
+#line 120
                 _S38 = transmittance_11;
                 if(transmittance_11 < 0.01499999966472387)
                 {
 
-#line 108
+#line 121
                     _S16 = int(0);
 
-#line 108
+#line 121
                     transmittance_0 = transmittance_11;
 
-#line 108
+#line 121
                     scattering_0 = scattering_11;
 
-#line 108
+#line 121
                     break;
                 }
 
-#line 108
+#line 121
                 _S16 = int(2);
 
-#line 108
+#line 121
                 break;
             }
 
-#line 108
+#line 121
             if(_S16 != int(2))
             {
 
-#line 108
+#line 121
                 break;
             }
 
-#line 96
+#line 109
             _S16 = int(1);
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         if(_S16 != int(1))
         {
 
-#line 96
+#line 109
             break;
         }
 
-#line 96
+#line 109
         transmittance_0 = _S38;
 
-#line 96
+#line 109
         scattering_0 = _S37;
 
-#line 96
+#line 109
         break;
     }
 
-#line 111
+#line 124
     return clear_0 * float3(transmittance_0)  + scattering_0;
 }
 
 
-#line 51
+#line 56
 void storeFloat3_0(uint32_t device* output_0, uint address_1, float3 value_1)
 {
-    uint3 _S57 = (as_type<uint3>((value_1)));
+    uint3 _S58 = (as_type<uint3>((value_1)));
 
-#line 53
-    output_0[(address_1)>>2] = as_type<uint32_t>(_S57[int(0)]);
+#line 58
+    output_0[(address_1)>>2] = as_type<uint32_t>(_S58[int(0)]);
 
-#line 53
-    output_0[(address_1 + 4U)>>2] = as_type<uint32_t>(_S57[int(1)]);
+#line 58
+    output_0[(address_1 + 4U)>>2] = as_type<uint32_t>(_S58[int(1)]);
 
-#line 53
-    output_0[(address_1 + 8U)>>2] = as_type<uint32_t>(_S57[int(2)]);
+#line 58
+    output_0[(address_1 + 8U)>>2] = as_type<uint32_t>(_S58[int(2)]);
     return;
 }
 
 
-#line 147
+#line 86
+float3 standInClear_0(float3 direction_1, KernelContext_0 thread* kernelContext_2)
+{
+
+#line 92
+    return mix(float3(0.0020000000949949, 0.00499999988824129, 0.01799999922513962), float3(0.15999999642372131, 0.43000000715255737, 0.92000001668930054), float3(saturate(kernelContext_2->visual_0->sunHeight_0 * 3.0 + 0.25)) ) * float3((0.15999999642372131 + 0.8399999737739563 * saturate(direction_1.y * 0.5 + 0.5))) ;
+}
+
+
+#line 160
 [[kernel]] void shadeClouds(uint3 index_0 [[thread_position_in_grid]], VisualPush_0 constant* visual_1 [[buffer(1)]], VisualResources_default_0 constant* resources_1 [[buffer(0)]])
 {
 
-#line 147
-    thread KernelContext_0 kernelContext_2;
+#line 160
+    thread KernelContext_0 kernelContext_3;
 
-#line 147
-    (&kernelContext_2)->visual_0 = visual_1;
+#line 160
+    (&kernelContext_3)->visual_0 = visual_1;
 
-#line 147
-    (&kernelContext_2)->resources_0 = resources_1;
+#line 160
+    (&kernelContext_3)->resources_0 = resources_1;
 
-#line 147
+#line 160
     uint index_1 = index_0.x;
 
     if(index_1 >= (visual_1->skyCount_0))
     {
 
-#line 150
+#line 163
         return;
     }
 
-#line 151
-    uint vertex_0 = (&kernelContext_2)->visual_0->skyStart_0 + index_1;
+#line 164
+    uint vertex_0 = (&kernelContext_3)->visual_0->skyStart_0 + index_1;
+    float3 direction_2 = normalize(loadFloat3_0((&kernelContext_3)->resources_0->dynamicVertices_0, vertex_0 * 24U + 12U));
+    if(((&kernelContext_3)->visual_0->atmosphereSky_0) > 0.5)
+    {
 
-#line 151
-    uint32_t device* _S58 = (&kernelContext_2)->resources_0->dynamicColours_0;
+#line 166
+        uint32_t device* _S59 = (&kernelContext_3)->resources_0->dynamicColours_0;
 
-    uint _S59 = vertex_0 * 12U;
+        uint _S60 = vertex_0 * 12U;
 
-#line 153
-    float3 _S60 = composeClouds_0(normalize(loadFloat3_0((&kernelContext_2)->resources_0->dynamicVertices_0, vertex_0 * 24U + 12U)), &kernelContext_2);
+#line 168
+        uint _S61 = as_type<uint>(_S59[(_S60)>>2]);
 
-#line 153
-    storeFloat3_0(_S58, _S59, _S60);
+#line 168
+        uint _S62 = as_type<uint>(_S59[(_S60 + 4U)>>2]);
+
+#line 168
+        uint _S63 = as_type<uint>(_S59[(_S60 + 8U)>>2]);
+
+)cy_msl"
+    R"cy_msl(#line 168
+        uint32_t device* _S64 = (&kernelContext_3)->resources_0->dynamicColours_0;
+
+#line 168
+        float3 _S65 = composeClouds_0(direction_2, (as_type<float3>((uint3(_S61, _S62, _S63)))), &kernelContext_3);
+        storeFloat3_0(_S64, _S60, _S65);
+        return;
+    }
+
+#line 170
+    uint32_t device* _S66 = (&kernelContext_3)->resources_0->dynamicColours_0;
+
+    uint _S67 = vertex_0 * 12U;
+
+#line 172
+    float3 _S68 = standInClear_0(direction_2, &kernelContext_3);
+
+#line 172
+    float3 _S69 = composeClouds_0(direction_2, _S68, &kernelContext_3);
+
+#line 172
+    storeFloat3_0(_S66, _S67, _S69);
+
     return;
 }
 
 )cy_msl";
 
-/// evolveFoam.metal, 4092 bytes.
-inline constexpr char kWorldEvolveFoamMsl[] = R"cy_msl(#include <metal_stdlib>
+/// evolveFoam.metal, 4094 bytes.
+inline constexpr char kWorldEvolveFoamMsl[] =
+    R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 46 "samples/10-world/shaders/world_visual.slang"
+#line 51 "samples/10-world/shaders/world_visual.slang"
 float3 loadFloat3_0(uint32_t device* input_0, uint address_0)
 {
 
-#line 46
+#line 51
     uint _S1 = as_type<uint>(input_0[(address_0)>>2]);
 
-#line 46
+#line 51
     uint _S2 = as_type<uint>(input_0[(address_0 + 4U)>>2]);
 
-#line 46
+#line 51
     uint _S3 = as_type<uint>(input_0[(address_0 + 8U)>>2]);
 
     return (as_type<float3>((uint3(_S1, _S2, _S3))));
@@ -2841,19 +2894,19 @@ void storeFloat3_0(uint32_t device* output_0, uint address_1, float3 value_0)
 {
     uint3 _S4 = (as_type<uint3>((value_0)));
 
-#line 53
+#line 58
     output_0[(address_1)>>2] = as_type<uint32_t>(_S4[int(0)]);
 
-#line 53
+#line 58
     output_0[(address_1 + 4U)>>2] = as_type<uint32_t>(_S4[int(1)]);
 
-#line 53
+#line 58
     output_0[(address_1 + 8U)>>2] = as_type<uint32_t>(_S4[int(2)]);
     return;
 }
 
 
-#line 7
+#line 8
 struct VisualPush_0
 {
     uint terrainCount_0;
@@ -2871,12 +2924,12 @@ struct VisualPush_0
     float cloudCoverage_0;
     float sunHeight_0;
     float exposure_0;
-    float unusedFloat_0;
+    float atmosphereSky_0;
     float4 fieldOrigin_0;
 };
 
 
-#line 99 "build/release/shaders/cy/field.slang"
+#line 99 "src/rendering/shaders/cy/field.slang"
 struct VisualResources_default_0
 {
     uint32_t device* terrainVertices_0;
@@ -2900,20 +2953,20 @@ struct KernelContext_0
 };
 
 
-#line 158 "samples/10-world/shaders/world_visual.slang"
+#line 178 "samples/10-world/shaders/world_visual.slang"
 [[kernel]] void evolveFoam(uint3 index_0 [[thread_position_in_grid]], VisualPush_0 constant* visual_1 [[buffer(1)]], VisualResources_default_0 constant* resources_1 [[buffer(0)]])
 {
 
-#line 158
+#line 178
     thread KernelContext_0 kernelContext_0;
 
-#line 158
+#line 178
     (&kernelContext_0)->visual_0 = visual_1;
 
-#line 158
+#line 178
     (&kernelContext_0)->resources_0 = resources_1;
 
-#line 158
+#line 178
     uint index_1 = index_0.x;
 
 
@@ -2927,10 +2980,10 @@ struct KernelContext_0
 
         *((&kernelContext_0)->resources_0->foamNext_0+index_1) = max((&kernelContext_0)->resources_0->foamPrevious_0[_S5 + _S6] * exp(- (&kernelContext_0)->visual_0->deltaSeconds_0 / 9.0), saturate(sin(float(x_0) * 0.17000000178813934 + (&kernelContext_0)->visual_0->timeSeconds_0 * 0.69999998807907104) * cos(float(y_0) * 0.10999999940395355 - (&kernelContext_0)->visual_0->timeSeconds_0 * 0.40000000596046448) - 0.72000002861022949));
 
-#line 161
+#line 181
     }
 
-#line 172
+#line 192
     if(index_1 < ((&kernelContext_0)->visual_0->waterCount_0))
     {
         uint vertex_0 = (&kernelContext_0)->visual_0->waterStart_0 + index_1;
@@ -2942,10 +2995,10 @@ struct KernelContext_0
 
         storeFloat3_0((&kernelContext_0)->resources_0->dynamicColours_0, vertex_0 * 12U, mix(float3(0.01999999955296516, 0.05000000074505806, 0.07000000029802322), float3(0.85000002384185791, 0.87999999523162842, 0.92000001668930054), float3(saturate(saturate(sin(float(x_1) * 0.17000000178813934 + (&kernelContext_0)->visual_0->timeSeconds_0 * 0.69999998807907104) * cos(float(y_1) * 0.10999999940395355 - (&kernelContext_0)->visual_0->timeSeconds_0 * 0.40000000596046448) - 0.72000002861022949))) ));
 
-#line 172
+#line 192
     }
 
-#line 184
+#line 204
     return;
 }
 
