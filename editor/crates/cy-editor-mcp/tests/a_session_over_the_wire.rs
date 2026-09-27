@@ -1081,6 +1081,7 @@ fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
     let mut editor =
         Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
     editor.open_document("worlds/city.cyworld").unwrap();
+    let _runtime = install_vfx_stage_catalogue(&mut editor);
     let replies = converse(
         &[
             INITIALIZE,
@@ -1097,11 +1098,20 @@ fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
     }
     assert_eq!(result(&replies, 4).get("isError"), &Json::Bool(true));
     assert_eq!(result(&replies, 5).get("isError"), &Json::Bool(false));
+    author_vfx_spawn_stage(&mut editor, reference, "embers_cpu");
+    author_vfx_spawn_stage(&mut editor, reference, "embers_gpu");
     let source = std::fs::read_to_string(sandbox.0.join(reference)).unwrap();
     let saved = VfxDocument::decode_text(&source).unwrap();
     assert_eq!(saved.emitters.len(), 2);
     assert_eq!(saved.emitters[0].path, SimulationPath::CpuRequired);
     assert_eq!(saved.emitters[1].path, SimulationPath::GpuPreferred);
+    for emitter in &saved.emitters {
+        let spawn = &emitter.stages[0].canvas;
+        assert!(spawn.contains("node 1 vfx.constant"));
+        assert!(spawn.contains("node 2 vfx.spawn_count"));
+        assert!(spawn.contains("link 1 out 2 value"));
+        assert!(spawn.contains("prop 1 value 3"));
+    }
     assert_eq!(
         editor
             .documents
@@ -1110,10 +1120,10 @@ fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
             .history()
             .entries()
             .len(),
-        3,
+        11,
     );
 
-    for _ in 0..3 {
+    for _ in 0..11 {
         let reply = converse(
             &[
                 INITIALIZE,
@@ -1124,7 +1134,7 @@ fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
         assert_eq!(result(&reply, 1).get("isError"), &Json::Bool(false));
     }
     assert!(!sandbox.0.join(reference).exists());
-    for _ in 0..3 {
+    for _ in 0..11 {
         let reply = converse(
             &[
                 INITIALIZE,
@@ -1138,6 +1148,107 @@ fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
         std::fs::read_to_string(sandbox.0.join(reference)).unwrap(),
         source
     );
+    let reopened = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"vfx.document.read","arguments":{"reference":"game/two_emitters.cyvfxdoc"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&reopened, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        result(&reopened, 1)
+            .get("structuredContent")
+            .get("source")
+            .as_text(),
+        Some(source.as_str()),
+    );
+}
+
+fn author_vfx_spawn_stage(editor: &mut Editor, reference: &str, emitter: &str) {
+    fn request(id: u32, name: &str, arguments: Json) -> String {
+        Json::object([
+            ("jsonrpc", Json::text("2.0")),
+            ("id", Json::Number(f64::from(id))),
+            ("method", Json::text("tools/call")),
+            (
+                "params",
+                Json::object([("name", Json::text(name)), ("arguments", arguments)]),
+            ),
+        ])
+        .render()
+    }
+    fn stage(reference: &str, emitter: &str, more: &[(&'static str, Json)]) -> Json {
+        let mut fields = vec![
+            ("reference", Json::text(reference)),
+            ("emitter", Json::text(emitter)),
+            ("stage", Json::text("spawn")),
+        ];
+        fields.extend_from_slice(more);
+        Json::object(fields)
+    }
+    let calls = [
+        request(
+            2,
+            "vfx.node.add",
+            stage(
+                reference,
+                emitter,
+                &[
+                    ("node_type", Json::text("vfx.constant")),
+                    ("x", Json::Number(12.0)),
+                    ("y", Json::Number(30.0)),
+                ],
+            ),
+        ),
+        request(
+            3,
+            "vfx.node.add",
+            stage(
+                reference,
+                emitter,
+                &[
+                    ("node_type", Json::text("vfx.spawn_count")),
+                    ("x", Json::Number(90.0)),
+                    ("y", Json::Number(30.0)),
+                ],
+            ),
+        ),
+        request(
+            4,
+            "vfx.node.property.set",
+            stage(
+                reference,
+                emitter,
+                &[
+                    ("node", Json::Number(1.0)),
+                    ("property", Json::text("value")),
+                    ("value", Json::text("3")),
+                ],
+            ),
+        ),
+        request(
+            5,
+            "vfx.node.connect",
+            stage(
+                reference,
+                emitter,
+                &[
+                    ("from", Json::Number(1.0)),
+                    ("from_pin", Json::text("out")),
+                    ("to", Json::Number(2.0)),
+                    ("to_pin", Json::text("value")),
+                ],
+            ),
+        ),
+    ];
+    let lines: Vec<&str> = std::iter::once(INITIALIZE)
+        .chain(calls.iter().map(String::as_str))
+        .collect();
+    let replies = converse(&lines, editor);
+    for index in 1..=4 {
+        assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
+    }
 }
 
 #[test]
