@@ -715,7 +715,16 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     CY_REQUIRE(assemble_scene_material_vertex_unit(*animated_program, animated_unit));
     const std::string_view source(animated_unit.data(), animated_unit.size());
     CY_CHECK(source.find("sin(") != std::string_view::npos);
-    CY_CHECK(source.find("sceneMaterialTime() - sceneMaterialDelta()") != std::string_view::npos);
+    const usize current = source.find("let current = sceneMaterialRelative(");
+    const usize previous = source.find("let previous = sceneMaterialRelative(");
+    const usize previous_point = source.find("let previousPoint =", previous);
+    CY_REQUIRE(current != std::string_view::npos);
+    CY_REQUIRE(previous != std::string_view::npos);
+    CY_REQUIRE(previous_point != std::string_view::npos);
+    CY_CHECK(source.substr(current, previous - current).find("sceneMaterialTime());") !=
+             std::string_view::npos);
+    CY_CHECK(source.substr(previous, previous_point - previous)
+                 .find("sceneMaterialTime() - sceneMaterialDelta());") != std::string_view::npos);
 #endif
 }
 
