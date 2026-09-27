@@ -56,9 +56,10 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
     }
     const graph::Graph& authored = *parsed;
     for (const graph::GraphNode& node : authored.nodes()) {
-        if (node.type.text() == "material.vertex_output") {
+        if (node.type.text() == "material.vertex_output" ||
+            node.type.text() == "material.vertex_interpolant") {
             return fail(ErrorCode::Unsupported,
-                        "authored scene renderer has no vertex-offset material pass");
+                        "authored scene renderer has no vertex-stage material pass");
         }
     }
     if (authored.nodes().size() != 4 || authored.links().size() != 4) {

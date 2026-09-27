@@ -118,7 +118,8 @@ The authored scene renderer maps opaque Diffuse graphs with a constant or `float
 parameter colour to its standard material path, reloading the graph on subsequent
 frames. The Material Graph compiler can validate and save other graphs, but the
 authored scene renderer reports unsupported shapes until it can bind compiled shader
-variants. To regenerate a canonical graph outside the editor, run `cy_material author
+variants. Vertex offset and custom interpolant outputs report the missing scene vertex-stage
+pass by name. To regenerate a canonical graph outside the editor, run `cy_material author
 project/materials/copper_clay.cymatcanvas --graph
 project/materials/copper_clay.cygraph` from this sample directory.
 

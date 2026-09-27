@@ -476,9 +476,10 @@ editor backend also accepts named geometry-source requests and reports the compi
 successful Compile result lists the named geometry
 sources whose variants were produced. Propagating non-static assignments from scene assets
 and build descriptions remains part of issue #15.
-The authored scene frame currently accepts only its standard
-constant-colour graph subset; a graph with `material.vertex_output` reports the missing
-vertex-offset pass explicitly instead of being presented as a generic graph mismatch.
+The authored scene frame currently accepts only its standard constant-colour graph subset;
+`material.vertex_output` and `material.vertex_interpolant` report the missing vertex-stage pass
+explicitly. The hosted compiled-material preview supports both outputs, but the authored scene
+frame does not yet bind compiled material variants.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 

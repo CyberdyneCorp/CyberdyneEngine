@@ -46,6 +46,13 @@ deterministic true
 node 1 "material.vertex_output" v1 {
 }
 )";
+constexpr std::string_view kInterpolantGraph = R"(cygraph 1
+graph "interpolant" version 1
+capability
+deterministic true
+node 1 "material.vertex_interpolant" v1 {
+}
+)";
 constexpr std::string_view kSphere = R"(cyworld 1
 type 1 runtime "Transform"
   field 1 quat "rotation" ""
@@ -481,7 +488,7 @@ void check_graph_material(AuthoredFrame& frame, const first_light::Camera& view)
 
 }  // namespace
 
-CY_TEST_CASE("authored scene material path names its unsupported vertex output") {
+CY_TEST_CASE("authored scene material path names unsupported vertex-stage outputs") {
     std::ifstream source(CY_TEST_PROJECT
                          "/samples/05b-editor-window/project/materials/copper_clay.cygraph");
     CY_REQUIRE(source.good());
@@ -491,11 +498,13 @@ CY_TEST_CASE("authored scene material path names its unsupported vertex output")
     auto accepted = graph_diffuse_colour(surface, allocator());
     CY_REQUIRE(accepted.has_value());
 
-    auto rejected = graph_diffuse_colour(kVertexGraph, allocator());
-    CY_REQUIRE_FALSE(rejected.has_value());
-    CY_CHECK_EQ(rejected.error().code, ErrorCode::Unsupported);
-    CY_CHECK(std::string_view(rejected.error().message).find("vertex-offset material pass") !=
-             std::string_view::npos);
+    for (std::string_view graph : {kVertexGraph, kInterpolantGraph}) {
+        auto rejected = graph_diffuse_colour(graph, allocator());
+        CY_REQUIRE_FALSE(rejected.has_value());
+        CY_CHECK_EQ(rejected.error().code, ErrorCode::Unsupported);
+        CY_CHECK(std::string_view(rejected.error().message).find("vertex-stage material pass") !=
+                 std::string_view::npos);
+    }
 }
 
 // One device and one frame for every stage: the stages run in this order against the same frame,
