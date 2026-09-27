@@ -66,7 +66,7 @@ public:
     AuthoredFrame& operator=(const AuthoredFrame&) = delete;
 
     [[nodiscard]] Status initialize(u32 width, u32 height, const char* project,
-                                    bool temporal = true) noexcept;
+                                    bool temporal = true, bool capture_motion = false) noexcept;
     [[nodiscard]] Status prepare_world(const scene::serialization::World& world) noexcept;
     [[nodiscard]] Status preview(std::string_view reference,
                                  std::string_view canonical_graph) noexcept;
@@ -83,6 +83,8 @@ public:
     }
 #endif
     [[nodiscard]] Span<const u32> pixels() const noexcept { return pixels_.span(); }
+    /// Packed RG16 motion values from the prepass when temporal rendering is enabled.
+    [[nodiscard]] Span<const u32> motion_texels() const noexcept { return motion_texels_.span(); }
     [[nodiscard]] Status publish(const first_light::Camera& camera,
                                  Array<render::GpuInstance>& instances,
                                  Array<render::DrawItem>& draws) const noexcept;
@@ -177,6 +179,7 @@ private:
     Array<rendering::pipeline::InstanceTransform> transforms_;
     Array<render::LightDescription> lights_;
     Array<u32> pixels_;
+    Array<u32> motion_texels_;
 
     std::vector<std::unique_ptr<Mesh>> meshes_;
     std::vector<Instance> instances_;
@@ -196,6 +199,8 @@ private:
     rhi::BufferHandle uvs_;
     rhi::BufferHandle indices_;
     rhi::BufferHandle readback_;
+    rhi::BufferHandle motion_readback_;
+    u32 motion_row_length_ = 0;
     rhi::TextureHandle output_;
     rhi::TextureHandle shadow_color_;
     rhi::TextureHandle shadow_depth_;

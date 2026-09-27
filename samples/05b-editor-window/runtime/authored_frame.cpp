@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <string_view>
 
 namespace cy::sample::editor_window {
@@ -331,6 +332,7 @@ struct AuthoredFrame::Readback {
     rhi::BufferHandle buffer;
     u32 width = 0;
     u32 height = 0;
+    u32 row_length = 0;
 };
 
 struct AuthoredFrame::MaterialVariant {
@@ -361,7 +363,8 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
       texture_server_(allocator),
       transforms_(allocator),
       lights_(allocator),
-      pixels_(allocator) {
+      pixels_(allocator),
+      motion_texels_(allocator) {
 }
 
 Status AuthoredFrame::create_material_variant_layout() noexcept {
@@ -450,6 +453,9 @@ AuthoredFrame::~AuthoredFrame() {
     if (!readback_.is_null()) {
         device_->destroy_buffer(readback_);
     }
+    if (!motion_readback_.is_null()) {
+        device_->destroy_buffer(motion_readback_);
+    }
     if (!output_.is_null()) {
         device_->destroy_texture(output_);
     }
@@ -463,8 +469,8 @@ AuthoredFrame::~AuthoredFrame() {
     pipelines_.shutdown();
 }
 
-Status AuthoredFrame::initialize(u32 width, u32 height, const char* project,
-                                 bool temporal) noexcept {
+Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, bool temporal,
+                                 bool capture_motion) noexcept {
     if (initialized_ || width == 0 || height == 0 || project == nullptr) {
         return fail(ErrorCode::InvalidArgument, "authored frame: invalid initialization");
     }
@@ -554,6 +560,20 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project,
         return make_unexpected(buffer.error());
     }
     readback_ = *buffer;
+    if (temporal && capture_motion) {
+        const u64 row_length = ((u64{width} + 63U) / 64U) * 64U;
+        if (row_length > std::numeric_limits<u32>::max()) {
+            return fail(ErrorCode::OutOfRange, "authored frame: motion row is too wide");
+        }
+        motion_row_length_ = static_cast<u32>(row_length);
+        readback.name = "editor authored motion readback";
+        readback.size = u64{motion_row_length_} * height * sizeof(u32);
+        auto motion_buffer = device_->create_buffer(readback);
+        if (!motion_buffer) {
+            return make_unexpected(motion_buffer.error());
+        }
+        motion_readback_ = *motion_buffer;
+    }
 
     rhi::TextureDescription output;
     output.name = "editor authored frame output";
@@ -1460,6 +1480,7 @@ void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
     const auto& read = *static_cast<const Readback*>(user);
     rhi::BufferTextureCopy region;
     region.texture_extent = rhi::Extent3D{read.width, read.height, 1};
+    region.buffer_row_length = read.row_length;
     context.commands->copy_texture_to_buffer(context.executor->texture(read.output), read.buffer,
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
 }
@@ -1816,7 +1837,7 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
     if (Status status = bindings_.upload(slot, data); !status) {
         return status;
     }
-    Readback read{assembly_.resources().output, readback_, width_, height_};
+    Readback read{assembly_.resources().output, readback_, width_, height_, 0};
     BufferRequest request;
     request.name = "editor authored capture";
     request.size = u64{width_} * height_ * sizeof(u32);
@@ -1829,10 +1850,43 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
     graph_.add_pass("editor capture host", rhi::QueueKind::Graphics)
         .read(destination, rhi::Access::HostRead)
         .side_effect();
+    Readback motion{assembly_.resources().velocity, motion_readback_, width_, height_,
+                    motion_row_length_};
+    if (motion.output != kInvalidResource && !motion.buffer.is_null()) {
+        BufferRequest motion_request;
+        motion_request.name = "editor motion capture";
+        motion_request.size = u64{motion_row_length_} * height_ * sizeof(u32);
+        motion_request.extra_usage = rhi::BufferUsage::TransferDestination;
+        const ResourceId motion_destination = graph_.import_buffer(motion_request, motion.buffer);
+        graph_.add_pass("editor motion capture", rhi::QueueKind::Graphics)
+            .read(motion.output, rhi::Access::TransferRead)
+            .write(motion_destination, rhi::Access::TransferWrite)
+            .record(&AuthoredFrame::readback, &motion);
+        graph_.add_pass("editor motion capture host", rhi::QueueKind::Graphics)
+            .read(motion_destination, rhi::Access::HostRead)
+            .side_effect();
+    }
     GraphExecutor executor(*allocator_, *device_);
     Status executed = assembly_.execute(executor, graph_, report);
     if (executed) {
         executed = device_->wait_idle();
+    }
+    if (executed && motion.output != kInvalidResource && !motion.buffer.is_null()) {
+        if (Status resized = motion_texels_.resize(usize{width_} * height_); !resized) {
+            executed = resized;
+        } else if (const void* mapped = device_->buffer_mapped_pointer(motion.buffer);
+                   mapped == nullptr) {
+            executed = fail(ErrorCode::Internal, "authored frame: motion readback not mapped");
+        } else {
+            const auto* rows = static_cast<const u8*>(mapped);
+            for (u32 row = 0; row < height_; ++row) {
+                std::memcpy(motion_texels_.data() + usize{row} * width_,
+                            rows + usize{row} * motion_row_length_ * sizeof(u32),
+                            usize{width_} * sizeof(u32));
+            }
+        }
+    } else if (motion.output == kInvalidResource) {
+        motion_texels_.clear();
     }
     if (executed) {
         if (Status status = pixels_.resize(usize{width_} * height_); !status) {

@@ -626,8 +626,8 @@ void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSch
 
     AuthoredFrame graph_frame(allocator(), device);
     AuthoredFrame cpu_frame(allocator(), device);
-    CY_REQUIRE(graph_frame.initialize(192, 128, CY_TEST_PROJECT, true));
-    CY_REQUIRE(cpu_frame.initialize(192, 128, CY_TEST_PROJECT, true));
+    CY_REQUIRE(graph_frame.initialize(192, 128, CY_TEST_PROJECT, true, true));
+    CY_REQUIRE(cpu_frame.initialize(192, 128, CY_TEST_PROJECT, true, true));
     const std::string sine_graph = time_vertex_graph();
     CY_REQUIRE(graph_frame.preview(reference, sine_graph));
     const std::string zero_offset =
@@ -645,6 +645,14 @@ void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSch
     CY_REQUIRE(cpu_frame.render(cpu_after, view, true, nullptr, second_time));
     CY_CHECK_GT(differing_pixels(graph_first.span(), graph_frame.pixels()), 100U);
     CY_CHECK_LE(differing_pixels(graph_frame.pixels(), cpu_frame.pixels()), 32U);
+    CY_REQUIRE_EQ(graph_frame.motion_texels().size(), graph_frame.pixels().size());
+    CY_REQUIRE_EQ(cpu_frame.motion_texels().size(), cpu_frame.pixels().size());
+    usize moving = 0;
+    for (u32 texel : graph_frame.motion_texels()) {
+        moving += static_cast<usize>(texel != 0);
+    }
+    CY_CHECK_GT(moving, 20U);
+    CY_CHECK_LE(differing_pixels(graph_frame.motion_texels(), cpu_frame.motion_texels()), 32U);
 }
 #endif
 
@@ -736,13 +744,21 @@ CY_TEST_CASE("authored frame refuses nonfinite material animation time") {
     CY_REQUIRE(device.has_value());
     {
         AuthoredFrame frame(allocator(), **device);
-        CY_REQUIRE(frame.initialize(64, 64, CY_TEST_PROJECT));
+        CY_REQUIRE(frame.initialize(64, 64, CY_TEST_PROJECT, true, true));
         ser::World empty(allocator());
         CY_REQUIRE(ser::read_world(kEmpty, "worlds/empty.cyworld", empty).has_value());
         const Status rendered =
             frame.render(empty, camera(), true, nullptr, std::numeric_limits<f32>::infinity());
         CY_REQUIRE_FALSE(rendered.has_value());
         CY_CHECK_EQ(rendered.error().code, ErrorCode::InvalidArgument);
+        CY_REQUIRE(frame.render(empty, camera(), true, nullptr, 0.0F));
+        CY_CHECK_EQ(frame.motion_texels().size(), 64U * 64U);
+        usize copies = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            copies +=
+                static_cast<usize>(command.kind == rhi::null::CommandKind::CopyTextureToBuffer);
+        }
+        CY_CHECK_EQ(copies, 2U);
     }
     rhi::destroy_device(allocator(), *device);
 }

@@ -113,8 +113,9 @@ The hosted Metal compiled-material path evaluates a graph's `vertex_offset` on t
 and uses the same generated function for its shadow pass. The Metal image test compares a constant
 offset against moving the same mesh on the CPU. The authored scene frame also accepts an optional
 time value for deterministic vertex-animation previews; without it, the frame uses elapsed time.
-Its temporal image test compares two frames of sine displacement with the same mesh translated on
-the CPU, including the previous-frame evaluation used for motion vectors. That pixel comparison
+Its temporal test compares two frames of sine displacement with the same mesh translated on the
+CPU, checking both the final image and the prepass motion texture. Motion readback is enabled only
+for that inspection; ordinary editor frames do not allocate or copy it. The pixel comparison
 requires a native device.
 
 The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
