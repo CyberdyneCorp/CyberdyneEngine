@@ -86,6 +86,14 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE SAME CHECK AS `m11d:lint`, byte for byte, so its declared mutation is copied word for word and
+# the one proof carries here (tools/roadmap/falsify.py, `_carry_to_identical_declarations`).
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 # TASK 7.2 LIVES HERE. `just quality-layers` runs three source-level rules and their negative
 # fixtures: the layer order, the `gpuapi` rule (no Vulkan, Slang or SPIR-V header above
 # src/backends/), and the `barriers` rule — no barrier-emitting symbol outside src/backends/rhi/ and

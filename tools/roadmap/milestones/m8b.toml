@@ -127,6 +127,14 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE SAME CHECK AS `m11d:lint`, byte for byte, so its declared mutation is copied word for word and
+# the one proof carries here (tools/roadmap/falsify.py, `_carry_to_identical_declarations`).
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "the engine's layer order holds with nine new directories in the tree — cy::graph at layer scene depending on nothing above cy::core, cy::animation depending on cy::graph and NOT on cy::ecs or cy::scene, cy::text at layer servers depending on cy::core alone, and cy::rendering-assembly reaching every rendering module and none of them reaching it"

@@ -119,6 +119,14 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE SAME CHECK AS `m11d:lint`, byte for byte, so its declared mutation is copied word for word and
+# the one proof carries here (tools/roadmap/falsify.py, `_carry_to_identical_declarations`).
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "the engine's layer order holds with src/physics/ and src/gameplay/play/ in the tree — both layer 4, and the second depends on the first rather than widening cy::gameplay's list, which is the arrangement tests/test_bypass.cpp's __has_include check exists to protect"
