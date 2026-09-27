@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 311 proven, 377 not yet shown able to fail.
+# 315 proven, 373 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -38,10 +38,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m0"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m0"
@@ -134,10 +134,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m10"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m10"
@@ -305,7 +305,7 @@ criterion = "generated-code"
 digest = "8b08108238322586"
 verdict = "proven against a built tree"
 mutation = "truncate in src/core/reflect/generated/cy_reflect_generated.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
+detail = "as m11d5:generated-code, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -569,7 +569,7 @@ criterion = "generated-code"
 digest = "8b08108238322586"
 verdict = "proven against a built tree"
 mutation = "truncate in src/core/reflect/generated/cy_reflect_generated.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
+detail = "as m11d5:generated-code, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -1254,10 +1254,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11d"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1382,10 +1382,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11d"
 criterion = "ship-sample-on-desktop"
-digest = "df6bc9ef74f70754"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/m11d-records (exit 1): override: CY_BUILD_DIR=build/m11d-records … A GAP IS NOT A PASS. This run returns 1 because something it claims was not satisfied."
+digest = "355930b218edfe33"
+verdict = "proven against a built tree"
+mutation = "delete-lines '{\"engine-revision\", &packages.provenance.engine_revision},' in tools/build/src/package.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 1: error: Recipe `run-ship` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1405,6 +1405,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d5"
+criterion = "device-identity-is-named"
+digest = "2c42289bd2d8d94e"
+verdict = "proven against a built tree"
+mutation = "rename-token 'Microsoft Basic Render Driver' in src/backends/rhi/src/device_identity.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11d5"
 criterion = "format"
 digest = "48992a2b2026a4cb"
 verdict = "proven"
@@ -1421,6 +1429,14 @@ detail = "as m1:four-profiles, the same check byte for byte: red under mutation 
 
 [[proof]]
 ledger = "m11d5"
+criterion = "generated-code"
+digest = "8b08108238322586"
+verdict = "proven against a built tree"
+mutation = "truncate in src/core/reflect/generated/cy_reflect_generated.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
+
+[[proof]]
+ledger = "m11d5"
 criterion = "layering"
 digest = "d915eb4fa3e15cc9"
 verdict = "proven"
@@ -1430,10 +1446,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11d5"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m11d5"
@@ -1461,6 +1477,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1:
 
 [[proof]]
 ledger = "m11d5"
+criterion = "rhi-row-at-complete-grade"
+digest = "fcc95a64d828359c"
+verdict = "proven"
+mutation = "rename-token 'every enabled backend is judged, and the answer names it' in tests/render/test_golden_backends.cpp (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
 criterion = "roadmap-record"
 digest = "060878dbfb9d1099"
 verdict = "proven"
@@ -1481,6 +1505,14 @@ criterion = "specs"
 digest = "204ba26e833d195c"
 verdict = "proven"
 mutation = "delete-lines '#### Scenario:' in openspec/specs/delivery-roadmap/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11d5"
+criterion = "three-backend-images-committed"
+digest = "0f699badcd9e6820"
+verdict = "proven"
+mutation = "delete-lines 'row backend=metal ' in docs/design/images/m11d5-three-backends-metal.manifest (declared)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
@@ -1534,10 +1566,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11e"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m11e"
@@ -1702,10 +1734,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m3"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m3"
@@ -1766,10 +1798,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m4"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m4"
@@ -1814,10 +1846,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m5"
@@ -1862,10 +1894,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5b"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m5b"
@@ -1942,10 +1974,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m6"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m6"
@@ -2006,10 +2038,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m7"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m7"
@@ -2094,10 +2126,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8a"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m8a"
@@ -2158,10 +2190,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8b"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m8b"
@@ -2230,10 +2262,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8c"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m8c"
@@ -2382,10 +2414,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m9"
 criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "as m11d:lint, the same check byte for byte: red unmutated against the build tree build/m11d-records (exit 123): override: CY_BUILD_DIR=build/m11d-records … [1/1] (4/4) Processing file /home/leonardo/work/CyberdyneEngine/src/abi/tests/module/behaviour.c."
+digest = "c85024452cafbfee"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in platform/linux-native/src/x11_display_server.cpp (declared)"
+detail = "as m11d:lint, the same check byte for byte: red under mutation of 1 file(s), rebuilt against build/m11d5-fix (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m9"
@@ -3229,22 +3261,6 @@ detail = "this host cannot evaluate it, so it cannot judge it either: D3D12 exis
 
 [[unproven]]
 ledger = "m11d5"
-criterion = "device-identity-is-named"
-digest = "05e7a3d3d9d966af"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d5"
-criterion = "generated-code"
-digest = "0571f02a45293a0d"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11d5"
 criterion = "golden-images-across-three-backends"
 digest = "7b49d70a1417310d"
 verdict = "not provable here"
@@ -3258,22 +3274,6 @@ digest = "dbed2d2395c26d5b"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: Metal exists only on macOS and this host is Linux with no Apple toolchain; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered — CI job 'milestone-m11d5'"
-
-[[unproven]]
-ledger = "m11d5"
-criterion = "rhi-row-at-complete-grade"
-digest = "6021d475593759c3"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d5"
-criterion = "three-backend-images-committed"
-digest = "26e6a00f8c682b77"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11e"
