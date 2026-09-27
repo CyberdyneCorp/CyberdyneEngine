@@ -149,6 +149,10 @@ saved, read, undone, and redone through the editor's MCP commands. The engine re
 load this exact file in `unit.editor_backend`; they validate both execution paths and produce a
 two-emitter cook. `integration.vfx` also plays the exact cooked document and checks CPU execution,
 GPU-preferred fallback on a device-free world, and publication of both emitters' particles.
+The `committed_two_emitter_sample_can_be_authored_through_mcp_commands` wire test also rebuilds
+its declarations and both stage graphs from an empty project through MCP, then compares the saved
+graph facts with this file. Constant nodes accept one to four finite components separated by
+spaces, such as `0 0 0` for position and `1 0.45 0.12 0.9` for colour.
 In the VFX Graph panel, **Load preview** cooks the open draft and starts an isolated engine
 simulation. Play, Pause, Restart, Scrub, and Apply speed control that simulation. The panel reports
 live and per-emitter particle counts, recent spawn/kill counts, pool usage and shortfall, event

@@ -49,7 +49,7 @@ struct PropertyDesc {
 };
 
 constexpr PropertyDesc kConstant[] = {
-    {1, 2, "value", "0", "Constant numeric value", "numeric", {}}};
+    {1, 0, "value", "0", "One to four space-separated finite components", "vfx-literal", {}}};
 constexpr PropertyDesc kParameter[] = {
     {1, 0, "parameter", {}, "Declared system parameter name", "identifier", {}}};
 constexpr PropertyDesc kAttribute[] = {

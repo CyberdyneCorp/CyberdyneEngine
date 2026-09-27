@@ -729,7 +729,11 @@ CY_TEST_CASE("editor_backend: VFX palette equals the compiler registry") {
             const std::string_view name = read_text(event.payload, event.payload_size, cursor);
             (void)read_text(event.payload, event.payload_size, cursor);  // default
             (void)read_text(event.payload, event.payload_size, cursor);  // tooltip
-            (void)read_text(event.payload, event.payload_size, cursor);  // semantic
+            const std::string_view semantic = read_text(event.payload, event.payload_size, cursor);
+            if (node.name().text() == "vfx.constant" && name == "value") {
+                CY_CHECK_EQ(kind, 0U);
+                CY_CHECK_EQ(semantic, "vfx-literal");
+            }
             (void)read_text(event.payload, event.payload_size, cursor);  // asset kind
             CY_REQUIRE(cursor + 4 <= event.payload_size);
             const cy::u32 choice_count = read_u32(event.payload + cursor);

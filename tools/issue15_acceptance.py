@@ -80,6 +80,13 @@ CRITERIA = (
                 ),
             ),
             Probe(
+                "exact sample authored over MCP",
+                cargo(
+                    "cy-editor-mcp",
+                    "committed_two_emitter_sample_can_be_authored_through_mcp_commands",
+                ),
+            ),
+            Probe(
                 "committed sample reopens",
                 cargo(
                     "cy-editor-interface",
@@ -101,7 +108,6 @@ CRITERIA = (
             ),
         ),
         "Mutate a reference texel away from an image edge; the golden comparison fails.",
-        "Automate authoring this exact two-emitter sample through editor or MCP save/reopen.",
     ),
     Criterion(
         "recook", "Live parameter edits avoid a recook; graph edits request one",

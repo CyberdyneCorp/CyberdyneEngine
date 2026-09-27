@@ -136,10 +136,12 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
     let mut vfx = Writer::new();
     vfx.u32(1);
     vfx.u32(1);
-    vfx.u32(2);
-    for (identity, name, pin, direction) in [
-        (1001, "vfx.constant", "out", 1),
-        (1002, "vfx.spawn_count", "value", 0),
+    vfx.u32(4);
+    for (identity, name, pin, direction, property) in [
+        (1001, "vfx.constant", "out", 1, "value"),
+        (1002, "vfx.parameter", "out", 1, "parameter"),
+        (1029, "vfx.set_attribute", "value", 0, "attribute"),
+        (1031, "vfx.spawn_count", "value", 0, ""),
     ] {
         vfx.u32(identity);
         vfx.u32(1);
@@ -149,16 +151,16 @@ fn install_vfx_stage_catalogue(editor: &mut Editor) -> (std::io::PipeReader, std
         vfx.u8(direction);
         vfx.text(pin);
         vfx.text("value");
-        if direction == 1 {
-            vfx.u32(1);
-            vfx.u32(1);
-            vfx.u8(2);
-            vfx.text("value");
-            vfx.text("0");
-            vfx.text("");
-            vfx.text("Constant value");
-        } else {
+        if property.is_empty() {
             vfx.u32(0);
+        } else {
+            vfx.u32(1);
+            vfx.u32(1);
+            vfx.u8(0);
+            vfx.text(property);
+            vfx.text(if property == "value" { "0" } else { "" });
+            vfx.text("");
+            vfx.text(property);
         }
     }
     for (operation, payload) in [
@@ -1249,6 +1251,259 @@ fn author_vfx_spawn_stage(editor: &mut Editor, reference: &str, emitter: &str) {
     for index in 1..=4 {
         assert_eq!(result(&replies, index).get("isError"), &Json::Bool(false));
     }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "full sample requires a linear MCP command sequence"
+)]
+fn committed_two_emitter_sample_can_be_authored_through_mcp_commands() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    fn call(lines: &mut Vec<String>, name: &str, fields: Vec<(&'static str, Json)>) {
+        let id = u32::try_from(lines.len() + 1).unwrap();
+        let arguments = Json::object(fields);
+        lines.push(
+            Json::object([
+                ("jsonrpc", Json::text("2.0")),
+                ("id", Json::Number(f64::from(id))),
+                ("method", Json::text("tools/call")),
+                (
+                    "params",
+                    Json::object([("name", Json::text(name)), ("arguments", arguments)]),
+                ),
+            ])
+            .render(),
+        );
+    }
+
+    fn stage_fields(reference: &str, emitter: &str, stage: &str) -> Vec<(&'static str, Json)> {
+        vec![
+            ("reference", Json::text(reference)),
+            ("emitter", Json::text(emitter)),
+            ("stage", Json::text(stage)),
+        ]
+    }
+
+    fn normalise_canvas(canvas: &str) -> String {
+        let mut facts: Vec<&str> = canvas
+            .lines()
+            .filter(|line| !line.starts_with("# layout "))
+            .collect();
+        facts.sort_unstable();
+        facts.join("\n")
+    }
+
+    let sandbox = Sandbox::new("vfx-committed-sample-over-mcp");
+    let reference = "game/issue15_two_emitters.cyvfxdoc";
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let _runtime = install_vfx_stage_catalogue(&mut editor);
+    let mut lines = vec![INITIALIZE.to_string()];
+    call(
+        &mut lines,
+        "vfx.document.create",
+        vec![
+            ("reference", Json::text(reference)),
+            ("name", Json::text("Issue15Sparks")),
+        ],
+    );
+    for (emitter, target) in [("CpuEmitter", "cpu"), ("GpuEmitter", "gpu")] {
+        call(
+            &mut lines,
+            "vfx.emitter.add",
+            vec![
+                ("reference", Json::text(reference)),
+                ("name", Json::text(emitter)),
+                ("target", Json::text(target)),
+                ("renderer", Json::text("Sprite")),
+            ],
+        );
+    }
+    call(
+        &mut lines,
+        "vfx.parameter.set",
+        vec![
+            ("reference", Json::text(reference)),
+            ("name", Json::text("speed")),
+            ("kind", Json::text("float")),
+            (
+                "values",
+                Json::Array(
+                    vec![2.0, 0.0, 0.0, 0.0]
+                        .into_iter()
+                        .map(Json::Number)
+                        .collect(),
+                ),
+            ),
+            ("exposed", Json::Bool(true)),
+        ],
+    );
+    call(
+        &mut lines,
+        "vfx.channel.set",
+        vec![
+            ("reference", Json::text(reference)),
+            ("name", Json::text("on_death")),
+            ("max_events_per_frame", Json::Number(128.0)),
+            ("max_chain_depth", Json::Number(2.0)),
+            ("readback", Json::Bool(false)),
+        ],
+    );
+    let attributes = [
+        ("position", "vec3", -100.0, 100.0, 0.0),
+        ("lifetime", "float", 0.0, 8.0, 0.0),
+        ("size", "float", 0.0, 1.0, 0.0),
+        ("color", "vec4", 0.0, 1.0, f64::from(1.0_f32 / 255.0)),
+        ("emission", "float", 0.0, 40000.0, 0.0),
+    ];
+    let constants = [
+        ("position", "0 0 0"),
+        ("lifetime", "2"),
+        ("size", "0.22"),
+        ("color", "1 0.45 0.12 0.9"),
+        ("emission", "14000"),
+    ];
+    for emitter in ["CpuEmitter", "GpuEmitter"] {
+        call(
+            &mut lines,
+            "vfx.emitter.capacity.set",
+            vec![
+                ("reference", Json::text(reference)),
+                ("emitter", Json::text(emitter)),
+                ("capacity", Json::Number(2048.0)),
+            ],
+        );
+        call(
+            &mut lines,
+            "vfx.interface.bind",
+            vec![
+                ("reference", Json::text(reference)),
+                ("emitter", Json::text(emitter)),
+                ("interface", Json::text("texture")),
+            ],
+        );
+        for (name, kind, minimum, maximum, tolerance) in attributes {
+            call(
+                &mut lines,
+                "vfx.attribute.set",
+                vec![
+                    ("reference", Json::text(reference)),
+                    ("emitter", Json::text(emitter)),
+                    ("name", Json::text(name)),
+                    ("kind", Json::text(kind)),
+                    ("minimum", Json::Number(minimum)),
+                    ("maximum", Json::Number(maximum)),
+                    ("tolerance", Json::Number(tolerance)),
+                    ("precision", Json::text("Auto")),
+                ],
+            );
+        }
+        for (node_type, x) in [("vfx.parameter", 12.0), ("vfx.spawn_count", 210.0)] {
+            let mut fields = stage_fields(reference, emitter, "spawn");
+            fields.extend([
+                ("node_type", Json::text(node_type)),
+                ("x", Json::Number(x)),
+                ("y", Json::Number(34.0)),
+            ]);
+            call(&mut lines, "vfx.node.add", fields);
+        }
+        let mut fields = stage_fields(reference, emitter, "spawn");
+        fields.extend([
+            ("node", Json::Number(1.0)),
+            ("property", Json::text("parameter")),
+            ("value", Json::text("speed")),
+        ]);
+        call(&mut lines, "vfx.node.property.set", fields);
+        let mut fields = stage_fields(reference, emitter, "spawn");
+        fields.extend([
+            ("from", Json::Number(1.0)),
+            ("from_pin", Json::text("out")),
+            ("to", Json::Number(2.0)),
+            ("to_pin", Json::text("value")),
+        ]);
+        call(&mut lines, "vfx.node.connect", fields);
+        for (index, (attribute, value)) in constants.into_iter().enumerate() {
+            let index = u32::try_from(index).unwrap();
+            let y = 34.0 + 70.0 * f64::from(index);
+            for (node_type, x) in [("vfx.constant", 12.0), ("vfx.set_attribute", 210.0)] {
+                let mut fields = stage_fields(reference, emitter, "initialise");
+                fields.extend([
+                    ("node_type", Json::text(node_type)),
+                    ("x", Json::Number(x)),
+                    ("y", Json::Number(y)),
+                ]);
+                call(&mut lines, "vfx.node.add", fields);
+            }
+            let source = f64::from(index * 2 + 1);
+            let target = source + 1.0;
+            for (node, property, value) in
+                [(source, "value", value), (target, "attribute", attribute)]
+            {
+                let mut fields = stage_fields(reference, emitter, "initialise");
+                fields.extend([
+                    ("node", Json::Number(node)),
+                    ("property", Json::text(property)),
+                    ("value", Json::text(value)),
+                ]);
+                call(&mut lines, "vfx.node.property.set", fields);
+            }
+            let mut fields = stage_fields(reference, emitter, "initialise");
+            fields.extend([
+                ("from", Json::Number(source)),
+                ("from_pin", Json::text("out")),
+                ("to", Json::Number(target)),
+                ("to_pin", Json::text("value")),
+            ]);
+            call(&mut lines, "vfx.node.connect", fields);
+        }
+    }
+    for (batch, calls) in lines[1..].chunks(40).enumerate() {
+        if batch != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        let requests: Vec<&str> = std::iter::once(INITIALIZE)
+            .chain(calls.iter().map(String::as_str))
+            .collect();
+        let replies = converse(&requests, &mut editor);
+        for index in 1..=calls.len() {
+            assert_eq!(
+                result(&replies, index).get("isError"),
+                &Json::Bool(false),
+                "request {}: {}",
+                batch * 40 + index,
+                result(&replies, index).render()
+            );
+        }
+    }
+
+    let actual =
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap();
+    let expected = VfxDocument::decode_text(include_str!(
+        "../../../../samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc"
+    ))
+    .unwrap();
+    let mut actual_semantic = actual;
+    let mut expected_semantic = expected;
+    for document in [&mut actual_semantic, &mut expected_semantic] {
+        for emitter in &mut document.emitters {
+            for stage in &mut emitter.stages {
+                stage.canvas = normalise_canvas(&stage.canvas);
+            }
+        }
+    }
+    assert_eq!(actual_semantic, expected_semantic);
+    let reopened = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.document.read","arguments":{"reference":"game/issue15_two_emitters.cyvfxdoc"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&reopened, 1).get("isError"), &Json::Bool(false));
 }
 
 #[test]

@@ -173,6 +173,20 @@ impl Property {
                 {
                     return Err(invalid("the value is not an ASCII identifier".into()));
                 }
+                if self.semantic == "vfx-literal" {
+                    let components: Vec<&str> = value.split_ascii_whitespace().collect();
+                    if !(1..=4).contains(&components.len()) {
+                        return Err(invalid(
+                            "the value needs one to four numeric components".into(),
+                        ));
+                    }
+                    for component in components {
+                        let parsed = component.parse::<f64>().map_err(|_| {
+                            invalid("every component must be a finite number".into())
+                        })?;
+                        self.validate_number(parsed, &invalid)?;
+                    }
+                }
             }
             PropertyKind::Bool => {
                 if !matches!(value, "true" | "false") {
@@ -1038,6 +1052,23 @@ mod tests {
             domain: "test".into(),
             required_capabilities: 0,
             vector_lanes: 0,
+        }
+    }
+
+    #[test]
+    fn vfx_constant_property_accepts_one_to_four_finite_space_separated_components() {
+        let property = Property {
+            kind: PropertyKind::Text,
+            semantic: "vfx-literal".into(),
+            minimum: None,
+            maximum: None,
+            ..scalar_property("value")
+        };
+        for value in ["2", "0 0 0", "1 0.45 0.12 0.9"] {
+            property.validate_literal(value).unwrap();
+        }
+        for value in ["", "1 2 3 4 5", "NaN", "1 inf", "1,2", "bad"] {
+            assert!(property.validate_literal(value).is_err(), "{value:?}");
         }
     }
 
