@@ -67,6 +67,11 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source, Alloc
         return fail(ErrorCode::Unsupported,
                     "authored scene renderer has no vertex-stage material pass");
     }
+    if (vertex) {
+        // The compiled fragment owns this graph's surface. The standard material table still
+        // needs a valid row for depth and draw setup, but its colour is not the shaded result.
+        return GraphColour{Vec4{1.0F, 1.0F, 1.0F, 1.0F}, {}, true};
+    }
     if (!vertex && (authored.nodes().size() != 4 || authored.links().size() != 4)) {
         return fail(ErrorCode::Unsupported,
                     "authored frame: only constant-colour diffuse graphs are supported here");
@@ -334,6 +339,7 @@ struct AuthoredFrame::MaterialVariant {
     rhi::ShaderModuleHandle depth_shader;
     rhi::ShaderModuleHandle visible_shader;
     rhi::ShaderModuleHandle shadow_shader;
+    rhi::ShaderModuleHandle fragment_shader;
     rhi::GraphicsPipelineHandle depth_pipeline;
     rhi::GraphicsPipelineHandle visible_pipeline;
     rhi::GraphicsPipelineHandle shadow_pipeline;
@@ -396,8 +402,8 @@ void AuthoredFrame::release_graph_variant(MaterialVariant& variant) noexcept {
             device_->destroy_graphics_pipeline(pipeline);
         }
     }
-    for (rhi::ShaderModuleHandle shader :
-         {variant.depth_shader, variant.visible_shader, variant.shadow_shader}) {
+    for (rhi::ShaderModuleHandle shader : {variant.depth_shader, variant.visible_shader,
+                                           variant.shadow_shader, variant.fragment_shader}) {
         if (!shader.is_null()) {
             device_->destroy_shader_module(shader);
         }
@@ -795,10 +801,6 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     if (program == nullptr || program->vertex_source.text.empty()) {
         return fail(ErrorCode::InvalidArgument, "authored scene material has no vertex expression");
     }
-    if (!program->module.vertex_interpolants().empty()) {
-        return fail(ErrorCode::Unsupported,
-                    "authored scene surface shader cannot consume custom vertex interpolants");
-    }
     auto stages = compile_scene_material_vertices(
         *program, *allocator_,
         format == rhi::ShaderFormat::Msl ? shader::Target::Msl : shader::Target::SpirV);
@@ -807,12 +809,12 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     }
     MaterialVariant variant;
     variant.slot = slot;
-    const auto create_shader = [&](const char* name, const char* entry,
+    const auto create_shader = [&](const char* name, const char* entry, rhi::ShaderStage stage,
                                    const shader::TargetArtefact& artefact,
                                    rhi::ShaderModuleHandle& out) -> Status {
         rhi::ShaderModuleDescription description;
         description.name = name;
-        description.stage = rhi::ShaderStage::Vertex;
+        description.stage = stage;
         if (format == rhi::ShaderFormat::Msl) {
             description.entry_point = entry;
             description.native = artefact.bytes();
@@ -843,20 +845,23 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     struct ShaderRequest {
         const char* name;
         const char* entry;
+        rhi::ShaderStage stage;
         const shader::TargetArtefact* artefact;
         rhi::ShaderModuleHandle* destination;
     };
     const ShaderRequest requests[] = {
-        {"scene material depth", "cySceneMaterialDepthVertex", &stages->depth,
-         &variant.depth_shader},
-        {"scene material visible", "cySceneMaterialVertex", &stages->visible,
-         &variant.visible_shader},
-        {"scene material shadow", "cySceneMaterialShadowVertex", &stages->shadow,
-         &variant.shadow_shader},
+        {"scene material depth", "cySceneMaterialDepthVertex", rhi::ShaderStage::Vertex,
+         &stages->depth, &variant.depth_shader},
+        {"scene material visible", "cySceneMaterialVertex", rhi::ShaderStage::Vertex,
+         &stages->visible, &variant.visible_shader},
+        {"scene material shadow", "cySceneMaterialShadowVertex", rhi::ShaderStage::Vertex,
+         &stages->shadow, &variant.shadow_shader},
+        {"scene material surface", "cySceneMaterialFragment", rhi::ShaderStage::Fragment,
+         &stages->fragment, &variant.fragment_shader},
     };
     for (const ShaderRequest& request : requests) {
-        if (Status status =
-                create_shader(request.name, request.entry, *request.artefact, *request.destination);
+        if (Status status = create_shader(request.name, request.entry, request.stage,
+                                          *request.artefact, *request.destination);
             !status) {
             release_graph_variant(variant);
             return status;
@@ -864,7 +869,10 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     }
     const auto create_pipeline = [&](FramePipelineKind kind, rhi::ShaderModuleHandle shader,
                                      rhi::GraphicsPipelineHandle& out) -> Status {
-        auto created = pipelines_.create_vertex_variant(kind, shader, material_pipeline_layout_);
+        const rhi::ShaderModuleHandle fragment =
+            kind == FramePipelineKind::Opaque ? variant.fragment_shader : rhi::ShaderModuleHandle{};
+        auto created =
+            pipelines_.create_vertex_variant(kind, shader, material_pipeline_layout_, fragment);
         if (!created) {
             return make_unexpected(created.error());
         }

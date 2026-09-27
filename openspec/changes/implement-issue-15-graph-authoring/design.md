@@ -147,10 +147,16 @@ backend regression covers all four geometry passes. The authored frame now compi
 previewed `.cygraph` vertex roots through the engine material compiler to MSL or SPIR-V, retains
 depth, opaque, and shadow pipelines by material slot, and selects them per draw. Parameter defaults
 use the compiled layout in a fourth descriptor set. A null-RHI scene test verifies actual draw
-selection, graph edit rebuild, and restoration of the standard pipeline. The visible surface still
-uses the standard frame fragment shader, so custom vertex interpolants are refused rather than
-silently ignored. Its mesh has no vertex-colour or second UV stream, so those graph attributes are
-refused at shader assembly. The authored frame now supplies elapsed and delta time from its frame
+selection, graph edit rebuild, and restoration of the standard pipeline. The visible variant now
+compiles a graph surface fragment beside the vertex program. `cy.frame` shares its forward lighting
+function with the standard fragment, so compiled surfaces retain the frame's light, irradiance-probe
+and AO treatment. The visible vertex passes typed interpolants and object position to that fragment;
+shadow and depth use the same offset without surface varyings. The frame pipeline accepts a
+caller-owned fragment only for opaque and transparent geometry, keeping fixed depth and shadow
+outputs. The authored mesh has no vertex-colour or second UV stream, so those graph attributes are
+refused at shader assembly. MSL and SPIR-V vertex/fragment compilation, graph lowering, and null-RHI
+draw selection are tested. Native image comparison remains open. The authored frame now supplies
+elapsed and delta time from its frame
 clock, retains previous object placements by stable entity ID and previous camera origin, and
 binds those rows beside each graph material's parameters. The depth vertex evaluates the same
 offset with previous time and placement, and the frame retains temporal history across unchanged

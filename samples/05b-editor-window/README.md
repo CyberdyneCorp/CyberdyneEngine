@@ -120,10 +120,11 @@ scene. **Sync graph properties** in the Inspector adds newly declared graph para
 to objects using the graph. Save the scene separately after editing object values.
 The authored scene renderer maps opaque Diffuse graphs with a constant or `float3`
 parameter colour to its standard material path, reloading the graph on subsequent
-frames. The Material Graph compiler can validate and save other graphs, but the
-authored scene renderer reports unsupported shapes until it can bind compiled shader
-variants. Vertex offset and custom interpolant outputs report the missing scene vertex-stage
-pass by name. To regenerate a canonical graph outside the editor, run `cy_material author
+frames. A graph with vertex outputs uses compiled visible, depth, and shadow vertex programs and a
+compiled surface fragment. Custom `float` through `float4` interpolants can pass from the vertex
+graph to the surface graph. The scene mesh currently supplies position, normal, and UV0; a vertex
+graph requiring vertex colour, UV1, or an environment field is refused with a named reason. Native
+scene pixels still need a device-backed check. To regenerate a canonical graph outside the editor, run `cy_material author
 project/materials/copper_clay.cymatcanvas --graph
 project/materials/copper_clay.cygraph` from this sample directory.
 

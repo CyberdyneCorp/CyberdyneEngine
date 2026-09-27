@@ -84,6 +84,27 @@ link 2 "out" -> 4 "opacity"
 link 3 "out" -> 4 "surface"
 link 5 "out" -> 6 "offset"
 )";
+constexpr std::string_view kSceneInterpolantGraph = R"(cygraph 1
+graph "scene_interpolant" version 1
+capability
+deterministic true
+node 1 "material.object_position" v1 {
+}
+node 2 "material.vertex_interpolant" v1 {
+    prop "symbol" : "name" = "tint"
+}
+node 3 "material.attribute" v1 {
+    prop "symbol" : "name" = "tint"
+    prop "type" : "name" = "float3"
+}
+node 4 "material.diffuse" v1 {
+}
+node 5 "material.output" v1 {
+}
+link 1 "out" -> 2 "value"
+link 3 "out" -> 4 "colour"
+link 4 "out" -> 5 "surface"
+)";
 constexpr std::string_view kSphere = R"(cyworld 1
 type 1 runtime "Transform"
   field 1 quat "rotation" ""
@@ -578,15 +599,15 @@ CY_TEST_CASE("authored scene material path names unsupported vertex-stage output
     }
 }
 
-CY_TEST_CASE("authored scene can retain a constant surface beside a vertex graph") {
+CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     auto refused = graph_diffuse_colour(kSurfaceVertexGraph, allocator());
     CY_REQUIRE_FALSE(refused.has_value());
     auto colour = graph_diffuse_colour(kSurfaceVertexGraph, allocator(), true);
     CY_REQUIRE(colour.has_value());
     CY_CHECK(colour->vertex);
-    CY_CHECK_EQ(colour->value.x, doctest::Approx(0.7F));
-    CY_CHECK_EQ(colour->value.y, doctest::Approx(0.5F));
-    CY_CHECK_EQ(colour->value.z, doctest::Approx(0.2F));
+    CY_CHECK_EQ(colour->value.x, doctest::Approx(1.0F));
+    CY_CHECK_EQ(colour->value.y, doctest::Approx(1.0F));
+    CY_CHECK_EQ(colour->value.z, doctest::Approx(1.0F));
     auto compiled = compile_scene_graph_material(kSurfaceVertexGraph, allocator());
     CY_REQUIRE(compiled.has_value());
     const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
@@ -602,6 +623,23 @@ CY_TEST_CASE("authored scene can retain a constant surface beside a vertex graph
     CY_CHECK_GT(spirv->visible.bytes().size(), 0U);
     CY_CHECK_GT(spirv->depth.bytes().size(), 0U);
     CY_CHECK_GT(spirv->shadow.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->fragment.bytes().size(), 0U);
+}
+
+CY_TEST_CASE("authored scene graph lowers an interpolant into its forward fragment") {
+    auto colour = graph_diffuse_colour(kSceneInterpolantGraph, allocator(), true);
+    CY_REQUIRE(colour.has_value());
+    CY_CHECK(colour->vertex);
+    auto compiled = compile_scene_graph_material(kSceneInterpolantGraph, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    CY_REQUIRE_EQ(program->module.vertex_interpolants().size(), 1U);
+    auto stages = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(stages.has_value());
+    CY_CHECK_GT(stages->visible.bytes().size(), 0U);
+    CY_CHECK_GT(stages->fragment.bytes().size(), 0U);
 }
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
@@ -716,6 +754,18 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
             }
         }
         CY_CHECK_GE(rebuilt, 2U);
+
+        CY_REQUIRE(frame.preview(reference, kSceneInterpolantGraph));
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, view));
+        u32 interpolated_draws = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                ++interpolated_draws;
+            }
+        }
+        CY_CHECK_GE(interpolated_draws, 2U);
 
         std::ifstream saved_file(std::string(CY_TEST_PROJECT) + "/" + reference);
         CY_REQUIRE(saved_file.good());

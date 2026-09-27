@@ -136,20 +136,26 @@ rhi::GraphicsPipelineHandle FramePipelines::pipeline(FramePipelineKind kind) con
 }
 
 Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::create_vertex_variant(
-    FramePipelineKind kind, rhi::ShaderModuleHandle vertex,
-    rhi::PipelineLayoutHandle layout) const noexcept {
+    FramePipelineKind kind, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
+    rhi::ShaderModuleHandle fragment) const noexcept {
     if (!ready_ || vertex.is_null() || layout.is_null()) {
         return fail(ErrorCode::InvalidArgument,
                     "vertex variant requires a ready frame and shaders");
     }
     if (kind == FramePipelineKind::Shadow) {
+        if (!fragment.is_null()) {
+            return fail(ErrorCode::InvalidArgument, "shadow variant has a fixed fragment output");
+        }
         return make_shadow_pipeline(*device_, vertex, layout, true);
     }
     if (kind != FramePipelineKind::Depth && kind != FramePipelineKind::Opaque &&
         kind != FramePipelineKind::Transparent) {
         return fail(ErrorCode::InvalidArgument, "vertex variant requires a geometry pass");
     }
-    return make_geometry_pipeline(*device_, setup_, kind, vertex, layout, true);
+    if (kind == FramePipelineKind::Depth && !fragment.is_null()) {
+        return fail(ErrorCode::InvalidArgument, "depth variant has a fixed fragment output");
+    }
+    return make_geometry_pipeline(*device_, setup_, kind, vertex, layout, true, fragment);
 }
 
 Status FramePipelines::create_modules(rhi::Device& device) noexcept {
@@ -332,8 +338,8 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
 
 Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipeline(
     rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
-    rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
-    bool graph_vertex) const noexcept {
+    rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout, bool graph_vertex,
+    rhi::ShaderModuleHandle fragment) const noexcept {
     const bool depth_only = kind == FramePipelineKind::Depth;
     const bool blended = kind == FramePipelineKind::Transparent;
 
@@ -376,7 +382,9 @@ Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipel
     description.name = frame_pipeline_kind_name(kind);
     description.layout = layout;
     description.vertex_shader = vertex;
-    description.fragment_shader = depth_only ? depth_fragment_ : forward_fragment_;
+    description.fragment_shader = depth_only           ? depth_fragment_
+                                  : fragment.is_null() ? forward_fragment_
+                                                       : fragment;
     description.vertex_bindings = Span<const rhi::VertexBinding>(bindings, stream_count);
     description.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, stream_count);
     usize color_count = 1U;

@@ -384,12 +384,14 @@ public:
     [[nodiscard]] rhi::PipelineLayoutHandle layout() const noexcept { return layout_; }
     [[nodiscard]] rhi::DescriptorSetLayoutHandle set_layout(u32 set) const noexcept;
     [[nodiscard]] rhi::GraphicsPipelineHandle pipeline(FramePipelineKind kind) const noexcept;
-    /// Create a caller-owned geometry pipeline with a compiled material vertex shader. The
-    /// supplied layout must preserve the frame's sets 0-2 and may append material set 3.
-    /// Depth and shadow variants bind all three streams because graph expressions may read UVs.
+    /// Create a caller-owned geometry pipeline with compiled material shaders. The supplied
+    /// layout must preserve the frame's sets 0-2 and may append material set 3. A fragment shader
+    /// may replace the standard one in opaque and transparent passes; depth and shadow keep their
+    /// fixed outputs. Graph vertex variants bind all three streams because expressions may read
+    /// UVs.
     [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> create_vertex_variant(
-        FramePipelineKind kind, rhi::ShaderModuleHandle vertex,
-        rhi::PipelineLayoutHandle layout) const noexcept;
+        FramePipelineKind kind, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
+        rhi::ShaderModuleHandle fragment = {}) const noexcept;
     [[nodiscard]] rhi::SamplerHandle linear_clamp() const noexcept { return sampler_; }
     /// The sampler bound at (set 0, binding 2) — `cy/material.slang`'s `cyMaterialSampler`.
     ///
@@ -413,8 +415,8 @@ private:
     [[nodiscard]] Status create_shadow_pipeline(rhi::Device& device) noexcept;
     [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_geometry_pipeline(
         rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
-        rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
-        bool graph_vertex) const noexcept;
+        rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout, bool graph_vertex,
+        rhi::ShaderModuleHandle fragment = {}) const noexcept;
     [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_shadow_pipeline(
         rhi::Device& device, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
         bool graph_vertex) const noexcept;

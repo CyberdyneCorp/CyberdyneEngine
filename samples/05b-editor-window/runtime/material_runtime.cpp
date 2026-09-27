@@ -11,6 +11,7 @@
 #include <cy/graph/text.h>
 #include <cy/rendering/material/slang_program.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -522,6 +523,7 @@ Status assemble_scene_material_vertex_unit(const CompiledProgram& program, Array
     }
     writer.text(
         std::string_view(program.vertex_source.text.data(), program.vertex_source.text.size()));
+    writer.text(std::string_view(program.source.text.data(), program.source.text.size()));
     Array<char> generated_entry(program.module.allocator());
     if (Status named = rendering::material::entry_point_name(
             program.module.name(), ProgramKind::Primary, QualityTier::High, generated_entry);
@@ -545,8 +547,13 @@ float sceneMaterialDelta()
     return cyGlobalSet.data.deltaSeconds;
 #endif
 }
-float3 sceneMaterialRelative(CyInstanceTransform instance, float3 modelPosition,
-                             float4 packedNormal, float2 uv, float timeSeconds)
+struct SceneMaterialEvaluation
+{
+    float3 relative;
+    CyMaterialVertexResult material;
+};
+SceneMaterialEvaluation sceneMaterialEvaluate(CyInstanceTransform instance, float3 modelPosition,
+                                              float4 packedNormal, float2 uv, float timeSeconds)
 {
     let relative = transformToRelative(instance, modelPosition);
     let normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
@@ -586,24 +593,63 @@ float3 sceneMaterialRelative(CyInstanceTransform instance, float3 modelPosition,
                         "the authored scene mesh cannot supply a vertex graph attribute");
         }
     }
-    writer.text("    return relative + ");
+    writer.text("    let materialVertex = ");
     writer.text({generated_entry.data(), generated_entry.size()});
-    writer.text(R"(_vertex_offset(ctx);
+    writer.text(R"(_vertex(ctx);
+    SceneMaterialEvaluation result;
+    result.relative = relative + materialVertex.offset;
+    result.material = materialVertex;
+    return result;
 }
+float3 sceneMaterialRelative(CyInstanceTransform instance, float3 modelPosition,
+                             float4 packedNormal, float2 uv, float timeSeconds)
+{
+    return sceneMaterialEvaluate(instance, modelPosition, packedNormal, uv, timeSeconds).relative;
+}
+struct CySceneForwardVertex
+{
+    float4 position : SV_Position;
+    float3 relativePosition : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float2 uv : TEXCOORD2;
+    nointerpolation uint drawIndex : TEXCOORD3;
+    float3 objectPosition : TEXCOORD4;
+)");
+    for (usize index = 0; index < program.module.vertex_interpolants().size(); ++index) {
+        const auto& interpolant = program.module.vertex_interpolants()[index];
+        writer.text("    ");
+        writer.text(rendering::material::value_type_name(interpolant.type));
+        writer.text(" vertex_");
+        writer.text(interpolant.name.text());
+        writer.text(" : TEXCOORD");
+        writer.number(static_cast<u32>(index) + 5U);
+        writer.text(";\n");
+    }
+    writer.text(R"(};
 [shader("vertex")]
-CyForwardVertex cySceneMaterialVertex(float3 modelPosition : POSITION,
-                                      float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
+CySceneForwardVertex cySceneMaterialVertex(float3 modelPosition : POSITION,
+                                           float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
 {
     let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
     let instance = cyFrameView.instances[draw.instanceSlot];
-    CyForwardVertex output;
-    output.relativePosition = sceneMaterialRelative(instance, modelPosition, packedNormal, uv,
-                                                    sceneMaterialTime());
+    let evaluated = sceneMaterialEvaluate(instance, modelPosition, packedNormal, uv,
+                                          sceneMaterialTime());
+    CySceneForwardVertex output;
+    output.relativePosition = evaluated.relative;
     output.position = transformToClip(output.relativePosition);
     output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     output.uv = uv;
     output.drawIndex = cyDraw.drawIndex;
-    return output;
+    output.objectPosition = modelPosition;
+)");
+    for (const auto& interpolant : program.module.vertex_interpolants()) {
+        writer.text("    output.vertex_");
+        writer.text(interpolant.name.text());
+        writer.text(" = evaluated.material.");
+        writer.text(interpolant.name.text());
+        writer.text(";\n");
+    }
+    writer.text(R"(    return output;
 }
 [shader("vertex")]
 CyShadowVertex cySceneMaterialShadowVertex(float3 modelPosition : POSITION,
@@ -641,6 +687,54 @@ CyDepthVertex cySceneMaterialDepthVertex(float3 modelPosition : POSITION,
         dot(cyFrameView.frame.previousRelativeToClipRow3, previousPoint));
     output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     return output;
+}
+)");
+    writer.text(R"(
+[shader("fragment")]
+float4 cySceneMaterialFragment(CySceneForwardVertex input) : SV_Target
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+)");
+    for (const Node& node : program.module.nodes()) {
+        if (node.op != Op::Attribute) {
+            continue;
+        }
+        writer.text("    ctx.attributes.");
+        writer.text(node.symbol.text());
+        const auto interpolants = program.module.vertex_interpolants();
+        const auto found = std::find_if(interpolants.begin(), interpolants.end(),
+                                        [&](const auto& root) { return root.name == node.symbol; });
+        if (found != interpolants.end() && found->type == node.type) {
+            writer.text(" = input.vertex_");
+            writer.text(node.symbol.text());
+            writer.text(";\n");
+        } else if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+            writer.text(" = sceneMaterialTime();\n");
+        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
+            writer.text(" = input.relativePosition;\n");
+        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
+            writer.text(" = input.objectPosition;\n");
+        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
+            writer.text(" = input.normal;\n");
+        } else if (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2) {
+            writer.text(" = input.uv;\n");
+        } else {
+            return fail(ErrorCode::Unsupported,
+                        "the authored scene mesh cannot supply a fragment graph attribute");
+        }
+    }
+    writer.text("    CySurface compiled = cyDefaultSurface();\n    ");
+    writer.text({generated_entry.data(), generated_entry.size()});
+    writer.text(R"((ctx, compiled);
+    CyForwardVertex frameInput;
+    frameInput.position = input.position;
+    frameInput.relativePosition = input.relativePosition;
+    frameInput.normal = input.normal;
+    frameInput.uv = input.uv;
+    frameInput.drawIndex = input.drawIndex;
+    return cyShadeForward(cyResolveSurface(compiled), frameInput);
 }
 )");
     return writer.status();
@@ -699,19 +793,20 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
         return make_unexpected(key.error());
     }
     const auto compile_stage =
-        [&](const char* entry,
+        [&](const char* entry, rhi::ShaderStage stage,
             shader::DiagnosticLog& diagnostics) -> Expected<shader::TargetArtefact, Error> {
         shader::CompileRequest request;
         request.source = *published;
         request.entry_point = Name::intern(entry);
-        request.stage = rhi::ShaderStage::Vertex;
+        request.stage = stage;
         request.resolver = library.resolver();
         request.permutations = &metal;
         request.permutation = *key;
         return compiler.compiler->compile_for(request, target, diagnostics);
     };
     shader::DiagnosticLog visible_diagnostics(allocator);
-    auto visible = compile_stage("cySceneMaterialVertex", visible_diagnostics);
+    auto visible =
+        compile_stage("cySceneMaterialVertex", rhi::ShaderStage::Vertex, visible_diagnostics);
     if (!visible.has_value()) {
         for (usize index = 0; index < visible_diagnostics.size(); ++index) {
             std::fprintf(stderr, "scene material visible shader: %s\n",
@@ -721,7 +816,8 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
                     "the scene material visible vertex shader did not compile");
     }
     shader::DiagnosticLog depth_diagnostics(allocator);
-    auto depth = compile_stage("cySceneMaterialDepthVertex", depth_diagnostics);
+    auto depth =
+        compile_stage("cySceneMaterialDepthVertex", rhi::ShaderStage::Vertex, depth_diagnostics);
     if (!depth.has_value()) {
         for (usize index = 0; index < depth_diagnostics.size(); ++index) {
             std::fprintf(stderr, "scene material depth shader: %s\n",
@@ -731,7 +827,8 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
                     "the scene material depth vertex shader did not compile");
     }
     shader::DiagnosticLog shadow_diagnostics(allocator);
-    auto shadow = compile_stage("cySceneMaterialShadowVertex", shadow_diagnostics);
+    auto shadow =
+        compile_stage("cySceneMaterialShadowVertex", rhi::ShaderStage::Vertex, shadow_diagnostics);
     if (!shadow.has_value()) {
         for (usize index = 0; index < shadow_diagnostics.size(); ++index) {
             std::fprintf(stderr, "scene material shadow shader: %s\n",
@@ -740,10 +837,22 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
         return fail(ErrorCode::InvalidArgument,
                     "the scene material shadow vertex shader did not compile");
     }
+    shader::DiagnosticLog fragment_diagnostics(allocator);
+    auto fragment =
+        compile_stage("cySceneMaterialFragment", rhi::ShaderStage::Fragment, fragment_diagnostics);
+    if (!fragment.has_value()) {
+        for (usize index = 0; index < fragment_diagnostics.size(); ++index) {
+            std::fprintf(stderr, "scene material fragment shader: %s\n",
+                         fragment_diagnostics.at(index).message);
+        }
+        return fail(ErrorCode::InvalidArgument,
+                    "the scene material surface fragment shader did not compile");
+    }
     SceneMaterialVertexArtefacts result(allocator);
     result.depth = std::move(*depth);
     result.visible = std::move(*visible);
     result.shadow = std::move(*shadow);
+    result.fragment = std::move(*fragment);
     return result;
 #else
     (void)program;

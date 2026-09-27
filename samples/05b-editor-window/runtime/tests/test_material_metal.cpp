@@ -114,6 +114,34 @@ material scene_sway {
     CY_CHECK_GT(stages->visible.bytes().size(), 0U);
     CY_CHECK_GT(stages->shadow.bytes().size(), 0U);
     CY_CHECK_GT(stages->depth.bytes().size(), 0U);
+    CY_CHECK_GT(stages->fragment.bytes().size(), 0U);
+}
+
+CY_TEST_CASE("authored scene interpolants reach the compiled surface fragment") {
+    constexpr std::string_view source =
+        "material scene_tint { attribute object_position : float3; "
+        "attribute tint : float3; vertex_interpolant tint = object_position; "
+        "surface = diffuse(tint); opacity = 1.0; }";
+    auto material = compile_material(source);
+    const auto* program = material.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*program, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("vertex_tint : TEXCOORD5") != std::string_view::npos);
+    CY_CHECK(shader.find("output.vertex_tint = evaluated.material.tint") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.tint = input.vertex_tint") != std::string_view::npos);
+    CY_CHECK(shader.find("cyShadeForward(cyResolveSurface(compiled), frameInput)") !=
+             std::string_view::npos);
+    auto metal = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(metal.has_value());
+    CY_CHECK_GT(metal->visible.bytes().size(), 0U);
+    CY_CHECK_GT(metal->fragment.bytes().size(), 0U);
+    auto spirv = compile_scene_material_vertices(*program, allocator(), shader::Target::SpirV);
+    CY_REQUIRE(spirv.has_value());
+    CY_CHECK_GT(spirv->visible.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->fragment.bytes().size(), 0U);
 }
 
 CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {

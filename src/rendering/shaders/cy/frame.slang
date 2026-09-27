@@ -764,12 +764,11 @@ float3 probeVolumeAmbient(float3 position, float3 normal, float3 flat)
     return lerp(flat, volume, coverage);
 }
 
-[shader("fragment")]
-public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
+/// Shared forward lighting for the standard material and a compiled scene material surface.
+/// The caller supplies a resolved surface; both paths keep the frame's lights, probes and AO.
+public float4 cyShadeForward(Surface surface, CyForwardVertex input)
 {
     let draw = cyDrawInstances[input.drawIndex];
-    let instance = cyInstances[draw.instanceSlot];
-    let surface = surfaceOf(draw.material, instance.tint.rgb, input.uv);
 
     let normal = normalize(input.normal);
     // Camera-relative, so the camera is at the origin and the direction to it is the negated
@@ -802,4 +801,12 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     color += surface.emission;
     color += ambient;
     return float4(color, surface.opacity);
+}
+
+[shader("fragment")]
+public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
+{
+    let draw = cyDrawInstances[input.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    return cyShadeForward(surfaceOf(draw.material, instance.tint.rgb, input.uv), input);
 }

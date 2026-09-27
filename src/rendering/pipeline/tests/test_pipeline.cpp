@@ -156,6 +156,22 @@ CY_TEST_CASE("compiled material vertex shaders can use every scene geometry pass
     CY_CHECK_EQ(frame.created(), standard_count);
     CY_CHECK_FALSE(
         frame.create_vertex_variant(FramePipelineKind::Resolve, *vertex, frame.layout()));
+
+    description.name = "material fragment variant";
+    description.stage = rhi::ShaderStage::Fragment;
+    description.spirv = Span<const u32>(kFrameForwardFragmentSpirv);
+    auto fragment = fixture.device().create_shader_module(description);
+    CY_REQUIRE(fragment.has_value());
+    for (FramePipelineKind kind : {FramePipelineKind::Opaque, FramePipelineKind::Transparent}) {
+        auto variant = frame.create_vertex_variant(kind, *vertex, frame.layout(), *fragment);
+        CY_REQUIRE(variant.has_value());
+        fixture.device().destroy_graphics_pipeline(*variant);
+    }
+    CY_CHECK_FALSE(
+        frame.create_vertex_variant(FramePipelineKind::Depth, *vertex, frame.layout(), *fragment));
+    CY_CHECK_FALSE(
+        frame.create_vertex_variant(FramePipelineKind::Shadow, *vertex, frame.layout(), *fragment));
+    fixture.device().destroy_shader_module(*fragment);
     fixture.device().destroy_shader_module(*vertex);
 }
 
