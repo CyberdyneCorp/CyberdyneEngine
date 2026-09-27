@@ -124,3 +124,10 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Green command:** `ctest --test-dir build/dev -R '^(unit\.editor_backend|integration\.editor_backend_compile|smoke\.editor_authored_frame_metal)$' --output-on-failure` — 3/3 passed on macOS Metal.
 - **Red mutation:** immediately after `render_test::adopt` in the Metal case, temporarily apply `captured.texels[0] ^= 0x00ffffffU`. The test fails with one differing texel away from edges and worst channel delta 255 at `(0, 0)`. Remove the mutation, rebuild, and rerun; 3/3 pass. The mutation is not committed.
 - **Scope:** the Metal comparison is verified on this Mac. The Vulkan two-emitter image case is present but its pixel assertion has not run here because no Vulkan device is available.
+
+## Material canvas and save history
+
+- **Regression:** `desktop_material_save_and_mcp_share_one_undoable_transaction` opens an engine-catalogue material canvas with a node, saves through the registered command, checks the engine authoring request and both saved files, then checks that undo clears the canvas and redo restores its node. A later unsaved node remains visible when the project source has not changed.
+- **Red mutation:** before material history synchronization, the test failed after undo because the canvas still had one node although the saved graph file had been removed.
+- **Green commands:** the focused regression, 99 shell unit tests, 167 service unit tests, all-target shell/service Clippy, Rust formatting, and strict OpenSpec validation passed locally.
+- **Scope:** this covers the Save transaction and open-canvas history synchronization. Individual material edit commands and MCP parity remain in task 3.4.

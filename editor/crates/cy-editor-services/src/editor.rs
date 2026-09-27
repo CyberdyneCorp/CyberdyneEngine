@@ -1656,6 +1656,12 @@ impl cy_editor_commands::ProjectHost for Editor {
 }
 
 impl Editor {
+    /// Latest material graph save result, used to settle the desktop canvas after asynchronous
+    /// engine authoring completes.
+    pub fn material_graph_save_status(&self) -> &str {
+        &self.graph_save_status
+    }
+
     fn set_local_play_state(&mut self, state: PlayState) {
         // Every viewport, because play is a property of the runtime rather than of a panel: two
         // viewports showing different play states would describe two runtimes.

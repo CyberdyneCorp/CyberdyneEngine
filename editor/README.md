@@ -480,6 +480,9 @@ The desktop Save button and `material.graph.save` over MCP invoke the same regis
 Both send an active scene's static-mesh assignment to the engine, which refuses unsupported
 vertex paths before authoring the canonical graph. Saving a graph and syncing its generated
 Inspector fields form one undo step; undo and redo restore both graph files and scene fields.
+When that save comes from the open Material Graph, undo and redo also reload its canvas from the
+project source. Undoing a newly created graph clears the canvas; an unrelated history step leaves
+unsaved canvas edits alone.
 The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
 and shadow passes. A graph requiring an unbound environment field is refused before replacing the
 last valid preview. The actual wind-field binding remains part of issue #15.

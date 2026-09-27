@@ -40,12 +40,12 @@ use cy_editor_commands::{Arguments, Registry, Scope};
 use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::Revision;
 use cy_editor_core::value::Value;
-use cy_editor_interface::SpecialisedEditors;
 use cy_editor_interface::docking::PanelId;
 use cy_editor_interface::notifications::{Choice, Modal};
 use cy_editor_interface::panels::{PanelKey, PanelTitles};
 use cy_editor_interface::shell::{Shell, panel_title};
 use cy_editor_interface::thumbnails::Thumbnails;
+use cy_editor_interface::{Domain, SpecialisedEditors};
 use cy_editor_reflection::Catalogue;
 use cy_editor_services::notifications::Notification;
 use cy_editor_services::{
@@ -76,6 +76,13 @@ const THUMBNAIL_CACHE: usize = 512;
 /// noticed and long enough that a missing socket costs nothing measurable.
 const REATTACH_INTERVAL: Duration = Duration::from_millis(500);
 
+fn material_canvas_reference(reference: &str) -> String {
+    std::path::Path::new(reference)
+        .with_extension("cymatcanvas")
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// The editor, with a window.
 pub struct EditorWindow {
     /// The authoritative state.
@@ -88,6 +95,10 @@ pub struct EditorWindow {
     shell: Shell,
     specialised: SpecialisedEditors,
     material_catalogue_revision: Revision,
+    /// Last material source displayed by this window, including an undone creation.
+    material_committed: Option<(String, Option<String>)>,
+    /// A desktop save waits for engine authoring before it becomes a history transaction.
+    material_save_pending: Option<(String, String)>,
     vfx_catalogue_revision: Revision,
     /// Last project-backed VFX source seen by this window, including an undone creation.
     vfx_committed: Option<(String, Option<String>)>,
@@ -185,6 +196,8 @@ impl EditorWindow {
             shell,
             specialised,
             material_catalogue_revision: Revision::INITIAL,
+            material_committed: None,
+            material_save_pending: None,
             vfx_catalogue_revision: Revision::INITIAL,
             vfx_committed: None,
             vfx_module_committed: None,
@@ -627,6 +640,10 @@ impl EditorWindow {
             self.perform(action);
             return;
         }
+        if matches!(id, "edit.undo" | "edit.redo") {
+            self.settle_material_save();
+            self.track_open_material();
+        }
         match self
             .registry
             .invoke(id, &self.scope, &mut self.editor, arguments)
@@ -636,6 +653,32 @@ impl EditorWindow {
                     && let Some(reference) = arguments.text("reference")
                 {
                     self.inputs.material_open_reference = Some(reference.into());
+                    if let Some(source) = arguments.text("source")
+                        && self.specialised.active() == Some(Domain::Materials)
+                        && self
+                            .specialised
+                            .open(Domain::Materials)
+                            .ok()
+                            .and_then(|session| session.graph)
+                            .and_then(|canvas| {
+                                cy_editor_interface::specialised::material::canvas_interchange(
+                                    &self.inputs.material_name,
+                                    canvas,
+                                )
+                                .ok()
+                            })
+                            .as_deref()
+                            == Some(source)
+                    {
+                        self.material_save_pending = Some((reference.into(), source.into()));
+                    }
+                }
+                if matches!(id, "edit.undo" | "edit.redo")
+                    && let Err(problem) = self.sync_material_after_history()
+                {
+                    self.editor
+                        .notifications
+                        .post(Notification::error(problem.what.clone(), problem));
                 }
                 if id == "vfx.document.save"
                     && let (Some(reference), Some(source)) =
@@ -731,6 +774,87 @@ impl EditorWindow {
         Ok(())
     }
 
+    fn settle_material_save(&mut self) {
+        let Some((reference, source)) = self.material_save_pending.as_ref() else {
+            return;
+        };
+        let status = self.editor.material_graph_save_status();
+        if status.starts_with("failed:") {
+            self.material_save_pending = None;
+            return;
+        }
+        let canvas_reference = material_canvas_reference(reference);
+        if (status == format!("saved: {reference}")
+            || status.starts_with(&format!("saved: {reference};")))
+            && self
+                .editor
+                .project
+                .read_source(&canvas_reference)
+                .ok()
+                .as_deref()
+                == Some(source)
+        {
+            self.material_committed = Some((reference.clone(), Some(source.clone())));
+            self.material_save_pending = None;
+        }
+    }
+
+    fn track_open_material(&mut self) {
+        if self.material_save_pending.is_some() {
+            return;
+        }
+        let Some(reference) = self.inputs.material_open_reference.as_ref() else {
+            return;
+        };
+        if self.material_committed.as_ref().map(|(path, _)| path) == Some(reference) {
+            return;
+        }
+        if let Ok(source) = self
+            .editor
+            .project
+            .read_source(&material_canvas_reference(reference))
+        {
+            self.material_committed = Some((reference.clone(), Some(source)));
+        }
+    }
+
+    fn sync_material_after_history(&mut self) -> cy_editor_core::problem::Result<()> {
+        let Some((reference, previous)) = self.material_committed.as_ref() else {
+            return Ok(());
+        };
+        if self.specialised.active() != Some(Domain::Materials) {
+            return Ok(());
+        }
+        let reference = reference.clone();
+        let canvas_reference = material_canvas_reference(&reference);
+        let current = if self.editor.project.source_exists(&canvas_reference) {
+            Some(self.editor.project.read_source(&canvas_reference)?)
+        } else {
+            None
+        };
+        if &current == previous {
+            return Ok(());
+        }
+        let canvas = self
+            .specialised
+            .open(Domain::Materials)?
+            .graph
+            .expect("graph domain");
+        if let Some(source) = &current {
+            self.inputs.material_name =
+                cy_editor_interface::specialised::material::load_canvas_interchange(
+                    source, canvas,
+                )?;
+            self.inputs.material_open_reference = Some(reference.clone());
+        } else {
+            canvas.load(canvas.catalogue().clone());
+            self.inputs.material_open_reference = None;
+        }
+        self.inputs.material_preview_source = None;
+        self.material_committed = Some((reference, current));
+        Ok(())
+    }
+
     fn select_added_vfx_emitter(
         &mut self,
         arguments: &Arguments,
@@ -758,7 +882,10 @@ impl EditorWindow {
     }
 
     fn refresh_vfx_sources(&mut self) {
+        self.settle_material_save();
+        self.track_open_material();
         for result in [
+            self.sync_material_after_history(),
             self.sync_vfx_after_history(),
             self.sync_vfx_module_after_history(),
         ] {
@@ -1789,47 +1916,50 @@ mod tests {
         let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
         let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
         let mut window = window();
+        window
+            .specialised
+            .install_material_catalogue(&material_test_catalogue())
+            .unwrap();
+        let canvas = window
+            .specialised
+            .open(Domain::Materials)
+            .unwrap()
+            .graph
+            .unwrap();
+        canvas
+            .add(
+                "material.future",
+                cy_editor_interface::specialised::graph::Layout { x: 28.0, y: 34.0 },
+            )
+            .unwrap();
+        window.inputs.material_name = "sway".into();
         window.editor.project = ProjectService::new(&root);
         window.editor.open_document("worlds/city.cyworld").unwrap();
         window.editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
         let reference = "materials/sway.cygraph";
-        let source = "cymatcanvas 1\nmaterial sway\n";
+        let source = cy_editor_interface::specialised::material::canvas_interchange(
+            &window.inputs.material_name,
+            window
+                .specialised
+                .open(Domain::Materials)
+                .unwrap()
+                .graph
+                .unwrap(),
+        )
+        .unwrap();
         let graph = "cygraph 1\ngraph \"sway\" version 1\ncapability\ndeterministic true\n";
         let mut notifications = window.editor.notifications.cursor();
         window.apply(vec![Intent::Invoke(
             "material.graph.save".into(),
             Arguments::new()
                 .with("reference", Value::Text(reference.into()))
-                .with("source", Value::Text(source.into())),
+                .with("source", Value::Text(source.clone())),
         )]);
         assert_eq!(
             window.inputs.material_open_reference.as_deref(),
             Some(reference)
         );
-        let submitted =
-            Message::decode(&read_frame(&mut runtime_reader).unwrap().unwrap()).unwrap();
-        let Message::ServiceRequest {
-            request, operation, ..
-        } = submitted
-        else {
-            panic!("desktop save did not request engine authoring");
-        };
-        assert_eq!(operation, "material.author");
-        let mut payload = Writer::new();
-        payload.u32(1);
-        payload.u8(1);
-        payload.text(graph);
-        write_frame(
-            &mut runtime_writer,
-            &Message::ServiceEvent {
-                request,
-                kind: ServiceEventKind::Completed,
-                schema_version: 1,
-                payload: payload.finish(),
-            }
-            .encode(),
-        )
-        .unwrap();
+        complete_material_author(&mut runtime_reader, &mut runtime_writer, graph);
         let graph_path = root.join(reference);
         for _ in 0..100 {
             window.editor.pump();
@@ -1853,9 +1983,87 @@ mod tests {
         );
         window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
         assert!(!graph_path.exists());
+        assert_eq!(material_node_count(&mut window), 0);
+        assert_eq!(window.inputs.material_open_reference, None);
         window.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
         assert_eq!(std::fs::read_to_string(graph_path).unwrap(), graph);
+        assert_eq!(material_node_count(&mut window), 1);
+        assert_eq!(
+            window.inputs.material_open_reference.as_deref(),
+            Some(reference)
+        );
+        window
+            .specialised
+            .open(Domain::Materials)
+            .unwrap()
+            .graph
+            .unwrap()
+            .add(
+                "material.future",
+                cy_editor_interface::specialised::graph::Layout { x: 70.0, y: 90.0 },
+            )
+            .unwrap();
+        window.sync_material_after_history().unwrap();
+        assert_eq!(material_node_count(&mut window), 2);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn material_node_count(window: &mut EditorWindow) -> usize {
+        window
+            .specialised
+            .open(Domain::Materials)
+            .unwrap()
+            .graph
+            .unwrap()
+            .nodes()
+            .count()
+    }
+
+    fn material_test_catalogue() -> Vec<u8> {
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(7);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(3);
+        catalogue.text("material.future");
+        catalogue.u32(1);
+        catalogue.u32(9);
+        catalogue.u8(1);
+        catalogue.text("out");
+        catalogue.text("value");
+        catalogue.u32(0);
+        catalogue.finish()
+    }
+
+    fn complete_material_author<R: std::io::Read, W: std::io::Write>(
+        runtime_reader: &mut R,
+        runtime_writer: &mut W,
+        graph: &str,
+    ) {
+        let submitted = Message::decode(&read_frame(runtime_reader).unwrap().unwrap()).unwrap();
+        let Message::ServiceRequest {
+            request, operation, ..
+        } = submitted
+        else {
+            panic!("desktop save did not request engine authoring");
+        };
+        assert_eq!(operation, "material.author");
+        let mut payload = Writer::new();
+        payload.u32(1);
+        payload.u8(1);
+        payload.text(graph);
+        write_frame(
+            runtime_writer,
+            &Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: payload.finish(),
+            }
+            .encode(),
+        )
+        .unwrap();
     }
 
     fn add_vfx_declarations(draft: &mut cy_editor_interface::specialised::vfx::VfxDocument) {
