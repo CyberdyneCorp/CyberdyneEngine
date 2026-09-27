@@ -121,9 +121,31 @@ binding to the engine-owned wind field remains in task 3.1. The typed RGB vertex
 shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
 Environment-field wind binding and the remaining scene geometry sources remain in task 3.1.
-The authored scene frame still uses the standard material path. It now rejects a vertex graph
-with a named missing-pass error before that path can flatten it to a diffuse colour; the
-first-light preview and authored scene frame will be unified under task 3.4.
+The authored scene frame still uses the standard material path. It now rejects offset and
+interpolant outputs with a named missing-pass error before that path can flatten them to a diffuse
+colour; the first-light preview and authored scene frame will be unified under task 3.4.
+
+### Authored scene pipeline integration (open)
+
+`AuthoredFrame` currently asks `graph_diffuse_colour` for one constant diffuse value per graph.
+`FrameRecorder::draw_layer` binds one fixed pipeline before walking a layer, so it cannot select
+a compiled material variant for an individual `DrawItem`. `FramePipelines` has three descriptor
+sets; the generated material prelude expects a per-material parameter binding. The scene path
+must retain the engine-compiled program and its parameter layout instead of reducing it to a
+colour. Its material slot and geometry source select the variant for each draw, and the frame
+recorder binds the matching vertex/fragment program and parameters under a compatible pipeline
+layout. Pipeline states are prepared when the graph changes, before recording a frame.
+
+The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
+expression. Depth also evaluates the expression with previous-frame time and transform for
+velocity, while its current clip position uses the current expression. The previous frame's
+inputs must be retained per view, with the first frame producing no history-dependent motion.
+Typed interpolants belong to the visible program's varying layout and surface context; they are
+not needed in the shadow or depth fragment programs. A compiled variant that cannot satisfy a
+pass or geometry source fails validation before a draw, with the compiler's diagnostic carried
+back to the editor. A scene device test will compare visible pixels, shadow placement, and
+velocity against CPU-displaced geometry using the same time samples, then repeat after a graph
+edit and scene save/reopen.
 
 ## Verification
 
