@@ -1158,7 +1158,17 @@ set -eo pipefail
 # asks for — `just run-ship` — and this runs it through both legs with `--require-draw`, so a leg
 # that presented nothing fails rather than reporting NOT EVALUATED, and exit 3 (it drew and tripped
 # validation, which ship.py records as a GAP) is red as well: the artefact is not shipped over it.
-just run-ship --platform both --require-draw --frames 30
+#
+# THE CAPTURE GOES TO A DIRECTORY THIS RUN OWNS, AND IS COMPARED WITH THE COMMITTED STILLS. The
+# recipe used to recompress both pictures under docs/design/images on every run, so this criterion
+# left the tree modified and the prover could never record it (M11.d's fourth close verdict). Each
+# leg's frame is now read back to `$shots` and must equal `docs/design/images/m11d-ship-<leg>.png`
+# pixel for pixel; the last line holds the two tracked stills to it.
+shots="$(mktemp -d)"
+trap 'rm -rf "$shots"' EXIT
+just run-ship --platform both --require-draw --frames 30 \
+    --shot "$shots/m11d-ship.png" --reference-dir docs/design/images
+git diff --quiet -- docs/design/images/m11d-ship-sdl3.png docs/design/images/m11d-ship-native.png
 '''
 requires = "display"
 reason = "both legs open a window and present to it; `smoke.ship` runs the same recipe's headless leg — build, cook, package, install, verify, launch — on every machine"

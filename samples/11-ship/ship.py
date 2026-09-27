@@ -426,6 +426,38 @@ def act_launch(tools: Tools, report: Report, platform: str, frames: int,
     return text, int(card.group(5))
 
 
+def act_reference(shot: Path, reference_dir: Path, report: Report) -> None:
+    """The presented frame is the committed picture, pixel for pixel.
+
+    THE CAPTURE GOES TO THE RUN, THE PICTURE STAYS IN THE TREE. A ledger criterion that wrote its
+    capture over `docs/design/images/` left the working tree modified after every run, and a check
+    that edits tracked files cannot be proven by mutating the tree. So the run writes its shot where
+    it was told to and COMPARES it with the still of the same name under `reference_dir`; the two
+    legs were measured byte-identical when the stills were captured (M11.d task 8.2), so no
+    tolerance is applied — a difference is either a change to what is drawn or a stale picture,
+    and both are for a person to look at.
+    """
+    from PIL import Image  # the capture recipes' dependency; smoke.ship never reaches this
+
+    committed = reference_dir / shot.name
+    expect(shot.is_file(), f"the launch was asked for {shot} and did not write it")
+    expect(committed.is_file(), f"there is no committed still {committed} to compare {shot} with")
+    with Image.open(shot) as captured, Image.open(committed) as expected:
+        expect(captured.size == expected.size,
+               f"{shot.name} is {captured.size[0]}x{captured.size[1]}, the committed still is "
+               f"{expected.size[0]}x{expected.size[1]}")
+        mine = captured.convert("RGBA").tobytes()
+        theirs = expected.convert("RGBA").tobytes()
+    differing = 0 if mine == theirs else sum(
+        1 for index in range(0, len(mine), 4) if mine[index:index + 4] != theirs[index:index + 4])
+    expect(differing == 0,
+           f"{shot.name}: {differing} pixel(s) differ from {committed} — the frame changed, or the "
+           "committed still is stale; re-capture with `just run-ship --shot "
+           "docs/design/images/m11d-ship.png --platform both` and look at it before committing")
+    report.did("the presented frame is the committed still, pixel for pixel",
+               f"{shot.name} against {committed}")
+
+
 # --- Act 4: the content decides the pixels ----------------------------------------------------------
 
 
@@ -497,6 +529,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--coverage", default=None, help="write the coverage table here")
     parser.add_argument("--require-draw", action="store_true",
                         help="fail the run if nothing was presented")
+    parser.add_argument("--reference-dir", default=None,
+                        help="compare each shot with the committed still of the same name here")
     arguments = parser.parse_args(argv)
 
     report = Report()
@@ -516,15 +550,22 @@ def main(argv: list[str] | None = None) -> int:
         legs = ["sdl3", "native"] if arguments.platform == "both" else [arguments.platform]
         shot = Path(arguments.shot) if arguments.shot else None
         coverage = Path(arguments.coverage) if arguments.coverage else None
+        reference_dir = Path(arguments.reference_dir) if arguments.reference_dir else None
+        expect(reference_dir is None or shot is not None,
+               "--reference-dir compares the shot, so it needs --shot")
         card_bytes = 0
         for leg in legs:
-            _, card_bytes = act_launch(tools, report, leg, arguments.frames,
-                                       leg_path(shot, leg) if len(legs) > 1 else shot,
+            written = leg_path(shot, leg) if len(legs) > 1 else shot
+            # A shot left over from an earlier run must not stand in for this launch's frame.
+            if reference_dir is not None and written.exists():
+                written.unlink()
+            _, card_bytes = act_launch(tools, report, leg, arguments.frames, written,
                                        leg_path(coverage, leg) if len(legs) > 1 else coverage,
                                        arguments.require_draw)
-            written = leg_path(shot, leg) if len(legs) > 1 else shot
             if written is not None and written.is_file():
                 report.shot(written)
+            if reference_dir is not None:
+                act_reference(written, reference_dir, report)
         act_content(tools, report, legs[-1], card_bytes)
     except Failed as failure:
         report.failed(str(failure))

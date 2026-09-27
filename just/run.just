@@ -1210,17 +1210,29 @@ run-ship *args:
 
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     mkdir -p docs/design/images
+    started="$(mktemp)"
+    trap 'rm -f "${started}"' EXIT
     echo "==> run         ship  profile=${profile}"
     python3 samples/11-ship/ship.py --build-dir "${build_dir}" \
         --work "${build_dir}/ship" ${rest}
+    just _ship-stills "${started}"
 
-    # A shot written into docs/design/images is a file that lives in the tree, and the golden-image
-    # suite's PNG writer STORES rather than compresses — the right trade for a byte comparison and
-    # the wrong one here. `collect_ship.py` recompresses and REFUSES to write a file whose pixels
-    # changed, which is the same two lines every other capture recipe in this file runs.
+# A shot written into docs/design/images is a file that lives in the tree, and the golden-image
+# suite's PNG writer STORES rather than compresses — the right trade for a byte comparison and the
+# wrong one here. `collect_ship.py` recompresses and REFUSES to write a file whose pixels changed,
+# which is the same two lines every other capture recipe in this file runs.
+#
+# ONLY THE STILLS THIS RUN WROTE, which is what `since` is: a file created when the run started. The
+# recipe used to recompress whichever committed still existed, so every run — the ledger's
+# `m11d:ship-sample-on-desktop` included, which writes its shot elsewhere — rewrote both tracked
+# pictures and left the tree modified. tools/ci/test_recipes.py holds this.
+_ship-stills since images="docs/design/images":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
     shots=()
-    for shot in docs/design/images/m11d-ship-sdl3.png docs/design/images/m11d-ship-native.png; do
-        [ -f "${shot}" ] && shots+=("${shot}")
+    for shot in "{{images}}/m11d-ship-sdl3.png" "{{images}}/m11d-ship-native.png"; do
+        [ -f "${shot}" ] && [ "${shot}" -nt "{{since}}" ] && shots+=("${shot}")
     done
     if [ "${#shots[@]}" -gt 0 ]; then
         echo "==> recompress  the stills"

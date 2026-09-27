@@ -9,7 +9,14 @@ just run-ship                                            headless: the acts that
 just run-ship --platform sdl3 --frames 240               a window, the card on a swapchain
 just run-ship --platform native --frames 240             the same, with no SDL anywhere
 just run-ship --platform both --shot out.png --require-draw    both legs, both photographed
+just run-ship --platform both --shot /tmp/s/m11d-ship.png --reference-dir docs/design/images
+                                                         ...and each photograph compared, pixel
+                                                         for pixel, with the committed still
 ```
+
+`--shot` names where the frames go and nothing else is written: the recipe recompresses a still
+under `docs/design/images/` only when this run wrote it, so a run that photographs elsewhere leaves
+the tracked pictures byte-for-byte as committed. `m11d:ship-sample-on-desktop` is the last form.
 
 `samples/` held fifteen entries before this one and **not one of them was a packaged project**.
 Every earlier artefact reads its content off a path in the source tree or generates it in the
