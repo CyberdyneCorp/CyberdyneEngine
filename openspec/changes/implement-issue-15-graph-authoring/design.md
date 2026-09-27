@@ -52,7 +52,14 @@ float3 world-space offset. Graph lowering combines them as `offset + normal * di
 the existing typed vertex root; tests confirm the normal reaches visible and shadow vertex programs.
 The text front end accepts the same scalar displacement assignment and graph/text cook identities
 match when both offset and displacement are present.
-Custom interpolants and previous-frame evaluation remain open.
+The IR now retains a sorted array of named `float` through `float4` vertex interpolant roots. The
+name, type, and source content enter the module digest and version 3 encoding. Optimisation and
+visible derivation preserve them, while shadow derivation drops them. Until Slang varyings and the
+graph/text authoring inputs are wired, compilation names every interpolant in a
+`vertex-interpolant-binding-unavailable` error instead of silently omitting its value. The next
+step is to emit a vertex evaluator for these roots and carry its typed results into the fragment
+context; then connect graph/text declarations and the hosted material mesh. Previous-frame
+evaluation remains open.
 
 The material IR first carries a typed `float3` world-space vertex offset root beside its surface
 and opacity roots. Graph and text authoring lower to that same root; its content enters the module

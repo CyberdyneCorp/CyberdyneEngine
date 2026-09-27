@@ -77,7 +77,7 @@ inline constexpr NodeId kInvalidNode = 0xFFFFFFFFU;
 /// The IR's own version. Part of every module digest, so a change to the representation invalidates
 /// derived data without touching an authored material — `material-compiler`'s "a compiler change
 /// invalidates derived shader data without invalidating the material asset itself".
-inline constexpr u32 kIrVersion = 2;
+inline constexpr u32 kIrVersion = 3;
 
 /// What a value is. Semantic role is carried by the op and the symbol, not by a second enumeration:
 /// a `Vec3` that is a colour is a `Vec3` reaching a closure's colour operand, and that is exactly
@@ -257,6 +257,13 @@ struct TextureDecl {
     bool shadow_critical = false;
 };
 
+/// A numeric value computed per vertex and passed to the surface stage by name.
+struct VertexInterpolant {
+    Name name;
+    NodeId value = kInvalidNode;
+    ValueType type = ValueType::Float;
+};
+
 /// A material as the compiler sees it: nodes, roots, declarations, and the two side tables.
 ///
 /// Immutable. Every module comes out of a `Builder`, including the ones a pass produces — that is
@@ -287,6 +294,9 @@ public:
     /// World-space displacement evaluated at the vertex stage. A float3 root is retained across
     /// optimisation and derivation, including shadow programs with no fragment work.
     [[nodiscard]] NodeId vertex_offset() const noexcept { return vertex_offset_; }
+    [[nodiscard]] Span<const VertexInterpolant> vertex_interpolants() const noexcept {
+        return vertex_interpolants_.span();
+    }
 
     /// The module's identity: `kIrVersion`, the material's name, and the roots' content hashes.
     [[nodiscard]] u64 digest() const noexcept { return digest_; }
@@ -320,6 +330,7 @@ private:
     Array<NodeId> operand_pool_;
     Array<ParameterDecl> parameters_;
     Array<TextureDecl> textures_;
+    Array<VertexInterpolant> vertex_interpolants_;
     Array<u8> flags_;
     /// Provenance, flattened: `origin_begin_[id] .. origin_begin_[id + 1]` into `origin_pool_`.
     Array<u32> origin_begin_;
@@ -418,6 +429,8 @@ public:
     [[nodiscard]] Status set_opacity(NodeId id) noexcept;
     /// Refuse non-float3 values before a vertex expression enters the material IR.
     [[nodiscard]] Status set_vertex_offset(NodeId id) noexcept;
+    /// Names are unique and values must be floating point scalars or vectors.
+    [[nodiscard]] Status set_vertex_interpolant(Name name, NodeId id) noexcept;
 
     /// Finish. The builder is empty afterwards and must not be reused.
     ///
@@ -457,7 +470,7 @@ private:
 
 /// The wire format's magic and version. Bumping `kModuleFormatVersion` invalidates cooked material
 /// data and no authored asset.
-inline constexpr u32 kModuleFormatVersion = 2;
+inline constexpr u32 kModuleFormatVersion = 3;
 
 /// Encode a module. Deterministic: two encodes of one module produce identical bytes, which is what
 /// lets the cook key be a digest over these bytes.

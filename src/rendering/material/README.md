@@ -87,6 +87,12 @@ content enters the material digest and versioned module encoding; optimisation a
 derivation retain it for visible and shadow programs. Graph lowering and the text front end
 (`vertex_offset = ...;`) require a float3 expression. Displaced frame rendering remains under
 issue #15.
+The IR also stores named floating point vertex interpolant roots (`float` through `float4`). Their
+names and source expressions enter the digest and version 3 module encoding, independent of
+declaration order. Optimisation and visible-program derivation retain them; shadow derivation drops
+them because shadows have no surface consumer. The compiler currently reports
+`vertex-interpolant-binding-unavailable` for each name until shader varyings and authoring inputs
+are connected. It will not cook a material that would silently discard an interpolant.
 The engine material catalogue assigns `material.vertex_output` a stable identity and marks it as a
 vertex-only node. Wiring its `offset` pin lowers to the same IR root as the text assignment.
 Its `displacement` pin accepts a scalar distance along the `normal` attribute. Graph lowering

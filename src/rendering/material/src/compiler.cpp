@@ -210,14 +210,15 @@ struct Build {
         if (Status added = report.push_back(path); !added) {
             return added;
         }
-        if (primary.vertex_offset() == kInvalidNode ||
+        if ((primary.vertex_offset() == kInvalidNode && primary.vertex_interpolants().empty()) ||
             path != GeometrySourceKind::VirtualGeometry) {
             continue;
         }
-        if (Status said = say(diagnostics, DiagnosticSeverity::Error, "vertex-geometry-unsupported",
-                              "virtual geometry has no vertex-offset evaluation in the visibility "
-                              "and shadow paths",
-                              Name::intern(geometry_source_kind_name(path)));
+        if (Status said =
+                say(diagnostics, DiagnosticSeverity::Error, "vertex-geometry-unsupported",
+                    "virtual geometry has no vertex material evaluation in the visibility "
+                    "and shadow paths",
+                    Name::intern(geometry_source_kind_name(path)));
             !said) {
             return said;
         }
@@ -228,8 +229,16 @@ struct Build {
 [[nodiscard]] Status check_vertex_operations(const Module& primary,
                                              Array<CompileDiagnostic>& diagnostics,
                                              Allocator& allocator) noexcept {
-    if (primary.vertex_offset() == kInvalidNode) {
+    if (primary.vertex_offset() == kInvalidNode && primary.vertex_interpolants().empty()) {
         return ok();
+    }
+    for (const VertexInterpolant& interpolant : primary.vertex_interpolants()) {
+        if (Status said = say(
+                diagnostics, DiagnosticSeverity::Error, "vertex-interpolant-binding-unavailable",
+                "this renderer has no vertex-to-surface interpolant binding yet", interpolant.name);
+            !said) {
+            return said;
+        }
     }
     Array<u8> visited(allocator);
     if (Status sized = visited.resize(primary.size()); !sized) {
@@ -237,8 +246,15 @@ struct Build {
     }
     std::ranges::fill(visited, 0);
     Array<NodeId> pending(allocator);
-    if (Status added = pending.push_back(primary.vertex_offset()); !added) {
-        return added;
+    if (primary.vertex_offset() != kInvalidNode) {
+        if (Status added = pending.push_back(primary.vertex_offset()); !added) {
+            return added;
+        }
+    }
+    for (const VertexInterpolant& interpolant : primary.vertex_interpolants()) {
+        if (Status added = pending.push_back(interpolant.value); !added) {
+            return added;
+        }
     }
     while (!pending.empty()) {
         const NodeId id = pending.back();
