@@ -950,6 +950,10 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
         rendering::pipeline::InstanceTransform previous;
         CY_REQUIRE(frame.previous_material_transform(identity, previous));
         CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        CY_CHECK_EQ(previous.tint[0], 1.0F);
+        CY_CHECK_EQ(previous.tint[1], 1.0F);
+        CY_CHECK_EQ(previous.tint[2], 1.0F);
+        CY_CHECK_EQ(previous.tint[3], 1.0F);
         const std::string moved_source =
             edited(kGraphMaterial, "field 2 0 0 0", "field 2 2 0 0", Occurrence::First);
         ser::World moved(allocator());

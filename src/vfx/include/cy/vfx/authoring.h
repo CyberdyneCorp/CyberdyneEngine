@@ -8,6 +8,8 @@
 
 namespace cy::vfx {
 
+struct CompileReport;
+
 /// A typed attribute the host emitter must provide to a reusable module.
 struct ModuleInputDecl {
     Name name;
@@ -52,8 +54,23 @@ struct ModuleSource {
                                                graph::DiagnosticSink& diagnostics,
                                                Allocator& allocator) noexcept;
 
+/// `resolve_authoring_modules`, also recording in `report.diagnostic_scopes` which emitter (and,
+/// once the module was read, which stage) each module diagnostic belongs to. The module itself is
+/// the diagnostic's `detail`. A composed module's content digest is recorded on its mapping, and
+/// `compile_system` folds it into the cook key.
+[[nodiscard]] Status resolve_authoring_modules(VfxSystemAsset& asset,
+                                               Span<const ModuleSource> sources,
+                                               graph::DiagnosticSink& diagnostics,
+                                               CompileReport& report,
+                                               Allocator& allocator) noexcept;
+
 /// Read a plain draft or a bundled draft with explicit module sources supplied by the project.
 [[nodiscard]] Expected<VfxSystemAsset, Error> read_authoring_bundle(
     std::string_view source, graph::DiagnosticSink& diagnostics, Allocator& allocator) noexcept;
+
+/// `read_authoring_bundle`, with module diagnostics scoped to their emitter in `report`.
+[[nodiscard]] Expected<VfxSystemAsset, Error> read_authoring_bundle(
+    std::string_view source, graph::DiagnosticSink& diagnostics, CompileReport& report,
+    Allocator& allocator) noexcept;
 
 }  // namespace cy::vfx

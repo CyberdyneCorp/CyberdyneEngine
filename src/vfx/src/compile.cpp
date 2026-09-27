@@ -1165,7 +1165,8 @@ struct KernelPlan {
 }
 
 /// The half of the cook key that is not an emitter's digest: the asset's identity, the interface
-/// registry's version set, the options, the parameters and the channels.
+/// registry's version set, the options, the parameters, the channels and the content of every
+/// composed module.
 [[nodiscard]] u64 declaration_key(const VfxSystemAsset& asset,
                                   const DataInterfaceRegistry& interfaces,
                                   const CompileOptions& options) noexcept {
@@ -1185,6 +1186,14 @@ struct KernelPlan {
         key = hash_u64(key, channel.max_events_per_frame);
         key = hash_u64(key, channel.max_chain_depth);
         key = hash_u64(key, channel.readback ? 1U : 0U);
+    }
+    // A composed module's content, not its name or path. Its nodes already reach the kernels, but
+    // an edit the optimiser discards would not; this keeps "editing a module invalidates every
+    // system that uses it" true of the key as well as of the build graph.
+    for (const ModuleAssetRef& module : asset.module_assets()) {
+        if (module.content_digest != 0) {
+            key = hash_u64(key, module.content_digest);
+        }
     }
     return key;
 }

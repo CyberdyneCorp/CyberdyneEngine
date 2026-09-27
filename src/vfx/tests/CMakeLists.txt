@@ -67,6 +67,7 @@ function(cy_vfx_declare_tests)
         SOURCES
             "${tests_dir}/effects.cpp"
             "${tests_dir}/test_vfx_compiler.cpp"
+            "${tests_dir}/test_vfx_modules.cpp"
         DEPENDENCIES cy::vfx)
     target_include_directories(cy_test_integration_vfx_compiler PRIVATE "${tests_dir}")
     # Diagnostic dumps go where the run owns. A bare filename lands in the caller's working

@@ -9,6 +9,14 @@ The editor SHALL author VFX systems containing emitters, spawn/update/event/rend
 - **WHEN** a compatible backend registers an additional VFX node
 - **THEN** the editor SHALL offer it without a hand-maintained Rust node entry
 
+#### Scenario: A stage references a saved module
+- **WHEN** an emitter references a separately saved module graph asset
+- **THEN** the cook SHALL resolve it through the project, validate its stage and typed inputs against the VFX node registry, compile its nodes through the existing compiler, include its content (transitively, not its name or path) in the cook identity, and declare it as a build-graph dependency of the system
+
+#### Scenario: A module cannot be used
+- **WHEN** a referenced module is missing, part of a cycle, or incompatible with its stage
+- **THEN** the cook SHALL fail with a diagnostic naming the module and the referencing emitter rather than omitting it
+
 #### Scenario: Two-emitter asset survives cooking
 - **WHEN** an author saves and reopens a system with one CPU and one GPU emitter
 - **THEN** both stage graphs SHALL cook and render with their authored settings

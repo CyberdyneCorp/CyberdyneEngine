@@ -163,6 +163,10 @@ struct EventChannelDecl {
 struct ModuleAssetRef {
     Name name;
     Name path;
+    /// Set by `resolve_authoring_modules` once the module is composed into an emitter: its stage,
+    /// typed inputs, graph semantic digest and the digests of the modules it uses. Zero until then.
+    /// Neither the name nor the path is in it; `compile_system` folds it into the cook key.
+    u64 content_digest = 0;
 };
 
 /// One emitter: a name, six optional stage graphs, its attribute declarations, and the path it
@@ -279,6 +283,8 @@ public:
         return module_assets_.span();
     }
     [[nodiscard]] const ModuleAssetRef* find_module_asset(Name name) const noexcept;
+    /// Record the content digest of a mapped module once it has been resolved.
+    [[nodiscard]] Status record_module_digest(Name name, u64 digest) noexcept;
 
     [[nodiscard]] ImportanceClass importance() const noexcept { return importance_; }
     void set_importance(ImportanceClass importance) noexcept { importance_ = importance; }

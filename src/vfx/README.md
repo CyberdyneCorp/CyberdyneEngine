@@ -394,14 +394,67 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
 ## Editor authoring bridge
 
 `read_authoring_document` is compiled into `cy::vfx-compiler`. It decodes editor `.cyvfxdoc`
-payload versions 1 and 2 into `VfxSystemAsset` and reads each `cyvfxcanvas` stage into CyberGraph.
+payload versions 1 to 3 into `VfxSystemAsset` and reads each `cyvfxcanvas` stage into CyberGraph.
 The compiler then resolves the registered node types and runs `compile_system`. The runtime target
 does not parse graphs. The editor service's `vfx.compile` operation publishes the resulting cook
-identity, memory layout, generated Slang, and graph diagnostics. Module asset references are
-refused until a module resolver is available. Interface bindings are retained in the engine asset,
+identity, memory layout, generated Slang, and graph diagnostics. Module references are resolved
+before cooking (see "Reusable modules" below). Interface bindings are retained in the engine asset,
 checked against the registered data interfaces and the emitter's CPU/GPU path, and included in the
 cook identity. An unknown interface or one without the required execution path fails the cook.
 Compilation currently does not start a preview.
+
+## Reusable modules — issue #19
+
+A module is a separately saved `.cyvfxmodule` graph asset: one stage graph for ONE declared stage,
+the typed host attributes it reads, and the other modules it uses. A version 3 `.cyvfxdoc` maps each
+module name an emitter references to an explicit project-relative `.cyvfxmodule` path; nothing
+infers a path from a name. `resolve_authoring_modules` (`include/cy/vfx/authoring.h`) is the
+cook-time step: it validates every module a system reaches and composes its nodes, under fresh keys,
+into the emitter's graph for that stage, where the existing compiler lowers them like authored
+nodes.
+
+```cpp
+auto asset = read_authoring_document(system_text, allocator);
+const ModuleSource modules[]{{Name::intern("shared_drag"), module_text}};
+resolve_authoring_modules(*asset, modules, sink, report, allocator);  // before compile_system
+asset->resolve(registry);
+auto system = compile_system(*asset, registry, interfaces, CompileOptions{}, sink, report);
+```
+
+**It is compilation, so it lives in `cy::vfx-compiler`.** The `CompiledSystem` the runtime loads
+carries the module already composed; no runtime source names a module. `compile_system` refuses an
+asset whose emitter module references were never resolved.
+
+**The cook key follows content, transitively, and nothing else.** When a module is composed, its
+content digest — stage, typed inputs, the graph's `semantic_digest` (which excludes layout) and the
+digests of the modules it uses — is recorded on its `ModuleAssetRef`, and `declaration_key` folds
+every recorded digest into the cook key. Its name and path are not in it. So an edit anywhere in a
+module chain moves the key of every system that reaches it, including an edit the optimiser
+discards, and moving a node or storing the module elsewhere moves nothing.
+
+**Where the modules come from.** The engine compiler reads no files. The editor, which owns the
+project, sends the mapped sources in a `cyvfxbundle 1` request, which `read_authoring_bundle`
+resolves. The build graph's `vfx` producer (`tools/build/src/vfx_producer.cpp`) reads the system as
+its declared source and each module it reaches through `NodeContext::discover`, which files the
+module as a dependency of the node in the same act. Editing a module therefore re-cooks every system
+node that reached it, and nothing else.
+
+**Failures are named.** Each refusal is a diagnostic whose `detail` is the module. When an emitter's
+reference led to it, the overloads taking a `CompileReport` also record a `DiagnosticScope` for that
+emitter, and for the module's stage once the module was read. A reference is never silently dropped.
+
+| Code | When |
+|---|---|
+| `vfx.module.mapping` | the system maps no path for a referenced name |
+| `vfx.module.missing` | the mapped source was not supplied (the file does not exist) |
+| `vfx.module.malformed` / `vfx.module.unexpected` | a source does not parse, declares another name, has no mapping, or is supplied twice |
+| `vfx.module.cycle` | A uses B uses A |
+| `vfx.module.stage` | a used module declares a different stage from its user, or a node its declared stage cannot run (`vfx.spawn_count` outside Spawn; an attribute write or kill in Spawn), which also carries the node key |
+| `vfx.module.input` / `vfx.module.interface` | a typed input missing or mistyped on the host emitter, or a read of an undeclared host attribute |
+
+**Not done here:** per-edit module transactions in the desktop panel; the panel saves a module as
+one undoable `vfx.module.save`. The commands `vfx.module.save` / `vfx.module.read` round-trip over
+MCP with undo and redo.
 
 ## Editor catalogue
 

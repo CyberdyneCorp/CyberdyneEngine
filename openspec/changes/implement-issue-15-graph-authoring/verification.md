@@ -260,3 +260,25 @@ mesh` case verifies a missing image refusal, then compares wind and plain pixels
 a moved camera; its image assertions have not run on this host. The bounded field-table null test
 passed 6 assertions. Temporarily changing its global table binding count back to two made its
 valid write fail (5 of 6 assertions); restoring binding three returned the case to green.
+
+## Reusable VFX module resolution from #24
+
+The #24 additions are integrated into this branch: resolver diagnostics retain emitter, module,
+stage, and offending node identity; a composed module records a transitive content digest in the
+cook key; and the `vfx` build producer discovers module assets as graph dependencies. The MCP wire
+test saves a module and a referencing system, edits the module, and checks read, undo, and redo.
+The focused MCP wire test passed (one selected test), Rust service compile tests passed (five
+selected), and `cargo clippy -p cy-editor-services -p cy-editor-mcp --lib --tests -- -D warnings`
+and `cargo fmt --all -- --check` passed. `integration.vfx_compiler`,
+`integration.build_content`, and `unit.editor_backend` passed after the conflict resolution.
+`openspec validate implement-issue-15-graph-authoring --strict` passed. The changed C++ source
+passed clang-format 22's dry-run check. The cognitive-complexity tool reports `ModuleResolution::apply`
+at 15, `produce_vfx` at 8, and `ReachableModules::collect` at 9, within the compiler and backend
+targets. Native image proof remains separate.
+
+The prior PR run's Linux ARM build caught `-Werror=class-memaccess` in
+`AuthoredFrame::previous_material_transform`: copying three mapped rows into the whole
+`InstanceTransform` wrote only 48 of its 64 bytes. The helper now copies row0, row1, and row2
+individually. The existing null-frame regression also checks all four default tint values after
+reading the previous transform; its focused run passed 58 assertions. Linux CI must still confirm
+the GCC diagnostic is gone.

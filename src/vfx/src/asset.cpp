@@ -293,6 +293,16 @@ Status VfxSystemAsset::declare_module_asset(const ModuleAssetRef& reference) noe
     return module_assets_.push_back(reference);
 }
 
+Status VfxSystemAsset::record_module_digest(Name name, u64 digest) noexcept {
+    for (ModuleAssetRef& reference : module_assets_) {
+        if (reference.name == name) {
+            reference.content_digest = digest;
+            return ok();
+        }
+    }
+    return fail(ErrorCode::NotFound, "vfx: module has no asset mapping");
+}
+
 const ModuleAssetRef* VfxSystemAsset::find_module_asset(Name name) const noexcept {
     for (const ModuleAssetRef& reference : module_assets_) {
         if (reference.name == name) {

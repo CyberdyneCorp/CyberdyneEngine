@@ -1827,7 +1827,10 @@ bool AuthoredFrame::previous_material_transform(u64 identity,
             return false;
         }
         out = InstanceTransform{};
-        std::memcpy(&out, mapped, 3U * sizeof(Vec4));
+        const auto* rows = static_cast<const u8*>(mapped);
+        std::memcpy(out.row0, rows, sizeof(out.row0));
+        std::memcpy(out.row1, rows + sizeof(Vec4), sizeof(out.row1));
+        std::memcpy(out.row2, rows + 2U * sizeof(Vec4), sizeof(out.row2));
         return true;
     }
     return false;
