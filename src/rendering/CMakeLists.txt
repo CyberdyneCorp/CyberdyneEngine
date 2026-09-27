@@ -174,6 +174,12 @@ add_subdirectory(particles)
 # is read after both.
 add_subdirectory(light_probes)
 
+# SELECTION OUTLINES AND UNIT HIGHLIGHTS. The engine's half of `editor-viewport-and-gizmos`' "selection
+# outlines, highlight rendering, and overlays": a mask of what a game marked and an edge pass over the
+# tonemapped colour, declared through the forward frame's stage seam. It draws through the pipeline
+# layer's recorder, so it is read after pipeline/.
+add_subdirectory(selection)
+
 # THE ARROW FROM A BONE MATRIX TO A MOVED VERTEX. M8.d. Before this module the engine could describe
 # a skin, bound it, store its blend shapes and publish its pose, and could not move one vertex:
 # there was no skinning shader in the tree and no CPU skinning either. It sits beside gpu_culling/ in
