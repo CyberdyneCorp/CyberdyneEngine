@@ -200,7 +200,8 @@ Status FrameScene::fill_index() noexcept {
         SpatialEntry entry;
         entry.bounds = Aabb::from_center_extents(centre, Vec3{half, floor ? 0.125F : half, half});
         boxes_[which] = entry.bounds;
-        entry.stable_id = 900U + which;
+        entry.stable_id =
+            hooks_.stable_id != nullptr ? hooks_.stable_id(which, hooks_.user) : 900U + which;
         entry.gpu_slot = which;
         // The half-diagonal of a cube of this half-extent: sqrt(3), which is what bounds a box
         // by a sphere and is spelled from the standard library rather than as a literal.

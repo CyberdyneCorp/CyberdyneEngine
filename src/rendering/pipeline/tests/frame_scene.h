@@ -111,6 +111,9 @@ struct FrameSceneHooks {
     Status (*before_upload)(FrameUpload& upload, void* user) noexcept = nullptr;
     /// Move one box before it is placed. The floor slab is box 0 and is not offered.
     void (*place_box)(u32 which, Vec3& centre, f32& half, void* user) noexcept = nullptr;
+    /// The stable identity a box's draws carry — an entity's bits, for a caller that marks boxes
+    /// through the ECS. Absent, box `which` is `900 + which`, as it always was.
+    u64 (*stable_id)(u32 which, void* user) noexcept = nullptr;
     /// After the upload, before the capture passes and `execute`: where a pass that reads what the
     /// frame produced — `render.grading`'s metering chain — is declared.
     Status (*after_assemble)(RenderGraph& graph, const FrameResources& resources,

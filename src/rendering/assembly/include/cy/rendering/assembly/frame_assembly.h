@@ -181,6 +181,11 @@ struct AssemblyDescription {
     /// declared by `contact_shadows::ContactShadowPass` through `FrameSinks::contact_shadows`. Off
     /// by default, and absent when off. Requires the depth prepass, whose depth it traces.
     bool contact_shadows = false;
+    /// Selection outlines and unit highlights over the tonemapped colour —
+    /// `FramePassKind::SelectionOutlines`, declared by `selection::OutlinePass` through
+    /// `FrameSinks::selection_outlines`. Off by default, and absent when off. Requires the depth
+    /// prepass, against which a marked surface is found hidden.
+    bool selection_outlines = false;
 };
 
 /// One view of one world, this frame.
@@ -262,6 +267,9 @@ struct FrameSinks {
     /// The producer that declares the contact shadow stage. Required when the description asks
     /// for contact shadows; the frame refuses to build without it.
     FrameStageDeclaration contact_shadows;
+    /// The producer that declares the selection outline stage. Required when the description asks
+    /// for selection outlines; the frame refuses to build without it.
+    FrameStageDeclaration selection_outlines;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
