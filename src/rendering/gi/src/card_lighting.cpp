@@ -27,7 +27,8 @@ void light_basis(Vec3 direction, Vec3& right, Vec3& up) noexcept {
 
 }  // namespace
 
-// --- ShadowMap ------------------------------------------------------------------------------------
+// --- ShadowMap
+// ------------------------------------------------------------------------------------
 
 Status ShadowMap::configure(const ShadowMapSettings& settings) noexcept {
     if (settings.resolution == 0 || settings.half_extent_metres <= 0.0F ||
@@ -39,7 +40,8 @@ Status ShadowMap::configure(const ShadowMapSettings& settings) noexcept {
     settings_ = settings;
     direction_ = normalized_or(settings.direction, Vec3{0.0F, -1.0F, 0.0F});
     light_basis(direction_, right_, up_);
-    if (Status sized = depths_.resize(static_cast<usize>(settings.resolution) * settings.resolution);
+    if (Status sized =
+            depths_.resize(static_cast<usize>(settings.resolution) * settings.resolution);
         !sized) {
         return sized;
     }
@@ -55,10 +57,10 @@ void ShadowMap::capture(const DistanceField& field) noexcept {
     const Vec3 near_plane = settings_.centre - (direction_ * (settings_.depth_range_metres * 0.5F));
     for (u32 row = 0; row < resolution; ++row) {
         for (u32 column = 0; column < resolution; ++column) {
-            const f32 u = ((((static_cast<f32>(column) + 0.5F) / static_cast<f32>(resolution)) *
-                            2.0F) -
-                           1.0F) *
-                          extent;
+            const f32 u =
+                ((((static_cast<f32>(column) + 0.5F) / static_cast<f32>(resolution)) * 2.0F) -
+                 1.0F) *
+                extent;
             const f32 v =
                 ((((static_cast<f32>(row) + 0.5F) / static_cast<f32>(resolution)) * 2.0F) - 1.0F) *
                 extent;
@@ -101,9 +103,8 @@ bool ShadowMap::shadowed(Vec3 point) const noexcept {
         return false;
     }
     const auto texel = [this, extent](f32 coordinate) {
-        const auto index = static_cast<i32>(
-            std::floor((((coordinate / extent) * 0.5F) + 0.5F) *
-                       static_cast<f32>(settings_.resolution)));
+        const auto index = static_cast<i32>(std::floor((((coordinate / extent) * 0.5F) + 0.5F) *
+                                                       static_cast<f32>(settings_.resolution)));
         return static_cast<u32>(std::clamp(index, 0, static_cast<i32>(settings_.resolution) - 1));
     };
     const f32 stored = depths_[(static_cast<usize>(texel(v)) * settings_.resolution) + texel(u)];
@@ -122,7 +123,8 @@ bool ShadowMapOccluder::occluded(Vec3 from, Vec3 to) const noexcept {
     return fallback_ != nullptr && fallback_->occluded(from, to);
 }
 
-// --- CardGrid -------------------------------------------------------------------------------------
+// --- CardGrid
+// -------------------------------------------------------------------------------------
 
 Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept {
     cell_ = std::max(cell_metres, 1.0e-3F);
@@ -174,7 +176,8 @@ Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept 
     return ok();
 }
 
-// --- CardSnapshot ---------------------------------------------------------------------------------
+// --- CardSnapshot
+// ---------------------------------------------------------------------------------
 
 Status CardSnapshot::capture(const SurfaceCache& cache, u64 frame) noexcept {
     const Span<const SurfacePage> pages = cache.pages();
@@ -235,7 +238,8 @@ bool CardSnapshot::radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
     return true;
 }
 
-// --- CardGather -----------------------------------------------------------------------------------
+// --- CardGather
+// -----------------------------------------------------------------------------------
 
 Vec3 CardGather::gather(Vec3 position, Vec3 normal) const noexcept {
     if (field_ == nullptr || settings_.rays == 0) {

@@ -1606,16 +1606,16 @@ note = "cell-scoped ingestion and eviction, and the word that matters is INCREME
 [[coverage]]
 row = "rendering-global-illumination"
 requirement = "Surface cache"
-evidence = "test:integration.render_gi_pipeline"
-case = "a traced hit is a cache lookup and the red wall bleeds"
-note = "both halves of the requirement in one case: a traced hit resolves through the cache rather than through a material evaluation — structurally, because a tracer holds a `RadianceLookup` and has no path to a material graph — and a saturated red wall recorded in the cache tints the surfaces near it, which is the colour-bleeding scenario. `bounces accumulate over frames` beside it is the multi-bounce approximation, and `the surface cache is budgeted, prioritised and does not starve` is the update budget."
+evidence = "test:render.gi_gpu"
+case = "the device card radiance matches the host surface cache"
+note = "issue #35 stage 2 moved this answer to the device: the surface cache's cards shaded in compute — direct light shadowed through the field (and, in `the shadow map shadows the device cards as it shadows the host ones`, through a sun's shadow map), the sky term, and last frame's cards as the next bounce — held page for page to the host cache over six frames of a closed room, so the multi-bounce feedback is compared rather than one pass of direct light. `the device card update shades the budgeted selection and nothing else` is the budgeted, prioritised update on the device. THE HOST CACHE REMAINS THE ORACLE and its own cases still run everywhere, including on machines with no GPU: in integration.render_gi_pipeline, `a traced hit is a cache lookup and the red wall bleeds` holds both halves of the requirement in one case: a traced hit resolves through the cache rather than through a material evaluation — structurally, because a tracer holds a `RadianceLookup` and has no path to a material graph — and a saturated red wall recorded in the cache tints the surfaces near it, which is the colour-bleeding scenario. `bounces accumulate over frames` beside it is the multi-bounce approximation, and `the surface cache is budgeted, prioritised and does not starve` is the update budget."
 
 [[coverage]]
 row = "rendering-global-illumination"
 requirement = "Distance field representation"
 evidence = "test:integration.render_gi_pipeline"
 case = "the camera translates and only the newly exposed region is re-solved"
-note = "the clipmap scroll, which is the requirement's second scenario and the one that decides whether a kilometre of world costs a rebuild or a band. `empty space costs no storage` is the sparsity claim, `a box composites into the world field and the field agrees with the box` is the per-asset field composited by transform, and `tracing the field toward the sky reports occlusion indoors` is the sky-visibility scenario; all four are in the same suite over one real field."
+note = "the clipmap scroll, which is the requirement's second scenario and the one that decides whether a kilometre of world costs a rebuild or a band. `empty space costs no storage` is the sparsity claim, `a box composites into the world field and the field agrees with the box` is the per-asset field composited by transform, and `tracing the field toward the sky reports occlusion indoors` is the sky-visibility scenario; all four are in the same suite over one real field. The same field on a device (issue #35 stage 1) is render.gi_gpu's `the uploaded field traces as the host field does` — the clipmap's page table and brick pool uploaded and sphere traced ray for ray against `DistanceField::sphere_trace`."
 
 [[coverage]]
 row = "rendering-global-illumination"
@@ -1636,7 +1636,7 @@ row = "rendering-global-illumination"
 requirement = "Incremental invalidation"
 evidence = "test:integration.render_gi_pipeline"
 case = "a door that opens invalidates what it touched and nothing else"
-note = "a moving occluder re-solves the bricks it touched and leaves the rest of the field alone, which is `a global rebuild SHALL NOT be required for a local change` as a count rather than as a promise. `an invalidation is attributable to what caused it` records the cause and the source id behind each invalidation, which is the reportability half, and `a light that changes invalidates its region and nothing else` runs the same claim through a whole frame and requires fewer than half the surface cache's pages to move."
+note = "a moving occluder re-solves the bricks it touched and leaves the rest of the field alone, which is `a global rebuild SHALL NOT be required for a local change` as a count rather than as a promise. `an invalidation is attributable to what caused it` records the cause and the source id behind each invalidation, which is the reportability half, and `a light that changes invalidates its region and nothing else` runs the same claim through a whole frame and requires fewer than half the surface cache's pages to move. On a device (issue #35 stage 1), render.gi_gpu's `a moved object re-uploads only the bricks it touched` holds the device copy of the field to the same count: exactly the bricks the host re-solved are uploaded, all of them near where the object was or is, and a still frame uploads nothing."
 
 [[coverage]]
 row = "rendering-global-illumination"
@@ -1691,7 +1691,7 @@ note = "hardware ray tracing AS A TIER: the same room converged twice, once thro
 row = "rendering-global-illumination"
 requirement = "Emissive surfaces as illumination"
 evidence = "exempt:m11e"
-note = "NOT IMPLEMENTED, and nothing in the tree claims it is. The requirement asks emissive materials to light their surroundings through the surface cache and to be CLASSIFIED by radiant power and area, with bright small emitters promoted to sampled lights rather than left to stochastic sampling. `Surfel` carries no emission channel, `GiLight` is the only emitter the gather knows, and there is no classifier and no promotion anywhere under src/rendering/gi/. What would observe it: an emissive surfel in a dark room raising the irradiance of the wall opposite with no `GiLight` placed, and a small high-power emitter arriving in the direct lighting path's light list instead — both cheap to write once the classification exists, and neither writable against a cache that has no emission to record."
+note = "NOT IMPLEMENTED, and nothing in the tree claims it is. The requirement asks emissive materials to light their surroundings through the surface cache and to be CLASSIFIED by radiant power and area, with bright small emitters promoted to sampled lights rather than left to stochastic sampling. `Surfel` and `SurfacePage` carry an emission channel and `SurfaceCache::outgoing` adds it — on the host and, since issue #35 stage 2, in the device card lighting (`cy::rendering-gi-gpu`) — so an emissive card already feeds the bounce; what is missing is the rest of the requirement: there is no classifier by radiant power and area and no promotion to a light anywhere under src/rendering/gi/ or src/rendering/gi_gpu/, and no case measures an emitter lighting a room. The next slice is its own issue, after #35's stage 4 puts the surface cache in the frame. What would observe it: an emissive surfel in a dark room raising the irradiance of the wall opposite with no `GiLight` placed, and a small high-power emitter arriving in the direct lighting path's light list instead — both cheap to write once the classification exists."
 
 [[coverage]]
 row = "rendering-global-illumination"

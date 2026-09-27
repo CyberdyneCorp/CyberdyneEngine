@@ -121,7 +121,8 @@ template <class Declare>
         return false;
     }
     rendering::GraphExecutor executor(allocator(), device);
-    auto executed = executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
+    auto executed =
+        executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
     if (!executed.has_value()) {
         std::fprintf(stderr, "execute failed: %s\n", executed.error().message);
         return false;
@@ -129,7 +130,8 @@ template <class Declare>
     return device.wait_idle().has_value() && device.end_frame().has_value();
 }
 
-// --- Scenes ---------------------------------------------------------------------------------------
+// --- Scenes
+// ---------------------------------------------------------------------------------------
 
 /// The host GI suites' room, in its field: one level, a quarter-metre voxel, a 16-brick window.
 struct RoomScene {
@@ -227,7 +229,8 @@ struct CourtyardScene {
     }
 };
 
-// --- The host oracle and the device cache, side by side -------------------------------------------
+// --- The host oracle and the device cache, side by side
+// -------------------------------------------
 
 /// Two surface caches over the same cards — one shaded on the host through the oracle, one through
 /// the device — and the device scene behind the second.
@@ -299,7 +302,8 @@ struct Pair {
                          shading.last_error().message);
             return false;
         }
-        if (!run_frame(gpu, [&](rendering::RenderGraph& graph) { return shading.declare(graph); })) {
+        if (!run_frame(gpu,
+                       [&](rendering::RenderGraph& graph) { return shading.declare(graph); })) {
             return false;
         }
         return device.collect() == report.pages_updated;
@@ -349,8 +353,8 @@ void print(const char* what, const Agreement& agreement) {
 /// Rays in every direction from a handful of points inside the room.
 [[nodiscard]] std::vector<GpuTraceRay> room_rays() {
     std::vector<GpuTraceRay> rays;
-    const Vec3 origins[] = {{0.0F, 0.0F, 2.0F},  {-2.5F, 1.0F, -2.0F}, {2.0F, -1.2F, -1.0F},
-                            {3.1F, 0.4F, 3.3F},  {-0.3F, 1.6F, 0.9F},  {1.7F, -0.5F, -3.2F},
+    const Vec3 origins[] = {{0.0F, 0.0F, 2.0F},   {-2.5F, 1.0F, -2.0F}, {2.0F, -1.2F, -1.0F},
+                            {3.1F, 0.4F, 3.3F},   {-0.3F, 1.6F, 0.9F},  {1.7F, -0.5F, -3.2F},
                             {-3.4F, -1.5F, 3.0F}, {0.6F, 0.1F, -0.6F}};
     constexpr u32 kPerOrigin = 128;
     for (const Vec3 origin : origins) {
@@ -384,9 +388,8 @@ struct TraceAgreement {
                                         const std::vector<GpuTraceRay>& rays) {
     TraceAgreement result;
     CY_REQUIRE(scene.set_rays({rays.data(), rays.size()}).has_value());
-    CY_REQUIRE(run_frame(gpu, [&](rendering::RenderGraph& graph) {
-        return scene.declare_trace(graph);
-    }));
+    CY_REQUIRE(
+        run_frame(gpu, [&](rendering::RenderGraph& graph) { return scene.declare_trace(graph); }));
     std::vector<GpuTraceHit> hits(rays.size());
     CY_REQUIRE(scene.read_back_hits({hits.data(), hits.size()}).has_value());
     for (usize index = 0; index < rays.size(); ++index) {
@@ -420,7 +423,8 @@ struct TraceAgreement {
 
 }  // namespace
 
-// --- Stage 1 --------------------------------------------------------------------------------------
+// --- Stage 1
+// --------------------------------------------------------------------------------------
 
 CY_TEST_CASE("the uploaded field traces as the host field does") {
     Gpu gpu;
@@ -429,7 +433,8 @@ CY_TEST_CASE("the uploaded field traces as the host field does") {
     }
     RoomScene room;
     GpuGiScene scene;
-    CY_REQUIRE(scene.create(allocator(), gpu.fixture.device(), GpuGiSceneDescription{}).has_value());
+    CY_REQUIRE(
+        scene.create(allocator(), gpu.fixture.device(), GpuGiSceneDescription{}).has_value());
     const auto uploaded = scene.upload_field(room.field);
     CY_REQUIRE(uploaded.has_value());
     CY_CHECK(uploaded->full);
@@ -460,13 +465,14 @@ CY_TEST_CASE("a moved object re-uploads only the bricks it touched") {
     settings.resolution = 32;
     settings.base_extent_metres = 8.0F;
     CY_REQUIRE(field.configure(settings).has_value());
-    CY_REQUIRE(field.place(1, floor.asset(), Mat4::from_translation(Vec3{0.0F, -1.5F, 0.0F}))
-                   .has_value());
+    CY_REQUIRE(
+        field.place(1, floor.asset(), Mat4::from_translation(Vec3{0.0F, -1.5F, 0.0F})).has_value());
     CY_REQUIRE(field.place(7, door.asset(), Mat4::identity()).has_value());
     (void)field.scroll_to(Vec3{0.0F, 0.0F, 0.0F});
 
     GpuGiScene scene;
-    CY_REQUIRE(scene.create(allocator(), gpu.fixture.device(), GpuGiSceneDescription{}).has_value());
+    CY_REQUIRE(
+        scene.create(allocator(), gpu.fixture.device(), GpuGiSceneDescription{}).has_value());
     const auto first = scene.upload_field(field);
     CY_REQUIRE(first.has_value());
     CY_CHECK(first->full);
@@ -493,10 +499,11 @@ CY_TEST_CASE("a moved object re-uploads only the bricks it touched") {
     CY_CHECK_GT(moved->table_entries, 0U);
     CY_CHECK_EQ(moved->table_entries, scrolled.bricks_solved);
     CY_CHECK_LT(moved->table_entries, window / 4U);
-    std::fprintf(stderr,
-                 "door moved: %u of %u bricks re-solved and uploaded (%u with samples, %llu bytes)\n",
-                 moved->table_entries, window, moved->bricks_uploaded,
-                 static_cast<unsigned long long>(moved->bytes));
+    std::fprintf(
+        stderr,
+        "door moved: %u of %u bricks re-solved and uploaded (%u with samples, %llu bytes)\n",
+        moved->table_entries, window, moved->bricks_uploaded,
+        static_cast<unsigned long long>(moved->bytes));
 
     // Every uploaded brick overlaps where the door was or where it is — the invalidation's own
     // one-brick margin included — and none is anywhere else.
@@ -509,7 +516,8 @@ CY_TEST_CASE("a moved object re-uploads only the bricks it touched") {
                       static_cast<f32>(change.brick[2]) * view.brick_size};
         const Aabb brick{lo, lo + Vec3{view.brick_size, view.brick_size, view.brick_size}};
         const f32 margin = view.brick_size * 1.01F;
-        if (!brick.intersects(before.expanded(margin)) && !brick.intersects(after.expanded(margin))) {
+        if (!brick.intersects(before.expanded(margin)) &&
+            !brick.intersects(after.expanded(margin))) {
             outside += 1;
         }
     }
@@ -531,7 +539,8 @@ CY_TEST_CASE("a moved object re-uploads only the bricks it touched") {
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-// --- Stage 2 --------------------------------------------------------------------------------------
+// --- Stage 2
+// --------------------------------------------------------------------------------------
 
 CY_TEST_CASE("the device card radiance matches the host surface cache") {
     Gpu gpu;
@@ -591,8 +600,8 @@ CY_TEST_CASE("the shadow map shadows the device cards as it shadows the host one
     for (u64 frame = 1; frame <= 3; ++frame) {
         CY_REQUIRE(pair.step(gpu.fixture.device(), frame, 0, true));
     }
-    const Agreement direct = agree(pair.host, pair.device, 1.0e-3,
-                                   [](const SurfacePage& page) { return page.direct; });
+    const Agreement direct =
+        agree(pair.host, pair.device, 1.0e-3, [](const SurfacePage& page) { return page.direct; });
     const Agreement bounce = agree(pair.host, pair.device, 1.0e-2,
                                    [](const SurfacePage& page) { return page.accumulated; });
     print("courtyard direct", direct);
@@ -609,12 +618,13 @@ CY_TEST_CASE("the shadow map shadows the device cards as it shadows the host one
         if (surfel.normal.y < 0.5F) {
             continue;
         }
-        const bool in_shadow = courtyard.shadow.shadowed(surfel.position + (surfel.normal * 1.0e-2F));
+        const bool in_shadow =
+            courtyard.shadow.shadowed(surfel.position + (surfel.normal * 1.0e-2F));
         const SurfacePage& page = pair.device.pages()[handle];
-        const Vec3 sun_only = cy::rendering::gi::direct_radiance(courtyard.sun, page.position,
-                                                                 page.normal);
-        const Vec3 lamp_only = cy::rendering::gi::direct_radiance(courtyard.lamp, page.position,
-                                                                  page.normal);
+        const Vec3 sun_only =
+            cy::rendering::gi::direct_radiance(courtyard.sun, page.position, page.normal);
+        const Vec3 lamp_only =
+            cy::rendering::gi::direct_radiance(courtyard.lamp, page.position, page.normal);
         if (in_shadow) {
             shadowed += 1;
             CY_CHECK_LT(page.direct.y, sun_only.y * 0.5F + lamp_only.y + 1.0e-3F);
@@ -639,7 +649,7 @@ CY_TEST_CASE("the device card update shades the budgeted selection and nothing e
     Pair pair(gpu.fixture.device(), room.field, surfels, nullptr, gi_support::room_lights(), 4);
     constexpr u32 kBudget = 48;
     const u32 live = pair.device.page_count();
-    CY_REQUIRE_GT(live, kBudget * 4U);
+    CY_REQUIRE(live > kBudget * 4U);
 
     u32 frames_to_cover = 0;
     for (u64 frame = 1; frame <= 16; ++frame) {
@@ -691,7 +701,8 @@ CY_TEST_CASE("the device card update shades the budgeted selection and nothing e
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-// --- The published picture -------------------------------------------------------------------------
+// --- The published picture
+// -------------------------------------------------------------------------
 
 namespace {
 
@@ -702,7 +713,8 @@ void splat(const SurfaceCache& cache, u32 width, u32 height, u32 x_offset, u32 s
     const Vec3 eye{5.5F, 4.0F, 7.0F};
     const Vec3 target{0.0F, 0.6F, -0.8F};
     const Vec3 forward = normalized_or(target - eye, Vec3{0.0F, 0.0F, -1.0F});
-    const Vec3 right = normalized_or(cross(forward, Vec3{0.0F, 1.0F, 0.0F}), Vec3{1.0F, 0.0F, 0.0F});
+    const Vec3 right =
+        normalized_or(cross(forward, Vec3{0.0F, 1.0F, 0.0F}), Vec3{1.0F, 0.0F, 0.0F});
     const Vec3 up = cross(right, forward);
     const f32 focal = static_cast<f32>(height) * 1.1F;
     for (const SurfacePage& page : cache.pages()) {
@@ -735,7 +747,8 @@ void splat(const SurfaceCache& cache, u32 width, u32 height, u32 x_offset, u32 s
                 if ((dx * dx) + (dy * dy) > radius * radius) {
                     continue;
                 }
-                const usize at = (static_cast<usize>(y) * stride) + x_offset + static_cast<usize>(x);
+                const usize at =
+                    (static_cast<usize>(y) * stride) + x_offset + static_cast<usize>(x);
                 if (z < depth[at]) {
                     depth[at] = z;
                     texels[at] = colour;
@@ -788,8 +801,8 @@ CY_TEST_CASE("the lit surface cache cards, host and device side by side") {
     CY_CHECK_LE(differing, kWidth * kHeight / 100U);
 
     render_test::Image image;
-    CY_REQUIRE(render_test::adopt(image, {texels.data(), texels.size()}, kStride, kHeight)
-                   .has_value());
+    CY_REQUIRE(
+        render_test::adopt(image, {texels.data(), texels.size()}, kStride, kHeight).has_value());
     const char* path = CY_TEST_BINARY_DIR "/gi-gpu-surface-cache.png";
     CY_REQUIRE(render_test::write_png(path, image).has_value());
     std::fprintf(stderr, "wrote %s (left: host surface cache, right: device)\n", path);

@@ -62,7 +62,8 @@ void put(f32* floats, u64 at, Vec3 value, f32 w) noexcept {
     floats[at + 3] = w;
 }
 
-/// `gi::CardGrid`'s bucket count for the most cards the scene holds — the largest grid it can build.
+/// `gi::CardGrid`'s bucket count for the most cards the scene holds — the largest grid it can
+/// build.
 [[nodiscard]] u32 max_buckets(u32 cards) noexcept {
     u32 count = 64;
     while (count < cards * 2U) {
@@ -236,8 +237,8 @@ Status GpuGiScene::create_pipelines() noexcept {
 }
 
 Status GpuGiScene::create_buffers() noexcept {
-    // WHICH MEMORY EACH BUFFER LIVES IN. Everything the host writes is Upload and mapped, written in
-    // place — the scene representation, the lights, the selection, the constants, and the card
+    // WHICH MEMORY EACH BUFFER LIVES IN. Everything the host writes is Upload and mapped, written
+    // in place — the scene representation, the lights, the selection, the constants, and the card
     // state, which the host writes for a page it allocated or invalidated and the commit dispatch
     // writes for a page it shaded. The two outputs the dispatches write for the host to read are
     // device-local and copied into Readback buffers by a declared transfer.
@@ -364,16 +365,17 @@ void GpuGiScene::write_constants() noexcept {
     }
 }
 
-// --- The field ------------------------------------------------------------------------------------
+// --- The field
+// ------------------------------------------------------------------------------------
 
 void GpuGiScene::apply_brick(const gi::DistanceField& field, const gi::FieldBrickChange& change,
                              FieldUploadReport& report) noexcept {
     const i32 dim = static_cast<i32>(field_window_);
     const auto wrap = [dim](i32 value) { return static_cast<u32>(((value % dim) + dim) % dim); };
     const u32 cells = field_window_ * field_window_ * field_window_;
-    const u32 cell = (((wrap(change.brick[2]) * field_window_) + wrap(change.brick[1])) *
-                      field_window_) +
-                     wrap(change.brick[0]);
+    const u32 cell =
+        (((wrap(change.brick[2]) * field_window_) + wrap(change.brick[1])) * field_window_) +
+        wrap(change.brick[0]);
     auto* table = static_cast<u32*>(mapped(kPageTable));
     table[(change.level * cells) + cell] = change.slot;
     report.table_entries += 1;
@@ -427,9 +429,8 @@ Expected<FieldUploadReport, Error> GpuGiScene::upload_field(
     if (report.full) {
         auto* table = static_cast<u32*>(mapped(kPageTable));
         std::memset(table, 0xFF, static_cast<usize>(sizes_[kPageTable]));
-        field.visit_bricks([&](const gi::FieldBrickChange& change) {
-            apply_brick(field, change, report);
-        });
+        field.visit_bricks(
+            [&](const gi::FieldBrickChange& change) { apply_brick(field, change, report); });
     } else {
         for (const gi::FieldBrickChange& change : field.last_changes()) {
             apply_brick(field, change, report);
@@ -440,9 +441,8 @@ Expected<FieldUploadReport, Error> GpuGiScene::upload_field(
     constants_[kCounts + 1] = window;
     for (u32 level = 0; level < levels; ++level) {
         const gi::FieldLevelView view = field.level_view(level);
-        put(constants_, kLevels + (level * 8U), Vec3{view.voxel_size, view.brick_size,
-                                                     view.far_distance},
-            0U);
+        put(constants_, kLevels + (level * 8U),
+            Vec3{view.voxel_size, view.brick_size, view.far_distance}, 0U);
         constants_[kLevels + (level * 8U) + 4U] = bits(view.origin_brick[0]);
         constants_[kLevels + (level * 8U) + 5U] = bits(view.origin_brick[1]);
         constants_[kLevels + (level * 8U) + 6U] = bits(view.origin_brick[2]);
@@ -457,7 +457,8 @@ Expected<FieldUploadReport, Error> GpuGiScene::upload_field(
     return report;
 }
 
-// --- The cards ------------------------------------------------------------------------------------
+// --- The cards
+// ------------------------------------------------------------------------------------
 
 Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::SurfacePage> pages,
                                                            f32 lookup_radius) noexcept {
@@ -576,14 +577,14 @@ void GpuGiScene::set_gather(const gi::CardGatherSettings& gather) noexcept {
     write_constants();
 }
 
-// --- Recording ------------------------------------------------------------------------------------
+// --- Recording
+// ------------------------------------------------------------------------------------
 
 ResourceId GpuGiScene::import(RenderGraph& graph, Binding binding) noexcept {
     static constexpr const char* kNames[kBufferCount] = {
-        "gi constants",  "gi page table",    "gi brick pool",  "gi cards",
-        "gi card state", "gi grid ranges",   "gi grid items",  "gi lights",
-        "gi shadow",     "gi selection",     "gi results",     "gi rays",
-        "gi hits",       "gi results host",  "gi hits host",
+        "gi constants",   "gi page table", "gi brick pool", "gi cards",        "gi card state",
+        "gi grid ranges", "gi grid items", "gi lights",     "gi shadow",       "gi selection",
+        "gi results",     "gi rays",       "gi hits",       "gi results host", "gi hits host",
     };
     BufferRequest request;
     request.name = kNames[binding];
@@ -611,7 +612,8 @@ void GpuGiScene::record_copy(const PassContext& context, void* user) noexcept {
                                   Span<const rhi::BufferCopy>(&region, 1));
 }
 
-// --- The trace batch ------------------------------------------------------------------------------
+// --- The trace batch
+// ------------------------------------------------------------------------------
 
 Status GpuGiScene::set_rays(Span<const GpuTraceRay> rays) noexcept {
     if (device_ == nullptr) {

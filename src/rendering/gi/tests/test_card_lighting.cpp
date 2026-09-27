@@ -4,8 +4,8 @@
 // through. Issue #35, stages 1 and 2.
 //
 // `render.gi_gpu` holds every dispatch to these functions. This file holds these functions to the
-// host subsystems they stand beside — the snapshot to `SurfaceCache::radiance_at`, the shadow map to
-// the field's own occlusion, the journal to the scroll report — so the chain is host subsystem →
+// host subsystems they stand beside — the snapshot to `SurfaceCache::radiance_at`, the shadow map
+// to the field's own occlusion, the journal to the scroll report — so the chain is host subsystem →
 // oracle → dispatch, and only the last link needs a device.
 
 #include <cy/test/test.h>
@@ -159,13 +159,14 @@ CY_TEST_CASE("the card snapshot answers a lookup with the card the surface cache
     CY_CHECK_EQ(disagreements, 0U);
 
     // An invalidated card answers nothing through either.
-    const cy::Aabb corner = cy::Aabb::from_min_max(Vec3{-4.5F, -2.5F, -4.5F}, Vec3{-3.5F, -1.5F, -3.5F});
-    CY_REQUIRE_GT(cache.invalidate(corner), 0U);
+    const cy::Aabb corner =
+        cy::Aabb::from_min_max(Vec3{-4.5F, -2.5F, -4.5F}, Vec3{-3.5F, -1.5F, -3.5F});
+    CY_REQUIRE(cache.invalidate(corner) > 0U);
     CY_REQUIRE(snapshot.capture(cache, 4).has_value());
     Vec3 radiance{};
     u32 age = 0;
-    CY_CHECK_FALSE(snapshot.radiance_at(Vec3{-4.0F, -2.0F, -4.0F}, Vec3{0.0F, 1.0F, 0.0F},
-                                        radiance, age));
+    CY_CHECK_FALSE(
+        snapshot.radiance_at(Vec3{-4.0F, -2.0F, -4.0F}, Vec3{0.0F, 1.0F, 0.0F}, radiance, age));
 }
 
 CY_TEST_CASE("the shadow map agrees with the field about what the sun cannot reach") {
@@ -260,8 +261,9 @@ CY_TEST_CASE("a shading backend installed on the system shades what the schedule
     // `select` over a page array that has not moved since: the same answer the update computed.
     std::vector<SurfacePage> pages(system.surfaces().pages().begin(),
                                    system.surfaces().pages().end());
-    CY_REQUIRE(SurfaceCache::select({pages.data(), pages.size()}, selection, false, expected, report)
-                   .has_value());
+    CY_REQUIRE(
+        SurfaceCache::select({pages.data(), pages.size()}, selection, false, expected, report)
+            .has_value());
     CY_REQUIRE_EQ(expected.size(), backend.submitted.size());
     for (cy::usize index = 0; index < expected.size(); ++index) {
         CY_CHECK_EQ(expected[index], backend.submitted[index]);

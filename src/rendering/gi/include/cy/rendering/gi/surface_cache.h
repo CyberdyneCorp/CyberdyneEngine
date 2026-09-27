@@ -127,11 +127,11 @@ struct SurfaceUpdateContext {
 /// arithmetic. That is what keeps the host implementation below the oracle: the selection a device
 /// shades is the selection this file would have shaded, computed by the same function.
 ///
-/// Asynchronous by construction. `submit` hands over this update's selection; the work runs when the
-/// caller executes its frame, and `retire` folds the results back into the pages. The cache calls
-/// `retire` at the start of its next update, so the caller's contract is that the frame that ran the
-/// previous submission has completed by then (its fence was waited on). A result for a page whose
-/// `revision` moved while it was in flight is discarded.
+/// Asynchronous by construction. `submit` hands over this update's selection; the work runs when
+/// the caller executes its frame, and `retire` folds the results back into the pages. The cache
+/// calls `retire` at the start of its next update, so the caller's contract is that the frame that
+/// ran the previous submission has completed by then (its fence was waited on). A result for a page
+/// whose `revision` moved while it was in flight is discarded.
 class SurfaceShadingBackend {
 public:
     SurfaceShadingBackend() = default;

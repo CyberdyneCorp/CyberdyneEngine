@@ -154,9 +154,7 @@ public:
     [[nodiscard]] const FieldUploadReport& last_field_upload() const noexcept {
         return field_report_;
     }
-    [[nodiscard]] const CardUploadReport& last_card_upload() const noexcept {
-        return card_report_;
-    }
+    [[nodiscard]] const CardUploadReport& last_card_upload() const noexcept { return card_report_; }
     [[nodiscard]] const GpuGiSceneDescription& description() const noexcept { return desc_; }
 
 private:

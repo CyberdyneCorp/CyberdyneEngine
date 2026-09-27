@@ -223,7 +223,7 @@ void SurfaceCache::shade(
 }
 
 Status SurfaceCache::select(Span<const SurfacePage> pages, const SurfaceUpdateContext& context,
-                           bool all, Array<u32>& selected, SurfaceUpdateReport& report) noexcept {
+                            bool all, Array<u32>& selected, SurfaceUpdateReport& report) noexcept {
     selected.clear();
     for (u32 handle = 0; handle < pages.size(); ++handle) {
         if (pages[handle].live) {
@@ -301,9 +301,8 @@ SurfaceUpdateReport SurfaceCache::service(const SurfaceUpdateContext& context, b
         for (usize index = 0; index < report.pages_updated; ++index) {
             error_total += pages_[selected[index]].error;
         }
-        report.mean_error = report.pages_updated == 0
-                                ? 0.0F
-                                : error_total / static_cast<f32>(report.pages_updated);
+        report.mean_error =
+            report.pages_updated == 0 ? 0.0F : error_total / static_cast<f32>(report.pages_updated);
         diagnostics_.last_update = report;
         return report;
     }

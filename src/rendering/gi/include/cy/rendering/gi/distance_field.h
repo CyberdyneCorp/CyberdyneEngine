@@ -76,9 +76,9 @@ struct AssetDistanceField {
 /// needs, and the one shape whose exact distance is worth having in closed form.
 [[nodiscard]] f32 box_distance(Vec3 point, Vec3 half_extents) noexcept;
 
-/// The `index`-th of `count` directions of a deterministic cosine-weighted hemisphere sequence around
-/// `normal` — the golden-ratio spiral `sky_visibility` casts. Public because a device transcription
-/// of a gather must cast the same rays as the host one it is checked against.
+/// The `index`-th of `count` directions of a deterministic cosine-weighted hemisphere sequence
+/// around `normal` — the golden-ratio spiral `sky_visibility` casts. Public because a device
+/// transcription of a gather must cast the same rays as the host one it is checked against.
 [[nodiscard]] Vec3 hemisphere_direction(Vec3 normal, u32 index, u32 count) noexcept;
 
 struct SphereTraceHit {
@@ -110,8 +110,8 @@ struct ScrollReport {
 /// One brick whose stored state changed during a `scroll_to`: solved, re-solved or found empty.
 ///
 /// The change journal a device mirror of the field consumes, so an upload is the bricks that moved
-/// rather than the field. `slot` is the brick's index into `brick_pool()` — `kEmptyBrick` for a brick
-/// that holds no surface and answers with its level's far value.
+/// rather than the field. `slot` is the brick's index into `brick_pool()` — `kEmptyBrick` for a
+/// brick that holds no surface and answers with its level's far value.
 struct FieldBrickChange {
     u32 level = 0;
     i32 brick[3] = {0, 0, 0};

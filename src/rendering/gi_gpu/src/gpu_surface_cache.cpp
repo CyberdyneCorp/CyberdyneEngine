@@ -157,8 +157,7 @@ u32 GpuSurfaceShading::retire(Span<gi::SurfacePage> pages) noexcept {
         revisions_.clear();
         return 0;
     }
-    const auto* results =
-        static_cast<const f32*>(scene_->mapped(GpuGiScene::kResultsReadback));
+    const auto* results = static_cast<const f32*>(scene_->mapped(GpuGiScene::kResultsReadback));
     if (results == nullptr) {
         return 0;
     }
