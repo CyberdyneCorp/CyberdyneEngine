@@ -51,6 +51,69 @@ the same `ComponentRecord` a module registration produces, once, on first use �
 `LocalTransform` without thirteen thunks learning about a second kind of component. See
 `include/cy/abi/host.h`.
 
+## What ABI 1.3 adds, and why
+
+`add-swift-game-api`. Up to 1.2 a Swift game reached input, physics, cameras and audio only through
+components a C++ host carried for it (`samples/04-character/game/Contract.swift`). An RTS needs the
+verbs themselves, so 1.3 appends 38 entries — time, input, camera, physics queries, navigation,
+audio, spawning — and `CyBehaviourVTable.frame_update`. The per-entry reference (phases,
+determinism, ownership, errors) is `openspec/changes/add-swift-game-api/design.md`; the header states
+the shared rules once, above `CyPhase`.
+
+| | |
+|---|---|
+| Phases | `CyPhase`: none, fixed update, frame update. Each entry lists `[N F U]`; any other phase is `CY_RESULT_PERMISSION_DENIED`, in every build. |
+| Determinism | Everything allowed in a fixed step answers from simulation state with a total order on every list. The pointer, the modifier keys and camera reads are frame-update only. |
+| Ownership | Values, caller-owned structs, caller buffers with `world_chunks`' sizing pattern. Service handles are integers, never engine addresses. |
+| The seam | Thunks in `src/abi/src/game/`, one file per group; each calls an abstract backend (`include/cy/abi/game/`) bound on `CyEngine_T::game`. `cy_abi` names no server. The adapters are `src/game_backend/`. |
+
+Every 1.3 entry is implemented; none answers `CY_RESULT_NOT_IMPLEMENTED`. `unit.abi` covers the
+table shape, the phase rule, `struct_size` in both directions and the 1.3 layouts
+(`test_game_services.cpp`), then each group against fake backends.
+
+### Input and camera
+
+| Entries | Phases | Behind them | Notes |
+|---|---|---|---|
+| `input_find_action`, `input_action_state`, `input_action_state_by_name` | N F U | `cy::game_backend::InputAdapter` over `InputServer` | The state is the record `resolve_tick` wrote for the last tick, never a device: a press and a release inside one tick read `press_count` 1 and `release_count` 1, and a replay fed the same events reads the same bytes. An action index the user lacks is NOT_FOUND; a user the server lacks is OUT_OF_RANGE. |
+| `input_pointer`, `input_modifiers` | N U | the mouse and keyboard the server routes to that user | Device state. Position and held buttons are the devices' as of the last resolved tick; the edges (buttons pressed and released, motion, wheel) are "since the previous frame update", which the server does not keep, so the host calls `InputAdapter::observe_pending()` before every `resolve_tick` and `begin_frame()` once per frame. `IN_WINDOW` and `OVER_UI` are the host's (`set_pointer_focus`). No pointing device is OK with `PRESENT` clear. The engine has no Super key, so `CY_INPUT_MOD_SUPER` is never set. |
+| `input_find_context`, `input_push_context`, `input_pop_context` | N F U | the server's registered `MappingContext`s and each user's stack | A handle is the server's `ContextHandle` bits. A push marks the user's table dirty and is resolved at the next tick, never mid-tick. ALREADY_EXISTS for a context already on the stack, OUT_OF_RANGE for a full one. |
+| `camera_active`, `camera_view`, `camera_screen_to_ray`, `camera_world_to_screen` | N U | `cy::game_backend::CameraAdapter` over `CameraServer` and the `cy::camera` projections | A camera is a `RigHandle`'s bits; a destroyed rig is NOT_FOUND. The host names the primary view (`set_primary_view(rig, RenderViewRequest)`); reads produce that view from the rig's last evaluation. The pick ray starts on the near plane and `max_distance` reaches the far plane (an infinite far plane is `screen_rect_to_frustum`'s 10^6 m stand-in). `ON_SCREEN` also requires the point to be in front of the near plane. |
+| `camera_set_target`, `camera_set_pose`, `camera_clear_pose` | N F U | the rig: `set_target`, `override_pose`, `clear_pose_override` | Presentation: OK and nothing while `CY_TIME_RESIMULATING` is set. `set_target` binds the focus (an entity by its `CyEntity` value, which the host samples like every binding), cuts when `blend_seconds` is zero, and records yaw, pitch and distance as the rig's `CameraAdapter::Framing`: the server has orbit intents (look deltas, zoom) and no absolute orbit, so the host's rig reads it. A rig whose definition has no Target node refuses a target (INVALID_ARGUMENT). An all-zero quaternion is the identity. |
+
+Tests: `unit.abi` (`test_game_input.cpp`, `test_game_camera.cpp`, against fake backends) and
+`integration.game_backend_input` (a real `InputServer`, live and replayed) /
+`integration.game_backend_camera` (a real rig; a world point projected and cast back lies on the ray,
+and a resimulated `camera_set_target` changes nothing).
+
+### Time, audio and spawning
+
+| Entries | Phases | Behind them | Notes |
+|---|---|---|---|
+| `time_get` | N F U | the host clock (`GameServices::clock`), no backend | `frame_delta` and `interpolation` are zero in F. `BehaviourRuntime::fixed_update` runs in F and the new `frame_update` in U, each under a `PhaseScope`. |
+| `audio_find_cue`, `audio_play`, `audio_stop`, `audio_voice_playing`, `audio_find_bus`, `audio_set_bus_volume` | N F U | `cy::game_backend::AudioAdapter` over `AudioServer` and its `BusGraph` | Presentation: `play`, `stop` and `set_bus_volume` are OK and do nothing while `CY_TIME_RESIMULATING` is set. Handles carry the server's generations, so a stale voice stops nobody. Fades, fade-ins and attached voices are advanced by `AudioAdapter::update`, once per frame. No free voice is OK with a null voice. |
+| `spawn_resolve` | N F U (loads only in N) | `cy::game_backend::SpawnAdapter` over `SceneTree` | A prefab is a `SceneDescription` (node 0 the root). Outside N a prefab that is not resident is UNAVAILABLE. |
+| `spawn_instantiate`, `spawn_instantiate_many`, `spawn_destroy` | N F | as above | Structural: each success bumps the world's epoch. A batch is all or nothing and writes the caller's roots only on success; destroy runs the destroy callbacks child first. A null parent attaches under the tree's root. |
+
+Tests: `unit.abi` (`test_game_time.cpp`, `test_game_audio.cpp`, `test_game_spawn.cpp`, against fake
+backends) and `integration.game_backend_audio` / `integration.game_backend_spawn` against the real
+servers.
+
+### Physics queries and navigation
+
+| Entries | Phases | Behind them | Notes |
+|---|---|---|---|
+| `physics_raycast`, `physics_raycast_all`, `physics_shape_cast`, `physics_overlap` | N F U | `cy::game_backend::PhysicsQueryAdapter` over `PhysicsServer`'s const queries | A null filter is layer 0, every layer, nothing ignored. Lists are ordered by distance, then entity, then body handle (overlaps by entity, each once), and the single raycast is the head of that order, so a fixed step gets the same answer on every run. The ignore list's entities become bodies through the embedder's `EntityBodies`. UNAVAILABLE while the step runs, in every build. Shapes are cached by their `CyShape`; the first use of a new shape creates it, so do it on the game thread or `prewarm()` it. Safe from a job worker. |
+| `nav_find_path` | N F U | `cy::game_backend::NavigationAdapter`: `find_path` + `straighten` over the world's mesh | No path is OK with `CY_NAV_PATH_FOUND` clear. Per-call scratch, so safe from a job worker. An unbound world is NOT_FOUND. |
+| `nav_request_path`, `nav_poll_path`, `nav_cancel_path` | F | the world's `PathQueue` | Delivered a fixed number of ticks after submission whatever the load. A query id is the world in the high 32 bits and the queue id plus one in the low. A READY path that does not fit is held, not lost: BUFFER_TOO_SMALL with `point_count`, and a larger buffer takes it. A cancelled query polls CANCELLED once, then NOT_FOUND. |
+| `nav_agent_configure` | N F | `NavAgent` component + the world's `Crowd` | Structural the first time (adds `NavAgent`, bumps the epoch). |
+| `nav_agent_move_to`, `nav_agent_stop` | F | `NavigationAdapter::update` | Recorded at the call and applied in the tick's navigation update, in entity order, so script order within a tick cannot matter. The adapter is the agent system for configured agents: it steps the queue, takes paths, steers through the crowd and moves agents (through `AgentMotion` when the host binds one). |
+| `nav_agent_state` | N F U | `NavAgent` + the crowd | `CY_NAV_AGENT_EVENT` is set by the update that arrived or failed and cleared by the next: exactly one tick. |
+
+Tests: `unit.abi` (`test_game_physics.cpp`, `test_game_navigation.cpp`, against fake backends) and
+`integration.game_backend_physics` (reference server) / `integration.game_backend_navigation` (a real
+mesh, queue and crowd).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

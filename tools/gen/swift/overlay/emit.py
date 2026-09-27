@@ -62,6 +62,11 @@ ENUM_SPECS = {
     "CySeverity": ("Severity", "CY_SEVERITY_", "UInt32"),
     "CyStage": ("SystemStage", "CY_STAGE_", "UInt32"),
     "CyServiceEventKind": ("ServiceEventKind", "CY_SERVICE_EVENT_", "UInt32"),
+    # ADDED AT ABI 1.3 with the game services (`add-swift-game-api`).
+    "CyPhase": ("Phase", "CY_PHASE_", "UInt32"),
+    "CyShapeKind": ("ShapeKind", "CY_SHAPE_", "UInt32"),
+    "CyNavPathStatus": ("NavPathStatus", "CY_NAV_PATH_STATUS_", "UInt32"),
+    "CyNavQueryState": ("NavQueryState", "CY_NAV_QUERY_", "UInt32"),
 }
 
 
@@ -151,12 +156,21 @@ def enums(description: dict) -> str:
 /// Also generated, and also replacing a copy. `SystemStage` was hand-written in CyberdyneKit with a
 /// comment saying "there is no `CyStage` in `cy_abi.h`, so nothing checks that this list still
 /// matches"; the fix was the appended enum rather than more care.""")
+    # ABI 1.3's game-service enums (`add-swift-game-api`). Generated for the reason the two above
+    # are: CyberdyneKit's facades switch on them, and a hand-written copy is what went wrong before.
+    game = "\n".join(_enum(description, name, doc) for name, doc in (
+        ("CyPhase", "/// `CyPhase`: the update phase an ABI 1.3 entry is called in."),
+        ("CyShapeKind", "/// `CyShapeKind`: the shapes a physics query sweeps or overlaps."),
+        ("CyNavPathStatus", "/// `CyNavPathStatus`: where a crowd agent is on its way to a target."),
+        ("CyNavQueryState", "/// `CyNavQueryState`: an asynchronous path search's state."),
+    ))
     return f"""{BANNER}
 {status}
 {var_type}
 {init_level}
 {severity}
 {stage}
+{game}
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

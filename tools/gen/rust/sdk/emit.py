@@ -51,6 +51,11 @@ ENUM_SPECS = {
     "CyInitLevel": ("InitLevel", "CY_INIT_LEVEL_", "u32"),
     "CyStage": ("Stage", "CY_STAGE_", "u32"),
     "CyServiceEventKind": ("ServiceEventKind", "CY_SERVICE_EVENT_", "u32"),
+    # ABI 1.3, the game services (`add-swift-game-api`).
+    "CyPhase": ("Phase", "CY_PHASE_", "u32"),
+    "CyShapeKind": ("ShapeKind", "CY_SHAPE_", "u32"),
+    "CyNavPathStatus": ("NavPathStatus", "CY_NAV_PATH_STATUS_", "u32"),
+    "CyNavQueryState": ("NavQueryState", "CY_NAV_QUERY_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

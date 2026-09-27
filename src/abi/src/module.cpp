@@ -309,9 +309,26 @@ Status BehaviourRuntime::destroy(u32 slot) noexcept {
 }
 
 void BehaviourRuntime::fixed_update(f32 dt) noexcept {
+    // The phase is set for the whole dispatch and restored after it, so a 1.3 entry a callback
+    // calls sees CY_PHASE_FIXED_UPDATE and applies the fixed step's rules — and no callback can
+    // leave the phase set. `add-swift-game-api`.
+    host_.game.clock.fixed_delta = static_cast<f64>(dt);
+    const game::PhaseScope phase(host_.game.clock, CY_PHASE_FIXED_UPDATE);
     for (BehaviourInstance& live : instances_) {
         if (live.instance != nullptr && live.record->vtable.fixed_update != nullptr) {
             live.record->vtable.fixed_update(live.instance, dt, live.record->vtable.user_data);
+        }
+    }
+}
+
+void BehaviourRuntime::frame_update(f32 dt) noexcept {
+    // A behaviour registered with no frame callback — every module built before 1.3, whose shorter
+    // vtable left the entry null — is skipped, and costs one comparison.
+    host_.game.clock.frame_delta = static_cast<f64>(dt);
+    const game::PhaseScope phase(host_.game.clock, CY_PHASE_FRAME_UPDATE);
+    for (BehaviourInstance& live : instances_) {
+        if (live.instance != nullptr && live.record->vtable.frame_update != nullptr) {
+            live.record->vtable.frame_update(live.instance, dt, live.record->vtable.user_data);
         }
     }
 }

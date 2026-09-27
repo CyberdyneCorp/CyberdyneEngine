@@ -520,6 +520,221 @@ impl ServiceEventKind {
         }
     }
 }
+/// `CyPhase`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum Phase {
+    /// `CY_PHASE_NONE` = 0.
+    None = 0,
+    /// `CY_PHASE_FIXED_UPDATE` = 1.
+    FixedUpdate = 1,
+    /// `CY_PHASE_FRAME_UPDATE` = 2.
+    FrameUpdate = 2,
+}
+
+impl Phase {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [Phase; 3] = [Phase::None, Phase::FixedUpdate, Phase::FrameUpdate];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(Phase::None),
+            1 => Some(Phase::FixedUpdate),
+            2 => Some(Phase::FrameUpdate),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            Phase::None => "CY_PHASE_NONE",
+            Phase::FixedUpdate => "CY_PHASE_FIXED_UPDATE",
+            Phase::FrameUpdate => "CY_PHASE_FRAME_UPDATE",
+        }
+    }
+}
+/// `CyShapeKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum ShapeKind {
+    /// `CY_SHAPE_SPHERE` = 0.
+    Sphere = 0,
+    /// `CY_SHAPE_CAPSULE` = 1.
+    Capsule = 1,
+    /// `CY_SHAPE_BOX` = 2.
+    Box = 2,
+}
+
+impl ShapeKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [ShapeKind; 3] = [ShapeKind::Sphere, ShapeKind::Capsule, ShapeKind::Box];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(ShapeKind::Sphere),
+            1 => Some(ShapeKind::Capsule),
+            2 => Some(ShapeKind::Box),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            ShapeKind::Sphere => "CY_SHAPE_SPHERE",
+            ShapeKind::Capsule => "CY_SHAPE_CAPSULE",
+            ShapeKind::Box => "CY_SHAPE_BOX",
+        }
+    }
+}
+/// `CyNavPathStatus`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum NavPathStatus {
+    /// `CY_NAV_PATH_STATUS_IDLE` = 0.
+    Idle = 0,
+    /// `CY_NAV_PATH_STATUS_COMPUTING` = 1.
+    Computing = 1,
+    /// `CY_NAV_PATH_STATUS_FOLLOWING` = 2.
+    Following = 2,
+    /// `CY_NAV_PATH_STATUS_ARRIVED` = 3.
+    Arrived = 3,
+    /// `CY_NAV_PATH_STATUS_FAILED` = 4.
+    Failed = 4,
+}
+
+impl NavPathStatus {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [NavPathStatus; 5] = [
+        NavPathStatus::Idle,
+        NavPathStatus::Computing,
+        NavPathStatus::Following,
+        NavPathStatus::Arrived,
+        NavPathStatus::Failed,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(NavPathStatus::Idle),
+            1 => Some(NavPathStatus::Computing),
+            2 => Some(NavPathStatus::Following),
+            3 => Some(NavPathStatus::Arrived),
+            4 => Some(NavPathStatus::Failed),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            NavPathStatus::Idle => "CY_NAV_PATH_STATUS_IDLE",
+            NavPathStatus::Computing => "CY_NAV_PATH_STATUS_COMPUTING",
+            NavPathStatus::Following => "CY_NAV_PATH_STATUS_FOLLOWING",
+            NavPathStatus::Arrived => "CY_NAV_PATH_STATUS_ARRIVED",
+            NavPathStatus::Failed => "CY_NAV_PATH_STATUS_FAILED",
+        }
+    }
+}
+/// `CyNavQueryState`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum NavQueryState {
+    /// `CY_NAV_QUERY_PENDING` = 0.
+    Pending = 0,
+    /// `CY_NAV_QUERY_READY` = 1.
+    Ready = 1,
+    /// `CY_NAV_QUERY_CONSUMED` = 2.
+    Consumed = 2,
+    /// `CY_NAV_QUERY_CANCELLED` = 3.
+    Cancelled = 3,
+}
+
+impl NavQueryState {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [NavQueryState; 4] = [
+        NavQueryState::Pending,
+        NavQueryState::Ready,
+        NavQueryState::Consumed,
+        NavQueryState::Cancelled,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(NavQueryState::Pending),
+            1 => Some(NavQueryState::Ready),
+            2 => Some(NavQueryState::Consumed),
+            3 => Some(NavQueryState::Cancelled),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            NavQueryState::Pending => "CY_NAV_QUERY_PENDING",
+            NavQueryState::Ready => "CY_NAV_QUERY_READY",
+            NavQueryState::Consumed => "CY_NAV_QUERY_CONSUMED",
+            NavQueryState::Cancelled => "CY_NAV_QUERY_CANCELLED",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

@@ -36,6 +36,7 @@
 #pragma once
 
 #include <cy/abi/cy_abi.h>
+#include <cy/abi/game/services.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/allocator.h>
@@ -204,6 +205,10 @@ struct CyEngine_T {
     cy::Allocator& allocator;
     CyWorld_T* world = nullptr;
     cy::abi::EditorServiceBackend* editor_service = nullptr;
+    /// ABI 1.3's game services and the clock their phase rules read. Bound by the embedder, one
+    /// field at a time; a backend left null makes its entries answer UNAVAILABLE. See
+    /// cy/abi/game/services.h.
+    cy::abi::game::GameServices game;
     cy::Array<CyBehaviourType_T*> behaviours;
     cy::u32 generation = 0;
     /// Heap-backed `CyVar` payloads currently alive. Atomic because a value may be released on a
