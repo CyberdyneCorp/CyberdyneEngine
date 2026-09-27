@@ -1530,6 +1530,7 @@ impl Interface {
     /// live, a pointer must point at what its type says for the duration of the call, and a
     /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
     /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    #[allow(clippy::too_many_arguments, reason = "mirrors the C ABI entry")]
     pub unsafe fn physics_shape_cast(
         &self,
         engine: ffi::CyEngine,
@@ -1572,6 +1573,7 @@ impl Interface {
     /// live, a pointer must point at what its type says for the duration of the call, and a
     /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
     /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    #[allow(clippy::too_many_arguments, reason = "mirrors the C ABI entry")]
     pub unsafe fn physics_overlap(
         &self,
         engine: ffi::CyEngine,

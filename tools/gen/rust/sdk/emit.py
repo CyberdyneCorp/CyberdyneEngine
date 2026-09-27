@@ -433,6 +433,10 @@ def _empty_table(description: dict) -> str:
     return "\n".join(lines)
 
 
+#: Clippy's `too_many_arguments` default, counting `&self`.
+CLIPPY_ARGUMENT_LIMIT = 7
+
+
 def _call(entry: dict, record: entries.Entry, enum_names: frozenset[str]) -> str:
     returns, parameters = entries.signature(entry)
     typed = [f"{identifier(name)}: {rusttypes.ffi(spelling, enum_names, 'ffi::')}"
@@ -456,6 +460,10 @@ def _call(entry: dict, record: entries.Entry, enum_names: frozenset[str]) -> str
         body = f"        Ok(unsafe {{ entry({arguments}) }})"
         result_type = rusttypes.ffi(returns, enum_names, "ffi::")
 
+    # The method mirrors the C entry's parameter list, so clippy's argument ceiling is not this
+    # generator's to meet; a longer ABI call would otherwise fail `-D warnings` in the editor build.
+    allow = ("    #[allow(clippy::too_many_arguments, reason = \"mirrors the C ABI entry\")]\n"
+             if len(typed) + 1 > CLIPPY_ARGUMENT_LIMIT else "")
     return f"""    /// {record.doc}
     ///
     /// # Safety
@@ -464,7 +472,7 @@ def _call(entry: dict, record: entries.Entry, enum_names: frozenset[str]) -> str
     /// live, a pointer must point at what its type says for the duration of the call, and a
     /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
     /// the crate root is what discharges these; nothing outside the SDK calls this directly.
-    pub unsafe fn {name}({signature_text}) -> Result<{result_type}, CallError> {{
+{allow}    pub unsafe fn {name}({signature_text}) -> Result<{result_type}, CallError> {{
         let entry = self.table().{name}.ok_or(CallError::Missing("{name}"))?;
 {body}
     }}"""

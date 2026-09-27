@@ -218,6 +218,25 @@ def the_interface_declares_one_method_per_entry() -> None:
         assert f"pub unsafe fn {entry['name']}(" in interface, f"{entry['name']} has no method"
 
 
+def a_long_abi_call_is_allowed_past_clippys_argument_ceiling() -> None:
+    """A method with more parameters than clippy accepts carries the allow, or the editor's
+    `-D warnings` build fails (physics_shape_cast, 9 with `&self`, broke all three editor legs)."""
+    description = describe_edited()
+    interface = emit.interface(description)
+    allow = "    #[allow(clippy::too_many_arguments"
+    long_calls = 0
+    for entry in entries.function_entries(description):
+        _, parameters = entries.signature(entry)
+        opening = f"    pub unsafe fn {entry['name']}("
+        preceding = interface.split(opening, 1)[0].rsplit("\n", 2)[-2]
+        if len(parameters) + 1 > 7:  # clippy's default ceiling, counting &self
+            long_calls += 1
+            assert preceding.startswith(allow), f"{entry['name']} is too long and has no allow"
+        else:
+            assert not preceding.startswith(allow), f"{entry['name']} carries an allow it needs not"
+    assert long_calls > 0, "no entry exceeds the ceiling, so this case checks nothing"
+
+
 def the_empty_table_names_every_entry() -> None:
     description = describe_edited()
     ffi = emit.ffi(description)
@@ -248,6 +267,8 @@ CASES = [
     ("14. every record has a layout assertion", the_layout_assertions_cover_every_record),
     ("15. every table entry has a method", the_interface_declares_one_method_per_entry),
     ("16. every table entry is in CyInterface::EMPTY", the_empty_table_names_every_entry),
+    ("17. a long ABI call is allowed past clippy's argument ceiling",
+     a_long_abi_call_is_allowed_past_clippys_argument_ceiling),
 ]
 
 
