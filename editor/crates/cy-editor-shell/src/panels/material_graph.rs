@@ -148,15 +148,18 @@ fn draw_material_canvas(
         .flatten();
     let pending = matches!(backend.request, MaterialRequestState::Pending { .. });
     let queued = RefCell::new(Vec::new());
+    let draft = RefCell::new(None);
+    let draft_name = inputs.material_name.clone();
+    let draft_reference = inputs.material_open_reference.clone();
     let move_seen = Cell::new(false);
     let mut connect = |canvas: &mut GraphCanvas, link: &GraphConnection| -> Result<()> {
+        if pending {
+            return Err(Problem::new(
+                "connect material nodes",
+                "engine authoring is pending",
+            ));
+        }
         if let Some(reference) = saved_reference.as_ref() {
-            if pending {
-                return Err(Problem::new(
-                    "connect material nodes",
-                    "engine authoring is pending",
-                ));
-            }
             let mut candidate = canvas.clone();
             candidate.connect_identified(link.from, link.from_pin, link.to, link.to_pin)?;
             queued
@@ -164,11 +167,24 @@ fn draw_material_canvas(
                 .push(material_connect_intent(reference, link));
             Ok(())
         } else {
-            canvas.connect_identified(link.from, link.from_pin, link.to, link.to_pin)
+            canvas.connect_identified(link.from, link.from_pin, link.to, link.to_pin)?;
+            *draft.borrow_mut() = Some(material_draft_intent(
+                canvas,
+                &draft_name,
+                draft_reference.as_deref(),
+            )?);
+            Ok(())
         }
     };
     let mut move_node = |canvas: &mut GraphCanvas, movement: GraphMovement| {
         move_seen.set(true);
+        if pending {
+            return Err(Problem::new(
+                "move a material node",
+                "engine authoring is pending",
+            ));
+        }
+        let saved_drag = inputs.material_drag.is_some();
         move_material_node_gesture(
             canvas,
             saved_reference.as_deref(),
@@ -176,7 +192,15 @@ fn draw_material_canvas(
             pending,
             &queued,
             movement,
-        )
+        )?;
+        if movement.finished && saved_reference.is_none() && !saved_drag {
+            *draft.borrow_mut() = Some(material_draft_intent(
+                canvas,
+                &draft_name,
+                draft_reference.as_deref(),
+            )?);
+        }
+        Ok(())
     };
     draw_canvas(
         ui,
@@ -196,6 +220,11 @@ fn draw_material_canvas(
         inputs.material_drag = None;
     }
     intents.extend(queued.into_inner());
+    if let Some((reference, intent)) = draft.into_inner() {
+        inputs.material_open_reference = Some(reference);
+        inputs.material_canvas_state = super::MaterialCanvasState::Draft;
+        intents.push(intent);
+    }
 }
 
 fn selected_graph_control(
@@ -213,6 +242,7 @@ fn selected_graph_control(
                 Ok(name) => {
                     inputs.material_name = name;
                     inputs.material_open_reference = Some(reference.into());
+                    inputs.material_canvas_state = super::MaterialCanvasState::Authored;
                     inputs.material_preview_source = None;
                     inputs.material_property_problem = None;
                     inputs.material_drag = None;
@@ -494,6 +524,9 @@ fn material_edit_controls(
 ) {
     let saved = saved_canvas_is_current(canvas, inputs, backend.project_root);
     let pending = matches!(backend.request, MaterialRequestState::Pending { .. });
+    let draft = RefCell::new(None);
+    let draft_name = inputs.material_name.clone();
+    let draft_reference = inputs.material_open_reference.clone();
     ui.add_enabled_ui(!pending, |ui| {
         graph_properties_with(
             ui,
@@ -516,11 +549,22 @@ fn material_edit_controls(
                     ));
                     Ok(())
                 } else {
-                    canvas.set_property_by_identity(key, property.identity, value)
+                    canvas.set_property_by_identity(key, property.identity, value)?;
+                    *draft.borrow_mut() = Some(material_draft_intent(
+                        canvas,
+                        &draft_name,
+                        draft_reference.as_deref(),
+                    )?);
+                    Ok(())
                 }
             },
         );
     });
+    if let Some((reference, intent)) = draft.into_inner() {
+        inputs.material_open_reference = Some(reference);
+        inputs.material_canvas_state = super::MaterialCanvasState::Draft;
+        intents.push(intent);
+    }
     selected_node_remove_control(ui, canvas, inputs, intents, saved, pending);
     link_disconnect_controls(ui, canvas, inputs, intents, saved, pending);
 }
@@ -552,8 +596,13 @@ fn selected_node_remove_control(
                     Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
                 ),
         ));
-    } else if let Err(problem) = canvas.remove(node) {
-        inputs.material_link_problem = Some(problem.to_string());
+    } else {
+        let result = canvas
+            .remove(node)
+            .and_then(|()| queue_material_draft(canvas, inputs, intents));
+        if let Err(problem) = result {
+            inputs.material_link_problem = Some(problem.to_string());
+        }
     }
 }
 
@@ -597,10 +646,13 @@ fn link_disconnect_controls(
                         )
                         .with("to_pin", Value::Text(link.to_pin.clone())),
                 ));
-            } else if let Err(problem) =
-                canvas.disconnect(link.from, &link.from_pin, link.to, &link.to_pin)
-            {
-                inputs.material_link_problem = Some(problem.to_string());
+            } else {
+                let result = canvas
+                    .disconnect(link.from, &link.from_pin, link.to, &link.to_pin)
+                    .and_then(|()| queue_material_draft(canvas, inputs, intents));
+                if let Err(problem) = result {
+                    inputs.material_link_problem = Some(problem.to_string());
+                }
             }
         });
     }
@@ -624,8 +676,13 @@ fn add_palette_node(
                 .with("x", Value::Float(at.x))
                 .with("y", Value::Float(at.y)),
         ));
-    } else if let Err(problem) = canvas.add(node_type, at) {
-        inputs.material_link_problem = Some(problem.to_string());
+    } else {
+        let result = canvas
+            .add(node_type, at)
+            .and_then(|_node| queue_material_draft(canvas, inputs, intents));
+        if let Err(problem) = result {
+            inputs.material_link_problem = Some(problem.to_string());
+        }
     }
 }
 
@@ -713,15 +770,54 @@ fn saved_canvas_is_current(
     inputs: &super::Inputs,
     project_root: &std::path::Path,
 ) -> bool {
+    if inputs.material_canvas_state == super::MaterialCanvasState::Draft {
+        return false;
+    }
     inputs
         .material_open_reference
         .as_ref()
         .is_some_and(|reference| {
+            if !project_root.join(reference).is_file() {
+                return false;
+            }
             let path = project_root.join(reference).with_extension("cymatcanvas");
             canvas_interchange(&inputs.material_name, canvas).is_ok_and(|source| {
                 std::fs::read_to_string(path).ok().as_deref() == Some(source.as_str())
             })
         })
+}
+
+fn material_draft_intent(
+    canvas: &GraphCanvas,
+    name: &str,
+    reference: Option<&str>,
+) -> Result<(String, Intent)> {
+    let source = canvas_interchange(name, canvas)?;
+    let reference =
+        reference.map_or_else(|| format!("materials/{name}.cygraph"), ToOwned::to_owned);
+    let intent = Intent::Invoke(
+        "material.canvas.draft.save".into(),
+        Arguments::new()
+            .with("reference", Value::Text(reference.clone()))
+            .with("source", Value::Text(source)),
+    );
+    Ok((reference, intent))
+}
+
+fn queue_material_draft(
+    canvas: &GraphCanvas,
+    inputs: &mut super::Inputs,
+    intents: &mut Vec<Intent>,
+) -> Result<()> {
+    let (reference, intent) = material_draft_intent(
+        canvas,
+        &inputs.material_name,
+        inputs.material_open_reference.as_deref(),
+    )?;
+    inputs.material_open_reference = Some(reference);
+    inputs.material_canvas_state = super::MaterialCanvasState::Draft;
+    intents.push(intent);
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1840,6 +1936,7 @@ mod tests {
             canvas_interchange(&inputs.material_name, &canvas).unwrap(),
         )
         .unwrap();
+        std::fs::write(root.join("materials/sway.cygraph"), "cygraph 1\n").unwrap();
         let mut intents = Vec::new();
         let at = GraphLayout { x: 12.0, y: 30.0 };
         add_palette_node(
@@ -1867,7 +1964,10 @@ mod tests {
             at,
         );
         assert_eq!(canvas.nodes().count(), 1);
-        assert_eq!(intents.len(), 1);
+        assert_eq!(intents.len(), 2);
+        assert!(
+            matches!(intents.last(), Some(Intent::Invoke(command, _)) if command == "material.canvas.draft.save")
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

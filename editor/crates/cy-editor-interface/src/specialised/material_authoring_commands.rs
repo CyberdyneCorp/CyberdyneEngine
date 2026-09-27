@@ -87,8 +87,13 @@ fn edit_canvas(
     let name = load_canvas_interchange(&project.material_graph_read(reference)?, &mut canvas)?;
     let outcome = edit(&mut canvas)?;
     let source = canvas_interchange(&name, &canvas)?;
-    let request = project.material_graph_save(reference, &source)?;
-    Ok(outcome.with("request", Value::Text(request.to_string())))
+    if project.material_graph_authored(reference) {
+        let request = project.material_graph_save(reference, &source)?;
+        Ok(outcome.with("request", Value::Text(request.to_string())))
+    } else {
+        project.material_canvas_draft_save(reference, &source)?;
+        Ok(outcome)
+    }
 }
 
 fn add_node() -> Command {

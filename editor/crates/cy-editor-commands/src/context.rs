@@ -446,6 +446,12 @@ pub trait ProjectHost {
     /// Report the latest engine material request and transient preview state.
     fn material_graph_status(&self) -> String;
 
+    /// Journal editable material canvas text without authoring a canonical graph yet.
+    fn material_canvas_draft_save(&mut self, reference: &str, source: &str) -> Result<()>;
+
+    /// Whether this material path already has a canonical engine-authored graph.
+    fn material_graph_authored(&self, reference: &str) -> bool;
+
     /// Current engine-owned material node catalogue for graph edit commands.
     fn material_catalogue(&self) -> Option<Vec<u8>> {
         None

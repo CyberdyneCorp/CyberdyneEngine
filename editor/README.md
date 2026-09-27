@@ -486,8 +486,10 @@ unsaved canvas edits alone.
 On an unchanged saved canvas, the desktop palette routes node add, connect, drag release, typed
 property edit, disconnect, and remove through `material.node.*` commands. The same commands are
 available over MCP, validate against the engine's material catalogue, and ask the engine to author
-each edit as one undoable save. A new or unsaved canvas keeps local edits until Save; individual
-history for those unsaved gestures remains part of #15.
+each edit as one undoable save. Before a canonical graph exists, canvas gestures record the
+editable `.cymatcanvas` through `material.canvas.draft.save` as individual undo steps. This keeps
+incomplete graphs editable without asking the engine to author them. The canonical Save still
+validates the complete graph through the engine.
 The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
 and shadow passes. A graph requiring an unbound environment field is refused before replacing the
 last valid preview. The actual wind-field binding remains part of issue #15.

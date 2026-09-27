@@ -692,6 +692,63 @@ fn material_node_edits_round_trip_as_individual_mcp_transactions() {
     );
 }
 
+#[test]
+fn material_draft_gestures_undo_before_canonical_authoring() {
+    let sandbox = Sandbox::new("material-draft-history");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let (_runtime_reader, _runtime_writer) = install_vfx_stage_catalogue(&mut editor);
+    let reference = "game/draft.cygraph";
+    let blank = "cymatcanvas 1\nmaterial draft\n";
+    let draft = material_graph_call(2, "material.canvas.draft.save", reference, blank);
+    assert_eq!(
+        result(&converse(&[INITIALIZE, &draft], &mut editor), 1).get("isError"),
+        &Json::Bool(false)
+    );
+    assert!(!sandbox.0.join(reference).exists());
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/draft.cymatcanvas")).unwrap(),
+        blank
+    );
+
+    let add = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"material.node.add","arguments":{"reference":"game/draft.cygraph","node_type":"material.constant","x":12,"y":30}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&add, 1).get("isError"), &Json::Bool(false));
+    let with_node = std::fs::read_to_string(sandbox.0.join("game/draft.cymatcanvas")).unwrap();
+    assert!(with_node.contains("node 1 material.constant"));
+    assert!(!sandbox.0.join(reference).exists());
+    let undo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undo, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/draft.cymatcanvas")).unwrap(),
+        blank
+    );
+    let redo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redo, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/draft.cymatcanvas")).unwrap(),
+        with_node
+    );
+}
+
 fn assert_material_property_refusal_preserves_history(
     editor: &mut Editor,
     root: &std::path::Path,

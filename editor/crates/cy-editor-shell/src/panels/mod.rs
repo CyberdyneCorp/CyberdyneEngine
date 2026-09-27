@@ -137,6 +137,16 @@ pub enum VfxCanvasVisibility {
     Visible,
 }
 
+/// Whether the open material canvas has a canonical engine graph or only a saved draft.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum MaterialCanvasState {
+    /// The canvas follows its canonical graph.
+    #[default]
+    Authored,
+    /// Canvas edits are recorded before a canonical graph can be authored.
+    Draft,
+}
+
 /// The text a person has typed into a panel's own field.
 ///
 /// Presentation state, and it lives beside the panels rather than in a view model for the reason
@@ -175,6 +185,8 @@ pub struct Inputs {
     pub material_name: String,
     /// Project asset opened into the canvas; independent of later scene selection.
     pub material_open_reference: Option<String>,
+    /// Local draft edits use source-only history until the canonical graph is authored.
+    pub material_canvas_state: MaterialCanvasState,
     /// Last semantic graph submitted for live scene preview.
     pub material_preview_source: Option<(String, String)>,
     /// Saved material node drag awaiting one history command at pointer release.
@@ -326,6 +338,7 @@ impl Default for Inputs {
             material_property_problem: None,
             material_name: "editor_preview".into(),
             material_open_reference: None,
+            material_canvas_state: MaterialCanvasState::Authored,
             material_preview_source: None,
             material_drag: None,
             vfx_filter: String::new(),

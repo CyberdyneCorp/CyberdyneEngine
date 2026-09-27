@@ -61,7 +61,7 @@ use cy_editor_visual::density::{Density, Metrics, Scale};
 
 use crate::keys::{Keys, Pressed};
 use crate::palette::Palette;
-use crate::panels::{Inputs, Intent, Panels, external_import_intent};
+use crate::panels::{Inputs, Intent, MaterialCanvasState, Panels, external_import_intent};
 use crate::view::ViewAction;
 use crate::viewport_link::ViewportLink;
 use crate::{chrome, dock, documents, identity, theme};
@@ -640,7 +640,9 @@ impl EditorWindow {
             self.perform(action);
             return;
         }
-        if matches!(id, "edit.undo" | "edit.redo") || id.starts_with("material.node.") {
+        if matches!(id, "edit.undo" | "edit.redo" | "material.canvas.draft.save")
+            || id.starts_with("material.node.")
+        {
             self.settle_material_save();
             self.track_open_material();
         }
@@ -649,29 +651,10 @@ impl EditorWindow {
             .invoke(id, &self.scope, &mut self.editor, arguments)
         {
             Ok(outcome) => {
-                if id == "material.graph.save"
-                    && let Some(reference) = arguments.text("reference")
-                {
-                    self.inputs.material_open_reference = Some(reference.into());
-                    if let Some(source) = arguments.text("source")
-                        && self.specialised.active() == Some(Domain::Materials)
-                        && self
-                            .specialised
-                            .open(Domain::Materials)
-                            .ok()
-                            .and_then(|session| session.graph)
-                            .and_then(|canvas| {
-                                cy_editor_interface::specialised::material::canvas_interchange(
-                                    &self.inputs.material_name,
-                                    canvas,
-                                )
-                                .ok()
-                            })
-                            .as_deref()
-                            == Some(source)
-                    {
-                        self.material_save_pending = Some((reference.into(), source.into()));
-                    }
+                if id == "material.graph.save" {
+                    self.remember_material_graph_save(arguments);
+                } else if id == "material.canvas.draft.save" {
+                    self.remember_material_draft_save(arguments);
                 }
                 if matches!(id, "edit.undo" | "edit.redo")
                     && let Err(problem) = self.sync_material_after_history()
@@ -738,6 +721,49 @@ impl EditorWindow {
         }
     }
 
+    fn open_material_matches(&mut self, source: &str) -> bool {
+        self.specialised.active() == Some(Domain::Materials)
+            && self
+                .specialised
+                .open(Domain::Materials)
+                .ok()
+                .and_then(|session| session.graph)
+                .and_then(|canvas| {
+                    cy_editor_interface::specialised::material::canvas_interchange(
+                        &self.inputs.material_name,
+                        canvas,
+                    )
+                    .ok()
+                })
+                .as_deref()
+                == Some(source)
+    }
+
+    fn remember_material_graph_save(&mut self, arguments: &Arguments) {
+        let Some(reference) = arguments.text("reference") else {
+            return;
+        };
+        self.inputs.material_open_reference = Some(reference.into());
+        if let Some(source) = arguments.text("source")
+            && self.open_material_matches(source)
+        {
+            self.material_save_pending = Some((reference.into(), source.into()));
+        }
+    }
+
+    fn remember_material_draft_save(&mut self, arguments: &Arguments) {
+        let (Some(reference), Some(source)) =
+            (arguments.text("reference"), arguments.text("source"))
+        else {
+            return;
+        };
+        if self.open_material_matches(source) {
+            self.inputs.material_open_reference = Some(reference.into());
+            self.inputs.material_canvas_state = MaterialCanvasState::Draft;
+            self.material_committed = Some((reference.into(), Some(source.into())));
+        }
+    }
+
     fn sync_vfx_after_history(&mut self) -> cy_editor_core::problem::Result<()> {
         let Some((reference, previous)) = self.vfx_committed.as_ref() else {
             return Ok(());
@@ -795,6 +821,7 @@ impl EditorWindow {
                 == Some(source)
         {
             self.material_committed = Some((reference.clone(), Some(source.clone())));
+            self.inputs.material_canvas_state = MaterialCanvasState::Authored;
             self.material_save_pending = None;
         }
     }
@@ -2006,6 +2033,66 @@ mod tests {
             .unwrap();
         window.sync_material_after_history().unwrap();
         assert_eq!(material_node_count(&mut window), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unsaved_material_canvas_undoes_before_engine_authoring() {
+        let root = scratch("material-draft-history");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut window = window();
+        window.editor.project = ProjectService::new(&root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        window
+            .specialised
+            .install_material_catalogue(&material_test_catalogue())
+            .unwrap();
+        let canvas = window
+            .specialised
+            .open(Domain::Materials)
+            .unwrap()
+            .graph
+            .unwrap();
+        canvas
+            .add(
+                "material.future",
+                cy_editor_interface::specialised::graph::Layout { x: 12.0, y: 30.0 },
+            )
+            .unwrap();
+        window.inputs.material_name = "draft".into();
+        let source = cy_editor_interface::specialised::material::canvas_interchange(
+            &window.inputs.material_name,
+            window
+                .specialised
+                .open(Domain::Materials)
+                .unwrap()
+                .graph
+                .unwrap(),
+        )
+        .unwrap();
+        let reference = "materials/draft.cygraph";
+        window.apply(vec![Intent::Invoke(
+            "material.canvas.draft.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(source.clone())),
+        )]);
+        assert_eq!(
+            std::fs::read_to_string(root.join("materials/draft.cymatcanvas")).unwrap(),
+            source
+        );
+        assert!(!root.join(reference).exists());
+        assert!(window.inputs.material_canvas_state == MaterialCanvasState::Draft);
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(material_node_count(&mut window), 0);
+        assert!(!root.join("materials/draft.cymatcanvas").exists());
+        window.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
+        assert_eq!(material_node_count(&mut window), 1);
+        assert_eq!(
+            std::fs::read_to_string(root.join("materials/draft.cymatcanvas")).unwrap(),
+            source
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

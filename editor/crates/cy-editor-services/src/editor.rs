@@ -1444,6 +1444,69 @@ impl cy_editor_commands::ProjectHost for Editor {
         )
     }
 
+    fn material_canvas_draft_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        let (_, canvas_path) = crate::material_graph::paths(self.project.root(), reference)?;
+        if !source.starts_with("cymatcanvas 1\n") {
+            return Err(Problem::new(
+                "save a material canvas draft",
+                "expected cymatcanvas 1 source",
+            ));
+        }
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a material canvas draft",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let canvas_reference = canvas_path
+            .strip_prefix(self.project.root())
+            .map_err(|error| Problem::new("save a material canvas draft", error.to_string()))?
+            .to_string_lossy()
+            .into_owned();
+        let prior_source = self.project.read_source(&canvas_reference).ok();
+        if prior_source.as_deref() == Some(source) {
+            return Ok(());
+        }
+        let prior_graph = self.project.read_source(reference).ok();
+        self.project.put_source(&canvas_reference, Some(source))?;
+        let recorded = (|| -> Result<()> {
+            let document = self.documents.get_mut(document_id).ok_or_else(|| {
+                Problem::new(
+                    "save a material canvas draft",
+                    "the active scene document closed",
+                )
+            })?;
+            document.with_transaction(
+                format!("Edit material canvas {reference}"),
+                self.actor.clone(),
+                |document| {
+                    document.record(cy_editor_documents::operation::Operation::Domain {
+                        node: None,
+                        kind: format!("{}{reference}", crate::material_graph::GRAPH_DOMAIN_PREFIX),
+                        before: crate::material_graph::encode_pair(
+                            prior_graph.as_deref(),
+                            prior_source.as_deref(),
+                        ),
+                        after: crate::material_graph::encode_pair(
+                            prior_graph.as_deref(),
+                            Some(source),
+                        ),
+                    })
+                },
+            )
+        })();
+        if let Err(problem) = recorded {
+            self.project
+                .put_source(&canvas_reference, prior_source.as_deref())?;
+            return Err(problem);
+        }
+        Ok(())
+    }
+
+    fn material_graph_authored(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
     fn vfx_document_read(&self, reference: &str) -> Result<String> {
         crate::vfx_document::validate_reference(reference)?;
         self.project.read_source(reference)
