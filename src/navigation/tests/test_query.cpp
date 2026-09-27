@@ -5,6 +5,10 @@
 #include <cy/navigation/query.h>
 #include <cy/test/test.h>
 
+#include <algorithm>
+#include <initializer_list>
+#include <utility>
+
 #include "nav_fixture.h"
 
 using namespace cy;
@@ -53,6 +57,179 @@ CY_TEST_CASE("A* crosses a tile boundary and the funnel pulls the path straight"
     // funnel SHALL reduce the path to a straight two-point line".
     CY_CHECK_EQ(path.size(), usize{2});
     CY_CHECK_NEAR(path[1].position.x, 14.0F, 0.001F);
+}
+
+// --- Funnel regressions ------------------------------------------------------------------------
+//
+// The funnel once compared its sides with the opposite sign to `triarea2`'s "positive is left", so
+// a path that crossed cells diagonally came back through every portal corner — a staircase —
+// while a path along one cell row still came out straight, because there both signs agree. These
+// cases are the diagonal and off-axis paths the row-only case above never exercised.
+
+namespace {
+
+/// Four tiles in a square, 16 m a side, of 2 m quads: a flat region crossed by many polygons.
+[[nodiscard]] NavMesh open_field_mesh() noexcept {
+    NavMesh mesh(allocator(), Name::intern("test.nav"), 8.0F);
+    for (const i32 z : {0, 1}) {
+        for (const i32 x : {0, 1}) {
+            CY_REQUIRE(mesh.add_tile(testing::grid_tile(allocator(), TileCoord{x, z, 0}, 8.0F, 4))
+                           .has_value());
+        }
+    }
+    return mesh;
+}
+
+/// One 8 m tile of 1 m quads keeping only the cells `walkable(row, column)` accepts.
+template <typename Walkable>
+[[nodiscard]] NavMesh carved_mesh(Walkable walkable) noexcept {
+    NavMesh mesh(allocator(), Name::intern("test.nav"), 8.0F);
+    CY_REQUIRE(
+        mesh.add_tile(testing::grid_tile_where(allocator(), TileCoord{0, 0, 0}, 8.0F, 8, walkable))
+            .has_value());
+    return mesh;
+}
+
+/// Search and straighten from `start` to `end`; the corridor must be complete.
+[[nodiscard]] Array<PathPoint> straight_path(const NavMesh& mesh, Vec3 start, Vec3 end) noexcept {
+    PathCorridor corridor(allocator());
+    const PathResult result =
+        find_path(mesh, start, end, Vec3{0.5F, 2.0F, 0.5F}, PathFilter{}, corridor);
+    CY_REQUIRE(result.found);
+    CY_REQUIRE_FALSE(result.partial);
+    Array<PathPoint> path(allocator());
+    CY_REQUIRE(straighten(mesh, corridor, start, end, path).has_value());
+    return path;
+}
+
+/// Straighten over the corridor of every polygon the segment from `start` to `end` crosses, in
+/// order — the corridor that contains the straight line, whichever one a search would prefer. The
+/// polygons are `open_field_mesh`'s 2 m cells, found at the midpoint between each pair of
+/// consecutive grid-line crossings.
+[[nodiscard]] Array<PathPoint> path_along(const NavMesh& mesh, Vec3 start, Vec3 end) noexcept {
+    constexpr f32 kCell = 2.0F;
+    constexpr u32 kLines = 8;
+    Array<f32> crossings(allocator());
+    CY_REQUIRE(crossings.push_back(0.0F).has_value());
+    CY_REQUIRE(crossings.push_back(1.0F).has_value());
+    for (u32 line = 1; line < kLines; ++line) {
+        const f32 at = static_cast<f32>(line) * kCell;
+        for (const auto& [from, to] : {std::pair{start.x, end.x}, std::pair{start.z, end.z}}) {
+            if ((at - from) * (at - to) < 0.0F) {
+                CY_REQUIRE(crossings.push_back((at - from) / (to - from)).has_value());
+            }
+        }
+    }
+    std::ranges::sort(crossings);
+
+    PathCorridor corridor(allocator());
+    for (usize index = 1; index < crossings.size(); ++index) {
+        const f32 t = 0.5F * (crossings[index - 1] + crossings[index]);
+        Vec3 on;
+        const PolyRef poly =
+            mesh.find_nearest(start + ((end - start) * t), Vec3{0.01F, 1.0F, 0.01F}, kAllAreas, on);
+        CY_REQUIRE(poly.valid());
+        CY_REQUIRE(corridor.push(poly, kInvalidLink).has_value());
+    }
+    Array<PathPoint> path(allocator());
+    CY_REQUIRE(straighten(mesh, corridor, start, end, path).has_value());
+    return path;
+}
+
+/// The path is exactly `expected`, point for point, in the XZ plane.
+void check_path(const Array<PathPoint>& path, std::initializer_list<Vec3> expected) noexcept {
+    CY_REQUIRE_EQ(path.size(), expected.size());
+    if (path.size() != expected.size()) {
+        return;
+    }
+    usize index = 0;
+    for (const Vec3 point : expected) {
+        CY_CHECK_NEAR(path[index].position.x, point.x, 0.001F);
+        CY_CHECK_NEAR(path[index].position.z, point.z, 0.001F);
+        ++index;
+    }
+}
+
+}  // namespace
+
+CY_TEST_CASE("the funnel pulls a diagonal or off-axis path across a quad grid taut") {
+    // Each pair crosses many cells without passing through a grid vertex. Over the corridor of the
+    // cells the segment crosses, the taut path is the two endpoints and nothing else; both
+    // directions are checked, because a sign error on one side of the funnel only shows when the
+    // path turns toward that side. The corridor is built rather than searched for: on a grid, A*
+    // may return a different staircase of cells, and over THAT corridor the taut path legitimately
+    // bends.
+    struct Case {
+        const char* name = nullptr;
+        Vec3 start;
+        Vec3 end;
+    };
+    const Case cases[] = {
+        {"diagonal, +x +z", Vec3{3.0F, 0.0F, 2.5F}, Vec3{13.0F, 0.0F, 12.5F}},
+        {"diagonal, -x +z", Vec3{13.0F, 0.0F, 2.5F}, Vec3{3.0F, 0.0F, 12.5F}},
+        {"shallow, +x +z", Vec3{3.0F, 0.0F, 3.0F}, Vec3{13.0F, 0.0F, 11.0F}},
+        {"steep, -x +z", Vec3{15.0F, 0.0F, 1.0F}, Vec3{9.5F, 0.0F, 15.0F}},
+        {"shallow, +x -z", Vec3{1.0F, 0.0F, 13.0F}, Vec3{15.0F, 0.0F, 5.0F}},
+        {"along a row", Vec3{1.0F, 0.0F, 3.0F}, Vec3{15.0F, 0.0F, 3.0F}},
+        {"along a column", Vec3{5.0F, 0.0F, 1.0F}, Vec3{5.0F, 0.0F, 15.0F}},
+    };
+    const NavMesh mesh = open_field_mesh();
+    for (const Case& test : cases) {
+        CY_TEST_SUBCASE(test.name) {
+            check_path(path_along(mesh, test.start, test.end), {test.start, test.end});
+            check_path(path_along(mesh, test.end, test.start), {test.end, test.start});
+        }
+    }
+}
+
+CY_TEST_CASE("a diagonal through grid vertices comes back on the straight line") {
+    // (3, 3) to (13, 13) is the report's own case: it passes exactly through the vertices at
+    // (4, 4), (6, 6) ... which are portal endpoints, so the funnel may keep a collinear point —
+    // but every point must lie ON the line, never on a staircase beside it.
+    const NavMesh mesh = open_field_mesh();
+    const Vec3 start{3.0F, 0.0F, 3.0F};
+    const Vec3 end{13.0F, 0.0F, 13.0F};
+    const Array<PathPoint> path = straight_path(mesh, start, end);
+    CY_REQUIRE(path.size() >= usize{2});
+    CY_CHECK_NEAR(path[0].position.x, start.x, 0.001F);
+    CY_CHECK_NEAR(path[path.size() - 1].position.x, end.x, 0.001F);
+    for (const PathPoint& point : path.span()) {
+        CY_CHECK_NEAR(point.position.x, point.position.z, 0.001F);
+    }
+}
+
+// The two cases below carve one-cell-wide lanes, so the corridor A* returns is the only one there
+// is and the expected corners are a property of the geometry, not of the search's tie-breaks.
+
+CY_TEST_CASE("a path around an obstacle bends only at the obstacle's corners") {
+    // A U of lanes — the columns x in [0, 1] and x in [4, 5] joined by the row z in [0, 1], all
+    // within z < 5 — around the solid block x in [1, 4], z in [1, 5]. From the top of one arm to
+    // the top of the other, the taut path drops to the block's two lower corners and nowhere else.
+    const NavMesh mesh = carved_mesh([](u32 row, u32 column) noexcept {
+        return row < 5 && column < 5 && (column == 0 || column == 4 || row == 0);
+    });
+    const Vec3 west_arm{0.5F, 0.0F, 4.5F};
+    const Vec3 east_arm{4.5F, 0.0F, 4.5F};
+    const Vec3 west_corner{1.0F, 0.0F, 1.0F};
+    const Vec3 east_corner{4.0F, 0.0F, 1.0F};
+
+    check_path(straight_path(mesh, west_arm, east_arm),
+               {west_arm, west_corner, east_corner, east_arm});
+    check_path(straight_path(mesh, east_arm, west_arm),
+               {east_arm, east_corner, west_corner, west_arm});
+}
+
+CY_TEST_CASE("a path through an L-shaped corridor touches exactly the inner corner") {
+    // Walkable: the column x in [0, 1] and the row z in [0, 1]. From the far end of one arm to the
+    // far end of the other, the taut path turns once, at the inner corner (1, 1).
+    const NavMesh mesh =
+        carved_mesh([](u32 row, u32 column) noexcept { return column == 0 || row == 0; });
+    const Vec3 column_end{0.5F, 0.0F, 7.5F};
+    const Vec3 row_end{7.5F, 0.0F, 0.5F};
+    const Vec3 corner{1.0F, 0.0F, 1.0F};
+
+    check_path(straight_path(mesh, column_end, row_end), {column_end, corner, row_end});
+    check_path(straight_path(mesh, row_end, column_end), {row_end, corner, column_end});
 }
 
 CY_TEST_CASE("an unreachable target answers the closest reachable point, flagged partial") {
