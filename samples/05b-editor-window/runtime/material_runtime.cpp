@@ -461,6 +461,200 @@ Status assemble_material_unit(const CompiledProgram& program, Array<char>& unit)
     return assemble_unit(program, unit);
 }
 
+Status assemble_scene_material_vertex_unit(const CompiledProgram& program,
+                                           Array<char>& unit) noexcept {
+    if (program.vertex_source.text.empty()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the material has no compiled vertex-stage expression");
+    }
+    unit.clear();
+    Writer writer(unit);
+    writer.text("import cy.frame;\nimport cy.packing;\n");
+    PreludeOptions prelude;
+    prelude.material_set = 3;
+    prelude.argument_buffer = true;
+    auto declared = rendering::material::emit_prelude(program.module, prelude, unit);
+    if (!declared.has_value()) {
+        return make_unexpected(declared.error());
+    }
+    writer.text(
+        std::string_view(program.vertex_source.text.data(), program.vertex_source.text.size()));
+    Array<char> generated_entry(program.module.allocator());
+    if (Status named = rendering::material::entry_point_name(
+            program.module.name(), ProgramKind::Primary, QualityTier::High, generated_entry);
+        !named) {
+        return named;
+    }
+    writer.text(R"(
+float sceneMaterialTime()
+{
+#if defined(CY_FRAME_METAL)
+    return cyFrameGlobals.globals.timeSeconds;
+#else
+    return cyGlobalSet.data.timeSeconds;
+#endif
+}
+float3 sceneMaterialRelative(float3 modelPosition, float4 packedNormal, float2 uv)
+{
+    let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
+    let instance = cyFrameView.instances[draw.instanceSlot];
+    let relative = transformToRelative(instance, modelPosition);
+    let normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+)");
+    for (const Node& node : program.module.nodes()) {
+        if (node.op == Op::Field) {
+            return fail(ErrorCode::Unsupported,
+                        "the authored scene has no environment-field vertex binding");
+        }
+        if (node.op != Op::Attribute) {
+            continue;
+        }
+        bool interpolant = false;
+        for (const auto& root : program.module.vertex_interpolants()) {
+            interpolant |= root.name == node.symbol;
+        }
+        if (interpolant) {
+            continue;
+        }
+        writer.text("    ctx.attributes.");
+        writer.text(node.symbol.text());
+        if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+            writer.text(" = sceneMaterialTime();\n");
+        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
+            writer.text(" = relative;\n");
+        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
+            writer.text(" = modelPosition;\n");
+        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
+            writer.text(" = normal;\n");
+        } else if (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2) {
+            writer.text(" = uv;\n");
+        } else {
+            return fail(ErrorCode::Unsupported,
+                        "the authored scene mesh cannot supply a vertex graph attribute");
+        }
+    }
+    writer.text("    return relative + ");
+    writer.text({generated_entry.data(), generated_entry.size()});
+    writer.text(R"(_vertex_offset(ctx);
+}
+[shader("vertex")]
+CyForwardVertex cySceneMaterialVertex(float3 modelPosition : POSITION,
+                                      float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
+{
+    let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
+    let instance = cyFrameView.instances[draw.instanceSlot];
+    CyForwardVertex output;
+    output.relativePosition = sceneMaterialRelative(modelPosition, packedNormal, uv);
+    output.position = transformToClip(output.relativePosition);
+    output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
+    output.uv = uv;
+    output.drawIndex = cyDraw.drawIndex;
+    return output;
+}
+[shader("vertex")]
+CyShadowVertex cySceneMaterialShadowVertex(float3 modelPosition : POSITION,
+                                           float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
+{
+    CyShadowVertex output;
+    output.position = transformToShadowClip(sceneMaterialRelative(modelPosition, packedNormal, uv));
+    return output;
+}
+)");
+    return writer.status();
+}
+
+Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
+    const CompiledProgram& program, Allocator& allocator) noexcept {
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+    Array<char> unit(allocator);
+    if (Status assembled = assemble_scene_material_vertex_unit(program, unit); !assembled) {
+        return make_unexpected(assembled.error());
+    }
+    (void)shader::slang::register_slang_backend();
+    StandardLibrary library(allocator);
+    if (Status started = library.start(); !started) {
+        return make_unexpected(started.error());
+    }
+    auto published = library.registry.add_generated(Name::intern("editor.scene.material.vertex"),
+                                                    Name::intern("material-compiler"),
+                                                    {unit.data(), unit.size()});
+    if (!published.has_value()) {
+        return make_unexpected(published.error());
+    }
+    shader::CompilerSelection selection;
+    auto created = shader::create_compiler(allocator, shader::kSlangBackendName, selection);
+    if (!created.has_value()) {
+        return make_unexpected(created.error());
+    }
+    struct CompilerHandle {
+        Allocator& allocator;
+        shader::ShaderCompiler* compiler;
+        ~CompilerHandle() { shader::destroy_compiler(allocator, compiler); }
+    } compiler{allocator, *created};
+    shader::PermutationSet metal(allocator);
+    const u32 values[] = {0, 1};
+    if (Status axis = metal.add_axis(Name::intern("CY_FRAME_METAL"),
+                                     shader::VariationKind::Preprocessor, values);
+        !axis) {
+        return make_unexpected(axis.error());
+    }
+    if (Status axis = metal.add_axis(Name::intern("CY_MATERIAL_METAL_ARGUMENT_BUFFER"),
+                                     shader::VariationKind::Preprocessor, values);
+        !axis) {
+        return make_unexpected(axis.error());
+    }
+    const u32 enabled[] = {1, 1};
+    auto key = metal.encode(enabled);
+    if (!key.has_value()) {
+        return make_unexpected(key.error());
+    }
+    const auto compile_stage =
+        [&](const char* entry,
+            shader::DiagnosticLog& diagnostics) -> Expected<shader::TargetArtefact, Error> {
+        shader::CompileRequest request;
+        request.source = *published;
+        request.entry_point = Name::intern(entry);
+        request.stage = rhi::ShaderStage::Vertex;
+        request.resolver = library.resolver();
+        request.permutations = &metal;
+        request.permutation = *key;
+        return compiler.compiler->compile_for(request, shader::Target::Msl, diagnostics);
+    };
+    shader::DiagnosticLog visible_diagnostics(allocator);
+    auto visible = compile_stage("cySceneMaterialVertex", visible_diagnostics);
+    if (!visible.has_value()) {
+        for (usize index = 0; index < visible_diagnostics.size(); ++index) {
+            std::fprintf(stderr, "scene material visible Slang: %s\n",
+                         visible_diagnostics.at(index).message);
+        }
+        return fail(ErrorCode::InvalidArgument,
+                    "the scene material visible vertex shader did not compile to MSL");
+    }
+    shader::DiagnosticLog shadow_diagnostics(allocator);
+    auto shadow = compile_stage("cySceneMaterialShadowVertex", shadow_diagnostics);
+    if (!shadow.has_value()) {
+        for (usize index = 0; index < shadow_diagnostics.size(); ++index) {
+            std::fprintf(stderr, "scene material shadow Slang: %s\n",
+                         shadow_diagnostics.at(index).message);
+        }
+        return fail(ErrorCode::InvalidArgument,
+                    "the scene material shadow vertex shader did not compile to MSL");
+    }
+    SceneMaterialVertexArtefacts result(allocator);
+    result.visible = std::move(*visible);
+    result.shadow = std::move(*shadow);
+    return result;
+#else
+    (void)program;
+    (void)allocator;
+    return fail(ErrorCode::Unsupported,
+                "scene material variants require the Slang front end in this editor build");
+#endif
+}
+
 struct MetalMaterialRuntime::Program {
     struct Slot {
         u32 identity = 0;

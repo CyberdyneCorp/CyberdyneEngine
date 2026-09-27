@@ -135,6 +135,14 @@ must retain the engine-compiled program and its parameter layout instead of redu
 colour. Its material slot and geometry source select the variant for each draw, and the frame
 recorder binds the matching vertex/fragment program and parameters under a compatible pipeline
 layout. Pipeline states are prepared when the graph changes, before recording a frame.
+The frame recorder now has a per-draw prepared-pipeline selector and can bind a material's fourth
+descriptor set. A selected depth or shadow program can request the normal and UV streams in
+addition to position. Null-backend command-log tests verify both paths. The scene shader assembler
+now compiles a sine-sway vertex expression to MSL for visible and shadow entries using the frame's
+actual camera-relative transforms, engine time, and material parameter binding. This compiler
+test runs without a Metal device. The scene renderer does not yet create pipeline states from the
+returned artefacts or attach them to material draws. Its mesh currently has no vertex-colour or
+second UV stream, so those graph attributes are refused at shader assembly.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for

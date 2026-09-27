@@ -72,6 +72,34 @@ rendering::material::CompiledMaterial compile_material(std::string_view source =
 bool images_differ(Span<const u32> left, Span<const u32> right);
 Array<u32> copy_image(Span<const u32> source);
 
+CY_TEST_CASE("authored scene visible and shadow vertices compile from the same sine graph") {
+    constexpr std::string_view source = R"(
+material scene_sway {
+    attribute time_seconds : float;
+    attribute object_position : float3;
+    let sway = sin(time_seconds + object_position.x);
+    vertex_offset = (0.0, sway, 0.0);
+    surface = diffuse((0.7, 0.5, 0.2));
+    opacity = 1.0;
+}
+)";
+    auto material = compile_material(source);
+    const auto* program = material.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*program, unit));
+    const std::string_view text(unit.data(), unit.size());
+    CY_CHECK(text.find("cySceneMaterialVertex") != std::string_view::npos);
+    CY_CHECK(text.find("cySceneMaterialShadowVertex") != std::string_view::npos);
+    CY_CHECK(text.find("object_position = modelPosition") != std::string_view::npos);
+    CY_CHECK(text.find("time_seconds = sceneMaterialTime()") != std::string_view::npos);
+    auto stages = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(stages.has_value());
+    CY_CHECK_GT(stages->visible.bytes().size(), 0U);
+    CY_CHECK_GT(stages->shadow.bytes().size(), 0U);
+}
+
 CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
     constexpr std::string_view plain_source =
         "material vertex_sway { surface = diffuse((0.7, 0.5, 0.2)); opacity = 1.0; }";

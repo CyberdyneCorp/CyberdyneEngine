@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cy/backends/shader/compiler.h>
 #include <cy/core/memory/array.h>
 #include <cy/editor/material_service.h>
 
@@ -12,6 +13,21 @@ namespace cy::sample::editor_window {
 /// Assemble the engine-compiled surface and vertex sources into the hosted material program.
 [[nodiscard]] Status assemble_material_unit(const rendering::material::CompiledProgram& program,
                                             Array<char>& unit) noexcept;
+
+/// Compile the graph's vertex expression against the authored scene frame's actual streams,
+/// transforms and descriptor convention. The returned MSL is retained for scene pipeline creation.
+struct SceneMaterialVertexArtefacts {
+    explicit SceneMaterialVertexArtefacts(Allocator& allocator) noexcept
+        : visible(allocator), shadow(allocator) {}
+
+    shader::TargetArtefact visible;
+    shader::TargetArtefact shadow;
+};
+
+[[nodiscard]] Status assemble_scene_material_vertex_unit(
+    const rendering::material::CompiledProgram& program, Array<char>& unit) noexcept;
+[[nodiscard]] Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
+    const rendering::material::CompiledProgram& program, Allocator& allocator) noexcept;
 
 /// The Mac editor-preview adapter. It owns the retained compiler layouts and preview bindings;
 /// `first_light::Renderer` owns the Metal shader modules, pipelines, descriptor sets and buffers.
