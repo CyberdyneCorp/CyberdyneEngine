@@ -22,6 +22,10 @@
 #                       with no visual discontinuity beyond tolerance. Its own suite because it is a
 #                       milestone criterion rather than a unit of behaviour, and because a criterion
 #                       buried in a larger file is a criterion nobody runs on its own.
+#   render_gi_volume    irradiance volumes: SH capture against a CPU reference integration, colour
+#                       bleeding near a coloured wall and not far from it, an unlit wall lit by
+#                       bounce, the visibility term, the update policy, and a capture through the
+#                       composed system's own tracer and surface cache.
 set_property(GLOBAL PROPERTY CY_RENDER_GI_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_render_gi_declare_tests)
@@ -73,6 +77,12 @@ function(cy_render_gi_declare_tests)
         NAME render_gi_signals
         KIND integration
         SOURCES "${tests_dir}/test_signals.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    cy_add_test(
+        NAME render_gi_volume
+        KIND integration
+        SOURCES "${tests_dir}/test_irradiance_volume.cpp"
         DEPENDENCIES cy::rendering-gi)
 endfunction()
 

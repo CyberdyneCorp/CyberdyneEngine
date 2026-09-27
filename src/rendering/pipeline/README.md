@@ -124,6 +124,18 @@ the frame with the setting off to a reference rendered by the pre-change SPIR-V.
 were regenerated: the five `frame.slang` entry points that read the block changed, and the shadow
 fragment and the fullscreen resolve and temporal entries came out byte-identical.
 
+## The irradiance volume — `FrameViewData::probe_volume_*`
+
+Three words appended after `soft_shadow_shape` (the block is 512 bytes), defaulted to "none". A
+caller that runs `light_probes::ProbeVolumeTexture` names the texture at a slot of set 0's texture
+table and calls `light_probes::write_probe_volume`, which writes the slot and grid size, the volume's
+origin RELATIVE TO THE CAMERA and its spacing, and the coefficient scale, normal offset and
+visibility slack. `cy/frame.slang`'s forward fragment then takes the ambient radiance from
+`probeVolumeAmbient` in place of the flat sky term, and ambient occlusion multiplies it as before.
+The five `frame.slang` entries that read the block were regenerated for the longer one; the shadow
+fragment and the fullscreen resolve and temporal entries came out byte-identical.
+`render.light_probes` renders this module's scene with it.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
