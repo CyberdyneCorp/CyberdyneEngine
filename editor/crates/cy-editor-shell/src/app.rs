@@ -665,6 +665,13 @@ impl EditorWindow {
                         .notifications
                         .post(Notification::error(problem.what.clone(), problem));
                 }
+                if id == "vfx.emitter.add"
+                    && let Err(problem) = self.select_added_vfx_emitter(arguments)
+                {
+                    self.editor
+                        .notifications
+                        .post(Notification::error(problem.what.clone(), problem));
+                }
                 if matches!(id, "edit.undo" | "edit.redo")
                     && let Err(problem) = self.sync_vfx_module_after_history()
                 {
@@ -716,6 +723,32 @@ impl EditorWindow {
             self.specialised.close_vfx_document();
         }
         self.vfx_committed = Some((reference, current));
+        Ok(())
+    }
+
+    fn select_added_vfx_emitter(
+        &mut self,
+        arguments: &Arguments,
+    ) -> cy_editor_core::problem::Result<()> {
+        let Some(reference) = arguments.text("reference") else {
+            return Ok(());
+        };
+        if self.vfx_committed.as_ref().map(|(path, _)| path.as_str()) != Some(reference) {
+            return Ok(());
+        }
+        self.sync_vfx_after_history()?;
+        let Some(name) = arguments.text("name") else {
+            return Ok(());
+        };
+        if let Some(index) = self.specialised.vfx_document().and_then(|document| {
+            document
+                .emitters
+                .iter()
+                .position(|emitter| emitter.name == name)
+        }) {
+            self.specialised
+                .select_vfx_stage(index, cy_editor_interface::specialised::vfx::Stage::Spawn)?;
+        }
         Ok(())
     }
 
@@ -2185,6 +2218,37 @@ mod tests {
                 .with("source", Value::Text(original.clone())),
         )]);
         (window, original)
+    }
+
+    #[test]
+    fn saved_emitter_addition_selects_spawn_and_undoes_with_one_command() {
+        use cy_editor_interface::specialised::vfx::{Stage, VfxDocument};
+
+        let root = scratch("vfx-emitter-add-history");
+        let (mut window, original) = saved_vfx_system_window(&root);
+        let reference = "effects/sparks.cyvfxdoc";
+        window.apply(vec![Intent::Invoke(
+            "vfx.emitter.add".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("name", Value::Text("smoke".into()))
+                .with("target", Value::Text("gpu".into()))
+                .with("renderer", Value::Text("Sprite".into())),
+        )]);
+        let added = window.editor.project.read_source(reference).unwrap();
+        assert_eq!(VfxDocument::decode_text(&added).unwrap().emitters.len(), 2);
+        assert_eq!(
+            window.specialised.active_vfx_stage(),
+            Some((1, Stage::Spawn))
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            original
+        );
+        window.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
+        assert_eq!(window.editor.project.read_source(reference).unwrap(), added);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn attach_and_undo_saved_module(window: &mut EditorWindow, reference: &str, before: &str) {

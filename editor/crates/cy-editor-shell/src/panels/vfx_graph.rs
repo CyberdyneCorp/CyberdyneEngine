@@ -1445,10 +1445,12 @@ fn emitter_choices(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 capacity: 1024,
                 attributes: Vec::new(),
             };
-            let result = panels
-                .specialised
-                .add_vfx_emitter(emitter)
-                .and_then(|index| panels.specialised.select_vfx_stage(index, Stage::Spawn));
+            let result = add_emitter_action(
+                panels.specialised,
+                panels.saved_vfx_document_reference,
+                panels.intents,
+                emitter,
+            );
             panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
@@ -1468,6 +1470,31 @@ fn emitter_choices(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             ));
         }
     }
+}
+
+fn add_emitter_action(
+    editors: &mut SpecialisedEditors,
+    reference: Option<&str>,
+    intents: &mut Vec<Intent>,
+    emitter: Emitter,
+) -> Result<()> {
+    let arguments = Arguments::new()
+        .with("name", Value::Text(emitter.name.clone()))
+        .with(
+            "target",
+            Value::Text(if emitter.path == SimulationPath::CpuRequired {
+                "cpu".into()
+            } else {
+                "gpu".into()
+            }),
+        )
+        .with("renderer", Value::Text(emitter.renderer.clone()));
+    if let Some(intent) = saved_asset_edit_intent(reference, "vfx.emitter.add", arguments) {
+        intents.push(intent);
+        return Ok(());
+    }
+    let index = editors.add_vfx_emitter(emitter)?;
+    editors.select_vfx_stage(index, Stage::Spawn)
 }
 
 fn stage_tabs(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -2558,6 +2585,58 @@ mod tests {
             assert_eq!(actual, command);
             assert_eq!(arguments.text("reference"), Some(reference));
         }
+    }
+
+    #[test]
+    fn saved_emitter_creation_uses_the_mcp_command_and_new_drafts_select_spawn() {
+        let mut catalogue = Writer::new();
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(1);
+        catalogue.u32(42);
+        catalogue.u32(1);
+        catalogue.text("vfx.constant");
+        catalogue.u32(0);
+        catalogue.u32(0);
+        let mut editors = SpecialisedEditors::new().unwrap();
+        editors.install_vfx_catalogue(&catalogue.finish()).unwrap();
+        editors
+            .start_vfx_document(VfxDocument::new("sparks").unwrap())
+            .unwrap();
+        let emitter = Emitter {
+            name: "embers".into(),
+            path: SimulationPath::GpuPreferred,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        };
+        let mut intents = Vec::new();
+        add_emitter_action(
+            &mut editors,
+            Some("effects/sparks.cyvfxdoc"),
+            &mut intents,
+            emitter.clone(),
+        )
+        .unwrap();
+        assert!(editors.vfx_document().unwrap().emitters.is_empty());
+        assert_eq!(editors.active_vfx_stage(), None);
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved emitter addition must invoke a command");
+        };
+        assert_eq!(command, "vfx.emitter.add");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("name"), Some("embers"));
+        assert_eq!(arguments.text("target"), Some("gpu"));
+        assert_eq!(arguments.text("renderer"), Some("Sprite"));
+        assert!(intents.is_empty());
+
+        add_emitter_action(&mut editors, None, &mut intents, emitter).unwrap();
+        assert_eq!(editors.vfx_document().unwrap().emitters.len(), 1);
+        assert_eq!(editors.active_vfx_stage(), Some((0, Stage::Spawn)));
+        assert!(intents.is_empty());
     }
 
     #[test]

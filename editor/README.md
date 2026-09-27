@@ -602,6 +602,8 @@ If the open canvas has unsaved edits, palette insertion stays in that draft unti
 edits are preserved; property, connection, removal, and disconnection edits follow the same rule.
 The panel's **Remove emitter** control retains the other emitters' stage graphs and selects
 the next available emitter; the edit is recorded in document history for a saved draft.
+**Add emitter** sends `vfx.emitter.add` for a saved system, selects the new Spawn stage after the
+command succeeds, and adds one undo entry. A new system without a saved path adds locally.
 `vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and
 `vfx.channel.set` / `vfx.channel.remove` provide the panel's particle storage and bounded event
 declarations through MCP with the same save and undo history. Invalid bounds or attribute types

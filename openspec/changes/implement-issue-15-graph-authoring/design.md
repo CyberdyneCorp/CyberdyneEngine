@@ -44,9 +44,10 @@ The panel keeps the engine preview's exposed-parameter update queue when a saved
 changes. Other hierarchy and canvas gestures remain to be moved to typed commands.
 Saved emitter renderer/target changes, emitter removal, and data-interface binding changes now
 use `vfx.emitter.configure`, `vfx.emitter.remove`, and `vfx.interface.bind/unbind` respectively.
-The editor refreshes their saved source and stage selection after each command. Emitter creation
-and direct canvas gestures still use frame-level document saves until their individual typed
-desktop actions are connected.
+The editor refreshes their saved source and stage selection after each command. Saved emitter
+creation now uses `vfx.emitter.add` too and selects its Spawn stage after the command succeeds;
+new systems still add the emitter locally. Remaining canvas gestures use frame-level document
+saves until their individual typed desktop actions are connected.
 
 After a system or module has its first saved project path, the desktop journals each changed UI
 frame through `vfx.document.save` or `vfx.module.save` before applying other frame intents. The

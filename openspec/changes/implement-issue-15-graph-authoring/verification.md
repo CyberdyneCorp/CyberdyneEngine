@@ -66,6 +66,13 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_vfx_drag_moves_locally_then_queues_one_typed_command` and `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib typed_vfx_drag_release_skips_whole_document_save` — each targeted test passed on macOS.
 - **Red mutations:** temporarily omit the release `intents.push`; the first test failed because no move intent was queued. Temporarily remove the journal's typed move suppression; the second test failed because release produced two intents instead of one. Both mutations were restored.
 
+## Desktop VFX emitter creation command parity
+
+- **Desktop path:** `saved_emitter_creation_uses_the_mcp_command_and_new_drafts_select_spawn` checks that a saved system queues `vfx.emitter.add` with the open reference, name, CPU/GPU target, and renderer without mutating the draft. A new system adds locally and opens its Spawn stage.
+- **History path:** `saved_emitter_addition_selects_spawn_and_undoes_with_one_command` invokes the same command in a saved desktop window, checks that the new Spawn stage is selected, and checks one undo and redo restore the project source.
+- **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_emitter --quiet` — the focused shell tests passed on macOS.
+- **Red mutations:** temporarily force saved additions down the draft path; the panel test failed when the saved draft gained an emitter. Temporarily disable the post-command stage selection; the window test failed because it stayed on emitter zero. Both mutations were restored.
+
 ## Vertex material save and history through MCP
 
 - **Wire path:** `vertex_material_canvas_saves_and_undoes_over_mcp` assigns the material to a scene mesh, saves a vertex graph through `material.graph.save`, and checks that the request carries `StaticMesh`. It receives the engine-authored canonical graph, reads the editable canvas through MCP, then checks that one undo removes both project files and redo restores both.
