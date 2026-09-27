@@ -1832,6 +1832,14 @@ Expected<environment::FieldGpuImage, Error> World::cloud_shadow_image() const no
                                           environment::FieldResidency::Regional);
 }
 
+const water::DisplacementModel* World::ocean_model() const noexcept {
+    return water_.model_of(sea_);
+}
+
+f64 World::water_time() const noexcept {
+    return water_.time();
+}
+
 f32 World::cloud_shadow_at(const WorldVec3d& at) const noexcept {
     return cloud_shadow_.attached() ? sky::CloudShadowField::sample(fields_, at) : 1.0F;
 }

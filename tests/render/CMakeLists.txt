@@ -247,6 +247,25 @@ function(cy_render_declare_tests)
                      cy::rhi-vulkan cy::world)
     target_include_directories(cy_test_render_world_cloud_shadow
                                PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
+
+    # WATER SHADING IN THE WORLD FRAME. `water` — "Water surface shading" and "Caustics". Drawn with
+    # `samples/10-world`'s committed world and water SPIR-V and with the sample's own water device
+    # half (`water_surface.cpp`, compiled in rather than linked, as the shader headers are included):
+    # the refraction and mirrored reflection pictures, then the frame that samples them. Each water
+    # pixel is checked against src/water/'s absorption law, Fresnel times the mirrored sky, the
+    # shoreline band and the surface's own caustic focus; with water shading off the frame is
+    # byte-identical to `references/world_water_off.png`.
+    cy_add_test(
+        NAME world_water
+        KIND render
+        SOURCES
+            "${cy_render_tests_dir}/golden.cpp"
+            "${cy_render_tests_dir}/test_world_water.cpp"
+            "${CMAKE_SOURCE_DIR}/samples/10-world/water_surface.cpp"
+        DEPENDENCIES cy::rendering-graph cy::rhi cy::rhi-null cy::rhi-vulkan cy::water cy::world
+        DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
+    target_include_directories(cy_test_render_world_water
+                               PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
 endfunction()
 
 cy_render_declare_tests()

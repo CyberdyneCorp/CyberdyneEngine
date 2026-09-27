@@ -1,0 +1,137 @@
+# Mutations applied to the shipped sources, each rebuilt (SPIR-V/MSL regenerated for shader
+# mutations with the recipe in water.slang's header), run, and restored; md5 of every touched file
+# verified identical after restore. Suite: render.world_water, Development, Vulkan, RTX 5060.
+# Driver: apply -> regenerate -> cmake --build cy_test_render_world_water -> run -> restore ->
+# regenerate -> md5.
+#
+# Every mutation below turned the suite red. One candidate was discarded rather than recorded as a
+# proof: world.slang's glitter exponent 120 -> 119 left the suite GREEN, because the off case's sun
+# is behind the camera and puts no glitter in view; the off case is proved instead by a change to
+# the Lambert term every lit surface, water included, is drawn with (i).
+
+== a-reflection-reads-refraction: samples/10-world/shaders/water.slang: 'let reflected = untonemap(water.reflection.Load(' -> 'let reflected = untonemap(water.refraction.Load('
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 0 within 2% of Fresnel times the mirrored sky, worst 1; blue from 0 to 0; 0 validation errors
+tests/render/test_world_water.cpp:1106: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1108: ERROR: CHECK_GT( brightest, dimmest * 4.0F ) is NOT correct!
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 0 within 2% of the absorption law, worst 18.0795; 12 depth bins, 5 darker than the one before and 4 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1183: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1185: ERROR: CHECK_EQ( darker, populated - 1 ) is NOT correct!
+tests/render/test_world_water.cpp:1186: ERROR: CHECK_EQ( bluer, populated - 1 ) is NOT correct!
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9053 moved between the two instants (0 without caustics), 3492 with every train resolved, 0 of 6984 readings within 3% of the surface's own focus, worst 0.735382; 1531 readings focused or spread by more than 10%; 0 validation errors
+tests/render/test_world_water.cpp:1337: ERROR: CHECK_GE( within * 100, resolved * 2 * 99 ) is NOT correct!
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 e3be8a8e71038581662a1c98cd99b914, water_spirv.h md5 e5be74fc4dacc0f8c4b0e626e68a9997, water_msl.h md5 92a347fc8d8d4643cafad2977db65ffe: identical)
+
+== b-mirror-without-near-plane: samples/10-world/water_surface.cpp: '    rows[2] = Vec4{rows[3].x, rows[3].y - kMirrorDepthSlope' -> '    rows[2] = rows[2];\n    (void)Vec4{rows[3].x, rows[3].y - kMirrorDepthSlope'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 0 within 2% of Fresnel times the mirrored sky, worst 1; blue from 0 to 0; 0 validation errors
+tests/render/test_world_water.cpp:1106: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1108: ERROR: CHECK_GT( brightest, dimmest * 4.0F ) is NOT correct!
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 0 within 2% of the absorption law, worst 18.0795; 12 depth bins, 5 darker than the one before and 4 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1183: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1185: ERROR: CHECK_EQ( darker, populated - 1 ) is NOT correct!
+tests/render/test_world_water.cpp:1186: ERROR: CHECK_EQ( bluer, populated - 1 ) is NOT correct!
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9053 moved between the two instants (0 without caustics), 3492 with every train resolved, 0 of 6984 readings within 3% of the surface's own focus, worst 0.735382; 1531 readings focused or spread by more than 10%; 0 validation errors
+tests/render/test_world_water.cpp:1337: ERROR: CHECK_GE( within * 100, resolved * 2 * 99 ) is NOT correct!
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water_surface.cpp md5 e549b81059f8365c8a1098702255036d: identical)
+
+== c-absorption-only: samples/10-world/water_surface.cpp: 'const Vec3 extinction = optics.absorption + optics.scattering;' -> 'const Vec3 extinction = optics.absorption;'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 4762 within 2% of the absorption law, worst 0.233502; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1183: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9126 moved between the two instants (0 without caustics), 3492 with every train resolved, 6984 of 6984 readings within 3% of the surface's own focus, worst 0.0222889; 1531 readings focused or spread by more than 10%; 0 validation errors
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (water_surface.cpp md5 e549b81059f8365c8a1098702255036d: identical)
+
+== d-vertical-path: samples/10-world/shaders/water.slang: 'let path = bentDepth > 0.0 ? length(bed - input.world) : 1.0e4;' -> 'let path = bentDepth > 0.0 ? (input.world.y - bed.y) : 1.0e4;'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 0 within 2% of the absorption law, worst 8.0417; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1183: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9134 moved between the two instants (0 without caustics), 3492 with every train resolved, 0 of 6984 readings within 3% of the surface's own focus, worst 1.63446; 1531 readings focused or spread by more than 10%; 0 validation errors
+tests/render/test_world_water.cpp:1337: ERROR: CHECK_GE( within * 100, resolved * 2 * 99 ) is NOT correct!
+[doctest] test cases:  5 |  3 passed | 2 failed | 0 skipped
+restored (water.slang md5 e3be8a8e71038581662a1c98cd99b914, water_spirv.h md5 e5be74fc4dacc0f8c4b0e626e68a9997, water_msl.h md5 92a347fc8d8d4643cafad2977db65ffe: identical)
+
+== e-foam-past-the-band: samples/10-world/shaders/water.slang: 'shore = saturate(1.0 - column / params.extinction.w)' -> 'shore = saturate(1.3 - column / params.extinction.w)'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 11794 within 2% of the absorption law, worst 0.00381403; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (632 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1232: ERROR: CHECK_EQ( deep_changed, 0U ) is NOT correct!
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9132 moved between the two instants (0 without caustics), 3492 with every train resolved, 6984 of 6984 readings within 3% of the surface's own focus, worst 0.00407273; 1531 readings focused or spread by more than 10%; 0 validation errors
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (water.slang md5 e3be8a8e71038581662a1c98cd99b914, water_spirv.h md5 e5be74fc4dacc0f8c4b0e626e68a9997, water_msl.h md5 92a347fc8d8d4643cafad2977db65ffe: identical)
+
+== f-caustics-frozen: samples/10-world/water_surface.cpp: '- (view.water_time * omega)' -> '- (0.0 * omega)'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 11794 within 2% of the absorption law, worst 0.00381403; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 0 moved between the two instants (0 without caustics), 3492 with every train resolved, 6984 of 6984 readings within 3% of the surface's own focus, worst 0.00409658; 1492 readings focused or spread by more than 10%; 0 validation errors
+tests/render/test_world_water.cpp:1332: ERROR: CHECK_GT( moved, compared / 3 ) is NOT correct!
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (water_surface.cpp md5 e549b81059f8365c8a1098702255036d: identical)
+
+== g-caustics-unrelated-pattern: samples/10-world/shaders/water.slang: 'laplacian -= resolved * train.w * train.z * train.z * cos(theta);' -> 'laplacian -= resolved * train.w * train.z * train.z * cos(xz.x * 0.9 + phase);'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 11794 within 2% of the absorption law, worst 0.00381403; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9104 moved between the two instants (0 without caustics), 3492 with every train resolved, 2950 of 6984 readings within 3% of the surface's own focus, worst 0.361922; 1531 readings focused or spread by more than 10%; 0 validation errors
+tests/render/test_world_water.cpp:1337: ERROR: CHECK_GE( within * 100, resolved * 2 * 99 ) is NOT correct!
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (water.slang md5 e3be8a8e71038581662a1c98cd99b914, water_spirv.h md5 e5be74fc4dacc0f8c4b0e626e68a9997, water_msl.h md5 92a347fc8d8d4643cafad2977db65ffe: identical)
+
+== j-no-shoreline-foam: samples/10-world/shaders/water.slang: 'shore = saturate(1.0 - column / params.extinction.w)' -> 'shore = 0.0 * saturate(1.0 - column / params.extinction.w)'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 11794 within 2% of the absorption law, worst 0.00381403; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (0 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1234: ERROR: CHECK_EQ( shallow_brighter, shallow ) is NOT correct!
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9132 moved between the two instants (0 without caustics), 3492 with every train resolved, 6984 of 6984 readings within 3% of the surface's own focus, worst 0.00407273; 1531 readings focused or spread by more than 10%; 0 validation errors
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (water.slang md5 e3be8a8e71038581662a1c98cd99b914, water_spirv.h md5 e5be74fc4dacc0f8c4b0e626e68a9997, water_msl.h md5 92a347fc8d8d4643cafad2977db65ffe: identical)
+
+== h-no-fresnel: samples/10-world/water_surface.cpp: 'params.in_scatter[3] = closure.f0;' -> 'params.in_scatter[3] = closure.f0 * 0.0F;'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 0, on 13512; 0 validation errors
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 2191 within 2% of Fresnel times the mirrored sky, worst 0.403314; blue from 0.0249766 to 0.763879; 0 validation errors
+tests/render/test_world_water.cpp:1106: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 9186 within 2% of the absorption law, worst 0.0210556; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1183: ERROR: CHECK_EQ( within, compared ) is NOT correct!
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9122 moved between the two instants (0 without caustics), 3492 with every train resolved, 6984 of 6984 readings within 3% of the surface's own focus, worst 0.0207476; 1531 readings focused or spread by more than 10%; 0 validation errors
+[doctest] test cases:  5 |  3 passed | 2 failed | 0 skipped
+restored (water_surface.cpp md5 e549b81059f8365c8a1098702255036d: identical)
+
+== i-world-lambert-changed: samples/10-world/shaders/world.slang: 'let lambert = saturate(dot(normal, -push.light.xyz));' -> 'let lambert = saturate(dot(normal, -push.light.xyz)) * 0.99;'
+exit 1 (RED)
+tests/render/test_world_water.cpp:1048: MESSAGE: texels differing from the reference drawn before water shading: off 3040, on 16552; 0 validation errors
+tests/render/test_world_water.cpp:1051: ERROR: CHECK_EQ( off_differs, 0U ) is NOT correct!
+tests/render/test_world_water.cpp:1100: MESSAGE: 12714 water texels, 12714 within 2% of Fresnel times the mirrored sky, worst 0.00541927; blue from 0.0417905 to 0.766; 0 validation errors
+tests/render/test_world_water.cpp:1176: MESSAGE: 11794 water texels over the bed, 11794 within 2% of the absorption law, worst 0.0117093; 12 depth bins, 11 darker than the one before and 11 bluer; 0 validation errors
+tests/render/test_world_water.cpp:1228: MESSAGE: 8922 texels over a column deeper than the band (0 changed), 2054 in its shallow half (2054 brighter); 0 validation errors
+tests/render/test_world_water.cpp:1324: MESSAGE: 4 trains; 11794 texels over the bed, 9126 moved between the two instants (0 without caustics), 3492 with every train resolved, 6984 of 6984 readings within 3% of the surface's own focus, worst 0.011834; 1531 readings focused or spread by more than 10%; 0 validation errors
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (world.slang md5 314e05b5bb0bd4ef2d3e4e49a6431df9, world_spirv.h md5 4185d07e8552444379265dc4682aab0c: identical)
+
+# After these proofs, water_surface.{h,cpp} and water_spirv.h gained their
+# `SPDX-License-Identifier: MIT` line (water_spirv.h through embed_spirv.py, regenerated; its
+# SPIR-V words are unchanged), and water_spirv.h's header now names water.slang as its source. The
+# md5s above are those of the files before that comment-only change.

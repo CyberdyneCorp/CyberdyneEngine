@@ -2775,6 +2775,28 @@ requirement = "Stochastic many-light direct lighting"
 evidence = "exempt:m11e"
 note = "THE ESTIMATOR IS OBSERVED, THE PATH IS NOT RUN. `many-light: the reservoir estimator is unbiased against a sum over every light` measures the estimator against the exact sum, `many-light: the path is off by default and refused without a denoiser` is the requirement's second scenario verbatim (configuration validation, not a visual discovery), and `two runs of one frame select the same lights` and `a reservoir's sample count is capped` carry reuse and the bound. What is missing is the middle of the requirement's own four-step path: 'RAY-TRACED OR SHADOW-MAP VISIBILITY FOR THE SELECTED SAMPLES'. `many_light.h` says outright that it does not depend on a tracer — visibility is a ray budget the caller spends — so no case here evaluates a shadowed sample, and the third scenario (the same content under both paths) needs two rendered frames. What would observe it: a device case rendering one many-lit scene clustered and stochastically and comparing them."
 
+# --- water, the two shading requirements ----------------------------------------------------------
+#
+# TWO OF THE ROW'S REQUIREMENTS, mapped by `add-water-shading`, and only the two its frame answers.
+# `samples/10-world` draws the sea through `shaders/water.slang`, whose inputs are src/water/'s own
+# optics and wave trains; `render.world_water` draws with that shader's committed SPIR-V and the
+# sample's own `WaterSurface`, and checks every water pixel against the processor. What each
+# requirement asks that is still not built is named in its note rather than mapped.
+
+[[coverage]]
+row = "water"
+requirement = "Water surface shading"
+evidence = "test:render.world_water"
+case = "world water: deeper water is darker, by the absorption law"
+note = "THE COLUMN, THE REFLECTION AND THE FOAM ARE SHADED IN A FRAME. `samples/10-world` draws its sea with `shaders/water.slang`: the bed from a refraction picture of the terrain, attenuated by Beer-Lambert over the path from the surface to the bed and filled by the column's in-scatter, with extinction and in-scatter filled by `build_water_params()` from `water::WaterOptics` through `water_in_scatter()`; Schlick's Fresnel with `build_closure()`'s F0 against a planar reflection of the sky and the scene; shoreline foam from the column depth. This case requires every water pixel over a sloping bed to equal `water_transmittance()` times the bed plus `water_in_scatter()` times the column's light over its own path, times one minus Fresnel, within 2% (11 794 pixels), and the depth bins to darken and turn bluer monotonically — the requirement's `Depth changes colour physically` scenario. Beside it: `world water: the reflection is the sky mirrored in the surface, by Fresnel` (every water pixel within 2% of Fresnel times the sky in the mirrored direction), `world water: shoreline foam is only where the column is shallow` (deeper than the band: bit-identical to the frame without foam; the shallow half: brighter) and `world water: off, the frame is the frame before water shading` (byte-identical to `tests/render/references/world_water_off.png`). Ten mutations, each seen red: `openspec/changes/add-water-shading/evidence/falsification.txt`. NOT BUILT, and recorded rather than mapped: the closure is evaluated by a sample shader and not by a water node of the material system (`material-compiler` has none), and the reflection is a planar mirror of the one sea-level body rather than the illumination hierarchy the requirement names — no screen or world trace escalating by roughness, and no cached radiance for distant rough water, so the `Rough water does not trace` scenario is still answered only by `unit.water`'s `select_reflection()`, which no frame calls. KIND render: the suite skips, loudly, on a machine with no Vulkan device."
+
+[[coverage]]
+row = "water"
+requirement = "Caustics"
+evidence = "test:render.world_water"
+case = "world water: caustics move with the water's clock and follow its surface"
+note = "THE SURFACE-DERIVED TIER, DRAWN. `shaders/water.slang` focuses the sun on the bed seen through the water by the reciprocal of the Jacobian `1 + D (1 - 1/n) laplacian(h)`, with the analytic Laplacian of the ocean's own trains (`select_caustic_trains()` keeps the sixteen of largest `a k^2` from `water::resolve_trains(model, All)`, phases reduced in f64 at the water's clock by `build_water_params()`), band-limited by each pixel's footprint on the bed, and applied to the sun's share of the bed's light weakened by `exp(-(a + b) D)` on green, `underwater_state()`'s strength. This case requires the bed to change between two instants of the water clock while the same frames without caustics are bit-identical, and every resolved pixel (3 492 of them, both instants) to equal the refracted bed scaled by the processor's own focus from the same parameter block within 3% — the `Caustics follow the actual surface` scenario. Mutations that freeze the phases or substitute an unrelated pattern both turn it red (`openspec/changes/add-water-shading/evidence/falsification.txt`). NOT BUILT, and recorded rather than mapped: the projected and traced tiers, the selection by profile and GI budget in a frame (`select_caustic_tier()` is still called only by `unit.water`), and caustics UNDERWATER — this world has no underwater camera and no underwater pass. KIND render: the suite skips on a machine with no Vulkan device."
+
 # --- rendering-post-processing, the remaining eleven -------------------------------------------------
 #
 # THE ROW'S GAP IN ONE SENTENCE: `src/rendering/post/` is 2,103 lines of parameter derivations and

@@ -106,6 +106,11 @@ struct Options {
     /// instead of per fragment through the cloud shadow field. The before half of the committed
     /// before/after pair, and the frame a byte-identity check compares against.
     bool no_cloud_shadows = false;
+    /// Draw the water through the world's own lit path, as before water shading existed, instead
+    /// of through `shaders/water.slang` with its reflection, refraction, foam and caustics. The
+    /// before half of the committed before/after pair, and the frame a byte-identity check
+    /// compares against.
+    bool no_water_shading = false;
     /// MEASURE ON A QUIET HOST, OR FAIL SAYING THE HOST WAS NOT QUIET. A frame budget on a loaded
     /// machine measures the machine: `m11a:world-budget-on-a-device` held at 10.8 ms worst alone
     /// on the host and missed at 58 to 286 ms beside 24 spinning processes, same binary, same
@@ -243,6 +248,7 @@ private:
             cursor.number("--budget-ms", out.budget_ms) ||
             cursor.flag("--headless", out.headless) ||
             cursor.flag("--no-cloud-shadows", out.no_cloud_shadows) ||
+            cursor.flag("--no-water-shading", out.no_water_shading) ||
             cursor.flag("--quiet-host", out.quiet_host) ||
             cursor.number("--quiet-wait-s", out.quiet_wait_s);
         if (!recognised) {
@@ -672,6 +678,7 @@ struct Band {
     if (!stage.available()) {
         return ok();
     }
+    stage.set_water_shading(!options.no_water_shading);
     // The plant proxies are written on the world's workers; the streams hold the same bits
     // whether they are or not, so a world whose job system did not start still draws.
     stage.set_jobs(world.jobs());

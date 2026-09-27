@@ -30,6 +30,7 @@
 #include "shaders/world_spirv.h"
 #include "shaders/world_visual_msl.h"
 #include "shaders/world_visual_spirv.h"
+#include "water_surface.h"
 
 #include <algorithm>
 #include <chrono>
@@ -187,6 +188,9 @@ struct DrawRun {
     u32 index_count = 0;
     i32 vertex_offset = 0;
     bool dynamic = false;
+    /// Drawn with `shaders/water.slang` rather than world.slang. Only the water run, and only with
+    /// water shading on.
+    bool water = false;
     WorldPush push;
 };
 
@@ -207,7 +211,27 @@ struct DrawState {
     u32 height = 0;
     DrawRun runs[5];
     u32 run_count = 0;
+    /// The water pipeline and this frame's pictures, when a run is drawn with it. The views are
+    /// the graph's, so they are written into the water's set while recording.
+    const WaterSurface* water = nullptr;
+    WaterTargets water_targets;
+    rhi::Device* device = nullptr;
+    Status water_bound = ok();
 };
+
+/// Bind the pipeline a run is drawn with, and the sets that pipeline reads.
+void bind_run_pipeline(const PassContext& context, const DrawState& state, bool water) noexcept {
+    if (water) {
+        const rhi::DescriptorSetHandle sets[2] = {state.cloud_shadow, state.water->set()};
+        context.commands->bind_graphics_pipeline(state.water->pipeline());
+        context.commands->bind_descriptor_sets(state.water->layout(), 0,
+                                               Span<const rhi::DescriptorSetHandle>(sets, 2));
+        return;
+    }
+    context.commands->bind_graphics_pipeline(state.pipeline);
+    context.commands->bind_descriptor_sets(
+        state.layout, 0, Span<const rhi::DescriptorSetHandle>(&state.cloud_shadow, 1));
+}
 
 struct ReadbackState {
     const cy::rendering::GraphExecutor* executor = nullptr;
@@ -219,6 +243,11 @@ struct ReadbackState {
 
 void record_draw(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<DrawState*>(user);
+    // BEFORE ANYTHING IS BOUND: a set written after it is bound invalidates what was recorded.
+    if (state->water != nullptr) {
+        state->water_bound =
+            state->water->bind(*state->device, *state->executor, state->water_targets);
+    }
 
     rhi::RenderAttachment color;
     color.view = state->executor->view(state->color);
@@ -248,15 +277,19 @@ void record_draw(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    context.commands->bind_graphics_pipeline(state->pipeline);
-    context.commands->bind_descriptor_sets(
-        state->layout, 0, Span<const rhi::DescriptorSetHandle>(&state->cloud_shadow, 1));
+    bind_run_pipeline(context, *state, false);
 
     const u64 offsets[2] = {0, 0};
+    bool water_pipeline = false;
     for (u32 index = 0; index < state->run_count; ++index) {
         const DrawRun& run = state->runs[index];
-        if (run.index_count == 0) {
+        const bool water = run.water && state->water != nullptr && state->water_bound;
+        if (run.index_count == 0 || (run.water && !water)) {
             continue;
+        }
+        if (water != water_pipeline) {
+            bind_run_pipeline(context, *state, water);
+            water_pipeline = water;
         }
         const rhi::BufferHandle streams[2] = {
             run.dynamic ? state->dynamic_vertices : state->static_vertices,
@@ -266,7 +299,8 @@ void record_draw(const PassContext& context, void* user) noexcept {
         context.commands->bind_index_buffer(
             run.dynamic ? state->dynamic_indices : state->static_indices, 0, true);
         context.commands->push_constants(
-            state->layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+            water ? state->water->layout() : state->layout,
+            rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
             Span<const u8>(reinterpret_cast<const u8*>(&run.push), sizeof(WorldPush)));
         context.commands->draw_indexed(run.index_count, 1, run.first_index, run.vertex_offset, 0);
     }
@@ -551,6 +585,9 @@ struct Stage::Device {
     rhi::DescriptorSetHandle world_set;
     rhi::BufferHandle cloud_shadow_field;
     rhi::BufferHandle cloud_shadow_placement;
+    /// The water pipeline, its set and the pictures it reads. Created whether or not water shading
+    /// is on, so that switching it is a per-frame decision; a frame with it off never touches it.
+    WaterSurface water;
 
     // --- THE ASSEMBLED FRAME. M11.c task 3.1. --------------------------------------------------
     //
@@ -753,6 +790,11 @@ Status Stage::create_pipeline() noexcept {
         return make_unexpected(created.error());
     }
     device_->pipeline = *created;
+    if (Status made =
+            device_->water.create(device, device_->world_set_layout, kSceneFormat, width_, height_);
+        !made) {
+        return made;
+    }
 
     rhi::BufferDescription readback;
     readback.name = "world colour readback";
@@ -1660,6 +1702,91 @@ Status Stage::upload_dynamic(const World& world, f32& field_origin_x,
                         dynamic_indices_.size() * sizeof(u32), jobs_);
 }
 
+// ================================================================================================
+// WATER SHADING — `water`'s "Water surface shading" and "Caustics"
+// ================================================================================================
+//
+// Two pictures the water shader reads, each drawn with world.slang's own pipeline from a copy of
+// the frame's runs, and the parameters it is given. See water_surface.h for what each picture is
+// and shaders/water.slang for what is done with them.
+
+struct Stage::WaterFrame {
+    DrawState refraction;
+    DrawState reflection;
+    WaterTargets targets;
+    cy::rendering::FrameResourceRead reads[3];
+};
+
+Status Stage::declare_water(const World& world, cy::rendering::RenderGraph& graph,
+                            const Mat4& world_to_clip, Span<const ResourceId> vertex_inputs,
+                            WaterFrame& out) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    WaterView view;
+    view.world_to_clip = world_to_clip;
+    view.width = width_;
+    view.height = height_;
+    view.level = static_cast<f32>(world.options().sea_level);
+    view.seconds = static_cast<f32>(world.state().seconds);
+    view.centre = world.centre();
+    view.water_time = world.water_time();
+    water::WaveTrain trains[kCausticTrains];
+    const water::DisplacementModel* model = world.ocean_model();
+    const u32 train_count =
+        model != nullptr ? select_caustic_trains(*model, Span<water::WaveTrain>(trains)) : 0;
+    Expected<WaterParams, Error> params =
+        build_water_params(water::clear_sea_optics(), WaterLook{}, view,
+                           Span<const water::WaveTrain>(trains, train_count));
+    if (!params) {
+        return make_unexpected(params.error());
+    }
+    if (Status uploaded = device_->water.upload(device, *params); !uploaded) {
+        return uploaded;
+    }
+    out.targets = device_->water.import(graph);
+
+    // THE REFRACTION: the terrain alone, from the frame's own camera.
+    out.refraction.runs[0] = out.refraction.runs[1];
+    out.refraction.run_count = 1;
+    out.refraction.color = out.targets.refraction;
+    out.refraction.depth = out.targets.refraction_depth;
+
+    // THE REFLECTION: every run but the water's, mirrored in the water's mean level.
+    Vec4 rows[4];
+    mirrored_rows(world_to_clip, view.level, rows);
+    // Sky and terrain stay where they are; the stars and the plants move down over the water.
+    out.reflection.runs[2] = out.reflection.runs[3];
+    out.reflection.runs[3] = out.reflection.runs[4];
+    out.reflection.run_count = 4;
+    for (u32 index = 0; index < out.reflection.run_count; ++index) {
+        WorldPush& push = out.reflection.runs[index].push;
+        write_row(push.row0, rows[0]);
+        write_row(push.row1, rows[1]);
+        write_row(push.row2, rows[2]);
+        write_row(push.row3, rows[3]);
+    }
+    out.reflection.color = out.targets.reflection;
+    out.reflection.depth = out.targets.reflection_depth;
+
+    const struct {
+        const char* name;
+        DrawState* state;
+    } passes[2] = {{"world water refraction", &out.refraction},
+                   {"world water reflection", &out.reflection}};
+    for (const auto& pass : passes) {
+        auto builder = graph.add_pass(pass.name, QueueKind::Graphics);
+        for (const ResourceId input : vertex_inputs) {
+            builder.read(input, Access::VertexAttributeRead);
+        }
+        builder.write(pass.state->color, Access::ColorAttachmentWrite)
+            .write(pass.state->depth, Access::DepthStencilAttachmentWrite)
+            .record(&record_draw, pass.state);
+    }
+    out.reads[0] = {out.targets.refraction, Access::FragmentSampledRead};
+    out.reads[1] = {out.targets.refraction_depth, Access::FragmentSampledRead};
+    out.reads[2] = {out.targets.reflection, Access::FragmentSampledRead};
+    return graph.status();
+}
+
 Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d& target,
                     const char* png_path, StageReport& out) noexcept {
     if (!available_) {
@@ -1896,6 +2023,28 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     state.runs[4].push = push;
     state.run_count = 5;
 
+    const ResourceId visual_inputs[4] = {terrain_vertices, terrain_colours, dynamic_vertices,
+                                         dynamic_colours};
+    // THE WATER'S TWO PICTURES, declared before the frame so the graph schedules them first. Both
+    // are drawn from copies of the runs above; the frame's own run 2 is then drawn with the water
+    // pipeline, which samples them. Off, none of this exists and the frame is the one before.
+    WaterFrame water_frame;
+    out.water_shaded = water_shading_;
+    if (water_shading_) {
+        water_frame.refraction = state;
+        water_frame.reflection = state;
+        if (Status declared = declare_water(world, graph, world_to_clip,
+                                            Span<const ResourceId>(visual_inputs, 4), water_frame);
+            !declared) {
+            (void)device.end_frame();
+            return declared;
+        }
+        state.runs[2].water = true;
+        state.water = &device_->water;
+        state.water_targets = water_frame.targets;
+        state.device = &device;
+    }
+
     ResolveState resolve;
     resolve.pipelines = &device_->pipelines;
     resolve.bindings = &device_->bindings;
@@ -1908,10 +2057,12 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     // callback, which `ForwardFrame` calls "a legitimate frame": this program has no transparent
     // layer, no screen-space effects and no interface.
     FrameSinks sinks;
-    const ResourceId visual_inputs[4] = {terrain_vertices, terrain_colours, dynamic_vertices,
-                                         dynamic_colours};
     sinks.passes[static_cast<usize>(FramePassKind::Opaque)] = cy::rendering::FramePassCallback{
         &record_draw, &state, Span<const ResourceId>(visual_inputs, 4)};
+    if (water_shading_) {
+        sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =
+            Span<const cy::rendering::FrameResourceRead>(water_frame.reads, 3);
+    }
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
 
@@ -1978,11 +2129,16 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     {
         cy::rendering::GraphExecutor executor(*allocator_, device);
         state.executor = &executor;
+        water_frame.refraction.executor = &executor;
+        water_frame.reflection.executor = &executor;
         resolve.executor = &executor;
         readback.executor = &executor;
         frame = device_->assembly.execute(executor, graph, report);
         if (frame) {
             frame = device.wait_idle();
+        }
+        if (frame && water_shading_ && !state.water_bound) {
+            frame = state.water_bound;
         }
         out.submit_ms = now_millis() - mark;
         if (frame && png_path != nullptr) {
@@ -2267,6 +2423,7 @@ void Stage::close() noexcept {
         device.destroy_buffer(device_->readback);
         device.destroy_buffer(device_->cloud_shadow_field);
         device.destroy_buffer(device_->cloud_shadow_placement);
+        device_->water.destroy(device);
         if (!device_->world_set_layout.is_null()) {
             device.destroy_descriptor_set_layout(device_->world_set_layout);
         }

@@ -77,6 +77,11 @@ budget of their own — see `streaming.h` for why a *derived* payload has nothin
 - **The water surface closure's evaluation.** `build_closure()` fills the closure's inputs;
   `material-compiler` owns the closure itself and `rendering-materials-and-shading` owns evaluating
   it. A water module that emitted shader code would be the second material system `water` forbids.
+  The one frame that shades the sea today is `samples/10-world`'s: its `shaders/water.slang` evaluates
+  reflection, refraction with Beer-Lambert over the column, shoreline foam and surface-derived
+  caustics from this module's own numbers — `water_in_scatter()`, `build_closure()`'s F0,
+  `resolve_trains()` — handed over by the sample's `build_water_params()`, and
+  `render.world_water` checks it against them. It is a sample's shader, not the closure.
 - **The underwater passes.** `underwater_state()` derives the parameters — including the submerged
   fraction that makes the crossing explicit rather than a switch — and the volumetric fog, the
   caustics and the audio filtering are the systems that already own those.

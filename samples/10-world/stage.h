@@ -79,10 +79,12 @@
 #include <cy/backends/rhi/handles.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/math/matrix.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/assembly/capture_manifest.h>
+#include <cy/rendering/graph/graph.h>
 
 #include "world.h"
 
@@ -115,6 +117,9 @@ struct StageReport {
     u32 foliage_triangles = 0;
     u32 plants_drawn = 0;
     u32 stars_drawn = 0;
+    /// Whether the water was shaded through `shaders/water.slang` this frame, which is what adds
+    /// the refraction and reflection passes to the graph.
+    bool water_shaded = false;
     /// Milliseconds spent turning the world's state into vertex buffers, on the processor. Part of
     /// the frame-budget curve, and separated from the world's own producers because it is this
     /// artefact's cost and not the engine's.
@@ -194,6 +199,12 @@ public:
     /// sun, 3.0 ms of it the irradiance alone. Same bits either way, for the same reason.
     void set_jobs(jobs::JobSystem* jobs) noexcept;
 
+    /// Whether the water is drawn through `shaders/water.slang` — reflection, refraction with
+    /// absorption over the column, shoreline foam and caustics — or through the world's own lit
+    /// path, as it was before. On by default; off is the frame this program drew before water
+    /// shading existed, byte for byte.
+    void set_water_shading(bool on) noexcept { water_shading_ = on; }
+
     void close() noexcept;
 
 private:
@@ -206,6 +217,13 @@ private:
     /// produces none.
     [[nodiscard]] Status upload_cloud_shadow(const World& world) noexcept;
     [[nodiscard]] Status create_visual_pipelines() noexcept;
+    /// Declare this frame's refraction and reflection passes and point the water run at
+    /// `shaders/water.slang`. Only when water shading is on.
+    struct WaterFrame;
+    [[nodiscard]] Status declare_water(const World& world, rendering::RenderGraph& graph,
+                                       const Mat4& world_to_clip,
+                                       Span<const rendering::ResourceId> vertex_inputs,
+                                       WaterFrame& out) noexcept;
     /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
     /// writes. M11.c task 3.1.
     [[nodiscard]] Status create_frame() noexcept;
@@ -225,6 +243,7 @@ private:
     u32 width_ = 0;
     u32 height_ = 0;
     bool available_ = false;
+    bool water_shading_ = true;
 
     /// The static half: terrain geometry, uploaded once.
     u32 terrain_vertices_ = 0;
