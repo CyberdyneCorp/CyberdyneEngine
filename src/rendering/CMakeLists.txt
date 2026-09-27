@@ -190,6 +190,9 @@ add_subdirectory(light_probes)
 # it is lit. It joins cy::rendering-lighting and cy::rendering-pipeline, so it is read after both.
 add_subdirectory(decals)
 
+# Issue #35: CyberGI on the device. After gi and graph, which it depends on.
+add_subdirectory(gi_gpu)
+
 # EXPOSURE AND COLOUR GRADING ON THE DEVICE. `rendering-post-processing`'s steps 6, 10, 11 and 12:
 # the luminance histogram and its adaptation as compute dispatches, and the graded resolve — exposure,
 # the tone curve and one lookup into a baked grading table — as the frame's post-process callback.

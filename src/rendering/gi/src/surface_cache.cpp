@@ -16,11 +16,6 @@ namespace {
     return Aabb{page.position - extent, page.position + extent};
 }
 
-/// How well a card's normal must agree with a hit's before the card may answer for it. A quarter is
-/// a 75-degree cone: wide enough that a hit whose normal the field blended at an edge still finds
-/// its own surface, and narrow enough that a card facing across the hit cannot.
-constexpr f32 kMinimumAlignment = 0.25F;
-
 [[nodiscard]] f32 relative_change(Vec3 before, Vec3 after) noexcept {
     const f32 magnitude = length(before) + length(after);
     if (magnitude <= 1.0e-5F) {
@@ -91,7 +86,11 @@ Expected<u32, Error> SurfaceCache::allocate(const Surfel& surfel) noexcept {
     }
 
     SurfacePage& page = pages_[handle];
+    // The revision survives the reset: a slot that is released and allocated again is a different
+    // card, and a mirror or an in-flight result keyed on the old revision must see that it moved.
+    const u32 revision = page.revision + 1U;
     page = SurfacePage{};
+    page.revision = revision;
     page.position = surfel.position;
     page.normal = surfel.normal;
     page.albedo = surfel.albedo;
@@ -136,6 +135,7 @@ void SurfaceCache::release(u32 handle) noexcept {
     (void)index_.remove(proxies_[handle]);
     pages_[handle].live = false;
     pages_[handle].valid = false;
+    pages_[handle].revision += 1U;
     (void)free_pages_.push_back(handle);
     live_pages_ -= 1;
     account();
@@ -149,6 +149,7 @@ u32 SurfaceCache::invalidate(const Aabb& region) noexcept {
             region.contains(pages_[handle].position)) {
             pages_[handle].valid = false;
             pages_[handle].error = 1.0F;
+            pages_[handle].revision += 1U;
             count += 1;
         }
         return true;
@@ -221,57 +222,97 @@ void SurfaceCache::shade(
     page.error = relative_change(before, outgoing(page));
 }
 
-SurfaceUpdateReport SurfaceCache::service(const SurfaceUpdateContext& context, bool all) noexcept {
-    SurfaceUpdateReport report;
-    current_frame_ = context.frame;
-
-    Array<u32> queue;
-    for (u32 handle = 0; handle < pages_.size(); ++handle) {
-        if (pages_[handle].live) {
-            (void)queue.push_back(handle);
-            if (!pages_[handle].valid) {
+Status SurfaceCache::select(Span<const SurfacePage> pages, const SurfaceUpdateContext& context,
+                           bool all, Array<u32>& selected, SurfaceUpdateReport& report) noexcept {
+    selected.clear();
+    for (u32 handle = 0; handle < pages.size(); ++handle) {
+        if (pages[handle].live) {
+            if (Status pushed = selected.push_back(handle); !pushed) {
+                return pushed;
+            }
+            if (!pages[handle].valid) {
                 report.pages_invalid += 1;
             }
         }
     }
-    report.queue_depth = static_cast<u32>(queue.size());
-    if (queue.empty()) {
-        diagnostics_.last_update = report;
-        return report;
-    }
+    report.queue_depth = static_cast<u32>(selected.size());
 
     const u64 frame = context.frame;
-    std::ranges::sort(queue, [&](u32 a, u32 b) {
+    const auto age_of = [frame](const SurfacePage& page) {
+        return frame > page.last_update_frame ? frame - page.last_update_frame : 0;
+    };
+    std::ranges::sort(selected, [&](u32 a, u32 b) {
         // The progress guarantee first: a page older than the cap outranks everything, so no valid
         // page is starved indefinitely by higher-priority work.
-        const u64 age_a =
-            frame > pages_[a].last_update_frame ? frame - pages_[a].last_update_frame : 0;
-        const u64 age_b =
-            frame > pages_[b].last_update_frame ? frame - pages_[b].last_update_frame : 0;
-        const bool starved_a = age_a >= context.max_age_frames;
-        const bool starved_b = age_b >= context.max_age_frames;
+        const bool starved_a = age_of(pages[a]) >= context.max_age_frames;
+        const bool starved_b = age_of(pages[b]) >= context.max_age_frames;
         if (starved_a != starved_b) {
             return starved_a;
         }
-        const f32 priority_a = priority_of(pages_[a], frame);
-        const f32 priority_b = priority_of(pages_[b], frame);
+        const f32 priority_a = priority_of(pages[a], frame);
+        const f32 priority_b = priority_of(pages[b], frame);
         if (priority_a != priority_b) {
             return priority_a > priority_b;
         }
         return a < b;
     });
 
-    const usize limit = all ? queue.size() : std::min<usize>(queue.size(), context.budget);
-    f32 error_total = 0.0F;
-    for (usize index = 0; index < limit; ++index) {
-        shade(pages_[queue[index]], context);
-        error_total += pages_[queue[index]].error;
-        report.pages_updated += 1;
+    const usize limit = all ? selected.size() : std::min<usize>(selected.size(), context.budget);
+    for (usize index = limit; index < selected.size(); ++index) {
+        report.oldest_unserviced_age =
+            std::max(report.oldest_unserviced_age, age_of(pages[selected[index]]));
     }
-    for (usize index = limit; index < queue.size(); ++index) {
-        const SurfacePage& page = pages_[queue[index]];
-        const u64 age = frame > page.last_update_frame ? frame - page.last_update_frame : 0;
-        report.oldest_unserviced_age = std::max(report.oldest_unserviced_age, age);
+    return selected.resize(limit);
+}
+
+u32 SurfaceCache::collect() noexcept {
+    if (backend_ == nullptr) {
+        return 0;
+    }
+    const u32 written = backend_->retire(pages_.span());
+    if (written != 0) {
+        account();
+    }
+    return written;
+}
+
+SurfaceUpdateReport SurfaceCache::service(const SurfaceUpdateContext& context, bool all) noexcept {
+    SurfaceUpdateReport report;
+    current_frame_ = context.frame;
+    // A backend's previous submission lands before this one is chosen, so the selection below sees
+    // its errors and ages — which is what makes the device path schedule as the host one does.
+    (void)collect();
+
+    Array<u32> selected;
+    if (Status chosen = select(pages_.span(), context, all, selected, report); !chosen) {
+        diagnostics_.last_update = report;
+        return report;
+    }
+    if (selected.empty()) {
+        diagnostics_.last_update = report;
+        return report;
+    }
+
+    if (backend_ != nullptr) {
+        // The mean error of this selection is not known until it is retired; the one reported is
+        // what the pages carried when they were chosen, which is what the scheduler ranked on.
+        report.pages_updated = backend_->submit(pages_.span(), selected.span(), context);
+        f32 error_total = 0.0F;
+        for (usize index = 0; index < report.pages_updated; ++index) {
+            error_total += pages_[selected[index]].error;
+        }
+        report.mean_error = report.pages_updated == 0
+                                ? 0.0F
+                                : error_total / static_cast<f32>(report.pages_updated);
+        diagnostics_.last_update = report;
+        return report;
+    }
+
+    f32 error_total = 0.0F;
+    for (const u32 handle : selected) {
+        shade(pages_[handle], context);
+        error_total += pages_[handle].error;
+        report.pages_updated += 1;
     }
     report.mean_error =
         report.pages_updated == 0 ? 0.0F : error_total / static_cast<f32>(report.pages_updated);
@@ -309,7 +350,7 @@ bool SurfaceCache::radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
         // read the ceiling's radiance about a third of the time. Which of two coincident cards a
         // spatial index happens to visit first is not a shading decision.
         const f32 alignment = dot(candidate.normal, normal);
-        if (alignment <= kMinimumAlignment) {
+        if (alignment <= kCardLookupAlignment) {
             return true;
         }
         const f32 squared = distance_squared(candidate.position, position);

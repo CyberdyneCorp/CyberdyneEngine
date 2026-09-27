@@ -76,6 +76,11 @@ struct AssetDistanceField {
 /// needs, and the one shape whose exact distance is worth having in closed form.
 [[nodiscard]] f32 box_distance(Vec3 point, Vec3 half_extents) noexcept;
 
+/// The `index`-th of `count` directions of a deterministic cosine-weighted hemisphere sequence around
+/// `normal` — the golden-ratio spiral `sky_visibility` casts. Public because a device transcription
+/// of a gather must cast the same rays as the host one it is checked against.
+[[nodiscard]] Vec3 hemisphere_direction(Vec3 normal, u32 index, u32 count) noexcept;
+
 struct SphereTraceHit {
     bool hit = false;
     f32 t = 0.0F;
@@ -101,6 +106,28 @@ struct ScrollReport {
     u32 bricks_freed = 0;
     u32 bricks_empty = 0;
 };
+
+/// One brick whose stored state changed during a `scroll_to`: solved, re-solved or found empty.
+///
+/// The change journal a device mirror of the field consumes, so an upload is the bricks that moved
+/// rather than the field. `slot` is the brick's index into `brick_pool()` — `kEmptyBrick` for a brick
+/// that holds no surface and answers with its level's far value.
+struct FieldBrickChange {
+    u32 level = 0;
+    i32 brick[3] = {0, 0, 0};
+    u32 slot = 0;
+};
+
+/// One clipmap level's placement, as a device mirror needs it. `origin_brick` is the window's
+/// lowest brick coordinate; the window is `window_bricks()` bricks along each axis.
+struct FieldLevelView {
+    f32 voxel_size = 0.0F;
+    f32 brick_size = 0.0F;
+    f32 far_distance = 0.0F;
+    i32 origin_brick[3] = {0, 0, 0};
+};
+
+inline constexpr u32 kEmptyBrick = ~0U;
 
 struct FieldDiagnostics {
     u32 levels = 0;
@@ -170,6 +197,41 @@ public:
 
     [[nodiscard]] const FieldDiagnostics& diagnostics() const noexcept { return diagnostics_; }
 
+    // --- The mirror's view --------------------------------------------------------------------
+    //
+    // What a device copy of this field reads, and nothing it could write. `generation()` counts
+    // `scroll_to` calls; `last_changes()` is every brick that call solved, so a mirror that saw
+    // generation N-1 is current after applying it, and a mirror that missed one rebuilds from
+    // `visit_bricks`. The field stays the authority: a mirror never solves a brick itself.
+
+    [[nodiscard]] u64 generation() const noexcept { return generation_; }
+    [[nodiscard]] Span<const FieldBrickChange> last_changes() const noexcept {
+        return changes_.span();
+    }
+    /// Bricks along each axis of one level's window: `resolution / kBrickEdge`.
+    [[nodiscard]] u32 window_bricks() const noexcept { return settings_.resolution / kBrickEdge; }
+    [[nodiscard]] u32 level_count() const noexcept { return static_cast<u32>(levels_.size()); }
+    [[nodiscard]] FieldLevelView level_view(u32 level) const noexcept;
+    /// Every brick's samples, `kBrickVoxels` floats per slot, indexed `((z * 4) + y) * 4 + x`.
+    [[nodiscard]] Span<const f32> brick_pool() const noexcept { return brick_pool_.span(); }
+    [[nodiscard]] u32 brick_slot_count() const noexcept {
+        return static_cast<u32>(brick_pool_.size() / kBrickVoxels);
+    }
+    /// Every brick a level holds, as a change record: what a mirror that missed a generation
+    /// rebuilds from. `fn(const FieldBrickChange&)`.
+    template <class Fn>
+    void visit_bricks(Fn&& fn) const {
+        for (u32 index = 0; index < levels_.size(); ++index) {
+            for (const auto& entry : levels_[index].bricks) {
+                FieldBrickChange change;
+                change.level = index;
+                decode_brick_key(entry.key, change.brick);
+                change.slot = entry.value.empty ? kEmptyBrick : entry.value.slot;
+                fn(change);
+            }
+        }
+    }
+
 private:
     struct Placement {
         u64 id = 0;
@@ -204,6 +266,8 @@ private:
         Level() noexcept = default;
     };
 
+    static void decode_brick_key(u64 key, i32 (&brick)[3]) noexcept;
+    void record_change(const Level& level, i32 bx, i32 by, i32 bz, const Brick& brick) noexcept;
     [[nodiscard]] f32 sample_placements(Vec3 point) const noexcept;
     [[nodiscard]] u32 find_placement(u64 id) const noexcept;
     [[nodiscard]] Status solve_brick(Level& level, i32 bx, i32 by, i32 bz, Brick& brick) noexcept;
@@ -221,9 +285,11 @@ private:
     Array<f32> brick_pool_;
     Array<u32> free_bricks_;
     Array<Aabb> pending_invalidations_;
+    Array<FieldBrickChange> changes_;
+    u64 generation_ = 0;
     FieldDiagnostics diagnostics_{};
 
-    static constexpr u32 kEmptySlot = ~0U;
+    static constexpr u32 kEmptySlot = kEmptyBrick;
 };
 
 }  // namespace cy::rendering::gi
