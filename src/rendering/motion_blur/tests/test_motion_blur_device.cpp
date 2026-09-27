@@ -548,9 +548,7 @@ CY_TEST_CASE("(e) without per-object motion or the stage, the frame is the frame
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE(
-    "(a) the moving box's velocity is its screen displacement; the still world's is "
-    "the camera's") {
+CY_TEST_CASE("(a) a moving box's velocity is its screen displacement, the rest the camera's") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();
@@ -595,9 +593,7 @@ CY_TEST_CASE(
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE(
-    "(b) temporal antialiasing ghosts less behind a moving object than with camera "
-    "motion only") {
+CY_TEST_CASE("(b) temporal antialiasing ghosts less than with camera motion only") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();

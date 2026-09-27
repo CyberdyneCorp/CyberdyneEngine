@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Last frame's instance rows, kept so the depth prepass derives PER-OBJECT motion.
 // `temporal-rendering` — "Motion vectors are derived, not authored".

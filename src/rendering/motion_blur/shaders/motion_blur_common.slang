@@ -51,9 +51,11 @@ float2 cyMotionBlurCameraMotion(uint2 pixel, float depth)
 
 /// A pixel's blur vector in pixels: the shutter-scaled half-motion, the camera's share scaled apart
 /// where the two scales differ, clamped to the longest radius.
+/// A pixel no surface covered is the sky: the far plane, moving with the camera alone.
 float2 cyMotionBlurVector(uint2 pixel, float2 velocity, float depth)
 {
-    let motion = velocity * cyMotionBlur.extent.xy;
+    let motion = depth > 0.0 ? velocity * cyMotionBlur.extent.xy
+                             : cyMotionBlurCameraMotion(pixel, 0.0);
     float2 blur = motion * cyMotionBlur.scales.x;
     if (cyMotionBlur.depth.z > 0.5 && depth > 0.0)
     {

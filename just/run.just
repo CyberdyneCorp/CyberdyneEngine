@@ -997,6 +997,49 @@ capture-beauty-depth-of-field *args:
         docs/design/images/depth-of-field-beauty-sphere.png \
         docs/design/images/depth-of-field-beauty-column.png
 
+# THE BEAUTY SHOT IN MOTION, WITH AND WITHOUT MOTION BLUR: one frame of the turntable — the camera
+# a step round its orbit from the frame before, the embers a step on — photographed without the
+# stage and with it at a 180-degree shutter, from one set of compiled programs. The first frame of
+# a run has no motion, so each capture draws the frame before and writes the one after. Needs a
+# graphics device, and says so and writes nothing without one.
+# Photograph a turntable frame of the beauty shot with and without motion blur. Usage: just capture-beauty-motion-blur [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-motion-blur *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-motion-blur: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-motion-blur"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    # Thirty degrees round the orbit, one and a half degrees a frame: the camera turns about the
+    # shot's target, so the motion is fastest at the frame's edges and slowest at its centre.
+    orbit=(--orbit-frame 20 --frames-count 240)
+    echo "==> capture     a turntable frame without motion blur"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" "${orbit[@]}" \
+        --orbit-still docs/design/images/motion-blur-beauty-off.png ${rest}
+    echo "==> capture     the same frame at a 180-degree shutter"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" "${orbit[@]}" \
+        --motion-blur 180 --orbit-still docs/design/images/motion-blur-beauty-on.png ${rest}
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/motion-blur-beauty-off.png \
+        docs/design/images/motion-blur-beauty-on.png
+
 # THE BEAUTY SHOT UNGRADED AND UNDER ITS TWO LOOKS: the same scene, the same compiled programs and the
 # same settled embers, photographed without a look and with `content/beauty/looks/warm.cygrade`
 # (the parametric controls alone) and `cool.cygrade` (a white balance and an exported-style `.cube`,

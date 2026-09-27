@@ -187,12 +187,17 @@ Expected<MotionBlurConstants, Error> make_motion_blur_constants(
 Vec2 blur_vector_at(const MotionBlurInputs& inputs, const MotionBlurConstants& constants, u32 x,
                     u32 y) noexcept {
     const usize at = texel(inputs, x, y);
-    const Vec2 motion{inputs.velocity[at].x * constants.extent[0],
-                      inputs.velocity[at].y * constants.extent[1]};
     const f32 depth = inputs.depth[at];
+    // A PIXEL NO SURFACE COVERED IS THE SKY, and the prepass wrote it no motion because it drew
+    // nothing there. The sky is at the far plane and moves with the camera alone, so its motion is
+    // the far plane's reprojection — which is the camera's rotation, and nothing at all for a
+    // camera that only translates under an infinite far plane.
+    const Vec2 motion = depth > 0.0F ? Vec2{inputs.velocity[at].x * constants.extent[0],
+                                            inputs.velocity[at].y * constants.extent[1]}
+                                     : camera_motion_pixels(constants, x, y, 0.0F);
     Vec2 blur{motion.x * constants.scales[0], motion.y * constants.scales[0]};
-    // The camera's share is separated only where there is a surface to reproject: a cleared texel
-    // has no depth, and the prepass wrote it no motion either.
+    // The camera's share is separated only where there is a surface: the sky's motion is all of it
+    // the camera's already.
     if (constants.depth[2] > 0.5F && depth > 0.0F) {
         const Vec2 camera = camera_motion_pixels(constants, x, y, depth);
         blur =

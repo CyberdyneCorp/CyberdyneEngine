@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Last frame's instance rows, kept so the depth prepass derives per-object motion.
 
 #include <cy/rendering/pipeline/instance_history.h>

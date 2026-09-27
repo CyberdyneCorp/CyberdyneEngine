@@ -105,6 +105,7 @@ cy_add_module(
         cy::rendering-grading
         cy::rendering-graph
         cy::rendering-lighting
+        cy::rendering-motion-blur
         cy::rendering-occlusion
         cy::rendering-particles
         cy::rendering-pipeline
