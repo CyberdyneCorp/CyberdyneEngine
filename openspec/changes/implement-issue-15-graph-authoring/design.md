@@ -151,9 +151,9 @@ that reason. The procedural wind node cannot stand in for the engine wind field.
 
 The field path must use `environment::build_deterministic_field_image` for the weather-owned
 `environment::fields::kWind` declaration, retain the image origin, and pass coordinates made local
-with `environment::image_local` before GPU sampling. The vertex shader must read the Vec3 result
-through `cy.field`'s sampler; the current generated `cy_field_sample` accessor reads one scalar
-from `CyMaterialParams` and cannot supply spatial wind. The authored frame needs a field buffer
+with `environment::image_local` before GPU sampling. The generated material prelude now imports
+`cy.field`, selects the IR field's typed components from the sampler's float4 result, and carries
+one bindless slot and camera-to-image offset per field. The authored frame needs a field buffer
 and descriptor binding that is shared by its visible, depth, and shadow vertex programs. Validation
 must refuse an unbound wind field before a preview or cook succeeds. A regression must compare
 several positions, including different vertical cells, against `sample_field_image` on the CPU.
@@ -162,7 +162,10 @@ separately so large world coordinates can be subtracted in f64 before sampling. 
 therefore needs each bound field's origin relative to the current camera, plus the vertex's
 camera-relative position; it cannot treat a material parameter as the field value or use one
 unqualified position for fields with different origins. The same field table and coordinate
-transform must be used at current and previous frame times for motion vectors.
+transform must be used at current and previous frame times for motion vectors. The host must set
+`CyMaterialContext.fieldPosition` to the vertex's camera-relative position and each binding's
+`cameraToImage.xz` to camera world position minus the image origin; its y component supplies the
+camera's absolute world height, because the field sampler interprets y as absolute metres.
 
 ### Authored scene pipeline integration (open)
 

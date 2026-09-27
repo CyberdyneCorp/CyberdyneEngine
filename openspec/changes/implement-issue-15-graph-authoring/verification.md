@@ -190,3 +190,10 @@ An exploratory typed wind-field shader probe compiled but failed all four assert
 red run: the field image keeps its world origin outside the GPU words, so a shader-only change
 would sample the wrong location. Task 3.1 remains open until a per-field camera-relative origin
 and the same field snapshot across visible, shadow, and motion passes are bound and tested.
+
+The first task 3.1 implementation now generates typed field reads through `cy.field` with a
+bindless slot and camera-to-image offset. The focused `typed vertex fields sample the engine field
+table at the authored position` case compiles the generated vertex program through Slang; all 19
+assertions pass, and the full `smoke.material_slang` suite passes. The prior scalar fallback made
+four assertions fail before the change. Engine field image creation and viewport binding remain
+open and are still refused by the authored frame.

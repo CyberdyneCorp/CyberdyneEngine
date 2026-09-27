@@ -123,9 +123,36 @@ void write_leaf(Writer& writer, const Node& node) noexcept {
             writer.text(node.symbol.text());
             return;
         case Op::Field:
+            if (node.type == ValueType::Int) {
+                writer.text("int(");
+            } else if (node.type == ValueType::Bool) {
+                writer.text("(");
+            }
             writer.text("cy_field_sample(ctx, CY_FIELD_");
             writer.text(node.symbol.text());
             writer.text(")");
+            switch (node.type) {
+                case ValueType::Float:
+                    writer.text(".x");
+                    break;
+                case ValueType::Vec2:
+                    writer.text(".xy");
+                    break;
+                case ValueType::Vec3:
+                    writer.text(".xyz");
+                    break;
+                case ValueType::Vec4:
+                    break;
+                case ValueType::Int:
+                    writer.text(".x)");
+                    break;
+                case ValueType::Bool:
+                    writer.text(".x != 0.0)");
+                    break;
+                default:
+                    writer.text(".x");
+                    break;
+            }
             return;
         default:
             writer.text("<leaf?>");

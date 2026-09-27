@@ -454,6 +454,8 @@ material flat_grey {
     CY_CHECK_EQ(report->attributes, 0U);
     CY_CHECK_EQ(report->textures, 0U);
     CY_CHECK_EQ(report->fields, 0U);
+    CY_CHECK(std::string_view(unit.data(), unit.size()).find("fieldPosition") ==
+             std::string_view::npos);
 
     shader::DiagnosticLog diagnostics(current_allocator());
     u32 words = 0;
@@ -463,6 +465,61 @@ material flat_grey {
         print_diagnostics(diagnostics);
     }
     CY_REQUIRE(ok);
+    CY_CHECK_GT(words, 5U);
+}
+
+CY_TEST_CASE("typed vertex fields sample the engine field table at the authored position") {
+    CY_REQUIRE(shader::slang::slang_available());
+    StandardLibrary library;
+    SlangHandle slang;
+    constexpr std::string_view kWind = R"(
+material field_wind {
+    field wind : float3;
+    vertex_offset = wind;
+    surface = diffuse((0.5, 0.5, 0.5));
+    opacity = 1.0;
+}
+)";
+    ParseDiagnostic sink(current_allocator());
+    Expected<Module, Error> module = parse_material(kWind, current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    Expected<GeneratedSource, Error> source = emit_vertex_offset(*module, EmitOptions{});
+    CY_REQUIRE(source.has_value());
+    Array<char> prelude(current_allocator());
+    Expected<PreludeReport, Error> report = emit_prelude(*module, PreludeOptions{}, prelude);
+    CY_REQUIRE(report.has_value());
+    CY_CHECK_EQ(report->fields, 1U);
+    std::string text(prelude.data(), prelude.size());
+    text.append(source->view());
+    text += R"(
+[[vk::binding(1, 3)]] RWStructuredBuffer<float4> cyMaterialProbeOutput;
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.fieldPosition = float3(0.0, 0.0, 0.0);
+    let offset = cy_material_field_wind_primary_high_vertex_offset(ctx);
+    cyMaterialProbeOutput[id.x] = float4(offset, 1.0);
+}
+)";
+    CY_CHECK(text.find("import cy.field;") != std::string_view::npos);
+    CY_CHECK(text.find("CyMaterialFieldBinding fields[1];") != std::string_view::npos);
+    CY_CHECK(text.find("float3 at = ctx.fieldPosition + binding.cameraToImage;") !=
+             std::string_view::npos);
+    CY_CHECK(text.find("cyFieldSampleScene(binding.slot, at.x, at.y, at.z).value") !=
+             std::string_view::npos);
+    CY_CHECK(text.find("cy_field_sample(ctx, CY_FIELD_wind).xyz") != std::string_view::npos);
+
+    shader::DiagnosticLog diagnostics(current_allocator());
+    u32 words = 0;
+    const bool ok = compiles(library, slang, "material.field_wind", text, diagnostics, words);
+    if (!ok) {
+        print_diagnostics(diagnostics);
+    }
+    CY_CHECK(ok);
     CY_CHECK_GT(words, 5U);
 }
 

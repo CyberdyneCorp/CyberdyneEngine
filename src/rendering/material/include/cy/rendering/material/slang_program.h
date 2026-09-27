@@ -48,11 +48,11 @@
 // WHAT IS NOT CLOSED, AND IT IS NAMED RATHER THAN PAPERED OVER
 // ================================================================================================
 //
-//  * **A field sample is a float.** `Op::Field` carries a type and this prelude declares
-//    `cy_field_sample` returning `float`, because the call is `cy_field_sample(ctx, CY_FIELD_x)`
-//    with the slot as a value — so two fields of different types cannot be told apart by overload
-//    resolution. `environment-fields` is M10's; when it arrives, either the emitter spells the type
-//    into the call or the slot becomes a type-tagged constant.
+//  * **A field sample needs a provider.** The emitted field expression selects the IR's scalar or
+//    vector width from the float4 returned by `cy.field`. Each material field binding contains a
+//    bindless scene slot and a per-view offset from camera-relative coordinates to the field
+//    image's local coordinates. A host must populate those bindings and the context's
+//    `fieldPosition`; compiling this translation unit alone does not provide field data.
 //  * **The probe entry point is a compute shader, not the frame's fragment shader.** What this
 //    module proves is that the generated program COMPILES and reflects; wiring a compiled material
 //    into `src/rendering/pipeline/`'s forward pass is a permutation and pipeline-cache question,
