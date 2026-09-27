@@ -80,6 +80,15 @@ module allocates none of its own. So a material's slot word means the same thing
 to the device's own table, and to any other consumer of either; the two sets differ in which
 descriptors are written, never in what a number means.
 
+**Environment fields use set 0, binding 3.** `cy.field` declares an array of packed field-image
+storage buffers there. `FramePipelines` includes a bounded 16-slot table in its global layout and
+`FrameBindings::set_environment_fields` accepts the slot and buffer supplied by the scene. The
+frame rewrites those descriptors alongside its globals each frame. A caller with no field images
+leaves the table empty; non-empty tables require a bindless device, and a field material may use
+only a slot the caller actually bound. Field slots
+are separate from the material texture table. The editor viewport still needs to create and bind
+the weather-owned wind image before it can enable its authored wind graph.
+
 **The macOS viewport's answer was read first and could not be lifted.** `samples/03-first-light`
 solved the same problem two days earlier by giving its compiled-material path a SECOND pipeline
 layout — the device's table at set 0, the material's parameters at set 1, and its own globals moved

@@ -80,7 +80,7 @@ inline constexpr u32 kViewSet = 1;
 inline constexpr u32 kPassSet = 2;
 inline constexpr u32 kSetCount = 3;
 
-// --- Set 0 carries the globals block AND the material texture table. M11.c task 3.7 -------------
+// --- Set 0 carries globals, material textures, and environment fields -------------------------
 //
 // THE REASON THE FORWARD PATH SAMPLED NOTHING, and it was not a missing feature anywhere. The RHI
 // has had a global bindless table since M11.c's first half — declared at (set 0, binding 1) and
@@ -99,7 +99,8 @@ inline constexpr u32 kSetCount = 3;
 inline constexpr u32 kGlobalBindingGlobals = 0;
 inline constexpr u32 kGlobalBindingMaterialTextures = 1;
 inline constexpr u32 kGlobalBindingMaterialSampler = 2;
-inline constexpr u32 kGlobalBindingCount = 3;
+inline constexpr u32 kGlobalBindingEnvironmentFields = 3;
+inline constexpr u32 kGlobalBindingCount = 4;
 
 /// How many slots of the global table the frame's own set 0 can name.
 ///
@@ -108,6 +109,10 @@ inline constexpr u32 kGlobalBindingCount = 3;
 /// slot at or past this index is REFUSED naming both numbers rather than drawing a surface that
 /// samples an unwritten descriptor — which is undefined, and looks like a texture on most drivers.
 inline constexpr u32 kMaterialTextureSlots = 128;
+
+/// Field images sampled through `cy.field` at set 0, binding 3. This bounded table is written
+/// alongside the frame globals so a material can sample a field without a per-draw descriptor.
+inline constexpr u32 kEnvironmentFieldSlots = 16;
 
 // The numbers are the SHADER's, reached from the RHI's own copy of them rather than written twice.
 // `rhi/pipeline.h` says why they live there: "the shader declared these first".
@@ -120,6 +125,13 @@ static_assert(kGlobalBindingMaterialSampler == rhi::kGlobalTableSamplerBinding);
 struct MaterialTextureSlot {
     rhi::BindlessIndex slot = rhi::kInvalidBindlessIndex;
     rhi::TextureViewHandle view;
+};
+
+/// A packed `environment::FieldGpuImage` uploaded as a storage buffer. Its slot is the index
+/// passed to `cyFieldSampleScene`, not a material texture slot.
+struct EnvironmentFieldSlot {
+    u32 slot = 0;
+    rhi::BufferHandle image;
 };
 
 /// The sentinel `cy/frame.slang` spells `kCyNoMaterialTexture`: "no texture here". It is

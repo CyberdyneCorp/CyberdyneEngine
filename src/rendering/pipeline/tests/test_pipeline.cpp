@@ -367,6 +367,39 @@ CY_TEST_CASE("the ring turns over many frames and tears down with the device sti
     delete scene;
 }
 
+CY_TEST_CASE("the frame writes Engine field images at cy.field's global binding") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+
+    rhi::BufferDescription description;
+    description.name = "field image descriptor probe";
+    description.size = 64;
+    description.usage = rhi::BufferUsage::Storage;
+    description.memory = rhi::MemoryUse::Upload;
+    auto image = fixture.device().create_buffer(description);
+    CY_REQUIRE(image.has_value());
+
+    const EnvironmentFieldSlot valid{3, *image};
+    const EnvironmentFieldSlot duplicate[] = {valid, valid};
+    const EnvironmentFieldSlot out_of_range{kEnvironmentFieldSlots, *image};
+    const EnvironmentFieldSlot missing{0, {}};
+    CY_CHECK_FALSE(scene.set_frame_fields({duplicate, 2}).has_value());
+    CY_CHECK_FALSE(scene.set_frame_fields({&out_of_range, 1}).has_value());
+    CY_CHECK_FALSE(scene.set_frame_fields({&missing, 1}).has_value());
+    CY_REQUIRE(scene.set_frame_fields({&valid, 1}).has_value());
+
+    rendering::assembly::AssemblyReport report;
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    fixture.device().destroy_buffer(*image);
+
+    // A stale handle is accepted by the setter, then rejected by the null device when set 0 is
+    // written. If write_sets ever omits binding 3, this negative control starts passing.
+    CY_CHECK_FALSE(scene.render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK(fixture.device().end_frame().has_value());
+}
+
 namespace {
 
 /// Two frames of a camera standing at `first` and then at `second`, told to the temporal

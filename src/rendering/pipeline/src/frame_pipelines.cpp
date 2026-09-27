@@ -239,10 +239,16 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
         view_binding(kGlobalBindingMaterialTextures, rhi::DescriptorKind::SampledTexture);
     material_textures.count = kMaterialTextureSlots;
     material_textures.partially_bound = device.descriptor_model() == rhi::DescriptorModel::Bindless;
+    rhi::DescriptorBinding environment_fields =
+        view_binding(kGlobalBindingEnvironmentFields, rhi::DescriptorKind::StorageBuffer);
+    environment_fields.count = kEnvironmentFieldSlots;
+    environment_fields.partially_bound =
+        device.descriptor_model() == rhi::DescriptorModel::Bindless;
     const rhi::DescriptorBinding globals[] = {
         view_binding(kGlobalBindingGlobals, rhi::DescriptorKind::UniformBuffer),
         material_textures,
         view_binding(kGlobalBindingMaterialSampler, rhi::DescriptorKind::Sampler),
+        environment_fields,
     };
     const rhi::DescriptorBinding view[] = {
         view_binding(kViewBindingFrame, rhi::DescriptorKind::UniformBuffer),

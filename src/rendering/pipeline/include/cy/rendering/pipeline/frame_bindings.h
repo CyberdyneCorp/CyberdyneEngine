@@ -121,6 +121,13 @@ public:
     /// has not asked for one, and of every frame before this task.
     [[nodiscard]] u32 material_textures() const noexcept { return material_texture_count_; }
 
+    /// Name packed Engine field images reachable by `cyFieldSampleScene` in this frame.
+    /// The caller keeps each buffer alive until the frame has finished using its descriptors.
+    /// Empty is valid for frames without field materials; a missing or out-of-range slot is
+    /// refused before any descriptors are written. Non-empty tables require a bindless device.
+    [[nodiscard]] Status set_environment_fields(Span<const EnvironmentFieldSlot> slots) noexcept;
+    [[nodiscard]] u32 environment_fields() const noexcept { return environment_field_count_; }
+
     /// Point the pass set's texture at the frame's scene colour, for the tonemapping resolve.
     /// Separate from `upload` because the view only exists once the graph has realised its
     /// transients, which is after `upload` and inside the record callback's own frame.
@@ -175,6 +182,8 @@ private:
     /// The material textures set 0 names, held across frames because the set is not.
     MaterialTextureSlot material_textures_[kMaterialTextureSlots];
     u32 material_texture_count_ = 0;
+    EnvironmentFieldSlot environment_fields_[kEnvironmentFieldSlots];
+    u32 environment_field_count_ = 0;
     u32 current_slot_ = 0;
     u64 staged_light_bytes_ = 0;
     u64 staged_draw_bytes_ = 0;

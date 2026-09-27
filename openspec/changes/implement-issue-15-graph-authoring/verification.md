@@ -17,6 +17,16 @@ made two unit tests fail, then restoration passed; this guards against a false g
 devices. The cognitive-complexity skill could not score these Python functions locally because
 `complexipy` is not installed; syntax parsing and focused tests passed.
 
+The Engine frame now carries `cy.field`'s storage-buffer table at set 0 binding 3. The null-device
+`the frame writes Engine field images at cy.field's global binding` regression accepts a live
+buffer, refuses duplicate, missing and out-of-range entries, then destroys the buffer and confirms
+the next descriptor update fails. That last control would pass incorrectly if binding 3 were not
+written. The focused case passed 10 assertions and the full `integration.render_pipeline` suite
+passed 14 cases and 174 assertions on macOS. Authored wind preview and CPU/GPU value comparison
+remain open.
+Removing the binding-3 write loop made that focused regression fail (8/10 assertions passed);
+restoring the loop returned it to green. The mutation is not committed.
+
 ## VFX palette and compiler registry
 
 - **Open:** `vfx_editor_opens_on_the_shared_canvas_from_backend_nodes` opens `Domain::VfxGraph` using a backend-supplied catalogue and edits it on the shared canvas.

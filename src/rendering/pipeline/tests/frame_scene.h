@@ -173,6 +173,9 @@ public:
     [[nodiscard]] Status set_frame_textures(Span<const MaterialTextureSlot> slots) noexcept {
         return bindings_.set_material_textures(slots);
     }
+    [[nodiscard]] Status set_frame_fields(Span<const EnvironmentFieldSlot> slots) noexcept {
+        return bindings_.set_environment_fields(slots);
+    }
     [[nodiscard]] const Mat4& projection() const noexcept { return projection_; }
     [[nodiscard]] const Mat4& view() const noexcept { return view_; }
     /// Each instance's box, camera-relative, in instance order: the floor slab first.

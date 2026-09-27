@@ -154,7 +154,10 @@ The field path must use `environment::build_deterministic_field_image` for the w
 with `environment::image_local` before GPU sampling. The generated material prelude now imports
 `cy.field`, selects the IR field's typed components from the sampler's float4 result, and carries
 one bindless slot and camera-to-image offset per field. The authored frame needs a field buffer
-and descriptor binding that is shared by its visible, depth, and shadow vertex programs. Validation
+and descriptor binding that is shared by its visible, depth, and shadow vertex programs. The Engine
+frame now declares `cy.field`'s set 0 binding 3 and writes caller-supplied field-image buffers into
+its bounded table every frame. The authored frame still needs a weather-owned image provider, its
+origin and material parameter upload before enabling `Op::Field`. Validation
 must refuse an unbound wind field before a preview or cook succeeds. A regression must compare
 several positions, including different vertical cells, against `sample_field_image` on the CPU.
 The GPU buffer has no world origin in its words: `FieldGpuImage::origin_x` and `origin_z` are kept
