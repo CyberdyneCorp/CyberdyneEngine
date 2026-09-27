@@ -591,8 +591,12 @@ Editing a node property in that state uses `vfx.node.property.set` or
 `vfx.module.node.property.set` with the engine catalogue's property name.
 Connecting compatible pins uses `vfx.node.connect` or `vfx.module.node.connect`; the canvas
 validates the typed connection before the command is queued.
+**Remove selected node** uses `vfx.node.remove` or `vfx.module.node.remove` for a clean saved
+asset, removing its attached wires in one undoable edit.
+The selected node's wires appear as **Disconnect** actions and use `vfx.node.disconnect` or
+`vfx.module.node.disconnect` for clean saved assets.
 If the open canvas has unsaved edits, palette insertion stays in that draft until Save so those
-edits are preserved; property and connection edits follow the same rule.
+edits are preserved; property, connection, removal, and disconnection edits follow the same rule.
 The panel's **Remove emitter** control retains the other emitters' stage graphs and selects
 the next available emitter; the edit is recorded in document history for a saved draft.
 `vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and

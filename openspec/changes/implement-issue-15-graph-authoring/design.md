@@ -22,12 +22,18 @@ refresh the open canvas from the project source before the next frame. Each type
 individual undo step; remaining canvas and system controls still need typed desktop parity.
 Palette insertion into a clean saved system stage or module now invokes `vfx.node.add` or
 `vfx.module.node.add`, sharing the MCP path and one undo entry. A canvas with unsaved gestures
-keeps palette insertion local until Save, preserving those pending edits. Movement, disconnection,
-and removal gestures still need the same per-action routing. Editing a property on a clean saved
+keeps palette insertion local until Save, preserving those pending edits. Node movement still needs
+the same per-action routing. Editing a property on a clean saved
 canvas now invokes `vfx.node.property.set` or `vfx.module.node.property.set`; property changes on
 an unsaved canvas remain local until Save. Compatible pin connections on a clean saved canvas
 invoke `vfx.node.connect` or `vfx.module.node.connect` after the shared canvas validates them;
 dirty drafts continue to connect locally until Save.
+The VFX panel's selected-node removal button invokes `vfx.node.remove` or
+`vfx.module.node.remove` on a clean saved graph, removing attached wires within one undoable edit.
+Unsaved drafts remove locally until Save.
+The selected node's wire list offers disconnection through `vfx.node.disconnect` or
+`vfx.module.node.disconnect` for clean saved graphs; the shared canvas checks that the exact wire
+exists before queuing a command. Dirty drafts disconnect locally until Save.
 The saved system's parameter, event-channel, particle-attribute, and emitter-capacity controls now
 send their matching typed commands too. Attaching a saved module uses `vfx.module.attach` against
 the committed system path. Unsaved systems still stage metadata locally until their first Save.

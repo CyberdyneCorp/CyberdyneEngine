@@ -7,7 +7,7 @@ use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::SpecialisedEditors;
-use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey, Property};
+use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, Link, NodeKey, Property};
 use cy_editor_interface::specialised::vfx::{
     Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument,
 };
@@ -153,6 +153,38 @@ fn canvas_area(
                         )
                     },
                 );
+                if let Some(node) = canvas.selection().first().copied()
+                    && ui.button("Remove selected node").clicked()
+                {
+                    inputs.vfx_property_problem =
+                        remove_selected_node(canvas, actions.saved, actions.intents, node)
+                            .err()
+                            .map(|problem| problem.to_string());
+                }
+                if let Some(node) = canvas.selection().first().copied() {
+                    let links: Vec<Link> = canvas
+                        .links()
+                        .filter(|link| link.from == node || link.to == node)
+                        .cloned()
+                        .collect();
+                    for link in links {
+                        if ui
+                            .button(format!(
+                                "Disconnect {}:{} → {}:{}",
+                                link.from.ordinal(),
+                                link.from_pin,
+                                link.to.ordinal(),
+                                link.to_pin
+                            ))
+                            .clicked()
+                        {
+                            inputs.vfx_link_problem =
+                                disconnect_link(canvas, actions.saved, actions.intents, &link)
+                                    .err()
+                                    .map(|problem| problem.to_string());
+                        }
+                    }
+                }
             },
         );
         ui.separator();
@@ -1750,6 +1782,85 @@ fn connect_nodes(
     Ok(())
 }
 
+fn remove_selected_node(
+    canvas: &mut GraphCanvas,
+    saved: Option<&SavedCanvas>,
+    intents: &mut Vec<Intent>,
+    node: NodeKey,
+) -> Result<()> {
+    let Some(saved) = saved else {
+        return canvas.remove(node);
+    };
+    let mut checked = canvas.clone();
+    checked.remove(node)?;
+    let arguments = Arguments::new().with(
+        "node",
+        Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
+    );
+    let intent = match saved {
+        SavedCanvas::Stage {
+            reference,
+            emitter,
+            stage,
+        } => Intent::Invoke(
+            "vfx.node.remove".into(),
+            arguments
+                .with("reference", Value::Text(reference.clone()))
+                .with("emitter", Value::Text(emitter.clone()))
+                .with("stage", Value::Text(stage.label().to_ascii_lowercase())),
+        ),
+        SavedCanvas::Module { reference } => Intent::Invoke(
+            "vfx.module.node.remove".into(),
+            arguments.with("reference", Value::Text(reference.clone())),
+        ),
+    };
+    intents.push(intent);
+    Ok(())
+}
+
+fn disconnect_link(
+    canvas: &mut GraphCanvas,
+    saved: Option<&SavedCanvas>,
+    intents: &mut Vec<Intent>,
+    link: &Link,
+) -> Result<()> {
+    let Some(saved) = saved else {
+        return canvas.disconnect(link.from, &link.from_pin, link.to, &link.to_pin);
+    };
+    let mut checked = canvas.clone();
+    checked.disconnect(link.from, &link.from_pin, link.to, &link.to_pin)?;
+    let arguments = Arguments::new()
+        .with(
+            "from",
+            Value::Int(i64::try_from(link.from.ordinal()).unwrap_or(i64::MAX)),
+        )
+        .with("from_pin", Value::Text(link.from_pin.clone()))
+        .with(
+            "to",
+            Value::Int(i64::try_from(link.to.ordinal()).unwrap_or(i64::MAX)),
+        )
+        .with("to_pin", Value::Text(link.to_pin.clone()));
+    let intent = match saved {
+        SavedCanvas::Stage {
+            reference,
+            emitter,
+            stage,
+        } => Intent::Invoke(
+            "vfx.node.disconnect".into(),
+            arguments
+                .with("reference", Value::Text(reference.clone()))
+                .with("emitter", Value::Text(emitter.clone()))
+                .with("stage", Value::Text(stage.label().to_ascii_lowercase())),
+        ),
+        SavedCanvas::Module { reference } => Intent::Invoke(
+            "vfx.module.node.disconnect".into(),
+            arguments.with("reference", Value::Text(reference.clone())),
+        ),
+    };
+    intents.push(intent);
+    Ok(())
+}
+
 fn add_palette_node(
     canvas: &mut GraphCanvas,
     saved: Option<&SavedCanvas>,
@@ -2017,6 +2128,107 @@ mod tests {
 
         connect_nodes(&mut canvas, None, &mut intents, &connection).unwrap();
         assert_eq!(canvas.links().count(), 1);
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn selected_vfx_node_removal_uses_the_same_commands_as_mcp() {
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(Catalogue::new(vec![NodeType::new("vfx.constant", Vec::new())]).unwrap());
+        let node = canvas.add("vfx.constant", Layout::default()).unwrap();
+        let stage = SavedCanvas::Stage {
+            reference: "effects/sparks.cyvfxdoc".into(),
+            emitter: "embers".into(),
+            stage: Stage::Spawn,
+        };
+        let mut intents = Vec::new();
+        remove_selected_node(&mut canvas, Some(&stage), &mut intents, node).unwrap();
+        assert_eq!(canvas.nodes().count(), 1);
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved node removal must invoke a command");
+        };
+        assert_eq!(command, "vfx.node.remove");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("emitter"), Some("embers"));
+        assert_eq!(arguments.text("stage"), Some("spawn"));
+        assert_eq!(arguments.get("node"), Some(&Value::Int(1)));
+
+        let module = SavedCanvas::Module {
+            reference: "effects/shared.cyvfxmodule".into(),
+        };
+        remove_selected_node(&mut canvas, Some(&module), &mut intents, node).unwrap();
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved module node removal must invoke a command");
+        };
+        assert_eq!(command, "vfx.module.node.remove");
+        assert_eq!(
+            arguments.text("reference"),
+            Some("effects/shared.cyvfxmodule")
+        );
+        assert_eq!(canvas.nodes().count(), 1);
+
+        remove_selected_node(&mut canvas, None, &mut intents, node).unwrap();
+        assert_eq!(canvas.nodes().count(), 0);
+        assert!(intents.is_empty());
+        assert!(remove_selected_node(&mut canvas, Some(&stage), &mut intents, node).is_err());
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn selected_vfx_wire_disconnection_uses_the_same_commands_as_mcp() {
+        let mut output = Pin::new("out", PinDirection::Output, "value");
+        output.identity = 41;
+        let mut input = Pin::new("value", PinDirection::Input, "value");
+        input.identity = 73;
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(
+            Catalogue::new(vec![
+                NodeType::new("vfx.constant", vec![output]),
+                NodeType::new("vfx.spawn_count", vec![input]),
+            ])
+            .unwrap(),
+        );
+        let from = canvas.add("vfx.constant", Layout::default()).unwrap();
+        let to = canvas.add("vfx.spawn_count", Layout::default()).unwrap();
+        canvas.connect(from, "out", to, "value").unwrap();
+        let link = canvas.links().next().unwrap().clone();
+        let stage = SavedCanvas::Stage {
+            reference: "effects/sparks.cyvfxdoc".into(),
+            emitter: "embers".into(),
+            stage: Stage::Spawn,
+        };
+        let mut intents = Vec::new();
+        disconnect_link(&mut canvas, Some(&stage), &mut intents, &link).unwrap();
+        assert_eq!(canvas.links().count(), 1);
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved wire disconnection must invoke a command");
+        };
+        assert_eq!(command, "vfx.node.disconnect");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("emitter"), Some("embers"));
+        assert_eq!(arguments.text("stage"), Some("spawn"));
+        assert_eq!(arguments.get("from"), Some(&Value::Int(1)));
+        assert_eq!(arguments.text("from_pin"), Some("out"));
+        assert_eq!(arguments.get("to"), Some(&Value::Int(2)));
+        assert_eq!(arguments.text("to_pin"), Some("value"));
+
+        let module = SavedCanvas::Module {
+            reference: "effects/shared.cyvfxmodule".into(),
+        };
+        disconnect_link(&mut canvas, Some(&module), &mut intents, &link).unwrap();
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved module wire disconnection must invoke a command");
+        };
+        assert_eq!(command, "vfx.module.node.disconnect");
+        assert_eq!(
+            arguments.text("reference"),
+            Some("effects/shared.cyvfxmodule")
+        );
+        assert_eq!(canvas.links().count(), 1);
+
+        disconnect_link(&mut canvas, None, &mut intents, &link).unwrap();
+        assert_eq!(canvas.links().count(), 0);
+        assert!(disconnect_link(&mut canvas, Some(&stage), &mut intents, &link).is_err());
         assert!(intents.is_empty());
     }
 

@@ -33,7 +33,7 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Desktop path:** `saved_palette_additions_use_the_same_commands_as_mcp` checks that adding a node to a saved system stage or module queues `vfx.node.add` or `vfx.module.node.add` with the open asset reference, stage, type, and coordinates, without mutating the canvas directly. A new draft still receives a local node.
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_palette_additions_use_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
 - **Red mutation:** temporarily make `add_palette_node` always call `canvas.add`. The test failed because the saved canvas gained a node instead of queuing the typed command. Restoring command routing made it pass. The mutation is not committed.
-- **Remaining work:** movement, disconnection, and removal gestures still need individual typed command routing and undo parity.
+- **Remaining work:** node movement still needs individual typed command routing and undo parity.
 
 ## Desktop VFX property command parity
 
@@ -46,6 +46,18 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Desktop path:** `saved_vfx_pin_connections_use_the_same_commands_as_mcp` checks saved system and module connections queue `vfx.node.connect` or `vfx.module.node.connect` with the node keys and engine pin names. `pin_action_can_route_a_connection_without_mutating_the_canvas` checks that the shared pin gesture invokes this hook. A new draft connects locally, while an invalid pin identity is refused before a command is queued.
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_vfx_pin_connections_use_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
 - **Red mutation:** temporarily make `connect_nodes` write directly to the saved canvas. The test failed because a link appeared locally instead of a typed command being queued. Restoring command routing made it pass. The mutation is not committed.
+
+## Desktop VFX selected-node removal
+
+- **Desktop path:** `selected_vfx_node_removal_uses_the_same_commands_as_mcp` checks that the panel action queues `vfx.node.remove` or `vfx.module.node.remove` with the saved reference and selected key, while a new draft removes locally. It checks an unknown node is refused without queuing a command.
+- **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib selected_vfx_node_removal_uses_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
+- **Red mutation:** temporarily make `remove_selected_node` remove directly from a saved canvas. The test failed because the saved canvas lost its node before any command ran. Restoring command routing made it pass. The mutation is not committed.
+
+## Desktop VFX selected-wire disconnection
+
+- **Desktop path:** `selected_vfx_wire_disconnection_uses_the_same_commands_as_mcp` checks that a selected node's wire action queues `vfx.node.disconnect` or `vfx.module.node.disconnect` with the exact saved wire endpoints. A new draft disconnects locally, and an absent wire is refused without queuing a command.
+- **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib selected_vfx_wire_disconnection_uses_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
+- **Red mutation:** temporarily make `disconnect_link` remove a wire directly from the saved canvas. The test failed because the saved canvas lost its wire before any command ran. Restoring command routing made it pass. The mutation is not committed.
 
 ## Vertex material save and history through MCP
 
