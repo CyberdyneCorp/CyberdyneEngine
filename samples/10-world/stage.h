@@ -126,6 +126,9 @@ struct StageReport {
     f64 build_ms = 0.0;
     /// Milliseconds spent inside `execute()` and the wait for the device.
     f64 submit_ms = 0.0;
+    /// The part of `build_ms` spent integrating the atmosphere for this camera: the clear sky the
+    /// dome is drawn with and the aerial perspective volume. Zero with aerial perspective off.
+    f64 aerial_ms = 0.0;
 
     // --- WHAT THE ASSEMBLED FRAME DID. M11.c task 3.1. -----------------------------------------
     //
@@ -211,11 +214,18 @@ private:
     struct Device;
 
     [[nodiscard]] Status create_pipeline() noexcept;
-    /// Set 0 of the lit pipeline: the cloud shadow field's image and its placement.
+    /// Set 0 of the lit pipeline: the cloud shadow field's image and its placement, and the aerial
+    /// perspective table.
     [[nodiscard]] Status create_cloud_shadow_binding() noexcept;
     /// Upload this frame's cloud shadow field and where it sits, or say "off" when the world
     /// produces none.
     [[nodiscard]] Status upload_cloud_shadow(const World& world) noexcept;
+    /// Integrate the world's atmosphere for this camera — the clear sky the dome is drawn with and
+    /// the aerial perspective volume — and upload the volume. With aerial perspective off, nothing
+    /// is integrated and the bound table stays switched off.
+    [[nodiscard]] Status update_aerial_perspective(const World& world, const WorldVec3d& eye,
+                                                   const WorldVec3d& target,
+                                                   StageReport& out) noexcept;
     [[nodiscard]] Status create_visual_pipelines() noexcept;
     /// Declare this frame's refraction and reflection passes and point the water run at
     /// `shaders/water.slang`. Only when water shading is on.

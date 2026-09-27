@@ -14,6 +14,7 @@
 #include <cy/rendering/pipeline/frame_bindings.h>
 #include <cy/rendering/pipeline/frame_pipelines.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
+#include <cy/rendering/sky/tables.h>
 #include <cy/water/shading.h>
 
 #include <cy_features.h>
@@ -84,6 +85,40 @@ constexpr f32 kNearPlane = 1.0F;
 /// the projection, the cull view and the cluster grid's slice mapping.
 constexpr f32 kFieldOfView = 0.95F;
 
+/// What the sky's radiance, in nits, is multiplied by before the emissive path tone maps it. ONE
+/// FUNCTION, because the light the air adds to a distant surface must be divided by exactly the
+/// number the sky beside it was, or the horizon has a seam the atmosphere did not put there. The
+/// frame's own mean sky lands at a quarter of white, which leaves two stops of headroom for the
+/// sun's disc and the brightest cloud and keeps the sky brighter than the ground it lights — which
+/// is true of every sky and is the first thing a wrong exposure breaks.
+[[nodiscard]] f32 sky_radiance_scale(f32 exposure) noexcept {
+    return 1.0F / (exposure * 4.0F);
+}
+
+/// The aerial perspective volume: 32 by 18 froxels over the frame, 32 slices out to the dome.
+///
+/// COARSE ON PURPOSE, because what it stores is smooth. Across the screen it varies with the
+/// Rayleigh and Mie phase functions and with how steeply a ray climbs out of the dense air, and
+/// the sampler interpolates bilinearly; along the view it is an integral, and the sampler
+/// interpolates between slices. Nothing past the dome can be seen, so the volume ends there, and
+/// the default exponent puts half the slices inside the nearest quarter of that distance, where a
+/// slice is thinnest in the world and a step would be most visible on a surface.
+[[nodiscard]] cy::rendering::FroxelVolume aerial_volume() noexcept {
+    cy::rendering::FroxelVolume volume;
+    volume.width = 32;
+    volume.height = 18;
+    volume.depth = 32;
+    volume.near_plane = kNearPlane;
+    volume.far_plane = kSkyRadius;
+    volume.depth_exponent = 2.0F;
+    return volume;
+}
+
+[[nodiscard]] u64 aerial_words(const cy::rendering::FroxelVolume& volume) noexcept {
+    return cy::rendering::sky::kAerialPerspectiveHeaderWords +
+           (static_cast<u64>(volume.width) * volume.height * volume.depth * 2U);
+}
+
 /// The most plants drawn in one frame, and the distance beyond which none is.
 ///
 /// A CAP AND NOT A CULL: this artefact has no hierarchical culling, no impostor ladder and no
@@ -139,7 +174,9 @@ struct VisualPush {
     f32 cloud_coverage = 0.0F;
     f32 sun_height = 0.0F;
     f32 exposure = 1.0F;
-    f32 unused_float = 0.0F;
+    /// 1 when the dome's clear sky is the atmosphere's, written into the sky's colour range before
+    /// the cloud pass; 0 for the stand-in gradient. `atmosphereSky` in world_visual.slang.
+    f32 atmosphere_sky = 0.0F;
     f32 field_origin[4] = {};
 };
 
@@ -501,11 +538,18 @@ struct U32x3 {
     return shape * profile;
 }
 
-[[nodiscard]] Vec3 compose_cloud_reference(Vec3 direction, const VisualPush& visual) noexcept {
+/// `standInClear()` in world_visual.slang: the tuned gradient the dome shows with aerial
+/// perspective off.
+[[nodiscard]] Vec3 stand_in_clear_reference(Vec3 direction, const VisualPush& visual) noexcept {
     const f32 horizon = clamp01((direction.y * 0.5F) + 0.5F);
     const f32 daylight = clamp01((visual.sun_height * 3.0F) + 0.25F);
-    Vec3 clear = blend(Vec3{0.002F, 0.005F, 0.018F}, Vec3{0.16F, 0.43F, 0.92F}, daylight);
-    clear = clear * (0.16F + (0.84F * horizon));
+    const Vec3 clear = blend(Vec3{0.002F, 0.005F, 0.018F}, Vec3{0.16F, 0.43F, 0.92F}, daylight);
+    return clear * (0.16F + (0.84F * horizon));
+}
+
+[[nodiscard]] Vec3 compose_cloud_reference(Vec3 direction, const VisualPush& visual,
+                                           Vec3 clear) noexcept {
+    const f32 daylight = clamp01((visual.sun_height * 3.0F) + 0.25F);
     if (direction.y <= 0.025F) {
         return clear;
     }
@@ -554,7 +598,8 @@ struct U32x3 {
 /// Everything that needs a device, so the header names none of it and a build without the Vulkan
 /// backend still compiles this file.
 struct Stage::Device {
-    explicit Device(Allocator& allocator) noexcept : assembly(allocator) {}
+    explicit Device(Allocator& allocator) noexcept
+        : aerial(allocator), sky_view(allocator), aerial_words(allocator), assembly(allocator) {}
 
     Expected<rhi::Device*, Error> handle = fail(ErrorCode::Unavailable, "not created");
     rhi::BackendSelection selection{};
@@ -588,6 +633,19 @@ struct Stage::Device {
     /// The water pipeline, its set and the pictures it reads. Created whether or not water shading
     /// is on, so that switching it is a per-frame decision; a frame with it off never touches it.
     WaterSurface water;
+    /// Binding 2 of the same set: `sky::pack_aerial_perspective()`'s words, sized once for
+    /// `aerial_volume()` and holding a switched-off header until a frame with aerial perspective
+    /// writes a table.
+    rhi::BufferHandle aerial_table;
+
+    // --- THE ATMOSPHERE, INTEGRATED FOR THIS CAMERA. `atmosphere-sky-and-clouds`, "Aerial
+    // perspective". Both are built from the world's own `Atmosphere` and `AtmosphereTables` — the
+    // ones its sky lighting is composed from — so the dome's clear sky and the air in front of the
+    // terrain are one model evaluated twice, not a sky and a fog.
+    cy::rendering::sky::AerialPerspectiveTable aerial;
+    cy::rendering::sky::IncrementalSkyView sky_view;
+    Array<Vec4> aerial_words;
+    bool atmosphere_configured = false;
 
     // --- THE ASSEMBLED FRAME. M11.c task 3.1. --------------------------------------------------
     //
@@ -933,8 +991,8 @@ constexpr u64 kPlaceholderCloudShadowWords = 16;
 
 Status Stage::create_cloud_shadow_binding() noexcept {
     rhi::Device& device = *device_->handle.value();
-    rhi::DescriptorBinding bindings[2] = {};
-    for (u32 index = 0; index < 2; ++index) {
+    rhi::DescriptorBinding bindings[3] = {};
+    for (u32 index = 0; index < 3; ++index) {
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
@@ -942,7 +1000,7 @@ Status Stage::create_cloud_shadow_binding() noexcept {
     }
     rhi::DescriptorSetLayoutDescription set_description;
     set_description.name = "world cloud shadow";
-    set_description.bindings = Span<const rhi::DescriptorBinding>(bindings, 2);
+    set_description.bindings = Span<const rhi::DescriptorBinding>(bindings, 3);
     auto set_layout = device.create_descriptor_set_layout(set_description);
     if (!set_layout) {
         return make_unexpected(set_layout.error());
@@ -972,20 +1030,41 @@ Status Stage::create_cloud_shadow_binding() noexcept {
     const CloudShadowPlacement off;
     std::memcpy(device.buffer_mapped_pointer(*placement), &off, sizeof(off));
 
+    // THE AERIAL PERSPECTIVE TABLE STARTS SWITCHED OFF: an unbuilt table packs its header alone
+    // with `enabled` zero, which the lit path reads as "leave every surface as it was lit".
+    description.name = "world aerial perspective";
+    description.size = aerial_words(aerial_volume()) * sizeof(Vec4);
+    auto aerial = device.create_buffer(description);
+    if (!aerial) {
+        return make_unexpected(aerial.error());
+    }
+    device_->aerial_table = *aerial;
+    std::memset(device.buffer_mapped_pointer(*aerial), 0, static_cast<usize>(description.size));
+    if (Status packed = cy::rendering::sky::pack_aerial_perspective(device_->aerial, 1.0F,
+                                                                    device_->aerial_words);
+        !packed) {
+        return packed;
+    }
+    std::memcpy(device.buffer_mapped_pointer(*aerial), device_->aerial_words.data(),
+                device_->aerial_words.size() * sizeof(Vec4));
+
     auto set = device.allocate_descriptor_set(device_->world_set_layout, false);
     if (!set) {
         return make_unexpected(set.error());
     }
     device_->world_set = *set;
-    rhi::DescriptorWrite writes[2] = {};
+    rhi::DescriptorWrite writes[3] = {};
     writes[0].binding = 0;
     writes[0].kind = rhi::DescriptorKind::StorageBuffer;
     writes[0].buffer = device_->cloud_shadow_field;
     writes[1].binding = 1;
     writes[1].kind = rhi::DescriptorKind::StorageBuffer;
     writes[1].buffer = device_->cloud_shadow_placement;
+    writes[2].binding = 2;
+    writes[2].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[2].buffer = device_->aerial_table;
     return device.update_descriptor_set(device_->world_set,
-                                        Span<const rhi::DescriptorWrite>(writes, 2));
+                                        Span<const rhi::DescriptorWrite>(writes, 3));
 }
 
 Status Stage::upload_cloud_shadow(const World& world) noexcept {
@@ -1036,6 +1115,72 @@ Status Stage::upload_cloud_shadow(const World& world) noexcept {
         placement.enabled = 1.0F;
     }
     return upload_bytes(device, device_->cloud_shadow_placement, &placement, sizeof(placement));
+}
+
+Status Stage::update_aerial_perspective(const World& world, const WorldVec3d& eye,
+                                        const WorldVec3d& target, StageReport& out) noexcept {
+    namespace sky = cy::rendering::sky;
+    out.aerial_ms = 0.0;
+    if (!world.aerial_perspective()) {
+        return ok();
+    }
+    const f64 began = now_millis();
+    if (!device_->atmosphere_configured) {
+        if (Status configured = device_->aerial.configure(aerial_volume()); !configured) {
+            return configured;
+        }
+        if (Status configured = device_->sky_view.configure(sky::SkyTableQuality::Medium);
+            !configured) {
+            return configured;
+        }
+        device_->atmosphere_configured = true;
+    }
+
+    // CAMERA-RELATIVE, as the table requires: only the eye's ALTITUDE reaches the atmosphere, and
+    // the basis is the camera's. The frustum is symmetric, so which way `right` points does not
+    // matter as long as the table is built and sampled with the same one — and the shader samples
+    // with the words this table packs.
+    const sky::Atmosphere& atmosphere = world.atmosphere();
+    const sky::AtmosphereTables& tables = world.atmosphere_tables();
+    const f32 altitude = static_cast<f32>(eye.y) > 1.0F ? static_cast<f32>(eye.y) : 1.0F;
+    const Vec3 view_position = sky::ground_position(atmosphere, altitude);
+    const Vec3 sun = world.sun_direction();
+    const Vec3 forward =
+        normalised(Vec3{static_cast<f32>(target.x - eye.x), static_cast<f32>(target.y - eye.y),
+                        static_cast<f32>(target.z - eye.z)});
+    sky::AerialPerspectiveTable::View view;
+    view.forward = forward;
+    // Any axis the camera is not looking along will do for the reference; this orbit never looks
+    // straight down, but a basis that collapsed if it did would put the whole table on one ray.
+    const Vec3 reference =
+        std::fabs(forward.y) < 0.99F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{1.0F, 0.0F, 0.0F};
+    view.right = normalised(cross(forward, reference));
+    view.up = cross(view.right, forward);
+    view.tan_half_fov_y = std::tan(kFieldOfView * 0.5F);
+    view.tan_half_fov_x =
+        view.tan_half_fov_y * (static_cast<f32>(width_) / static_cast<f32>(height_));
+
+    // THE CLEAR SKY THE DOME IS DRAWN WITH, from the same tables the volume reads: rebuilt in full,
+    // because this take moves the sun five degrees a frame and a row budget would draw a sky
+    // integrated for a sun that has already moved.
+    auto sky_update =
+        device_->sky_view.update_aerial(atmosphere, tables, view_position, sun, 0, jobs_);
+    if (!sky_update) {
+        return make_unexpected(sky_update.error());
+    }
+    if (Status updated =
+            device_->aerial.update(atmosphere, tables, view_position, view, sun, jobs_);
+        !updated) {
+        return updated;
+    }
+    if (Status packed = sky::pack_aerial_perspective(
+            device_->aerial, sky_radiance_scale(world.lighting().exposure), device_->aerial_words);
+        !packed) {
+        return packed;
+    }
+    out.aerial_ms = now_millis() - began;
+    return upload_bytes(*device_->handle.value(), device_->aerial_table,
+                        device_->aerial_words.data(), device_->aerial_words.size() * sizeof(Vec4));
 }
 
 Status Stage::create_visual_pipelines() noexcept {
@@ -1456,13 +1601,14 @@ Status Stage::build_dynamic(const World& world, const WorldVec3d& eye, StageRepo
         }
         // The exposure divide happens HERE and not in the shader, because the shader's emissive
         // path has to receive a number it can tone map and the radiance `compose_sky()` answers is
-        // in nits. The frame's own mean sky lands at a quarter of white, which leaves two stops of
-        // headroom for the sun's disc and the brightest cloud and keeps the sky brighter than the
-        // ground it lights — which is true of every sky and is the first thing a wrong exposure
-        // breaks.
-        const f32 scale = 1.0F / (exposure * 4.0F);
+        // in nits. With aerial perspective on, this is the atmosphere's clear sky in this
+        // direction, which the cloud pass composes its clouds over instead of the stand-in
+        // gradient; off, the cloud pass overwrites it with the gradient as it always has.
+        const f32 scale = sky_radiance_scale(exposure);
+        const Vec3 radiance =
+            world.aerial_perspective() ? device_->sky_view.sample(sky.direction) : sky.radiance;
         if (Status pushed = dynamic_colours_.push_back(
-                Vec3{sky.radiance.x * scale, sky.radiance.y * scale, sky.radiance.z * scale});
+                Vec3{radiance.x * scale, radiance.y * scale, radiance.z * scale});
             !pushed) {
             return pushed;
         }
@@ -1795,6 +1941,9 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     rhi::Device& device = *device_->handle.value();
 
     f64 mark = now_millis();
+    if (Status integrated = update_aerial_perspective(world, eye, target, out); !integrated) {
+        return integrated;
+    }
     if (Status built = build_dynamic(world, eye, out); !built) {
         return built;
     }
@@ -1863,6 +2012,7 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     visual.sun_height =
         std::sin(world.state().sun_elevation_degrees * (std::numbers::pi_v<f32> / 180.0F));
     visual.exposure = world.lighting().exposure;
+    visual.atmosphere_sky = world.aerial_perspective() ? 1.0F : 0.0F;
     visual.field_origin[0] = field_origin_x;
     visual.field_origin[1] = field_origin_z;
     visual.field_origin[2] = static_cast<f32>(eye.x);
@@ -2254,10 +2404,22 @@ Status Stage::verify_cloud_agreement(const World&, f32& worst_error, u32& compar
     constexpr f32 kTolerance = 0.002F;
     for (u32 index = 0; index < sky_vertices_; ++index) {
         const Vec3 direction = normalised(dynamic_vertices_[index].normal);
-        const Vec3 reference = compose_cloud_reference(direction, device_->last_visual);
+        const Vec3 clear = device_->last_visual.atmosphere_sky > 0.5F
+                               ? dynamic_colours_[index]
+                               : stand_in_clear_reference(direction, device_->last_visual);
+        const Vec3 reference = compose_cloud_reference(direction, device_->last_visual, clear);
         const Vec3 actual = device_colours[index];
-        const f32 errors[3] = {std::abs(actual.x - reference.x), std::abs(actual.y - reference.y),
-                               std::abs(actual.z - reference.z)};
+        // RELATIVE ABOVE ONE. With aerial perspective on, the clear sky is the atmosphere's
+        // radiance over the exposure, and on the warm-up frame — drawn before the world's first
+        // tick, at the default exposure of one — that is over a thousand, where a float carries
+        // about a ten-thousandth of absolute precision. Below one this is the absolute tolerance
+        // it always was, so the stand-in sky is held exactly as before.
+        const auto error_of = [](f32 got, f32 want) {
+            const f32 magnitude = std::abs(want) > 1.0F ? std::abs(want) : 1.0F;
+            return std::abs(got - want) / magnitude;
+        };
+        const f32 errors[3] = {error_of(actual.x, reference.x), error_of(actual.y, reference.y),
+                               error_of(actual.z, reference.z)};
         for (const f32 error : errors) {
             worst_error = error > worst_error ? error : worst_error;
         }
@@ -2424,6 +2586,7 @@ void Stage::close() noexcept {
         device.destroy_buffer(device_->cloud_shadow_field);
         device.destroy_buffer(device_->cloud_shadow_placement);
         device_->water.destroy(device);
+        device.destroy_buffer(device_->aerial_table);
         if (!device_->world_set_layout.is_null()) {
             device.destroy_descriptor_set_layout(device_->world_set_layout);
         }
