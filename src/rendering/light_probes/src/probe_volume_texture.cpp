@@ -13,7 +13,6 @@ namespace cy::rendering::light_probes {
 namespace {
 
 constexpr rhi::Format kFormat = rhi::Format::Rgba16Sfloat;
-constexpr u64 kBytesPerTexel = 8;
 
 struct UploadRecording {
     rhi::BufferHandle staging;
