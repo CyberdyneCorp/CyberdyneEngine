@@ -56,9 +56,10 @@
 //                    column is laid over it, and the column's result is then seen through the air
 //                    between the eye and the surface, once.
 //   the reflection   a reflected hill was hazed over its distance from the eye, which is the
-//                    length of the mirrored ray eye -> surface -> hill to within 2 h e / r^2 for a
-//                    hill h metres up, an eye e metres up and r metres away: already the air of the
-//                    whole reflected path, the part in front of the surface included. The mirrored
+//                    length of the mirrored ray eye -> surface -> hill short by a fraction
+//                    2 h e / r^2 for a hill h metres up, an eye e metres up and r metres away:
+//                    already the air of the whole reflected path, the part in front of the surface
+//                    included. The mirrored
 //                    dome is the sky itself, which is the in-scattering of the whole path to space.
 //                    So the reflected picture is NOT attenuated again, and only the rest of the
 //                    surface's in-scattering is added, weighted by what the mirror does not cover.

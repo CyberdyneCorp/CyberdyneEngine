@@ -12,9 +12,9 @@
 // The scene is a level camera over a flat sea: water to the left of the view's centre line, flat
 // land at the same level to the right, a shallow bed under the water, and a dome coloured from the
 // atmosphere's clear sky, all drawn with THAT frame's committed SPIR-V (`world_spirv.h`,
-// `water_spirv.h`) and THAT frame's water device half (`samples/10-world/water_surface.cpp`), in the
-// three passes `Stage::declare_water` declares. The table is `sky::AerialPerspectiveTable` for the
-// same camera, packed by `sky::pack_aerial_perspective()`, bound where the stage binds it.
+// `water_spirv.h`) and THAT frame's water device half (`samples/10-world/water_surface.cpp`), in
+// the three passes `Stage::declare_water` declares. The table is `sky::AerialPerspectiveTable` for
+// the same camera, packed by `sky::pack_aerial_perspective()`, bound where the stage binds it.
 //
 // ================================================================================================
 // WHAT THE WATER MUST DO, AND HOW THE PIXELS SHOW IT
@@ -686,10 +686,9 @@ cy::Status WaterAirScene::prepare_modules() noexcept {
 
 constexpr rhi::VertexBinding kStreams[2] = {{0, sizeof(Vertex), rhi::VertexInputRate::PerVertex},
                                             {1, sizeof(f32) * 3, rhi::VertexInputRate::PerVertex}};
-constexpr rhi::VertexAttribute kAttributes[3] = {
-    {0, 0, rhi::Format::Rgb32Sfloat, 0},
-    {1, 0, rhi::Format::Rgb32Sfloat, sizeof(f32) * 3},
-    {2, 1, rhi::Format::Rgb32Sfloat, 0}};
+constexpr rhi::VertexAttribute kAttributes[3] = {{0, 0, rhi::Format::Rgb32Sfloat, 0},
+                                                 {1, 0, rhi::Format::Rgb32Sfloat, sizeof(f32) * 3},
+                                                 {2, 1, rhi::Format::Rgb32Sfloat, 0}};
 
 cy::Status WaterAirScene::prepare_world_pipeline() noexcept {
     // Set 0 exactly as the stage makes it: the cloud shadow field, its placement and the aerial
@@ -1016,7 +1015,8 @@ struct Suite {
     [[nodiscard]] bool have_vulkan() const noexcept { return fixture.is(rhi::BackendKind::Vulkan); }
 };
 
-/// Everything one eye height needs: its atmosphere, its scene, the packed table and the four frames.
+/// Everything one eye height needs: its atmosphere, its scene, the packed table and the four
+/// frames.
 struct Take {
     Air air;
     Scene scene;
@@ -1307,8 +1307,8 @@ CY_TEST_CASE("world water aerial perspective: off, the frame is the frame before
         off_differing += differing(lit ? take.frames.lit_off : take.frames.dark_off, before);
         on_differing += differing(lit ? take.frames.lit_on : take.frames.dark_on, before);
     }
-    CY_TEST_MESSAGE("texels differing from the water's shaders before this change: ",
-                    off_differing, " with the table off, ", on_differing, " with it on");
+    CY_TEST_MESSAGE("texels differing from the water's shaders before this change: ", off_differing,
+                    " with the table off, ", on_differing, " with it on");
     CY_CHECK(off_differing == 0U);
     CY_CHECK(on_differing > 2000U);
     CY_CHECK(suite.fixture.validation_errors() == 0U);

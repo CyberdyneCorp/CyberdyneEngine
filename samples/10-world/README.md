@@ -156,6 +156,16 @@ ones the sky lighting is composed from, on the world's workers. The lit fragment
 between it and the eye and adds the in-scattered light through `cy/aerial_perspective.slang`,
 divided by the same exposure as the sky. There is no fog colour and no fog distance anywhere.
 
+**The shaded sea reads the same table, and applies it once.** `shaders/water.slang` binds it where
+world.slang does — set 0, binding 2 — but its refraction and reflection pictures are drawn by
+world.slang, so they already carry air. The bed from the refraction picture is taken back to the
+radiance it was lit with by inverting the table at the bed before the water column is laid over
+it; the surface's own light (the column, the glitter, the foam) is then attenuated by the air
+between the eye and the surface; and the reflected picture, whose hills were hazed over their own
+distance and whose dome is the sky itself, is left as drawn, with only the in-scattering the mirror
+does not cover, `(1 - F) S`, added. So the sea hazes like the land beside it, with no step at the
+shoreline (`render.world_water_aerial_perspective`).
+
 **The dome is that atmosphere too.** With aerial perspective on, the dome's clear sky is
 `sky::IncrementalSkyView::update_aerial` over the same tables, and the device cloud pass composes
 its clouds over it instead of over the stand-in gradient. Without that, the terrain would fade toward
@@ -174,10 +184,12 @@ headless run builds no table.
 The dome's band below the horizon, past the world's edge, is now the planet's ground seen through
 the air — grey-brown at a ground albedo of 0.1 — where the stand-in drew more blue sky.
 
-**Not applied:** the shaded sea — `shaders/water.slang`, the default since water shading — reads
-no table, so its surface is not attenuated by the air in front of it; the dome's clouds are composed over the atmosphere's sky but are not attenuated by
+**Not applied:** the dome's clouds are composed over the atmosphere's sky but are not attenuated by
 the air in front of them (the requirement's "and to volumetric media"), and the engine's forward
-frame (`cy/frame.slang`) reads no table.
+frame (`cy/frame.slang`) reads no table. A reflected hill is hazed along the straight line from the
+eye to it rather than along the mirrored path, which is longer by about `2 h e / r` metres for a
+hill `h` metres up, an eye `e` metres up and `r` metres away: a hill 100 m high a kilometre off,
+seen from the orbit's 100 m, is hazed over a path 2% short.
 
 ## Volumetric fog: a valley haze
 

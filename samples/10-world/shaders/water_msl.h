@@ -32,7 +32,7 @@ struct vertexInput_0
 };
 
 
-#line 103 "water.slang"
+#line 104 "water.slang"
 struct WorldPush_0
 {
     float4 row0_0;
@@ -46,7 +46,7 @@ struct WorldPush_0
 };
 
 
-#line 183
+#line 184
 struct VertexOutput_0
 {
     float4 clip_1;
@@ -56,11 +56,11 @@ struct VertexOutput_0
 };
 
 
-#line 183
+#line 184
 [[vertex]] waterVertex_Result_0 waterVertex(vertexInput_0 _S1 [[stage_in]], WorldPush_0 constant* push_0 [[buffer(2)]])
 {
 
-#line 194
+#line 195
     float4 _S2 = float4(_S1.position_0, 1.0);
     thread VertexOutput_0 output_0;
     (&output_0)->clip_1 = float4(dot(push_0->row0_0, _S2), dot(push_0->row1_0, _S2), dot(push_0->row2_0, _S2), dot(push_0->row3_0, _S2));
@@ -69,22 +69,22 @@ struct VertexOutput_0
     (&output_0)->normal_2 = _S1.normal_1;
     (&output_0)->color_2 = _S1.color_1;
 
-#line 200
+#line 201
     thread waterVertex_Result_0 _S3;
 
-#line 200
+#line 201
     (&_S3)->clip_0 = output_0.clip_1;
 
-#line 200
+#line 201
     (&_S3)->world_0 = output_0.world_1;
 
-#line 200
+#line 201
     (&_S3)->normal_0 = output_0.normal_2;
 
-#line 200
+#line 201
     (&_S3)->color_0 = output_0.color_2;
 
-#line 200
+#line 201
     return _S3;
 }
 
@@ -1419,7 +1419,7 @@ float cyCloudShadowAtImage_0(uint device* image_words_10, float x_4, float y_3, 
 }
 
 
-#line 120 "water.slang"
+#line 121 "water.slang"
 struct WaterParams_0
 {
     float4 inverse0_0;
@@ -1436,7 +1436,7 @@ struct WaterParams_0
 };
 
 
-#line 315
+#line 316
 struct WaterSurface_default_0
 {
     texture2d<float, access::sample> refraction_0;
@@ -1446,7 +1446,7 @@ struct WaterSurface_default_0
 };
 
 
-#line 103
+#line 104
 struct WorldPush_0
 {
     float4 row0_0;
@@ -1478,7 +1478,7 @@ struct KernelContext_0
 };
 
 
-#line 219 "water.slang"
+#line 220 "water.slang"
 float sunThroughClouds_0(float3 world_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 placement_1 = kernelContext_0->cloudShadow_0->placement_0[int(0)];
@@ -1487,7 +1487,7 @@ float sunThroughClouds_0(float3 world_0, KernelContext_0 thread* kernelContext_0
         return 1.0;
     }
 
-#line 224
+#line 225
     float _S53 = cyCloudShadowAtImage_0(kernelContext_0->cloudShadow_0->field_0, world_0.x + placement_1.x, world_0.y, world_0.z + placement_1.y);
 
 
@@ -1498,10 +1498,10 @@ float sunThroughClouds_0(float3 world_0, KernelContext_0 thread* kernelContext_0
 void aerialTable_0(float4 device* thread* _S54, KernelContext_0 thread* kernelContext_1)
 {
 
-#line 231
+#line 232
     *_S54 = kernelContext_1->cloudShadow_0->aerial_0;
 
-#line 231
+#line 232
     return;
 }
 
@@ -1513,7 +1513,7 @@ bool cyAerialPerspectiveEnabled_0(float4 device* table_words_0)
 }
 
 
-#line 213 "water.slang"
+#line 214 "water.slang"
 float3 untonemap_0(float3 display_0)
 {
     float3 _S55 = min(pow(saturate(display_0), float3(2.20000004768371582) ), float3(0.99900001287460327) );
@@ -1723,11 +1723,11 @@ CyAerialPerspective_0 cyAerialPerspectiveAt_0(float4 device* table_words_3, floa
 }
 
 
-#line 240 "water.slang"
+#line 241 "water.slang"
 float3 bedBeforeAir_0(float4 device* table_words_4, float3 stored_0, float3 bed_0, KernelContext_0 thread* kernelContext_2)
 {
 
-#line 240
+#line 241
     CyAerialPerspective_0 _S77 = cyAerialPerspectiveAt_0(table_words_4, bed_0 - kernelContext_2->push_0->eye_0.xyz);
 
 
@@ -1803,7 +1803,7 @@ float valueNoise_0(float3 position_0)
 }
 
 
-#line 305 "water.slang"
+#line 306 "water.slang"
 float foamBreakup_0(float2 xz_0, float seconds_0)
 {
 
@@ -1812,20 +1812,20 @@ float foamBreakup_0(float2 xz_0, float seconds_0)
 }
 
 
-#line 248
+#line 249
 float3 seenThroughAir_0(float4 device* table_words_5, float3 world_1, float3 refracted_0, float3 reflected_0, float fresnel_0, float3 glitter_0, float3 foamRadiance_0, float foam_0, KernelContext_0 thread* kernelContext_3)
 {
     CyAerialPerspective_0 _S86 = cyAerialPerspectiveAt_0(table_words_5, world_1 - kernelContext_3->push_0->eye_0.xyz);
 
-#line 250
+#line 251
     float3 _S87 = float3((1.0 - fresnel_0)) ;
 
-#line 257
+#line 258
     return mix(float3(fresnel_0)  * reflected_0 + (_S87 * refracted_0 + glitter_0) * _S86.transmittance_0 + _S87 * _S86.inScattering_0, foamRadiance_0 * _S86.transmittance_0 + _S86.inScattering_0, float3(foam_0) );
 }
 
 
-#line 205
+#line 206
 float3 tonemap_0(float3 radiance_0)
 {
 
@@ -1833,14 +1833,14 @@ float3 tonemap_0(float3 radiance_0)
 }
 
 
-#line 208
+#line 209
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 208
+#line 209
 struct pixelInput_0
 {
     float3 world_2 [[user(TEXCOORD)]];
@@ -1849,14 +1849,14 @@ struct pixelInput_0
 };
 
 
-#line 208
+#line 209
 float3 worldAt_0(WaterParams_0 device* _S88, int _S89, float2 _S90, float _S91)
 {
 
-#line 208
+#line 209
     WaterParams_0 device* _S92 = _S88+_S89;
 
-#line 263
+#line 264
     float4 _S93 = float4(_S90.x * 2.0 / _S92->viewport_0.x - 1.0, 1.0 - _S90.y * 2.0 / _S92->viewport_0.y, _S91, 1.0);
 
 
@@ -1865,7 +1865,7 @@ float3 worldAt_0(WaterParams_0 device* _S88, int _S89, float2 _S90, float _S91)
 }
 
 
-#line 267
+#line 268
 int2 clampPixel_0(WaterParams_0 device* _S94, int _S95, int2 _S96)
 {
 
@@ -1875,35 +1875,35 @@ int2 clampPixel_0(WaterParams_0 device* _S94, int _S95, int2 _S96)
 }
 
 
-#line 272
+#line 273
 float causticFocus_0(WaterParams_0 device* _S97, int _S98, float2 _S99, float _S100, float _S101)
 {
 
-#line 272
+#line 273
     WaterParams_0 device* _S102 = _S97+_S98;
 
-#line 272
+#line 273
     float4 _S103 = _S102->caustic_0;
 
-#line 290
+#line 291
     uint _S104 = min(uint(_S102->caustic_0.x), 16U);
 
-#line 290
+#line 291
     uint index_5 = 0U;
 
-#line 290
+#line 291
     float laplacian_0 = 0.0;
     for(;;)
     {
 
-#line 291
+#line 292
         if(index_5 < _S104)
         {
         }
         else
         {
 
-#line 291
+#line 292
             break;
         }
 
@@ -1913,40 +1913,40 @@ float causticFocus_0(WaterParams_0 device* _S97, int _S98, float2 _S99, float _S
         float laplacian_1 = laplacian_0 - saturate(2.0 - _S105 * _S101 * 0.63661974668502808) * _S102->trains_0[index_5].w * _S105 * _S105 * cos(dot(_S102->trains_0[index_5].xy, _S99) * _S105 + _S102->phases_0[index_5 / 4U][index_5 % 4U]);
 
 )cy_msl"
-    R"cy_msl(#line 291
+    R"cy_msl(#line 292
         index_5 = index_5 + 1U;
 
-#line 291
+#line 292
         laplacian_0 = laplacian_1;
 
-#line 291
+#line 292
     }
 
-#line 300
+#line 301
     return min(1.0 / max(abs(1.0 + _S100 * _S102->surface_0.w * laplacian_0), 0.00009999999747379), _S103.y);
 }
 
 
-#line 313
+#line 314
 [[fragment]] pixelOutput_0 waterFragment(pixelInput_0 _S106 [[stage_in]], float4 clip_0 [[position]], WaterSurface_default_0 constant* water_1 [[buffer(1)]], WorldPush_0 constant* push_1 [[buffer(2)]], WaterCloudShadow_default_0 constant* cloudShadow_1 [[buffer(0)]])
 {
 
-#line 313
+#line 314
     thread KernelContext_0 kernelContext_4;
 
-#line 313
+#line 314
     (&kernelContext_4)->water_0 = water_1;
 
-#line 313
+#line 314
     (&kernelContext_4)->push_0 = push_1;
 
-#line 313
+#line 314
     (&kernelContext_4)->cloudShadow_0 = cloudShadow_1;
 
-#line 313
+#line 314
     WaterParams_0 device* _S107 = water_1->params_0;
 
-#line 313
+#line 314
     WaterParams_0 device* _S108 = water_1->params_0+int(0);
 
 
@@ -1954,270 +1954,270 @@ float causticFocus_0(WaterParams_0 device* _S97, int _S98, float2 _S99, float _S
     float3 normal_1 = normalize(_S106.normal_0);
     float3 _S109 = normalize(push_1->eye_0.xyz - _S106.world_2);
 
-#line 318
+#line 319
     float3 normal_2;
     if((dot(normal_1, _S109)) < 0.0)
     {
 
-#line 319
+#line 320
         normal_2 = - normal_1;
 
-#line 319
+#line 320
     }
     else
     {
 
-#line 319
+#line 320
         normal_2 = normal_1;
 
-#line 319
+#line 320
     }
 
-#line 324
+#line 325
     float3 _S110 = (&kernelContext_4)->push_0->sun_0.xyz;
 
-#line 324
+#line 325
     float _S111 = sunThroughClouds_0(_S106.world_2, &kernelContext_4);
 
-#line 324
+#line 325
     float3 _S112 = _S110 * float3(_S111) ;
     float _S113 = saturate(dot(normal_2, - (&kernelContext_4)->push_0->light_0.xyz));
 
 
     float3 _S114 = (&kernelContext_4)->push_0->ambient_0.xyz + _S112 * float3(saturate(- (&kernelContext_4)->push_0->light_0.y)) ;
 
-#line 334
+#line 335
     int2 _S115 = int2(clip_0.xy);
     int3 _S116 = int3(_S115, int(0));
 
-#line 335
+#line 336
     float _S117 = (((&kernelContext_4)->water_0->refractionDepth_0).read(vec<uint,2>(((_S116)).xy), uint(((_S116)).z)).x);
     bool _S118 = _S117 > 0.0;
 
-#line 336
+#line 337
     float2 _S119 = float2(0.5) ;
 
-#line 336
+#line 337
     float3 _S120 = worldAt_0(_S107, int(0), float2(_S115) + _S119, _S117);
 
-#line 336
+#line 337
     float shore_0;
 
     if(_S118)
     {
 
-#line 338
+#line 339
         shore_0 = max(_S106.world_2.y - _S120.y, 0.0);
 
-#line 338
+#line 339
     }
     else
     {
 
-#line 338
+#line 339
         shore_0 = 10000.0;
 
-#line 338
+#line 339
     }
 
     float2 _S121 = _S120.xz;
 
-#line 340
+#line 341
     float _S122 = max(length(dfdx(_S121)), length(dfdy(_S121)));
 
     float2 _S123 = normal_2.xz;
 
-#line 342
+#line 343
     float4 _S124 = _S108->viewport_0;
 
-#line 342
+#line 343
     int2 _S125 = clampPixel_0(_S107, int(0), _S115 + int2(round(_S123 * float2(_S108->viewport_0.z)  * float2(saturate(shore_0 * 0.5)) )));
 
     int3 _S126 = int3(_S125, int(0));
 
-#line 344
+#line 345
     float bentDepth_0 = (((&kernelContext_4)->water_0->refractionDepth_0).read(vec<uint,2>(((_S126)).xy), uint(((_S126)).z)).x);
 
-#line 344
+#line 345
     bool _S127;
     if(bentDepth_0 > (clip_0.z))
     {
 
-#line 345
+#line 346
         _S127 = true;
 
-#line 345
+#line 346
     }
     else
     {
 
-#line 345
+#line 346
         if(_S118)
         {
 
-#line 345
+#line 346
             _S127 = bentDepth_0 <= 0.0;
 
-#line 345
+#line 346
         }
         else
         {
 
-#line 345
+#line 346
             _S127 = false;
 
-#line 345
+#line 346
         }
 
-#line 345
+#line 346
     }
 
-#line 345
+#line 346
     float bentDepth_1;
 
-#line 345
+#line 346
     int2 bentPixel_0;
 
-#line 345
+#line 346
     if(_S127)
     {
 
-#line 345
+#line 346
         bentPixel_0 = _S115;
 
-#line 345
+#line 346
         bentDepth_1 = _S117;
 
-#line 345
+#line 346
     }
     else
     {
 
-#line 345
+#line 346
         bentPixel_0 = _S125;
 
-#line 345
+#line 346
         bentDepth_1 = bentDepth_0;
 
-#line 345
+#line 346
     }
 
-#line 345
+#line 346
     float3 _S128 = worldAt_0(_S107, int(0), float2(bentPixel_0) + _S119, bentDepth_1);
 
-#line 351
+#line 352
     bool _S129 = bentDepth_1 > 0.0;
 
-#line 351
+#line 352
     if(_S129)
     {
 
-#line 351
+#line 352
         bentDepth_1 = length(_S128 - _S106.world_2);
 
-#line 351
+#line 352
     }
     else
     {
 
-#line 351
+#line 352
         bentDepth_1 = 10000.0;
 
-#line 351
+#line 352
     }
 
-#line 351
+#line 352
     float4 _S130 = _S108->extinction_0;
 
 
 
     float3 _S131 = exp(- _S108->extinction_0.xyz * float3(bentDepth_1) );
 
-#line 355
+#line 356
     thread float4 device* _S132;
 
-#line 355
+#line 356
     aerialTable_0(&_S132, &kernelContext_4);
 
-#line 355
+#line 356
     float4 device* _S133 = _S132;
 
-#line 355
+#line 356
     bool _S134 = cyAerialPerspectiveEnabled_0(_S132);
 
 
     int3 _S135 = int3(bentPixel_0, int(0));
 
-#line 358
+#line 359
     float3 bedRadiance_0 = untonemap_0((((&kernelContext_4)->water_0->refraction_0).read(vec<uint,2>(((_S135)).xy), uint(((_S135)).z))).xyz);
     if(_S134)
     {
 
-#line 359
+#line 360
         _S127 = _S129;
 
-#line 359
+#line 360
     }
     else
     {
 
-#line 359
+#line 360
         _S127 = false;
 
-#line 359
+#line 360
     }
 
-#line 359
+#line 360
     float3 bedRadiance_1;
 
-#line 359
+#line 360
     if(_S127)
     {
 
-#line 359
+#line 360
         float3 _S136 = bedBeforeAir_0(_S133, bedRadiance_0, _S128, &kernelContext_4);
 
-#line 359
+#line 360
         bedRadiance_1 = _S136;
 
-#line 359
+#line 360
     }
     else
     {
 
-#line 359
+#line 360
         bedRadiance_1 = bedRadiance_0;
 
-#line 359
+#line 360
     }
 
-#line 359
+#line 360
     float4 _S137 = _S108->surface_0;
 
 
 
     float _S138 = _S108->surface_0.z;
 
-#line 363
+#line 364
     if(_S138 > 0.0)
     {
 
-#line 363
+#line 364
         _S127 = _S129;
 
-#line 363
+#line 364
     }
     else
     {
 
-#line 363
+#line 364
         _S127 = false;
 
-#line 363
+#line 364
     }
 
 )cy_msl"
-    R"cy_msl(#line 363
+    R"cy_msl(#line 364
     if(_S127)
     {
 
@@ -2226,33 +2226,33 @@ float causticFocus_0(WaterParams_0 device* _S97, int _S98, float2 _S99, float _S
         float3 _S140 = _S112 * float3(saturate(- (&kernelContext_4)->push_0->light_0.y)) ;
         float3 _S141 = float3(1.0) ;
 
-#line 369
+#line 370
         float _S142 = dot(_S140, _S141) / max(dot(_S140 + (&kernelContext_4)->push_0->ambient_0.xyz, _S141), 9.99999997475242708e-07);
         float _S143 = exp(- _S130.y * _S139);
 
-#line 370
+#line 371
         float _S144 = causticFocus_0(_S107, int(0), _S128.xz, _S139, _S122);
 
-#line 370
+#line 371
         bedRadiance_1 = bedRadiance_1 * float3((1.0 + _S138 * _S142 * _S143 * (_S144 - 1.0))) ;
 
-#line 363
+#line 364
     }
 
-#line 363
+#line 364
     float4 _S145 = _S108->inScatter_0;
 
-#line 375
+#line 376
     float3 _S146 = bedRadiance_1 * _S131 + (float3(1.0)  - _S131) * _S108->inScatter_0.xyz * _S114;
 
-#line 375
+#line 376
     int2 _S147 = clampPixel_0(_S107, int(0), _S115 + int2(round(_S123 * float2(_S124.w) )));
 
 
 
     int3 _S148 = int3(_S147, int(0));
 
-#line 379
+#line 380
     float3 _S149 = untonemap_0((((&kernelContext_4)->water_0->reflection_0).read(vec<uint,2>(((_S148)).xy), uint(((_S148)).z))).xyz);
     float _S150 = _S145.w;
     float _S151 = _S150 + (1.0 - _S150) * pow(1.0 - saturate(dot(normal_2, _S109)), 5.0);
@@ -2261,64 +2261,64 @@ float causticFocus_0(WaterParams_0 device* _S97, int _S98, float2 _S99, float _S
 
     float3 _S152 = _S112 * float3(pow(saturate(dot(normal_2, normalize(- (&kernelContext_4)->push_0->light_0.xyz + _S109))), 120.0))  * float3((&kernelContext_4)->push_0->sun_0.w) ;
 
-#line 390
+#line 391
     float _S153 = _S130.w;
 
-#line 390
+#line 391
     if(_S153 > 0.0)
     {
 
-#line 390
+#line 391
         _S127 = _S118;
 
-#line 390
+#line 391
     }
     else
     {
 
-#line 390
+#line 391
         _S127 = false;
 
-#line 390
+#line 391
     }
 
-#line 390
+#line 391
     if(_S127)
     {
 
-#line 390
+#line 391
         shore_0 = saturate(1.0 - shore_0 / _S153) * foamBreakup_0(_S106.world_2.xz, _S137.y);
 
-#line 390
+#line 391
     }
     else
     {
 
-#line 390
+#line 391
         shore_0 = 0.0;
 
-#line 390
+#line 391
     }
 
-#line 396
+#line 397
     float _S154 = max(shore_0, saturate((_S106.color_0.x - 0.01999999955296516) / 0.82999998331069946));
     float3 _S155 = float3(0.89999997615814209)  * ((&kernelContext_4)->push_0->ambient_0.xyz + _S112 * float3(_S113) );
     if(_S134)
     {
 
-#line 398
+#line 399
         float3 _S156 = seenThroughAir_0(_S133, _S106.world_2, _S146, _S149, _S151, _S152, _S155, _S154, &kernelContext_4);
 
-#line 398
+#line 399
         pixelOutput_0 _S157 = { float4(tonemap_0(_S156), 1.0) };
 
         return _S157;
     }
 
-#line 400
+#line 401
     pixelOutput_0 _S158 = { float4(tonemap_0(mix(mix(_S146, _S149, float3(_S151) ) + _S152, _S155, float3(_S154) )), 1.0) };
 
-#line 408
+#line 409
     return _S158;
 }
 
