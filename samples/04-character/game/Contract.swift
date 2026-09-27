@@ -13,12 +13,13 @@
 // WHY COMPONENTS AND NOT AN APPENDED ABI ENTRY. ABI 1.0's interface table carries the engine-neutral
 // core — diagnostics, values, entities, components, behaviours — and nothing about input, physics,
 // audio or cameras; those entries are appended by the subsystems that own them, which is what the
-// append-only rule is for and which has not happened yet. So a game reaches those subsystems the way
-// any ECS game does: it writes what it wants into components and the host, which is the only thing
-// that may name a server, carries them across. When `input`, `physics`, `camera` and `audio` entries
-// are appended to `CyInterface`, the components that exist only to carry them — `PlayerInput`,
-// `CharacterDrive`, `AudioCue`, `CameraIntent` — become calls, and nothing else in this directory
-// changes.
+// append-only rule is for. This sample predates them, so it reaches those subsystems the way any ECS
+// game does: it writes what it wants into components and the host, which is the only thing that may
+// name a server, carries them across. ABI 1.3 (`add-swift-game-api`) appended `input`, `camera`,
+// `physics`, `nav`, `audio`, `spawn` and `time` entries; `samples/13-rts-api` calls them directly.
+// Moving this sample onto them would turn the components that exist only to carry them —
+// `PlayerInput`, `CharacterDrive`, `AudioCue`, `CameraIntent` — into calls, and nothing else in this
+// directory would change.
 //
 // FIELDS ARE MATCHED BY NAME, NEVER BY POSITION. `CyWorld_T::find` hands the host the field records
 // a registration produced — name, type, offset — so the host resolves `"velocity"` rather than

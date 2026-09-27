@@ -3285,3 +3285,22 @@ requirement = "ECS diagnostics"
 evidence = "test:integration.ecs_diagnostics"
 case = "archetype thrash is detected and names the component to declare sparse"
 note = "the Archetype thrash warning scenario. `the ECS reports its shape, its systems and its queries onto the one trace` carries archetype and chunk counts with fill ratio, per-system execution time and entity counts, query match statistics and structural-change counts; `a world under a sparse declaration does not thrash at all` is the negative control."
+
+# --- native-abi -----------------------------------------------------------------------------------
+#
+# Mapped by `add-swift-game-api` (ABI 1.3). Only the requirements that change's cases answer; the
+# rest of the row has not been swept, and the change's own ADDED requirements join the map when the
+# change is archived into openspec/specs/.
+
+[[coverage]]
+row = "native-abi"
+requirement = "Versioned interface table"
+evidence = "test:unit.abi"
+case = "the 1.3 table carries every game-service entry, after every 1.2 entry"
+note = "the append-only half, observed on the table rather than read off the header: the first 1.3 entry sits exactly one pointer after `service_poll`, the last 1.3 entry is the last member, `table_size` is `sizeof(CyInterface)` and `abi_minor` is 3. The older-module half is `CyEngine_T::register_behaviour` copying only a vtable's `struct_size` prefix, so a 1.2 module's behaviour has a null `frame_update`; `a behaviour with no frame callback is never scheduled for a frame` in the same suite is that null being skipped."
+
+[[coverage]]
+row = "native-abi"
+requirement = "ABI compatibility testing"
+evidence = "gate:abi"
+note = "`just quality-abi` diffs cy_abi.h against src/abi/abi_baseline.json; ABI 1.3 passed it as `compatible` against main's baseline (new types and 38 appended entries, nothing reordered, removed or re-typed) before the baseline was regenerated, and `just quality-abi --selftest` breaks each rule on purpose."

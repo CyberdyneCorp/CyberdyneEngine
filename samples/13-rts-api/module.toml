@@ -1,0 +1,23 @@
+# The game module's manifest. `native-abi`: "module name, entry symbol, minimum ABI version,
+# per-platform library paths, and whether the module is hot-reloadable".
+#
+# The host takes the library's path from the build (`CY_RTS_API_MODULE_LIBRARY`) because the file
+# is named for its hot-reload generation; see samples/04-character/module.toml for the reasoning.
+#
+# min_abi_minor = 3: the game calls the input, camera, physics, navigation, audio, spawn and time
+# entries ABI 1.3 appended, and an engine older than that does not have them.
+
+name = "rts-api"
+entry_symbol = "cy_module_entry"
+min_abi_major = 1
+min_abi_minor = 3
+hot_reload = true
+
+[platform.linux]
+library = "libCyGame_g0.so"
+
+[platform.windows]
+library = "CyGame_g0.dll"
+
+[platform.macos]
+library = "libCyGame_g0.dylib"

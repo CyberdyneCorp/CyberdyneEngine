@@ -169,6 +169,134 @@ incomplete, the suite fails visibly instead of disappearing from the test list.
 invocation here goes through `bash -lc '. <env.sh>; …'`; `just env-doctor` diagnoses the case where
 it has not been sourced.
 
+## The game services (ABI 1.3)
+
+`add-swift-game-api` appends input, camera, physics queries, navigation, audio, spawning and time to
+the table, so a game calls them instead of writing components for a C++ host to carry
+(`samples/04-character/game/Contract.swift` still does the latter, and migrates when the services
+are implemented). `CyberdyneCore` already has one throwing `Engine` method per entry and the enums
+`Phase`, `ShapeKind`, `NavPathStatus` and `NavQueryState`, all generated.
+
+`CyberdyneKit` gets one facade per service — `Input`, `Camera`, `Physics`, `Navigation`, `Audio`,
+`Spawn`, `Time` — each in its own file, over the shared `Pose`, `Ray` and tuple conversions in
+`GameTypes.swift`. A call made in a phase its entry refuses throws
+`CyberdyneError.status(.permissionDenied, …)`; with no engine bound, `.unavailable`. The facades are
+tested through the package with `Tests/CyberdyneKitTests/FakeEngine.swift`, an interface table built
+in Swift. The phase and determinism rules are `openspec/changes/add-swift-game-api/design.md`'s.
+
+### Audio, spawning and time
+
+```swift
+try Audio.play("explosion", at: impact)                          // any phase; fire and forget
+let hum = try Audio.play(Audio.cue("tank.engine"), attachedTo: tank,
+                         options: PlayOptions(loop: true, fadeIn: 0.3))
+try hum?.stop(fadeOut: 0.5)
+try Audio.bus("Music").setVolume(0.2, fade: 2)
+
+let tank = try World.spawn(prefab: "units/tank", at: Pose(position: p))   // fixed step or init
+let squad = try Spawn.prefab("units/rifleman").instantiate(at: formation, parent: tank)
+try World.destroy(tank)                                          // the subtree, children first
+
+let tick = try Time.now.tick                                     // any phase
+```
+
+* **Audio is presentation**, callable in every phase. While a tick is being resimulated `play`,
+  `stop` and `setVolume` succeed and do nothing, and `play` returns nil — as it does when the mixer
+  has no voice to give. A fixed step must not branch on `Voice.isPlaying`.
+* **Spawning is simulation**: `instantiate` and `destroy` are refused in `onUpdate` with
+  `.permissionDenied`. `Spawn.prefab(_:)` loads an asset only at initialisation; resolve prefabs in
+  `onCreate` and keep the `Prefab`, and a fixed step never stalls on a load. The same calls in the
+  same fixed step give the same entities on every run.
+* **`Time.now` in `onFixedUpdate`** reports `frameDelta` and `interpolation` as zero, so a fixed
+  step cannot come to depend on the frame rate.
+* **`onUpdate` is driven.** A behaviour that overrides it registers `frame_update`, and the engine's
+  `BehaviourRuntime::frame_update` calls it in the frame-update phase; one that does not registers
+  nothing and is never scheduled for a frame.
+
+### Writing an RTS unit in Swift
+
+`samples/13-rts-api` is the whole of this, runnable (`just run-sample rts-api`) and tested
+(`integration.rts_api_sample`). The shape, from its `game/Commander.swift`:
+
+```swift
+@Behaviour(name: "Commander", schema: 1)
+final class Commander: Behaviour {
+    @Export(range: 0.5...20) var unitSpeed: Float = 6
+    private var worker = Prefab(raw: 0)
+    private var squad: [Entity] = []
+    private var selected: Entity = .null
+    private var pendingOrder: Vec3?
+
+    // No phase: the only place a prefab may load. Resolve once, keep the handle.
+    override func onCreate() throws {
+        worker = try Spawn.prefab("units/worker")
+        for unit in try worker.instantiate(at: [Pose(position: a), Pose(position: b)]) {
+            try NavAgent(unit).configure(.init(radius: 0.5, height: 1.8, maxSpeed: unitSpeed))
+            squad.append(unit)
+        }
+    }
+
+    // Frame: device and camera state. Read the click, decide what it means, RECORD it.
+    override func onUpdate(_ delta: Double) throws {
+        guard let camera = try Camera.active() else { return }
+        let pointer = try Input.pointer()
+        if pointer.pressed.contains(.left) {
+            let hit = try Physics.raycast(camera.ray(under: pointer), filter: .init(mask: 1 << 1))
+            selected = hit?.entity ?? .null
+        }
+        if pointer.pressed.contains(.right),
+            let ground = try Physics.raycast(camera.ray(under: pointer), filter: .init(mask: 1 << 0))
+        {
+            pendingOrder = ground.point
+        }
+    }
+
+    // Fixed step: simulation. ACT on the recorded order; hear arrivals; build.
+    override func onFixedUpdate(_ delta: Double) throws {
+        if let target = pendingOrder, !selected.isNull {
+            try NavAgent(selected).move(to: target)
+            pendingOrder = nil
+        }
+        for unit in squad {
+            let state = try NavAgent(unit).state
+            if state.justArrived {
+                try Audio.play("unit.arrived", at: state.position)
+            }
+        }
+        if try Input.action("unit.spawn").justPressed {
+            try squad.append(worker.instantiate(at: Pose(position: barracks)))
+        }
+    }
+}
+```
+
+Four rules make it work, and each is one the engine enforces rather than one the game remembers:
+
+* **Read devices in `onUpdate`, change the simulation in `onFixedUpdate`.** `Input.pointer()`,
+  `Input.modifiers()` and every camera read throw `.permissionDenied` in a fixed step, and
+  `instantiate`, `destroy`, `NavAgent.move(to:)` and `requestPath` throw it in a frame. A click
+  becomes a value the behaviour keeps and the next fixed step consumes. Action state
+  (`Input.action(_:)`) is resolved per tick, so it is readable in both.
+* **Ask physics for one layer.** The host decides what is on which collision layer; the game picks
+  with `Physics.Filter(mask:)`. A unit click asks for units only, so the ground under a unit never
+  wins, and an order asks for the ground only, so a unit in the way does not become the target.
+* **"Has it arrived" is an event, not a distance.** `NavAgent.state.justArrived` is true in exactly
+  one fixed step, so a cue plays once however many ticks the unit then stands there.
+* **Resolve names once.** `Spawn.prefab`, `Audio.cue` and `Input.find(action:)` return handles that
+  stay valid across a hot reload; a fixed step that resolves by name each tick pays a lookup for a
+  number that cannot change.
+
+The camera is presentation: `camera.setTarget(CameraTarget(focus: .position(focus)))` from
+`onUpdate` moves the focus of whatever rig the host built, and shows on the next frame. Yaw,
+pitch and distance are recorded for the host's rig to apply (`CameraAdapter::framing()`): the camera
+server has orbit intents and no absolute orbit, so a target's angle does not move the camera on its
+own.
+`samples/13-rts-api/game/RtsCamera.swift` pans that focus with the keys and the screen edges.
+
+What the host still does, and why none of it is gameplay: it builds the level (ground, navigation
+tile, prefab, cue, input actions) and names each piece, binds the adapters, and gives every
+navigation agent a body and a scene node to move. See `samples/13-rts-api/README.md`.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:
@@ -187,8 +315,9 @@ Recorded here rather than only in a report, because these are the places a reade
   assertion could not have caught it: this side asserts what it *sent*. Appending `CyStage` and
   `CySeverity` to `CyInterface` would let the generator own both, and that is the real fix.
 * **The tree callbacks are declared, not driven.** `CyBehaviourVTable` carries `create`, `destroy`,
-  `fixed_update`, `serialize` and `deserialize`. `onEnterTree`, `onReady`, `onEnable`, `onDisable`,
-  `onUpdate` and `onExitTree` are part of the model and recorded in `behaviourCallbacks`; the engine
+  `fixed_update`, `serialize` and `deserialize`, and at 1.3 `frame_update`, which `onUpdate` is
+  wired to by `add-swift-game-api`. `onEnterTree`, `onReady`, `onEnable`, `onDisable` and
+  `onExitTree` are part of the model and recorded in `behaviourCallbacks`; the engine
   gains the thunks when the scene entries are appended.
 * **`@Node(path)` resolves to nil.** There is no node entry in ABI 1.0. The wrapper is the seam.
 * **No `async` wrappers.** The generator emits them for entries declared asynchronous, and no entry
