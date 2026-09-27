@@ -163,6 +163,9 @@ The local macOS sandbox currently selects the null RHI when Metal is requested. 
 pixel tests now check the actual selected backend before making image assertions, so its all-black
 null framebuffer cannot be mistaken for a failed Metal rendering result. A device-backed run is
 still required for the issue's visual acceptance criterion.
+An MCP wire test submits an editable vertex canvas, accepts the engine authoring response, reads
+the saved source, and checks undo and redo of both the canonical graph and canvas files. Scene and
+preview-mesh vertex pixels still need device-backed verification.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for
