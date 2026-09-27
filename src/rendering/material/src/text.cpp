@@ -300,6 +300,7 @@ private:
     [[nodiscard]] Status parse_parameter(bool requested_static) noexcept;
     [[nodiscard]] Status parse_texture() noexcept;
     [[nodiscard]] Status parse_attribute(bool is_field) noexcept;
+    [[nodiscard]] Status parse_vertex_interpolant() noexcept;
     [[nodiscard]] Status parse_let() noexcept;
     [[nodiscard]] Status parse_statement() noexcept;
     [[nodiscard]] Status parse_annotations() noexcept;
@@ -440,6 +441,24 @@ Status Parser::parse_attribute(bool is_field) noexcept {
     return expect_symbol(';', "a declaration ends with a semicolon");
 }
 
+Status Parser::parse_vertex_interpolant() noexcept {
+    const Token name = lexer_.take();
+    if (name.kind != TokenKind::Identifier) {
+        return make_unexpected(report(name, "a vertex interpolant needs a name"));
+    }
+    if (Status expected = expect_symbol('=', "a vertex interpolant is assigned"); !expected) {
+        return expected;
+    }
+    auto value = parse_expression();
+    if (!value) {
+        return make_unexpected(value.error());
+    }
+    if (Status set = builder_->set_vertex_interpolant(Name::intern(name.text), *value); !set) {
+        return make_unexpected(report(name, set.error().message));
+    }
+    return expect_symbol(';', "a statement ends with a semicolon");
+}
+
 Status Parser::parse_annotations() noexcept {
     while (at_symbol('@')) {
         (void)lexer_.take();
@@ -506,6 +525,9 @@ Status Parser::parse_statement() noexcept {
     }
     if (keyword.text == "field") {
         return parse_attribute(true);
+    }
+    if (keyword.text == "vertex_interpolant") {
+        return parse_vertex_interpolant();
     }
     if (keyword.text == "let") {
         return parse_let();

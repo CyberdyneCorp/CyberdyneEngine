@@ -109,6 +109,11 @@ struct GraphNode {
     NodeFlags flags = NodeFlags::None;
 };
 
+struct GraphVertexInterpolant {
+    Name name;
+    u32 source = kInvalidNode;
+};
+
 /// An authored material graph.
 class MaterialGraph {
 public:
@@ -137,6 +142,8 @@ public:
     [[nodiscard]] Status set_vertex_offset_output(u32 node) noexcept;
     /// Select a scalar displacement in metres along the mesh normal.
     [[nodiscard]] Status set_vertex_displacement_output(u32 node) noexcept;
+    /// Send a named numeric node value from the vertex stage to surface expressions.
+    [[nodiscard]] Status set_vertex_interpolant_output(Name name, u32 node) noexcept;
 
     [[nodiscard]] Name name() const noexcept { return name_; }
     [[nodiscard]] Span<const GraphNode> nodes() const noexcept { return nodes_.span(); }
@@ -150,6 +157,9 @@ public:
     [[nodiscard]] u32 opacity_output() const noexcept { return opacity_; }
     [[nodiscard]] u32 vertex_offset_output() const noexcept { return vertex_offset_; }
     [[nodiscard]] u32 vertex_displacement_output() const noexcept { return vertex_displacement_; }
+    [[nodiscard]] Span<const GraphVertexInterpolant> vertex_interpolants() const noexcept {
+        return vertex_interpolants_.span();
+    }
     [[nodiscard]] Allocator& allocator() const noexcept { return nodes_.allocator(); }
 
     /// The most inputs any node has: two operands plus a weight.
@@ -161,6 +171,7 @@ private:
     Array<u32> links_;  // kMaxPorts entries per node
     Array<ParameterDecl> parameters_;
     Array<TextureDecl> textures_;
+    Array<GraphVertexInterpolant> vertex_interpolants_;
     u32 surface_ = kInvalidNode;
     u32 opacity_ = kInvalidNode;
     u32 vertex_offset_ = kInvalidNode;

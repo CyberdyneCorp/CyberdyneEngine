@@ -294,6 +294,7 @@ void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
     let offset = cy_material_wind_sway_primary_high_vertex_offset(ctx);
     cyMaterialProbeOutput[id.x] = float4(offset, 1.0);
 }
+
 struct CyVertexProbeOutput { float4 position : SV_Position; };
 [shader("vertex")]
 CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COLOR0)
@@ -331,6 +332,78 @@ CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COL
     }
     CY_CHECK(vertex_ok);
     CY_CHECK_GT(vertex_words, 16U);
+}
+
+CY_TEST_CASE("a named vertex interpolant compiles in vertex and fragment Slang stages") {
+    CY_REQUIRE(shader::slang::slang_available());
+    ParseDiagnostic sink(current_allocator());
+    auto module = parse_material(
+        "material vertex_tint { attribute color0 : float3; attribute tint : float3; "
+        "vertex_interpolant tint = color0; surface = diffuse(tint); }",
+        current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    auto surface = emit_program(*module, EmitOptions{});
+    auto vertex = emit_vertex_offset(*module, EmitOptions{});
+    CY_REQUIRE(surface.has_value());
+    CY_REQUIRE(vertex.has_value());
+    Array<char> prelude(current_allocator());
+    CY_REQUIRE(emit_prelude(*module, PreludeOptions{}, prelude).has_value());
+    std::string source(prelude.data(), prelude.size());
+    source.append(surface->view());
+    source.append(vertex->view());
+    source += R"(
+struct CyVertexProbeOutput
+{
+    float4 position : SV_Position;
+    [[vk::location(0)]] float3 tint : TEXCOORD0;
+};
+[shader("vertex")]
+CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COLOR0)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.color0 = color.rgb;
+    let evaluated = cy_material_vertex_tint_primary_high_vertex(ctx);
+    CyVertexProbeOutput output;
+    output.position = float4(position + evaluated.offset, 1.0);
+    output.tint = evaluated.tint;
+    return output;
+}
+[shader("fragment")]
+float4 cyFragmentProbe(CyVertexProbeOutput input) : SV_Target
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.tint = input.tint;
+    CySurface compiled = cyDefaultSurface();
+    cy_material_vertex_tint_primary_high(ctx, compiled);
+    return float4(cyResolveSurface(compiled).albedo, 1.0);
+}
+)";
+    StandardLibrary library;
+    SlangHandle slang;
+    shader::DiagnosticLog vertex_diagnostics(current_allocator());
+    u32 vertex_words = 0;
+    const bool vertex_ok =
+        compiles(library, slang, "material.vertex_tint_vertex", source, vertex_diagnostics,
+                 vertex_words, "cyVertexProbe", rhi::ShaderStage::Vertex);
+    if (!vertex_ok) {
+        print_diagnostics(vertex_diagnostics);
+    }
+    CY_CHECK(vertex_ok);
+    CY_CHECK_GT(vertex_words, 16U);
+    shader::DiagnosticLog fragment_diagnostics(current_allocator());
+    u32 fragment_words = 0;
+    const bool fragment_ok =
+        compiles(library, slang, "material.vertex_tint_fragment", source, fragment_diagnostics,
+                 fragment_words, "cyFragmentProbe", rhi::ShaderStage::Fragment);
+    if (!fragment_ok) {
+        print_diagnostics(fragment_diagnostics);
+    }
+    CY_CHECK(fragment_ok);
+    CY_CHECK_GT(fragment_words, 16U);
 }
 
 CY_TEST_CASE("a material with no textures, no attributes and no parameters still compiles") {

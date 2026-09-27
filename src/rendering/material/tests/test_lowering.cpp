@@ -380,6 +380,7 @@ material vertex_texture {
     surface = diffuse(sampled);
     vertex_offset = sampled;
 }
+
 )";
     auto module = from_text(source);
     CY_REQUIRE(module.has_value());
@@ -414,6 +415,29 @@ material custom_offset {
     CY_REQUIRE(custom_rejected.has_value());
     CY_CHECK(custom_rejected.value().failed());
     CY_CHECK(has_diagnostic(custom_rejected.value(), "vertex-stage-unsupported"));
+}
+
+CY_TEST_CASE("material_lowering: interpolant reads are typed and cannot feed vertex outputs") {
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto mismatched = from_text(
+        "material bad_tint { attribute tint : float3; "
+        "vertex_interpolant tint = 0.5; surface = diffuse(tint); }");
+    CY_REQUIRE(mismatched.has_value());
+    auto type_result = compile_material(*mismatched, options, allocator());
+    CY_REQUIRE(type_result.has_value());
+    CY_CHECK(type_result->failed());
+    CY_CHECK(has_diagnostic(*type_result, "vertex-interpolant-type"));
+
+    auto dependent = from_text(
+        "material recursive_tint { attribute tint : float3; "
+        "vertex_interpolant tint = tint; surface = diffuse(tint); }");
+    CY_REQUIRE(dependent.has_value());
+    auto stage_result = compile_material(*dependent, options, allocator());
+    CY_REQUIRE(stage_result.has_value());
+    CY_CHECK(stage_result->failed());
+    CY_CHECK(has_diagnostic(*stage_result, "vertex-interpolant-stage-dependency"));
 }
 
 CY_TEST_CASE("material_lowering: cost is attributed to the authoring nodes that caused it") {

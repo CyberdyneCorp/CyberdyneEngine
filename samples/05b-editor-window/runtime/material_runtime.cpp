@@ -10,6 +10,7 @@
 #include <cy/rendering/material/slang_program.h>
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <string_view>
@@ -38,6 +39,12 @@ public:
         if (status_) {
             status_ = output_->append({value.data(), value.size()});
         }
+    }
+
+    void number(u32 value) noexcept {
+        char buffer[16] = {};
+        (void)std::snprintf(buffer, sizeof(buffer), "%u", value);
+        text(buffer);
     }
 
     [[nodiscard]] Status status() const noexcept { return status_; }
@@ -109,9 +116,25 @@ struct StandardLibrary {
         if (node.op != Op::Attribute) {
             continue;
         }
+        const rendering::material::VertexInterpolant* interpolant = nullptr;
+        for (const auto& candidate : program.module.vertex_interpolants()) {
+            if (candidate.name == node.symbol) {
+                interpolant = &candidate;
+                break;
+            }
+        }
+        if (interpolant != nullptr && source == "output") {
+            continue;
+        }
         writer.text("    ctx.attributes.");
         writer.text(node.symbol.text());
-        if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+        if (interpolant != nullptr && node.type == interpolant->type) {
+            writer.text(" = ");
+            writer.text(source);
+            writer.text(".vertex_");
+            writer.text(node.symbol.text());
+            writer.text(";\n");
+        } else if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
             writer.text(" = editorFrame.frame.shadowControl.z;\n");
         } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
             writer.text(" = ");
@@ -223,7 +246,20 @@ struct EditorVertexOutput
     [[vk::location(2)]] float2 uv : TEXCOORD3;
     [[vk::location(3)]] float3 objectPosition : TEXCOORD4;
     [[vk::location(4)]] float4 color : COLOR1;
-};
+)");
+    for (usize index = 0; index < program.module.vertex_interpolants().size(); ++index) {
+        const auto& interpolant = program.module.vertex_interpolants()[index];
+        writer.text("    [[vk::location(");
+        writer.number(static_cast<u32>(index) + 5U);
+        writer.text(")]] ");
+        writer.text(rendering::material::value_type_name(interpolant.type));
+        writer.text(" vertex_");
+        writer.text(interpolant.name.text());
+        writer.text(" : TEXCOORD");
+        writer.number(static_cast<u32>(index) + 5U);
+        writer.text(";\n");
+    }
+    writer.text(R"(};
 float3 editorPosition(float3 position)
 {
     let point = float4(position, 1.0);
@@ -241,7 +277,8 @@ EditorVertexOutput editorMaterialVertexBase(EditorVertexInput input)
     output.uv = input.uv;
     output.color = input.color;
 )");
-    if (program.module.vertex_offset() != rendering::material::kInvalidNode) {
+    if (program.module.vertex_offset() != rendering::material::kInvalidNode ||
+        !program.module.vertex_interpolants().empty()) {
         writer.text(
             "    CyMaterialContext ctx;\n"
             "    ctx.params = cyMaterialParameters;\n"
@@ -249,9 +286,18 @@ EditorVertexOutput editorMaterialVertexBase(EditorVertexInput input)
         if (Status attributes = append_attribute_bindings(program, writer, "output"); !attributes) {
             return attributes;
         }
-        writer.text("    output.positionRelativeToCamera += ");
+        writer.text("    let materialVertex = ");
         writer.text({generated_entry.data(), generated_entry.size()});
-        writer.text("_vertex_offset(ctx);\n");
+        writer.text(
+            "_vertex(ctx);\n"
+            "    output.positionRelativeToCamera += materialVertex.offset;\n");
+        for (const auto& interpolant : program.module.vertex_interpolants()) {
+            writer.text("    output.vertex_");
+            writer.text(interpolant.name.text());
+            writer.text(" = materialVertex.");
+            writer.text(interpolant.name.text());
+            writer.text(";\n");
+        }
     }
     writer.text(R"(
     return output;

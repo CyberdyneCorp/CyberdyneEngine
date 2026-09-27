@@ -36,6 +36,8 @@
 // A material that moves geometry may also assign `vertex_offset = float3(...);`; the expression
 // must be a float3 in world space and is the same IR root used by the graph front-end.
 // `vertex_displacement = float;` adds a distance in metres along the mesh normal to that root.
+// `vertex_interpolant tint = color0;` computes a typed value at each vertex. Declare
+// `attribute tint : float3;` to read the interpolated value in a surface expression.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>

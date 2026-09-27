@@ -38,6 +38,7 @@ struct NodeSpec {
 /// lowering turns it into those two calls.
 constexpr std::string_view kOutputType = "material.output";
 constexpr std::string_view kVertexOutputType = "material.vertex_output";
+constexpr std::string_view kVertexInterpolantType = "material.vertex_interpolant";
 
 constexpr NodeSpec kPalette[] = {
     {1, "material.constant", GraphOp::Constant, {}, 0, false},
@@ -77,11 +78,13 @@ constexpr NodeSpec kPalette[] = {
 
 constexpr NodeTypeId kOutputIdentity = 25;
 constexpr NodeTypeId kVertexOutputIdentity = 27;
+constexpr NodeTypeId kVertexInterpolantIdentity = 36;
 
 /// The root's two pins, which are the two setters.
 constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
 constexpr std::string_view kVertexOutputPin = "offset";
 constexpr std::string_view kVertexDisplacementPin = "displacement";
+constexpr std::string_view kVertexInterpolantPin = "value";
 
 /// The pin type names. Deliberately two and not a lattice: `cybergraph.h` decision 2 keeps pin
 /// types the domain's business, and this domain has exactly one distinction that matters — a
@@ -155,8 +158,15 @@ constexpr PropertySpec kTypedProperties[] = {
     {1, "type", PropertyKind::Enumeration, "float", "Result value type", "value-type",
      "float|float2|float3|float4", "", "compile"},
 };
+constexpr PropertySpec kVertexInterpolantProperties[] = {
+    {1, "symbol", PropertyKind::Text, "", "Name read by a surface attribute node", "identifier", "",
+     "", "compile"},
+};
 
 [[nodiscard]] Span<const PropertySpec> properties_for(std::string_view type) noexcept {
+    if (type == kVertexInterpolantType) {
+        return {kVertexInterpolantProperties, std::size(kVertexInterpolantProperties)};
+    }
     if (type == "material.constant") {
         return {kConstantProperties, std::size(kConstantProperties)};
     }
@@ -370,6 +380,15 @@ private:
         return fail(ErrorCode::InvalidArgument,
                     "a wire into `material.vertex_output` on a pin it does not have");
     }
+    if (type == kVertexInterpolantType) {
+        if (link.to_pin.text() != kVertexInterpolantPin) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a wire into `material.vertex_interpolant` needs its value pin");
+        }
+        const Literal* property = graph.property(target->key, Name::intern("symbol"));
+        const Name name = property != nullptr ? property->text : Name{};
+        return out.set_vertex_interpolant_output(name, source);
+    }
     const NodeSpec* spec = spec_for(type);
     const u32 destination = keys.find(link.to);
     if (spec == nullptr || destination == rendering::material::kInvalidNode) {
@@ -389,13 +408,14 @@ private:
 Span<const std::string_view> material_node_types() noexcept {
     // Built once, in the palette's own order plus both output roots. `static` rather than a member
     // of a registry because the list is a property of this build and not of a session.
-    static std::string_view names[std::size(kPalette) + 2];
+    static std::string_view names[std::size(kPalette) + 3];
     static const bool built = [] {
         for (usize index = 0; index < std::size(kPalette); ++index) {
             names[index] = kPalette[index].type;
         }
         names[std::size(kPalette)] = kOutputType;
         names[std::size(kPalette) + 1] = kVertexOutputType;
+        names[std::size(kPalette) + 2] = kVertexInterpolantType;
         return true;
     }();
     (void)built;
@@ -409,6 +429,9 @@ NodeTypeId material_node_type_id(std::string_view type) noexcept {
     if (type == kVertexOutputType) {
         return kVertexOutputIdentity;
     }
+    if (type == kVertexInterpolantType) {
+        return kVertexInterpolantIdentity;
+    }
     const NodeSpec* spec = spec_for(type);
     return spec != nullptr ? spec->identity : kInvalidNodeTypeId;
 }
@@ -420,6 +443,9 @@ u8 material_node_stage_mask(std::string_view type) noexcept {
         return surface;
     }
     if (type == kVertexOutputType) {
+        return vertex;
+    }
+    if (type == kVertexInterpolantType) {
         return vertex;
     }
     const NodeSpec* spec = spec_for(type);
@@ -618,6 +644,10 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
         push(kVertexDisplacementPin, kValuePin, PinDirection::Input);
         return {storage, count};
     }
+    if (type == kVertexInterpolantType) {
+        push(kVertexInterpolantPin, kValuePin, PinDirection::Input);
+        return {storage, count};
+    }
     const NodeSpec* spec = spec_for(type);
     if (spec == nullptr) {
         return {};
@@ -657,7 +687,7 @@ Status lower_material(const Graph& graph, MaterialGraph& out) noexcept {
     // PASS ONE: every node, in the authored order, including the disconnected and the muted ones.
     for (const GraphNode& node : graph.nodes()) {
         const std::string_view type = node.type.text();
-        if (type == kOutputType || type == kVertexOutputType) {
+        if (type == kOutputType || type == kVertexOutputType || type == kVertexInterpolantType) {
             continue;
         }
         const NodeSpec* spec = spec_for(type);

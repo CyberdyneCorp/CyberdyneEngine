@@ -207,14 +207,48 @@ CY_TEST_CASE("the hosted material shader calls the compiled vertex offset") {
     CY_REQUIRE(assemble_material_unit(*primary, unit));
     const std::string_view shader(unit.data(), unit.size());
     CY_CHECK(shader.find(primary->vertex_source.view()) != std::string_view::npos);
-    CY_CHECK(shader.find("output.positionRelativeToCamera += "
-                         "cy_material_vertex_sway_primary_high_vertex_offset(ctx)") !=
+    CY_CHECK(shader.find("let materialVertex = "
+                         "cy_material_vertex_sway_primary_high_vertex(ctx)") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("output.positionRelativeToCamera += materialVertex.offset") !=
              std::string_view::npos);
     CY_CHECK(shader.find("EditorVertexOutput output = editorMaterialVertexBase(input)") !=
              std::string_view::npos);
     CY_CHECK(
         shader.find("let position = editorMaterialVertexBase(input).positionRelativeToCamera") !=
         std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader carries a typed vertex colour to its surface") {
+    using namespace rendering::material;
+    Builder builder(allocator(), Name::intern("vertex_tint"));
+    auto colour = builder.attribute(Name::intern("color0"), ValueType::Vec3);
+    auto tint = builder.attribute(Name::intern("tint"), ValueType::Vec3);
+    CY_REQUIRE(colour.has_value());
+    CY_REQUIRE(tint.has_value());
+    const NodeId inputs[] = {tint.value()};
+    auto surface = builder.make(Op::Diffuse, {inputs, 1});
+    CY_REQUIRE(surface.has_value());
+    CY_REQUIRE(builder.set_surface(surface.value()));
+    CY_REQUIRE(builder.set_vertex_interpolant(Name::intern("tint"), colour.value()));
+    auto authored = builder.finish();
+    CY_REQUIRE(authored.has_value());
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto compiled = rendering::material::compile_material(*authored, options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    CY_CHECK_FALSE(compiled->failed());
+    const CompiledProgram* primary = compiled->find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("[[vk::location(5)]] float3 vertex_tint : TEXCOORD5") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("result.tint = ctx.attributes.color0") != std::string_view::npos);
+    CY_CHECK(shader.find("output.vertex_tint = materialVertex.tint") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.tint = input.vertex_tint") != std::string_view::npos);
 }
 
 CY_TEST_CASE("the hosted material shader binds object position before vertex evaluation") {
@@ -265,7 +299,8 @@ CY_TEST_CASE("the hosted material shader binds camera-relative world position") 
     CY_REQUIRE(assemble_material_unit(*primary, unit));
     const std::string_view shader(unit.data(), unit.size());
     const usize binding = shader.find("ctx.attributes.position = output.positionRelativeToCamera");
-    const usize evaluation = shader.find("_vertex_offset(ctx)");
+    const usize evaluation =
+        shader.find("let materialVertex = cy_material_world_sway_primary_high_vertex(ctx)");
     CY_REQUIRE_NE(binding, std::string_view::npos);
     CY_REQUIRE_NE(evaluation, std::string_view::npos);
     CY_CHECK_LT(binding, evaluation);
@@ -287,7 +322,8 @@ CY_TEST_CASE("the hosted material shader samples engine time in vertex and fragm
     constexpr std::string_view binding =
         "ctx.attributes.time_seconds = editorFrame.frame.shadowControl.z";
     const usize vertex = shader.find(binding);
-    const usize evaluation = shader.find("_vertex_offset(ctx)");
+    const usize evaluation =
+        shader.find("let materialVertex = cy_material_time_sway_primary_high_vertex(ctx)");
     CY_REQUIRE_NE(vertex, std::string_view::npos);
     CY_REQUIRE_NE(evaluation, std::string_view::npos);
     CY_CHECK_LT(vertex, evaluation);

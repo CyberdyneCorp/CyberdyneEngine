@@ -54,11 +54,14 @@ The text front end accepts the same scalar displacement assignment and graph/tex
 match when both offset and displacement are present.
 The IR now retains a sorted array of named `float` through `float4` vertex interpolant roots. The
 name, type, and source content enter the module digest and version 3 encoding. Optimisation and
-visible derivation preserve them, while shadow derivation drops them. Until Slang varyings and the
-graph/text authoring inputs are wired, compilation names every interpolant in a
-`vertex-interpolant-binding-unavailable` error instead of silently omitting its value. The next
-step is to emit a vertex evaluator for these roots and carry its typed results into the fragment
-context; then connect graph/text declarations and the hosted material mesh. Previous-frame
+visible derivation preserve them, while shadow derivation drops them. The generated vertex
+evaluator returns offset plus typed interpolants; the hosted material shader assigns these to
+varyings and binds them into the fragment context. The `material.vertex_interpolant` catalogue
+node supplies a named output, and a typed `material.attribute` reads it on the surface. Text uses
+`vertex_interpolant tint = color0;` with `attribute tint : float3;`. Both front ends produce one
+cook identity. Compilation rejects mismatched reads and any vertex output that reads an
+interpolant. Slang vertex and fragment probes compile, and shader assembly has source assertions;
+a hosted device image comparison and authored-scene integration remain open. Previous-frame
 evaluation remains open.
 
 The material IR first carries a typed `float3` world-space vertex offset root beside its surface
@@ -117,7 +120,7 @@ binding to the engine-owned wind field remains in task 3.1. The typed RGB vertex
 `color0` from an added RGBA mesh stream in the first-light compiled-material preview, including
 shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
-Custom interpolants and displacement remain in task 3.1.
+Environment-field wind binding and the remaining scene geometry sources remain in task 3.1.
 The authored scene frame still uses the standard material path. It now rejects a vertex graph
 with a named missing-pass error before that path can flatten it to a diffuse colour; the
 first-light preview and authored scene frame will be unified under task 3.4.

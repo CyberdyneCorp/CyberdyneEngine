@@ -552,23 +552,47 @@ namespace {
                                           GeneratedSource& source) noexcept {
     Writer writer(source.text);
     write_header(writer, module, options);
-    writer.text("float3 ");
     Array<char> entry(module.allocator());
     if (Status named = entry_point_name(module.name(), options.kind, options.tier, entry); !named) {
         return named;
     }
+    writer.text("struct CyMaterialVertexResult {\n    float3 offset;\n");
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        writer.text("    ");
+        writer.text(slang_type(interpolant.type));
+        writer.text(" ");
+        writer.text(interpolant.name.text());
+        writer.text(";\n");
+    }
+    writer.text("};\nCyMaterialVertexResult ");
     writer.text(std::string_view(entry.data(), entry.size()));
-    writer.text("_vertex_offset(in CyMaterialContext ctx) {\n");
+    writer.text("_vertex(in CyMaterialContext ctx) {\n");
     source.body_begin = writer.size();
     if (Status written = write_statements(writer, module, options, order, names, source);
         !written) {
         return written;
     }
-    writer.text("    return ");
-    write_operand(writer, module, names, module.vertex_offset());
-    writer.text(";\n");
+    writer.text("    CyMaterialVertexResult result;\n    result.offset = ");
+    if (module.vertex_offset() == kInvalidNode) {
+        writer.text("float3(0.0);\n");
+    } else {
+        write_operand(writer, module, names, module.vertex_offset());
+        writer.text(";\n");
+    }
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        writer.text("    result.");
+        writer.text(interpolant.name.text());
+        writer.text(" = ");
+        write_operand(writer, module, names, interpolant.value);
+        writer.text(";\n");
+    }
+    writer.text("    return result;\n");
     source.body_end = writer.size();
-    writer.text("}\n");
+    writer.text("}\nfloat3 ");
+    writer.text(std::string_view(entry.data(), entry.size()));
+    writer.text("_vertex_offset(in CyMaterialContext ctx) {\n    return ");
+    writer.text(std::string_view(entry.data(), entry.size()));
+    writer.text("_vertex(ctx).offset;\n}\n");
     if (!writer.status()) {
         return fail(ErrorCode::OutOfMemory, "the generated vertex source could not be grown");
     }
@@ -612,18 +636,28 @@ Expected<GeneratedSource, Error> emit_program(const Module& module,
 
 Expected<GeneratedSource, Error> emit_vertex_offset(const Module& module,
                                                     const EmitOptions& options) noexcept {
-    if (module.vertex_offset() == kInvalidNode) {
+    if (module.vertex_offset() == kInvalidNode && module.vertex_interpolants().empty()) {
         return make_unexpected(
-            Error{ErrorCode::InvalidArgument, "this material has no vertex offset", 0});
+            Error{ErrorCode::InvalidArgument, "this material has no vertex outputs", 0});
     }
     Allocator& allocator = module.allocator();
     EmitOptions vertex_options = options;
     vertex_options.vertex_stage = true;
     GeneratedSource source(allocator);
     Array<NodeId> order(allocator);
-    const NodeId root = module.vertex_offset();
-    if (Status built = build_order(module, vertex_options, Span<const NodeId>(&root, 1), order,
-                                   source.hoisted_statements);
+    Array<NodeId> roots(allocator);
+    if (module.vertex_offset() != kInvalidNode) {
+        if (Status added = roots.push_back(module.vertex_offset()); !added) {
+            return make_unexpected(added.error());
+        }
+    }
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        if (Status added = roots.push_back(interpolant.value); !added) {
+            return make_unexpected(added.error());
+        }
+    }
+    if (Status built =
+            build_order(module, vertex_options, roots.span(), order, source.hoisted_statements);
         !built) {
         return make_unexpected(built.error());
     }

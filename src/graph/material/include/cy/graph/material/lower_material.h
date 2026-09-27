@@ -30,8 +30,9 @@
 // that derivation for every enumerator. An op added to `GraphOp` and not to this table is RED, in
 // the engine's own suite, before the editor is involved at all.
 //
-// Two names are NOT ops: `material.output` and `material.vertex_output`. `MaterialGraph` has no
-// output nodes — it has typed root setters — and an author needs pins for final expressions.
+// Three names are NOT ops: `material.output`, `material.vertex_output`, and
+// `material.vertex_interpolant`. `MaterialGraph` has typed root setters, and an author needs
+// pins for final expressions.
 //
 // ================================================================================================
 // A SEPARATE MODULE, AND NOT A FIFTH FILE IN `cy_graph`

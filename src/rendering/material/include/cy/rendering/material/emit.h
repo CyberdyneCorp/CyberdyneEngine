@@ -141,8 +141,8 @@ struct GeneratedSource {
 [[nodiscard]] Expected<GeneratedSource, Error> emit_program(const Module& module,
                                                             const EmitOptions& options) noexcept;
 
-/// Emit the module's world-space vertex offset as a separate float3 function. The same typed
-/// expression writer and canonical SSA order serve both material stages.
+/// Emit a vertex result containing world-space offset and named typed interpolants. The legacy
+/// `_vertex_offset` entry point remains as a wrapper around the shared vertex evaluator.
 [[nodiscard]] Expected<GeneratedSource, Error> emit_vertex_offset(
     const Module& module, const EmitOptions& options) noexcept;
 

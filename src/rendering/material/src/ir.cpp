@@ -688,6 +688,14 @@ Status Builder::set_vertex_interpolant(Name name, NodeId id) noexcept {
             return make_unexpected(invalid("a vertex interpolant needs an identifier name"));
         }
     }
+    constexpr std::string_view kBuiltInAttributes[] = {
+        "position", "object_position", "normal", "uv0", "uv1", "tangent", "color0", "time_seconds",
+    };
+    for (const std::string_view reserved : kBuiltInAttributes) {
+        if (symbol == reserved) {
+            return make_unexpected(invalid("a vertex interpolant cannot shadow a mesh attribute"));
+        }
+    }
     if (id >= module_.nodes_.size()) {
         return make_unexpected(invalid("a vertex interpolant source must be a node"));
     }

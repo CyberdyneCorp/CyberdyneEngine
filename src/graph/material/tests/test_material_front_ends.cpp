@@ -97,6 +97,43 @@ CY_TEST_CASE("graph_material: spatial vertex noise has one graph and text cook i
     CY_CHECK_EQ(graph_program->cook_key(), text_program->cook_key());
 }
 
+CY_TEST_CASE("graph_material: named vertex interpolants have graph and text cook parity") {
+    Canvas canvas("vertex_tint");
+    const auto colour = canvas.add("material.vertex_color");
+    const auto interpolant = canvas.add("material.vertex_interpolant");
+    canvas.symbol(interpolant, "tint");
+    canvas.wire(colour, interpolant, "value");
+    const auto tint = canvas.add("material.attribute");
+    canvas.symbol(tint, "tint");
+    canvas.type_of(tint, ValueType::Vec3);
+    const auto diffuse = canvas.add("material.diffuse");
+    canvas.wire(tint, diffuse, "colour");
+    const auto output = canvas.add("material.output");
+    canvas.wire(diffuse, output, "surface");
+    CY_REQUIRE(canvas.good());
+
+    MaterialGraph lowered(allocator(), Name::intern("vertex_tint"));
+    CY_REQUIRE(lower_material(canvas.graph(), lowered));
+    auto graph_ir = cy::rendering::material::lower_graph(lowered, allocator());
+    CY_REQUIRE(graph_ir.has_value());
+    cy::rendering::material::ParseDiagnostic diagnostic(allocator());
+    auto text_ir = cy::rendering::material::parse_material(
+        "material vertex_tint { attribute color0 : float3; attribute tint : float3; "
+        "vertex_interpolant tint = color0; surface = diffuse(tint); }",
+        allocator(), diagnostic);
+    CY_REQUIRE(text_ir.has_value());
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto graph_program = cy::rendering::material::compile_material(*graph_ir, options, allocator());
+    auto text_program = cy::rendering::material::compile_material(*text_ir, options, allocator());
+    CY_REQUIRE(graph_program.has_value());
+    CY_REQUIRE(text_program.has_value());
+    CY_CHECK_FALSE(graph_program->failed());
+    CY_CHECK_FALSE(text_program->failed());
+    CY_CHECK_EQ(graph_program->cook_key(), text_program->cook_key());
+}
+
 CY_TEST_CASE("graph_material: normal displacement reaches visible and shadow vertex programs") {
     Canvas canvas("raised");
     const auto amount = canvas.add("material.constant");

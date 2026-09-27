@@ -119,7 +119,7 @@ CY_TEST_CASE("material_ir: vertex offset is typed, hashed, serialised and kept f
     CY_CHECK(vertex.value().view().find(
                  "float3 cy_material_vertex_offset_case_primary_high_vertex_offset") !=
              std::string_view::npos);
-    CY_CHECK(vertex.value().view().find("return ctx.attributes.position") !=
+    CY_CHECK(vertex.value().view().find("result.offset = ctx.attributes.position") !=
              std::string_view::npos);
     DerivationOptions shadow;
     shadow.kind = ProgramKind::Shadow;
@@ -129,7 +129,7 @@ CY_TEST_CASE("material_ir: vertex offset is typed, hashed, serialised and kept f
     CY_CHECK_NE(derived.value().vertex_offset(), kInvalidNode);
     auto shadow_vertex = emit_vertex_offset(derived.value(), EmitOptions{});
     CY_REQUIRE(shadow_vertex.has_value());
-    CY_CHECK(shadow_vertex.value().view().find("return ctx.attributes.position") !=
+    CY_CHECK(shadow_vertex.value().view().find("result.offset = ctx.attributes.position") !=
              std::string_view::npos);
 
     CompileOptions options;
@@ -168,6 +168,8 @@ CY_TEST_CASE("material_ir: named vertex interpolants survive round trip and prim
     CY_CHECK_FALSE(builder.set_vertex_interpolant(Name{}, position.value()).has_value());
     CY_CHECK_FALSE(
         builder.set_vertex_interpolant(Name::intern("bad-name"), position.value()).has_value());
+    CY_CHECK_FALSE(
+        builder.set_vertex_interpolant(Name::intern("position"), position.value()).has_value());
     CY_CHECK_FALSE(builder.set_vertex_interpolant(colour, closure.value()).has_value());
     CY_REQUIRE(builder.set_vertex_interpolant(colour, position.value()));
     CY_REQUIRE(builder.set_vertex_interpolant(height, scalar.value()));
@@ -211,6 +213,13 @@ CY_TEST_CASE("material_ir: named vertex interpolants survive round trip and prim
     auto visible = derive_program(*optimised, DerivationOptions{});
     CY_REQUIRE(visible.has_value());
     CY_CHECK_EQ(visible->vertex_interpolants().size(), 2U);
+    auto vertex = emit_vertex_offset(*visible, EmitOptions{});
+    CY_REQUIRE(vertex.has_value());
+    CY_CHECK(vertex->view().find("float height;") != std::string_view::npos);
+    CY_CHECK(vertex->view().find("float3 tint;") != std::string_view::npos);
+    CY_CHECK(vertex->view().find("result.tint = ctx.attributes.position") !=
+             std::string_view::npos);
+    CY_CHECK(vertex->view().find("result.height = 0.5") != std::string_view::npos);
     DerivationOptions shadow;
     shadow.kind = ProgramKind::Shadow;
     auto silhouette = derive_program(*optimised, shadow);
@@ -222,14 +231,11 @@ CY_TEST_CASE("material_ir: named vertex interpolants survive round trip and prim
     options.derive_tiers = false;
     auto compiled = compile_material(*authored, options, allocator());
     CY_REQUIRE(compiled.has_value());
-    CY_CHECK(compiled->failed());
-    bool named_refusal = false;
-    for (const CompileDiagnostic& diagnostic : compiled->diagnostics()) {
-        named_refusal = named_refusal || (std::string_view(diagnostic.code) ==
-                                              "vertex-interpolant-binding-unavailable" &&
-                                          diagnostic.subject == colour);
-    }
-    CY_CHECK(named_refusal);
+    CY_CHECK_FALSE(compiled->failed());
+    const CompiledProgram* program = compiled->find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    CY_CHECK(program->vertex_source.view().find("result.tint = ctx.attributes.position") !=
+             std::string_view::npos);
 }
 
 CY_TEST_CASE("material_ir: the program does not depend on node ids") {

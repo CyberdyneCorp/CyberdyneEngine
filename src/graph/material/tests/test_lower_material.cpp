@@ -67,7 +67,7 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
     for (const auto& type : types) {
         offered.emplace_back(type);
     }
-    CY_CHECK(offered.size() == static_cast<usize>(GraphOp::Count) + 2U);
+    CY_CHECK(offered.size() == static_cast<usize>(GraphOp::Count) + 3U);
     for (u32 index = 0; index < static_cast<u32>(GraphOp::Count); ++index) {
         const std::string expected =
             std::string("material.") +
@@ -76,6 +76,8 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
     }
     CY_CHECK(std::ranges::find(offered, std::string("material.output")) != offered.end());
     CY_CHECK(std::ranges::find(offered, std::string("material.vertex_output")) != offered.end());
+    CY_CHECK(std::ranges::find(offered, std::string("material.vertex_interpolant")) !=
+             offered.end());
 }
 
 CY_TEST_CASE("graph_material: every catalogue node and pin has a stable nonzero identity") {
@@ -177,7 +179,8 @@ CY_TEST_CASE("graph_material: the pin an author wires is the port the compiler r
     // entry, wire a constant into every input pin in turn and require it to land on the port index
     // `MaterialGraph::input` reports — which is the number `graph.h` fixes the meaning of.
     for (const auto& type : material_node_types()) {
-        if (type == "material.output" || type == "material.vertex_output") {
+        if (type == "material.output" || type == "material.vertex_output" ||
+            type == "material.vertex_interpolant") {
             continue;
         }
         cy::graph::PinDesc storage[cy::graph::material::kMaxPins];

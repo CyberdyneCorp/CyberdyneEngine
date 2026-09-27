@@ -323,7 +323,8 @@ MaterialGraph::MaterialGraph(Allocator& allocator, Name material_name) noexcept
       nodes_(allocator),
       links_(allocator),
       parameters_(allocator),
-      textures_(allocator) {}
+      textures_(allocator),
+      vertex_interpolants_(allocator) {}
 
 Status MaterialGraph::declare_parameter(const ParameterDecl& decl) noexcept {
     return parameters_.push_back(decl);
@@ -414,6 +415,20 @@ Status MaterialGraph::set_vertex_displacement_output(u32 node) noexcept {
     return ok();
 }
 
+Status MaterialGraph::set_vertex_interpolant_output(Name name, u32 node) noexcept {
+    if (node >= nodes_.size() || name.is_empty()) {
+        return make_unexpected(Error{ErrorCode::InvalidArgument,
+                                     "a vertex interpolant needs a name and source node", 0});
+    }
+    for (const GraphVertexInterpolant& existing : vertex_interpolants_) {
+        if (existing.name == name) {
+            return make_unexpected(
+                Error{ErrorCode::AlreadyExists, "a vertex interpolant name is already used", 0});
+        }
+    }
+    return vertex_interpolants_.push_back(GraphVertexInterpolant{name, node});
+}
+
 u32 MaterialGraph::input(u32 node, u8 port) const noexcept {
     if (node >= nodes_.size() || port >= kMaxPorts) {
         return kInvalidNode;
@@ -479,6 +494,13 @@ Expected<Module, Error> lower_graph(const MaterialGraph& graph, Allocator& alloc
     }
     if (*vertex_offset != kInvalidNode) {
         if (Status set = builder.set_vertex_offset(*vertex_offset); !set) {
+            return make_unexpected(set.error());
+        }
+    }
+    for (const GraphVertexInterpolant& interpolant : graph.vertex_interpolants()) {
+        if (Status set =
+                builder.set_vertex_interpolant(interpolant.name, mapped[interpolant.source]);
+            !set) {
             return make_unexpected(set.error());
         }
     }

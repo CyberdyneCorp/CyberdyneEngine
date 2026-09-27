@@ -233,11 +233,16 @@ struct Build {
         return ok();
     }
     for (const VertexInterpolant& interpolant : primary.vertex_interpolants()) {
-        if (Status said = say(
-                diagnostics, DiagnosticSeverity::Error, "vertex-interpolant-binding-unavailable",
-                "this renderer has no vertex-to-surface interpolant binding yet", interpolant.name);
-            !said) {
-            return said;
+        for (const Node& node : primary.nodes()) {
+            if (node.op == Op::Attribute && node.symbol == interpolant.name &&
+                node.type != interpolant.type) {
+                if (Status said =
+                        say(diagnostics, DiagnosticSeverity::Error, "vertex-interpolant-type",
+                            "the surface read must match the vertex output type", interpolant.name);
+                    !said) {
+                    return said;
+                }
+            }
         }
     }
     Array<u8> visited(allocator);
@@ -264,6 +269,19 @@ struct Build {
         }
         visited[id] = 1;
         const Node& node = primary.node(id);
+        if (node.op == Op::Attribute) {
+            for (const VertexInterpolant& interpolant : primary.vertex_interpolants()) {
+                if (node.symbol == interpolant.name) {
+                    if (Status said = say(diagnostics, DiagnosticSeverity::Error,
+                                          "vertex-interpolant-stage-dependency",
+                                          "a vertex output cannot read a surface interpolant",
+                                          interpolant.name);
+                        !said) {
+                        return said;
+                    }
+                }
+            }
+        }
         if (node.op == Op::TextureSample || node.op == Op::Custom) {
             CompileDiagnostic diagnostic;
             diagnostic.severity = DiagnosticSeverity::Error;
@@ -348,7 +366,8 @@ struct Build {
     emit.shading_model = render::shading_model_name(lowered.model);
     emit.canonical_order = options.passes.canonical_emission_order;
     emit.hoist_uniform = options.passes.uniform_varying;
-    if (program.module.vertex_offset() != kInvalidNode) {
+    if (program.module.vertex_offset() != kInvalidNode ||
+        !program.module.vertex_interpolants().empty()) {
         auto vertex = emit_vertex_offset(program.module, emit);
         if (!vertex) {
             return make_unexpected(vertex.error());
