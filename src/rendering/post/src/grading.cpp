@@ -172,7 +172,13 @@ Vec3 sample_grading_lut(const Vec3* lut, u32 size, Vec3 colour) noexcept {
     if (lut == nullptr || size < 2) {
         return colour;
     }
-    const Vec3 encoded = log_encode(colour);
+    return sample_lut_encoded(lut, size, log_encode(colour));
+}
+
+Vec3 sample_lut_encoded(const Vec3* lut, u32 size, Vec3 encoded) noexcept {
+    if (lut == nullptr || size < 2) {
+        return encoded;
+    }
     const f32 last = static_cast<f32>(size - 1U);
     const f32 fx = math::saturate(encoded.x) * last;
     const f32 fy = math::saturate(encoded.y) * last;

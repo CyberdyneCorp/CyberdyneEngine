@@ -12,6 +12,8 @@ The post-process chain, in its defined order, with the colour space each stage o
 | `exposure.h` | manual, camera and automatic exposure; the histogram percentile; adaptation with two speeds |
 | `tonemap.h` | the six operators, AgX by default, and the output transfer functions |
 | `grading.h` | every grading control, the log encoding, and the bake into one 3D LUT |
+| `lut.h` | the `.cube` parser, the display-referred log encoding the runtime table is indexed in, and the bake of a grade and a `.cube` into that table |
+| `look.h` | the `.cygrade` look: the parametric controls, a `.cube` and the table size, as content |
 | `effects.h` | the derivations: AO, froxel fog, circle of confusion, motion blur, bloom — the soft knee, the Karis weight, the level weights and the redistributing composite |
 | `volumes.h` | the post-process volume stack, blended **per parameter** by normalised weight |
 | `quality.h` | five levels per stage, each with a declared cost, and the fit against a frame budget |
@@ -118,7 +120,8 @@ GPU.
 
 The gathers, the blurs, the histogram compute pass and the froxel volume itself are shaders, and
 they belong with the frame's passes. Bloom's downsample and upsample chain is the first of them to
-exist — see the section above; the others do not yet.
+exist — see the section above — and the metering histogram is the second, in
+`src/rendering/grading/`; the others do not yet.
 
 Two stages of this chain are consumers of `src/rendering/temporal/` rather than implementations:
 `rendering-post-processing` says TAA "SHALL consume the temporal framework… It SHALL NOT implement
@@ -131,6 +134,24 @@ them.
 The internal resolution an upscaler renders at arrives as a parameter and is never decided here:
 `rendering-post-processing` says it "SHALL be a budget allocation held by the renderer budget
 arbiter… not an independent controller measuring frame time".
+
+## Exposure and grading on the device
+
+`src/rendering/grading/` runs this module's exposure and grading arithmetic on a frame: three
+compute dispatches meter the scene-referred colour into a 256-bin histogram and adapt an EV100
+(`luminance_histogram_bin`, `metered_ev100`, `adapt_ev100`, statement for statement), and a graded
+resolve applies the exposure, the tone curve and one lookup into a table `bake_display_lut` baked.
+
+| Where | What |
+|---|---|
+| `exposure.h` | `exposure_stops_for_ev100` — a physical EV100 as the stops the frame's globals carry, `-EV100 - log2(1.2)`; the histogram binning; `adaptation_seconds`, the stated adaptation time |
+| `lut.h` | `display_log_encode`: `log2(1 + 4096 x) / log2(4097)`, exact at 0 and 1, for step 12's [0, 1] range; the table stores encoded outputs, so interpolation is exact for anything linear in the encoding |
+| `look.h` | the `.cygrade` file a look is committed as; `content/beauty/looks/` holds two |
+
+**Two encodings, two places in the chain.** `log_encode` spans eighteen stops of scene light and is
+what a pre-tonemap table would want; `display_log_encode` spans the display range and is what the
+runtime's step-12 table uses. `bake_grading_lut` and `bake_display_lut` are the two bakes, and each
+has its own agreement test in `integration.render_post_bake`.
 
 ## Ambient occlusion on the device
 
