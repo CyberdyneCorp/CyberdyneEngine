@@ -112,11 +112,12 @@ function(cy_editor_window_runtime_declare_tests)
             SOURCES
                 "${tests_dir}/test_material_metal.cpp"
                 "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader cy::shader-slang cy::rhi-metal
-                cy::rhi-null
+                cy::rhi-null cy::weather
             DEFINITIONS
                 "CY_SAMPLE_PROJECT=\"${tests_dir}/../../project\""
                 "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\""

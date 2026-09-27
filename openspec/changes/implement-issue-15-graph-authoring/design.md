@@ -145,13 +145,15 @@ shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
 Discovery of non-static scene geometry sources remains in task 3.2. The authored scene frame now
 compiles vertex offsets and interpolants for its static meshes, including visible, depth, and
-shadow passes. Its first-light material preview still lacks an environment-field provider, while
-the authored scene binds the weather-owned `wind` field. Other field names receive an explicit
-refusal. The procedural wind node remains a separate operation.
-The first-light shader assembler now accepts the typed `wind` read and supplies the mesh's
-camera-relative position to both vertex and fragment material contexts. Publishing that program
-still refuses it until the first-light renderer binds the Engine field image and its separate
-camera-to-image constants; the scene preview path already supplies those resources.
+shadow passes. The authored scene binds the weather-owned `wind` field. The first-light material
+preview now uses the same `WindFieldPreview` provider when a field graph is active. Its renderer
+uploads the Engine image into the global descriptor table's storage-buffer slot and keeps the
+origin in f64 until each camera's relative offset is written to the material field block. Camera
+motion outside the preview region republishes the weather image. The shader assembler supplies
+the mesh's camera-relative position to both vertex and fragment contexts. Other field names
+receive an explicit refusal. The procedural wind node remains a separate operation. A native
+material-mesh image comparison is encoded but has not run on this sandbox's unavailable Metal
+device.
 
 The field path must use `environment::build_deterministic_field_image` for the weather-owned
 `environment::fields::kWind` declaration, retain the image origin, and pass coordinates made local

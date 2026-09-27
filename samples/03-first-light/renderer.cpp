@@ -40,6 +40,12 @@ struct ObjectPush {
     f32 base_color[4] = {};
 };
 
+struct MaterialFieldBinding {
+    u32 slot = 0;
+    f32 camera_to_image[3] = {};
+};
+static_assert(sizeof(MaterialFieldBinding) == 16);
+
 static_assert(sizeof(ObjectPush) <= rhi::kMaxPushConstantBytes,
               "the push block must fit the portability limit every backend guarantees");
 static_assert(sizeof(ObjectPush) == kObjectPushBytes,
@@ -94,12 +100,14 @@ struct Renderer::PassState {
 struct Renderer::MaterialState {
     struct Program {
         u64 artefact = 0;
+        bool has_wind = false;
         rhi::ShaderModuleHandle vertex;
         rhi::ShaderModuleHandle shadow_vertex;
         rhi::ShaderModuleHandle fragment;
         rhi::GraphicsPipelineHandle pipeline;
         rhi::GraphicsPipelineHandle shadow_pipeline;
         rhi::BufferHandle parameters;
+        rhi::BufferHandle field_parameters;
         rhi::DescriptorSetHandle descriptor_set;
     };
 
@@ -352,7 +360,7 @@ Renderer::~Renderer() {
         device.destroy_sampler(albedo_sampler_);
     }
     for (const rhi::BufferHandle buffer :
-         {readback_buffer_, checker_staging_, constants_, indices_, vertices_}) {
+         {wind_field_image_, readback_buffer_, checker_staging_, constants_, indices_, vertices_}) {
         if (!buffer.is_null()) {
             device.destroy_buffer(buffer);
         }
@@ -381,6 +389,9 @@ void Renderer::destroy_material_runtime() noexcept {
         }
         if (!program.parameters.is_null()) {
             device_->destroy_buffer(program.parameters);
+        }
+        if (!program.field_parameters.is_null()) {
+            device_->destroy_buffer(program.field_parameters);
         }
     }
     if (checker_bindless_ != rhi::kInvalidBindlessIndex) {
@@ -498,11 +509,15 @@ Status Renderer::create_pipelines() noexcept {
     }
     set_layout_ = *layout;
 
-    const rhi::DescriptorBinding material_binding{0, rhi::DescriptorKind::UniformBuffer, 1,
-                                                  rhi::ShaderStage::Fragment, false};
+    const rhi::DescriptorBinding material_bindings[] = {
+        {0, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+        {1, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+    };
     rhi::DescriptorSetLayoutDescription material_set;
     material_set.name = "first-light compiled material parameters";
-    material_set.bindings = {&material_binding, 1};
+    material_set.bindings = material_bindings;
     auto created_material_set = device_->create_descriptor_set_layout(material_set);
     if (!created_material_set.has_value()) {
         return make_unexpected(created_material_set.error());
@@ -818,10 +833,60 @@ void Renderer::write_frame_constants(const Scene& scene, const Camera& camera) n
     *block = constants;
 }
 
+Status Renderer::set_material_wind_field(Span<const u32> words, f64 origin_x,
+                                         f64 origin_z) noexcept {
+    if (words.empty() || !std::isfinite(origin_x) || !std::isfinite(origin_z)) {
+        return fail(ErrorCode::InvalidArgument, "first-light: the wind image or origin is invalid");
+    }
+    if (device_->descriptor_model() != rhi::DescriptorModel::Bindless ||
+        device_->global_texture_table().is_null()) {
+        return fail(ErrorCode::Unsupported,
+                    "first-light: wind materials require the global field table");
+    }
+    rhi::BufferDescription description;
+    description.name = "first-light weather wind image";
+    description.size = words.size() * sizeof(u32);
+    description.usage = rhi::BufferUsage::Storage;
+    description.memory = rhi::MemoryUse::Upload;
+    auto created = device_->create_buffer(description);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    void* mapped = device_->buffer_mapped_pointer(*created);
+    if (mapped == nullptr) {
+        device_->destroy_buffer(*created);
+        return fail(ErrorCode::Internal, "first-light: the wind image is not mapped");
+    }
+    std::memcpy(mapped, words.data(), description.size);
+    if (Status idle = device_->wait_idle(); !idle) {
+        device_->destroy_buffer(*created);
+        return idle;
+    }
+    rhi::DescriptorWrite write{};
+    write.binding = rhi::kGlobalTableFieldBinding;
+    write.array_index = 0;
+    write.kind = rhi::DescriptorKind::StorageBuffer;
+    write.buffer = *created;
+    write.buffer_range = description.size;
+    if (Status updated =
+            device_->update_descriptor_set(device_->global_texture_table(), {&write, 1});
+        !updated) {
+        device_->destroy_buffer(*created);
+        return updated;
+    }
+    if (!wind_field_image_.is_null()) {
+        device_->destroy_buffer(wind_field_image_);
+    }
+    wind_field_image_ = *created;
+    wind_origin_x_ = origin_x;
+    wind_origin_z_ = origin_z;
+    return ok();
+}
+
 Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const char* vertex_entry,
                                  Span<const u8> fragment_msl, const char* fragment_entry,
                                  Span<const u8> shadow_msl, const char* shadow_entry,
-                                 Span<const u8> parameters) noexcept {
+                                 Span<const u8> parameters, bool has_wind) noexcept {
     if (artefact == 0 || vertex_msl.empty() || fragment_msl.empty() || shadow_msl.empty() ||
         vertex_entry == nullptr || fragment_entry == nullptr || shadow_entry == nullptr ||
         parameters.size() > rendering::kMaterialBlockBytes) {
@@ -843,9 +908,13 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
 
     MaterialState::Program program;
     program.artefact = artefact;
+    program.has_wind = has_wind;
     const auto discard = [&] {
         if (!program.parameters.is_null()) {
             device_->destroy_buffer(program.parameters);
+        }
+        if (!program.field_parameters.is_null()) {
+            device_->destroy_buffer(program.field_parameters);
         }
         if (!program.shadow_pipeline.is_null()) {
             device_->destroy_graphics_pipeline(program.shadow_pipeline);
@@ -944,18 +1013,38 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
         return make_unexpected(created_buffer.error());
     }
     program.parameters = *created_buffer;
+    if (has_wind) {
+        rhi::BufferDescription field_block;
+        field_block.name = "first-light material wind binding";
+        field_block.size = sizeof(MaterialFieldBinding);
+        field_block.usage = rhi::BufferUsage::Uniform;
+        field_block.memory = rhi::MemoryUse::Upload;
+        auto created_field = device_->create_buffer(field_block);
+        if (!created_field) {
+            discard();
+            return make_unexpected(created_field.error());
+        }
+        program.field_parameters = *created_field;
+    }
     auto created_set = device_->allocate_descriptor_set(material_set_layout_, false);
     if (!created_set.has_value()) {
         discard();
         return make_unexpected(created_set.error());
     }
     program.descriptor_set = *created_set;
-    rhi::DescriptorWrite write{};
-    write.binding = 0;
-    write.kind = rhi::DescriptorKind::UniformBuffer;
-    write.buffer = program.parameters;
-    write.buffer_range = rendering::kMaterialBlockBytes;
-    if (Status updated = device_->update_descriptor_set(program.descriptor_set, {&write, 1});
+    rhi::DescriptorWrite writes[2]{};
+    writes[0].binding = 0;
+    writes[0].kind = rhi::DescriptorKind::UniformBuffer;
+    writes[0].buffer = program.parameters;
+    writes[0].buffer_range = rendering::kMaterialBlockBytes;
+    if (has_wind) {
+        writes[1].binding = 1;
+        writes[1].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[1].buffer = program.field_parameters;
+        writes[1].buffer_range = sizeof(MaterialFieldBinding);
+    }
+    if (Status updated =
+            device_->update_descriptor_set(program.descriptor_set, {writes, has_wind ? 2U : 1U});
         !updated) {
         discard();
         return updated;
@@ -968,6 +1057,15 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     }
     std::memset(mapped, 0, rendering::kMaterialBlockBytes);
     std::memcpy(mapped, parameters.data(), parameters.size());
+    if (has_wind) {
+        void* field = device_->buffer_mapped_pointer(program.field_parameters);
+        if (field == nullptr) {
+            discard();
+            return fail(ErrorCode::Internal,
+                        "first-light: the material wind binding is not mapped");
+        }
+        std::memset(field, 0, sizeof(MaterialFieldBinding));
+    }
     if (Status retained = materials_->programs.push_back(program); !retained) {
         discard();
         return retained;
@@ -1022,6 +1120,26 @@ void Renderer::unbind_material(u32 object, u32 material_slot, u64 artefact) noex
 Expected<FrameReport, Error> Renderer::render(const Scene& scene, const Camera& camera) noexcept {
     if (forward_pipeline_.is_null()) {
         return fail(ErrorCode::Unavailable, "first-light: prepare() was not called");
+    }
+    for (u64 artefact : materials_->object_artefacts) {
+        const MaterialState::Program* program = materials_->find(artefact);
+        if (program == nullptr || !program->has_wind) {
+            continue;
+        }
+        if (wind_field_image_.is_null()) {
+            return fail(ErrorCode::Unavailable,
+                        "first-light: a wind material has no Engine field image");
+        }
+        auto* binding = static_cast<MaterialFieldBinding*>(
+            device_->buffer_mapped_pointer(program->field_parameters));
+        if (binding == nullptr) {
+            return fail(ErrorCode::Internal,
+                        "first-light: the material wind binding is not mapped");
+        }
+        binding->slot = 0;
+        binding->camera_to_image[0] = static_cast<f32>(camera.position[0] - wind_origin_x_);
+        binding->camera_to_image[1] = static_cast<f32>(camera.position[1]);
+        binding->camera_to_image[2] = static_cast<f32>(camera.position[2] - wind_origin_z_);
     }
     rhi::Device& device = *device_;
     if (Expected<u32, Error> began = device.begin_frame(); !began.has_value()) {

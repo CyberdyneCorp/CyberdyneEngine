@@ -10,6 +10,7 @@
 #include <cy_reflect_generated_scene.h>
 
 #include "material_runtime.h"
+#include "wind_field_preview.h"
 
 #include <cstdio>
 #include <cstring>
@@ -210,6 +211,58 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
     scene.objects_mutable()[object].world_position[1] += 2.0;
     CY_REQUIRE(renderer.render(scene, camera).has_value());
     CY_CHECK_FALSE(images_differ(offset_image.span(), renderer.color_texels()));
+}
+
+CY_TEST_CASE("a weather-owned wind field moves the hosted Metal material mesh") {
+    Device device;
+    if (!device.native_metal()) {
+        const bool unavailable = device.handle == nullptr || device.selection.fell_back;
+        CY_CHECK(unavailable);
+        return;
+    }
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    scene_description.box_count = kWorldCapacity;
+    CY_REQUIRE(scene.build(scene_description));
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    WorldView world(allocator());
+    CY_REQUIRE(world.open(CY_SAMPLE_PROJECT, "worlds/city.cyworld", types));
+    CY_REQUIRE_EQ(world.present(scene), 3U);
+    first_light::Renderer renderer(allocator(), *device.handle);
+    first_light::RendererOptions options;
+    options.width = 160;
+    options.height = 90;
+    options.readback = true;
+    CY_REQUIRE(renderer.prepare(scene, options));
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto plain = compile_material(
+        "material wind_sway { surface = diffuse((0.5, 0.5, 0.5)); opacity = 1.0; }");
+    auto wind = compile_material(
+        "material wind_sway { field wind : float3; vertex_offset = wind * 0.05; "
+        "surface = diffuse((0.5, 0.5, 0.5)); opacity = 1.0; }");
+    CY_REQUIRE(runtime.publish(plain.cook_key(), plain));
+    CY_REQUIRE(runtime.publish(wind.cook_key(), wind));
+    constexpr u64 preview = 2;
+    CY_REQUIRE(runtime.create(preview));
+    const u64 entity = world.identity_of(1);
+    CY_REQUIRE_NE(entity, 0U);
+    editor::MaterialPreviewTarget target;
+    std::memcpy(target.entity, &entity, sizeof(entity));
+    target.material_slot = 0;
+    const first_light::Camera camera = world.framing(scene);
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    Array<u32> baseline = copy_image(renderer.color_texels());
+    CY_REQUIRE(runtime.reload(preview, wind.cook_key(), {&target, 1}));
+    CY_CHECK_FALSE(renderer.render(scene, camera).has_value());
+    CY_REQUIRE(runtime.prepare_frame(camera));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    CY_CHECK(images_differ(baseline.span(), renderer.color_texels()));
+    first_light::Camera moved = camera;
+    moved.position[0] += 300.0;
+    CY_REQUIRE(runtime.prepare_frame(moved));
+    CY_CHECK(renderer.render(scene, moved).has_value());
 }
 
 CY_TEST_CASE("a compiled vertex colour shades the hosted Metal material mesh") {
@@ -444,6 +497,36 @@ CY_TEST_CASE("the hosted material shader gives typed wind a camera-relative fiel
     CY_CHECK(shader.find("ctx.fieldPosition = input.positionRelativeToCamera") !=
              std::string_view::npos);
     CY_CHECK(shader.find("cyFieldSampleScene(binding.slot, at.x, at.y, at.z)") !=
+             std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted wind preview compiles Engine field sampling before device binding") {
+    rhi::DeviceDescription description;
+    auto created = rhi::null::create_null_device(allocator(), description);
+    CY_REQUIRE(created.has_value());
+    struct NullOwner {
+        rhi::Device* handle;
+        ~NullOwner() { rhi::null::destroy_null_device(allocator(), handle); }
+    } device{*created};
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    CY_REQUIRE(scene.build(scene_description));
+    first_light::Renderer renderer(allocator(), *device.handle);
+    CY_REQUIRE(renderer.prepare(scene, {}));
+    WindFieldPreview weather(allocator());
+    CY_REQUIRE(weather.initialize({0.0, 2.0, 0.0}));
+    const auto& image = weather.image();
+    CY_REQUIRE(
+        renderer.set_material_wind_field(image.words.span(), image.origin_x, image.origin_z));
+    WorldView world(allocator());
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto material = compile_material(
+        "material wind_sway { field wind : float3; vertex_offset = wind * 0.05; "
+        "surface = diffuse((0.5, 0.5, 0.5)); opacity = 1.0; }");
+    const Status published = runtime.publish(material.cook_key(), material);
+    CY_CHECK_FALSE(published);
+    CY_CHECK_EQ(published.error().code, ErrorCode::InvalidArgument);
+    CY_CHECK(std::string_view(published.error().message).find("Metal renderer rejected") !=
              std::string_view::npos);
 }
 

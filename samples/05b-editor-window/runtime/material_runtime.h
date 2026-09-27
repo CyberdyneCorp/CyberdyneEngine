@@ -9,7 +9,11 @@
 #include "renderer.h"
 #include "world_view.h"
 
+#include <memory>
+
 namespace cy::sample::editor_window {
+
+class WindFieldPreview;
 
 /// Assemble the engine-compiled surface and vertex sources into the hosted material program.
 [[nodiscard]] Status assemble_material_unit(const rendering::material::CompiledProgram& program,
@@ -47,6 +51,7 @@ public:
 
     [[nodiscard]] Status publish(
         u64 artefact, const rendering::material::CompiledMaterial& material) noexcept override;
+    [[nodiscard]] Status prepare_frame(const first_light::Camera& camera) noexcept;
     [[nodiscard]] Status create(u64 preview) noexcept override;
     [[nodiscard]] Status reload(
         u64 preview, u64 artefact,
@@ -67,6 +72,8 @@ private:
     WorldView* world_;
     Array<Program> programs_;
     Array<Preview> previews_;
+    std::unique_ptr<WindFieldPreview> wind_;
+    bool wind_requested_ = false;
 };
 
 }  // namespace cy::sample::editor_window

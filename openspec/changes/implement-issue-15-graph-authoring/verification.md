@@ -215,4 +215,11 @@ vertex and fragment contexts for a typed `wind` graph. The focused
 the full `smoke.editor_material_metal` suite passed 12 cases and 99 assertions on this host. Removing
 the vertex field-position assignment made the focused case fail 2 of 10 assertions; restoring it
 returned the test to green. Native image cases still stop at the Metal availability check, and
-`MetalMaterialRuntime::publish` refuses field graphs until the first-light renderer has a provider.
+the first-light renderer now binds an Engine weather image before drawing a field graph. The
+headless `the hosted wind preview compiles Engine field sampling before device binding` test
+compiles the generated wind program through Slang to MSL and reaches only the null device's named
+Metal-pipeline refusal. The new native `a weather-owned wind field moves the hosted Metal material
+mesh` case verifies a missing image refusal, then compares wind and plain pixels and refreshes at
+a moved camera; its image assertions have not run on this host. The bounded field-table null test
+passed 6 assertions. Temporarily changing its global table binding count back to two made its
+valid write fail (5 of 6 assertions); restoring binding three returned the case to green.

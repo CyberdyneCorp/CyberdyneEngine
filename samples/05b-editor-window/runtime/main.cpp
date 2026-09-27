@@ -275,6 +275,9 @@ struct Host {
     AuthoredFrame* authored_frame = nullptr;
     first_light::Scene* scene = nullptr;
     first_light::Renderer* renderer = nullptr;
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+    MetalMaterialRuntime* material_runtime = nullptr;
+#endif
     viewport::Publisher* publisher = nullptr;
     /// M6'S CONTROL HALF, JOINED TO M7'S PIXEL HALF. `cy::render::ViewportTransport` records the
     /// frame's identity, the view state it was rendered with, and what it cost; its own header says
@@ -1086,6 +1089,12 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
         }
         texels = host.authored_frame->pixels();
     } else {
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+        if (Status prepared = host.material_runtime->prepare_frame(host.camera); !prepared) {
+            report("material wind field", prepared.error());
+            return false;
+        }
+#endif
         host.renderer->set_time_seconds(time_seconds);
         const Expected<first_light::FrameReport, Error> frame =
             host.renderer->render(*host.scene, host.camera);
@@ -1461,6 +1470,9 @@ int main(int argc, char** argv) {
         host.scripts = &scripts;
         host.physics = physics_server;
         host.renderer = &renderer;
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+        host.material_runtime = &material_runtime;
+#endif
         host.publisher = publisher->get();
         host.bridge = &bridge;
         host.editor_service = &editor_service;

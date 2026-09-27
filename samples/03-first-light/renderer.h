@@ -114,8 +114,12 @@ public:
     [[nodiscard]] Status retain_material(u64 artefact, Span<const u8> vertex_msl,
                                          const char* vertex_entry, Span<const u8> fragment_msl,
                                          const char* fragment_entry, Span<const u8> shadow_msl,
-                                         const char* shadow_entry,
-                                         Span<const u8> parameters) noexcept;
+                                         const char* shadow_entry, Span<const u8> parameters,
+                                         bool has_wind = false) noexcept;
+    /// Publish one Engine field image at the global table's wind slot. The image origin stays in
+    /// f64 until render() derives the camera-relative coordinates for each material.
+    [[nodiscard]] Status set_material_wind_field(Span<const u32> words, f64 origin_x,
+                                                 f64 origin_z) noexcept;
     [[nodiscard]] Status update_material(u64 artefact, Span<const u8> parameters) noexcept;
     /// Bind the retained program to one exact scene object. This sample has one section per object,
     /// so slot zero is the only representable material slot and every other slot is rejected.
@@ -159,6 +163,9 @@ private:
     rhi::BufferHandle constants_;
     rhi::BufferHandle checker_staging_;
     rhi::BufferHandle readback_buffer_;
+    rhi::BufferHandle wind_field_image_;
+    f64 wind_origin_x_ = 0.0;
+    f64 wind_origin_z_ = 0.0;
     rhi::TextureHandle albedo_;
     rhi::TextureViewHandle albedo_view_;
     /// A persistent texture rather than a graph transient, so that the descriptor set can be

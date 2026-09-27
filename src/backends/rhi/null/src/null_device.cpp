@@ -220,12 +220,13 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
     memory_.device_heap_budget = memory_.device_heap_size;
 
     // THE GLOBAL TEXTURE TABLE, which this backend has because the Vulkan one does and a program
-    // written against it must be buildable with no GPU. `cy/material.slang`'s two bindings, as
+    // written against it must be buildable with no GPU. `cy/material.slang`'s texture and sampler
+    // plus `cy/field.slang`'s storage-buffer table, as
     // records: no descriptor is written anywhere, but the handles are real, they go into a pipeline
     // layout and a bind, and a caller that forgot to name the layout fails here as it would there.
     NullDescriptorSetLayout table_layout;
     table_layout.name.assign("global texture table layout");
-    table_layout.binding_count = 2;
+    table_layout.binding_count = 3;
     table_layout.has_runtime_array = true;
     if (Expected<DescriptorSetLayoutHandle, Error> handle = set_layouts_.create(table_layout);
         handle) {
@@ -766,6 +767,15 @@ Status NullDevice::update_descriptor_set(DescriptorSetHandle set,
         return fail(ErrorCode::NotFound, "update_descriptor_set(): stale set handle");
     }
     for (const DescriptorWrite& write : writes) {
+        if (stored->layout == bindless_layout_ && write.binding == kGlobalTableFieldBinding) {
+            const NullDescriptorSetLayout* layout = set_layouts_.resolve(bindless_layout_);
+            if (layout == nullptr || layout->binding_count < 3 ||
+                write.kind != DescriptorKind::StorageBuffer ||
+                write.array_index >= kGlobalTableFieldSlots || write.buffer.is_null()) {
+                return fail(ErrorCode::InvalidArgument,
+                            "global field-table write requires a bounded storage buffer");
+            }
+        }
         // Every handle a write names is validated, because a descriptor written with a stale handle
         // is the failure mode this whole handle model exists to catch, and on a real device it is a
         // silent read of whatever took the slot.

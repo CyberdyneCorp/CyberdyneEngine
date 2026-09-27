@@ -2968,6 +2968,11 @@ private:
              .kind = DescriptorKind::Sampler,
              .count = 1,
              .stages = ShaderStage::Vertex | ShaderStage::Fragment | ShaderStage::Compute},
+            {.binding = kGlobalTableFieldBinding,
+             .kind = DescriptorKind::StorageBuffer,
+             .count = kGlobalTableFieldSlots,
+             .stages = ShaderStage::Vertex | ShaderStage::Fragment | ShaderStage::Compute,
+             .partially_bound = true},
         };
         DescriptorSetLayoutDescription layout_description;
         layout_description.name = "Metal global texture table";

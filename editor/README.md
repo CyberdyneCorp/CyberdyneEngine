@@ -468,7 +468,10 @@ the hosted compiled-material preview passes that attribute through to vertex and
 Its generated mesh assigns a different colour to each face axis for a visible preview.
 The `displacement` pin accepts a scalar distance in metres; the engine combines it with any
 connected `offset` as `offset + normal * displacement` for visible and shadow vertex programs.
-The actual `environment-fields` wind binding and custom interpolants are tracked by issue #15.
+The typed `wind` field node samples the Engine weather field in the authored scene and hosted
+material mesh previews. The material mesh renderer refreshes its weather image when the camera
+moves outside the preview region; other field names receive a named refusal. Native pixel proof
+and remaining custom-interpolant acceptance work are tracked by issue #15.
 When an opened graph is assigned to a mesh in the active scene, including an imported material
 slot, Validate and Compile send `StaticMesh` to the Engine material compiler. A material assigned
 to a terrain layer sends `Terrain`; a material used by both requests both variants. The editor

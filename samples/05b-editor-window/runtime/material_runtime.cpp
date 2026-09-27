@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "material_runtime.h"
+#include "wind_field_preview.h"
 
 #include <cy/backends/shader/compiler.h>
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
@@ -923,6 +924,28 @@ MetalMaterialRuntime::MetalMaterialRuntime(Allocator& allocator, first_light::Re
 
 MetalMaterialRuntime::~MetalMaterialRuntime() = default;
 
+Status MetalMaterialRuntime::prepare_frame(const first_light::Camera& camera) noexcept {
+    if (!wind_requested_) {
+        return ok();
+    }
+    const world::WorldVec3d centre{camera.position[0], camera.position[1], camera.position[2]};
+    if (wind_ != nullptr && wind_->covers(centre)) {
+        return ok();
+    }
+    auto next = std::make_unique<WindFieldPreview>(*allocator_);
+    if (Status ready = next->initialize(centre); !ready) {
+        return ready;
+    }
+    const auto& image = next->image();
+    if (Status bound =
+            renderer_->set_material_wind_field(image.words.span(), image.origin_x, image.origin_z);
+        !bound) {
+        return bound;
+    }
+    wind_ = std::move(next);
+    return ok();
+}
+
 MetalMaterialRuntime::Program* MetalMaterialRuntime::find_program(u64 artefact) noexcept {
     for (Program& program : programs_) {
         if (program.artefact == artefact) {
@@ -954,11 +977,9 @@ Status MetalMaterialRuntime::publish(
         return fail(ErrorCode::InvalidArgument,
                     "the compiled material has no primary high-quality program");
     }
+    bool has_wind = false;
     for (const Node& node : primary->module.nodes()) {
-        if (node.op == Op::Field) {
-            return fail(ErrorCode::Unsupported,
-                        "the first-light viewport has no environment-field provider");
-        }
+        has_wind |= node.op == Op::Field;
     }
 
     Array<char> unit(*allocator_);
@@ -1083,12 +1104,16 @@ Status MetalMaterialRuntime::publish(
     if (Status retained =
             renderer_->retain_material(artefact, vertex->bytes(), kVertexEntry, fragment->bytes(),
                                        kFragmentEntry, shadow_vertex->bytes(), kShadowVertexEntry,
-                                       {program.parameters, sizeof(program.parameters)});
+                                       {program.parameters, sizeof(program.parameters)}, has_wind);
         !retained) {
         return fail(ErrorCode::InvalidArgument,
                     "the Metal renderer rejected the compiled material pipeline or resources");
     }
-    return programs_.push_back(std::move(program));
+    if (Status saved = programs_.push_back(std::move(program)); !saved) {
+        return saved;
+    }
+    wind_requested_ |= has_wind;
+    return ok();
 #else
     (void)material;
     return fail(ErrorCode::Unsupported,
