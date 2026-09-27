@@ -305,17 +305,31 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     const bool depth_only = kind == FramePipelineKind::Depth;
     const bool blended = kind == FramePipelineKind::Transparent;
 
-    const rhi::VertexBinding bindings[] = {
+    const rhi::VertexBinding forward_bindings[] = {
         {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
         {kNormalStream, kNormalStreamStride, rhi::VertexInputRate::PerVertex},
         {kUvStream, kUvStreamStride, rhi::VertexInputRate::PerVertex},
     };
-    const rhi::VertexAttribute attributes[] = {
+    const rhi::VertexAttribute forward_attributes[] = {
         {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
     };
-    // THE DEPTH PIPELINE BINDS TWO STREAMS AND THE FORWARD ONES THREE, and the constants are
+    // The depth pipeline's third attribute is LAST FRAME'S POSITION, which `cyDepthVertex` derives
+    // per-object motion from — see `kPreviousPositionStream`.
+    const rhi::VertexBinding depth_bindings[] = {
+        {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
+        {kNormalStream, kNormalStreamStride, rhi::VertexInputRate::PerVertex},
+        {kPreviousPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
+    };
+    const rhi::VertexAttribute depth_attributes[] = {
+        {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
+        {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
+        {2, kPreviousPositionStream, rhi::Format::Rgb32Sfloat, 0},
+    };
+    const rhi::VertexBinding* bindings = depth_only ? depth_bindings : forward_bindings;
+    const rhi::VertexAttribute* attributes = depth_only ? depth_attributes : forward_attributes;
+    // THE DEPTH PIPELINE'S STREAMS ARE NOT THE FORWARD ONES, and the constants are
     // `frame_pipelines.h`'s so that the RECORDER binds the same number — which it did not between
     // `6514c3d` and M11.c task 3.7, and every depth draw in between fetched attribute 1 from a
     // binding nothing was bound to.
@@ -323,7 +337,9 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     // It was one stream until the prepass grew a normal output: `render::kDepthPassStreams` is
     // `stream_bit(Position)` and a depth pass that declared three bindings would need three buffers
     // bound to draw, which is the bandwidth the stream split exists to avoid — so the pass takes
-    // the position and the packed normal and still leaves the UVs unbound.
+    // the position and the packed normal and still leaves the UVs unbound. Its third binding is the
+    // previous position, and for a rigid mesh that is the position buffer bound a second time: the
+    // same bytes, fetched twice, and no UV read.
     const usize stream_count = depth_only ? kDepthPassStreamCount : kForwardPassStreamCount;
 
     rhi::ColorAttachmentState colors[2];

@@ -243,6 +243,10 @@ struct AssemblyView {
     /// The volumetric fog volume's storage, imported by its producer
     /// (`fog::FogPass::import_target`). Read only when the post chain enables volumetric fog.
     ResourceId volumetric_fog = kInvalidResource;
+    /// The motion-blurred colour's storage, imported by its producer
+    /// (`motion_blur::MotionBlurPass::import_target`). Read only when the post chain enables
+    /// motion blur, and then required.
+    ResourceId motion_blur = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport
     /// both invalidate history and neither is a camera that moved fast.
     bool cut = false;
@@ -290,6 +294,9 @@ struct FrameSinks {
     /// The producer that declares the volumetric fog stage. Required when the post chain enables
     /// volumetric fog; the frame refuses to build without it.
     FrameStageDeclaration volumetric_fog;
+    /// The producer that declares the motion blur stage — `motion_blur::MotionBlurPass::stage()`.
+    /// Required when the post chain has motion blur in it; the frame refuses to build without it.
+    FrameStageDeclaration motion_blur;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than

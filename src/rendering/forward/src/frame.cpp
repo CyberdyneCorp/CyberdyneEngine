@@ -462,6 +462,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "temporal";
         case FramePassKind::DepthOfField:
             return "depth of field";
+        case FramePassKind::MotionBlur:
+            return "motion blur";
         case FramePassKind::Bloom:
             return "bloom";
         case FramePassKind::PostProcess:
@@ -511,6 +513,8 @@ void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& 
     inputs.target = target;
     inputs.draw_instances = resources_.draw_instances;
     inputs.source = source;
+    inputs.velocity = resources_.velocity;
+    inputs.color = state.current_color;
     inputs.width = state.description->width;
     inputs.height = state.description->height;
     const PassId first = producer.declare(graph, inputs, producer.user);
@@ -666,6 +670,15 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
                                FramePassKind::DepthOfField, "depth of field",
                                resources_.depth_of_field, state.current_color);
         state.current_color = resources_.depth_of_field;
+    // 8. Motion blur: after the temporal resolve, which it reads, and before bloom, so a streak of
+    // a bright light blooms as the light it is. Its producer's last pass writes the target and the
+    // chain continues from it.
+    if (features.motion_blur) {
+        resources_.motion_blur = description.motion_blur_target;
+        declare_produced_stage(graph, state, description.motion_blur_stage,
+                               FramePassKind::MotionBlur, "motion blur", resources_.motion_blur,
+                               state.current_color);
+        state.current_color = resources_.motion_blur;
     }
 
     // Bloom: scene-referred, after the temporal resolve and before the exposure the post-process
@@ -794,6 +807,14 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
                                     !valid(description.volumetric_fog_target))) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: volumetric fog needs its producer's stage and target");
+    }
+    // NOR DOES MOTION BLUR. The gather reads the tile reductions its producer declares, and the
+    // chain continues from the producer's target: without one, post-processing would read an image
+    // nothing wrote.
+    if (features.motion_blur && (description.motion_blur_stage.declare == nullptr ||
+                                 !valid(description.motion_blur_target))) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: motion blur needs its producer's stage and target");
     }
     // THE OUTLINE STAGE HAS NO SINGLE-PASS STAND-IN EITHER, and it reads the prepass depth: a
     // marked surface is "hidden" where the scene's depth is nearer than its own, and a frame with

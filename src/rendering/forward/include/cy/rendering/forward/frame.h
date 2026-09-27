@@ -165,6 +165,12 @@ enum class FramePassKind : u8 {
     /// the chain has reached (`ScreenSpaceStageInputs::source`) and the depth, and whose last pass
     /// writes `FrameResources::depth_of_field`, the colour every later stage reads.
     DepthOfField,
+    /// Step 8 of `rendering-post-processing`: motion blur, on the temporal resolve's linear HDR
+    /// colour and before bloom, so a streak blooms as the light it is. Declared by its producer
+    /// (`src/rendering/motion_blur/`) through `FrameStageDeclaration` — a tile reduction, a
+    /// neighbourhood maximum and a gather are three dispatches, and only the graph can put a
+    /// barrier between them.
+    MotionBlur,
     /// Step 9 of `rendering-post-processing`: bloom, on linear HDR before exposure. Several graph
     /// passes, one callback — `ForwardFrame::bloom()` says which step a pass is.
     Bloom,
@@ -239,6 +245,12 @@ struct ScreenSpaceStageInputs {
     /// a stage that writes a new one into `target`. Invalid for every stage that is not one.
     /// Appended, like `draw_instances`.
     ResourceId source = kInvalidResource;
+    /// The prepass motion vectors, for a stage after the shading — motion blur. Invalid when the
+    /// prepass writes none. Appended, as `draw_instances` is.
+    ResourceId velocity = kInvalidResource;
+    /// The colour the post chain has reached at this stage — the temporal resolve's output, for
+    /// motion blur — which a stage that filters the picture reads. Appended, as above.
+    ResourceId color = kInvalidResource;
 };
 
 /// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
@@ -277,6 +289,8 @@ struct FrameResources {
     /// The colour depth of field wrote: full resolution, the scene colour's format. Only with
     /// `FrameFeatures::depth_of_field`.
     ResourceId depth_of_field = kInvalidResource;
+    /// The motion-blurred colour, imported by its producer. Only with `FrameFeatures::motion_blur`.
+    ResourceId motion_blur = kInvalidResource;
     ResourceId post_color = kInvalidResource;
     /// The scene-referred colour the post-process reads: `color`, the temporal history, or the
     /// bloomed colour, whichever stage ran last before exposure.
@@ -360,6 +374,11 @@ struct FrameDescription {
     /// refuses rather than declaring a pass nothing records.
     ResourceId volumetric_fog_target = kInvalidResource;
     FrameStageDeclaration volumetric_fog_stage;
+    /// The motion blur target, imported by its producer, and the producer that declares the stage's
+    /// passes. With `features.motion_blur` both are required — there is no single-pass stand-in —
+    /// and the post chain continues from the target.
+    ResourceId motion_blur_target = kInvalidResource;
+    FrameStageDeclaration motion_blur_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;

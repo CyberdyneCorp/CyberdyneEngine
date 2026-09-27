@@ -135,6 +135,55 @@ void record_extensions(FrameRecorder& recorder, const PassContext& context, Fram
     }
 }
 
+/// The vertex buffers one geometry pass binds, in binding order.
+struct StreamSet {
+    rhi::BufferHandle buffers[3];
+    usize count = 0;
+
+    /// Bind the set. `deformed` null binds every stream from its start. Non-null, it is a depth
+    /// draw of a mesh whose previous vertices sit elsewhere in the same streams: the draw's own
+    /// `vertex_offset` becomes the SMALLER of the two windows' starts and each binding is offset to
+    /// its own window, because a vertex buffer offset cannot be negative and the previous half of
+    /// a double-buffered output is below the current one on every other frame.
+    void bind(rhi::CommandBuffer& commands, DrawGeometry* deformed) const noexcept {
+        u64 offsets[3] = {0, 0, 0};
+        if (deformed != nullptr) {
+            const i32 base = deformed->vertex_offset < deformed->previous_vertex_offset
+                                 ? deformed->vertex_offset
+                                 : deformed->previous_vertex_offset;
+            const auto current = static_cast<u64>(deformed->vertex_offset - base);
+            const auto previous = static_cast<u64>(deformed->previous_vertex_offset - base);
+            offsets[kPositionStream] = current * kPositionStreamStride;
+            offsets[kNormalStream] = current * kNormalStreamStride;
+            offsets[kPreviousPositionStream] = previous * kPositionStreamStride;
+            deformed->vertex_offset = base;
+        }
+        commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(buffers, count),
+                                     Span<const u64>(offsets, count));
+    }
+};
+
+[[nodiscard]] StreamSet streams_for(const GeometrySource& geometry,
+                                    FramePipelineKind pipeline) noexcept {
+    StreamSet set;
+    if (pipeline == FramePipelineKind::Shadow) {
+        set.buffers[0] = geometry.streams[kPositionStream];
+        set.count = 1U;
+    } else if (pipeline == FramePipelineKind::Depth) {
+        set.buffers[kPositionStream] = geometry.streams[kPositionStream];
+        set.buffers[kNormalStream] = geometry.streams[kNormalStream];
+        // The previous positions of a rigid mesh ARE its positions: the same buffer, bound again.
+        set.buffers[kPreviousPositionStream] = geometry.streams[kPositionStream];
+        set.count = kDepthPassStreamCount;
+    } else {
+        for (u32 stream = 0; stream < kForwardPassStreamCount; ++stream) {
+            set.buffers[stream] = geometry.streams[stream];
+        }
+        set.count = kForwardPassStreamCount;
+    }
+    return set;
+}
+
 /// One geometry pass: bind the state, walk the layer, draw what has geometry.
 void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipelineKind pipeline,
                 render::SortLayer layer, u32& counter) noexcept {
@@ -147,7 +196,8 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     rhi::CommandBuffer& commands = *context.commands;
     commands.bind_graphics_pipeline(recorder.pipelines()->pipeline(pipeline));
 
-    // TWO STREAMS FOR THE DEPTH PASS, NOT ONE — position and the packed normal.
+    // THREE STREAMS FOR THE DEPTH PASS, NOT ONE — position, the packed normal, and the previous
+    // positions per-object motion is derived from (the position stream again, for a rigid mesh).
     //
     // A REGRESSION FIXED HERE RATHER THAN WORKED AROUND, and it was three commits old when M11.c
     // task 3.7 found it. `6514c3d` ("Execute temporal anti-aliasing in frame pipeline") gave the
@@ -159,17 +209,11 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     // red in this tree since 20 September while the binary built on the 19th still passes.
     // The number here is the pipeline's own, so the two cannot disagree again.
     const bool depth_only = pipeline == FramePipelineKind::Depth;
-    const u64 offsets[3] = {0, 0, 0};
-    usize stream_count = kForwardPassStreamCount;
-    if (pipeline == FramePipelineKind::Shadow) {
-        stream_count = 1U;
-    } else if (depth_only) {
-        stream_count = kDepthPassStreamCount;
-    }
-    commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(geometry.streams, stream_count),
-                                 Span<const u64>(offsets, stream_count));
+    const StreamSet streams = streams_for(geometry, pipeline);
+    streams.bind(commands, nullptr);
 
     rhi::BufferHandle bound_indices;
+    bool offsets_moved = false;
     for (u32 offset = 0; offset < range.count; ++offset) {
         const u32 index = range.first + offset;
         if (pipeline == FramePipelineKind::Shadow &&
@@ -180,6 +224,13 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
         if (!geometry.geometry(range.items[index], range.instances[index], geometry.user, draw)) {
             ++recorder.mutable_report().skipped_draws;
             continue;
+        }
+        // A DEFORMED MESH IN THE PREPASS reads two windows of one stream; everything else reads the
+        // streams from their start, as it always did. See `StreamSet::bind`.
+        const bool deformed = depth_only && draw.has_previous_vertices && !draw.indices.is_null();
+        if (deformed || offsets_moved) {
+            streams.bind(commands, deformed ? &draw : nullptr);
+            offsets_moved = deformed;
         }
         const DrawPush push{index};
         commands.push_constants(recorder.pipelines()->layout(),
@@ -578,6 +629,12 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     upload.view.temporal_jitter[1] = report.jitter.y;
     upload.view.temporal_jitter[2] = assembly.temporal().jitter().previous().x;
     upload.view.temporal_jitter[3] = assembly.temporal().jitter().previous().y;
+
+    // PER-OBJECT MOTION'S TWO INPUTS, both already held by the temporal framework: how far the
+    // camera moved, which rebases last frame's camera-relative rows, and whether history survived.
+    upload.camera_motion = assembly.temporal().view().camera_position -
+                           assembly.temporal().previous_view().camera_position;
+    upload.motion_cut = report.temporal_invalidated;
 
     upload.lights = assembly.lights();
     upload.cluster_headers = clusters.headers.span();

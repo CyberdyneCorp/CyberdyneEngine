@@ -210,7 +210,18 @@ public struct CyFrameData
     /// of `fog::FogPass`'s volume, or `kCyNoMaterialTexture` — the default, which draws every
     /// surface as it was lit. yzw: reserved.
     public uint4 volumetricFogControl;
+    /// Per-object motion, appended for the reason `materialTextures` gives. x: the index in
+    /// `cyInstances` of the first PREVIOUS-frame row — row `x + slot` is where instance `slot` was
+    /// last frame, already expressed about this frame's camera — or `kCyNoPreviousInstances`, the
+    /// default, in which case every instance is taken to be where it is now and the prepass writes
+    /// camera motion alone, arithmetic for arithmetic what it always wrote. yzw: reserved.
+    /// `pipeline::FrameBindings::upload` fills it from the rows it uploaded the frame before.
+    public uint4 motionControl;
 };
+
+/// `motionControl.x` when the frame carries no previous instance rows.
+/// `cy::rendering::pipeline::kNoPreviousInstances` is the same number.
+public static const uint kCyNoPreviousInstances = 0xFFFFFFFFu;
 
 /// `softShadowControl.x`'s bits. `cy::rendering::pipeline::kSoftShadowPcss` and
 /// `kSoftShadowContact` are the same numbers.
@@ -464,8 +475,25 @@ public struct CyDepthVertex
     public float4 previousClip : TEXCOORD2;
 };
 
+/// Where this vertex was last frame, camera-relative to THIS frame's camera.
+///
+/// DERIVED, NOT AUTHORED — `temporal-rendering`'s "Motion vectors are derived". The placement is
+/// last frame's row of the same GPU scene slot when the frame carries one, and the model-space
+/// position is the previous frame's output of whatever deformed the mesh: the other half of a
+/// skinned mesh's double-buffered output, or — for a rigid mesh — the very same stream bound a
+/// second time, so the value is the current one bit for bit. With no previous rows the result is
+/// `transformToRelative(instance, modelPosition)` exactly, which is the expression this prepass
+/// always pushed through the previous projection: camera motion and nothing else.
+float3 previousRelativeOf(uint slot, CyInstanceTransform current, float3 previousModelPosition)
+{
+    let base = cyFrame.motionControl.x;
+    let placement = base == kCyNoPreviousInstances ? current : cyInstances[base + slot];
+    return transformToRelative(placement, previousModelPosition);
+}
+
 [shader("vertex")]
-public CyDepthVertex cyDepthVertex(float3 modelPosition : POSITION, float4 packedNormal : NORMAL)
+public CyDepthVertex cyDepthVertex(float3 modelPosition : POSITION, float4 packedNormal : NORMAL,
+                                   float3 previousModelPosition : PREVIOUS_POSITION)
 {
     let draw = cyDrawInstances[cyDraw.drawIndex];
     let instance = cyInstances[draw.instanceSlot];
@@ -473,7 +501,7 @@ public CyDepthVertex cyDepthVertex(float3 modelPosition : POSITION, float4 packe
     let relative = transformToRelative(instance, modelPosition);
     output.position = transformToClip(relative);
     output.currentClip = output.position;
-    let point = float4(relative, 1.0);
+    let point = float4(previousRelativeOf(draw.instanceSlot, instance, previousModelPosition), 1.0);
     output.previousClip = float4(dot(cyFrame.previousRelativeToClipRow0, point),
                                  dot(cyFrame.previousRelativeToClipRow1, point),
                                  dot(cyFrame.previousRelativeToClipRow2, point),
