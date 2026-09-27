@@ -28,16 +28,16 @@
 
 namespace cy::sample::first_light {
 
-/// The vertex the shader's three inputs read. 32 bytes, and the layout is stated once here and once
-/// in `renderer.cpp`'s vertex attributes; a `static_assert` below pins the size so the two cannot
-/// drift by an accidental member.
+/// The vertex the shader inputs read. The fourth attribute is linear per-vertex colour; ordinary
+/// first-light geometry defaults it to white. The layout is also stated in `renderer.cpp`.
 struct Vertex {
     f32 position[3] = {};
     f32 normal[3] = {};
     f32 uv[2] = {};
+    f32 color[4] = {1.0F, 1.0F, 1.0F, 1.0F};
 };
 
-static_assert(sizeof(Vertex) == 32, "the vertex attribute offsets in renderer.cpp assume this");
+static_assert(sizeof(Vertex) == 48, "the vertex attribute offsets in renderer.cpp assume this");
 
 /// One drawable: a range of the shared index buffer, placed in the world.
 ///

@@ -231,7 +231,9 @@ public:
     [[nodiscard]] BudgetController& budget() noexcept { return budget_; }
     [[nodiscard]] const BudgetController& budget() const noexcept { return budget_; }
     [[nodiscard]] EventRouter& events() noexcept { return events_; }
+    [[nodiscard]] const EventRouter& events() const noexcept { return events_; }
     [[nodiscard]] ReadbackQueue& readback() noexcept { return readback_; }
+    [[nodiscard]] const ReadbackQueue& readback() const noexcept { return readback_; }
     [[nodiscard]] const StepReport& last_step() const noexcept { return last_step_; }
 
     /// Read one live particle's attribute, in f32 regardless of the precision it is stored at. The

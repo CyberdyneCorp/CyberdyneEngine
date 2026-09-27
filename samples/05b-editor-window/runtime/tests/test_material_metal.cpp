@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cy/backends/rhi-metal/backend.h>
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/null/null_device.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
 #include <cy/rendering/material/compiler.h>
@@ -10,6 +11,7 @@
 
 #include "material_runtime.h"
 
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -37,16 +39,21 @@ Allocator& allocator() noexcept {
 struct Device {
     rhi::BackendSelection selection;
     rhi::Device* handle = nullptr;
+    Error creation_error;
 
     Device() {
+        (void)rhi::null::register_null_backend();
         (void)rhi::metal::register_metal_backend();
         rhi::DeviceDescription description;
         description.application_name = "smoke.editor_material_metal";
         description.enable_validation = true;
         auto created =
             rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
-        CY_REQUIRE(created.has_value());
-        handle = *created;
+        if (created) {
+            handle = *created;
+        } else {
+            creation_error = created.error();
+        }
     }
 
     ~Device() {
@@ -54,6 +61,10 @@ struct Device {
             (void)handle->wait_idle();
             rhi::destroy_device(allocator(), handle);
         }
+    }
+
+    [[nodiscard]] bool native_metal() const noexcept {
+        return handle != nullptr && handle->capabilities().backend() == rhi::BackendKind::Metal;
     }
 };
 
@@ -112,6 +123,16 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
         "material vertex_sway { surface = diffuse((0.7, 0.5, 0.2)); opacity = 1.0; "
         "vertex_offset = (0.0, 2.0, 0.0); }";
     Device device;
+    if (!device.native_metal()) {
+        std::fprintf(
+            stderr, "no Metal device: %s\n",
+            device.handle == nullptr ? device.creation_error.message : device.selection.reason);
+        const bool expected_unavailable = device.handle == nullptr
+                                              ? device.creation_error.code == ErrorCode::Unavailable
+                                              : device.selection.fell_back;
+        CY_CHECK(expected_unavailable);
+        return;
+    }
     first_light::Scene scene(allocator());
     first_light::SceneDescription scene_description;
     scene_description.box_count = kWorldCapacity;
@@ -165,6 +186,16 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
 
 CY_TEST_CASE("a compiled vertex colour shades the hosted Metal material mesh") {
     Device device;
+    if (!device.native_metal()) {
+        std::fprintf(
+            stderr, "no Metal device: %s\n",
+            device.handle == nullptr ? device.creation_error.message : device.selection.reason);
+        const bool expected_unavailable = device.handle == nullptr
+                                              ? device.creation_error.code == ErrorCode::Unavailable
+                                              : device.selection.fell_back;
+        CY_CHECK(expected_unavailable);
+        return;
+    }
     first_light::Scene scene(allocator());
     first_light::SceneDescription scene_description;
     scene_description.box_count = kWorldCapacity;
@@ -365,6 +396,16 @@ CY_TEST_CASE("the hosted material shader samples engine time in vertex and fragm
 
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
+    if (!device.native_metal()) {
+        std::fprintf(
+            stderr, "no Metal device: %s\n",
+            device.handle == nullptr ? device.creation_error.message : device.selection.reason);
+        const bool expected_unavailable = device.handle == nullptr
+                                              ? device.creation_error.code == ErrorCode::Unavailable
+                                              : device.selection.fell_back;
+        CY_CHECK(expected_unavailable);
+        return;
+    }
     first_light::Scene scene(allocator());
     first_light::SceneDescription scene_description;
     scene_description.box_count = kWorldCapacity;

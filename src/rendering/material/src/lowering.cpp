@@ -225,19 +225,30 @@ Expected<Module, Error> derive_program(const Module& primary,
     state.tier = options.tier;
     state.dropped = dropped_leaves(options.kind, options.tier);
 
-    // The shadow program's ONLY root is opacity. Not "the surface root with the closures removed":
-    // a surface root that survived would carry every texture the material samples into a pass that
-    // exists to answer a silhouette question.
+    // The shadow program retains opacity and vertex offset, but no surface closure. The offset is
+    // required to place its silhouette on the same geometry as the visible pass.
     const bool shadow = options.kind == ProgramKind::Shadow;
-    const NodeId roots[] = {shadow ? kInvalidNode : primary.surface(), primary.opacity()};
+    Array<NodeId> roots(primary.allocator());
+    for (const NodeId root :
+         {shadow ? kInvalidNode : primary.surface(), primary.opacity(), primary.vertex_offset()}) {
+        if (Status added = roots.push_back(root); !added) {
+            return make_unexpected(added.error());
+        }
+    }
+    if (!shadow) {
+        for (const VertexInterpolant& interpolant : primary.vertex_interpolants()) {
+            if (Status added = roots.push_back(interpolant.value); !added) {
+                return make_unexpected(added.error());
+            }
+        }
+    }
 
     Array<NodeId> mapping(primary.allocator());
     const auto visit = [&state](const Module& module, NodeId id, Span<const NodeId> operands,
                                 Builder& out) noexcept {
         return derive_node(module, id, operands, out, state);
     };
-    if (Status rebuilt =
-            detail::rebuild_module(primary, Span<const NodeId>(roots, 2), builder, mapping, visit);
+    if (Status rebuilt = detail::rebuild_module(primary, roots.span(), builder, mapping, visit);
         !rebuilt) {
         return make_unexpected(rebuilt.error());
     }
@@ -255,6 +266,21 @@ Expected<Module, Error> derive_program(const Module& primary,
         // which is the structural form of "no fragment work".
         if (!(shadow && opaque)) {
             if (Status set = builder.set_opacity(mapping[primary.opacity()]); !set) {
+                return make_unexpected(set.error());
+            }
+        }
+    }
+    if (primary.vertex_offset() != kInvalidNode &&
+        mapping[primary.vertex_offset()] != kInvalidNode) {
+        if (Status set = builder.set_vertex_offset(mapping[primary.vertex_offset()]); !set) {
+            return make_unexpected(set.error());
+        }
+    }
+    if (!shadow) {
+        for (const VertexInterpolant& interpolant : primary.vertex_interpolants()) {
+            if (Status set =
+                    builder.set_vertex_interpolant(interpolant.name, mapping[interpolant.value]);
+                !set) {
                 return make_unexpected(set.error());
             }
         }

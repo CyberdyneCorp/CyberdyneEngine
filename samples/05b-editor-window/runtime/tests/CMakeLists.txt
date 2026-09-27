@@ -43,14 +43,24 @@ function(cy_editor_window_runtime_declare_tests)
             SOURCES
                 "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
+                "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
-                cy::sample-first-light cy::scene-serialization cy::scene
-                cy::rhi-vulkan
+                cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
+                cy::rendering-material-slang cy::shader
+                cy::rhi-vulkan cy::rhi-null
             DEFINITIONS
                 "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
         target_include_directories(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                    "${tests_dir}/..")
+        if(CY_SHADER_SLANG)
+            target_link_libraries(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                  cy::shader-slang)
+            target_compile_definitions(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                       CY_SHADER_SLANG=1
+                                       "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\"")
+        endif()
     endif()
 
     if(APPLE AND CY_RENDERER_METAL AND CY_SHADER_SLANG)
@@ -60,14 +70,29 @@ function(cy_editor_window_runtime_declare_tests)
             SOURCES
                 "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
+                "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
-                cy::sample-first-light cy::scene-serialization cy::scene
-                cy::rhi-metal
+                cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
+                cy::rendering-material-slang cy::shader cy::shader-slang
+                cy::rhi-metal cy::rhi-null
             DEFINITIONS
-                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
+                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\""
+                "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\""
+                CY_SHADER_SLANG=1)
         target_include_directories(cy_test_smoke_editor_authored_frame_metal PRIVATE
                                    "${tests_dir}/..")
+        if(CY_VFX)
+            target_sources(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                           "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
+            target_include_directories(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                       "${CMAKE_SOURCE_DIR}/tests/render")
+            target_link_libraries(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                  cy::vfx cy::rendering-particles cy::editor-backend)
+            target_compile_definitions(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                       CY_EDITOR_WINDOW_HAS_VFX=1)
+        endif()
 
         cy_add_test(
             NAME editor_material_metal
@@ -79,6 +104,7 @@ function(cy_editor_window_runtime_declare_tests)
             DEPENDENCIES
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader cy::shader-slang cy::rhi-metal
+                cy::rhi-null
             DEFINITIONS
                 "CY_SAMPLE_PROJECT=\"${tests_dir}/../../project\""
                 "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\""

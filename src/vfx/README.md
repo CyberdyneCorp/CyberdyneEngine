@@ -376,9 +376,9 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
   overflow, so a raise is a GPU-side append with both of its declared bounds enforced — but nothing
   feeds a channel's contents back in as a dispatch, so "a bullet impact spawns sparks, and a spark
   collision spawns dust" is one link short.
-* **The editor's VFX graph editor is not built.** `vfx-system`'s authoring requirement is
-  `editor-*`'s surface over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`,
-  all three of which are public for exactly that reason.
+* **The editor's VFX graph editor is partial.** It can author and reopen system/emitter/stage drafts
+  through the shared canvas. `vfx-system` still needs compilation, diagnostics, canonical cooking,
+  and preview over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`.
 * **The GPU sort is bounded at `kGpuSortCapacity` (2048) particles a block**, because it is one
   workgroup over group-shared memory — one render-graph pass rather than the 66 a global bitonic
   sort would need, and the RHI deliberately exposes no barrier outside the graph's executor. A block
@@ -391,3 +391,34 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
 * **A curve is the identity over [0, 1]** on both paths until a cooked curve resource is bound. Both
   spellings — the CPU executor's and the generated Slang's — say so at the same place, because two
   spellings of one function is how a fallback and a GPU path come to disagree.
+## Editor authoring bridge
+
+`read_authoring_document` is compiled into `cy::vfx-compiler`. It decodes editor `.cyvfxdoc`
+payload versions 1 and 2 into `VfxSystemAsset` and reads each `cyvfxcanvas` stage into CyberGraph.
+The compiler then resolves the registered node types and runs `compile_system`. The runtime target
+does not parse graphs. The editor service's `vfx.compile` operation publishes the resulting cook
+identity, memory layout, generated Slang, and graph diagnostics. Module asset references are
+refused until a module resolver is available. Interface bindings are retained in the engine asset,
+checked against the registered data interfaces and the emitter's CPU/GPU path, and included in the
+cook identity. An unknown interface or one without the required execution path fails the cook.
+Compilation currently does not start a preview.
+
+## Editor catalogue
+
+`register_vfx_nodes` is the source of the VFX graph palette. Each built-in node has an explicit
+type identity in `src/asset.cpp`; registered pin identities are stable within its type. The
+`vfx.catalogue.get` editor service serializes the registry's actual definitions, and its parity
+test compares every node and pin against that registry. `CY_VFX=OFF` omits the operation.
+Each registered data-interface field also becomes a typed `vfx.sample.<interface>.<field>` node.
+`register_vfx_interface_nodes` adds project fields after their interfaces are registered, and those
+nodes lower through the existing sampler path. The generic `vfx.sample` node remains readable for
+older authored graphs.
+
+`vfx.authoring-capabilities.get` publishes renderer availability from `renderer_availability`
+in the renderer module and CPU/GPU execution prerequisites from `target_availability` in the
+runtime. Schema 2 also publishes binding names and CPU/GPU availability from the registered
+built-in data interfaces. The editor offers those names for emitter bindings and disables
+interfaces that cannot run on the selected simulation path; compilation still validates every
+binding. Sprite, Mesh, Ribbon, Beam and Trail have draw paths. Decal, Light and Volume remain
+unavailable with specific missing-pass reasons. Without an attached preview device the GPU target
+can still be authored and compiled, but runtime availability reports `NoDeviceInThisWorld`.

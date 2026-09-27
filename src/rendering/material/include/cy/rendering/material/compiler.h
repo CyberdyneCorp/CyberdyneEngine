@@ -48,9 +48,23 @@ namespace cy::rendering::material {
 /// The compiler's own version. Part of every cook key: "WHEN the material compiler version
 /// increases THEN compiled programs SHALL be recooked and the authored material assets SHALL be
 /// untouched."
-inline constexpr u32 kCompilerVersion = 1;
+inline constexpr u32 kCompilerVersion = 3;
 
 enum class DiagnosticSeverity : u8 { Info = 0, Warning = 1, Error = 2 };
+
+/// Geometry sources requesting this material's vertex program. Kept separate from ray-tracing
+/// adapters: raster material support is decided by the material compiler and frame pipeline.
+enum class GeometrySourceKind : u8 {
+    StaticMesh,
+    SkinnedMesh,
+    VirtualGeometry,
+    Terrain,
+    MeshParticles,
+    Procedural,
+    Count,
+};
+
+[[nodiscard]] const char* geometry_source_kind_name(GeometrySourceKind source) noexcept;
 
 [[nodiscard]] const char* diagnostic_severity_name(DiagnosticSeverity severity) noexcept;
 
@@ -70,7 +84,11 @@ struct CompileDiagnostic {
 /// One compiled program of the family.
 struct CompiledProgram {
     explicit CompiledProgram(Allocator& allocator) noexcept
-        : module(allocator), source(allocator), cost(allocator), inputs(allocator) {}
+        : module(allocator),
+          source(allocator),
+          vertex_source(allocator),
+          cost(allocator),
+          inputs(allocator) {}
 
     CompiledProgram(const CompiledProgram&) = delete;
     CompiledProgram& operator=(const CompiledProgram&) = delete;
@@ -83,6 +101,8 @@ struct CompiledProgram {
     /// the editor's "show me the IR" both need it, and re-deriving it would be a second answer.
     Module module;
     GeneratedSource source;
+    /// The vertex-stage offset function, empty when this material does not move geometry.
+    GeneratedSource vertex_source;
     CostReport cost;
     ShadingModel model = ShadingModel::Lit;
     bool generic_evaluator = false;
@@ -109,6 +129,9 @@ struct CompileOptions {
     /// How many geometry sources the material is used with. Only matters under a vertex-stage
     /// pipeline, where it multiplies the variant count.
     u32 geometry_sources = 1;
+    /// Named geometry sources used by a vertex graph. When supplied, these replace the anonymous
+    /// count above in variant reports and let compilation refuse unsupported paths by name.
+    Span<const GeometrySourceKind> geometry_paths;
     /// The environment fields the project declares. When `check_fields` is set, a material sampling
     /// a field outside this list fails to cook naming the field — "rather than silently
     /// substituting a default".
@@ -141,6 +164,9 @@ public:
     /// One digest over everything a cook of this material depends on.
     [[nodiscard]] u64 cook_key() const noexcept { return cook_key_; }
     [[nodiscard]] const OptimiseReport& optimisation() const noexcept { return optimisation_; }
+    [[nodiscard]] Span<const GeometrySourceKind> geometry_paths() const noexcept {
+        return geometry_paths_.span();
+    }
 
 private:
     friend Expected<CompiledMaterial, Error> compile_material(const Module&, const CompileOptions&,
@@ -150,6 +176,7 @@ private:
     Array<CompileDiagnostic> diagnostics_;
     MaterialProgram layout_;
     OptimiseReport optimisation_;
+    Array<GeometrySourceKind> geometry_paths_;
     u64 cook_key_ = 0;
 };
 

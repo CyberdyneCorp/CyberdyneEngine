@@ -98,6 +98,15 @@ enum class RendererKind : u8 {
 
 [[nodiscard]] const char* renderer_kind_name(RendererKind kind) noexcept;
 
+/// Whether this build can composite the kind, with an author-facing reason when it cannot.
+struct RendererAvailability {
+    bool available = false;
+    const char* reason = "Unknown renderer kind";
+};
+
+/// Let authoring tools refuse a renderer that this build cannot composite, with its reason.
+[[nodiscard]] RendererAvailability renderer_availability(RendererKind kind) noexcept;
+
 inline constexpr u32 kRendererKindCount = static_cast<u32>(RendererKind::Count);
 
 /// `vfx-system`: "Transparent particles SHALL support sorting modes: none, by distance to camera,

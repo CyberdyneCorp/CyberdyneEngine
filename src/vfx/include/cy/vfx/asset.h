@@ -47,6 +47,11 @@ namespace cy::vfx {
 
 using graph::Graph;
 using graph::NodeRegistry;
+class DataInterfaceRegistry;
+
+/// Stable renderer identity spelling shared by authored assets and runtime publications.
+inline constexpr u8 kAssetRendererCount = 8;
+[[nodiscard]] const char* asset_renderer_name(u8 kind) noexcept;
 
 /// The six stages `vfx-system`'s table declares. `Count` is the size of a per-stage array and never
 /// a stage.
@@ -154,6 +159,12 @@ struct EventChannelDecl {
     bool readback = false;
 };
 
+/// Explicit project source for a reusable VFX module identifier.
+struct ModuleAssetRef {
+    Name name;
+    Name path;
+};
+
 /// One emitter: a name, six optional stage graphs, its attribute declarations, and the path it
 /// requires.
 class Emitter {
@@ -170,6 +181,7 @@ public:
     /// Give a stage its graph. A stage already set is replaced, which is what an editor does.
     [[nodiscard]] Status set_stage(Stage which, Graph&& graph) noexcept;
     [[nodiscard]] const Graph* stage(Stage which) const noexcept;
+    [[nodiscard]] Graph* stage(Stage which) noexcept;
     /// Resolve every stage graph's node types against `registry`. CyberGraph's load-time step: a
     /// node whose type the registry does not have keeps whatever body it was loaded with and is
     /// reported by `validate`, rather than being dropped. `compile_system` refuses an asset that
@@ -183,6 +195,14 @@ public:
         return attributes_.span();
     }
     [[nodiscard]] const AttributeDecl* find_attribute(Name attribute) const noexcept;
+
+    /// Interfaces explicitly bound by this emitter's authored document.
+    [[nodiscard]] Status bind_interface(Name interface_name) noexcept;
+    [[nodiscard]] Span<const Name> interfaces() const noexcept { return interfaces_.span(); }
+
+    [[nodiscard]] Status reference_module(Name module_name) noexcept;
+    [[nodiscard]] Span<const Name> modules() const noexcept { return modules_.span(); }
+    void clear_module_references() noexcept { modules_.clear(); }
 
     [[nodiscard]] SimulationPath path() const noexcept { return path_; }
     void set_path(SimulationPath path) noexcept { path_ = path; }
@@ -214,6 +234,8 @@ private:
     Name name_;
     Array<StageEntry> stages_;
     Array<AttributeDecl> attributes_;
+    Array<Name> interfaces_;
+    Array<Name> modules_;
     SimulationPath path_ = SimulationPath::GpuPreferred;
     /// `RendererKind::Sprite`. See `set_renderer`.
     u8 renderer_ = 0;
@@ -237,6 +259,7 @@ public:
 
     [[nodiscard]] Status add_emitter(Emitter&& emitter) noexcept;
     [[nodiscard]] Span<const Emitter> emitters() const noexcept { return emitters_.span(); }
+    [[nodiscard]] Span<Emitter> edit_emitters() noexcept { return emitters_.span(); }
     [[nodiscard]] const Emitter* find_emitter(Name emitter) const noexcept;
 
     [[nodiscard]] Status declare_parameter(const ParameterDecl& decl) noexcept;
@@ -251,6 +274,12 @@ public:
     }
     [[nodiscard]] const EventChannelDecl* find_channel(Name channel) const noexcept;
 
+    [[nodiscard]] Status declare_module_asset(const ModuleAssetRef& reference) noexcept;
+    [[nodiscard]] Span<const ModuleAssetRef> module_assets() const noexcept {
+        return module_assets_.span();
+    }
+    [[nodiscard]] const ModuleAssetRef* find_module_asset(Name name) const noexcept;
+
     [[nodiscard]] ImportanceClass importance() const noexcept { return importance_; }
     void set_importance(ImportanceClass importance) noexcept { importance_ = importance; }
 
@@ -264,6 +293,7 @@ private:
     Array<Emitter> emitters_;
     Array<ParameterDecl> parameters_;
     Array<EventChannelDecl> channels_;
+    Array<ModuleAssetRef> module_assets_;
     ImportanceClass importance_ = ImportanceClass::Ambient;
     ScalabilityPolicy scalability_;
 };
@@ -290,5 +320,10 @@ inline constexpr const char* kCurve = "curve";
 /// Register the built-in VFX node types. Idempotent: registering twice is refused by the registry
 /// itself, which is how a caller finds out it did.
 [[nodiscard]] Status register_vfx_nodes(NodeRegistry& registry) noexcept;
+
+/// Add typed sample nodes for every field in a data-interface registry. Call this after adding
+/// project interfaces so their fields reach the editor palette and the cook registry alike.
+[[nodiscard]] Status register_vfx_interface_nodes(NodeRegistry& registry,
+                                                  const DataInterfaceRegistry& interfaces) noexcept;
 
 }  // namespace cy::vfx

@@ -44,6 +44,12 @@ void write_vertex(Vertex& out, const Corner& corner) noexcept {
     out.normal[2] = corner.normal.z;
     out.uv[0] = corner.u;
     out.uv[1] = corner.v;
+    // Distinct linear colours per face make a vertex-colour material visible in the hosted mesh
+    // preview; the standard first-light material does not read this stream.
+    out.color[0] = std::abs(corner.normal.x);
+    out.color[1] = std::abs(corner.normal.y);
+    out.color[2] = std::abs(corner.normal.z);
+    out.color[3] = 1.0F;
 }
 
 /// The camera-relative position of a world point, computed the only way that survives a million

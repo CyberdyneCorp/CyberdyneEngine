@@ -379,23 +379,41 @@ struct Lowering {
 [[nodiscard]] Expected<NodeId, Error> lower_sample(Lowering& state, const Graph& graph,
                                                    const GraphNode& node) noexcept {
     const NodeNames& n = names();
-    const Literal* interface_name = graph.property(node.key, n.prop_interface);
-    const Literal* field_name = graph.property(node.key, n.prop_field);
-    if (interface_name == nullptr || field_name == nullptr) {
+    Name interface_name;
+    Name field_name;
+    const std::string_view type = node.type.text();
+    if (type.starts_with("vfx.sample.")) {
+        const std::string_view source = type.substr(sizeof("vfx.sample.") - 1);
+        const usize separator = source.rfind('.');
+        if (separator != std::string_view::npos) {
+            interface_name = Name::intern(source.substr(0, separator));
+            field_name = Name::intern(source.substr(separator + 1));
+        }
+    } else {
+        const Literal* interface_property = graph.property(node.key, n.prop_interface);
+        const Literal* field_property = graph.property(node.key, n.prop_field);
+        if (interface_property != nullptr) {
+            interface_name = interface_property->text;
+        }
+        if (field_property != nullptr) {
+            field_name = field_property->text;
+        }
+    }
+    if (interface_name.is_empty() || field_name.is_empty()) {
         report(*state.sink, node.key, n.prop_interface,
                "vfx: a sample node names an interface and a field");
         return fail(ErrorCode::InvalidArgument, "vfx: a sample with no interface");
     }
-    const DataInterface* interface = state.interfaces->find(interface_name->text);
+    const DataInterface* interface = state.interfaces->find(interface_name);
     if (interface == nullptr) {
         report(*state.sink, node.key, n.prop_interface,
-               "vfx: no data interface of that name is registered", interface_name->text);
+               "vfx: no data interface of that name is registered", interface_name);
         return fail(ErrorCode::NotFound, "vfx: an unregistered data interface");
     }
-    const InterfaceField* field = interface->find_field(field_name->text);
+    const InterfaceField* field = interface->find_field(field_name);
     if (field == nullptr) {
         report(*state.sink, node.key, n.prop_field, "vfx: that data interface has no such field",
-               field_name->text);
+               field_name);
         return fail(ErrorCode::NotFound, "vfx: an unknown interface field");
     }
     // THE COOK-TIME GATE. `vfx-system`: "WHEN an effect declares CPU simulation and uses a GPU-only
@@ -459,7 +477,7 @@ Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph, NodeKey
     const NodeNames& n = names();
     Expected<NodeId, Error> produced = fail(ErrorCode::Internal, "vfx: unlowered");
 
-    if (node->type == n.sample) {
+    if (node->type == n.sample || node->type.text().starts_with("vfx.sample.")) {
         produced = lower_sample(state, graph, *node);
     } else if (node->type == n.curve || node->type == n.noise) {
         auto argument = lower_pin(state, graph, key, "x");
@@ -733,11 +751,23 @@ struct StageLowering {
     return ok();
 }
 
+[[nodiscard]] Status record_diagnostic_scopes(const DiagnosticSink& sink,
+                                              Array<DiagnosticScope>& scopes, usize start,
+                                              u32 emitter_index, Stage stage) noexcept {
+    for (usize index = start; index < sink.entries().size(); ++index) {
+        if (Status pushed = scopes.push_back({index, emitter_index, stage}); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
+
 /// One kernel, from one or two stages. `fuse` names the second stage lowered onto the first.
 [[nodiscard]] Expected<VfxKernel, Error> compile_kernel(
     const VfxSystemAsset& asset, const Emitter& emitter, Stage primary, Stage fused,
     const DataInterfaceRegistry& interfaces, const CompileOptions& options, AttributeLayout& layout,
-    DiagnosticSink& sink, EmitterReport& report, Allocator& allocator) noexcept {
+    DiagnosticSink& sink, Array<DiagnosticScope>& scopes, u32 emitter_index, EmitterReport& report,
+    Allocator& allocator) noexcept {
     // THE MODULE'S NAME IS THE STAGE'S, NOT THE EMITTER'S, and that is load-bearing rather than
     // cosmetic: `Module::digest` closes over the module name, so naming it after the emitter would
     // give two structurally identical kernels two digests — and the scheduler groups by digest, so
@@ -767,8 +797,15 @@ struct StageLowering {
     if (primary_graph == nullptr) {
         return fail(ErrorCode::NotFound, "vfx: the stage this kernel is for has no graph");
     }
-    if (Status lowered = lower_stage(state, *primary_graph, primary, primary_result); !lowered) {
-        return make_unexpected(lowered.error());
+    const usize primary_start = sink.entries().size();
+    const Status primary_lowered = lower_stage(state, *primary_graph, primary, primary_result);
+    if (Status recorded =
+            record_diagnostic_scopes(sink, scopes, primary_start, emitter_index, primary);
+        !recorded) {
+        return make_unexpected(recorded.error());
+    }
+    if (!primary_lowered) {
+        return make_unexpected(primary_lowered.error());
     }
 
     StageLowering fused_result;
@@ -779,8 +816,15 @@ struct StageLowering {
             // only within one; `pending` is NOT, which is the whole of the fusion.
             memo.clear();
             state.substitute_pending = true;
-            if (Status lowered = lower_stage(state, *fused_graph, fused, fused_result); !lowered) {
-                return make_unexpected(lowered.error());
+            const usize fused_start = sink.entries().size();
+            const Status fused_lowered = lower_stage(state, *fused_graph, fused, fused_result);
+            if (Status recorded =
+                    record_diagnostic_scopes(sink, scopes, fused_start, emitter_index, fused);
+                !recorded) {
+                return make_unexpected(recorded.error());
+            }
+            if (!fused_lowered) {
+                return make_unexpected(fused_lowered.error());
             }
             state.substitute_pending = false;
         }
@@ -999,13 +1043,21 @@ namespace {
 /// Validate every stage graph of one emitter. Node- and pin-precise diagnostics land in `sink`; the
 /// return says only whether anything is wrong, because "which node" is the question an author has.
 [[nodiscard]] Status validate_emitter(const Emitter& emitter, const NodeRegistry& registry,
-                                      DiagnosticSink& sink) noexcept {
+                                      DiagnosticSink& sink, Array<DiagnosticScope>& scopes,
+                                      u32 emitter_index) noexcept {
     for (u32 which = 0; which < static_cast<u32>(Stage::Count); ++which) {
         const Graph* stage_graph = emitter.stage(static_cast<Stage>(which));
         if (stage_graph == nullptr) {
             continue;
         }
-        if (Status valid = graph::validate(*stage_graph, registry, nullptr, sink); !valid) {
+        const usize start = sink.entries().size();
+        Status valid = graph::validate(*stage_graph, registry, nullptr, sink);
+        if (Status recorded = record_diagnostic_scopes(sink, scopes, start, emitter_index,
+                                                       static_cast<Stage>(which));
+            !recorded) {
+            return recorded;
+        }
+        if (!valid) {
             return valid;
         }
     }
@@ -1049,7 +1101,7 @@ struct KernelPlan {
 [[nodiscard]] Expected<CompiledEmitter, Error> compile_emitter(
     const VfxSystemAsset& asset, const Emitter& emitter, const DataInterfaceRegistry& interfaces,
     const CompileOptions& options, DiagnosticSink& sink, EmitterReport& emitter_report,
-    Allocator& allocator) noexcept {
+    Array<DiagnosticScope>& scopes, u32 emitter_index, Allocator& allocator) noexcept {
     CompiledEmitter compiled(allocator);
     CompiledAccess::set_name(compiled, emitter.name());
     CompiledAccess::set_path(compiled, emitter.path());
@@ -1060,8 +1112,9 @@ struct KernelPlan {
     KernelPlan plan[static_cast<usize>(Stage::Count)];
     const u32 plan_count = plan_kernels(emitter, options, emitter_report, plan);
     for (u32 which = 0; which < plan_count; ++which) {
-        auto kernel = compile_kernel(asset, emitter, plan[which].primary, plan[which].fused,
-                                     interfaces, options, layout, sink, emitter_report, allocator);
+        auto kernel =
+            compile_kernel(asset, emitter, plan[which].primary, plan[which].fused, interfaces,
+                           options, layout, sink, scopes, emitter_index, emitter_report, allocator);
         if (!kernel) {
             return make_unexpected(kernel.error());
         }
@@ -1101,6 +1154,9 @@ struct KernelPlan {
     emitter_report.generated_source_bytes = static_cast<u32>(compiled.source_bytes());
 
     u64 digest = hash_u64(kHashSeed, layout.digest());
+    for (Name interface_name : emitter.interfaces()) {
+        digest = hash_text(digest, interface_name.text());
+    }
     for (const VfxKernel& kernel : compiled.kernels()) {
         digest = hash_u64(digest, kernel.digest());
     }
@@ -1159,19 +1215,41 @@ Expected<CompiledSystem, Error> compile_system(const VfxSystemAsset& asset,
     }
 
     u64 cook_key = declaration_key(asset, interfaces, options);
-    for (const Emitter& emitter : asset.emitters()) {
+    for (u32 emitter_index = 0; emitter_index < asset.emitters().size(); ++emitter_index) {
+        const Emitter& emitter = asset.emitters()[emitter_index];
+        if (!emitter.modules().empty()) {
+            return make_unexpected(Error{
+                ErrorCode::Unsupported, "vfx: emitter modules must be resolved before cooking", 0});
+        }
+        for (Name interface_name : emitter.interfaces()) {
+            const DataInterface* binding = interfaces.find(interface_name);
+            if (binding == nullptr) {
+                return make_unexpected(Error{ErrorCode::InvalidArgument,
+                                             "vfx: bound data interface is not registered", 0});
+            }
+            if (emitter.path() == SimulationPath::CpuRequired && !binding->cpu_available()) {
+                return make_unexpected(
+                    Error{ErrorCode::Unsupported, "vfx: bound data interface has no CPU path", 0});
+            }
+            if (emitter.path() == SimulationPath::GpuPreferred && !binding->gpu_available()) {
+                return make_unexpected(
+                    Error{ErrorCode::Unsupported, "vfx: bound data interface has no GPU path", 0});
+            }
+        }
         // EVERY STAGE GRAPH IS VALIDATED BEFORE IT IS LOWERED, so a wire whose types do not convert
         // is a node- and pin-precise diagnostic from the authoring layer rather than a type error
         // from the builder with no node in it.
-        if (Status valid = validate_emitter(emitter, registry, sink); !valid) {
+        if (Status valid =
+                validate_emitter(emitter, registry, sink, report.diagnostic_scopes, emitter_index);
+            !valid) {
             return make_unexpected(valid.error());
         }
 
         EmitterReport emitter_report;
         emitter_report.emitter = emitter.name();
         emitter_report.path = emitter.path();
-        auto compiled =
-            compile_emitter(asset, emitter, interfaces, options, sink, emitter_report, allocator);
+        auto compiled = compile_emitter(asset, emitter, interfaces, options, sink, emitter_report,
+                                        report.diagnostic_scopes, emitter_index, allocator);
         if (!compiled) {
             return make_unexpected(compiled.error());
         }
