@@ -91,10 +91,11 @@ bloom levels 8
 # camera's own — the focal length its field of view implies on a full-frame sensor — so only the
 # f-number is chosen, and f/1.4 is a real lens wide open. A target is a point in world metres; the
 # focus distance is its distance along the view axis. The sphere's centre is its radius above the
-# ground; the far column is the right-hand pillar at the end of the colonnade, at half its height.
+# ground; the far column is the colonnade's last pillar on the right of the frame, 33 m out, at half
+# its height.
 depth-of-field f-number 1.4
 depth-of-field focus sphere 1.35 0.62 -3.4
-depth-of-field focus column 3.6 2.75 21
+depth-of-field focus column -3.6 2.75 21
 
 # --- The materials ----------------------------------------------------------------------------
 #

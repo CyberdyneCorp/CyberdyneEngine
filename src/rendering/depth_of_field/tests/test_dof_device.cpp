@@ -685,21 +685,27 @@ CY_TEST_CASE("six aperture blades draw a far point as a hexagon") {
                             (129U * kSize) + 129U}) {
         scene.grey[texel] = 64.0F;
     }
-    /// How far from the point, along a direction, the light reaches.
-    const auto extent = [](const Result& result, f32 dx, f32 dy) {
-        f32 reach = 0.0F;
-        for (f32 t = 0.0F; t < 40.0F; t += 0.25F) {
-            const auto x = static_cast<u32>(129.0F + (dx * t));
-            const auto y = static_cast<u32>(129.0F + (dy * t));
-            if (result.at(x, y) > 0.02F) {
-                reach = t;
+    /// How far from the point the light reaches along x and along y: the farthest lit texel
+    /// centre, over the whole footprint, so a texel the sparse taps missed does not shorten it.
+    const auto extents = [](const Result& result) {
+        f32 across = 0.0F;
+        f32 down = 0.0F;
+        for (u32 y = 0; y < kSize; ++y) {
+            for (u32 x = 0; x < kSize; ++x) {
+                if (result.at(x, y) > 0.02F) {
+                    across = math::max(across, std::fabs((static_cast<f32>(x) + 0.5F) - 129.0F));
+                    down = math::max(down, std::fabs((static_cast<f32>(y) + 0.5F) - 129.0F));
+                }
             }
         }
-        return reach;
+        return Vec2{across, down};
     };
+    // The shape is the aperture's, not the sampling's: enough rings for a tap a texel.
+    DofSettings circular = bench_settings();
+    circular.max_rings = rendering::depth_of_field::kMaxRings;
     Result round;
-    CY_REQUIRE(bench.run(scene, bench_settings(), round).has_value());
-    DofSettings bladed = bench_settings();
+    CY_REQUIRE(bench.run(scene, circular, round).has_value());
+    DofSettings bladed = circular;
     bladed.blades = 6;
     Result hexagon;
     CY_REQUIRE(bench.run(scene, bladed, hexagon).has_value());
@@ -707,8 +713,10 @@ CY_TEST_CASE("six aperture blades draw a far point as a hexagon") {
 
     // Blades rotated 0: corners along x, edges' midpoints along y, cos(30 degrees) = 0.866 of the
     // way out. The circle reaches as far both ways.
-    const f32 round_ratio = extent(round, 0.0F, 1.0F) / extent(round, 1.0F, 0.0F);
-    const f32 hexagon_ratio = extent(hexagon, 0.0F, 1.0F) / extent(hexagon, 1.0F, 0.0F);
+    const Vec2 round_extent = extents(round);
+    const Vec2 hexagon_extent = extents(hexagon);
+    const f32 round_ratio = round_extent.y / round_extent.x;
+    const f32 hexagon_ratio = hexagon_extent.y / hexagon_extent.x;
     std::fprintf(stderr, "aperture: edge over corner %.3f for the circle, %.3f for six blades\n",
                  static_cast<f64>(round_ratio), static_cast<f64>(hexagon_ratio));
     CY_CHECK_GT(round_ratio, 0.95F);

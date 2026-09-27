@@ -39,46 +39,31 @@ template <usize N>
     return {reinterpret_cast<const u8*>(module), N - 1U};
 }
 
+[[nodiscard]] StepShape shape(const char* name, const char* entry, Span<const u32> spirv,
+                              Span<const u8> msl, u32 sampled, u32 storage) noexcept {
+    return StepShape{name, entry, spirv, msl, sampled, storage};
+}
+
 [[nodiscard]] StepShape shape_of(DofStep step) noexcept {
     switch (step) {
         case DofStep::Setup:
-            return {"depth of field setup",
-                    "cyDofSetup",
-                    words(kDofSetupSpirv),
-                    text(kDofSetupMsl),
-                    2,
-                    1};
+            return shape("depth of field setup", "cyDofSetup", words(kDofSetupSpirv),
+                         text(kDofSetupMsl), 2, 1);
         case DofStep::Tiles:
-            return {"depth of field tiles",
-                    "cyDofTiles",
-                    words(kDofTilesSpirv),
-                    text(kDofTilesMsl),
-                    1,
-                    1};
+            return shape("depth of field tiles", "cyDofTiles", words(kDofTilesSpirv),
+                         text(kDofTilesMsl), 1, 1);
         case DofStep::Dilate:
-            return {"depth of field dilate",
-                    "cyDofDilate",
-                    words(kDofDilateSpirv),
-                    text(kDofDilateMsl),
-                    1,
-                    1};
+            return shape("depth of field dilate", "cyDofDilate", words(kDofDilateSpirv),
+                         text(kDofDilateMsl), 1, 1);
         case DofStep::Gather:
-            return {"depth of field gather",
-                    "cyDofGather",
-                    words(kDofGatherSpirv),
-                    text(kDofGatherMsl),
-                    2,
-                    2};
+            return shape("depth of field gather", "cyDofGather", words(kDofGatherSpirv),
+                         text(kDofGatherMsl), 2, 2);
         case DofStep::Composite:
         case DofStep::Count:
             break;
     }
-    return {"depth of field composite",
-            "cyDofComposite",
-            words(kDofCompositeSpirv),
-            text(kDofCompositeMsl),
-            5,
-            1};
+    return shape("depth of field composite", "cyDofComposite", words(kDofCompositeSpirv),
+                 text(kDofCompositeMsl), 5, 1);
 }
 
 [[nodiscard]] u32 groups(u32 extent) noexcept {
@@ -264,6 +249,11 @@ PassId DepthOfFieldPass::declare(RenderGraph& graph,
     if (device_ == nullptr || !viewed_ || inputs.source == kInvalidResource ||
         inputs.target == kInvalidResource || inputs.depth == kInvalidResource ||
         inputs.width != desc_.width || inputs.height != desc_.height) {
+        return kInvalidPass;
+    }
+    // The composite writes the target as `rgba16f` storage, and the setup reads the source as
+    // linear HDR: a frame whose scene colour is another format is refused rather than converted.
+    if (graph.resource(inputs.target).texture.format != kLayerFormat) {
         return kInvalidPass;
     }
     source_ = inputs.source;

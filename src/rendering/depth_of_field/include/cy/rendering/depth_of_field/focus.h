@@ -39,7 +39,8 @@
 //                           circle beyond it is clamped. It bounds the gather's taps and sizes
 //                           the near field's tiles, which must be at least that wide.
 //   `max_rings`             the gather's sampling density: rings of 6k taps at spacing
-//                           R / (rings + 1/2). More rings, less banding; not a physical quantity.
+//                           R / (rings + 1/2), 1 + 3k(k + 1) taps. Eight by default: a tap a
+//                           texel out to eight texels of radius. Not a physical quantity.
 //   `blades`                the aperture's shape. Zero is a circle; five or more straight blades
 //                           make that polygon, inscribed in the circle, the shape a defocused
 //                           point takes — its area is what the near field's coverage divides by.
@@ -76,7 +77,7 @@ struct DofSettings {
     /// The largest blur radius gathered, as a fraction of the image height. See the header.
     f32 max_radius_fraction = 0.02F;
     /// The gather's rings. See the header.
-    u32 max_rings = 6;
+    u32 max_rings = 8;
 };
 
 /// What one frame's view contributes.

@@ -99,6 +99,19 @@ pass reads and writes the target, so the interface loads the outlined colour. `b
 feature without a producer, and without the depth prepass: a marked surface is found hidden by
 comparing it with the prepass depth. `src/rendering/selection/` is the producer.
 
+## A fourth, in the post chain: depth of field
+
+`FramePassKind::DepthOfField` is step 7 of `rendering-post-processing`'s chain: after the temporal
+resolve, so it blurs a converged image, and before bloom, so a defocused highlight blooms as the
+disc it became. It is the first produced stage that writes a NEW colour rather than a term another
+pass samples: the frame creates `FrameResources::depth_of_field` (full resolution, the scene
+colour's format, storage-writable) and hands it to `FrameDescription::depth_of_field_stage` as
+`target`, with the colour the chain has reached as `ScreenSpaceStageInputs::source` — appended, as
+`draw_instances` was. Every later stage, bloom and the post-process included, reads the target.
+`build()` refuses the feature without a producer, and on a multisampled frame without the prepass,
+whose depth resolve is the only single-sample depth such a frame has; a single-sample frame without
+the prepass reads the depth its opaque pass wrote. `src/rendering/depth_of_field/` is the producer.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in
