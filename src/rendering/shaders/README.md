@@ -34,6 +34,7 @@ may not appear above the backends.
 | `cy/field.slang` | an environment field, sampled from the buffer layout `cy/environment/gpu.h` fixes, through the GPU scene's bindless table at set 0, binding 3 |
 | `cy/terrain_shade.slang` | the four substrate samples a terrain vertex takes, and the colour they produce |
 | `cy/cloud_shadow.slang` | the cloud shadow field read as an attenuation of direct sunlight |
+| `cy/aerial_perspective.slang` | the atmosphere's aerial perspective table (`sky::pack_aerial_perspective()`'s words) sampled for a surface: transmittance and in-scattering, interpolated in depth from the eye |
 
 **The last three are M11.a's, and they are why `m10:fields-sampled-on-a-device` is closed.** That
 criterion measured the number of modules in this directory that sampled an environment field at
@@ -44,6 +45,12 @@ device — and the two consumers below it are the shapes the requirement names: 
 a reader of the sky's cloud shadow. `cy/cloud_shadow.slang` is imported by `samples/10-world`'s
 lit fragment path, through the image-bound `cyCloudShadowAtImage` that the bindless
 `cyCloudShadowAt` is built on; `render.world_cloud_shadow` runs that shader on a device.
+
+**`cy/aerial_perspective.slang` is `add-aerial-perspective`'s.** It carries no fog colour and no
+density: what it reads is `sky::AerialPerspectiveTable`, integrated on the processor from the same
+atmosphere and tables as the sky, and `sky::AerialPerspectiveTable::sample_at()` is the same
+sampler on the processor. `samples/10-world`'s lit fragment path imports it, and
+`render.world_aerial_perspective` compares what that path draws with `sample_at()` texel for texel.
 
 **Every module here is compiled by something.** `smoke.material_slang`'s last case compiles
 `cy.field`, `cy.terrain_shade` and `cy.cloud_shadow` through the engine's own Slang front end against

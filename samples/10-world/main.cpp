@@ -111,6 +111,9 @@ struct Options {
     /// before half of the committed before/after pair, and the frame a byte-identity check
     /// compares against.
     bool no_water_shading = false;
+    /// Draw the frame without aerial perspective and with the stand-in clear sky, as before the
+    /// frame took its distance from the atmosphere. The before half of that before/after pair.
+    bool no_aerial_perspective = false;
     /// MEASURE ON A QUIET HOST, OR FAIL SAYING THE HOST WAS NOT QUIET. A frame budget on a loaded
     /// machine measures the machine: `m11a:world-budget-on-a-device` held at 10.8 ms worst alone
     /// on the host and missed at 58 to 286 ms beside 24 spinning processes, same binary, same
@@ -249,6 +252,7 @@ private:
             cursor.flag("--headless", out.headless) ||
             cursor.flag("--no-cloud-shadows", out.no_cloud_shadows) ||
             cursor.flag("--no-water-shading", out.no_water_shading) ||
+            cursor.flag("--no-aerial-perspective", out.no_aerial_perspective) ||
             cursor.flag("--quiet-host", out.quiet_host) ||
             cursor.number("--quiet-wait-s", out.quiet_wait_s);
         if (!recognised) {
@@ -650,6 +654,14 @@ struct Band {
         worst_cost.weather_ms, worst_cost.water_ms, worst_cost.ocean_ms, worst_cost.sky_ms,
         worst_cost.terrain_shade_ms, worst_cost.foliage_ms, worst_drawn.build_ms,
         worst_drawn.submit_ms);
+    f64 aerial_mean = 0.0;
+    for (const StageReport& drawn : take.drawn.span()) {
+        aerial_mean += drawn.aerial_ms;
+    }
+    std::printf(
+        "  of stage_build_ms, the atmosphere integrated for the camera (clear sky and "
+        "aerial perspective): %.1f ms mean\n",
+        aerial_mean / frames);
     if (worst <= static_cast<f64>(budget_ms)) {
         std::printf("  INSIDE the budget at every frame of the cycle.\n");
         return true;
@@ -791,6 +803,7 @@ int main(int argc, char** argv) {
     world_options.take_fps = static_cast<f32>(options.fps);
     // Presentation, not simulation: a headless run draws nothing that could be shadowed.
     world_options.cloud_shadows = !options.no_cloud_shadows && !options.headless;
+    world_options.aerial_perspective = !options.no_aerial_perspective;
 
     World world(allocator, world_options);
     BuildReport report;

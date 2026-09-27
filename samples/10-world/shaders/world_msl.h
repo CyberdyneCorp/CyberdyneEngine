@@ -32,7 +32,7 @@ struct vertexInput_0
 };
 
 
-#line 75 "samples/10-world/shaders/world.slang"
+#line 92 "samples/10-world/shaders/world.slang"
 struct WorldPush_0
 {
     float4 row0_0;
@@ -46,7 +46,7 @@ struct WorldPush_0
 };
 
 
-#line 127
+#line 148
 struct VertexOutput_0
 {
     float4 clip_1;
@@ -56,11 +56,11 @@ struct VertexOutput_0
 };
 
 
-#line 127
+#line 148
 [[vertex]] worldVertex_Result_0 worldVertex(vertexInput_0 _S1 [[stage_in]], WorldPush_0 constant* push_0 [[buffer(1)]])
 {
 
-#line 138
+#line 159
     float4 _S2 = float4(_S1.position_0, 1.0);
     thread VertexOutput_0 output_0;
     (&output_0)->clip_1 = float4(dot(push_0->row0_0, _S2), dot(push_0->row1_0, _S2), dot(push_0->row2_0, _S2), dot(push_0->row3_0, _S2));
@@ -69,35 +69,35 @@ struct VertexOutput_0
     (&output_0)->normal_2 = _S1.normal_1;
     (&output_0)->color_2 = _S1.color_1;
 
-#line 144
+#line 165
     thread worldVertex_Result_0 _S3;
 
-#line 144
+#line 165
     (&_S3)->clip_0 = output_0.clip_1;
 
-#line 144
+#line 165
     (&_S3)->world_0 = output_0.world_1;
 
-#line 144
+#line 165
     (&_S3)->normal_0 = output_0.normal_2;
 
-#line 144
+#line 165
     (&_S3)->color_0 = output_0.color_2;
 
-#line 144
+#line 165
     return _S3;
 }
 
 )cy_msl";
 
-/// world_fragment.metal, 24388 bytes.
+/// world_fragment.metal, 29915 bytes.
 inline constexpr char kWorldFragmentMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 154 "samples/10-world/shaders/world.slang"
+#line 175 "samples/10-world/shaders/world.slang"
 float3 tonemap_0(float3 radiance_0)
 {
 
@@ -1427,7 +1427,7 @@ float cyCloudShadowAtImage_0(uint device* image_words_10, float x_4, float y_3, 
 }
 
 
-#line 75 "samples/10-world/shaders/world.slang"
+#line 92 "samples/10-world/shaders/world.slang"
 struct WorldPush_0
 {
     float4 row0_0;
@@ -1441,15 +1441,16 @@ struct WorldPush_0
 };
 
 
-#line 163
+#line 49 "src/rendering/shaders/cy/aerial_perspective.slang"
 struct WorldCloudShadow_default_0
 {
     uint device* field_0;
     float4 device* placement_0;
+    float4 device* aerial_0;
 };
 
 
-#line 163
+#line 49
 struct KernelContext_0
 {
     WorldPush_0 constant* push_0;
@@ -1457,7 +1458,7 @@ struct KernelContext_0
 };
 
 
-#line 161
+#line 182 "samples/10-world/shaders/world.slang"
 float sunThroughClouds_0(float3 world_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 placement_1 = kernelContext_0->cloudShadow_0->placement_0[int(0)];
@@ -1466,7 +1467,7 @@ float sunThroughClouds_0(float3 world_0, KernelContext_0 thread* kernelContext_0
         return 1.0;
     }
 
-#line 166
+#line 187
     float _S53 = cyCloudShadowAtImage_0(kernelContext_0->cloudShadow_0->field_0, world_0.x + placement_1.x, world_0.y, world_0.z + placement_1.y);
 
 
@@ -1475,104 +1476,342 @@ float sunThroughClouds_0(float3 world_0, KernelContext_0 thread* kernelContext_0
 }
 
 
-#line 170
+#line 58 "src/rendering/shaders/cy/aerial_perspective.slang"
+bool cyAerialPerspectiveEnabled_0(float4 device* table_words_0)
+{
+    return (table_words_0[int(0)].w) > 0.5;
+}
+
+float cyAerialSliceDepth_0(float4 shape_0, float4 planes_0, float slice_0)
+{
+    float _S54 = shape_0.z;
+    return mix(planes_0.x, planes_0.y, pow(min(slice_0 + 1.0, _S54) / _S54, max(shape_0.w, 1.0)));
+}
+
+float3 cyAerialFetch_0(float4 device* table_words_1, float4 shape_1, uint slice_1, uint x_5, uint y_4, uint which_0)
+{
+
+    uint width_0 = uint(shape_1.x);
+
+
+    return table_words_1[5U + (slice_1 * uint(shape_1.y) * width_0 + y_4 * width_0 + x_5) * 2U + which_0].xyz;
+}
+
+float3 cyAerialPlane_0(float4 device* table_words_2, float4 shape_2, uint slice_2, float2 texel_0, uint which_1)
+{
+
+    float _S55 = shape_2.x;
+    float _S56 = shape_2.y;
+    float2 clamped_0 = clamp(texel_0, float2(0.0) , float2(_S55 - 1.0, _S56 - 1.0));
+    float _S57 = clamped_0.x;
+
+#line 84
+    uint x0_0 = uint(_S57);
+    float _S58 = clamped_0.y;
+
+#line 85
+    uint y0_0 = uint(_S58);
+    uint _S59 = min(x0_0 + 1U, uint(_S55) - 1U);
+    uint _S60 = min(y0_0 + 1U, uint(_S56) - 1U);
+
+
+
+    float3 _S61 = float3((_S57 - float(x0_0))) ;
+
+
+    return mix(mix(cyAerialFetch_0(table_words_2, shape_2, slice_2, x0_0, y0_0, which_1), cyAerialFetch_0(table_words_2, shape_2, slice_2, _S59, y0_0, which_1), _S61), mix(cyAerialFetch_0(table_words_2, shape_2, slice_2, x0_0, _S60, which_1), cyAerialFetch_0(table_words_2, shape_2, slice_2, _S59, _S60, which_1), _S61), float3((_S58 - float(y0_0))) );
+}
+
+
+#line 42
+struct CyAerialPerspective_0
+{
+    float3 transmittance_0;
+    float3 inScattering_0;
+};
+
+
+#line 99
+CyAerialPerspective_0 cyAerialPerspectiveAt_0(float4 device* table_words_3, float3 offset_1)
+{
+    thread CyAerialPerspective_0 result_1;
+    float3 _S62 = float3(1.0) ;
+
+#line 102
+    (&result_1)->transmittance_0 = _S62;
+    float3 _S63 = float3(0.0) ;
+
+#line 103
+    (&result_1)->inScattering_0 = _S63;
+
+    float4 forward_0 = table_words_3[int(0)];
+    float4 right_0 = table_words_3[int(1)];
+    float4 up_0 = table_words_3[int(2)];
+    float4 shape_3 = table_words_3[int(3)];
+    float4 planes_1 = table_words_3[int(4)];
+    float depth_0 = dot(offset_1, forward_0.xyz);
+
+#line 110
+    bool _S64;
+    if((forward_0.w) < 0.5)
+    {
+
+#line 111
+        _S64 = true;
+
+#line 111
+    }
+    else
+    {
+
+#line 111
+        _S64 = depth_0 <= 0.0;
+
+#line 111
+    }
+
+#line 111
+    if(_S64)
+    {
+        return result_1;
+    }
+
+
+
+    float2 texel_1 = float2((dot(offset_1, right_0.xyz) / (depth_0 * right_0.w) * 0.5 + 0.5) * shape_3.x - 0.5, (dot(offset_1, up_0.xyz) / (depth_0 * up_0.w) * 0.5 + 0.5) * shape_3.y - 0.5);
+
+
+
+    float _S65 = shape_3.z;
+
+#line 122
+    uint last_0 = uint(_S65) - 1U;
+    float first_0 = cyAerialSliceDepth_0(shape_3, planes_1, 0.0);
+
+
+
+    float _S66 = saturate(depth_0 / max(first_0, 9.99999997475242708e-07));
+
+#line 127
+    float fraction_0;
+
+#line 127
+    uint farSlice_0;
+
+#line 127
+    float3 nearT_0;
+
+#line 127
+    float3 nearS_0;
+    if(depth_0 > first_0)
+    {
+        float _S67 = planes_1.x;
+
+
+)cy_msl"
+    R"cy_msl(        uint _S68 = min(uint(max(pow(saturate((depth_0 - _S67) / max(planes_1.y - _S67, 9.99999997475242708e-07)), 1.0 / max(shape_3.w, 1.0)) * _S65 - 1.0, 0.0)), last_0);
+
+#line 133
+        float3 _S69 = cyAerialPlane_0(table_words_3, shape_3, _S68, texel_1, 0U);
+
+#line 133
+        float3 _S70 = cyAerialPlane_0(table_words_3, shape_3, _S68, texel_1, 1U);
+
+
+        uint _S71 = _S68 + 1U;
+
+#line 136
+        uint _S72 = min(_S71, last_0);
+        float nearEdge_0 = cyAerialSliceDepth_0(shape_3, planes_1, float(_S68));
+        float farEdge_0 = cyAerialSliceDepth_0(shape_3, planes_1, float(_S71));
+        if(_S68 == last_0)
+        {
+
+#line 139
+            fraction_0 = 1.0;
+
+#line 139
+        }
+        else
+        {
+
+#line 139
+            fraction_0 = saturate((depth_0 - nearEdge_0) / max(farEdge_0 - nearEdge_0, 9.99999997475242708e-07));
+
+#line 139
+        }
+
+#line 139
+        farSlice_0 = _S72;
+
+#line 139
+        nearT_0 = _S69;
+
+#line 139
+        nearS_0 = _S70;
+
+#line 128
+    }
+    else
+    {
+
+#line 128
+        farSlice_0 = 0U;
+
+#line 128
+        nearT_0 = _S62;
+
+#line 128
+        fraction_0 = _S66;
+
+#line 128
+        nearS_0 = _S63;
+
+#line 128
+    }
+
+#line 128
+    float3 _S73 = cyAerialPlane_0(table_words_3, shape_3, farSlice_0, texel_1, 1U);
+
+#line 143
+    float3 _S74 = float3(fraction_0) ;
+
+#line 143
+    (&result_1)->transmittance_0 = mix(nearT_0, cyAerialPlane_0(table_words_3, shape_3, farSlice_0, texel_1, 0U), _S74);
+    (&result_1)->inScattering_0 = mix(nearS_0, _S73, _S74);
+    return result_1;
+}
+
+
+float3 cyApplyAerialPerspective_0(float4 device* table_words_4, float3 radiance_1, float3 offset_2)
+{
+
+#line 150
+    CyAerialPerspective_0 _S75 = cyAerialPerspectiveAt_0(table_words_4, offset_2);
+
+
+    return radiance_1 * _S75.transmittance_0 + _S75.inScattering_0;
+}
+
+
+#line 195 "samples/10-world/shaders/world.slang"
+float3 throughAir_0(float3 lit_0, float3 world_1, KernelContext_0 thread* kernelContext_1)
+{
+
+#line 195
+    float4 device* table_words_5 = kernelContext_1->cloudShadow_0->aerial_0;
+
+
+
+    if(!cyAerialPerspectiveEnabled_0(table_words_5))
+    {
+        return lit_0;
+    }
+    return cyApplyAerialPerspective_0(table_words_5, lit_0, world_1 - kernelContext_1->push_0->eye_0.xyz);
+}
+
+
+#line 203
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 170
+#line 203
 struct pixelInput_0
 {
-    float3 world_1 [[user(TEXCOORD)]];
+    float3 world_2 [[user(TEXCOORD)]];
     float3 normal_0 [[user(TEXCOORD_1)]];
     float3 color_0 [[user(TEXCOORD_2)]];
 };
 
 
-#line 174
-[[fragment]] pixelOutput_0 worldFragment(pixelInput_0 _S54 [[stage_in]], float4 clip_0 [[position]], WorldPush_0 constant* push_1 [[buffer(1)]], WorldCloudShadow_default_0 constant* cloudShadow_1 [[buffer(0)]])
+#line 207
+[[fragment]] pixelOutput_0 worldFragment(pixelInput_0 _S76 [[stage_in]], float4 clip_0 [[position]], WorldPush_0 constant* push_1 [[buffer(1)]], WorldCloudShadow_default_0 constant* cloudShadow_1 [[buffer(0)]])
 {
 
-#line 174
-    thread KernelContext_0 kernelContext_1;
+#line 207
+    thread KernelContext_0 kernelContext_2;
 
-#line 174
-    (&kernelContext_1)->push_0 = push_1;
+#line 207
+    (&kernelContext_2)->push_0 = push_1;
 
-#line 174
-    (&kernelContext_1)->cloudShadow_0 = cloudShadow_1;
+#line 207
+    (&kernelContext_2)->cloudShadow_0 = cloudShadow_1;
 
     if((push_1->eye_0.w) > 0.5)
     {
 
-#line 176
-        pixelOutput_0 _S55 = { float4(tonemap_0(_S54.color_0), 1.0) };
+#line 209
+        pixelOutput_0 _S77 = { float4(tonemap_0(_S76.color_0), 1.0) };
 
 
 
-        return _S55;
+        return _S77;
     }
 
-    float3 normal_1 = normalize(_S54.normal_0);
-    float3 toEye_0 = normalize(push_1->eye_0.xyz - _S54.world_1);
+    float3 normal_1 = normalize(_S76.normal_0);
+    float3 toEye_0 = normalize(push_1->eye_0.xyz - _S76.world_2);
 
-#line 184
+#line 217
     float3 normal_2;
     if((dot(normal_1, toEye_0)) < 0.0)
     {
 
-#line 185
+#line 218
         normal_2 = - normal_1;
 
-#line 185
+#line 218
     }
     else
     {
 
-#line 185
+#line 218
         normal_2 = normal_1;
 
-#line 185
+#line 218
     }
 
-#line 195
-    float3 _S56 = (&kernelContext_1)->push_0->sun_0.xyz;
+#line 228
+    float3 _S78 = (&kernelContext_2)->push_0->sun_0.xyz;
 
-#line 195
-    float _S57 = sunThroughClouds_0(_S54.world_1, &kernelContext_1);
+#line 228
+    float _S79 = sunThroughClouds_0(_S76.world_2, &kernelContext_2);
 
-#line 195
-    float3 _S58 = _S56 * float3(_S57) ;
+#line 228
+    float3 _S80 = _S78 * float3(_S79) ;
 
-    float3 lit_0 = _S54.color_0 * ((&kernelContext_1)->push_0->ambient_0.xyz + _S58 * float3(saturate(dot(normal_2, - (&kernelContext_1)->push_0->light_0.xyz))) );
+    float3 lit_1 = _S76.color_0 * ((&kernelContext_2)->push_0->ambient_0.xyz + _S80 * float3(saturate(dot(normal_2, - (&kernelContext_2)->push_0->light_0.xyz))) );
 
-#line 197
-    float3 lit_1;
+#line 230
+    float3 lit_2;
 
-    if(((&kernelContext_1)->push_0->sun_0.w) > 0.0)
+    if(((&kernelContext_2)->push_0->sun_0.w) > 0.0)
     {
 
-#line 199
-        lit_1 = lit_0 + _S58 * float3((pow(saturate(dot(normal_2, normalize(- (&kernelContext_1)->push_0->light_0.xyz + toEye_0))), 120.0) * (&kernelContext_1)->push_0->sun_0.w)) ;
+#line 232
+        lit_2 = lit_1 + _S80 * float3((pow(saturate(dot(normal_2, normalize(- (&kernelContext_2)->push_0->light_0.xyz + toEye_0))), 120.0) * (&kernelContext_2)->push_0->sun_0.w)) ;
 
-#line 199
+#line 232
     }
     else
     {
 
-#line 199
-        lit_1 = lit_0;
+#line 232
+        lit_2 = lit_1;
 
-#line 199
+#line 232
     }
 
-#line 199
-    pixelOutput_0 _S59 = { float4(tonemap_0(lit_1), 1.0) };
+#line 232
+    float3 _S81 = throughAir_0(lit_2, _S76.world_2, &kernelContext_2);
 
-#line 210
-    return _S59;
+#line 232
+    pixelOutput_0 _S82 = { float4(tonemap_0(_S81), 1.0) };
+
+#line 243
+    return _S82;
 }
 
 )cy_msl";

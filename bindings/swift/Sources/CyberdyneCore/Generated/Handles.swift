@@ -103,6 +103,196 @@ public struct Engine: @unchecked Sendable {
     public func servicePoll(session: CyServiceSession, event: UnsafeMutablePointer<CyServiceEvent>?, hasEvent: UnsafeMutablePointer<Bool>?) throws {
         try interface.servicePoll(engine: raw, session: session, event: event, hasEvent: hasEvent)
     }
+
+    @inlinable
+    public func timeGet(into: UnsafeMutablePointer<CyTime>?) throws {
+        try interface.timeGet(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func inputFindAction(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyInputAction>?) throws {
+        try interface.inputFindAction(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func inputActionState(user: UInt32, action: CyInputAction, into: UnsafeMutablePointer<CyInputActionState>?) throws {
+        try interface.inputActionState(engine: raw, user: user, action: action, into: into)
+    }
+
+    @inlinable
+    public func inputActionStateByName(user: UInt32, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyInputActionState>?) throws {
+        try interface.inputActionStateByName(engine: raw, user: user, name: name, into: into)
+    }
+
+    @inlinable
+    public func inputPointer(user: UInt32, into: UnsafeMutablePointer<CyInputPointer>?) throws {
+        try interface.inputPointer(engine: raw, user: user, into: into)
+    }
+
+    @inlinable
+    public func inputModifiers(user: UInt32, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.inputModifiers(engine: raw, user: user, into: into)
+    }
+
+    @inlinable
+    public func inputFindContext(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyInputContext>?) throws {
+        try interface.inputFindContext(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func inputPushContext(user: UInt32, context: CyInputContext, priority: Int32) throws {
+        try interface.inputPushContext(engine: raw, user: user, context: context, priority: priority)
+    }
+
+    @inlinable
+    public func inputPopContext(user: UInt32, context: CyInputContext) throws {
+        try interface.inputPopContext(engine: raw, user: user, context: context)
+    }
+
+    @inlinable
+    public func cameraActive(into: UnsafeMutablePointer<CyCamera>?) throws {
+        try interface.cameraActive(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func cameraView(camera: CyCamera, into: UnsafeMutablePointer<CyCameraView>?) throws {
+        try interface.cameraView(engine: raw, camera: camera, into: into)
+    }
+
+    @inlinable
+    public func cameraScreenToRay(camera: CyCamera, screen: UnsafePointer<Float>?, into: UnsafeMutablePointer<CyRay>?) throws {
+        try interface.cameraScreenToRay(engine: raw, camera: camera, screen: screen, into: into)
+    }
+
+    @inlinable
+    public func cameraWorldToScreen(camera: CyCamera, points: UnsafePointer<Float>?, count: UInt32, into: UnsafeMutablePointer<CyScreenPoint>?) throws {
+        try interface.cameraWorldToScreen(engine: raw, camera: camera, points: points, count: count, into: into)
+    }
+
+    @inlinable
+    public func cameraSetTarget(camera: CyCamera, target: UnsafePointer<CyCameraTarget>?) throws {
+        try interface.cameraSetTarget(engine: raw, camera: camera, target: target)
+    }
+
+    @inlinable
+    public func cameraSetPose(camera: CyCamera, pose: UnsafePointer<CyPose>?) throws {
+        try interface.cameraSetPose(engine: raw, camera: camera, pose: pose)
+    }
+
+    @inlinable
+    public func cameraClearPose(camera: CyCamera) throws {
+        try interface.cameraClearPose(engine: raw, camera: camera)
+    }
+
+    @inlinable
+    public func physicsRaycast(ray: UnsafePointer<CyRay>?, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyPhysicsHit>?, hasHit: UnsafeMutablePointer<Bool>?) throws {
+        try interface.physicsRaycast(engine: raw, ray: ray, filter: filter, into: into, hasHit: hasHit)
+    }
+
+    @inlinable
+    public func physicsRaycastAll(ray: UnsafePointer<CyRay>?, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyPhysicsHit>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.physicsRaycastAll(engine: raw, ray: ray, filter: filter, into: into, capacity: capacity, count: count)
+    }
+
+    @inlinable
+    public func physicsShapeCast(shape: UnsafePointer<CyShape>?, start: UnsafePointer<CyPose>?, direction: UnsafePointer<Float>?, maxDistance: Float, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyPhysicsHit>?, hasHit: UnsafeMutablePointer<Bool>?) throws {
+        try interface.physicsShapeCast(engine: raw, shape: shape, start: start, direction: direction, maxDistance: maxDistance, filter: filter, into: into, hasHit: hasHit)
+    }
+
+    @inlinable
+    public func physicsOverlap(shape: UnsafePointer<CyShape>?, pose: UnsafePointer<CyPose>?, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyEntity>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.physicsOverlap(engine: raw, shape: shape, pose: pose, filter: filter, into: into, capacity: capacity, count: count)
+    }
+
+    @inlinable
+    public func navFindPath(request: UnsafePointer<CyNavPathRequest>?, into: UnsafeMutablePointer<Float>?, capacity: UInt32, result: UnsafeMutablePointer<CyNavPathResult>?) throws {
+        try interface.navFindPath(engine: raw, request: request, into: into, capacity: capacity, result: result)
+    }
+
+    @inlinable
+    public func navRequestPath(request: UnsafePointer<CyNavPathRequest>?, into: UnsafeMutablePointer<CyNavQuery>?) throws {
+        try interface.navRequestPath(engine: raw, request: request, into: into)
+    }
+
+    @inlinable
+    public func navPollPath(query: CyNavQuery, into: UnsafeMutablePointer<Float>?, capacity: UInt32, result: UnsafeMutablePointer<CyNavPathResult>?) throws {
+        try interface.navPollPath(engine: raw, query: query, into: into, capacity: capacity, result: result)
+    }
+
+    @inlinable
+    public func navCancelPath(query: CyNavQuery) throws {
+        try interface.navCancelPath(engine: raw, query: query)
+    }
+
+    @inlinable
+    public func navAgentConfigure(entity: CyEntity, params: UnsafePointer<CyNavAgentParams>?) throws {
+        try interface.navAgentConfigure(engine: raw, entity: entity, params: params)
+    }
+
+    @inlinable
+    public func navAgentMoveTo(entity: CyEntity, target: UnsafePointer<Float>?) throws {
+        try interface.navAgentMoveTo(engine: raw, entity: entity, target: target)
+    }
+
+    @inlinable
+    public func navAgentStop(entity: CyEntity) throws {
+        try interface.navAgentStop(engine: raw, entity: entity)
+    }
+
+    @inlinable
+    public func navAgentState(entity: CyEntity, into: UnsafeMutablePointer<CyNavAgentState>?) throws {
+        try interface.navAgentState(engine: raw, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func audioFindCue(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyAudioCue>?) throws {
+        try interface.audioFindCue(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func audioPlay(play: UnsafePointer<CyAudioPlay>?, voice: UnsafeMutablePointer<CyAudioVoice>?) throws {
+        try interface.audioPlay(engine: raw, play: play, voice: voice)
+    }
+
+    @inlinable
+    public func audioStop(voice: CyAudioVoice, fadeOut: Float) throws {
+        try interface.audioStop(engine: raw, voice: voice, fadeOut: fadeOut)
+    }
+
+    @inlinable
+    public func audioVoicePlaying(voice: CyAudioVoice) -> Bool {
+        interface.audioVoicePlaying(engine: raw, voice: voice)
+    }
+
+    @inlinable
+    public func audioFindBus(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyAudioBus>?) throws {
+        try interface.audioFindBus(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func audioSetBusVolume(bus: CyAudioBus, volume: Float, fade: Float) throws {
+        try interface.audioSetBusVolume(engine: raw, bus: bus, volume: volume, fade: fade)
+    }
+
+    @inlinable
+    public func spawnResolve(asset: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyPrefab>?) throws {
+        try interface.spawnResolve(engine: raw, asset: asset, into: into)
+    }
+
+    @inlinable
+    public func spawnInstantiate(prefab: CyPrefab, params: UnsafePointer<CySpawnParams>?, root: UnsafeMutablePointer<CyEntity>?) throws {
+        try interface.spawnInstantiate(engine: raw, prefab: prefab, params: params, root: root)
+    }
+
+    @inlinable
+    public func spawnInstantiateMany(prefab: CyPrefab, parent: CyEntity, poses: UnsafePointer<CyPose>?, count: UInt32, roots: UnsafeMutablePointer<CyEntity>?) throws {
+        try interface.spawnInstantiateMany(engine: raw, prefab: prefab, parent: parent, poses: poses, count: count, roots: roots)
+    }
+
+    @inlinable
+    public func spawnDestroy(root: CyEntity) throws {
+        try interface.spawnDestroy(engine: raw, root: root)
+    }
 }
 
 public struct World: @unchecked Sendable {

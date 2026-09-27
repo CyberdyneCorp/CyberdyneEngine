@@ -9,7 +9,9 @@
 
 #include <cy/test/test.h>
 
+#include <cy/core/jobs/job_system.h>
 #include <cy/core/math/math.h>
+#include <cy/core/memory/array.h>
 #include <cy/rendering/sky/composition.h>
 #include <cy/rendering/sky/diagnostics.h>
 #include <cy/rendering/sky/tables.h>
@@ -21,8 +23,10 @@ namespace {
 using cy::f32;
 using cy::u32;
 using cy::u64;
+using cy::usize;
 using cy::Vec2;
 using cy::Vec3;
+using cy::Vec4;
 using cy::rendering::FroxelVolume;
 using namespace cy::rendering::sky;
 
@@ -433,6 +437,179 @@ CY_TEST_CASE("sky tables: aerial perspective is the atmosphere's, in the engine'
                     "% of the sky's radiance in the same direction");
     CY_CHECK_GT(fraction, 0.15F);
     CY_CHECK_LT(fraction, 1.05F);
+}
+
+namespace {
+
+/// The aerial perspective volume a surface sampler is checked against: a camera 150 m up looking
+/// along -Z under a sun thirty degrees high, out to 20 km.
+struct SurfaceVolume {
+    Atmosphere atmosphere = earth_atmosphere();
+    AtmosphereTables tables;
+    AerialPerspectiveTable aerial;
+    AerialPerspectiveTable::View view;
+    FroxelVolume volume;
+    Vec3 eye{0.0F, 0.0F, 0.0F};
+    Vec3 sun = direction_at(30.0F, 60.0F);
+
+    [[nodiscard]] cy::Status build(cy::jobs::JobSystem* jobs = nullptr) noexcept {
+        if (cy::Status configured = tables.configure(SkyTableQuality::Medium); !configured) {
+            return configured;
+        }
+        if (auto built = tables.build(atmosphere); !built) {
+            return cy::make_unexpected(built.error());
+        }
+        volume.width = 16;
+        volume.height = 9;
+        volume.depth = 32;
+        volume.near_plane = 1.0F;
+        volume.far_plane = 20000.0F;
+        if (cy::Status configured = aerial.configure(volume); !configured) {
+            return configured;
+        }
+        eye = ground_position(atmosphere, 150.0F);
+        view.tan_half_fov_y = 0.45F;
+        view.tan_half_fov_x = 0.8F;
+        return aerial.update(atmosphere, tables, eye, view, sun, jobs);
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE("sky tables: a surface's aerial perspective is interpolated in depth from the eye") {
+    SurfaceVolume scene;
+    CY_REQUIRE(scene.build());
+    const AerialPerspectiveTable& aerial = scene.aerial;
+
+    // A SURFACE A FEW METRES AWAY IS LEFT AS IT WAS LIT. `sample()` answers with the froxel whose
+    // far edge holds the surface, which for a surface two metres out is the whole first slice's
+    // haze; the surface sampler interpolates from the eye instead, where nothing has been
+    // attenuated and nothing added.
+    const Vec3 near_offset{0.3F, -0.2F, -2.0F};
+    const AerialPerspective near_surface = aerial.sample_at(near_offset);
+    const AerialPerspective near_froxel = aerial.sample(Vec2{0.5F, 0.5F}, 2.0F);
+    const f32 first_edge = cy::rendering::froxel_slice_depth(scene.volume, 0);
+    CY_TEST_MESSAGE("two metres out: surface transmittance ", near_surface.transmittance.z,
+                    ", in-scattering ", near_surface.in_scattering.z, " nits; the first slice ",
+                    "(to ", first_edge, " m) holds ", near_froxel.transmittance.z, " and ",
+                    near_froxel.in_scattering.z);
+    CY_CHECK_GT(near_surface.transmittance.z, 0.9999F);
+    CY_CHECK_LT(near_surface.in_scattering.z, near_froxel.in_scattering.z * 0.2F);
+    CY_CHECK_LT(near_froxel.transmittance.z, near_surface.transmittance.z);
+
+    // AT EVERY SLICE'S FAR EDGE THE TWO SAMPLERS ARE THE SAME TABLE ENTRY. Straight ahead, where
+    // the pixel is a froxel centre, so the only thing that can differ is depth.
+    f32 worst = 0.0F;
+    for (const u32 slice : {0U, 3U, 11U, 20U, 30U}) {
+        // A hair inside the edge: exactly on it, `froxel_slice_of()`'s ceiling may round to the
+        // next slice, which is a statement about float equality rather than about either sampler.
+        const f32 depth = cy::rendering::froxel_slice_depth(scene.volume, slice) * 0.99999F;
+        const Vec2 centre{(7.0F + 0.5F) / 16.0F, (4.0F + 0.5F) / 9.0F};
+        const f32 x = ((centre.x * 2.0F) - 1.0F) * scene.view.tan_half_fov_x * depth;
+        const f32 y = ((centre.y * 2.0F) - 1.0F) * scene.view.tan_half_fov_y * depth;
+        const AerialPerspective surface = aerial.sample_at(Vec3{x, y, -depth});
+        const AerialPerspective froxel = aerial.sample(centre, depth);
+        worst =
+            cy::math::max(worst, relative_difference(surface.transmittance, froxel.transmittance));
+        worst =
+            cy::math::max(worst, relative_difference(surface.in_scattering, froxel.in_scattering));
+    }
+    CY_TEST_MESSAGE("at the slices' far edges the samplers differ by at most ", worst * 100.0F,
+                    "%");
+    CY_CHECK_LT(worst, 1.0e-3F);
+
+    // AND IT NEVER RUNS BACKWARDS between them: attenuation and in-scattering both grow with
+    // distance, continuously, so a landscape has no band where a slice boundary falls.
+    f32 previous_t = 2.0F;
+    f32 previous_s = -1.0F;
+    u32 backwards = 0;
+    for (u32 step = 1; step <= 400; ++step) {
+        const f32 depth = 50.0F * static_cast<f32>(step);
+        const AerialPerspective at = aerial.sample_at(Vec3{0.0F, 0.0F, -depth});
+        backwards += at.transmittance.y > previous_t + 1.0e-6F ? 1U : 0U;
+        backwards += at.in_scattering.y < previous_s - 1.0e-3F ? 1U : 0U;
+        previous_t = at.transmittance.y;
+        previous_s = at.in_scattering.y;
+    }
+    CY_CHECK_EQ(backwards, 0U);
+
+    // A surface behind the eye is not a surface the eye sees: untouched rather than extrapolated.
+    const AerialPerspective behind = aerial.sample_at(Vec3{0.0F, 0.0F, 30.0F});
+    CY_CHECK(behind.transmittance == (Vec3{1.0F, 1.0F, 1.0F}));
+    CY_CHECK(behind.in_scattering == (Vec3{0.0F, 0.0F, 0.0F}));
+}
+
+CY_TEST_CASE("sky tables: the aerial perspective table integrated on workers is the serial bits") {
+    // The world frame rebuilds this volume every frame its camera or sun moves, so it lends the
+    // table its workers. Every column is its own ray written to its own slots; EQUALITY, not a
+    // tolerance, because a frame whose pixels depended on whether a job system was attached would
+    // not be reproducible.
+    cy::jobs::JobSystem jobs;
+    cy::jobs::JobSystemConfig config;
+    config.worker_count = 4;
+    config.task_slots_per_participant = 256;
+    config.deque_capacity = 256;
+    config.scratch_bytes_per_participant = cy::usize{64} * 1024;
+    CY_REQUIRE(jobs.start(config).has_value());
+
+    SurfaceVolume serial;
+    SurfaceVolume parallel;
+    CY_REQUIRE(serial.build());
+    CY_REQUIRE(parallel.build(&jobs));
+    jobs.shutdown();
+
+    u32 differing = 0;
+    const cy::Span<const Vec3> a_t = serial.aerial.transmittances();
+    const cy::Span<const Vec3> b_t = parallel.aerial.transmittances();
+    const cy::Span<const Vec3> a_s = serial.aerial.in_scatterings();
+    const cy::Span<const Vec3> b_s = parallel.aerial.in_scatterings();
+    CY_REQUIRE_EQ(a_t.size(), b_t.size());
+    for (usize index = 0; index < a_t.size(); ++index) {
+        differing += (a_t[index] == b_t[index] && a_s[index] == b_s[index]) ? 0U : 1U;
+    }
+    CY_TEST_MESSAGE(a_t.size(), " froxels, ", differing, " differing");
+    CY_CHECK_EQ(a_t.size(), static_cast<usize>(16U * 9U * 32U));
+    CY_CHECK_EQ(differing, 0U);
+}
+
+CY_TEST_CASE("sky tables: the aerial perspective words are the layout the device sampler reads") {
+    SurfaceVolume scene;
+    constexpr f32 kScale = 0.001F;
+
+    // UNBUILT, THE WORDS SAY "OFF": the header alone, `enabled` zero. That is what a frame with
+    // aerial perspective off binds, and the device then leaves every surface as it was lit.
+    cy::Array<Vec4> words(cy::current_allocator());
+    CY_REQUIRE(pack_aerial_perspective(scene.aerial, kScale, words));
+    CY_CHECK_EQ(words.size(), static_cast<usize>(kAerialPerspectiveHeaderWords));
+    CY_CHECK_EQ(words[0].w, 0.0F);
+
+    CY_REQUIRE(scene.build());
+    CY_REQUIRE(pack_aerial_perspective(scene.aerial, kScale, words));
+    const auto froxels = static_cast<usize>(scene.aerial.froxels());
+    CY_REQUIRE_EQ(words.size(), kAerialPerspectiveHeaderWords + (froxels * 2U));
+    CY_CHECK_EQ(words[0].w, 1.0F);
+    CY_CHECK_EQ(words[0].z, -1.0F);
+    CY_CHECK_EQ(words[1].x, 1.0F);
+    CY_CHECK_EQ(words[1].w, scene.view.tan_half_fov_x);
+    CY_CHECK_EQ(words[2].y, 1.0F);
+    CY_CHECK_EQ(words[2].w, scene.view.tan_half_fov_y);
+    CY_CHECK_EQ(words[3].x, 16.0F);
+    CY_CHECK_EQ(words[3].y, 9.0F);
+    CY_CHECK_EQ(words[3].z, 32.0F);
+    CY_CHECK_EQ(words[3].w, scene.volume.depth_exponent);
+    CY_CHECK_EQ(words[4].x, scene.volume.near_plane);
+    CY_CHECK_EQ(words[4].y, scene.volume.far_plane);
+    CY_CHECK_EQ(words[4].z, kScale);
+
+    // Slice-major, then row-major, two words a froxel; in-scattering already in the frame's units.
+    const usize froxel = (static_cast<usize>(17) * 16U * 9U) + (static_cast<usize>(5) * 16U) + 11U;
+    const Vec3 t = scene.aerial.transmittances()[froxel];
+    const Vec3 s = scene.aerial.in_scatterings()[froxel];
+    const Vec4 packed_t = words[kAerialPerspectiveHeaderWords + (froxel * 2U)];
+    const Vec4 packed_s = words[kAerialPerspectiveHeaderWords + (froxel * 2U) + 1U];
+    CY_CHECK((Vec3{packed_t.x, packed_t.y, packed_t.z}) == t);
+    CY_CHECK((Vec3{packed_s.x, packed_s.y, packed_s.z}) == s * kScale);
+    CY_CHECK_GT(s.z, 0.0F);
 }
 
 CY_TEST_CASE("sky tables: the ground-to-orbit transition is one model, not a band per altitude") {

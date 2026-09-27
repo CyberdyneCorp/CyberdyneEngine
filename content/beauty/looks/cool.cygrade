@@ -1,0 +1,10 @@
+# content/beauty/looks/cool.cygrade — the beauty shot's cool look: a slightly cool white balance
+# from the parametric controls, then an exported-style `.cube` (cool.cube, sRGB-encoded) that pushes
+# the shadows teal and the highlights toward steel. The two are baked into ONE table, so the frame
+# still pays one lookup.
+cygrade 1
+name Cool
+temperature 7400
+contrast 1.02
+cube cool.cube
+cube-encoding srgb

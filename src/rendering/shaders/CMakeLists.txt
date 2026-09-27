@@ -17,6 +17,7 @@
 # name is staged by nothing, and an `import` of it fails at compile time rather than silently
 # resolving to a stale copy somebody left in the build directory.
 set(CY_SHADER_STDLIB_MODULES
+    cy/aerial_perspective.slang
     cy/brdf.slang
     cy/cloud_shadow.slang
     cy/cluster.slang

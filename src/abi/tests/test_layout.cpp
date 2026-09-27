@@ -29,7 +29,7 @@ CY_TEST_CASE("every ABI struct has the size the header declares") {
     CY_CHECK_EQ(sizeof(CyVar), 32U);
     CY_CHECK_EQ(sizeof(CyFieldDesc), 24U);
     CY_CHECK_EQ(sizeof(CyComponentTypeDesc), 32U);
-    CY_CHECK_EQ(sizeof(CyBehaviourVTable), 56U);
+    CY_CHECK_EQ(sizeof(CyBehaviourVTable), 64U);
     CY_CHECK_EQ(sizeof(CyBorrow), 16U);
     CY_CHECK_EQ(sizeof(CyServiceRequest), 40U);
     CY_CHECK_EQ(sizeof(CyServiceEvent), 40U);
@@ -58,6 +58,7 @@ CY_TEST_CASE("every ABI struct has the offsets the description generator compute
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, schema_version), 4U);
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, create), 8U);
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, user_data), 48U);
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, frame_update), 56U);  // appended at 1.3
 
     CY_CHECK_EQ(offsetof(CyInterfaceHeader, table_size), 12U);
     CY_CHECK_EQ(offsetof(CyModuleInit, initialize), 16U);
@@ -91,4 +92,166 @@ CY_TEST_CASE("the ABI's types are the C types they claim to be") {
 
 CY_TEST_CASE("the var blob header is the size var_release subtracts") {
     CY_CHECK_EQ(cy::abi::kVarBlobHeaderSize, 32U);
+}
+
+// `add-swift-game-api`. The claim above, for the structs ABI 1.3 appended: the overlays are
+// generated from abi_describe.py's numbers, so the compiler has to agree with them. One case per
+// service group.
+CY_TEST_CASE(
+    "the 1.3 the pose, the ray and the clock structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyPose), 28U);
+    CY_CHECK_EQ(offsetof(CyPose, position), 0U);
+    CY_CHECK_EQ(offsetof(CyPose, rotation), 12U);
+    CY_CHECK_EQ(sizeof(CyRay), 28U);
+    CY_CHECK_EQ(offsetof(CyRay, origin), 0U);
+    CY_CHECK_EQ(offsetof(CyRay, direction), 12U);
+    CY_CHECK_EQ(offsetof(CyRay, max_distance), 24U);
+    CY_CHECK_EQ(sizeof(CyTime), 48U);
+    CY_CHECK_EQ(offsetof(CyTime, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyTime, phase), 4U);
+    CY_CHECK_EQ(offsetof(CyTime, tick), 8U);
+    CY_CHECK_EQ(offsetof(CyTime, fixed_delta), 16U);
+    CY_CHECK_EQ(offsetof(CyTime, frame_delta), 24U);
+    CY_CHECK_EQ(offsetof(CyTime, interpolation), 32U);
+    CY_CHECK_EQ(offsetof(CyTime, flags), 40U);
+    CY_CHECK_EQ(offsetof(CyTime, reserved), 44U);
+}
+
+CY_TEST_CASE("the 1.3 input structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyInputActionState), 32U);
+    CY_CHECK_EQ(offsetof(CyInputActionState, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyInputActionState, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyInputActionState, value), 8U);
+    CY_CHECK_EQ(offsetof(CyInputActionState, press_count), 20U);
+    CY_CHECK_EQ(offsetof(CyInputActionState, release_count), 22U);
+    CY_CHECK_EQ(offsetof(CyInputActionState, tick), 24U);
+    CY_CHECK_EQ(sizeof(CyInputPointer), 48U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, buttons), 8U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, buttons_pressed), 12U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, buttons_released), 16U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, position), 20U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, delta), 28U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, wheel), 36U);
+    CY_CHECK_EQ(offsetof(CyInputPointer, reserved), 44U);
+}
+
+CY_TEST_CASE("the 1.3 camera structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyCameraView), 68U);
+    CY_CHECK_EQ(offsetof(CyCameraView, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyCameraView, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyCameraView, pose), 8U);
+    CY_CHECK_EQ(offsetof(CyCameraView, vertical_fov), 36U);
+    CY_CHECK_EQ(offsetof(CyCameraView, ortho_height), 40U);
+    CY_CHECK_EQ(offsetof(CyCameraView, near_plane), 44U);
+    CY_CHECK_EQ(offsetof(CyCameraView, far_plane), 48U);
+    CY_CHECK_EQ(offsetof(CyCameraView, viewport), 52U);
+    CY_CHECK_EQ(sizeof(CyScreenPoint), 16U);
+    CY_CHECK_EQ(offsetof(CyScreenPoint, position), 0U);
+    CY_CHECK_EQ(offsetof(CyScreenPoint, depth), 8U);
+    CY_CHECK_EQ(offsetof(CyScreenPoint, flags), 12U);
+    CY_CHECK_EQ(sizeof(CyCameraTarget), 48U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, entity), 8U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, position), 16U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, yaw), 28U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, pitch), 32U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, distance), 36U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, blend_seconds), 40U);
+    CY_CHECK_EQ(offsetof(CyCameraTarget, reserved), 44U);
+}
+
+CY_TEST_CASE("the 1.3 physics queries structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyShape), 24U);
+    CY_CHECK_EQ(offsetof(CyShape, kind), 0U);
+    CY_CHECK_EQ(offsetof(CyShape, radius), 4U);
+    CY_CHECK_EQ(offsetof(CyShape, half_height), 8U);
+    CY_CHECK_EQ(offsetof(CyShape, half_extents), 12U);
+    CY_CHECK_EQ(sizeof(CyQueryFilter), 32U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, layer), 4U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, mask), 8U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, flags), 12U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, ignore), 16U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, ignore_count), 24U);
+    CY_CHECK_EQ(offsetof(CyQueryFilter, reserved), 28U);
+    CY_CHECK_EQ(sizeof(CyPhysicsHit), 48U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, flags), 0U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, reserved), 4U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, entity), 8U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, point), 16U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, normal), 28U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, distance), 40U);
+    CY_CHECK_EQ(offsetof(CyPhysicsHit, fraction), 44U);
+}
+
+CY_TEST_CASE("the 1.3 navigation structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyNavPathRequest), 64U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, world), 4U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, start), 8U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, end), 20U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, extents), 32U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, node_budget), 44U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, area_mask), 48U);
+    CY_CHECK_EQ(offsetof(CyNavPathRequest, capabilities), 56U);
+    CY_CHECK_EQ(sizeof(CyNavPathResult), 24U);
+    CY_CHECK_EQ(offsetof(CyNavPathResult, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyNavPathResult, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyNavPathResult, point_count), 8U);
+    CY_CHECK_EQ(offsetof(CyNavPathResult, state), 12U);
+    CY_CHECK_EQ(offsetof(CyNavPathResult, cost), 16U);
+    CY_CHECK_EQ(offsetof(CyNavPathResult, length), 20U);
+    CY_CHECK_EQ(sizeof(CyNavAgentParams), 48U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, world), 4U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, radius), 8U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, height), 12U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, max_speed), 16U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, max_acceleration), 20U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, arrival_distance), 24U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, priority), 28U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, area_mask), 32U);
+    CY_CHECK_EQ(offsetof(CyNavAgentParams, capabilities), 40U);
+    CY_CHECK_EQ(sizeof(CyNavAgentState), 56U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, status), 4U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, flags), 8U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, reserved), 12U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, position), 16U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, velocity), 28U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, target), 40U);
+    CY_CHECK_EQ(offsetof(CyNavAgentState, remaining_distance), 52U);
+}
+
+CY_TEST_CASE("the 1.3 audio and spawning structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyAudioPlay), 56U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, cue), 8U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, attach_to), 16U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, bus), 24U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, position), 32U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, volume), 44U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, pitch), 48U);
+    CY_CHECK_EQ(offsetof(CyAudioPlay, fade_in_seconds), 52U);
+    CY_CHECK_EQ(sizeof(CySpawnParams), 56U);
+    CY_CHECK_EQ(offsetof(CySpawnParams, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CySpawnParams, flags), 4U);
+    CY_CHECK_EQ(offsetof(CySpawnParams, parent), 8U);
+    CY_CHECK_EQ(offsetof(CySpawnParams, pose), 16U);
+    CY_CHECK_EQ(offsetof(CySpawnParams, scale), 44U);
+}
+
+CY_TEST_CASE("the 1.3 service handles are integers, never addresses") {
+    CY_CHECK_EQ(sizeof(CyInputAction), 4U);
+    CY_CHECK_EQ(sizeof(CyInputContext), 8U);
+    CY_CHECK_EQ(sizeof(CyCamera), 8U);
+    CY_CHECK_EQ(sizeof(CyNavQuery), 8U);
+    CY_CHECK_EQ(sizeof(CyAudioCue), 8U);
+    CY_CHECK_EQ(sizeof(CyAudioBus), 8U);
+    CY_CHECK_EQ(sizeof(CyAudioVoice), 8U);
+    CY_CHECK_EQ(sizeof(CyPrefab), 8U);
 }

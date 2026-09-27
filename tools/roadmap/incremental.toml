@@ -104,3 +104,11 @@ reason = "the same driver builds generation 0 from samples/04-character/game/*.s
 sources = ["bindings/swift", ".swift-version", "samples/04-character/game"]
 generated_by = ["bindings/swift/tools/cy_swift_module.py", "bindings/swift/Package.swift", "samples/04-character/CMakeLists.txt"]
 digest = "9d2cea33602894e5"
+
+[[edge]]
+name = "the 13-rts-api game module"
+outputs = ["samples/13-rts-api/module/libCyGame_g*.so"]
+reason = "the same driver as 04-character builds generation 0 from samples/13-rts-api/game/*.swift against bindings/swift by path, so SwiftPM reads the whole package directory and .swift-version plus the game's own sources"
+sources = ["bindings/swift", ".swift-version", "samples/13-rts-api/game"]
+generated_by = ["bindings/swift/tools/cy_swift_module.py", "bindings/swift/Package.swift", "samples/13-rts-api/CMakeLists.txt"]
+digest = "3d27503b5215a966"

@@ -2,6 +2,8 @@
 
 #include <cy/rendering/sky/tables.h>
 
+#include <cy/core/jobs/job_system.h>
+#include <cy/core/jobs/parallel.h>
 #include <cy/core/math/math.h>
 
 #include "internal.h"
@@ -440,6 +442,101 @@ Vec3 sky_radiance_tabulated(const Atmosphere& atmosphere, const AtmosphereTables
     return radiance;
 }
 
+namespace {
+
+/// The light a view ray has gathered so far, and the air it has passed through.
+struct ViewPath {
+    Vec3 optical_depth{0.0F, 0.0F, 0.0F};
+    Vec3 scattered{0.0F, 0.0F, 0.0F};
+};
+
+/// What scatters toward the eye at one point, per metre and per unit of stellar illuminance:
+/// single scattering of the sun through the tabulated transmittance, and the tabulated multiple
+/// scattering. The integrand both `sky_radiance_aerial()` and `AerialPerspectiveTable` share.
+[[nodiscard]] Vec3 view_source(const Atmosphere& atmosphere, const AtmosphereTables& tables,
+                               Vec3 sample, f32 altitude, Vec3 sun, f32 rayleigh_p,
+                               f32 mie_p) noexcept {
+    const f32 cos_sun = dot(normalize(sample), sun);
+    const bool shadowed = entry_distance(sample, sun, atmosphere.planet_radius) >= 0.0F;
+    const Vec3 sun_transmittance =
+        shadowed ? Vec3{0.0F, 0.0F, 0.0F} : tables.transmittance.sample(altitude, cos_sun);
+    const f32 rayleigh_density = density_at(altitude, atmosphere.rayleigh_scale_height);
+    const f32 mie_density = density_at(altitude, atmosphere.mie_scale_height);
+    const Vec3 rayleigh_term = atmosphere.rayleigh_scattering * (rayleigh_density * rayleigh_p);
+    const f32 mie_value = atmosphere.mie_scattering * mie_density * mie_p;
+    const Vec3 single =
+        cwise_mul(sun_transmittance, rayleigh_term + Vec3{mie_value, mie_value, mie_value});
+    const Vec3 multiple = cwise_mul(scattering_at(atmosphere, altitude),
+                                    tables.multiple_scattering.sample(altitude, cos_sun));
+    return single + multiple;
+}
+
+/// One step of a view ray, integrated EXACTLY for a source and an extinction that are constant
+/// across it: the light scattered in over the step and attenuated on its way out of it is
+/// `source * (1 - exp(-sigma * step)) / sigma`, times the transmittance in front of the step.
+/// A step that is optically thick therefore contributes what it really does, rather than being
+/// weighted by the transmittance at its far end — which is what lets a few coarse steps far from
+/// the eye and many fine ones near it describe the same integral.
+void integrate_view_step(const Atmosphere& atmosphere, const AtmosphereTables& tables, Vec3 sample,
+                         f32 step, Vec3 sun, f32 rayleigh_p, f32 mie_p, ViewPath& path) noexcept {
+    const f32 altitude = altitude_of(atmosphere, sample);
+    const Vec3 sigma = extinction_at(atmosphere, altitude);
+    const Vec3 source = view_source(atmosphere, tables, sample, altitude, sun, rayleigh_p, mie_p);
+    const Vec3 in_front = exp3(path.optical_depth);
+    const Vec3 depth = sigma * step;
+    const auto through = [&](u32 channel) {
+        return sigma[channel] > 1.0e-12F ? (1.0F - std::exp(-depth[channel])) / sigma[channel]
+                                         : step;
+    };
+    const Vec3 weight{through(0), through(1), through(2)};
+    path.scattered = path.scattered + cwise_mul(in_front, cwise_mul(source, weight));
+    path.optical_depth = path.optical_depth + depth;
+}
+
+}  // namespace
+
+Vec3 sky_radiance_aerial(const Atmosphere& atmosphere, const AtmosphereTables& tables,
+                         Vec3 view_position, Vec3 view_direction, Vec3 sun_direction,
+                         u32 steps) noexcept {
+    const Vec3 view = normalized_or(view_direction, Vec3{0.0F, 1.0F, 0.0F});
+    const Vec3 sun = normalized_or(sun_direction, Vec3{0.0F, 1.0F, 0.0F});
+    const f32 ground = entry_distance(view_position, view, atmosphere.planet_radius);
+    const f32 top = exit_distance(view_position, view, atmosphere.atmosphere_radius);
+    const f32 span = ground >= 0.0F ? ground : top;
+    if (span <= 0.0F) {
+        return Vec3{0.0F, 0.0F, 0.0F};
+    }
+    const f32 cos_theta = dot(view, sun);
+    const f32 rayleigh_p = rayleigh_phase(cos_theta);
+    const f32 mie_p = mie_phase(cos_theta, atmosphere.mie_anisotropy);
+
+    // Steps that grow as the square of the distance, as the froxel slices do: the air near the eye
+    // is the densest and the nearest, and it is where a uniform step loses the most.
+    const u32 count = math::max(steps, 4U);
+    ViewPath path;
+    f32 previous = 0.0F;
+    for (u32 index = 0; index < count; ++index) {
+        const f32 t = static_cast<f32>(index + 1U) / static_cast<f32>(count);
+        const f32 distance = span * t * t;
+        const f32 step = distance - previous;
+        const Vec3 sample = view_position + view * (previous + (step * 0.5F));
+        integrate_view_step(atmosphere, tables, sample, step, sun, rayleigh_p, mie_p, path);
+        previous = distance;
+    }
+
+    Vec3 radiance = path.scattered * atmosphere.stellar_illuminance;
+    if (ground > 0.0F) {
+        const Vec3 hit = view_position + view * ground;
+        const Vec3 normal = normalize(hit);
+        const f32 lambert = math::max(0.0F, dot(normal, sun));
+        const Vec3 sun_at_ground = tables.transmittance.sample(0.0F, dot(normal, sun));
+        const Vec3 ground_radiance = cwise_mul(atmosphere.ground_albedo, sun_at_ground) *
+                                     (lambert * atmosphere.stellar_illuminance / math::kPi);
+        radiance = radiance + cwise_mul(exp3(path.optical_depth), ground_radiance);
+    }
+    return radiance;
+}
+
 Vec3 segment_transmittance_tabulated(const Atmosphere& atmosphere, const AtmosphereTables& tables,
                                      Vec3 from, Vec3 to) noexcept {
     const Vec3 offset = to - from;
@@ -491,7 +588,8 @@ Status IncrementalSkyView::configure(SkyTableQuality quality) noexcept {
 }
 
 void IncrementalSkyView::integrate_row(const Atmosphere& atmosphere, const AtmosphereTables* tables,
-                                       Vec3 view_position, Vec3 sun, u32 row) noexcept {
+                                       Integrand integrand, Vec3 view_position, Vec3 sun,
+                                       u32 row) noexcept {
     const u32 width = sky_table_width(quality_);
     const u32 height = sky_table_height(quality_);
 
@@ -508,20 +606,31 @@ void IncrementalSkyView::integrate_row(const Atmosphere& atmosphere, const Atmos
             2.0F * math::kPi * (static_cast<f32>(x) + 0.5F) / static_cast<f32>(width);
         const Vec3 direction{cos_elevation * std::cos(azimuth), std::sin(elevation),
                              cos_elevation * std::sin(azimuth)};
-        radiance_[(static_cast<usize>(row) * width) + x] =
-            tables != nullptr
-                ? sky_radiance_tabulated(atmosphere, *tables, view_position, direction, sun, 16)
-                : sky_radiance(atmosphere, view_position, direction, sun, 16);
+        Vec3 radiance;
+        switch (integrand) {
+            case Integrand::Tabulated:
+                radiance =
+                    sky_radiance_tabulated(atmosphere, *tables, view_position, direction, sun, 16);
+                break;
+            case Integrand::Aerial:
+                radiance =
+                    sky_radiance_aerial(atmosphere, *tables, view_position, direction, sun, 32);
+                break;
+            case Integrand::Marched:
+                radiance = sky_radiance(atmosphere, view_position, direction, sun, 16);
+                break;
+        }
+        radiance_[(static_cast<usize>(row) * width) + x] = radiance;
     }
     row_sun_[row] = sun;
 }
 
 IncrementalSkyView::UpdatePlan IncrementalSkyView::plan_update(const Atmosphere& atmosphere,
-                                                               Vec3 view_position,
-                                                               Vec3 sun) noexcept {
+                                                               Vec3 view_position, Vec3 sun,
+                                                               Integrand integrand) noexcept {
     UpdatePlan plan;
     if (!built_ || !same_atmosphere(last_atmosphere_, atmosphere) ||
-        length_squared(view_position - last_position_) >= 1.0F) {
+        length_squared(view_position - last_position_) >= 1.0F || integrand != last_integrand_) {
         plan.full = true;
         return plan;
     }
@@ -534,10 +643,9 @@ IncrementalSkyView::UpdatePlan IncrementalSkyView::plan_update(const Atmosphere&
     return plan;
 }
 
-Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(const Atmosphere& atmosphere,
-                                                                 const AtmosphereTables* tables,
-                                                                 Vec3 view_position, Vec3 sun_in,
-                                                                 u32 row_budget) noexcept {
+Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(
+    const Atmosphere& atmosphere, const AtmosphereTables* tables, Integrand integrand,
+    Vec3 view_position, Vec3 sun_in, u32 row_budget, jobs::JobSystem* jobs) noexcept {
     if (radiance_.empty()) {
         if (auto configured = configure(quality_); !configured) {
             return fail(configured.error().code, configured.error().message);
@@ -547,7 +655,7 @@ Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(const Atmospher
     const u32 height = sky_table_height(quality_);
     const u32 width = sky_table_width(quality_);
 
-    const UpdatePlan plan = plan_update(atmosphere, view_position, sun);
+    const UpdatePlan plan = plan_update(atmosphere, view_position, sun, integrand);
     SkyViewUpdate update;
 
     if (plan.skip) {
@@ -556,8 +664,17 @@ Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(const Atmospher
     }
 
     if (plan.full || row_budget == 0 || row_budget >= height) {
-        for (u32 row = 0; row < height; ++row) {
-            integrate_row(atmosphere, tables, view_position, sun, row);
+        auto rows = [&](const jobs::TaskContext&, u64 begin, u64 end) noexcept {
+            for (u64 row = begin; row < end; ++row) {
+                integrate_row(atmosphere, tables, integrand, view_position, sun,
+                              static_cast<u32>(row));
+            }
+        };
+        const bool parallel =
+            jobs != nullptr &&
+            jobs::parallel_for(*jobs, height, 1, rows, "incremental sky view").has_value();
+        if (!parallel) {
+            rows(jobs::TaskContext{}, 0, height);
         }
         update.rows_rebuilt = height;
         update.directions_integrated = static_cast<u64>(width) * height;
@@ -565,6 +682,7 @@ Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(const Atmospher
         last_sun_ = sun;
         last_position_ = view_position;
         last_atmosphere_ = atmosphere;
+        last_integrand_ = integrand;
         built_ = true;
         if (plan.full) {
             ++stats_.full_rebuilds;
@@ -610,7 +728,7 @@ Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(const Atmospher
             break;  // every row already carries this sun: nothing to do with the rest of the budget
         }
         stats_.worst_row_staleness = math::max(stats_.worst_row_staleness, worst);
-        integrate_row(atmosphere, tables, view_position, sun, worst_row);
+        integrate_row(atmosphere, tables, integrand, view_position, sun, worst_row);
         ++update.rows_rebuilt;
         update.directions_integrated += width;
     }
@@ -627,7 +745,8 @@ Expected<SkyViewUpdate, Error> IncrementalSkyView::update_common(const Atmospher
 Expected<SkyViewUpdate, Error> IncrementalSkyView::update(const Atmosphere& atmosphere,
                                                           Vec3 view_position, Vec3 sun_direction,
                                                           u32 row_budget) noexcept {
-    return update_common(atmosphere, nullptr, view_position, sun_direction, row_budget);
+    return update_common(atmosphere, nullptr, Integrand::Marched, view_position, sun_direction,
+                         row_budget, nullptr);
 }
 
 Expected<SkyViewUpdate, Error> IncrementalSkyView::update_tabulated(const Atmosphere& atmosphere,
@@ -635,7 +754,17 @@ Expected<SkyViewUpdate, Error> IncrementalSkyView::update_tabulated(const Atmosp
                                                                     Vec3 view_position,
                                                                     Vec3 sun_direction,
                                                                     u32 row_budget) noexcept {
-    return update_common(atmosphere, &tables, view_position, sun_direction, row_budget);
+    return update_common(atmosphere, &tables, Integrand::Tabulated, view_position, sun_direction,
+                         row_budget, nullptr);
+}
+
+Expected<SkyViewUpdate, Error> IncrementalSkyView::update_aerial(const Atmosphere& atmosphere,
+                                                                 const AtmosphereTables& tables,
+                                                                 Vec3 view_position,
+                                                                 Vec3 sun_direction, u32 row_budget,
+                                                                 jobs::JobSystem* jobs) noexcept {
+    return update_common(atmosphere, &tables, Integrand::Aerial, view_position, sun_direction,
+                         row_budget, jobs);
 }
 
 Vec3 IncrementalSkyView::sample(Vec3 direction) const noexcept {
@@ -702,8 +831,8 @@ Status AerialPerspectiveTable::configure(const FroxelVolume& volume) noexcept {
 }
 
 Status AerialPerspectiveTable::update(const Atmosphere& atmosphere, const AtmosphereTables& tables,
-                                      Vec3 view_position, const View& view,
-                                      Vec3 sun_direction) noexcept {
+                                      Vec3 view_position, const View& view, Vec3 sun_direction,
+                                      jobs::JobSystem* jobs) noexcept {
     if (transmittance_.empty()) {
         if (auto status = configure(volume_); !status) {
             return status;
@@ -713,70 +842,64 @@ Status AerialPerspectiveTable::update(const Atmosphere& atmosphere, const Atmosp
         return fail(ErrorCode::Unavailable,
                     "AerialPerspectiveTable::update: the atmosphere tables have not been built");
     }
+    view_ = view;
     const Vec3 sun = normalized_or(sun_direction, Vec3{0.0F, 1.0F, 0.0F});
-
-    for (u32 y = 0; y < volume_.height; ++y) {
-        const f32 ndc_y =
-            (((static_cast<f32>(y) + 0.5F) / static_cast<f32>(volume_.height)) * 2.0F) - 1.0F;
-        for (u32 x = 0; x < volume_.width; ++x) {
-            const f32 ndc_x =
-                (((static_cast<f32>(x) + 0.5F) / static_cast<f32>(volume_.width)) * 2.0F) - 1.0F;
-            // CAMERA-RELATIVE: the ray is built in the view's own basis and only the ALTITUDE of
-            // the camera reaches the atmosphere. That is the whole of the planetary-scale precision
-            // argument — see `composition.h` — and it is why this loop never adds a world position
-            // to a distance.
-            const Vec3 direction =
-                normalize(view.forward + (view.right * (ndc_x * view.tan_half_fov_x)) +
-                          (view.up * (ndc_y * view.tan_half_fov_y)));
-            const f32 forward_cosine = math::max(dot(direction, view.forward), 1.0e-3F);
-
-            Vec3 optical_depth{0.0F, 0.0F, 0.0F};
-            Vec3 scattered{0.0F, 0.0F, 0.0F};
-            f32 previous_distance = 0.0F;
-            const f32 cos_theta = dot(direction, sun);
-            const f32 rayleigh_p = rayleigh_phase(cos_theta);
-            const f32 mie_p = mie_phase(cos_theta, atmosphere.mie_anisotropy);
-
-            for (u32 slice = 0; slice < volume_.depth; ++slice) {
-                // `froxel_slice_depth()` is called rather than re-derived: the requirement's
-                // "share the engine's volumetric infrastructure" is a build fact only if the slice
-                // distribution is literally the one `rendering-post-processing` defines.
-                const f32 slice_depth = froxel_slice_depth(volume_, slice);
-                const f32 distance = slice_depth / forward_cosine;
-                const f32 step = math::max(distance - previous_distance, 0.0F);
-                const Vec3 sample = view_position + direction * (previous_distance + (step * 0.5F));
-                previous_distance = distance;
-
-                const f32 altitude = altitude_of(atmosphere, sample);
-                optical_depth = optical_depth + extinction_at(atmosphere, altitude) * step;
-                const Vec3 along = exp3(optical_depth);
-                const f32 cos_sun = dot(normalize(sample), sun);
-                const bool shadowed = entry_distance(sample, sun, atmosphere.planet_radius) >= 0.0F;
-                const Vec3 sun_transmittance = shadowed
-                                                   ? Vec3{0.0F, 0.0F, 0.0F}
-                                                   : tables.transmittance.sample(altitude, cos_sun);
-
-                const f32 rayleigh_density = density_at(altitude, atmosphere.rayleigh_scale_height);
-                const f32 mie_density = density_at(altitude, atmosphere.mie_scale_height);
-                const Vec3 rayleigh_term =
-                    atmosphere.rayleigh_scattering * (rayleigh_density * rayleigh_p);
-                const f32 mie_value = atmosphere.mie_scattering * mie_density * mie_p;
-                const Vec3 single = cwise_mul(
-                    sun_transmittance, rayleigh_term + Vec3{mie_value, mie_value, mie_value});
-                const Vec3 multiple =
-                    cwise_mul(scattering_at(atmosphere, altitude),
-                              tables.multiple_scattering.sample(altitude, cos_sun));
-                scattered = scattered + cwise_mul(along, single + multiple) * step;
-
-                const usize index = (static_cast<usize>(slice) * volume_.height * volume_.width) +
-                                    (static_cast<usize>(y) * volume_.width) + x;
-                transmittance_[index] = along;
-                in_scattering_[index] = scattered * atmosphere.stellar_illuminance;
+    auto rows = [&](const jobs::TaskContext&, u64 begin, u64 end) noexcept {
+        for (u64 y = begin; y < end; ++y) {
+            for (u32 x = 0; x < volume_.width; ++x) {
+                integrate_column(atmosphere, tables, view_position, sun, x, static_cast<u32>(y));
             }
         }
+    };
+    const bool parallel =
+        jobs != nullptr &&
+        jobs::parallel_for(*jobs, volume_.height, 1, rows, "aerial perspective table").has_value();
+    if (!parallel) {
+        rows(jobs::TaskContext{}, 0, volume_.height);
     }
     built_ = true;
     return {};
+}
+
+void AerialPerspectiveTable::integrate_column(const Atmosphere& atmosphere,
+                                              const AtmosphereTables& tables, Vec3 view_position,
+                                              Vec3 sun, u32 x, u32 y) noexcept {
+    const f32 ndc_y =
+        (((static_cast<f32>(y) + 0.5F) / static_cast<f32>(volume_.height)) * 2.0F) - 1.0F;
+    const f32 ndc_x =
+        (((static_cast<f32>(x) + 0.5F) / static_cast<f32>(volume_.width)) * 2.0F) - 1.0F;
+    // CAMERA-RELATIVE: the ray is built in the view's own basis and only the ALTITUDE of the
+    // camera reaches the atmosphere. That is the whole of the planetary-scale precision argument —
+    // see `composition.h` — and it is why this loop never adds a world position to a distance.
+    const Vec3 direction =
+        normalize(view_.forward + (view_.right * (ndc_x * view_.tan_half_fov_x)) +
+                  (view_.up * (ndc_y * view_.tan_half_fov_y)));
+    const f32 forward_cosine = math::max(dot(direction, view_.forward), 1.0e-3F);
+
+    ViewPath path;
+    f32 previous_distance = 0.0F;
+    const f32 cos_theta = dot(direction, sun);
+    const f32 rayleigh_p = rayleigh_phase(cos_theta);
+    const f32 mie_p = mie_phase(cos_theta, atmosphere.mie_anisotropy);
+
+    for (u32 slice = 0; slice < volume_.depth; ++slice) {
+        // `froxel_slice_depth()` is called rather than re-derived: the requirement's "share the
+        // engine's volumetric infrastructure" is a build fact only if the slice distribution is
+        // literally the one `rendering-post-processing` defines.
+        const f32 slice_depth = froxel_slice_depth(volume_, slice);
+        const f32 distance = slice_depth / forward_cosine;
+        const f32 step = math::max(distance - previous_distance, 0.0F);
+        const Vec3 sample = view_position + direction * (previous_distance + (step * 0.5F));
+        previous_distance = distance;
+        // The step rule `sky_radiance_aerial()` uses, so the air in front of a distant surface
+        // and the sky behind it are one integral taken one way.
+        integrate_view_step(atmosphere, tables, sample, step, sun, rayleigh_p, mie_p, path);
+
+        const usize index = (static_cast<usize>(slice) * volume_.height * volume_.width) +
+                            (static_cast<usize>(y) * volume_.width) + x;
+        transmittance_[index] = exp3(path.optical_depth);
+        in_scattering_[index] = path.scattered * atmosphere.stellar_illuminance;
+    }
 }
 
 AerialPerspective AerialPerspectiveTable::sample(Vec2 uv, f32 view_depth) const noexcept {
@@ -811,6 +934,134 @@ AerialPerspective AerialPerspectiveTable::sample(Vec2 uv, f32 view_depth) const 
     result.transmittance = fetch(transmittance_.span());
     result.in_scattering = fetch(in_scattering_.span());
     return result;
+}
+
+namespace {
+
+/// The bilinear corners of a froxel plane and their weights, shared by both samplers.
+struct PlaneTaps {
+    u32 x0 = 0;
+    u32 x1 = 0;
+    u32 y0 = 0;
+    u32 y1 = 0;
+    f32 tx = 0.0F;
+    f32 ty = 0.0F;
+};
+
+[[nodiscard]] PlaneTaps plane_taps(const FroxelVolume& volume, Vec2 uv) noexcept {
+    PlaneTaps taps;
+    const f32 x = math::clamp((uv.x * static_cast<f32>(volume.width)) - 0.5F, 0.0F,
+                              static_cast<f32>(volume.width - 1U));
+    const f32 y = math::clamp((uv.y * static_cast<f32>(volume.height)) - 0.5F, 0.0F,
+                              static_cast<f32>(volume.height - 1U));
+    taps.x0 = static_cast<u32>(x);
+    taps.y0 = static_cast<u32>(y);
+    taps.x1 = math::min(taps.x0 + 1U, volume.width - 1U);
+    taps.y1 = math::min(taps.y0 + 1U, volume.height - 1U);
+    taps.tx = x - static_cast<f32>(taps.x0);
+    taps.ty = y - static_cast<f32>(taps.y0);
+    return taps;
+}
+
+[[nodiscard]] Vec3 fetch_plane(Span<const Vec3> values, const FroxelVolume& volume,
+                               const PlaneTaps& taps, u32 slice) noexcept {
+    const usize plane = static_cast<usize>(slice) * volume.height * volume.width;
+    const auto at = [&](u32 x, u32 y) {
+        return values[plane + (static_cast<usize>(y) * volume.width) + x];
+    };
+    return lerp(lerp(at(taps.x0, taps.y0), at(taps.x1, taps.y0), taps.tx),
+                lerp(at(taps.x0, taps.y1), at(taps.x1, taps.y1), taps.tx), taps.ty);
+}
+
+/// Where a view depth falls between two slices' far edges: the nearer slice (or -1 for the eye
+/// itself) and the fraction of the way to the next. The inverse of `froxel_slice_depth()`'s
+/// distribution, taken continuously rather than rounded to a slice.
+struct DepthTap {
+    i32 slice = -1;
+    f32 fraction = 0.0F;
+};
+
+[[nodiscard]] DepthTap depth_tap(const FroxelVolume& volume, f32 view_depth) noexcept {
+    DepthTap tap;
+    const f32 first = froxel_slice_depth(volume, 0);
+    if (view_depth <= first) {
+        tap.fraction = math::saturate(view_depth / math::max(first, 1.0e-6F));
+        return tap;
+    }
+    const f32 span = math::max(volume.far_plane - volume.near_plane, 1.0e-6F);
+    const f32 normalised = math::saturate((view_depth - volume.near_plane) / span);
+    const f32 exponent = math::max(volume.depth_exponent, 1.0F);
+    const f32 continuous =
+        (std::pow(normalised, 1.0F / exponent) * static_cast<f32>(volume.depth)) - 1.0F;
+    const u32 last = volume.depth - 1U;
+    const u32 slice = math::min(static_cast<u32>(math::max(continuous, 0.0F)), last);
+    if (slice == last) {
+        tap.slice = static_cast<i32>(last);
+        tap.fraction = 1.0F;
+        return tap;
+    }
+    const f32 near_edge = froxel_slice_depth(volume, slice);
+    const f32 far_edge = froxel_slice_depth(volume, slice + 1U);
+    tap.slice = static_cast<i32>(slice);
+    tap.fraction =
+        math::saturate((view_depth - near_edge) / math::max(far_edge - near_edge, 1.0e-6F));
+    return tap;
+}
+
+}  // namespace
+
+AerialPerspective AerialPerspectiveTable::sample_at(Vec3 offset) const noexcept {
+    AerialPerspective result;
+    const f32 view_depth = dot(offset, view_.forward);
+    if (!built_ || view_depth <= 0.0F) {
+        return result;
+    }
+    const f32 ndc_x = dot(offset, view_.right) / (view_depth * view_.tan_half_fov_x);
+    const f32 ndc_y = dot(offset, view_.up) / (view_depth * view_.tan_half_fov_y);
+    const PlaneTaps taps = plane_taps(volume_, Vec2{(ndc_x * 0.5F) + 0.5F, (ndc_y * 0.5F) + 0.5F});
+    const DepthTap tap = depth_tap(volume_, view_depth);
+
+    // The eye is an implicit slice in front of the first: nothing attenuated, nothing added.
+    const Vec3 identity_t{1.0F, 1.0F, 1.0F};
+    const Vec3 identity_s{0.0F, 0.0F, 0.0F};
+    const Vec3 near_t = tap.slice < 0 ? identity_t
+                                      : fetch_plane(transmittance_.span(), volume_, taps,
+                                                    static_cast<u32>(tap.slice));
+    const Vec3 near_s = tap.slice < 0 ? identity_s
+                                      : fetch_plane(in_scattering_.span(), volume_, taps,
+                                                    static_cast<u32>(tap.slice));
+    const u32 far_slice = math::min(static_cast<u32>(tap.slice + 1), volume_.depth - 1U);
+    const Vec3 far_t = fetch_plane(transmittance_.span(), volume_, taps, far_slice);
+    const Vec3 far_s = fetch_plane(in_scattering_.span(), volume_, taps, far_slice);
+    result.transmittance = lerp(near_t, far_t, tap.fraction);
+    result.in_scattering = lerp(near_s, far_s, tap.fraction);
+    return result;
+}
+
+Status pack_aerial_perspective(const AerialPerspectiveTable& table, f32 radiance_scale,
+                               Array<Vec4>& out) noexcept {
+    const bool enabled = table.built();
+    const usize froxels = enabled ? static_cast<usize>(table.froxels()) : 0U;
+    if (auto sized = out.resize(kAerialPerspectiveHeaderWords + (froxels * 2U)); !sized) {
+        return sized;
+    }
+    const AerialPerspectiveTable::View& view = table.view();
+    const FroxelVolume& volume = table.volume();
+    out[0] = Vec4{view.forward.x, view.forward.y, view.forward.z, enabled ? 1.0F : 0.0F};
+    out[1] = Vec4{view.right.x, view.right.y, view.right.z, view.tan_half_fov_x};
+    out[2] = Vec4{view.up.x, view.up.y, view.up.z, view.tan_half_fov_y};
+    out[3] = Vec4{static_cast<f32>(volume.width), static_cast<f32>(volume.height),
+                  static_cast<f32>(volume.depth), volume.depth_exponent};
+    out[4] = Vec4{volume.near_plane, volume.far_plane, radiance_scale, 0.0F};
+    const Span<const Vec3> transmittance = table.transmittances();
+    const Span<const Vec3> in_scattering = table.in_scatterings();
+    for (usize index = 0; index < froxels; ++index) {
+        const Vec3 t = transmittance[index];
+        const Vec3 s = in_scattering[index] * radiance_scale;
+        out[kAerialPerspectiveHeaderWords + (index * 2U)] = Vec4{t.x, t.y, t.z, 0.0F};
+        out[kAerialPerspectiveHeaderWords + (index * 2U) + 1U] = Vec4{s.x, s.y, s.z, 0.0F};
+    }
+    return {};
 }
 
 }  // namespace cy::rendering::sky

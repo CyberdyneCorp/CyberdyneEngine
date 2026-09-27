@@ -99,6 +99,7 @@ cy_add_module(
         cy::import
         cy::rendering-assembly
         cy::rendering-contact-shadows
+        cy::rendering-grading
         cy::rendering-graph
         cy::rendering-lighting
         cy::rendering-occlusion

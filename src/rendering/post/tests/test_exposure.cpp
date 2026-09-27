@@ -11,13 +11,13 @@
 namespace {
 
 using cy::rendering::AutoExposureSettings;
-using cy::rendering::CameraExposure;
+using cy::rendering::CameraControls;
 using cy::rendering::ev100_from_luminance;
-using cy::rendering::exposure_multiplier;
 using cy::rendering::ExposureMode;
 using cy::rendering::ExposureState;
 using cy::rendering::luminance_for_ev100;
 using cy::rendering::LuminanceHistogram;
+using cy::rendering::multiplier_for_ev100;
 using cy::rendering::OutputTarget;
 using cy::rendering::TonemapOperator;
 using cy::rendering::TonemapSettings;
@@ -95,7 +95,7 @@ CY_TEST_CASE("metering is clamped, compensated, and honest about an empty histog
 }
 
 CY_TEST_CASE("the camera's three controls agree with EV, and adaptation has two speeds") {
-    CameraExposure camera;
+    CameraControls camera;
     camera.aperture = 4.0F;
     camera.shutter_seconds = 1.0F / 100.0F;
     camera.iso = 100.0F;
@@ -104,12 +104,12 @@ CY_TEST_CASE("the camera's three controls agree with EV, and adaptation has two 
 
     // Stopping down one stop raises EV by exactly one, which is the property a photographer's
     // intuition rests on.
-    CameraExposure stopped = camera;
+    CameraControls stopped = camera;
     stopped.aperture = 5.6568542F;
     CY_CHECK_NEAR(ev100_from_camera(stopped), ev100_from_camera(camera) + 1.0F, 1e-3F);
 
     // Brighter scene means a bigger EV means a smaller multiplier.
-    CY_CHECK_LT(exposure_multiplier(14.0F), exposure_multiplier(10.0F));
+    CY_CHECK_LT(multiplier_for_ev100(14.0F), multiplier_for_ev100(10.0F));
     // The two luminance conversions are inverses.
     CY_CHECK_NEAR(ev100_from_luminance(luminance_for_ev100(7.5F)), 7.5F, 1e-4F);
 
@@ -134,7 +134,7 @@ CY_TEST_CASE("the exposure state does what its mode says and nothing else") {
     manual.manual_ev100 = 9.5F;
     manual.update(nothing, 1.0F / 60.0F);
     CY_CHECK_NEAR(manual.current_ev100, 9.5F, 1e-6F);
-    CY_CHECK_NEAR(manual.multiplier(), exposure_multiplier(9.5F), 1e-9F);
+    CY_CHECK_NEAR(manual.multiplier(), multiplier_for_ev100(9.5F), 1e-9F);
 
     ExposureState camera;
     camera.mode = ExposureMode::Camera;

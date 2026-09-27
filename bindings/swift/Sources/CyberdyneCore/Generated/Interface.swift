@@ -273,4 +273,194 @@ public struct Interface: @unchecked Sendable {
     public func servicePoll(engine: CyEngine, session: CyServiceSession, event: UnsafeMutablePointer<CyServiceEvent>?, hasEvent: UnsafeMutablePointer<Bool>?) throws {
         try check(table.pointee.service_poll(engine, session, event, hasEvent))
     }
+
+    @inlinable
+    public func timeGet(engine: CyEngine, into: UnsafeMutablePointer<CyTime>?) throws {
+        try check(table.pointee.time_get(engine, into))
+    }
+
+    @inlinable
+    public func inputFindAction(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyInputAction>?) throws {
+        try check(table.pointee.input_find_action(engine, name, into))
+    }
+
+    @inlinable
+    public func inputActionState(engine: CyEngine, user: UInt32, action: CyInputAction, into: UnsafeMutablePointer<CyInputActionState>?) throws {
+        try check(table.pointee.input_action_state(engine, user, action, into))
+    }
+
+    @inlinable
+    public func inputActionStateByName(engine: CyEngine, user: UInt32, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyInputActionState>?) throws {
+        try check(table.pointee.input_action_state_by_name(engine, user, name, into))
+    }
+
+    @inlinable
+    public func inputPointer(engine: CyEngine, user: UInt32, into: UnsafeMutablePointer<CyInputPointer>?) throws {
+        try check(table.pointee.input_pointer(engine, user, into))
+    }
+
+    @inlinable
+    public func inputModifiers(engine: CyEngine, user: UInt32, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.input_modifiers(engine, user, into))
+    }
+
+    @inlinable
+    public func inputFindContext(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyInputContext>?) throws {
+        try check(table.pointee.input_find_context(engine, name, into))
+    }
+
+    @inlinable
+    public func inputPushContext(engine: CyEngine, user: UInt32, context: CyInputContext, priority: Int32) throws {
+        try check(table.pointee.input_push_context(engine, user, context, priority))
+    }
+
+    @inlinable
+    public func inputPopContext(engine: CyEngine, user: UInt32, context: CyInputContext) throws {
+        try check(table.pointee.input_pop_context(engine, user, context))
+    }
+
+    @inlinable
+    public func cameraActive(engine: CyEngine, into: UnsafeMutablePointer<CyCamera>?) throws {
+        try check(table.pointee.camera_active(engine, into))
+    }
+
+    @inlinable
+    public func cameraView(engine: CyEngine, camera: CyCamera, into: UnsafeMutablePointer<CyCameraView>?) throws {
+        try check(table.pointee.camera_view(engine, camera, into))
+    }
+
+    @inlinable
+    public func cameraScreenToRay(engine: CyEngine, camera: CyCamera, screen: UnsafePointer<Float>?, into: UnsafeMutablePointer<CyRay>?) throws {
+        try check(table.pointee.camera_screen_to_ray(engine, camera, screen, into))
+    }
+
+    @inlinable
+    public func cameraWorldToScreen(engine: CyEngine, camera: CyCamera, points: UnsafePointer<Float>?, count: UInt32, into: UnsafeMutablePointer<CyScreenPoint>?) throws {
+        try check(table.pointee.camera_world_to_screen(engine, camera, points, count, into))
+    }
+
+    @inlinable
+    public func cameraSetTarget(engine: CyEngine, camera: CyCamera, target: UnsafePointer<CyCameraTarget>?) throws {
+        try check(table.pointee.camera_set_target(engine, camera, target))
+    }
+
+    @inlinable
+    public func cameraSetPose(engine: CyEngine, camera: CyCamera, pose: UnsafePointer<CyPose>?) throws {
+        try check(table.pointee.camera_set_pose(engine, camera, pose))
+    }
+
+    @inlinable
+    public func cameraClearPose(engine: CyEngine, camera: CyCamera) throws {
+        try check(table.pointee.camera_clear_pose(engine, camera))
+    }
+
+    @inlinable
+    public func physicsRaycast(engine: CyEngine, ray: UnsafePointer<CyRay>?, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyPhysicsHit>?, hasHit: UnsafeMutablePointer<Bool>?) throws {
+        try check(table.pointee.physics_raycast(engine, ray, filter, into, hasHit))
+    }
+
+    @inlinable
+    public func physicsRaycastAll(engine: CyEngine, ray: UnsafePointer<CyRay>?, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyPhysicsHit>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.physics_raycast_all(engine, ray, filter, into, capacity, count))
+    }
+
+    @inlinable
+    public func physicsShapeCast(engine: CyEngine, shape: UnsafePointer<CyShape>?, start: UnsafePointer<CyPose>?, direction: UnsafePointer<Float>?, maxDistance: Float, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyPhysicsHit>?, hasHit: UnsafeMutablePointer<Bool>?) throws {
+        try check(table.pointee.physics_shape_cast(engine, shape, start, direction, maxDistance, filter, into, hasHit))
+    }
+
+    @inlinable
+    public func physicsOverlap(engine: CyEngine, shape: UnsafePointer<CyShape>?, pose: UnsafePointer<CyPose>?, filter: UnsafePointer<CyQueryFilter>?, into: UnsafeMutablePointer<CyEntity>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.physics_overlap(engine, shape, pose, filter, into, capacity, count))
+    }
+
+    @inlinable
+    public func navFindPath(engine: CyEngine, request: UnsafePointer<CyNavPathRequest>?, into: UnsafeMutablePointer<Float>?, capacity: UInt32, result: UnsafeMutablePointer<CyNavPathResult>?) throws {
+        try check(table.pointee.nav_find_path(engine, request, into, capacity, result))
+    }
+
+    @inlinable
+    public func navRequestPath(engine: CyEngine, request: UnsafePointer<CyNavPathRequest>?, into: UnsafeMutablePointer<CyNavQuery>?) throws {
+        try check(table.pointee.nav_request_path(engine, request, into))
+    }
+
+    @inlinable
+    public func navPollPath(engine: CyEngine, query: CyNavQuery, into: UnsafeMutablePointer<Float>?, capacity: UInt32, result: UnsafeMutablePointer<CyNavPathResult>?) throws {
+        try check(table.pointee.nav_poll_path(engine, query, into, capacity, result))
+    }
+
+    @inlinable
+    public func navCancelPath(engine: CyEngine, query: CyNavQuery) throws {
+        try check(table.pointee.nav_cancel_path(engine, query))
+    }
+
+    @inlinable
+    public func navAgentConfigure(engine: CyEngine, entity: CyEntity, params: UnsafePointer<CyNavAgentParams>?) throws {
+        try check(table.pointee.nav_agent_configure(engine, entity, params))
+    }
+
+    @inlinable
+    public func navAgentMoveTo(engine: CyEngine, entity: CyEntity, target: UnsafePointer<Float>?) throws {
+        try check(table.pointee.nav_agent_move_to(engine, entity, target))
+    }
+
+    @inlinable
+    public func navAgentStop(engine: CyEngine, entity: CyEntity) throws {
+        try check(table.pointee.nav_agent_stop(engine, entity))
+    }
+
+    @inlinable
+    public func navAgentState(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyNavAgentState>?) throws {
+        try check(table.pointee.nav_agent_state(engine, entity, into))
+    }
+
+    @inlinable
+    public func audioFindCue(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyAudioCue>?) throws {
+        try check(table.pointee.audio_find_cue(engine, name, into))
+    }
+
+    @inlinable
+    public func audioPlay(engine: CyEngine, play: UnsafePointer<CyAudioPlay>?, voice: UnsafeMutablePointer<CyAudioVoice>?) throws {
+        try check(table.pointee.audio_play(engine, play, voice))
+    }
+
+    @inlinable
+    public func audioStop(engine: CyEngine, voice: CyAudioVoice, fadeOut: Float) throws {
+        try check(table.pointee.audio_stop(engine, voice, fadeOut))
+    }
+
+    @inlinable
+    public func audioVoicePlaying(engine: CyEngine, voice: CyAudioVoice) -> Bool {
+        table.pointee.audio_voice_playing(engine, voice)
+    }
+
+    @inlinable
+    public func audioFindBus(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyAudioBus>?) throws {
+        try check(table.pointee.audio_find_bus(engine, name, into))
+    }
+
+    @inlinable
+    public func audioSetBusVolume(engine: CyEngine, bus: CyAudioBus, volume: Float, fade: Float) throws {
+        try check(table.pointee.audio_set_bus_volume(engine, bus, volume, fade))
+    }
+
+    @inlinable
+    public func spawnResolve(engine: CyEngine, asset: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyPrefab>?) throws {
+        try check(table.pointee.spawn_resolve(engine, asset, into))
+    }
+
+    @inlinable
+    public func spawnInstantiate(engine: CyEngine, prefab: CyPrefab, params: UnsafePointer<CySpawnParams>?, root: UnsafeMutablePointer<CyEntity>?) throws {
+        try check(table.pointee.spawn_instantiate(engine, prefab, params, root))
+    }
+
+    @inlinable
+    public func spawnInstantiateMany(engine: CyEngine, prefab: CyPrefab, parent: CyEntity, poses: UnsafePointer<CyPose>?, count: UInt32, roots: UnsafeMutablePointer<CyEntity>?) throws {
+        try check(table.pointee.spawn_instantiate_many(engine, prefab, parent, poses, count, roots))
+    }
+
+    @inlinable
+    public func spawnDestroy(engine: CyEngine, root: CyEntity) throws {
+        try check(table.pointee.spawn_destroy(engine, root))
+    }
 }

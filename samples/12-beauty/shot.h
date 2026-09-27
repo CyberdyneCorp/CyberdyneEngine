@@ -299,6 +299,12 @@ public:
     /// `stage_shot`. Off by default, and off is the frame M11.c published.
     void enable_bloom(const Shot& shot) noexcept;
 
+    /// Grade the frame with a committed look — a `.cygrade` file and the `.cube` it names — at step
+    /// 12 of the post chain, after the tone curve, through `grading::GradingRenderer`'s resolve.
+    /// Call it before `stage_shot`. Null, the default, is the frame M11.c published; a look that
+    /// bakes to the identity is recognised and draws that frame too.
+    void enable_grading(const char* look_path) noexcept { look_path_ = look_path; }
+
     /// Draw ONE frame and write BOTH images out of it.
     ///
     /// `png_path` is the tonemapped 8-bit image the resolve wrote; `linear_path` is the linear HDR
@@ -331,6 +337,7 @@ private:
     /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
     /// reads it.
     [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
+    [[nodiscard]] Status create_grading(rhi::Device& device) noexcept;
     [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
                                                     const rhi::GraphicsPipelineDescription& scene,
                                                     rhi::GraphicsPipelineHandle& occluded,
@@ -361,6 +368,7 @@ private:
     u32 albedo_level_limit_ = 0;
     rendering::BloomSettings bloom_{};
     bool bloom_enabled_ = false;
+    const char* look_path_ = nullptr;
     bool available_ = false;
     Array<u32> pixels_;
 };

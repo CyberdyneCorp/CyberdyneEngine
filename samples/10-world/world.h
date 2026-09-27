@@ -113,6 +113,12 @@ struct WorldOptions {
     /// is attenuated once, at the viewer, and the frame is the one this program drew before cloud
     /// shadows existed. Headless runs turn it off — the field is presentation, not simulation.
     bool cloud_shadows = true;
+    /// Whether distance is the atmosphere's: the stage integrates `sky::AerialPerspectiveTable`
+    /// for its camera from this world's atmosphere and tables, the lit path attenuates every
+    /// surface by it and adds the air's in-scattered light, and the dome's clear sky is that same
+    /// atmosphere's rather than the stand-in gradient — so distant terrain fades toward the sky
+    /// drawn beside it. Off, the frame is the one this program drew before aerial perspective.
+    bool aerial_perspective = true;
     /// The field's levers, chosen by what they cost. 256 m cells are still four times finer than
     /// the weather map's kilometre. A 1 km radius about the world's centre straddles the tile
     /// boundary at the world's corner, so the regional image is the four 4 096 m tiles around it:
@@ -442,6 +448,19 @@ public:
     [[nodiscard]] bool cloud_shadows() const noexcept { return cloud_shadow_.attached(); }
     /// The cloud shadow field at its regional level, as the lit fragment path samples it.
     [[nodiscard]] Expected<environment::FieldGpuImage, Error> cloud_shadow_image() const noexcept;
+    /// Whether the frame applies aerial perspective. See `WorldOptions::aerial_perspective`.
+    [[nodiscard]] bool aerial_perspective() const noexcept { return options_.aerial_perspective; }
+    /// The atmosphere the sky is composed from, and its tables. The stage integrates the dome's
+    /// clear sky and the aerial perspective volume from these, so neither can be tuned apart from
+    /// the sky the world is lit by.
+    [[nodiscard]] const rendering::sky::Atmosphere& atmosphere() const noexcept {
+        return atmosphere_;
+    }
+    [[nodiscard]] const rendering::sky::AtmosphereTables& atmosphere_tables() const noexcept {
+        return tables_;
+    }
+    /// The unit direction TOWARD the sun this frame, in world axes.
+    [[nodiscard]] Vec3 sun_direction() const noexcept { return celestial_.sun.direction; }
     /// The fraction of the sun the cloud shadow field lets through at a position, through the same
     /// sampler every consumer of the field reads. One when cloud shadows are off.
     [[nodiscard]] f32 cloud_shadow_at(const WorldVec3d& at) const noexcept;

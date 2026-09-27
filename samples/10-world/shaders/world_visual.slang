@@ -22,7 +22,11 @@ struct VisualPush
     float cloudCoverage;
     float sunHeight;
     float exposure;
-    float unusedFloat;
+    // 1 when the dome's clear sky is the atmosphere's, written into the sky's colour range by the
+    // processor before this pass runs; 0 for the stand-in gradient. Aerial perspective turns it
+    // on, because distant terrain fades toward the atmosphere's sky and the dome has to be that
+    // sky for the horizon to meet.
+    float atmosphereSky;
     float4 fieldOrigin;
 };
 
@@ -77,12 +81,20 @@ float cloudDensity(float3 position, float coverage, float3 seedOffset)
     return shape * profile;
 }
 
-float3 composeClouds(float3 direction)
+/// The stand-in clear sky: a tuned gradient, not the atmosphere. Drawn when aerial perspective is
+/// off, which is the frame as it was before the dome could be the atmosphere's.
+float3 standInClear(float3 direction)
 {
     const float horizon = saturate(direction.y * 0.5 + 0.5);
     const float daylight = saturate(visual.sunHeight * 3.0 + 0.25);
     float3 clear = lerp(float3(0.002, 0.005, 0.018), float3(0.16, 0.43, 0.92), daylight);
     clear *= 0.16 + 0.84 * horizon;
+    return clear;
+}
+
+float3 composeClouds(float3 direction, float3 clear)
+{
+    const float daylight = saturate(visual.sunHeight * 3.0 + 0.25);
     if (direction.y <= 0.025)
         return clear;
 
@@ -151,7 +163,14 @@ void shadeClouds(uint index : SV_DispatchThreadID)
         return;
     const uint vertex = visual.skyStart + index;
     const float3 direction = normalize(loadFloat3(resources.dynamicVertices, vertex * 24u + 12u));
-    storeFloat3(resources.dynamicColours, vertex * 12u, composeClouds(direction));
+    if (visual.atmosphereSky > 0.5)
+    {
+        const float3 atmosphere = asfloat(resources.dynamicColours.Load3(vertex * 12u));
+        storeFloat3(resources.dynamicColours, vertex * 12u, composeClouds(direction, atmosphere));
+        return;
+    }
+    storeFloat3(resources.dynamicColours, vertex * 12u,
+                composeClouds(direction, standInClear(direction)));
 }
 
 [shader("compute")]

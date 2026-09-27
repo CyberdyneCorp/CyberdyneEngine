@@ -3,7 +3,7 @@
 # shrink: a path here that has since gained the header, or left the tree, FAILS the gate.
 #
 # Add `// SPDX-License-Identifier: MIT` to a file and delete its line here. Regenerate
-# with `just quality-licence --update`. Backlog at last write: 2582 of 2584.
+# with `just quality-licence --update`. Backlog at last write: 2579 of 2884.
 benchmarks/ecs/bench_ecs.cpp
 benchmarks/gameplay/bench_gameplay.cpp
 benchmarks/harness/include/cy/bench/bench.h
@@ -361,7 +361,6 @@ samples/09b-animated-character/stage.h
 samples/10-world/main.cpp
 samples/10-world/shaders/embed_spirv.py
 samples/10-world/shaders/world.slang
-samples/10-world/shaders/world_spirv.h
 samples/10-world/stage.cpp
 samples/10-world/stage.h
 samples/10-world/world.cpp
