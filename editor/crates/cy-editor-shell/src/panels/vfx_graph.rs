@@ -526,7 +526,7 @@ fn edit_module_metadata(
     edit_draft: impl FnOnce(&mut VfxModule),
 ) {
     if let Some(intent) =
-        saved_module_edit_intent(panels.saved_vfx_module_reference, command, arguments)
+        saved_asset_edit_intent(panels.saved_vfx_module_reference, command, arguments)
     {
         panels.intents.push(intent);
         panels.inputs.vfx_document_problem = None;
@@ -539,7 +539,7 @@ fn edit_module_metadata(
     panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
 }
 
-fn saved_module_edit_intent(
+fn saved_asset_edit_intent(
     reference: Option<&str>,
     command: &str,
     arguments: Arguments,
@@ -577,8 +577,18 @@ fn module_attachment_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 }
             });
         if ui.button("Attach saved module").clicked() {
-            match attach_saved_module(panels) {
-                Ok(source) => {
+            let result = if let Some(reference) = panels.saved_vfx_document_reference {
+                validated_module_attachment(panels).map(|(emitter, path, _)| {
+                    panels.intents.push(Intent::Invoke(
+                        "vfx.module.attach".into(),
+                        Arguments::new()
+                            .with("reference", Value::Text(reference.into()))
+                            .with("emitter", Value::Text(emitter))
+                            .with("module_reference", Value::Text(path)),
+                    ));
+                })
+            } else {
+                attach_saved_module(panels).map(|source| {
                     panels.intents.push(Intent::Invoke(
                         "vfx.document.save".into(),
                         Arguments::new()
@@ -588,8 +598,10 @@ fn module_attachment_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                             )
                             .with("source", Value::Text(source)),
                     ));
-                    panels.inputs.vfx_document_problem = None;
-                }
+                })
+            };
+            match result {
+                Ok(()) => panels.inputs.vfx_document_problem = None,
                 Err(problem) => panels.inputs.vfx_document_problem = Some(problem.to_string()),
             }
         }
@@ -597,13 +609,26 @@ fn module_attachment_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
 }
 
 fn attach_saved_module(panels: &mut Panels<'_>) -> Result<String> {
+    cy_editor_services::vfx_document::validate_reference(&panels.inputs.vfx_reference)?;
+    let (_, path, module) = validated_module_attachment(panels)?;
+    let emitter = panels.inputs.vfx_module_emitter;
+    panels
+        .specialised
+        .edit_vfx_metadata(|document| document.attach_module(emitter, module.name, path))?;
+    panels
+        .specialised
+        .vfx_document_snapshot()?
+        .ok_or_else(|| Problem::new("attach a VFX module", "system document closed"))?
+        .encode_text()
+}
+
+fn validated_module_attachment(panels: &Panels<'_>) -> Result<(String, String, VfxModule)> {
     if panels.editor.workspace.active().is_none() {
         return Err(Problem::new(
             "attach a VFX module",
             "no scene document is active for undo history",
         ));
     }
-    cy_editor_services::vfx_document::validate_reference(&panels.inputs.vfx_reference)?;
     let path = panels.inputs.vfx_module_reference.clone();
     cy_editor_services::vfx_module::validate_reference(&path)?;
     let saved = panels.editor.project.read_source(&path)?;
@@ -632,14 +657,7 @@ fn attach_saved_module(panels: &mut Panels<'_>) -> Result<String> {
             ));
         }
     }
-    panels
-        .specialised
-        .edit_vfx_metadata(|document| document.attach_module(emitter, module.name, path))?;
-    panels
-        .specialised
-        .vfx_document_snapshot()?
-        .ok_or_else(|| Problem::new("attach a VFX module", "system document closed"))?
-        .encode_text()
+    Ok((host.name.clone(), path, module))
 }
 
 fn document_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -838,15 +856,20 @@ fn parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         });
         if changed || remove {
             let live = parameter.clone();
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let command = if remove {
+                "vfx.parameter.remove"
+            } else {
+                "vfx.parameter.set"
+            };
+            let arguments = parameter_arguments(&parameter);
+            edit_document_metadata(panels, command, arguments, |document| {
                 if remove {
                     document.parameters.remove(index);
                 } else {
                     document.parameters[index] = parameter;
                 }
-                Ok(())
             });
-            if result.is_ok()
+            if panels.inputs.vfx_document_problem.is_none()
                 && value_changed
                 && !remove
                 && live.exposed
@@ -863,7 +886,6 @@ fn parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     .vfx_live_parameters
                     .push_back((live.name, live.value, lanes));
             }
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     }
     ui.horizontal(|ui| {
@@ -887,13 +909,20 @@ fn parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 value: panels.inputs.vfx_parameter_values,
                 exposed: panels.inputs.vfx_parameter_exposed,
             };
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let arguments = parameter_arguments(&parameter);
+            edit_document_metadata(panels, "vfx.parameter.set", arguments, |document| {
                 document.parameters.push(parameter);
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
+}
+
+fn parameter_arguments(parameter: &Parameter) -> Arguments {
+    Arguments::new()
+        .with("name", Value::Text(parameter.name.clone()))
+        .with("kind", Value::Text(parameter.kind.clone()))
+        .with("values", Value::Vec4(parameter.value))
+        .with("exposed", Value::Bool(parameter.exposed))
 }
 
 fn channel_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -915,15 +944,19 @@ fn channel_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             remove = ui.button("Remove").clicked();
         });
         if changed || remove {
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let command = if remove {
+                "vfx.channel.remove"
+            } else {
+                "vfx.channel.set"
+            };
+            let arguments = channel_arguments(&channel);
+            edit_document_metadata(panels, command, arguments, |document| {
                 if remove {
                     document.channels.remove(index);
                 } else {
                     document.channels[index] = channel;
                 }
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     }
     ui.horizontal(|ui| {
@@ -941,13 +974,46 @@ fn channel_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 max_chain_depth: panels.inputs.vfx_channel_depth,
                 readback: panels.inputs.vfx_channel_readback,
             };
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let arguments = channel_arguments(&channel);
+            edit_document_metadata(panels, "vfx.channel.set", arguments, |document| {
                 document.channels.push(channel);
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
+}
+
+fn channel_arguments(channel: &EventChannel) -> Arguments {
+    Arguments::new()
+        .with("name", Value::Text(channel.name.clone()))
+        .with(
+            "max_events_per_frame",
+            Value::Int(i64::from(channel.max_events_per_frame)),
+        )
+        .with(
+            "max_chain_depth",
+            Value::Int(i64::from(channel.max_chain_depth)),
+        )
+        .with("readback", Value::Bool(channel.readback))
+}
+
+fn edit_document_metadata(
+    panels: &mut Panels<'_>,
+    command: &str,
+    arguments: Arguments,
+    edit_draft: impl FnOnce(&mut VfxDocument),
+) {
+    if let Some(intent) =
+        saved_asset_edit_intent(panels.saved_vfx_document_reference, command, arguments)
+    {
+        panels.intents.push(intent);
+        panels.inputs.vfx_document_problem = None;
+        return;
+    }
+    let result = panels.specialised.edit_vfx_metadata(|document| {
+        edit_draft(document);
+        Ok(())
+    });
+    panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
 }
 
 fn attribute_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize) {
@@ -959,11 +1025,12 @@ fn attribute_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize
             .add(egui::DragValue::new(&mut capacity).range(1..=1_000_000))
             .changed()
         {
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let arguments = Arguments::new()
+                .with("emitter", Value::Text(authored.name.clone()))
+                .with("capacity", Value::Int(i64::from(capacity)));
+            edit_document_metadata(panels, "vfx.emitter.capacity.set", arguments, |document| {
                 document.emitters[emitter].capacity = capacity;
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
     for (index, mut attribute) in authored.attributes.into_iter().enumerate() {
@@ -993,15 +1060,19 @@ fn attribute_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize
             remove = ui.button("Remove").clicked();
         });
         if changed || remove {
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let command = if remove {
+                "vfx.attribute.remove"
+            } else {
+                "vfx.attribute.set"
+            };
+            let arguments = attribute_arguments(&authored.name, &attribute);
+            edit_document_metadata(panels, command, arguments, |document| {
                 if remove {
                     document.emitters[emitter].attributes.remove(index);
                 } else {
                     document.emitters[emitter].attributes[index] = attribute;
                 }
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     }
     ui.horizontal(|ui| {
@@ -1038,13 +1109,23 @@ fn attribute_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize
                 tolerance: panels.inputs.vfx_attribute_tolerance,
                 precision: panels.inputs.vfx_attribute_precision.clone(),
             };
-            let result = panels.specialised.edit_vfx_metadata(|document| {
+            let arguments = attribute_arguments(&authored.name, &attribute);
+            edit_document_metadata(panels, "vfx.attribute.set", arguments, |document| {
                 document.emitters[emitter].attributes.push(attribute);
-                Ok(())
             });
-            panels.inputs.vfx_document_problem = result.err().map(|error| error.to_string());
         }
     });
+}
+
+fn attribute_arguments(emitter: &str, attribute: &Attribute) -> Arguments {
+    Arguments::new()
+        .with("emitter", Value::Text(emitter.into()))
+        .with("name", Value::Text(attribute.name.clone()))
+        .with("kind", Value::Text(attribute.kind.clone()))
+        .with("minimum", Value::Float(attribute.minimum))
+        .with("maximum", Value::Float(attribute.maximum))
+        .with("tolerance", Value::Float(attribute.tolerance))
+        .with("precision", Value::Text(attribute.precision.clone()))
 }
 
 fn compile_report(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -1512,7 +1593,7 @@ mod tests {
         ] {
             let arguments = Arguments::new().with("name", Value::Text("drag".into()));
             let Some(Intent::Invoke(actual, arguments)) =
-                saved_module_edit_intent(Some(reference), command, arguments)
+                saved_asset_edit_intent(Some(reference), command, arguments)
             else {
                 panic!("saved module edit did not produce a command");
             };
@@ -1520,7 +1601,43 @@ mod tests {
             assert_eq!(arguments.text("reference"), Some(reference));
             assert_eq!(arguments.text("name"), Some("drag"));
         }
-        assert!(saved_module_edit_intent(None, "vfx.module.input.add", Arguments::new()).is_none());
+        assert!(saved_asset_edit_intent(None, "vfx.module.input.add", Arguments::new()).is_none());
+    }
+
+    #[test]
+    fn saved_system_metadata_uses_typed_commands_and_values() {
+        let reference = "effects/open.cyvfxdoc";
+        let channel = EventChannel {
+            name: "on_death".into(),
+            max_events_per_frame: 128,
+            max_chain_depth: 3,
+            readback: true,
+        };
+        let Some(Intent::Invoke(command, arguments)) = saved_asset_edit_intent(
+            Some(reference),
+            "vfx.channel.set",
+            channel_arguments(&channel),
+        ) else {
+            panic!("saved channel edit did not produce a command");
+        };
+        assert_eq!(command, "vfx.channel.set");
+        assert_eq!(arguments.text("reference"), Some(reference));
+        assert_eq!(
+            arguments.get("max_events_per_frame"),
+            Some(&Value::Int(128))
+        );
+        assert_eq!(arguments.get("max_chain_depth"), Some(&Value::Int(3)));
+        assert_eq!(arguments.get("readback"), Some(&Value::Bool(true)));
+
+        let parameter = Parameter {
+            name: "wind".into(),
+            kind: "vec3".into(),
+            value: [1.0, 2.0, 3.0, 0.0],
+            exposed: true,
+        };
+        let arguments = parameter_arguments(&parameter);
+        assert_eq!(arguments.get("values"), Some(&Value::Vec4(parameter.value)));
+        assert_eq!(arguments.get("exposed"), Some(&Value::Bool(true)));
     }
 
     #[test]

@@ -392,6 +392,8 @@ pub struct Panels<'frame> {
     pub shell: &'frame mut Shell,
     /// The one shared specialised-editor surface host.
     pub specialised: &'frame mut SpecialisedEditors,
+    /// Committed path of the open VFX system document.
+    pub saved_vfx_document_reference: Option<&'frame str>,
     /// Committed path of the open module; independent of the editable Save/Open path field.
     pub saved_vfx_module_reference: Option<&'frame str>,
     /// The hierarchy's presentation state.

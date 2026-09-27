@@ -1134,6 +1134,7 @@ impl EditorWindow {
                     scope,
                     shell,
                     specialised,
+                    vfx_committed,
                     vfx_module_committed,
                     hierarchy,
                     history,
@@ -1158,6 +1159,9 @@ impl EditorWindow {
                     scope,
                     shell,
                     specialised,
+                    saved_vfx_document_reference: vfx_committed.as_ref().and_then(
+                        |(reference, source)| source.as_ref().map(|_| reference.as_str()),
+                    ),
                     saved_vfx_module_reference: vfx_module_committed.as_ref().and_then(
                         |(reference, source)| source.as_ref().map(|_| reference.as_str()),
                     ),
@@ -2066,6 +2070,188 @@ mod tests {
         assert_eq!(
             author.specialised.active_vfx_module().unwrap().name,
             "shared_drag"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn saved_vfx_system_window(root: &std::path::Path) -> (EditorWindow, String) {
+        use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, VfxDocument};
+
+        let _ = std::fs::remove_dir_all(root);
+        std::fs::create_dir_all(root).unwrap();
+        let mut window = vfx_test_window(root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.emitters.push(Emitter {
+            name: "embers".into(),
+            path: SimulationPath::CpuRequired,
+            renderer: "Sprite".into(),
+            stages: Vec::new(),
+            modules: Vec::new(),
+            interfaces: Vec::new(),
+            capacity: 1024,
+            attributes: Vec::new(),
+        });
+        window.specialised.start_vfx_document(document).unwrap();
+        window
+            .specialised
+            .select_vfx_stage(0, cy_editor_interface::specialised::vfx::Stage::Spawn)
+            .unwrap();
+        let original = window
+            .specialised
+            .vfx_document_snapshot()
+            .unwrap()
+            .unwrap()
+            .encode_text()
+            .unwrap();
+        let reference = "effects/sparks.cyvfxdoc";
+        window.apply(vec![Intent::Invoke(
+            "vfx.document.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(original.clone())),
+        )]);
+        (window, original)
+    }
+
+    fn attach_and_undo_saved_module(window: &mut EditorWindow, reference: &str, before: &str) {
+        use cy_editor_interface::specialised::vfx::Stage;
+        use cy_editor_interface::specialised::vfx_module::VfxModule;
+
+        let module_reference = "effects/shared_drag.cyvfxmodule";
+        let module = VfxModule::new("shared_drag", Stage::Update).unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(module_reference.into()))
+                .with("source", Value::Text(module.encode_text().unwrap())),
+        )]);
+        window.apply(vec![Intent::Invoke(
+            "vfx.module.attach".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into()))
+                .with("module_reference", Value::Text(module_reference.into())),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(
+            window.specialised.vfx_document().unwrap().emitters[0].modules,
+            ["shared_drag"]
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            before
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert!(!window.editor.project.source_exists(module_reference));
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn typed_saved_system_metadata_edits_refresh_and_undo_individually() {
+        let root = scratch("vfx-system-typed-metadata-history");
+        let (mut window, original) = saved_vfx_system_window(&root);
+        let reference = "effects/sparks.cyvfxdoc";
+        window.apply(vec![Intent::Invoke(
+            "vfx.channel.set".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("name", Value::Text("on_death".into()))
+                .with("max_events_per_frame", Value::Int(128))
+                .with("max_chain_depth", Value::Int(2))
+                .with("readback", Value::Bool(false)),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(window.specialised.vfx_document().unwrap().channels.len(), 1);
+        let with_channel = window.editor.project.read_source(reference).unwrap();
+
+        window.apply(vec![Intent::Invoke(
+            "vfx.emitter.capacity.set".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into()))
+                .with("capacity", Value::Int(4096)),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(
+            window.specialised.vfx_document().unwrap().emitters[0].capacity,
+            4096
+        );
+        let with_capacity = window.editor.project.read_source(reference).unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.parameter.set".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("name", Value::Text("speed".into()))
+                .with("kind", Value::Text("float".into()))
+                .with("values", Value::Vec4([2.0, 0.0, 0.0, 0.0]))
+                .with("exposed", Value::Bool(true)),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(
+            window.specialised.vfx_document().unwrap().parameters.len(),
+            1
+        );
+        let with_parameter = window.editor.project.read_source(reference).unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.attribute.set".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into()))
+                .with("name", Value::Text("position".into()))
+                .with("kind", Value::Text("vec3".into()))
+                .with("minimum", Value::Float(-100.0))
+                .with("maximum", Value::Float(100.0))
+                .with("tolerance", Value::Float(0.01))
+                .with("precision", Value::Text("Auto".into())),
+        )]);
+        window.refresh_vfx_sources();
+        assert_eq!(
+            window.specialised.vfx_document().unwrap().emitters[0]
+                .attributes
+                .len(),
+            1
+        );
+        let mut journaled = Vec::new();
+        window.journal_vfx_edits(&mut journaled).unwrap();
+        assert!(journaled.is_empty());
+        let with_attribute = window.editor.project.read_source(reference).unwrap();
+        attach_and_undo_saved_module(&mut window, reference, &with_attribute);
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            with_parameter
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            with_capacity
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            with_channel
+        );
+        assert_eq!(
+            window.specialised.vfx_document().unwrap().emitters[0].capacity,
+            1024
+        );
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            original
+        );
+        assert!(
+            window
+                .specialised
+                .vfx_document()
+                .unwrap()
+                .channels
+                .is_empty()
         );
         std::fs::remove_dir_all(root).unwrap();
     }

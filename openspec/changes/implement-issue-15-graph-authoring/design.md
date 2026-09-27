@@ -20,6 +20,11 @@ typed commands for the committed path of the open module. The editable Save/Open
 not retarget those controls. A new unsaved module still edits its local draft, and saved edits
 refresh the open canvas from the project source before the next frame. Each typed command is an
 individual undo step; remaining canvas and system controls still need typed desktop parity.
+The saved system's parameter, event-channel, particle-attribute, and emitter-capacity controls now
+send their matching typed commands too. Attaching a saved module uses `vfx.module.attach` against
+the committed system path. Unsaved systems still stage metadata locally until their first Save.
+The panel keeps the engine preview's exposed-parameter update queue when a saved parameter value
+changes. Other hierarchy and canvas gestures remain to be moved to typed commands.
 
 After a system or module has its first saved project path, the desktop journals each changed UI
 frame through `vfx.document.save` or `vfx.module.save` before applying other frame intents. The
