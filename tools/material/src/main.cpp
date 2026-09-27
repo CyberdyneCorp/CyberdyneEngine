@@ -207,7 +207,8 @@ struct CookInputs {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-void add_static_mesh_material(CookInputs& inputs, std::string_view material) {
+void add_world_material(CookInputs& inputs, std::string_view material,
+                        std::string_view geometry_source) {
     if (!material.ends_with(".cymat") && !material.ends_with(".cygraph")) {
         return;
     }
@@ -223,41 +224,60 @@ void add_static_mesh_material(CookInputs& inputs, std::string_view material) {
             continue;
         }
         const std::string_view names(assignment.sources);
-        if (names != "StaticMesh" && !names.starts_with("StaticMesh,") &&
-            !names.ends_with(",StaticMesh") && names.find(",StaticMesh,") == std::string::npos) {
-            assignment.sources += ",StaticMesh";
+        const std::string source(geometry_source);
+        if (names != source && !names.starts_with(source + ",") && !names.ends_with("," + source) &&
+            names.find("," + source + ",") == std::string::npos) {
+            assignment.sources += "," + source;
         }
         return;
     }
-    inputs.geometry.push_back({std::string(material), "StaticMesh", false});
+    inputs.geometry.push_back({std::string(material), std::string(geometry_source), false});
 }
 
 void collect_world_materials(const scene::serialization::World& world, CookInputs& inputs) {
     const auto* mesh_type = world_type_named(world, "MeshRenderer");
-    if (mesh_type == nullptr) {
-        return;
-    }
-    const u64 mesh_field = world_field_named(world, *mesh_type, "mesh");
-    const u64 material_field = world_field_named(world, *mesh_type, "material");
+    const u64 mesh_field = mesh_type == nullptr ? 0 : world_field_named(world, *mesh_type, "mesh");
+    const u64 material_field =
+        mesh_type == nullptr ? 0 : world_field_named(world, *mesh_type, "material");
     const auto* slots_type = world_type_named(world, "ImportedMaterialSlots");
     for (const auto& node : world.nodes()) {
-        if (!node.live) {
+        if (!node.live || mesh_type == nullptr) {
             continue;
         }
         const auto* mesh = node.find(mesh_type->file_type);
         if (world_text_field(world, mesh, mesh_field).empty()) {
             continue;
         }
-        add_static_mesh_material(inputs, world_text_field(world, mesh, material_field));
+        add_world_material(inputs, world_text_field(world, mesh, material_field), "StaticMesh");
         if (slots_type == nullptr) {
             continue;
         }
         const auto* slots = node.find(slots_type->file_type);
         for (const auto& field : slots_type->fields()) {
             if (world.text(field.name).starts_with("slot_")) {
-                add_static_mesh_material(inputs, world_text_field(world, slots, field.file_field));
+                add_world_material(inputs, world_text_field(world, slots, field.file_field),
+                                   "StaticMesh");
             }
         }
+    }
+
+    const auto* terrain_type = world_type_named(world, "TerrainAuthoring");
+    const auto* layer_type = world_type_named(world, "TerrainMaterialLayer");
+    if (terrain_type == nullptr || layer_type == nullptr) {
+        return;
+    }
+    const u64 layer_material = world_field_named(world, *layer_type, "material");
+    for (const auto& node : world.nodes()) {
+        if (!node.live || node.parent == scene::serialization::WorldNode::kNoParent) {
+            continue;
+        }
+        const auto& parent = world.nodes()[node.parent];
+        if (!parent.live || parent.find(terrain_type->file_type) == nullptr) {
+            continue;
+        }
+        add_world_material(
+            inputs, world_text_field(world, node.find(layer_type->file_type), layer_material),
+            "Terrain");
     }
 }
 

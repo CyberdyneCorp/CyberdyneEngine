@@ -46,9 +46,11 @@ each named material source receives only its own scene assignment. For example,
 material absent from the cook inputs is refused.
 `--world worlds/scene.cyworld` reads an editor-saved scene through the engine world reader, finds
 materials on live `MeshRenderer` nodes with a mesh, includes imported material slots, and passes
-`StaticMesh` for those assignments. It also discovers the listed `.cymat` and `.cygraph` sources,
-so a cook can run with a world instead of a hand-maintained material list. Multiple worlds are
-combined. The cook accepts the editor's canonical `.cygraph` source through the engine graph
+`StaticMesh` for those assignments. It also finds material layers whose live parent has
+`TerrainAuthoring` and passes `Terrain` for their materials. Orphan layers are ignored. A material
+used by both kinds receives both geometry sources. The cook discovers the listed `.cymat` and
+`.cygraph` sources, so it can run with a world instead of a hand-maintained material list. Multiple
+worlds are combined. The cook accepts the editor's canonical `.cygraph` source through the engine graph
 registry and material lowering; it does not reinterpret the graph in the CLI.
 
 **The producer's version is the compiler's version.** `kMaterialProducerVersion` is *defined as*

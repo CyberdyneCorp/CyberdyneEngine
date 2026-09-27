@@ -143,7 +143,9 @@ separate typed field node reads the engine-owned wind. The typed RGB vertex-colo
 `color0` from an added RGBA mesh stream in the first-light compiled-material preview, including
 shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
-Discovery of non-static scene geometry sources remains in task 3.2. The authored scene frame now
+The material cook's saved-world discovery now matches the editor's terrain-layer assignment:
+live layers under `TerrainAuthoring` add a `Terrain` variant, including when a material is shared
+with a static mesh. Discovery of other non-static scene geometry sources remains in task 3.2. The authored scene frame now
 compiles vertex offsets and interpolants for its static meshes, including visible, depth, and
 shadow passes. The authored scene binds the weather-owned `wind` field. The first-light material
 preview now uses the same `WindFieldPreview` provider when a field graph is active. Its renderer

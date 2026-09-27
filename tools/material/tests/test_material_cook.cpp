@@ -432,6 +432,8 @@ CY_TEST_CASE("material_cook: saved world discovers graph and slot materials for 
                   {reinterpret_cast<const char*>(graph.data()), graph.size()});
     project.write("materials/moving_stone.cymat",
                   "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }");
+    project.write("materials/terrain_only.cymat",
+                  "material terrain_only { vertex_offset = (0.0, 0.1, 0.0); }");
     project.write("worlds/materials.cyworld", R"(cyworld 1
 type 1 runtime "MeshRenderer"
   field 1 text "mesh" ""
@@ -439,6 +441,10 @@ type 1 runtime "MeshRenderer"
 type 2 authoring "ImportedMaterialSlots"
   field 3 text "slot_0" ""
   field 4 text "slot_1" ""
+type 3 authoring "TerrainAuthoring"
+  field 5 text "source" ""
+type 4 authoring "TerrainMaterialLayer"
+  field 6 text "material" ""
 node 0 - "demo" "Graph"
   component 1
     field 1 "meshes/cube.cyprim"
@@ -454,6 +460,18 @@ node 2 - "demo" "Unrendered"
   component 1
     field 1 ""
     field 2 "materials/second.cymat"
+node 3 - "demo" "Terrain"
+  component 3
+    field 5 "heightmaps/terrain.cyheight"
+node 4 3 "demo" "Terrain Layer"
+  component 4
+    field 6 "materials/terrain_only.cymat"
+node 5 - "demo" "Orphan Layer"
+  component 4
+    field 6 "materials/second.cymat"
+node 6 3 "demo" "Shared Layer"
+  component 4
+    field 6 "materials/moving_stone.cymat"
 )");
     const std::string log = project.path("world-cook.log");
     const auto run = [&](std::string_view extra, std::string_view output) {
@@ -480,8 +498,9 @@ node 2 - "demo" "Unrendered"
     CY_CHECK(report.find("material:materials/graph.cygraph") != std::string::npos);
     CY_CHECK(report.find("material:materials/worn_metal.cymat") != std::string::npos);
     CY_CHECK(report.find("material:materials/moving_stone.cymat") != std::string::npos);
+    CY_CHECK(report.find("material:materials/terrain_only.cymat") != std::string::npos);
     CY_CHECK(report.find("material:materials/second.cymat") == std::string::npos);
-    CY_CHECK(report.find("ran 3, cached 0, rebuilt 0, failed 0") != std::string::npos);
+    CY_CHECK(report.find("ran 4, cached 0, rebuilt 0, failed 0") != std::string::npos);
 
     const auto [refused, failure] =
         run("--geometry materials/moving_stone.cymat=VirtualGeometry", "world-unsupported");
