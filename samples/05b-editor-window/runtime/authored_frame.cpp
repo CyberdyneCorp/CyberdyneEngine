@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "authored_frame.h"
+#include "material_runtime.h"
 
 #include <cy/core/assets/cooked.h>
 #include <cy/core/assets/file.h>
@@ -40,8 +41,8 @@ constexpr u32 kShadowExtent = 2048;
 
 }  // namespace
 
-Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
-                                                  Allocator& allocator) noexcept {
+Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source, Allocator& allocator,
+                                                  bool allow_vertex) noexcept {
     graph::NodeRegistry registry(allocator);
     if (Status status = graph::material::register_material_nodes(registry); !status) {
         return make_unexpected(status.error());
@@ -55,14 +56,18 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
         return fail(ErrorCode::InvalidArgument, "authored frame: material graph has unknown nodes");
     }
     const graph::Graph& authored = *parsed;
+    bool vertex = false;
     for (const graph::GraphNode& node : authored.nodes()) {
         if (node.type.text() == "material.vertex_output" ||
             node.type.text() == "material.vertex_interpolant") {
-            return fail(ErrorCode::Unsupported,
-                        "authored scene renderer has no vertex-stage material pass");
+            vertex = true;
         }
     }
-    if (authored.nodes().size() != 4 || authored.links().size() != 4) {
+    if (vertex && !allow_vertex) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene renderer has no vertex-stage material pass");
+    }
+    if (!vertex && (authored.nodes().size() != 4 || authored.links().size() != 4)) {
         return fail(ErrorCode::Unsupported,
                     "authored frame: only constant-colour diffuse graphs are supported here");
     }
@@ -120,7 +125,8 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
     }
     const graph::Literal* symbol = authored.property(colour, Name::intern("symbol"));
     return GraphColour{Vec4{value->value.x, value->value.y, value->value.z, 1.0F},
-                       parameter && symbol != nullptr ? std::string(symbol->text.text()) : ""};
+                       parameter && symbol != nullptr ? std::string(symbol->text.text()) : "",
+                       vertex};
 }
 
 namespace {
@@ -322,6 +328,19 @@ struct AuthoredFrame::Readback {
     u32 height = 0;
 };
 
+struct AuthoredFrame::MaterialVariant {
+    u32 slot = 0;
+    std::string source;
+    rhi::ShaderModuleHandle depth_shader;
+    rhi::ShaderModuleHandle visible_shader;
+    rhi::ShaderModuleHandle shadow_shader;
+    rhi::GraphicsPipelineHandle depth_pipeline;
+    rhi::GraphicsPipelineHandle visible_pipeline;
+    rhi::GraphicsPipelineHandle shadow_pipeline;
+    rhi::BufferHandle parameters;
+    rhi::DescriptorSetHandle descriptor_set;
+};
+
 AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
     : allocator_(&allocator),
       device_(&device),
@@ -338,9 +357,57 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
       pixels_(allocator) {
 }
 
+Status AuthoredFrame::create_material_variant_layout() noexcept {
+    const rhi::DescriptorBinding parameter{0, rhi::DescriptorKind::UniformBuffer, 1,
+                                           rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment,
+                                           false};
+    rhi::DescriptorSetLayoutDescription set;
+    set.name = "editor scene material parameters";
+    set.bindings = {&parameter, 1};
+    auto created_set = device_->create_descriptor_set_layout(set);
+    if (!created_set) {
+        return make_unexpected(created_set.error());
+    }
+    material_set_layout_ = *created_set;
+    const rhi::DescriptorSetLayoutHandle sets[] = {pipelines_.set_layout(0),
+                                                   pipelines_.set_layout(1),
+                                                   pipelines_.set_layout(2), material_set_layout_};
+    const rhi::PushConstantRange push{rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+                                      sizeof(DrawPush)};
+    rhi::PipelineLayoutDescription layout;
+    layout.name = "editor scene material pipeline";
+    layout.set_layouts = sets;
+    layout.push_constants = {&push, 1};
+    auto created_layout = device_->create_pipeline_layout(layout);
+    if (!created_layout) {
+        return make_unexpected(created_layout.error());
+    }
+    material_pipeline_layout_ = *created_layout;
+    return ok();
+}
+
+void AuthoredFrame::release_graph_variant(MaterialVariant& variant) noexcept {
+    for (rhi::GraphicsPipelineHandle pipeline :
+         {variant.depth_pipeline, variant.visible_pipeline, variant.shadow_pipeline}) {
+        if (!pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(pipeline);
+        }
+    }
+    for (rhi::ShaderModuleHandle shader :
+         {variant.depth_shader, variant.visible_shader, variant.shadow_shader}) {
+        if (!shader.is_null()) {
+            device_->destroy_shader_module(shader);
+        }
+    }
+    if (!variant.parameters.is_null()) {
+        device_->destroy_buffer(variant.parameters);
+    }
+    variant = {};
+}
+
 Status AuthoredFrame::preview(std::string_view reference,
                               std::string_view canonical_graph) noexcept {
-    auto colour = graph_diffuse_colour(canonical_graph, *allocator_);
+    auto colour = graph_diffuse_colour(canonical_graph, *allocator_, true);
     if (!colour) {
         return make_unexpected(colour.error());
     }
@@ -350,6 +417,9 @@ Status AuthoredFrame::preview(std::string_view reference,
 
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
+    for (MaterialVariant& variant : material_variants_) {
+        release_graph_variant(variant);
+    }
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     vfx_renderer_.shutdown();
 #endif
@@ -372,6 +442,12 @@ AuthoredFrame::~AuthoredFrame() {
         device_->destroy_texture(output_);
     }
     bindings_.shutdown();
+    if (!material_pipeline_layout_.is_null()) {
+        device_->destroy_pipeline_layout(material_pipeline_layout_);
+    }
+    if (!material_set_layout_.is_null()) {
+        device_->destroy_descriptor_set_layout(material_set_layout_);
+    }
     pipelines_.shutdown();
 }
 
@@ -383,6 +459,7 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project,
     width_ = width;
     height_ = height;
     project_ = project;
+    time_origin_ = std::chrono::steady_clock::now();
 
     AssemblyDescription description;
     description.width = width;
@@ -411,6 +488,9 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project,
     if (Status status = pipelines_.initialize(*device_, setup); !status) {
         return status;
     }
+    if (Status status = create_material_variant_layout(); !status) {
+        return status;
+    }
     Expected<ClusterGrid, Error> grid = make_cluster_grid(
         description.clusters, width, height, description.near_plane, description.far_plane);
     if (!grid) {
@@ -424,6 +504,7 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project,
     if (Status status = recorder_.initialize(pipelines_, bindings_); !status) {
         return status;
     }
+    recorder_.set_draw_pipeline(&AuthoredFrame::select_material_pipeline, this);
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     if (Status status = vfx_renderer_.initialize(*device_, pipelines_, kVfxCapacity); !status) {
         return status;
@@ -640,7 +721,7 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
     }
     const bool previewing = preview_graph_ && preview_graph_->first == reference;
     const std::string_view active = previewing ? std::string_view(preview_graph_->second) : saved;
-    auto colour = graph_diffuse_colour(active, *allocator_);
+    auto colour = graph_diffuse_colour(active, *allocator_, true);
     if (!colour) {
         return make_unexpected(colour.error());
     }
@@ -650,7 +731,7 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
         const ser::WorldValue* override = field_value(world, node, component, colour->parameter);
         bool inherited = false;
         if (previewing && override != nullptr && override->kind == ser::WorldValueKind::Vec3) {
-            auto original = graph_diffuse_colour(saved, *allocator_);
+            auto original = graph_diffuse_colour(saved, *allocator_, true);
             if (original && original->parameter == colour->parameter) {
                 inherited = std::abs(override->lanes[0] - original->value.x) < 0.0001F &&
                             std::abs(override->lanes[1] - original->value.y) < 0.0001F &&
@@ -667,10 +748,197 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
         !status) {
         return make_unexpected(status.error());
     }
+    if (colour->vertex) {
+        if (Status status = prepare_graph_variant(slot, active); !status) {
+            return make_unexpected(status.error());
+        }
+    } else {
+        const auto previous = std::ranges::find_if(
+            material_variants_,
+            [slot](const MaterialVariant& variant) { return variant.slot == slot; });
+        if (previous != material_variants_.end()) {
+            release_graph_variant(*previous);
+            material_variants_.erase(previous);
+        }
+    }
     if (new_slot) {
         material_slots_.emplace_back(key, slot);
     }
     return slot;
+}
+
+Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) noexcept {
+    const auto previous = std::ranges::find_if(
+        material_variants_,
+        [slot](const MaterialVariant& variant) { return variant.slot == slot; });
+    if (previous != material_variants_.end() && previous->source == source) {
+        return ok();
+    }
+    const rhi::ShaderFormat format = device_->capabilities().native_shader_format();
+    if (format != rhi::ShaderFormat::Msl && format != rhi::ShaderFormat::Spirv) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene vertex graphs require an MSL or SPIR-V shader path");
+    }
+    auto compiled = compile_scene_graph_material(source, *allocator_);
+    if (!compiled) {
+        return make_unexpected(compiled.error());
+    }
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    if (program == nullptr || program->vertex_source.text.empty()) {
+        return fail(ErrorCode::InvalidArgument, "authored scene material has no vertex expression");
+    }
+    if (!program->module.vertex_interpolants().empty()) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene surface shader cannot consume custom vertex interpolants");
+    }
+    auto stages = compile_scene_material_vertices(
+        *program, *allocator_,
+        format == rhi::ShaderFormat::Msl ? shader::Target::Msl : shader::Target::SpirV);
+    if (!stages) {
+        return make_unexpected(stages.error());
+    }
+    MaterialVariant variant;
+    variant.slot = slot;
+    const auto create_shader = [&](const char* name, const char* entry,
+                                   const shader::TargetArtefact& artefact,
+                                   rhi::ShaderModuleHandle& out) -> Status {
+        rhi::ShaderModuleDescription description;
+        description.name = name;
+        description.stage = rhi::ShaderStage::Vertex;
+        if (format == rhi::ShaderFormat::Msl) {
+            description.entry_point = entry;
+            description.native = artefact.bytes();
+            description.native_format = format;
+        } else {
+            if (artefact.bytes().size() % sizeof(u32) != 0) {
+                return fail(ErrorCode::InvalidArgument,
+                            "authored scene vertex SPIR-V has an incomplete word");
+            }
+            description.entry_point = "main";
+            std::vector<u32> words(artefact.bytes().size() / sizeof(u32));
+            std::memcpy(words.data(), artefact.bytes().data(), artefact.bytes().size());
+            description.spirv = words;
+            auto created = device_->create_shader_module(description);
+            if (!created) {
+                return make_unexpected(created.error());
+            }
+            out = *created;
+            return ok();
+        }
+        auto created = device_->create_shader_module(description);
+        if (!created) {
+            return make_unexpected(created.error());
+        }
+        out = *created;
+        return ok();
+    };
+    struct ShaderRequest {
+        const char* name;
+        const char* entry;
+        const shader::TargetArtefact* artefact;
+        rhi::ShaderModuleHandle* destination;
+    };
+    const ShaderRequest requests[] = {
+        {"scene material depth", "cySceneMaterialDepthVertex", &stages->depth,
+         &variant.depth_shader},
+        {"scene material visible", "cySceneMaterialVertex", &stages->visible,
+         &variant.visible_shader},
+        {"scene material shadow", "cySceneMaterialShadowVertex", &stages->shadow,
+         &variant.shadow_shader},
+    };
+    for (const ShaderRequest& request : requests) {
+        if (Status status =
+                create_shader(request.name, request.entry, *request.artefact, *request.destination);
+            !status) {
+            release_graph_variant(variant);
+            return status;
+        }
+    }
+    const auto create_pipeline = [&](FramePipelineKind kind, rhi::ShaderModuleHandle shader,
+                                     rhi::GraphicsPipelineHandle& out) -> Status {
+        auto created = pipelines_.create_vertex_variant(kind, shader, material_pipeline_layout_);
+        if (!created) {
+            return make_unexpected(created.error());
+        }
+        out = *created;
+        return ok();
+    };
+    for (const auto& pass : {std::pair{FramePipelineKind::Depth, &variant.depth_pipeline},
+                             std::pair{FramePipelineKind::Opaque, &variant.visible_pipeline},
+                             std::pair{FramePipelineKind::Shadow, &variant.shadow_pipeline}}) {
+        const rhi::ShaderModuleHandle shader =
+            pass.first == FramePipelineKind::Depth    ? variant.depth_shader
+            : pass.first == FramePipelineKind::Opaque ? variant.visible_shader
+                                                      : variant.shadow_shader;
+        if (Status status = create_pipeline(pass.first, shader, *pass.second); !status) {
+            release_graph_variant(variant);
+            return status;
+        }
+    }
+    rhi::BufferDescription buffer;
+    buffer.name = "editor scene material parameters";
+    buffer.size = rendering::kMaterialBlockBytes;
+    buffer.usage = rhi::BufferUsage::Uniform;
+    buffer.memory = rhi::MemoryUse::Upload;
+    auto created_buffer = device_->create_buffer(buffer);
+    if (!created_buffer) {
+        release_graph_variant(variant);
+        return make_unexpected(created_buffer.error());
+    }
+    variant.parameters = *created_buffer;
+    auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(variant.parameters));
+    if (mapped == nullptr) {
+        release_graph_variant(variant);
+        return fail(ErrorCode::Internal, "authored scene material parameters are not mapped");
+    }
+    std::memset(mapped, 0, rendering::kMaterialBlockBytes);
+    for (const auto& declared : program->module.parameters()) {
+        const auto* parameter =
+            compiled->layout().find(rendering::parameter_id(declared.name.c_str()));
+        if (parameter == nullptr) {
+            continue;
+        }
+        const usize bytes = rendering::parameter_byte_size(parameter->kind);
+        if (parameter->offset + bytes > rendering::kMaterialBlockBytes) {
+            release_graph_variant(variant);
+            return fail(ErrorCode::OutOfRange, "authored scene material parameters exceed block");
+        }
+        if (parameter->kind == rendering::ParameterKind::Int) {
+            const i32 value = static_cast<i32>(declared.default_value.mask);
+            std::memcpy(mapped + parameter->offset, &value, sizeof(value));
+        } else {
+            std::memcpy(mapped + parameter->offset, &declared.default_value, bytes);
+        }
+    }
+    variant.source = source;
+    if (previous != material_variants_.end()) {
+        release_graph_variant(*previous);
+        *previous = std::move(variant);
+    } else {
+        material_variants_.push_back(std::move(variant));
+    }
+    return ok();
+}
+
+Status AuthoredFrame::bind_graph_variants() noexcept {
+    for (MaterialVariant& variant : material_variants_) {
+        auto set = device_->allocate_descriptor_set(material_set_layout_, true);
+        if (!set) {
+            return make_unexpected(set.error());
+        }
+        variant.descriptor_set = *set;
+        rhi::DescriptorWrite write;
+        write.binding = 0;
+        write.kind = rhi::DescriptorKind::UniformBuffer;
+        write.buffer = variant.parameters;
+        write.buffer_range = rendering::kMaterialBlockBytes;
+        if (Status status = device_->update_descriptor_set(variant.descriptor_set, {&write, 1});
+            !status) {
+            return status;
+        }
+    }
+    return ok();
 }
 
 Expected<rhi::BindlessIndex, Error> AuthoredFrame::texture_slot(AssetId identity) noexcept {
@@ -1068,6 +1336,35 @@ bool AuthoredFrame::geometry(const render::DrawItem& item, const GpuDrawInstance
     return true;
 }
 
+bool AuthoredFrame::select_material_pipeline(FramePipelineKind kind, const render::DrawItem&,
+                                             const GpuDrawInstance& instance, void* user,
+                                             DrawPipelineSelection& out) noexcept {
+    const auto& frame = *static_cast<const AuthoredFrame*>(user);
+    const auto found =
+        std::ranges::find_if(frame.material_variants_,
+                             [&](const MaterialVariant& v) { return v.slot == instance.material; });
+    if (found == frame.material_variants_.end()) {
+        return false;
+    }
+    switch (kind) {
+        case FramePipelineKind::Depth:
+            out.pipeline = found->depth_pipeline;
+            break;
+        case FramePipelineKind::Opaque:
+            out.pipeline = found->visible_pipeline;
+            break;
+        case FramePipelineKind::Shadow:
+            out.pipeline = found->shadow_pipeline;
+            break;
+        default:
+            return false;
+    }
+    out.layout = frame.material_pipeline_layout_;
+    out.material_set = found->descriptor_set;
+    out.vertex_streams = kForwardPassStreamCount;
+    return true;
+}
+
 void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
     const auto& read = *static_cast<const Readback*>(user);
     rhi::BufferTextureCopy region;
@@ -1114,6 +1411,10 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     Expected<u32, Error> begun = device_->begin_frame();
     if (!begun) {
         return make_unexpected(begun.error());
+    }
+    if (Status status = bind_graph_variants(); !status) {
+        (void)device_->end_frame();
+        return status;
     }
     recorder_.clear_extensions();
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
@@ -1331,6 +1632,13 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
         return status;
     }
     GlobalsData globals;
+    const auto now = std::chrono::steady_clock::now();
+    globals.time_seconds = std::chrono::duration<f32>(now - time_origin_).count();
+    globals.delta_seconds =
+        has_frame_time_ ? std::clamp(globals.time_seconds - previous_frame_time_, 0.0F, 0.1F)
+                        : 0.0F;
+    previous_frame_time_ = globals.time_seconds;
+    has_frame_time_ = true;
     globals.exposure_stops = -16.0F;
     FrameUpload data = upload_for(assembly_, report, projection * relative_view, relative_view,
                                   transforms_.span(), globals, material_offsets_);

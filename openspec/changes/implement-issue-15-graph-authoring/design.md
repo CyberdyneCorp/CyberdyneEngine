@@ -143,11 +143,17 @@ frame's actual camera-relative transforms, engine time, and material parameter b
 reevaluates the expression at the previous time sample for velocity. The compiler test runs
 without a Metal device. `FramePipelines` can now create caller-owned geometry variants from those
 vertex modules with the standard pass attachments, depth rules, and three vertex streams; a null
-backend regression covers all four geometry passes. The scene renderer does not yet create those
-pipeline states or attach them to material draws. Its mesh currently has no vertex-colour or second
-UV stream, so those graph attributes are refused at shader assembly. The authored frame also has
-not yet populated elapsed time or previous object transforms, so the depth shader's previous
-sample is only a compiled path until those inputs are retained.
+backend regression covers all four geometry passes. The authored frame now compiles saved or
+previewed `.cygraph` vertex roots through the engine material compiler to MSL or SPIR-V, retains
+depth, opaque, and shadow pipelines by material slot, and selects them per draw. Parameter defaults
+use the compiled layout in a fourth descriptor set. A null-RHI scene test verifies actual draw
+selection, graph edit rebuild, and restoration of the standard pipeline. The visible surface still
+uses the standard frame fragment shader, so custom vertex interpolants are refused rather than
+silently ignored. Its mesh has no vertex-colour or second UV stream, so those graph attributes are
+refused at shader assembly. The authored frame now supplies elapsed and delta time from its frame
+clock, so time-driven offsets animate. Native pixels and displaced shadows remain to be measured.
+Previous object transforms and a retained temporal view are still missing, so the depth shader's
+previous sample does not yet establish correct motion vectors for moving meshes.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for

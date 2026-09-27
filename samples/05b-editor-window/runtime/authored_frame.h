@@ -18,6 +18,7 @@
 #include "scene.h"
 #include "world_view.h"
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -34,11 +35,14 @@ namespace cy::sample::editor_window {
 struct GraphColour {
     Vec4 value;
     std::string parameter;
+    bool vertex = false;
 };
 
-/// Extract the supported surface colour, refusing vertex graphs the authored frame cannot draw.
+/// Extract the supported surface colour. Vertex roots are allowed only for the scene path that
+/// also prepares their compiled pipeline variants.
 [[nodiscard]] Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
-                                                                Allocator& allocator) noexcept;
+                                                                Allocator& allocator,
+                                                                bool allow_vertex = false) noexcept;
 
 struct LightMarker {
     u64 identity = 0;
@@ -96,6 +100,7 @@ private:
     struct Mesh;
     struct Instance;
     struct Readback;
+    struct MaterialVariant;
 
     [[nodiscard]] Status resolve_meshes(const scene::serialization::World& world) noexcept;
     [[nodiscard]] Status load_mesh(const std::string& reference) noexcept;
@@ -109,6 +114,10 @@ private:
     [[nodiscard]] Expected<rhi::BindlessIndex, Error> texture_slot(AssetId identity) noexcept;
     [[nodiscard]] Status upload_geometry() noexcept;
     [[nodiscard]] Status create_materials() noexcept;
+    [[nodiscard]] Status create_material_variant_layout() noexcept;
+    [[nodiscard]] Status prepare_graph_variant(u32 slot, std::string_view source) noexcept;
+    [[nodiscard]] Status bind_graph_variants() noexcept;
+    void release_graph_variant(MaterialVariant& variant) noexcept;
     [[nodiscard]] Status build_instances(const scene::serialization::World& world, Vec3 eye,
                                          bool editor_lighting = true) noexcept;
     [[nodiscard]] Status append_instance(const scene::serialization::World& world,
@@ -126,6 +135,10 @@ private:
                                                        void* user) noexcept;
     static bool geometry(const render::DrawItem& item, const rendering::GpuDrawInstance& instance,
                          void* user, rendering::pipeline::DrawGeometry& out) noexcept;
+    static bool select_material_pipeline(rendering::pipeline::FramePipelineKind kind,
+                                         const render::DrawItem& item,
+                                         const rendering::GpuDrawInstance& instance, void* user,
+                                         rendering::pipeline::DrawPipelineSelection& out) noexcept;
     static void readback(const rendering::PassContext& context, void* user) noexcept;
 
     Allocator* allocator_;
@@ -134,6 +147,9 @@ private:
     u32 width_ = 0;
     u32 height_ = 0;
     bool initialized_ = false;
+    std::chrono::steady_clock::time_point time_origin_;
+    f32 previous_frame_time_ = 0.0F;
+    bool has_frame_time_ = false;
 
     rendering::assembly::FrameAssembly assembly_;
     rendering::SpatialIndex index_;
@@ -159,7 +175,10 @@ private:
     std::vector<LightMarker> light_markers_;
     std::vector<CameraMarker> camera_markers_;
     std::vector<std::pair<std::string, u32>> material_slots_;
+    std::vector<MaterialVariant> material_variants_;
     std::optional<std::pair<std::string, std::string>> preview_graph_;
+    rhi::DescriptorSetLayoutHandle material_set_layout_;
+    rhi::PipelineLayoutHandle material_pipeline_layout_;
     std::vector<std::pair<AssetId, render::TextureHandle>> texture_handles_;
     rhi::BufferHandle positions_;
     rhi::BufferHandle normals_;

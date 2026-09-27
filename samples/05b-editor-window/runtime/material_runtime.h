@@ -4,6 +4,7 @@
 #include <cy/backends/shader/compiler.h>
 #include <cy/core/memory/array.h>
 #include <cy/editor/material_service.h>
+#include <cy/rendering/material/compiler.h>
 
 #include "renderer.h"
 #include "world_view.h"
@@ -26,9 +27,14 @@ struct SceneMaterialVertexArtefacts {
 };
 
 [[nodiscard]] Status assemble_scene_material_vertex_unit(
-    const rendering::material::CompiledProgram& program, Array<char>& unit) noexcept;
+    const rendering::material::CompiledProgram& program, Array<char>& unit,
+    bool argument_buffer = true) noexcept;
 [[nodiscard]] Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
-    const rendering::material::CompiledProgram& program, Allocator& allocator) noexcept;
+    const rendering::material::CompiledProgram& program, Allocator& allocator,
+    shader::Target target = shader::Target::Msl) noexcept;
+/// Parse and compile the editor's saved graph through the engine material front end.
+[[nodiscard]] Expected<rendering::material::CompiledMaterial, Error> compile_scene_graph_material(
+    std::string_view source, Allocator& allocator) noexcept;
 
 /// The Mac editor-preview adapter. It owns the retained compiler layouts and preview bindings;
 /// `first_light::Renderer` owns the Metal shader modules, pipelines, descriptor sets and buffers.

@@ -7,6 +7,8 @@
 #endif
 #include <cy/backends/shader/source.h>
 #include <cy/core/assets/vfs.h>
+#include <cy/graph/material/lower_material.h>
+#include <cy/graph/text.h>
 #include <cy/rendering/material/slang_program.h>
 
 #include <cmath>
@@ -461,8 +463,48 @@ Status assemble_material_unit(const CompiledProgram& program, Array<char>& unit)
     return assemble_unit(program, unit);
 }
 
-Status assemble_scene_material_vertex_unit(const CompiledProgram& program,
-                                           Array<char>& unit) noexcept {
+Expected<rendering::material::CompiledMaterial, Error> compile_scene_graph_material(
+    std::string_view source, Allocator& allocator) noexcept {
+    graph::NodeRegistry registry(allocator);
+    if (Status registered = graph::material::register_material_nodes(registry); !registered) {
+        return make_unexpected(registered.error());
+    }
+    graph::DiagnosticSink diagnostics(allocator);
+    auto parsed = graph::parse_graph(source, &registry, allocator, diagnostics);
+    if (!parsed) {
+        return make_unexpected(parsed.error());
+    }
+    if (Status checked = graph::validate(*parsed, registry, nullptr, diagnostics); !checked) {
+        return make_unexpected(checked.error());
+    }
+    if (diagnostics.errors() != 0) {
+        return fail(ErrorCode::InvalidArgument, "authored scene vertex graph is invalid");
+    }
+    rendering::material::MaterialGraph lowered(allocator, Name::intern("editor_scene_material"));
+    if (Status status = graph::material::lower_material(*parsed, lowered); !status) {
+        return make_unexpected(status.error());
+    }
+    auto module = rendering::material::lower_graph(lowered, allocator);
+    if (!module) {
+        return make_unexpected(module.error());
+    }
+    rendering::material::CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    const auto geometry = rendering::material::GeometrySourceKind::StaticMesh;
+    options.geometry_paths = {&geometry, 1};
+    auto compiled = rendering::material::compile_material(*module, options, allocator);
+    if (!compiled) {
+        return make_unexpected(compiled.error());
+    }
+    if (compiled->failed()) {
+        return fail(ErrorCode::InvalidArgument, "authored scene vertex material did not compile");
+    }
+    return std::move(*compiled);
+}
+
+Status assemble_scene_material_vertex_unit(const CompiledProgram& program, Array<char>& unit,
+                                           bool argument_buffer) noexcept {
     if (program.vertex_source.text.empty()) {
         return fail(ErrorCode::InvalidArgument,
                     "the material has no compiled vertex-stage expression");
@@ -472,7 +514,7 @@ Status assemble_scene_material_vertex_unit(const CompiledProgram& program,
     writer.text("import cy.frame;\nimport cy.packing;\n");
     PreludeOptions prelude;
     prelude.material_set = 3;
-    prelude.argument_buffer = true;
+    prelude.argument_buffer = argument_buffer;
     auto declared = rendering::material::emit_prelude(program.module, prelude, unit);
     if (!declared.has_value()) {
         return make_unexpected(declared.error());
@@ -599,10 +641,16 @@ CyDepthVertex cySceneMaterialDepthVertex(float3 modelPosition : POSITION,
 }
 
 Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
-    const CompiledProgram& program, Allocator& allocator) noexcept {
+    const CompiledProgram& program, Allocator& allocator, shader::Target target) noexcept {
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+    if (target != shader::Target::Msl && target != shader::Target::SpirV) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene vertex shaders require an MSL or SPIR-V target");
+    }
     Array<char> unit(allocator);
-    if (Status assembled = assemble_scene_material_vertex_unit(program, unit); !assembled) {
+    if (Status assembled =
+            assemble_scene_material_vertex_unit(program, unit, target == shader::Target::Msl);
+        !assembled) {
         return make_unexpected(assembled.error());
     }
     (void)shader::slang::register_slang_backend();
@@ -638,7 +686,8 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
         !axis) {
         return make_unexpected(axis.error());
     }
-    const u32 enabled[] = {1, 1};
+    const u32 enabled[] = {target == shader::Target::Msl ? 1U : 0U,
+                           target == shader::Target::Msl ? 1U : 0U};
     auto key = metal.encode(enabled);
     if (!key.has_value()) {
         return make_unexpected(key.error());
@@ -653,37 +702,37 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
         request.resolver = library.resolver();
         request.permutations = &metal;
         request.permutation = *key;
-        return compiler.compiler->compile_for(request, shader::Target::Msl, diagnostics);
+        return compiler.compiler->compile_for(request, target, diagnostics);
     };
     shader::DiagnosticLog visible_diagnostics(allocator);
     auto visible = compile_stage("cySceneMaterialVertex", visible_diagnostics);
     if (!visible.has_value()) {
         for (usize index = 0; index < visible_diagnostics.size(); ++index) {
-            std::fprintf(stderr, "scene material visible Slang: %s\n",
+            std::fprintf(stderr, "scene material visible shader: %s\n",
                          visible_diagnostics.at(index).message);
         }
         return fail(ErrorCode::InvalidArgument,
-                    "the scene material visible vertex shader did not compile to MSL");
+                    "the scene material visible vertex shader did not compile");
     }
     shader::DiagnosticLog depth_diagnostics(allocator);
     auto depth = compile_stage("cySceneMaterialDepthVertex", depth_diagnostics);
     if (!depth.has_value()) {
         for (usize index = 0; index < depth_diagnostics.size(); ++index) {
-            std::fprintf(stderr, "scene material depth Slang: %s\n",
+            std::fprintf(stderr, "scene material depth shader: %s\n",
                          depth_diagnostics.at(index).message);
         }
         return fail(ErrorCode::InvalidArgument,
-                    "the scene material depth vertex shader did not compile to MSL");
+                    "the scene material depth vertex shader did not compile");
     }
     shader::DiagnosticLog shadow_diagnostics(allocator);
     auto shadow = compile_stage("cySceneMaterialShadowVertex", shadow_diagnostics);
     if (!shadow.has_value()) {
         for (usize index = 0; index < shadow_diagnostics.size(); ++index) {
-            std::fprintf(stderr, "scene material shadow Slang: %s\n",
+            std::fprintf(stderr, "scene material shadow shader: %s\n",
                          shadow_diagnostics.at(index).message);
         }
         return fail(ErrorCode::InvalidArgument,
-                    "the scene material shadow vertex shader did not compile to MSL");
+                    "the scene material shadow vertex shader did not compile");
     }
     SceneMaterialVertexArtefacts result(allocator);
     result.depth = std::move(*depth);
@@ -693,6 +742,7 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
 #else
     (void)program;
     (void)allocator;
+    (void)target;
     return fail(ErrorCode::Unsupported,
                 "scene material variants require the Slang front end in this editor build");
 #endif

@@ -2,6 +2,7 @@
 // The editor's authored frame on the native device this host publishes from: Metal on Apple,
 // Vulkan on Linux. One file so both backends answer to the same pixel assertions.
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/null/null_device.h>
 #if defined(__APPLE__)
 #    include <cy/backends/rhi-metal/backend.h>
 #else
@@ -18,10 +19,12 @@
 #include <cy_reflect_generated_scene.h>
 
 #include "authored_frame.h"
+#include "material_runtime.h"
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include "golden.h"
 #endif
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -52,6 +55,34 @@ capability
 deterministic true
 node 1 "material.vertex_interpolant" v1 {
 }
+)";
+constexpr std::string_view kSurfaceVertexGraph = R"(cygraph 1
+graph "scene_sway" version 1
+capability
+deterministic true
+node 1 "material.constant" v1 {
+    prop "type" : "name" = "float3"
+    prop "value" : "vec4" = (0.7, 0.5, 0.2, 0, 0)
+}
+node 2 "material.constant" v1 {
+    prop "type" : "name" = "float"
+    prop "value" : "vec4" = (1, 0, 0, 0, 0)
+}
+node 3 "material.diffuse" v1 {
+}
+node 4 "material.output" v1 {
+}
+node 5 "material.constant" v1 {
+    prop "type" : "name" = "float3"
+    prop "value" : "vec4" = (0, 0.25, 0, 0, 0)
+}
+node 6 "material.vertex_output" v1 {
+}
+link 1 "out" -> 3 "colour"
+link 2 "out" -> 3 "weight"
+link 2 "out" -> 4 "opacity"
+link 3 "out" -> 4 "surface"
+link 5 "out" -> 6 "offset"
 )";
 constexpr std::string_view kSphere = R"(cyworld 1
 type 1 runtime "Transform"
@@ -506,6 +537,103 @@ CY_TEST_CASE("authored scene material path names unsupported vertex-stage output
                  std::string_view::npos);
     }
 }
+
+CY_TEST_CASE("authored scene can retain a constant surface beside a vertex graph") {
+    auto refused = graph_diffuse_colour(kSurfaceVertexGraph, allocator());
+    CY_REQUIRE_FALSE(refused.has_value());
+    auto colour = graph_diffuse_colour(kSurfaceVertexGraph, allocator(), true);
+    CY_REQUIRE(colour.has_value());
+    CY_CHECK(colour->vertex);
+    CY_CHECK_EQ(colour->value.x, doctest::Approx(0.7F));
+    CY_CHECK_EQ(colour->value.y, doctest::Approx(0.5F));
+    CY_CHECK_EQ(colour->value.z, doctest::Approx(0.2F));
+    auto compiled = compile_scene_graph_material(kSurfaceVertexGraph, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    auto stages = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(stages.has_value());
+    CY_CHECK_GT(stages->visible.bytes().size(), 0U);
+    CY_CHECK_GT(stages->depth.bytes().size(), 0U);
+    CY_CHECK_GT(stages->shadow.bytes().size(), 0U);
+    auto spirv = compile_scene_material_vertices(*program, allocator(), shader::Target::SpirV);
+    CY_REQUIRE(spirv.has_value());
+    CY_CHECK_GT(spirv->visible.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->depth.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->shadow.bytes().size(), 0U);
+}
+
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph material") {
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "editor scene vertex graph null regression";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(160, 90, CY_TEST_PROJECT));
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", world).has_value());
+        CY_REQUIRE(frame.render(world, camera()));
+        std::vector<u64> standard;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline) {
+                standard.push_back(command.handle_bits);
+            }
+        }
+        const std::string reference =
+            "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+        CY_REQUIRE(frame.preview(reference, kSurfaceVertexGraph));
+        rhi::null::clear_command_log(**device);
+        const Status rendered = frame.render(world, camera());
+        if (!rendered) {
+            std::fprintf(stderr, "scene vertex graph: %s\n", rendered.error().message);
+        }
+        CY_REQUIRE(rendered);
+        std::vector<u64> selected;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                selected.push_back(command.handle_bits);
+            }
+        }
+        CY_CHECK_GE(selected.size(), 2U);
+
+        const std::string changed = edited(kSurfaceVertexGraph, "0.25", "0.75", Occurrence::First);
+        CY_REQUIRE(frame.preview(reference, changed));
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, camera()));
+        u32 rebuilt = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end() &&
+                std::ranges::find(selected, command.handle_bits) == selected.end()) {
+                ++rebuilt;
+            }
+        }
+        CY_CHECK_GE(rebuilt, 2U);
+
+        std::ifstream saved_file(std::string(CY_TEST_PROJECT) + "/" + reference);
+        CY_REQUIRE(saved_file.good());
+        const std::string saved(std::istreambuf_iterator<char>{saved_file}, {});
+        CY_REQUIRE(frame.preview(reference, saved));
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, camera()));
+        u32 restored_variants = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                ++restored_variants;
+            }
+        }
+        CY_CHECK_EQ(restored_variants, 0U);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif
 
 // One device and one frame for every stage: the stages run in this order against the same frame,
 // so each one also shows the frame carries nothing over from the scene before it.
