@@ -26,14 +26,14 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Wire path:** `vfx_stage_wire_and_property_round_trip_over_mcp` adds stage nodes, edits a property, connects and moves nodes, disconnects and removes them, and checks the saved document and history through MCP. Other wire cases cover emitter, parameter, module, and preview commands.
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-mcp --test a_session_over_the_wire vfx_stage_wire_and_property_round_trip_over_mcp --quiet` — 1 targeted test passed on macOS.
 - **Red mutation:** temporarily omit `connect_nodes()` from `vfx_authoring_commands::register`. The same wire test failed when `vfx.node.connect` returned an MCP error. Restoring registration made the test pass. The mutation is not committed.
-- **Remaining work:** task 2.6 still tracks individual typed desktop transactions for unsaved canvas gestures and a complete desktop/MCP parity check.
+- **Parity check:** saved desktop canvas gestures and metadata actions use the same registered `vfx.*` commands exposed through MCP. New unsaved drafts edit their local canvas until saved. `cargo test --manifest-path editor/Cargo.toml -p cy-editor-mcp --test a_session_over_the_wire vfx_ --quiet` passed 11 wire tests, including history, stage graphs, emitters, modules, declarations, and refusals; `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_vfx --quiet` passed 6 desktop routing tests; and the `saved_emitter` shell filter passed 3 tests on 2026-09-27.
 
 ## Desktop VFX palette command parity
 
 - **Desktop path:** `saved_palette_additions_use_the_same_commands_as_mcp` checks that adding a node to a saved system stage or module queues `vfx.node.add` or `vfx.module.node.add` with the open asset reference, stage, type, and coordinates, without mutating the canvas directly. A new draft still receives a local node.
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_palette_additions_use_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
 - **Red mutation:** temporarily make `add_palette_node` always call `canvas.add`. The test failed because the saved canvas gained a node instead of queuing the typed command. Restoring command routing made it pass. The mutation is not committed.
-- **Remaining work:** node movement still needs individual typed command routing and undo parity.
+- **Movement:** saved node movement queues one typed command at drag release, with history covered below.
 
 ## Desktop VFX property command parity
 
