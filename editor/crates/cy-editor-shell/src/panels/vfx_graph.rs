@@ -533,6 +533,7 @@ fn module_toolbar(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             panels.intents.push(Intent::CreateVfxModule(
                 panels.inputs.vfx_module_name.clone(),
                 panels.inputs.vfx_module_stage,
+                panels.inputs.vfx_module_reference.clone(),
             ));
         }
     });

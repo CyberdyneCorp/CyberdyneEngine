@@ -388,7 +388,9 @@ impl EditorWindow {
                     self.create_vfx_document(&name, &reference);
                 }
                 Intent::OpenVfxModule(reference) => self.open_vfx_module(&reference),
-                Intent::CreateVfxModule(name, stage) => self.create_vfx_module(name, stage),
+                Intent::CreateVfxModule(name, stage, reference) => {
+                    self.create_vfx_module(&name, stage, &reference);
+                }
                 Intent::DiscardVfxModuleChanges => self.discard_vfx_module_changes(),
                 Intent::ImportExternal { paths, destination } => {
                     for path in paths {
@@ -1066,13 +1068,27 @@ impl EditorWindow {
 
     fn create_vfx_module(
         &mut self,
-        name: String,
+        name: &str,
         stage: cy_editor_interface::specialised::vfx::Stage,
+        reference: &str,
     ) {
         let result = self.ensure_vfx_module_saved().and_then(|()| {
-            let module = cy_editor_interface::specialised::vfx_module::VfxModule::new(name, stage)?;
+            let arguments = Arguments::new()
+                .with("name", Value::Text(name.into()))
+                .with("stage", Value::Text(stage.label().into()))
+                .with("reference", Value::Text(reference.into()));
+            self.registry.invoke(
+                "vfx.module.create",
+                &self.scope,
+                &mut self.editor,
+                &arguments,
+            )?;
+            let source = self.editor.project.read_source(reference)?;
+            let module =
+                cy_editor_interface::specialised::vfx_module::VfxModule::decode_text(&source)?;
             self.specialised.start_vfx_module(module)?;
-            self.vfx_module_committed = None;
+            self.vfx_module_committed = Some((reference.into(), Some(source)));
+            self.inputs.vfx_module_reference = reference.into();
             Ok(())
         });
         self.inputs.vfx_document_problem = result.err().map(|problem| problem.to_string());
@@ -2349,6 +2365,46 @@ mod tests {
     }
 
     #[test]
+    fn desktop_module_creation_uses_saved_history_and_refuses_overwrite() {
+        use cy_editor_interface::specialised::vfx::Stage;
+
+        let root = scratch("vfx-desktop-module-create-history");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut window = vfx_test_window(&root);
+        window.editor.open_document("worlds/city.cyworld").unwrap();
+        let reference = "effects/drag.cyvfxmodule";
+
+        window.apply(vec![Intent::CreateVfxModule(
+            "drag".into(),
+            Stage::Update,
+            reference.into(),
+        )]);
+        let created = window.editor.project.read_source(reference).unwrap();
+        assert_eq!(window.specialised.active_vfx_module().unwrap().name, "drag");
+        assert_eq!(window.inputs.vfx_module_reference, reference);
+
+        window.apply(vec![Intent::Invoke("edit.undo".into(), Arguments::new())]);
+        assert!(!window.editor.project.source_exists(reference));
+        assert!(window.specialised.active_vfx_module().is_none());
+        window.apply(vec![Intent::Invoke("edit.redo".into(), Arguments::new())]);
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            created
+        );
+        assert_eq!(window.specialised.active_vfx_module().unwrap().name, "drag");
+
+        window.create_vfx_module("replacement", Stage::Spawn, reference);
+        assert!(window.inputs.vfx_document_problem.is_some());
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            created
+        );
+        assert_eq!(window.specialised.active_vfx_module().unwrap().name, "drag");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn saved_vfx_canvas_edit_is_journaled_and_undoable_without_manual_save() {
         use cy_editor_interface::specialised::graph::Layout;
         use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
@@ -3086,7 +3142,10 @@ mod tests {
                 .with("source", Value::Text(other.encode_text().unwrap())),
         )]);
 
-        window.apply(vec![Intent::CreateVfxModule("first".into(), Stage::Update)]);
+        window
+            .specialised
+            .start_vfx_module(VfxModule::new("first", Stage::Update).unwrap())
+            .unwrap();
         window.apply(vec![Intent::OpenVfxModule(
             "effects/other.cyvfxmodule".into(),
         )]);
@@ -3124,10 +3183,11 @@ mod tests {
             window.specialised.active_vfx_module().unwrap().name,
             "first"
         );
-        window.apply(vec![Intent::CreateVfxModule(
-            "replacement".into(),
+        window.create_vfx_module(
+            "replacement",
             Stage::Update,
-        )]);
+            "effects/replacement.cyvfxmodule",
+        );
         assert_eq!(
             window.specialised.active_vfx_module().unwrap().name,
             "first"
@@ -3163,7 +3223,11 @@ mod tests {
             window.specialised.active_vfx_module().unwrap().name,
             "other"
         );
-        window.apply(vec![Intent::CreateVfxModule("new".into(), Stage::Spawn)]);
+        window
+            .specialised
+            .start_vfx_module(VfxModule::new("new", Stage::Spawn).unwrap())
+            .unwrap();
+        window.vfx_module_committed = None;
         window.apply(vec![Intent::DiscardVfxModuleChanges]);
         assert!(window.specialised.active_vfx_module().is_none());
         std::fs::remove_dir_all(root).unwrap();

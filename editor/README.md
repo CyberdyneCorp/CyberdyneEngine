@@ -654,12 +654,13 @@ history for every unsaved edit remains an OpenSpec task. A separately saved `.cy
 records one compatible stage, named typed inputs, dependency names, and a shared-canvas graph.
 `vfx.module.save` and `vfx.module.read` use the command registry shared with MCP; save requires an
 active scene document and supports undo/redo. The sample project includes
-`effects/shared_drag.cyvfxmodule`. The VFX panel can create or open a module on the shared canvas,
-edit its compatible stage, typed host inputs and dependencies, and save it through
-`vfx.module.save`. It can attach a saved module to an emitter through an undoable document save;
-the attachment records its explicit project path. Module saves and attachments refresh when the
+`effects/shared_drag.cyvfxmodule`. The VFX panel creates a saved module at the Asset path through
+`vfx.module.create`, or opens an existing module on the shared canvas. It can edit the compatible
+stage, typed host inputs and dependencies, and save changes through `vfx.module.save`. It can
+attach a saved module to an emitter through an undoable document save;
+the attachment records its explicit project path. Creation, module saves, and attachments refresh when the
 scene history is undone or redone. Unsaved graph edits do not yet have individual history entries.
-Opening or creating another module keeps an unsaved draft in place; **Discard module edits**
+Opening or creating another module keeps unsaved changes in place; **Discard module edits**
 reopens its last saved source or closes a new module that has never been saved.
 Each referenced module needs an explicit path
 in the system document; the engine does not guess a file from its name. Compile and preview load

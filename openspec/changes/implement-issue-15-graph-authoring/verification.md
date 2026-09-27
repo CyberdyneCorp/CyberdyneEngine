@@ -174,3 +174,8 @@ devices. The cognitive-complexity skill could not score these Python functions l
 The New VFX system button now invokes the same `vfx.document.create` command used by MCP and
 opens the saved source. The shell regression covers create, undo removing the source and closing
 the canvas, redo restoring both, and refusal to overwrite an existing source.
+
+The Create module button similarly invokes `vfx.module.create` at the selected Asset path. Its
+shell regression covers saved creation, undo and redo of both source and open module, and refusal
+to overwrite an existing module. Switching to another module still preserves unsaved edits until
+the author saves or discards them.
