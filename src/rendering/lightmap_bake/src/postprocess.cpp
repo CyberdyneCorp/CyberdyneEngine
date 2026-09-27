@@ -128,8 +128,9 @@ struct SeamSample {
                                   Array<SeamSample>& out) noexcept {
     for (const SeamEdge& seam : seams) {
         const f32 span = std::max(length(seam.a1 - seam.a0), length(seam.b1 - seam.b0));
-        // Two samples per texel of the longer side, ends included.
-        const u32 count = std::max(2U, static_cast<u32>(std::ceil(span * 2.0F)) + 1U);
+        // Four samples per texel of the longer side, ends included: dense enough that the two
+        // sides' piecewise-bilinear readings agree between the samples as well as at them.
+        const u32 count = std::max(2U, static_cast<u32>(std::ceil(span * 4.0F)) + 1U);
         for (u32 index = 0; index < count; ++index) {
             const f32 t = static_cast<f32>(index) / static_cast<f32>(count - 1U);
             SeamSample sample;

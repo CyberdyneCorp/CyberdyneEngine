@@ -347,8 +347,10 @@ CY_TEST_CASE("texels at a seam are dilated and reconciled so the seam does not s
     scene.lights = {lights.data(), lights.size()};
 
     LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
-    settings.trace.samples = 12;
-    settings.content = LightmapContent::DirectAndIndirect;
+    // Indirect only and not denoised, so each side of the seam carries its own sampling noise: the
+    // disagreement the reconciliation exists to remove.
+    settings.trace.samples = 8;
+    settings.denoise = false;
     settings.atlas.texel_density = 6.0F;
 
     // Both sides of the seam at matched points along it: world x = 0, z from -2 to 2. The left

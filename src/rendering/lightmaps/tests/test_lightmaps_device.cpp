@@ -172,6 +172,43 @@ void save(const char* name, const std::vector<u32>& texels) noexcept {
     }
 }
 
+/// The first plane of a lightmap as a picture: each page side by side is too wide, so the stacked
+/// texture as it is, exposed to its own mean and tonemapped. For the README, not for an assertion.
+void save_atlas(const char* name, const bake::BakedLightmap& lightmap) noexcept {
+    const bake::LightmapTexels& texels = lightmap.texels;
+    f64 total = 0.0;
+    for (usize index = 0; index < usize{texels.width} * texels.height; ++index) {
+        total += texels.texels[index].y;
+    }
+    const f64 mean = total / static_cast<f64>(usize{texels.width} * texels.height);
+    const f64 scale = mean > 0.0 ? 0.5 / mean : 1.0;
+    std::vector<u32> pixels(usize{texels.width} * texels.height);
+    for (usize index = 0; index < pixels.size(); ++index) {
+        const Vec4 texel = texels.texels[index];
+        const auto encode = [scale](f32 value) {
+            const f64 mapped = (value * scale) / (1.0 + (value * scale));
+            return static_cast<u32>(std::clamp(std::pow(mapped, 1.0 / 2.2), 0.0, 1.0) * 255.0);
+        };
+        pixels[index] = encode(texel.x) | (encode(texel.y) << 8U) | (encode(texel.z) << 16U) |
+                        0xFF000000U;
+    }
+    render_test::Image image(allocator());
+    if (!render_test::adopt(image, Span<const u32>(pixels.data(), pixels.size()), texels.width,
+                            texels.height)
+             .has_value()) {
+        return;
+    }
+    const char* directory = std::getenv("CY_TEST_ARTEFACT_DIR");
+    if (directory == nullptr || *directory == '\0') {
+        directory = CY_TEST_BINARY_DIR;
+    }
+    char path[1024];
+    (void)std::snprintf(path, sizeof(path), "%s/%s", directory, name);
+    if (render_test::write_png(path, image).has_value()) {
+        std::fprintf(stderr, "wrote %s (%ux%u)\n", path, texels.width, texels.height);
+    }
+}
+
 Vec3 albedo_of(u32 box) noexcept {
     return box == kRedWallBox ? kRed : Vec3{kWhite, kWhite, kWhite};
 }
@@ -928,6 +965,7 @@ CY_TEST_CASE("(a) a baked red wall bleeds onto the white surfaces near it, not t
     CY_REQUIRE(on.render());
     save("lightmaps-off.png", off.pixels());
     save("lightmaps-on.png", on.pixels());
+    save_atlas("lightmaps-atlas.png", on.lightmap());
 
     const Picture picture = classify_all(on.scene());
     const Bleed flat = measure_bleed(picture, off.pixels());
