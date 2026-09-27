@@ -52,13 +52,8 @@ public struct CyParticle
     public float4 color;
 };
 
-public struct CyParticlePassSet
-{
-    public StructuredBuffer<CyParticle> particles;
-};
-
 [[vk::binding(0, 2)]]
-public ParameterBlock<CyParticlePassSet> cyParticlePass;
+public StructuredBuffer<CyParticle> cyParticles;
 
 public struct CyParticleVertex
 {
@@ -82,7 +77,7 @@ static const float2 kCorners[6] = {
 [shader("vertex")]
 public CyParticleVertex cyParticleVertex(uint vertexId: SV_VertexID)
 {
-    let particle = cyParticlePass.particles[vertexId / 6];
+    let particle = cyParticles[vertexId / 6];
     let corner = kCorners[vertexId % 6];
 
     // Rows 0 and 1 of camera-relative-to-view: the camera's right and up, in camera-relative space.

@@ -23,11 +23,9 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/material/author.h>
 #include <cy/material/cook.h>
-#include <cy/scene/serialization/worldfile.h>
 
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -48,9 +46,7 @@ int usage() {
                  "  cy_material author <canvas.cymatcanvas> --graph <out.cygraph>\n"
                  "                     [--module <out.slang>] [--info <out.cymatinfo>]\n"
                  "  cy_material cook <project-dir> <artefact-dir> [--profile desktop|mobile]\n"
-                 "                   [--cache <dir>] [--world <scene.cyworld>]...\n"
-                 "                   [--geometry <material>=<sources>]...\n"
-                 "                   <material.cymat|material.cygraph>...\n");
+                 "                   [--cache <dir>] <material.cymat>...\n");
     return 2;
 }
 
@@ -158,210 +154,14 @@ int compile_one(int argc, char** argv) {
     return 0;
 }
 
-struct GeometryAssignment {
-    std::string material;
-    std::string sources;
-    bool used = false;
-};
-
-struct CookInputs {
-    std::string cache;
-    std::string profile = "desktop";
-    std::vector<std::string> materials;
-    std::vector<GeometryAssignment> geometry;
-    std::vector<std::string> worlds;
-};
-
-[[nodiscard]] const scene::serialization::WorldTypeDecl* world_type_named(
-    const scene::serialization::World& world, std::string_view name) {
-    for (const auto& type : world.types()) {
-        if (world.text(type.name) == name) {
-            return &type;
-        }
-    }
-    return nullptr;
-}
-
-[[nodiscard]] u64 world_field_named(const scene::serialization::World& world,
-                                    const scene::serialization::WorldTypeDecl& type,
-                                    std::string_view name) {
-    for (const auto& field : type.fields()) {
-        if (world.text(field.name) == name) {
-            return field.file_field;
-        }
-    }
-    return 0;
-}
-
-[[nodiscard]] std::string_view world_text_field(
-    const scene::serialization::World& world, const scene::serialization::WorldComponent* component,
-    u64 file_field) {
-    if (component == nullptr || file_field == 0) {
-        return {};
-    }
-    const auto* field = component->find(file_field);
-    if (field == nullptr || field->value.kind != scene::serialization::WorldValueKind::Text) {
-        return {};
-    }
-    const Span<const u8> bytes = world.blob(field->value);
-    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-}
-
-void add_static_mesh_material(CookInputs& inputs, std::string_view material) {
-    if (!material.ends_with(".cymat") && !material.ends_with(".cygraph")) {
-        return;
-    }
-    bool listed = false;
-    for (const auto& source : inputs.materials) {
-        listed |= source == material;
-    }
-    if (!listed) {
-        inputs.materials.emplace_back(material);
-    }
-    for (auto& assignment : inputs.geometry) {
-        if (assignment.material != material) {
-            continue;
-        }
-        const std::string_view names(assignment.sources);
-        if (names != "StaticMesh" && !names.starts_with("StaticMesh,") &&
-            !names.ends_with(",StaticMesh") && names.find(",StaticMesh,") == std::string::npos) {
-            assignment.sources += ",StaticMesh";
-        }
-        return;
-    }
-    inputs.geometry.push_back({std::string(material), "StaticMesh", false});
-}
-
-void collect_world_materials(const scene::serialization::World& world, CookInputs& inputs) {
-    const auto* mesh_type = world_type_named(world, "MeshRenderer");
-    if (mesh_type == nullptr) {
-        return;
-    }
-    const u64 mesh_field = world_field_named(world, *mesh_type, "mesh");
-    const u64 material_field = world_field_named(world, *mesh_type, "material");
-    const auto* slots_type = world_type_named(world, "ImportedMaterialSlots");
-    for (const auto& node : world.nodes()) {
-        if (!node.live) {
-            continue;
-        }
-        const auto* mesh = node.find(mesh_type->file_type);
-        if (world_text_field(world, mesh, mesh_field).empty()) {
-            continue;
-        }
-        add_static_mesh_material(inputs, world_text_field(world, mesh, material_field));
-        if (slots_type == nullptr) {
-            continue;
-        }
-        const auto* slots = node.find(slots_type->file_type);
-        for (const auto& field : slots_type->fields()) {
-            if (world.text(field.name).starts_with("slot_")) {
-                add_static_mesh_material(inputs, world_text_field(world, slots, field.file_field));
-            }
-        }
-    }
-}
-
-[[nodiscard]] bool load_world_materials(std::string_view project, CookInputs& inputs) {
-    for (const std::string& reference : inputs.worlds) {
-        const std::filesystem::path path(reference);
-        if (path.is_absolute() || path.extension() != ".cyworld" ||
-            reference.find('\\') != std::string::npos || reference.find(':') != std::string::npos) {
-            std::fprintf(stderr, "cy_material: expected a project-relative .cyworld path\n");
-            return false;
-        }
-        for (const auto& part : path) {
-            if (part == "." || part == "..") {
-                std::fprintf(stderr, "cy_material: world path escapes the project\n");
-                return false;
-            }
-        }
-        const std::string absolute = (std::filesystem::path(project) / path).string();
-        Array<u8> bytes(allocator());
-        if (Status read = assets::fs::read_whole(absolute.c_str(), bytes); !read) {
-            std::fprintf(stderr, "cy_material: cannot read world %s\n", reference.c_str());
-            return false;
-        }
-        scene::serialization::World world(allocator());
-        auto parsed = scene::serialization::read_world(
-            std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), reference,
-            world);
-        if (!parsed) {
-            std::fprintf(stderr, "cy_material: cannot parse world %s: %s\n", reference.c_str(),
-                         parsed.error().message);
-            return false;
-        }
-        collect_world_materials(world, inputs);
-    }
-    return true;
-}
-
-[[nodiscard]] bool add_geometry_assignment(CookInputs& inputs, std::string_view assignment) {
-    const usize separator = assignment.find('=');
-    if (separator == 0 || separator == std::string_view::npos ||
-        separator + 1 == assignment.size()) {
-        std::fprintf(stderr, "cy_material: expected --geometry <material>=<sources>\n");
-        return false;
-    }
-    const std::string material(assignment.substr(0, separator));
-    for (const auto& recorded : inputs.geometry) {
-        if (recorded.material == material) {
-            std::fprintf(stderr, "cy_material: duplicate geometry assignment for %s\n",
-                         material.c_str());
-            return false;
-        }
-    }
-    inputs.geometry.push_back({material, std::string(assignment.substr(separator + 1)), false});
-    return true;
-}
-
-[[nodiscard]] bool parse_cook_inputs(int argc, char** argv, CookInputs& inputs) {
-    for (int index = 4; index < argc; ++index) {
-        const std::string_view argument = argv[index];
-        if (argument == "--cache" || argument == "--profile") {
-            if (++index >= argc) {
-                return false;
-            }
-            (argument == "--cache" ? inputs.cache : inputs.profile) = argv[index];
-            continue;
-        }
-        if (argument == "--geometry") {
-            if (++index >= argc || !add_geometry_assignment(inputs, argv[index])) {
-                return false;
-            }
-            continue;
-        }
-        if (argument == "--world") {
-            if (++index >= argc) {
-                return false;
-            }
-            inputs.worlds.emplace_back(argv[index]);
-            continue;
-        }
-        if (argument.starts_with("--")) {
-            return false;
-        }
-        inputs.materials.emplace_back(argument);
-    }
-    return !inputs.materials.empty() || !inputs.worlds.empty();
-}
-
 int cook_project(int argc, char** argv) {
     if (argc < 5) {
         return usage();
     }
     const std::string project = argv[2];
     const std::string artefacts = argv[3];
-    CookInputs inputs;
-    if (!parse_cook_inputs(argc, argv, inputs)) {
-        return usage();
-    }
-    if (!load_world_materials(project, inputs)) {
-        return 1;
-    }
-    if (inputs.materials.empty()) {
-        std::fprintf(stderr, "cy_material: no material sources were assigned by the worlds\n");
-        return 1;
-    }
+    const std::string cache = option_value(argc, argv, "--cache", "");
+    const std::string profile = option_value(argc, argv, "--profile", "desktop");
 
     build::ProducerRegistry producers;
     if (Status added = material::add_material_producers(producers); !added) {
@@ -370,33 +170,29 @@ int cook_project(int argc, char** argv) {
     }
 
     build::BuildGraph graph;
-    for (const std::string& argument : inputs.materials) {
+    u32 declared = 0;
+    for (int index = 4; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument.starts_with("--")) {
+            ++index;  // its value
+            continue;
+        }
         build::NodeDesc node;
         node.kind = build::NodeKind::Shader;
-        node.name = "material:" + argument;
+        node.name = "material:" + std::string(argument);
         node.producer = "material";
         node.producer_version = material::kMaterialProducerVersion;
         node.sources.emplace_back(argument);
-        node.outputs.emplace_back(argument + ".cymatbin");
-        node.options.push_back(build::NodeOption{"profile", inputs.profile});
-        for (auto& assignment : inputs.geometry) {
-            if (assignment.material == argument) {
-                node.options.push_back(build::NodeOption{"geometry", assignment.sources});
-                assignment.used = true;
-                break;
-            }
-        }
+        node.outputs.emplace_back(std::string(argument) + ".cymatbin");
+        node.options.push_back(build::NodeOption{"profile", profile});
         if (auto added = graph.add(std::move(node)); !added) {
             std::fprintf(stderr, "cy_material: %s\n", added.error().message);
             return 1;
         }
+        ++declared;
     }
-    for (const auto& assignment : inputs.geometry) {
-        if (!assignment.used) {
-            std::fprintf(stderr, "cy_material: geometry assignment has no material %s\n",
-                         assignment.material.c_str());
-            return 2;
-        }
+    if (declared == 0) {
+        return usage();
     }
     if (Status finalized = graph.finalize(); !finalized) {
         std::fprintf(stderr, "cy_material: %s\n", finalized.error().message);
@@ -409,7 +205,7 @@ int cook_project(int argc, char** argv) {
     config.producers = &producers;
     config.sources = &sources;
     config.artefact_root = artefacts;
-    config.cache.local = inputs.cache.empty() ? "" : inputs.cache.c_str();
+    config.cache.local = cache.empty() ? "" : cache.c_str();
 
     build::BuildService service;
     if (Status configured = service.configure(std::move(config)); !configured) {

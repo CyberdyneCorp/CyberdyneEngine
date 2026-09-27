@@ -244,6 +244,23 @@ CY_TEST_CASE("the Metal prelude places material parameters in the requested argu
     CY_CHECK(text.find("ParameterBlock<CyMaterialDraw> cyMaterialDraw;") != std::string_view::npos);
     CY_CHECK(text.find("#define cyMaterialParameters cyMaterialDraw.parameters") !=
              std::string_view::npos);
+    CY_CHECK(text.find("cyMaterialPreviousTransform") == std::string_view::npos);
+
+    unit.clear();
+    options.scene_previous_transform = true;
+    CY_REQUIRE(emit_prelude(*module, options, unit).has_value());
+    const std::string_view scene(unit.data(), unit.size());
+    CY_CHECK(scene.find("ConstantBuffer<CyScenePreviousTransform> previousTransform") !=
+             std::string_view::npos);
+    CY_CHECK(scene.find("#define cyMaterialPreviousTransform cyMaterialDraw.previousTransform") !=
+             std::string_view::npos);
+
+    unit.clear();
+    options.argument_buffer = false;
+    CY_REQUIRE(emit_prelude(*module, options, unit).has_value());
+    CY_CHECK(std::string_view(unit.data(), unit.size())
+                 .find("[[vk::binding(5, 2)]]\nConstantBuffer<CyScenePreviousTransform>") !=
+             std::string_view::npos);
 }
 
 CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standard library") {

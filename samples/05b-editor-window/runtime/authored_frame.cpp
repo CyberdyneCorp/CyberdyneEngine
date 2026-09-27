@@ -338,6 +338,7 @@ struct AuthoredFrame::MaterialVariant {
     rhi::GraphicsPipelineHandle visible_pipeline;
     rhi::GraphicsPipelineHandle shadow_pipeline;
     rhi::BufferHandle parameters;
+    rhi::BufferHandle previous_transform;
     rhi::DescriptorSetHandle descriptor_set;
 };
 
@@ -358,12 +359,14 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
 }
 
 Status AuthoredFrame::create_material_variant_layout() noexcept {
-    const rhi::DescriptorBinding parameter{0, rhi::DescriptorKind::UniformBuffer, 1,
-                                           rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment,
-                                           false};
+    const rhi::DescriptorBinding bindings[] = {
+        {0, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+        {1, rhi::DescriptorKind::UniformBuffer, 1, rhi::ShaderStage::Vertex, false},
+    };
     rhi::DescriptorSetLayoutDescription set;
     set.name = "editor scene material parameters";
-    set.bindings = {&parameter, 1};
+    set.bindings = bindings;
     auto created_set = device_->create_descriptor_set_layout(set);
     if (!created_set) {
         return make_unexpected(created_set.error());
@@ -401,6 +404,9 @@ void AuthoredFrame::release_graph_variant(MaterialVariant& variant) noexcept {
     }
     if (!variant.parameters.is_null()) {
         device_->destroy_buffer(variant.parameters);
+    }
+    if (!variant.previous_transform.is_null()) {
+        device_->destroy_buffer(variant.previous_transform);
     }
     variant = {};
 }
@@ -759,6 +765,7 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
         if (previous != material_variants_.end()) {
             release_graph_variant(*previous);
             material_variants_.erase(previous);
+            history_cut_ = true;
         }
     }
     if (new_slot) {
@@ -887,6 +894,21 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
         return make_unexpected(created_buffer.error());
     }
     variant.parameters = *created_buffer;
+    buffer.name = "editor scene previous object transform";
+    buffer.size = 3U * sizeof(Vec4);
+    auto previous_buffer = device_->create_buffer(buffer);
+    if (!previous_buffer) {
+        release_graph_variant(variant);
+        return make_unexpected(previous_buffer.error());
+    }
+    variant.previous_transform = *previous_buffer;
+    auto* mapped_previous = device_->buffer_mapped_pointer(variant.previous_transform);
+    if (mapped_previous == nullptr) {
+        release_graph_variant(variant);
+        return fail(ErrorCode::Internal, "authored scene previous transform buffer is not mapped");
+    }
+    const InstanceTransform identity;
+    std::memcpy(mapped_previous, &identity, buffer.size);
     auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(variant.parameters));
     if (mapped == nullptr) {
         release_graph_variant(variant);
@@ -918,6 +940,7 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     } else {
         material_variants_.push_back(std::move(variant));
     }
+    history_cut_ = true;
     return ok();
 }
 
@@ -928,12 +951,16 @@ Status AuthoredFrame::bind_graph_variants() noexcept {
             return make_unexpected(set.error());
         }
         variant.descriptor_set = *set;
-        rhi::DescriptorWrite write;
-        write.binding = 0;
-        write.kind = rhi::DescriptorKind::UniformBuffer;
-        write.buffer = variant.parameters;
-        write.buffer_range = rendering::kMaterialBlockBytes;
-        if (Status status = device_->update_descriptor_set(variant.descriptor_set, {&write, 1});
+        rhi::DescriptorWrite writes[2];
+        writes[0].binding = 0;
+        writes[0].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[0].buffer = variant.parameters;
+        writes[0].buffer_range = rendering::kMaterialBlockBytes;
+        writes[1].binding = 1;
+        writes[1].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[1].buffer = variant.previous_transform;
+        writes[1].buffer_range = 3U * sizeof(Vec4);
+        if (Status status = device_->update_descriptor_set(variant.descriptor_set, writes);
             !status) {
             return status;
         }
@@ -1062,7 +1089,11 @@ Status AuthoredFrame::resolve_meshes(const ser::World& world) noexcept {
         }
         added = true;
     }
-    return added ? upload_geometry() : ok();
+    if (added) {
+        history_cut_ = true;
+        return upload_geometry();
+    }
+    return ok();
 }
 
 Status AuthoredFrame::prepare_world(const ser::World& world) noexcept {
@@ -1166,6 +1197,7 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
                                       bool editor_lighting) noexcept {
     index_.reset();
     instances_.clear();
+    current_models_.clear();
     pivots_.clear();
     light_markers_.clear();
     camera_markers_.clear();
@@ -1210,6 +1242,22 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
                 camera_markers_.push_back(CameraMarker{node.identity, origin, forward});
             }
             if (Status status = append_instance(world, node, matrices[row], eye); !status) {
+                return status;
+            }
+        }
+    }
+    if (current_models_.size() != previous_models_.size() ||
+        !std::equal(current_models_.begin(), current_models_.end(), previous_models_.begin(),
+                    [](const auto& current, const auto& previous) {
+                        return current.first == previous.first;
+                    })) {
+        history_cut_ = true;
+        for (usize row = 0; row < instances_.size(); ++row) {
+            const Instance& placed = instances_[row];
+            if (Status status =
+                    update_previous_transform(placed.identity, current_models_[row].second, eye,
+                                              {placed.materials.data(), placed.materials.size()});
+                !status) {
                 return status;
             }
         }
@@ -1268,6 +1316,11 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         }
         instance.materials.push_back(*material);
     }
+    if (Status status = update_previous_transform(
+            node.identity, matrix, eye, {instance.materials.data(), instance.materials.size()});
+        !status) {
+        return status;
+    }
     SpatialEntry entry;
     entry.bounds = bounds;
     entry.stable_id = node.identity;
@@ -1283,6 +1336,7 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         return make_unexpected(inserted.error());
     }
     instances_.push_back(std::move(instance));
+    current_models_.emplace_back(node.identity, matrix);
     InstanceTransform transformed = relative_transform(matrix, eye);
     const ser::WorldValue* tint = field_value(world, node, "MeshRenderer", "tint");
     if (tint != nullptr && tint->kind == ser::WorldValueKind::Vec3) {
@@ -1291,6 +1345,35 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         }
     }
     return transforms_.push_back(transformed);
+}
+
+Status AuthoredFrame::update_previous_transform(u64 identity, const Mat4& matrix, Vec3 eye,
+                                                Span<const u32> materials) noexcept {
+    Mat4 prior = matrix;
+    Vec3 prior_eye = eye;
+    if (has_previous_frame_ && !history_cut_) {
+        const auto found = std::ranges::find_if(
+            previous_models_, [identity](const auto& entry) { return entry.first == identity; });
+        if (found != previous_models_.end()) {
+            prior = found->second;
+            prior_eye = previous_eye_;
+        }
+    }
+    const InstanceTransform relative = relative_transform(prior, prior_eye);
+    for (u32 slot : materials) {
+        const auto variant = std::ranges::find_if(
+            material_variants_,
+            [slot](const MaterialVariant& entry) { return entry.slot == slot; });
+        if (variant == material_variants_.end()) {
+            continue;
+        }
+        void* mapped = device_->buffer_mapped_pointer(variant->previous_transform);
+        if (mapped == nullptr) {
+            return fail(ErrorCode::Internal, "authored scene previous transform is not mapped");
+        }
+        std::memcpy(mapped, &relative, 3U * sizeof(Vec4));
+    }
+    return ok();
 }
 
 Span<const DrawSurface> AuthoredFrame::surfaces(const VisibleInstance& instance,
@@ -1426,10 +1509,18 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     (void)preview;
 #endif
     Status result = capture(*begun, camera, editor_lighting);
-    if (Status ended = device_->end_frame(); !ended && result) {
+    Status ended = device_->end_frame();
+    if (!result) {
+        return result;
+    }
+    if (!ended) {
         return ended;
     }
-    return result;
+    previous_models_ = current_models_;
+    previous_eye_ = eye;
+    has_previous_frame_ = true;
+    history_cut_ = false;
+    return ok();
 }
 
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
@@ -1495,6 +1586,31 @@ bool AuthoredFrame::pivot_for(u64 identity, Vec3& pivot) const noexcept {
             pivot = entry.second;
             return true;
         }
+    }
+    return false;
+}
+
+bool AuthoredFrame::previous_material_transform(u64 identity,
+                                                InstanceTransform& out) const noexcept {
+    const auto placed = std::ranges::find_if(
+        instances_, [identity](const Instance& instance) { return instance.identity == identity; });
+    if (placed == instances_.end()) {
+        return false;
+    }
+    for (u32 slot : placed->materials) {
+        const auto variant = std::ranges::find_if(
+            material_variants_,
+            [slot](const MaterialVariant& entry) { return entry.slot == slot; });
+        if (variant == material_variants_.end()) {
+            continue;
+        }
+        const void* mapped = device_->buffer_mapped_pointer(variant->previous_transform);
+        if (mapped == nullptr) {
+            return false;
+        }
+        out = InstanceTransform{};
+        std::memcpy(&out, mapped, 3U * sizeof(Vec4));
+        return true;
     }
     return false;
 }
@@ -1589,7 +1705,7 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     view.lights = lights_.span();
     view.sun_direction = Vec3{0.28F, 0.82F, 0.50F};
     // Edits can insert geometry into a previously empty history. Reset it for the editor frame.
-    view.cut = true;
+    view.cut = !has_previous_frame_ || history_cut_;
     TextureRequest output;
     output.name = "editor authored output";
     output.format = kOutputFormat;

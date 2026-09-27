@@ -92,6 +92,9 @@ struct PreludeOptions {
     /// Emit the parameter block as a Slang `ParameterBlock`, which becomes the argument buffer the
     /// Metal RHI binds for one descriptor set. Other targets keep the direct constant-buffer form.
     bool argument_buffer = false;
+    /// Add a previous object transform beside the parameter block for authored scene velocity.
+    /// Other material hosts keep their existing one-binding layout.
+    bool scene_previous_transform = false;
 };
 
 /// What the prelude declared. Every number is counted off the module rather than predicted.

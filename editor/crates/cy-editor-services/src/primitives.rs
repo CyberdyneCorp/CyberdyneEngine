@@ -732,14 +732,6 @@ pub fn material_slots_of(document: &Document, node: NodeId) -> Vec<String> {
     let Some(binding) = MaterialSlotsBinding::of_schema(document.schema()) else {
         return material_of(document, node).into_iter().collect();
     };
-    if binding
-        .slots
-        .first()
-        .and_then(|field| document.content().field(node, binding.component, *field))
-        .is_none()
-    {
-        return material_of(document, node).into_iter().collect();
-    }
     let mut assets: Vec<String> = binding
         .slots
         .iter()

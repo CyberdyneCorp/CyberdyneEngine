@@ -234,28 +234,27 @@ u32 publication_slots(const SimulationWorld& world) noexcept {
 }
 
 const char* renderer_kind_name(RendererKind kind) noexcept {
-    static_assert(kAssetRendererCount == static_cast<u8>(RendererKind::Count));
-    return asset_renderer_name(static_cast<u8>(kind));
-}
-
-RendererAvailability renderer_availability(RendererKind kind) noexcept {
     switch (kind) {
         case RendererKind::Sprite:
+            return "Sprite";
         case RendererKind::Mesh:
+            return "Mesh";
         case RendererKind::Ribbon:
+            return "Ribbon";
         case RendererKind::Beam:
+            return "Beam";
         case RendererKind::Trail:
-            return {true, ""};
+            return "Trail";
         case RendererKind::Decal:
-            return {false, "No decal projection pass consumes VFX decal rows"};
+            return "Decal";
         case RendererKind::Light:
-            return {false, "No clustered-light assignment consumes VFX light rows"};
+            return "Light";
         case RendererKind::Volume:
-            return {false, "No volumetric pass consumes VFX volume rows"};
+            return "Volume";
         case RendererKind::Count:
-            return {};
+            break;
     }
-    return {};
+    return "unknown";
 }
 
 const char* sorting_mode_name(SortingMode mode) noexcept {

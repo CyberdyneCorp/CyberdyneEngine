@@ -215,15 +215,6 @@ struct Binding {
     if (text == "saturate") {
         return Op::Saturate;
     }
-    if (text == "sin") {
-        return Op::Sin;
-    }
-    if (text == "noise") {
-        return Op::Noise;
-    }
-    if (text == "procedural_wind") {
-        return Op::ProceduralWind;
-    }
     if (text == "normalize") {
         return Op::Normalize;
     }
@@ -300,7 +291,6 @@ private:
     [[nodiscard]] Status parse_parameter(bool requested_static) noexcept;
     [[nodiscard]] Status parse_texture() noexcept;
     [[nodiscard]] Status parse_attribute(bool is_field) noexcept;
-    [[nodiscard]] Status parse_vertex_interpolant() noexcept;
     [[nodiscard]] Status parse_let() noexcept;
     [[nodiscard]] Status parse_statement() noexcept;
     [[nodiscard]] Status parse_annotations() noexcept;
@@ -327,8 +317,6 @@ private:
     Builder* builder_ = nullptr;
     BuilderPolicy policy_;
     Array<Binding> bindings_;
-    NodeId vertex_offset_ = kInvalidNode;
-    NodeId vertex_displacement_ = kInvalidNode;
     /// The annotations `@microdetail` and friends collected for the next `let`.
     NodeFlags pending_ = NodeFlags::None;
 };
@@ -441,24 +429,6 @@ Status Parser::parse_attribute(bool is_field) noexcept {
     return expect_symbol(';', "a declaration ends with a semicolon");
 }
 
-Status Parser::parse_vertex_interpolant() noexcept {
-    const Token name = lexer_.take();
-    if (name.kind != TokenKind::Identifier) {
-        return make_unexpected(report(name, "a vertex interpolant needs a name"));
-    }
-    if (Status expected = expect_symbol('=', "a vertex interpolant is assigned"); !expected) {
-        return expected;
-    }
-    auto value = parse_expression();
-    if (!value) {
-        return make_unexpected(value.error());
-    }
-    if (Status set = builder_->set_vertex_interpolant(Name::intern(name.text), *value); !set) {
-        return make_unexpected(report(name, set.error().message));
-    }
-    return expect_symbol(';', "a statement ends with a semicolon");
-}
-
 Status Parser::parse_annotations() noexcept {
     while (at_symbol('@')) {
         (void)lexer_.take();
@@ -526,14 +496,10 @@ Status Parser::parse_statement() noexcept {
     if (keyword.text == "field") {
         return parse_attribute(true);
     }
-    if (keyword.text == "vertex_interpolant") {
-        return parse_vertex_interpolant();
-    }
     if (keyword.text == "let") {
         return parse_let();
     }
-    if (keyword.text == "surface" || keyword.text == "opacity" || keyword.text == "vertex_offset" ||
-        keyword.text == "vertex_displacement") {
+    if (keyword.text == "surface" || keyword.text == "opacity") {
         if (Status expected = expect_symbol('=', "an output is assigned"); !expected) {
             return expected;
         }
@@ -541,19 +507,9 @@ Status Parser::parse_statement() noexcept {
         if (!value) {
             return make_unexpected(value.error());
         }
-        if (keyword.text == "vertex_offset" || keyword.text == "vertex_displacement") {
-            const bool displacement = keyword.text == "vertex_displacement";
-            const ValueType expected = displacement ? ValueType::Float : ValueType::Vec3;
-            if (builder_->node(*value).type != expected) {
-                return make_unexpected(
-                    report(keyword, displacement ? "vertex displacement must be a scalar distance"
-                                                 : "the vertex offset output must be a float3"));
-            }
-            (displacement ? vertex_displacement_ : vertex_offset_) = *value;
-            return expect_symbol(';', "a statement ends with a semicolon");
-        }
         const bool surface = keyword.text == "surface";
-        const Status set = surface ? builder_->set_surface(*value) : builder_->set_opacity(*value);
+        Status set =
+            surface ? builder_->set_surface(value.value()) : builder_->set_opacity(value.value());
         if (!set) {
             return make_unexpected(report(keyword, surface ? "the surface output must be a closure"
                                                            : "the opacity output must be a float"));
@@ -893,28 +849,6 @@ Expected<Module, Error> Parser::run() noexcept {
     }
     if (Status expected = expect_symbol('}', "a material's body is braced"); !expected) {
         return make_unexpected(expected.error());
-    }
-    NodeId offset = vertex_offset_;
-    if (vertex_displacement_ != kInvalidNode) {
-        auto displaced = builder.normal_displacement(vertex_displacement_);
-        if (!displaced) {
-            return make_unexpected(displaced.error());
-        }
-        if (offset == kInvalidNode) {
-            offset = *displaced;
-        } else {
-            const NodeId operands[] = {offset, *displaced};
-            auto combined = builder.make(Op::Add, {operands, 2});
-            if (!combined) {
-                return make_unexpected(combined.error());
-            }
-            offset = *combined;
-        }
-    }
-    if (offset != kInvalidNode) {
-        if (Status set = builder.set_vertex_offset(offset); !set) {
-            return make_unexpected(set.error());
-        }
     }
     return builder.finish();
 }

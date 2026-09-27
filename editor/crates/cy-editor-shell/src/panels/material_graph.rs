@@ -12,10 +12,8 @@ use cy_editor_interface::specialised::graph::{
     GraphCanvas, Layout as GraphLayout, NodeKey, Pin, PinDirection, Property, PropertyKind,
     Severity,
 };
-use cy_editor_interface::specialised::material::{
-    SURFACE_STAGE, VERTEX_STAGE, canvas_interchange, load_canvas_interchange,
-};
-use cy_editor_services::primitives::{material_of, material_slots_of, mesh_of};
+use cy_editor_interface::specialised::material::{canvas_interchange, load_canvas_interchange};
+use cy_editor_services::primitives::material_of;
 use cy_editor_services::{
     AssetCatalogueService, Editor, MaterialCatalogueState, MaterialDiagnosticSeverity,
     MaterialOperation, MaterialPreviewState, MaterialRequestState,
@@ -33,10 +31,6 @@ const PIN_ROW: f32 = 18.0;
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let selected_graph = selected_material_graph(panels.editor);
-    let geometry = active_material_geometry(
-        panels.editor,
-        panels.inputs.material_open_reference.as_deref(),
-    );
     let project_root = panels.editor.project.root().to_path_buf();
     let state = panels.editor.backend.material_catalogue_state();
     let request_state = panels.editor.backend.material_request_state().clone();
@@ -91,13 +85,14 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     ui,
                     panels.shell,
                     canvas,
-                    panels.inputs,
+                    &mut panels.inputs.material_filter,
                     PaletteBackendState {
                         catalogue: state,
                         request: &request_state,
                         preview: &preview_state,
                     },
                     &panels.editor.asset_catalogue,
+                    &mut panels.inputs.material_property_problem,
                 );
             },
         );
@@ -108,17 +103,13 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                 panels.shell,
                 canvas,
                 state,
-                "Empty material graph\nChoose a node from the engine catalogue",
                 &mut panels.inputs.material_link_source,
-                &mut CanvasFeedback {
-                    link_problem: &mut panels.inputs.material_link_problem,
-                    node_alerts: &[],
-                },
+                &mut panels.inputs.material_link_problem,
             );
         });
     });
     let had_action = action.is_some();
-    handle_palette_action(panels.editor, panels.inputs, canvas, action, geometry);
+    handle_palette_action(panels.editor, panels.inputs, canvas, action);
     if !had_action
         && panels.editor.runtime.is_connected()
         && state == MaterialCatalogueState::Ready
@@ -133,7 +124,6 @@ fn handle_palette_action(
     inputs: &mut super::Inputs,
     canvas: &GraphCanvas,
     action: Option<PaletteAction>,
-    geometry: Option<&str>,
 ) {
     match action {
         Some(PaletteAction::Save) => {
@@ -159,10 +149,9 @@ fn handle_palette_action(
             }
         }
         Some(PaletteAction::Request(operation)) => {
-            let sources: Vec<&str> = geometry.into_iter().collect();
-            match canvas_interchange(&inputs.material_name, canvas).and_then(|payload| {
-                editor.request_material_for_geometry(operation, payload.into_bytes(), &sources)
-            }) {
+            match canvas_interchange(&inputs.material_name, canvas)
+                .and_then(|payload| editor.request_material(operation, payload.into_bytes()))
+            {
                 Ok(_) => {}
                 Err(problem) => {
                     editor
@@ -216,19 +205,6 @@ fn selected_material_graph(editor: &Editor) -> Option<String> {
         return None;
     }
     material_of(document, node).filter(|path| path.ends_with(".cygraph"))
-}
-
-fn active_material_geometry(editor: &Editor, reference: Option<&str>) -> Option<&'static str> {
-    let reference = reference?;
-    let document = editor.documents.get(editor.workspace.active()?)?;
-    // The authored scene renderer currently loads MeshRenderer assets as static meshes.
-    document.content().nodes().find_map(|node| {
-        (mesh_of(document, node).is_some()
-            && material_slots_of(document, node)
-                .iter()
-                .any(|material| material == reference))
-        .then_some("StaticMesh")
-    })
 }
 
 fn open_selected_graph(
@@ -377,9 +353,10 @@ fn palette(
     ui: &mut egui::Ui,
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
-    inputs: &mut super::Inputs,
+    filter: &mut String,
     backend: PaletteBackendState<'_>,
     assets: &AssetCatalogueService,
+    property_problem: &mut Option<String>,
 ) -> Option<PaletteAction> {
     let mut action = None;
     ui.heading("Engine catalogue");
@@ -415,30 +392,23 @@ fn palette(
     });
     material_request_status(ui, shell, canvas, backend.request);
     material_preview_status(ui, shell, backend.preview);
-    graph_properties(ui, canvas, assets, &mut inputs.material_property_problem);
-    ui.horizontal(|ui| {
-        ui.label("Stage");
-        egui::ComboBox::from_id_salt("material-palette-stage")
-            .selected_text(if inputs.material_stage == VERTEX_STAGE {
-                "Vertex"
-            } else {
-                "Surface"
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut inputs.material_stage, SURFACE_STAGE, "Surface");
-                ui.selectable_value(&mut inputs.material_stage, VERTEX_STAGE, "Vertex");
-            });
-    });
+    material_properties(ui, canvas, assets, property_problem);
     ui.add_space(shell.metrics().gap() * 0.5);
     ui.add(
-        egui::TextEdit::singleline(&mut inputs.material_filter)
+        egui::TextEdit::singleline(filter)
             .hint_text("Search nodes")
             .desired_width(f32::INFINITY),
     );
     ui.add_space(shell.metrics().gap() * 0.5);
 
-    let query = inputs.material_filter.trim().to_ascii_lowercase();
-    let names = palette_names(canvas, &query, inputs.material_stage);
+    let query = filter.trim().to_ascii_lowercase();
+    let names: Vec<String> = canvas
+        .catalogue()
+        .type_names()
+        .into_iter()
+        .filter(|name| matches_filter(name, &query))
+        .map(ToOwned::to_owned)
+        .collect();
     egui::ScrollArea::vertical().show(ui, |ui| {
         for name in names {
             let Some(node_type) = canvas.catalogue().get(&name) else {
@@ -481,22 +451,6 @@ fn palette(
     action
 }
 
-fn palette_names(canvas: &GraphCanvas, query: &str, stage: u8) -> Vec<String> {
-    canvas
-        .catalogue()
-        .type_names()
-        .into_iter()
-        .filter(|name| {
-            matches_filter(name, query)
-                && canvas
-                    .catalogue()
-                    .get(name)
-                    .is_some_and(|node| node.supports_stage(stage))
-        })
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
 #[derive(Clone, Copy)]
 struct PaletteBackendState<'a> {
     catalogue: MaterialCatalogueState,
@@ -531,7 +485,7 @@ fn material_preview_status(
     );
 }
 
-pub(super) fn graph_properties(
+fn material_properties(
     ui: &mut egui::Ui,
     canvas: &mut GraphCanvas,
     assets: &AssetCatalogueService,
@@ -744,17 +698,11 @@ fn material_request_status(
             graph,
             programs,
             dependencies,
-            geometry_sources,
         } => (
             Semantic::Live,
             format!(
-                "Compiled {artefact:016x}\ngraph {graph:016x} · {programs} programs · {} dependencies · geometry {}\nrequest #{}",
+                "Compiled {artefact:016x}\ngraph {graph:016x} · {programs} programs · {} dependencies\nrequest #{}",
                 dependencies.len(),
-                if geometry_sources.is_empty() {
-                    "unspecified".to_owned()
-                } else {
-                    geometry_sources.join(", ")
-                },
                 request.as_u64()
             ),
         ),
@@ -777,19 +725,13 @@ fn select_backend_location(canvas: &mut GraphCanvas, node: u64) {
     }
 }
 
-pub(super) struct CanvasFeedback<'a> {
-    pub link_problem: &'a mut Option<String>,
-    pub node_alerts: &'a [(u64, String)],
-}
-
-pub(super) fn draw_canvas(
+fn draw_canvas(
     ui: &mut egui::Ui,
     shell: &cy_editor_interface::shell::Shell,
     canvas: &mut GraphCanvas,
     state: MaterialCatalogueState,
-    empty_message: &str,
     pending_source: &mut Option<(u64, u32, String, String)>,
-    feedback: &mut CanvasFeedback<'_>,
+    link_problem: &mut Option<String>,
 ) {
     let rect = ui.available_rect_before_wrap();
     let background = ui.allocate_rect(rect, egui::Sense::click());
@@ -841,11 +783,10 @@ pub(super) fn draw_canvas(
             selected.contains(&card.key),
             response.hovered(),
         );
-        draw_node_alert(&painter, shell, card, response, feedback.node_alerts);
     }
     let pin_action = interact_with_pins(ui, shell, &cards, pending_source.as_ref());
     if let Some(pin) = pin_action {
-        apply_pin_action(canvas, pending_source, feedback.link_problem, pin);
+        apply_pin_action(canvas, pending_source, link_problem, pin);
     } else if background.clicked() {
         *pending_source = None;
     }
@@ -864,30 +805,11 @@ pub(super) fn draw_canvas(
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            empty_message,
+            "Empty material graph\nChoose a node from the engine catalogue",
             egui::FontId::proportional(shell.metrics().text(TextRole::Body)),
             theme::role(shell.theme, Semantic::SecondaryText),
         );
     }
-    draw_catalogue_status(&painter, shell, rect, state);
-    if let Some(key) = draw_diagnostics(
-        ui,
-        &painter,
-        shell,
-        canvas,
-        rect,
-        feedback.link_problem.as_deref(),
-    ) {
-        let _ = canvas.select([key]);
-    }
-}
-
-fn draw_catalogue_status(
-    painter: &egui::Painter,
-    shell: &cy_editor_interface::shell::Shell,
-    rect: egui::Rect,
-    state: MaterialCatalogueState,
-) {
     let service = match state {
         MaterialCatalogueState::Ready => "ENGINE CATALOGUE · LIVE",
         _ => "ENGINE CATALOGUE · OFFLINE SNAPSHOT",
@@ -906,23 +828,9 @@ fn draw_catalogue_status(
             },
         ),
     );
-}
-
-fn draw_node_alert(
-    painter: &egui::Painter,
-    shell: &cy_editor_interface::shell::Shell,
-    card: &NodeCard,
-    response: egui::Response,
-    alerts: &[(u64, String)],
-) {
-    if let Some((_, message)) = alerts.iter().find(|(node, _)| *node == card.key.ordinal()) {
-        painter.rect_stroke(
-            card.rect,
-            egui::CornerRadius::same(5),
-            egui::Stroke::new(2.0, theme::role(shell.theme, Semantic::Error)),
-            egui::StrokeKind::Outside,
-        );
-        response.on_hover_text(message);
+    if let Some(key) = draw_diagnostics(ui, &painter, shell, canvas, rect, link_problem.as_deref())
+    {
+        let _ = canvas.select([key]);
     }
 }
 
@@ -1476,76 +1384,8 @@ fn display_index(index: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use cy_editor_interface::specialised::graph::{Catalogue, NodeType};
-    use cy_editor_interface::specialised::material::VERTEX_STAGE;
 
     use super::*;
-
-    #[test]
-    fn active_scene_meshes_supply_static_geometry_for_primary_and_imported_slots() {
-        use cy_editor_core::Actor;
-        use cy_editor_documents::operation::Operation;
-        use cy_editor_documents::selection::Selection;
-        use cy_editor_services::primitives::{
-            MaterialBinding, create_mesh_instance, set_material_slots,
-        };
-        use cy_editor_viewport::gizmo::Transform3;
-
-        let mut editor = Editor::default();
-        let document_id = editor.open_document("worlds/city.cyworld").unwrap();
-        let unrelated_node = editor
-            .documents
-            .get_mut(document_id)
-            .unwrap()
-            .with_transaction("Assign material", Actor::human("designer"), |document| {
-                let node = create_mesh_instance(
-                    document,
-                    None,
-                    "meshes/box.cyprim",
-                    Transform3::default(),
-                )?;
-                let binding = MaterialBinding::of_schema(document.schema()).unwrap();
-                document.record(Operation::SetAssetReference {
-                    node,
-                    component: binding.component,
-                    field: binding.material,
-                    before: String::new(),
-                    after: "materials/sway.cygraph".into(),
-                })?;
-                let slotted = create_mesh_instance(
-                    document,
-                    None,
-                    "meshes/other.cyprim",
-                    Transform3::default(),
-                )?;
-                set_material_slots(
-                    document,
-                    slotted,
-                    &[
-                        "materials/other.cygraph".into(),
-                        "materials/secondary.cygraph".into(),
-                    ],
-                )?;
-                Ok(slotted)
-            })
-            .unwrap();
-        let mut selection = Selection::new();
-        selection.set_nodes([unrelated_node]);
-        editor.selection.set(selection);
-
-        assert_eq!(
-            active_material_geometry(&editor, Some("materials/sway.cygraph")),
-            Some("StaticMesh")
-        );
-        assert_eq!(
-            active_material_geometry(&editor, Some("materials/secondary.cygraph")),
-            Some("StaticMesh")
-        );
-        assert_eq!(
-            active_material_geometry(&editor, Some("materials/missing.cygraph")),
-            None
-        );
-        assert_eq!(active_material_geometry(&editor, None), None);
-    }
 
     #[test]
     fn graph_save_writes_both_formats_and_rejects_paths_outside_project() {
@@ -1603,36 +1443,6 @@ mod tests {
     #[test]
     fn display_labels_with_spaces_are_searchable() {
         assert!(matches_filter("material.add_closures", "add closures"));
-    }
-
-    #[test]
-    fn material_palette_uses_engine_stage_compatibility() {
-        let catalogue = Catalogue::new(vec![
-            NodeType::identified(1, 1, "material.output".into(), vec![])
-                .with_stage_mask(SURFACE_STAGE),
-            NodeType::identified(2, 1, "material.offset".into(), vec![])
-                .with_stage_mask(VERTEX_STAGE),
-            NodeType::identified(4, 1, "material.vertex_interpolant".into(), vec![])
-                .with_stage_mask(VERTEX_STAGE),
-            NodeType::identified(3, 1, "material.sin".into(), vec![])
-                .with_stage_mask(SURFACE_STAGE | VERTEX_STAGE),
-        ])
-        .unwrap();
-        let mut canvas = GraphCanvas::new(1);
-        canvas.load(catalogue);
-
-        assert_eq!(
-            palette_names(&canvas, "", SURFACE_STAGE),
-            ["material.output", "material.sin"]
-        );
-        assert_eq!(
-            palette_names(&canvas, "", VERTEX_STAGE),
-            [
-                "material.offset",
-                "material.sin",
-                "material.vertex_interpolant"
-            ]
-        );
     }
 
     #[test]

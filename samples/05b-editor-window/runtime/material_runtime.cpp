@@ -515,6 +515,7 @@ Status assemble_scene_material_vertex_unit(const CompiledProgram& program, Array
     PreludeOptions prelude;
     prelude.material_set = 3;
     prelude.argument_buffer = argument_buffer;
+    prelude.scene_previous_transform = true;
     auto declared = rendering::material::emit_prelude(program.module, prelude, unit);
     if (!declared.has_value()) {
         return make_unexpected(declared.error());
@@ -544,11 +545,9 @@ float sceneMaterialDelta()
     return cyGlobalSet.data.deltaSeconds;
 #endif
 }
-float3 sceneMaterialRelative(float3 modelPosition, float4 packedNormal, float2 uv,
-                             float timeSeconds)
+float3 sceneMaterialRelative(CyInstanceTransform instance, float3 modelPosition,
+                             float4 packedNormal, float2 uv, float timeSeconds)
 {
-    let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
-    let instance = cyFrameView.instances[draw.instanceSlot];
     let relative = transformToRelative(instance, modelPosition);
     let normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     CyMaterialContext ctx;
@@ -598,7 +597,7 @@ CyForwardVertex cySceneMaterialVertex(float3 modelPosition : POSITION,
     let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
     let instance = cyFrameView.instances[draw.instanceSlot];
     CyForwardVertex output;
-    output.relativePosition = sceneMaterialRelative(modelPosition, packedNormal, uv,
+    output.relativePosition = sceneMaterialRelative(instance, modelPosition, packedNormal, uv,
                                                     sceneMaterialTime());
     output.position = transformToClip(output.relativePosition);
     output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
@@ -610,9 +609,11 @@ CyForwardVertex cySceneMaterialVertex(float3 modelPosition : POSITION,
 CyShadowVertex cySceneMaterialShadowVertex(float3 modelPosition : POSITION,
                                            float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
 {
+    let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
+    let instance = cyFrameView.instances[draw.instanceSlot];
     CyShadowVertex output;
-    output.position = transformToShadowClip(sceneMaterialRelative(modelPosition, packedNormal, uv,
-                                                                  sceneMaterialTime()));
+    output.position = transformToShadowClip(sceneMaterialRelative(
+        instance, modelPosition, packedNormal, uv, sceneMaterialTime()));
     return output;
 }
 [shader("vertex")]
@@ -621,8 +622,13 @@ CyDepthVertex cySceneMaterialDepthVertex(float3 modelPosition : POSITION,
 {
     let draw = cyFrameView.drawInstances[cyDraw.drawIndex];
     let instance = cyFrameView.instances[draw.instanceSlot];
-    let current = sceneMaterialRelative(modelPosition, packedNormal, uv, sceneMaterialTime());
-    let previous = sceneMaterialRelative(modelPosition, packedNormal, uv,
+    CyInstanceTransform previousInstance = instance;
+    previousInstance.row0 = cyMaterialPreviousTransform.row0;
+    previousInstance.row1 = cyMaterialPreviousTransform.row1;
+    previousInstance.row2 = cyMaterialPreviousTransform.row2;
+    let current = sceneMaterialRelative(instance, modelPosition, packedNormal, uv,
+                                         sceneMaterialTime());
+    let previous = sceneMaterialRelative(previousInstance, modelPosition, packedNormal, uv,
                                          sceneMaterialTime() - sceneMaterialDelta());
     let previousPoint = float4(previous, 1.0);
     CyDepthVertex output;

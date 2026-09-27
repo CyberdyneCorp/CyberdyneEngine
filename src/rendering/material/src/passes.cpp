@@ -95,9 +95,6 @@ struct Scalars {
             case Op::OneMinus:
                 out.component[index] = 1.0F - a;
                 break;
-            case Op::Sin:
-                out.component[index] = std::sin(a);
-                break;
             case Op::Lerp:
                 out.component[index] = a + ((b - a) * in[2].at(index));
                 break;
@@ -306,22 +303,13 @@ struct PassState {
         }
     }
 
-    Array<NodeId> roots(source.allocator());
-    for (const NodeId root : {source.surface(), source.opacity(), source.vertex_offset()}) {
-        if (Status added = roots.push_back(root); !added) {
-            return make_unexpected(added.error());
-        }
-    }
-    for (const VertexInterpolant& interpolant : source.vertex_interpolants()) {
-        if (Status added = roots.push_back(interpolant.value); !added) {
-            return make_unexpected(added.error());
-        }
-    }
+    const NodeId roots[] = {source.surface(), source.opacity()};
     const auto visit = [&state](const Module& module, NodeId id, Span<const NodeId> operands,
                                 Builder& out) noexcept {
         return rewrite(module, id, operands, out, state);
     };
-    if (Status rebuilt = detail::rebuild_module(source, roots.span(), builder, mapping, visit);
+    if (Status rebuilt =
+            detail::rebuild_module(source, Span<const NodeId>(roots, 2), builder, mapping, visit);
         !rebuilt) {
         return make_unexpected(rebuilt.error());
     }
@@ -360,18 +348,6 @@ struct PassState {
     }
     if (source.opacity() != kInvalidNode && mapping[source.opacity()] != kInvalidNode) {
         if (Status set = builder.set_opacity(mapping[source.opacity()]); !set) {
-            return make_unexpected(set.error());
-        }
-    }
-    if (source.vertex_offset() != kInvalidNode && mapping[source.vertex_offset()] != kInvalidNode) {
-        if (Status set = builder.set_vertex_offset(mapping[source.vertex_offset()]); !set) {
-            return make_unexpected(set.error());
-        }
-    }
-    for (const VertexInterpolant& interpolant : source.vertex_interpolants()) {
-        if (Status set =
-                builder.set_vertex_interpolant(interpolant.name, mapping[interpolant.value]);
-            !set) {
             return make_unexpected(set.error());
         }
     }

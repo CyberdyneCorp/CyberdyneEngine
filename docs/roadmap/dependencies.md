@@ -287,7 +287,9 @@ the RHI interface M11.d settles, and the rung depends on hardware and toolchains
 legs of the continuous-integration matrix. `delivery-roadmap`'s *"A spike may resize a milestone as
 well as redirect it"* is the rule, and
 [`implement-m11d5-backends`](../../openspec/changes/implement-m11d5-backends/proposal.md) is the
-change.
+change. M11.d has closed on the interface and the native platform, so
+M11.d.5's entry — the settled RHI interface — is met, and the edge that still holds it is the
+toolchain.
 
 **Why environment is after game systems.** Terrain, foliage, water and weather are the largest block
 of work whose absence blocks nothing else. They consume the field substrate, the streaming

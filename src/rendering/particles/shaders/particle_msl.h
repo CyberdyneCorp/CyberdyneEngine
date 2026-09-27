@@ -6,13 +6,13 @@
 
 namespace cy::rendering::particles {
 
-/// issue15-particle-vertex.metal, 4700 bytes.
+/// cyParticleVertex.metal, 4542 bytes.
 inline constexpr char kParticleVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 73 "src/rendering/shaders/cy/particle.slang"
+#line 68 "src/rendering/shaders/cy/particle.slang"
 constant array<float2, int(6)> kCorners_0 = { float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(-1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0) };
 
 #line 47
@@ -23,17 +23,10 @@ struct CyParticle_0
 };
 
 
-#line 85
-struct CyParticlePassSet_default_0
-{
-    CyParticle_0 device* particles_0;
-};
-
-
 #line 10 "src/rendering/shaders/cy/cluster.slang"
 struct ClusterGrid_0
 {
-    packed_uint3 dimensions_0;
+    uint3 dimensions_0;
     uint maxLightsPerCluster_0;
     float nearPlane_0;
     float farPlane_0;
@@ -125,7 +118,7 @@ struct CyFrameViewSet_default_0
 #line 208
 struct KernelContext_0
 {
-    CyParticlePassSet_default_0 constant* cyParticlePass_0;
+    CyParticle_0 device* cyParticles_0;
     CyFrameViewSet_default_0 constant* cyFrameView_0;
 };
 
@@ -147,7 +140,7 @@ struct cyParticleVertex_Result_0
 };
 
 
-#line 63 "src/rendering/shaders/cy/particle.slang"
+#line 58 "src/rendering/shaders/cy/particle.slang"
 struct CyParticleVertex_0
 {
     float4 position_1;
@@ -156,51 +149,51 @@ struct CyParticleVertex_0
 };
 
 
-#line 63
-[[vertex]] cyParticleVertex_Result_0 cyParticleVertex(uint vertexId_0 [[vertex_id]], CyParticlePassSet_default_0 constant* cyParticlePass_1 [[buffer(2)]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]])
+#line 58
+[[vertex]] cyParticleVertex_Result_0 cyParticleVertex(uint vertexId_0 [[vertex_id]], CyParticle_0 device* cyParticles_1 [[buffer(0)]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]])
 {
 
-#line 63
+#line 58
     thread KernelContext_0 kernelContext_1;
 
-#line 63
-    (&kernelContext_1)->cyParticlePass_0 = cyParticlePass_1;
+#line 58
+    (&kernelContext_1)->cyParticles_0 = cyParticles_1;
 
-#line 63
+#line 58
     (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
 
-#line 85
-    CyParticle_0 _S2 = cyParticlePass_1->particles_0[vertexId_0 / 6U];
+#line 80
+    CyParticle_0 _S2 = cyParticles_1[vertexId_0 / 6U];
     uint _S3 = vertexId_0 % 6U;
 
-#line 95
+#line 90
     thread CyParticleVertex_0 output_0;
 
-#line 95
+#line 90
     float4 _S4 = transformToClip_0(_S2.positionAndSize_0.xyz + (cyFrameView_1->frame_0->relativeToViewRow0_0.xyz * float3(kCorners_0[_S3].x)  + cyFrameView_1->frame_0->relativeToViewRow1_0.xyz * float3(kCorners_0[_S3].y) ) * float3(_S2.positionAndSize_0.w) , &kernelContext_1);
     (&output_0)->position_1 = _S4;
     (&output_0)->corner_1 = kCorners_0[_S3];
     (&output_0)->color_3 = _S2.color_0;
 
-#line 98
+#line 93
     thread cyParticleVertex_Result_0 _S5;
 
-#line 98
+#line 93
     (&_S5)->position_0 = output_0.position_1;
 
-#line 98
+#line 93
     (&_S5)->corner_0 = output_0.corner_1;
 
-#line 98
+#line 93
     (&_S5)->color_2 = output_0.color_3;
 
-#line 98
+#line 93
     return _S5;
 }
 
 )cy_msl";
 
-/// issue15-particle-fragment.metal, 745 bytes.
+/// cyParticleFragment.metal, 743 bytes.
 inline constexpr char kParticleFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -221,21 +214,21 @@ struct pixelInput_0
 };
 
 
-#line 103 "src/rendering/shaders/cy/particle.slang"
+#line 98 "src/rendering/shaders/cy/particle.slang"
 [[fragment]] pixelOutput_0 cyParticleFragment(pixelInput_0 _S1 [[stage_in]], float4 position_0 [[position]])
 {
 
-#line 103
+#line 98
     float2 _S2 = _S1.corner_0;
 
-#line 109
+#line 104
     float _S3 = saturate(1.0 - dot(_S2, _S2));
     float _S4 = _S1.color_0.w * _S3 * _S3;
 
-#line 110
+#line 105
     pixelOutput_0 _S5 = { float4(_S1.color_0.xyz * float3(_S4) , _S4) };
 
-#line 115
+#line 110
     return _S5;
 }
 

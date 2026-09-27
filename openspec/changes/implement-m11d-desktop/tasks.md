@@ -729,10 +729,13 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       10.2 lists them
 - [x] 9.2 An `m11e-open` criterion using the double-star glob form — satisfied and RE-POINTED by
       the insertion; see the close phase's verdict at the end of this file
-- [ ] 9.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
+- [x] 9.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them
-- [ ] 9.4 Move `ci.yml`'s milestone job to `m11d` in the same commit that flips the gate green — the
+      **Done in the closing change**: three rows to Complete at M11.D, each read by a criterion green in
+      the full ledger at `1fe6446`; see the close phase's fourth verdict at the end of this file
+- [x] 9.4 Move `ci.yml`'s milestone job to `m11d` in the same commit that flips the gate green — the
       job runs on every push to `main`, so this commit must not land before the gate is green
+      **Done**: `milestone-m11d` is `green` and the step runs `just roadmap-milestone m11d --ci`, one commit
 - [x] 9.5 **Hand M11.e its entry.** The M11.e change directory already exists with its README and
       proposal; what this rung owes it is a written statement of **what M11.d did not close**, in the
       shape M8.a, M8.c and M10 used — unchecked tasks named, with the defect rather than the intention
@@ -930,8 +933,10 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 
 ## 10. The gate
 
-- [ ] 10.1 Clean build of every profile from empty; `test-all` in each; every gate by hand; the
+- [x] 10.1 Clean build of every profile from empty; `test-all` in each; every gate by hand; the
       M11.d ledger run once
+      **Run on `1fe6446`: 4 of 470 red, each classified and resolved** — the close phase's fourth
+      verdict at the end of this file
 - [ ] 10.2 **Every criterion executes something and can fail** — break what it checks and prove it
       goes red. M6 shipped four that did not, and M9's gate found one that passed 44 of 44 with its
       enforcement point deleted
@@ -1418,3 +1423,89 @@ Then one full `just roadmap-milestone m11d` on a quiet tree, which is 10.1.
   upload step is correct and unchanged; no `test` job has run since it landed because `test` waits
   on the whole build matrix and `afaeb33`'s Windows build leg ran for five hours. Freeing the Linux
   legs from Windows is a `needs` change outside the upload step.
+
+## The close phase's fourth verdict — THE FULL LEDGER ON `1fe6446`: 4 RED, EACH RESOLVED, M11.d CLOSES
+
+Task 10.1's ledger run on the commit carrying the owner's decisions above, and the re-runs that
+classified its reds. Pull requests merged after `1fe6446` are not covered by this verdict; M11.d.5's
+ledger evaluates them.
+
+| | |
+|---|---|
+| command | `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11d`, main clone detached at `1fe6446` |
+| window | 17:20 → 20:08 on 2026-09-26, exit 1 |
+| log | `/tmp/m11d-close-full-1fe6446.log` |
+| load | feature builds in two other worktrees ran on this machine during parts of the window |
+
+**`M11D is not closed: 4 of 470 evaluated criteria failed.`** 15 declared gaps still open (none now
+passing), 5 legitimately NOT EVALUATED. Every other criterion was green, including the four this
+phase's decisions were about: `m0:lint`, the `smoke.authoring` family, both beauty-shot criteria and
+`m11d:ship-sample-on-desktop`. Each red was re-run ALONE at `1fe6446` on a host that was quiet by
+the wrapper's own verdict. A process named `roadmap.py milestone` was held alive for the other
+worktrees' agents to pause on, and did not stop builds they had already started, so each re-run
+also waited for twenty seconds with none of their compilers running and I/O pressure under 3%
+(logs `/tmp/m11d-rerun2-*.log`):
+
+1. **`m11d:roadmap-tiers` — EXPECTED.** The closing change writes the three tiers; see below.
+2. **`m0:test` — ENVIRONMENTAL.** `smoke.quiet_host_io` leg 5: *"under the writer: no 'host too
+   busy: io pressure' reason on stderr"*. The wrapper around the whole suite reported the same run
+   **not quiet** (*"other processes used 2.75 of 24 cores (limit 2.00)"*), so the criterion failed on
+   the host whatever the leg said. Mechanism, read from `tools/quiet-host/`: the pre-run wait prints
+   each busy second to stdout and puts only the DEADLINE window's reason on stderr; the writer
+   pauses three seconds in five, so when the deadline lands in a pause while other processes use
+   more than two cores, the reason leads with CPU and the leg misses the I/O string. On a CPU-quiet
+   host a pause second is quiet and the deadline always lands on a writer second. Re-runs:
+   `smoke.quiet_host_io` **2 of 2 green** (17.1 s each); `just test-quiet-host -- just test-all`
+   (the criterion itself) **green**, 91 + 198 + 35 + 26 + 5 tests, host quiet across the run.
+   *Finding, not fixed:* the leg's docstring says the busy half is "judged on every host"; on a
+   CPU-busy host it is not. The leg could report the CPU-led case as NOT EVALUATED the way its idle
+   half already does; it changes no verdict, because the wrapper around `test-all` fails such a run
+   anyway.
+3. **`m1:four-profiles` — FLAKE, not reproduced.** `smoke.editor_window` failed in the debug row, and
+   the wrapper judged that row quiet (*"`just test-all` exited 1 on a quiet host; the verdict is its
+   own"*), so this is not load. The loop stops at the first failing row, so the dev, profile and
+   release rows were not evaluated by the ledger. Re-runs: `smoke.editor_window` in
+   `build/ledger-matrix/debug-default` inside `just test-quiet-host --profile debug` **2 of 2 green**
+   (24.6 s, 24.3 s); the whole criterion three times, `test-all` green in every row each attempt
+   reached, each attempt stopped by the wrapper judging one row's busiest second over two cores —
+   2.22 in dev, then 2.23 in debug, then 2.32 in release, against a desktop baseline near one core
+   and with no other build running: host-too-busy, not a test failure. The third attempt had debug,
+   dev and profile quiet and green, and the release row re-run alone was quiet and green, so every
+   row has a quiet green run at `1fe6446`. **Family: not determinable from the evidence.** e20e0ad
+   (the wedged-viewport fix and its `act_runtime_pause` case) is in `1fe6446`, and the smoke has
+   changed since (`b49bb5e`, `61ff002c`, `801adf8f`, `7f58cdc3`); the act that failed is not in the
+   log, because `window.py` reports a failed act as `editor-window: <problem>` and the ledger's
+   excerpt keeps only lines carrying a failure marker — `(Failed)` survived, the act did not, and
+   the debug tree's `LastTest.log` was overwritten by a later criterion. Measured instead: **20 of
+   20** in a loop in the debug tree, so **31 of 31** across every re-run. The reader should know the excerpt is what cost the
+   diagnosis: a failed act that printed a marker the ledger keeps would have named itself.
+4. **`m7:plan-consistency` — STALE PROOF RECORD, re-recorded.** `just roadmap-test`'s *"every
+   criterion on the ladder is either proven or on the list that only shrinks"*:
+   `m11c:the-shot-does-not-overclaim-the-editor` changed in `4040473e` (it now reads the
+   `material.graph.*` commands) and its proof carried the old digest. Re-proven on a clean tree:
+   `just roadmap-falsify prove m11c --only the-shot-does-not-overclaim-the-editor --build-dir
+   build/m11c-final --mutate-the-tree --record` — red with `honestly missing` deleted from
+   `docs/design/beauty-shot.md`, green once restored; digest `f4d33ba04e4ff1ff` → `c5610a4291425bd4`.
+
+**The close.** `milestone-m11d` goes green and `ci.yml`'s milestone step moves to `m11d` in the same
+commit (9.4). `testing-and-quality` and `developer-workflow-and-just` (Seed → Complete) and
+`ecs-core` (Working → Complete) are recorded at M11.D (9.3), each read by criteria green in this
+ledger: `full-gate-set`, `documentation-gate`, `acceptance-scenarios`; `developer-workflow-recipes`,
+`release-recipes-stop-refusing`; `core-rows-at-complete-grade`. No fix commit was needed: the
+closing commit carries the re-proofs — `m11c:the-shot-does-not-overclaim-the-editor` above, and
+`m11d:roadmap-tiers`, which now passes and was proven red under its derived `lower-tiers` mutation. The capability matrix, `docs/ROADMAP.md`,
+`dependencies.md` and `open-debts.md` are updated, and `m11d:roadmap-tiers`, `m7:plan-consistency`
+and `just roadmap-test` were re-run over the closing tree: `m11d:roadmap-tiers` passes,
+`just roadmap-test` (which is `m7:plan-consistency`) is **665 of 665** with *"every criterion on the
+ladder is either proven or on the list that only shrinks"* green, 145 of 688 proven.
+
+**Two records left as they are, and why.** `falsifiability.toml` still carries `m11d:lint` and
+`m11d:ship-sample-on-desktop` as red against `build/m11d-records`, a tree older than the fixes, so
+`open-debts.md` lists them as red under a green gate although both were green in this ledger.
+Neither could be re-recorded here: `lint` has no declared mutation (10.2's ladder debt, and the
+prover refuses to record it: *"The list only shrinks"*), and `ship-sample-on-desktop` REWRITES the
+two committed pictures under `docs/design/images/` when it runs, so the prover finds the tree dirty
+after its unmutated run and calls it not provable. The second is a defect of the criterion — a check
+that writes tracked files cannot be proven by mutating the tree — and is M11.d.5's to fix, since its
+ledger inherits the criterion. The ledger run left the same two pictures modified in the main clone;
+they were restored to the committed bytes, not committed.

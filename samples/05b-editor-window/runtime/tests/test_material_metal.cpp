@@ -96,6 +96,8 @@ material scene_sway {
     CY_CHECK(text.find("object_position = modelPosition") != std::string_view::npos);
     CY_CHECK(text.find("time_seconds = timeSeconds") != std::string_view::npos);
     CY_CHECK(text.find("sceneMaterialTime() - sceneMaterialDelta()") != std::string_view::npos);
+    CY_CHECK(text.find("previousInstance.row0 = cyMaterialPreviousTransform.row0") !=
+             std::string_view::npos);
     auto stages = compile_scene_material_vertices(*program, allocator());
     CY_REQUIRE(stages.has_value());
     CY_CHECK_GT(stages->visible.bytes().size(), 0U);

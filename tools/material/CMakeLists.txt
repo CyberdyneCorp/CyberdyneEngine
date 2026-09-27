@@ -40,7 +40,7 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES
         src/main.cpp
-    PRIVATE_DEPENDENCIES cy::material-cook cy::scene-serialization)
+    PRIVATE_DEPENDENCIES cy::material-cook)
 
 # tests/ is read now and declares its suites later; see the comment at the top of it for why.
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

@@ -247,9 +247,26 @@ struct alignas(16) FrameViewData {
     /// APPENDED, for the reason `material_textures` gives: every field another committed module
     /// reads stays where it was.
     u32 occlusion_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// Soft and contact shadows for the directional shadow. x: `kSoftShadowPcss` and
+    /// `kSoftShadowContact` flags; y: the set 0 texture slot of `contact::ContactShadowPass`'s
+    /// target, or `kNoMaterialTexture`; z: blocker search taps; w: filter taps. ZERO FLAGS, THE
+    /// DEFAULT, IS THE FRAME'S 3x3 FILTER UNCHANGED. `lighting::write_soft_shadow_words` fills it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 soft_shadow_control[4] = {0, kNoMaterialTexture, 0, 0};
+    /// `cy.shadow`'s `PcssShape`: x penumbra UV per unit of light-space depth, y smallest kernel
+    /// (UV), z largest kernel (UV). w: unused.
+    f32 soft_shadow_shape[4] = {};
 };
 
-static_assert(sizeof(FrameViewData) == 432, "CyFrameData's std140 block is 432 bytes");
+/// `soft_shadow_control[0]`'s bits, `cy/frame.slang`'s `kCySoftShadowPcss` and
+/// `kCySoftShadowContact`.
+inline constexpr u32 kSoftShadowPcss = 1U;
+inline constexpr u32 kSoftShadowContact = 2U;
+
+static_assert(sizeof(FrameViewData) == 464, "CyFrameData's std140 block is 464 bytes");
+static_assert(offsetof(FrameViewData, soft_shadow_control) == 432);
+static_assert(offsetof(FrameViewData, soft_shadow_shape) == 448);
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);
 static_assert(offsetof(FrameViewData, material_textures) == 320);
 static_assert(offsetof(FrameViewData, shadow_to_clip) == 336);
@@ -352,12 +369,6 @@ public:
     [[nodiscard]] rhi::PipelineLayoutHandle layout() const noexcept { return layout_; }
     [[nodiscard]] rhi::DescriptorSetLayoutHandle set_layout(u32 set) const noexcept;
     [[nodiscard]] rhi::GraphicsPipelineHandle pipeline(FramePipelineKind kind) const noexcept;
-    /// Create a caller-owned geometry pipeline with a compiled material vertex shader. The
-    /// supplied layout must preserve the frame's sets 0-2 and may append material set 3.
-    /// Depth and shadow variants bind all three streams because graph expressions may read UVs.
-    [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> create_vertex_variant(
-        FramePipelineKind kind, rhi::ShaderModuleHandle vertex,
-        rhi::PipelineLayoutHandle layout) const noexcept;
     [[nodiscard]] rhi::SamplerHandle linear_clamp() const noexcept { return sampler_; }
     /// The sampler bound at (set 0, binding 2) — `cy/material.slang`'s `cyMaterialSampler`.
     ///
@@ -379,13 +390,6 @@ private:
     [[nodiscard]] Status create_geometry_pipeline(rhi::Device& device, const PipelineSetup& setup,
                                                   FramePipelineKind kind) noexcept;
     [[nodiscard]] Status create_shadow_pipeline(rhi::Device& device) noexcept;
-    [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_geometry_pipeline(
-        rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
-        rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
-        bool graph_vertex) const noexcept;
-    [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_shadow_pipeline(
-        rhi::Device& device, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
-        bool graph_vertex) const noexcept;
     [[nodiscard]] Status create_resolve_pipeline(rhi::Device& device,
                                                  const PipelineSetup& setup) noexcept;
     [[nodiscard]] Status create_temporal_pipeline(rhi::Device& device,

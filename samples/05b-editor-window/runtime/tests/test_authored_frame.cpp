@@ -577,7 +577,13 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
         CY_REQUIRE(frame.initialize(160, 90, CY_TEST_PROJECT));
         ser::World world(allocator());
         CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", world).has_value());
-        CY_REQUIRE(frame.render(world, camera()));
+        reflect::TypeRegistry types;
+        CY_REQUIRE(reflect::register_scene_types(types));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(types, schema));
+        CY_REQUIRE(ser::resolve_against(world, schema).has_value());
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(world, view));
         std::vector<u64> standard;
         for (const auto& command : rhi::null::command_log(**device)) {
             if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline) {
@@ -588,7 +594,7 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
             "samples/05b-editor-window/project/materials/copper_clay.cygraph";
         CY_REQUIRE(frame.preview(reference, kSurfaceVertexGraph));
         rhi::null::clear_command_log(**device);
-        const Status rendered = frame.render(world, camera());
+        const Status rendered = frame.render(world, view);
         if (!rendered) {
             std::fprintf(stderr, "scene vertex graph: %s\n", rendered.error().message);
         }
@@ -602,10 +608,65 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
         }
         CY_CHECK_GE(selected.size(), 2U);
 
+        const u64 identity = world.nodes()[0].identity;
+        rendering::pipeline::InstanceTransform previous;
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        const std::string moved_source =
+            edited(kGraphMaterial, "field 2 0 0 0", "field 2 2 0 0", Occurrence::First);
+        ser::World moved(allocator());
+        CY_REQUIRE(ser::read_world(moved_source, "worlds/graph.cyworld", moved).has_value());
+        CY_REQUIRE(ser::resolve_against(moved, schema).has_value());
+        CY_REQUIRE(frame.render(moved, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        CY_REQUIRE(frame.render(moved, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(2.0 - view.position[0]));
+        first_light::Camera moved_view = view;
+        moved_view.position[0] += 1.0;
+        CY_REQUIRE(frame.render(moved, moved_view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(2.0 - view.position[0]));
+        CY_REQUIRE(frame.render(moved, moved_view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(2.0 - moved_view.position[0]));
+
+        const std::string two_objects =
+            std::string(kGraphMaterial) + R"(node 1 - "test" "Second Block"
+  component 1
+    field 1 0 0 0 1
+    field 2 4 0 0
+    field 3 1 1 1
+  component 2
+    field 4 "content/beauty/meshes/block.cyprim"
+    field 5 "samples/05b-editor-window/project/materials/copper_clay.cygraph"
+)";
+        ser::World pair(allocator());
+        CY_REQUIRE(ser::read_world(two_objects, "worlds/graph.cyworld", pair).has_value());
+        CY_REQUIRE(ser::resolve_against(pair, schema).has_value());
+        CY_REQUIRE(frame.render(pair, view));
+        const u64 second_identity = pair.nodes()[1].identity;
+        CY_REQUIRE(frame.previous_material_transform(second_identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(4.0 - view.position[0]));
+        const std::string moved_pair_source =
+            edited(two_objects, "field 2 0 0 0", "field 2 2 0 0", Occurrence::First);
+        ser::World moved_pair(allocator());
+        CY_REQUIRE(
+            ser::read_world(moved_pair_source, "worlds/graph.cyworld", moved_pair).has_value());
+        CY_REQUIRE(ser::resolve_against(moved_pair, schema).has_value());
+        CY_REQUIRE(frame.render(moved_pair, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        CY_REQUIRE(frame.previous_material_transform(second_identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(4.0 - view.position[0]));
+
         const std::string changed = edited(kSurfaceVertexGraph, "0.25", "0.75", Occurrence::First);
         CY_REQUIRE(frame.preview(reference, changed));
         rhi::null::clear_command_log(**device);
-        CY_REQUIRE(frame.render(world, camera()));
+        CY_REQUIRE(frame.render(world, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
         u32 rebuilt = 0;
         for (const auto& command : rhi::null::command_log(**device)) {
             if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
@@ -621,7 +682,8 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
         const std::string saved(std::istreambuf_iterator<char>{saved_file}, {});
         CY_REQUIRE(frame.preview(reference, saved));
         rhi::null::clear_command_log(**device);
-        CY_REQUIRE(frame.render(world, camera()));
+        CY_REQUIRE(frame.render(world, view));
+        CY_CHECK_FALSE(frame.previous_material_transform(identity, previous));
         u32 restored_variants = 0;
         for (const auto& command : rhi::null::command_log(**device)) {
             if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&

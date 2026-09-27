@@ -86,6 +86,9 @@ public:
                                  Array<render::GpuInstance>& instances,
                                  Array<render::DrawItem>& draws) const noexcept;
     [[nodiscard]] bool pivot_for(u64 identity, Vec3& pivot) const noexcept;
+    /// Inspect the prior camera-relative placement bound for a graph material on this entity.
+    [[nodiscard]] bool previous_material_transform(
+        u64 identity, rendering::pipeline::InstanceTransform& out) const noexcept;
     [[nodiscard]] Span<const LightMarker> light_markers() const noexcept {
         return {light_markers_.data(), light_markers_.size()};
     }
@@ -123,6 +126,8 @@ private:
     [[nodiscard]] Status append_instance(const scene::serialization::World& world,
                                          const scene::serialization::WorldNode& node,
                                          const Mat4& matrix, Vec3 eye) noexcept;
+    [[nodiscard]] Status update_previous_transform(u64 identity, const Mat4& matrix, Vec3 eye,
+                                                   Span<const u32> materials) noexcept;
     [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera,
                                  bool editor_lighting) noexcept;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
@@ -150,6 +155,9 @@ private:
     std::chrono::steady_clock::time_point time_origin_;
     f32 previous_frame_time_ = 0.0F;
     bool has_frame_time_ = false;
+    bool has_previous_frame_ = false;
+    bool history_cut_ = true;
+    Vec3 previous_eye_;
 
     rendering::assembly::FrameAssembly assembly_;
     rendering::SpatialIndex index_;
@@ -171,6 +179,8 @@ private:
 
     std::vector<std::unique_ptr<Mesh>> meshes_;
     std::vector<Instance> instances_;
+    std::vector<std::pair<u64, Mat4>> current_models_;
+    std::vector<std::pair<u64, Mat4>> previous_models_;
     std::vector<std::pair<u64, Vec3>> pivots_;
     std::vector<LightMarker> light_markers_;
     std::vector<CameraMarker> camera_markers_;

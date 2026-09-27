@@ -151,9 +151,13 @@ selection, graph edit rebuild, and restoration of the standard pipeline. The vis
 uses the standard frame fragment shader, so custom vertex interpolants are refused rather than
 silently ignored. Its mesh has no vertex-colour or second UV stream, so those graph attributes are
 refused at shader assembly. The authored frame now supplies elapsed and delta time from its frame
-clock, so time-driven offsets animate. Native pixels and displaced shadows remain to be measured.
-Previous object transforms and a retained temporal view are still missing, so the depth shader's
-previous sample does not yet establish correct motion vectors for moving meshes.
+clock, retains previous object placements by stable entity ID and previous camera origin, and
+binds those rows beside each graph material's parameters. The depth vertex evaluates the same
+offset with previous time and placement, and the frame retains temporal history across unchanged
+scene topology. A graph edit, new mesh, or topology change cuts history. The null-RHI regression
+inspects the actual bound previous-transform buffer across object and camera motion and a graph
+edit. Native pixels, displaced shadows, and motion vectors still need image comparison against
+CPU-displaced reference geometry.
 
 The depth prepass, visible pass, and shadow pass must resolve the same draw to the same vertex
 expression. Depth also evaluates the expression with previous-frame time and transform for

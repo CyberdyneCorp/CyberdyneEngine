@@ -57,16 +57,6 @@ the same reason `FrameAssembly` holds none.
 **Policy.** It creates the pipelines the `PipelineSetup` names, and the setup's formats, sample count
 and feature flags are decisions `cy::rendering-arbiter` and the post chain already made.
 
-**Prepared material variants.** A caller can install `FrameRecorder::set_draw_pipeline` to select
-a pipeline for an individual draw in the depth, opaque, transparent, or shadow pass. A false answer
-uses the standard pipeline. A selected pipeline and layout must already exist, match that pass's
-attachments and vertex streams, and accept the frame's sets 0–2. An optional set 3 binds compiled
-material parameters. A selected depth or shadow vertex program can request the normal and UV
-streams when its offset expression reads them. The recorder never compiles a pipeline while
-recording. Null-backend integration tests check the selected pipeline and extra depth streams. The
-authored scene's compiled graph variants and previous-frame displacement are still being wired to
-this selection point under issue #15.
-
 **Shader compilation.** The SPIR-V is committed (`shaders/frame_spirv.h`) because `CY_SHADER_SLANG`
 is off by default and off in Profile and Shipping, and `shader-system` requires a shipping build to
 "contain compiled backend-native shader artefacts and no Slang compiler".
@@ -121,6 +111,18 @@ of set 0's texture table (`FrameBindings::set_material_textures`) and writes the
 direct sum alone unless `.y` asks for the non-physical option. The six `frame.slang` entry points
 were regenerated for the longer block; the fullscreen resolve and temporal entries are unchanged.
 `render.ambient_occlusion` renders this module's scene with the stage on.
+
+## Soft and contact shadows — `FrameViewData::soft_shadow_control` and `soft_shadow_shape`
+
+Appended after `occlusion_control`, for the same reason. `.x` of the control carries two flags:
+`kSoftShadowPcss` filters the directional shadow with `cy/shadow.slang`'s percentage-closer soft
+filter, whose shape — the penumbra per unit of light-space depth, and the smallest and largest
+kernel — is `soft_shadow_shape`, and `kSoftShadowContact` takes the darker of the map's visibility
+and the contact term named by the slot in `.y`. `lighting::write_soft_shadow_words` fills both from
+`make_pcss_shape`. ZERO FLAGS, THE DEFAULT, IS THE 3x3 FILTER UNCHANGED: `render.soft_shadows` pins
+the frame with the setting off to a reference rendered by the pre-change SPIR-V. The frame's modules
+were regenerated: the five `frame.slang` entry points that read the block changed, and the shadow
+fragment and the fullscreen resolve and temporal entries came out byte-identical.
 
 ## What is measured and recorded rather than hidden
 

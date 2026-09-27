@@ -82,11 +82,6 @@ const ChannelReport* EventRouter::report(Name channel) const noexcept {
     return nullptr;
 }
 
-void EventRouter::reset() noexcept {
-    channels_.clear();
-    reports_.clear();
-}
-
 void EventRouter::begin_frame() noexcept {
     for (Channel& channel : channels_) {
         channel.live.clear();
@@ -182,12 +177,6 @@ u32 EventRouter::total_truncated() const noexcept {
 ReadbackQueue::ReadbackQueue(Allocator& allocator) noexcept
     : pending_(allocator), ready_(allocator) {
     report_.budget_bytes = 4096;
-}
-
-void ReadbackQueue::reset() noexcept {
-    pending_.clear();
-    ready_.clear();
-    report_ = ReadbackReport{};
 }
 
 ReadbackQueue::Pending* ReadbackQueue::find(Array<Pending>& list, Name channel) noexcept {

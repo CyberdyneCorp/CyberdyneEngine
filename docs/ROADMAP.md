@@ -1584,6 +1584,15 @@ the ladder rather than requested by a task list.
 | `ecs-core` | C | Here rather than in M11.a for one reason: the exit criterion for the native backend is that **none of `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/` changes**, which is a first-hand audit of exactly the core rows whether or not anybody calls it one |
 | `core-assets-and-io` / `core-jobs-and-concurrency` / `core-memory-and-containers` / `engine-architecture` | — | Audited here by the same diff; their **C** cells moved to M11.e at the gate, below |
 
+**What closed.** M11.d closed on its resized column: `testing-and-quality`,
+`developer-workflow-and-just` and `ecs-core` are recorded Complete; `rhi-and-render-graph`'s **C** is
+M11.d.5's, and `build-and-packaging`'s and the five core rows' are M11.e's. The evidence is the full
+ledger at `1fe6446` — 4 of 470 red: the closing change's own `m11d:roadmap-tiers`, two quiet-host
+suites that failed while other builds loaded the machine and passed alone on a quiet host, and one
+stale proof record, re-recorded
+([`implement-m11d-desktop`](../openspec/changes/implement-m11d-desktop/tasks.md), the close phase's
+fourth verdict). Pull requests merged after `1fe6446` are evaluated by M11.d.5's ledger.
+
 **Closing artefact**: `samples/11-ship` built, cooked, packaged and launched on each desktop target
 from one recipe, plus the M0 sample and the M3 golden images on the native platform backend with
 `src/core/`, `src/ecs/`, `src/servers/` and `src/scene/` untouched.

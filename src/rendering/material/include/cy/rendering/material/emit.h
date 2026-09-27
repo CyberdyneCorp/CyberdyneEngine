@@ -94,8 +94,6 @@ struct EmitOptions {
     /// hoisted into parameter data. `material-compiler`: "a subexpression depends only on material
     /// parameters THEN it SHALL be evaluated once into parameter data rather than per pixel".
     bool hoist_uniform = true;
-    /// Label varying work accurately in the separate vertex offset function.
-    bool vertex_stage = false;
 };
 
 /// Generated source, and the identity a cook key is built from.
@@ -140,11 +138,6 @@ struct GeneratedSource {
 /// Emit one program.
 [[nodiscard]] Expected<GeneratedSource, Error> emit_program(const Module& module,
                                                             const EmitOptions& options) noexcept;
-
-/// Emit a vertex result containing world-space offset and named typed interpolants. The legacy
-/// `_vertex_offset` entry point remains as a wrapper around the shared vertex evaluator.
-[[nodiscard]] Expected<GeneratedSource, Error> emit_vertex_offset(
-    const Module& module, const EmitOptions& options) noexcept;
 
 /// The generated entry point's name, as `emit_program` spells it. Exposed because the shader
 /// pipeline and the material table both need to name it and two spellings would diverge.

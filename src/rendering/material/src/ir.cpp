@@ -54,9 +54,6 @@ constexpr OpInfo kOps[] = {
     {"closure_scale", 2, false, true, false},
     {"closure_add", kVariadic, true, true, false},
     {"closure_layer", 2, false, true, false},
-    {"sin", 1, false, false, false},
-    {"noise", 1, false, false, false},
-    {"procedural_wind", 2, false, false, false},
 };
 
 static_assert(sizeof(kOps) / sizeof(kOps[0]) == static_cast<usize>(Op::Count),
@@ -334,7 +331,6 @@ Module::Module(Allocator& allocator) noexcept
       operand_pool_(allocator),
       parameters_(allocator),
       textures_(allocator),
-      vertex_interpolants_(allocator),
       flags_(allocator),
       origin_begin_(allocator),
       origin_pool_(allocator) {}
@@ -431,18 +427,6 @@ Expected<NodeId, Error> Builder::attribute(Name semantic, ValueType type) noexce
 
 Expected<NodeId, Error> Builder::field(Name field_name, ValueType type) noexcept {
     return make(Op::Field, type, field_name, Immediate{}, {});
-}
-
-Expected<NodeId, Error> Builder::normal_displacement(NodeId amount) noexcept {
-    if (amount >= module_.nodes_.size() || module_.nodes_[amount].type != ValueType::Float) {
-        return fail(ErrorCode::InvalidArgument, "vertex displacement must be a scalar distance");
-    }
-    auto normal = attribute(Name::intern("normal"), ValueType::Vec3);
-    if (!normal) {
-        return make_unexpected(normal.error());
-    }
-    const NodeId operands[] = {*normal, amount};
-    return make(Op::Mul, {operands, 2});
 }
 
 Expected<NodeId, Error> Builder::texture_sample(Name texture, NodeId uv) noexcept {
@@ -662,56 +646,6 @@ Status Builder::set_opacity(NodeId id) noexcept {
     return ok();
 }
 
-Status Builder::set_vertex_offset(NodeId id) noexcept {
-    if (id >= module_.nodes_.size() || module_.nodes_[id].type != ValueType::Vec3) {
-        return make_unexpected(invalid("the vertex offset root must be a float3"));
-    }
-    module_.vertex_offset_ = id;
-    return ok();
-}
-
-Status Builder::set_vertex_interpolant(Name name, NodeId id) noexcept {
-    const std::string_view symbol = name.text();
-    if (symbol.empty()) {
-        return make_unexpected(invalid("a vertex interpolant needs a name"));
-    }
-    const auto letter = [](char character) noexcept {
-        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
-               character == '_';
-    };
-    const auto digit = [](char character) noexcept { return character >= '0' && character <= '9'; };
-    if (!letter(symbol.front())) {
-        return make_unexpected(invalid("a vertex interpolant needs an identifier name"));
-    }
-    for (const char character : symbol.substr(1)) {
-        if (!letter(character) && !digit(character)) {
-            return make_unexpected(invalid("a vertex interpolant needs an identifier name"));
-        }
-    }
-    constexpr std::string_view kBuiltInAttributes[] = {
-        "position", "object_position", "normal", "uv0", "uv1", "tangent", "color0", "time_seconds",
-    };
-    for (const std::string_view reserved : kBuiltInAttributes) {
-        if (symbol == reserved) {
-            return make_unexpected(invalid("a vertex interpolant cannot shadow a mesh attribute"));
-        }
-    }
-    if (id >= module_.nodes_.size()) {
-        return make_unexpected(invalid("a vertex interpolant source must be a node"));
-    }
-    const ValueType type = module_.nodes_[id].type;
-    if (type != ValueType::Float && type != ValueType::Vec2 && type != ValueType::Vec3 &&
-        type != ValueType::Vec4) {
-        return make_unexpected(invalid("a vertex interpolant must be a floating point value"));
-    }
-    for (const VertexInterpolant& existing : module_.vertex_interpolants_) {
-        if (existing.name == name) {
-            return make_unexpected(invalid("a vertex interpolant name is already used"));
-        }
-    }
-    return module_.vertex_interpolants_.push_back(VertexInterpolant{name, id, type});
-}
-
 Expected<Module, Error> Builder::finish() noexcept {
     if (finished_) {
         return make_unexpected(invalid("a builder produces one module"));
@@ -760,31 +694,12 @@ Expected<Module, Error> Builder::finish() noexcept {
     module_.origin_pool_ = std::move(flattened);
     module_.origin_begin_ = std::move(begin);
 
-    // Declaration order is a canvas detail. Keep both encoding and identity in name order.
-    for (usize outer = 1; outer < module_.vertex_interpolants_.size(); ++outer) {
-        for (usize inner = outer;
-             inner > 0 && module_.vertex_interpolants_[inner].name.text() <
-                              module_.vertex_interpolants_[inner - 1].name.text();
-             --inner) {
-            std::swap(module_.vertex_interpolants_[inner], module_.vertex_interpolants_[inner - 1]);
-        }
-    }
-
     u64 digest = hash_u64(kHashSeed, kIrVersion);
     digest = hash_text(digest, module_.name_.text());
     digest = hash_u64(
         digest, module_.surface_ == kInvalidNode ? 0ULL : module_.nodes_[module_.surface_].hash);
     digest = hash_u64(
         digest, module_.opacity_ == kInvalidNode ? 0ULL : module_.nodes_[module_.opacity_].hash);
-    digest = hash_u64(digest, module_.vertex_offset_ == kInvalidNode
-                                  ? 0ULL
-                                  : module_.nodes_[module_.vertex_offset_].hash);
-    digest = hash_u64(digest, module_.vertex_interpolants_.size());
-    for (const VertexInterpolant& interpolant : module_.vertex_interpolants_) {
-        digest = hash_text(digest, interpolant.name.text());
-        digest = hash_u64(digest, static_cast<u64>(interpolant.type));
-        digest = hash_u64(digest, module_.nodes_[interpolant.value].hash);
-    }
     module_.digest_ = digest;
     return std::move(module_);
 }
@@ -839,27 +754,11 @@ namespace {
         case Op::Saturate:
         case Op::OneMinus:
         case Op::Normalize:
-        case Op::Sin:
             if (Status checked = require(is_numeric(types[0]), "this operand may not be a closure");
                 !checked) {
                 return make_unexpected(checked.error());
             }
             return types[0];
-        case Op::Noise:
-            if (Status checked = require(types[0] == ValueType::Vec3,
-                                         "three-dimensional noise requires a float3 position");
-                !checked) {
-                return make_unexpected(checked.error());
-            }
-            return ValueType::Float;
-        case Op::ProceduralWind:
-            if (Status checked =
-                    require(types[0] == ValueType::Vec3 && types[1] == ValueType::Float,
-                            "procedural wind requires a float3 position and float time");
-                !checked) {
-                return make_unexpected(checked.error());
-            }
-            return ValueType::Vec3;
         case Op::Lerp: {
             auto blended = combine_numeric(types[0], types[1]);
             if (!blended) {
@@ -1090,12 +989,6 @@ Status encode_module(const Module& module, Array<u8>& out) noexcept {
 
     put_u32(out, module.surface(), status);
     put_u32(out, module.opacity(), status);
-    put_u32(out, module.vertex_offset(), status);
-    put_u32(out, static_cast<u32>(module.vertex_interpolants().size()), status);
-    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
-        put_text(out, interpolant.name.text(), status);
-        put_u32(out, interpolant.value, status);
-    }
     return status;
 }
 
@@ -1204,7 +1097,6 @@ Expected<Module, Error> decode_module(Span<const u8> bytes, Allocator& allocator
 
     const u32 surface = reader.u32_value();
     const u32 opacity = reader.u32_value();
-    const u32 vertex_offset = reader.u32_value();
     if (!reader.ok()) {
         return make_unexpected(Error{ErrorCode::InvalidArgument, "a truncated material IR", 0});
     }
@@ -1225,30 +1117,6 @@ Expected<Module, Error> decode_module(Span<const u8> bytes, Allocator& allocator
         if (Status set = builder.set_opacity(mapping[opacity]); !set) {
             return make_unexpected(set.error());
         }
-    }
-    if (vertex_offset != kInvalidNode) {
-        if (vertex_offset >= mapping.size()) {
-            return make_unexpected(
-                Error{ErrorCode::InvalidArgument, "the vertex offset root is not a node", 0});
-        }
-        if (Status set = builder.set_vertex_offset(mapping[vertex_offset]); !set) {
-            return make_unexpected(set.error());
-        }
-    }
-    const u32 interpolant_count = reader.u32_value();
-    for (u32 index = 0; index < interpolant_count && reader.ok(); ++index) {
-        const Name name = Name::intern(reader.text());
-        const u32 source = reader.u32_value();
-        if (source >= mapping.size()) {
-            return make_unexpected(
-                Error{ErrorCode::InvalidArgument, "a vertex interpolant source is not a node", 0});
-        }
-        if (Status set = builder.set_vertex_interpolant(name, mapping[source]); !set) {
-            return make_unexpected(set.error());
-        }
-    }
-    if (!reader.ok()) {
-        return make_unexpected(Error{ErrorCode::InvalidArgument, "a truncated material IR", 0});
     }
     return builder.finish();
 }
