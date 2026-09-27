@@ -113,6 +113,7 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
                     link_problem: &mut panels.inputs.material_link_problem,
                     node_alerts: &[],
                     on_connect: None,
+                    on_move: None,
                 },
             );
         });
@@ -796,11 +797,21 @@ fn select_backend_location(canvas: &mut GraphCanvas, node: u64) {
 
 type ConnectionHandler<'a> =
     dyn FnMut(&mut GraphCanvas, &GraphConnection) -> cy_editor_core::problem::Result<()> + 'a;
+type MoveHandler<'a> =
+    dyn FnMut(&mut GraphCanvas, GraphMovement) -> cy_editor_core::problem::Result<()> + 'a;
 
 pub(super) struct CanvasFeedback<'a> {
     pub link_problem: &'a mut Option<String>,
     pub node_alerts: &'a [(u64, String)],
     pub on_connect: Option<&'a mut ConnectionHandler<'a>>,
+    pub on_move: Option<&'a mut MoveHandler<'a>>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct GraphMovement {
+    pub node: NodeKey,
+    pub at: GraphLayout,
+    pub finished: bool,
 }
 
 pub(super) struct GraphConnection {
@@ -856,13 +867,20 @@ pub(super) fn draw_canvas(
             select = Some(card.key);
         }
         if response.dragged() {
-            movement = Some((
-                card.key,
-                GraphLayout {
+            movement = Some(GraphMovement {
+                node: card.key,
+                at: GraphLayout {
                     x: card.layout.x + response.drag_delta().x,
                     y: card.layout.y + response.drag_delta().y,
                 },
-            ));
+                finished: false,
+            });
+        } else if response.drag_stopped() && feedback.on_move.is_some() {
+            movement = Some(GraphMovement {
+                node: card.key,
+                at: card.layout,
+                finished: true,
+            });
         }
         draw_node(
             &painter,
@@ -892,9 +910,7 @@ pub(super) fn draw_canvas(
     if let Some(key) = select {
         let _ = canvas.select([key]);
     }
-    if let Some((key, layout)) = movement {
-        let _ = canvas.move_to(key, layout);
-    }
+    apply_movement(canvas, feedback, movement);
 
     if cards.is_empty() {
         painter.text(
@@ -915,6 +931,24 @@ pub(super) fn draw_canvas(
         feedback.link_problem.as_deref(),
     ) {
         let _ = canvas.select([key]);
+    }
+}
+
+fn apply_movement(
+    canvas: &mut GraphCanvas,
+    feedback: &mut CanvasFeedback<'_>,
+    movement: Option<GraphMovement>,
+) {
+    let Some(movement) = movement else { return };
+    let result = if let Some(move_node) = feedback.on_move.take() {
+        move_node(canvas, movement)
+    } else if movement.finished {
+        Ok(())
+    } else {
+        canvas.move_to(movement.node, movement.at)
+    };
+    if let Err(problem) = result {
+        *feedback.link_problem = Some(problem.to_string());
     }
 }
 

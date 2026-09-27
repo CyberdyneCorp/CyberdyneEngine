@@ -484,10 +484,16 @@ impl EditorWindow {
                 && intents
                     .iter()
                     .any(|intent| matches!(intent, Intent::DiscardVfxModuleChanges)))
+                || self.inputs.vfx_drag.is_some()
                 || source == *previous
                 || intents
                     .iter()
                     .any(|intent| matches!(intent, Intent::Invoke(id, _) if id == command))
+                || intents.iter().any(|intent| {
+                    matches!(intent, Intent::Invoke(id, _) if
+                        (command == "vfx.document.save" && id == "vfx.node.move")
+                        || (command == "vfx.module.save" && id == "vfx.module.node.move"))
+                })
             {
                 continue;
             }
@@ -1234,6 +1240,12 @@ impl EditorWindow {
             );
         }
     }
+
+    fn clear_hidden_vfx_drag(&mut self) {
+        if self.inputs.vfx_drag_seen == crate::panels::VfxCanvasVisibility::Hidden {
+            self.inputs.vfx_drag = None;
+        }
+    }
 }
 
 /// Bind the window's own actions into the shell's keymap, reporting any conflict.
@@ -1247,6 +1259,20 @@ fn bind_view_actions(shell: &mut Shell, report: &mut dyn FnMut(cy_editor_core::p
             report(problem);
         }
     }
+}
+
+fn dropped_files(ctx: &egui::Context) -> Vec<std::path::PathBuf> {
+    ctx.input(|input| {
+        input
+            .raw
+            .dropped_files
+            .iter()
+            .filter_map(|file| {
+                let path = file.path();
+                (!path.as_os_str().is_empty()).then(|| path.to_path_buf())
+            })
+            .collect()
+    })
 }
 
 impl eframe::App for EditorWindow {
@@ -1311,17 +1337,7 @@ impl eframe::App for EditorWindow {
         root.set_style(std::sync::Arc::new(style));
         let metrics = self.shell.metrics();
         let mut intents: Vec<Intent> = Vec::new();
-        let dropped: Vec<std::path::PathBuf> = ctx.input(|input| {
-            input
-                .raw
-                .dropped_files
-                .iter()
-                .filter_map(|file| {
-                    let path = file.path();
-                    (!path.as_os_str().is_empty()).then(|| path.to_path_buf())
-                })
-                .collect()
-        });
+        let dropped = dropped_files(ctx);
         if !dropped.is_empty() {
             intents.push(external_import_intent(dropped, self.asset_browser.folder()));
         }
@@ -1331,7 +1347,9 @@ impl eframe::App for EditorWindow {
         let pending_chord = self.keyboard(ctx, &mut intents);
 
         self.chrome(root, &pending_chord, &mut intents);
+        self.inputs.vfx_drag_seen = crate::panels::VfxCanvasVisibility::Hidden;
         self.dock_area(root, &mut intents);
+        self.clear_hidden_vfx_drag();
 
         // The palette and the notifications, over everything.
         self.overlays(ctx, metrics, &mut intents);
@@ -1944,6 +1962,61 @@ mod tests {
                 .encode_text()
                 .unwrap(),
             original
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn typed_vfx_drag_release_skips_whole_document_save() {
+        use cy_editor_interface::specialised::graph::Layout;
+
+        let root = scratch("vfx-typed-drag-history");
+        let (mut window, _) = saved_vfx_system_window(&root);
+        let reference = "effects/sparks.cyvfxdoc";
+        let canvas = window
+            .specialised
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap();
+        let node = canvas
+            .add("vfx.test_node", Layout { x: 10.0, y: 20.0 })
+            .unwrap();
+        let before_move = window
+            .specialised
+            .vfx_document_snapshot()
+            .unwrap()
+            .unwrap()
+            .encode_text()
+            .unwrap();
+        window.apply(vec![Intent::Invoke(
+            "vfx.document.save".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("source", Value::Text(before_move.clone())),
+        )]);
+        let canvas = window
+            .specialised
+            .open(Domain::VfxGraph)
+            .unwrap()
+            .graph
+            .unwrap();
+        canvas.move_to(node, Layout { x: 30.0, y: 40.0 }).unwrap();
+        let mut intents = vec![Intent::Invoke(
+            "vfx.node.move".into(),
+            Arguments::new()
+                .with("reference", Value::Text(reference.into()))
+                .with("emitter", Value::Text("embers".into()))
+                .with("stage", Value::Text("spawn".into()))
+                .with("node", Value::Int(1))
+                .with("x", Value::Float(30.0))
+                .with("y", Value::Float(40.0)),
+        )];
+        window.journal_vfx_edits(&mut intents).unwrap();
+        assert_eq!(intents.len(), 1, "release must keep one move command");
+        assert_eq!(
+            window.editor.project.read_source(reference).unwrap(),
+            before_move
         );
         std::fs::remove_dir_all(root).unwrap();
     }

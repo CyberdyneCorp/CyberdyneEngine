@@ -22,8 +22,11 @@ refresh the open canvas from the project source before the next frame. Each type
 individual undo step; remaining canvas and system controls still need typed desktop parity.
 Palette insertion into a clean saved system stage or module now invokes `vfx.node.add` or
 `vfx.module.node.add`, sharing the MCP path and one undo entry. A canvas with unsaved gestures
-keeps palette insertion local until Save, preserving those pending edits. Node movement still needs
-the same per-action routing. Editing a property on a clean saved
+keeps palette insertion local until Save, preserving those pending edits. A clean saved canvas
+previews a node drag locally and sends one typed `vfx.node.move` or `vfx.module.node.move` command
+on release; the frame journal skips its whole-document save so the move is one undo step. A new
+draft without a saved project path keeps movement local until its first Save. Edits already pending
+on a saved canvas follow frame journaling. Editing a property on a clean saved
 canvas now invokes `vfx.node.property.set` or `vfx.module.node.property.set`; property changes on
 an unsaved canvas remain local until Save. Compatible pin connections on a clean saved canvas
 invoke `vfx.node.connect` or `vfx.module.node.connect` after the shared canvas validates them;

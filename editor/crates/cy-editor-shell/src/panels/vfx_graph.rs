@@ -63,6 +63,14 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         return;
     }
     let active_stage = panels.specialised.active_vfx_stage();
+    if panels
+        .inputs
+        .vfx_drag
+        .as_ref()
+        .is_some_and(|drag| !drag.matches_open(panels))
+    {
+        panels.inputs.vfx_drag = None;
+    }
     let failed_diagnostics = match panels.editor.backend.vfx_compile_state() {
         VfxCompileState::Failed(_, failure) => failure.diagnostics.clone(),
         _ => Vec::new(),
@@ -189,23 +197,69 @@ fn canvas_area(
         );
         ui.separator();
         ui.allocate_ui(egui::vec2(ui.available_width(), available.y), |ui| {
-            material_graph::draw_canvas(
-                ui,
-                shell,
-                canvas,
-                state,
-                "Empty VFX stage graph\nChoose a node from the engine catalogue",
-                &mut inputs.vfx_link_source,
-                &mut material_graph::CanvasFeedback {
-                    link_problem: &mut inputs.vfx_link_problem,
-                    node_alerts: actions.node_alerts,
-                    on_connect: Some(&mut |canvas, connection| {
-                        connect_nodes(canvas, actions.saved, actions.intents, connection)
-                    }),
-                },
-            );
+            draw_vfx_canvas(ui, shell, canvas, state, inputs, actions);
         });
     });
+}
+
+fn draw_vfx_canvas(
+    ui: &mut egui::Ui,
+    shell: &Shell,
+    canvas: &mut GraphCanvas,
+    state: MaterialCatalogueState,
+    inputs: &mut Inputs,
+    actions: &mut CanvasActions<'_>,
+) {
+    inputs.vfx_drag_seen = super::VfxCanvasVisibility::Visible;
+    let mut connect_intents = Vec::new();
+    let mut move_intents = Vec::new();
+    let mut move_seen = false;
+    material_graph::draw_canvas(
+        ui,
+        shell,
+        canvas,
+        state,
+        "Empty VFX stage graph\nChoose a node from the engine catalogue",
+        &mut inputs.vfx_link_source,
+        &mut material_graph::CanvasFeedback {
+            link_problem: &mut inputs.vfx_link_problem,
+            node_alerts: actions.node_alerts,
+            on_connect: Some(&mut |canvas, connection| {
+                connect_nodes(canvas, actions.saved, &mut connect_intents, connection)
+            }),
+            on_move: Some(&mut |canvas, movement| {
+                move_seen = true;
+                move_node_gesture(
+                    canvas,
+                    actions.saved,
+                    &mut inputs.vfx_drag,
+                    &mut move_intents,
+                    movement,
+                )
+            }),
+        },
+    );
+    if !move_seen
+        && let Some(node) = inputs.vfx_drag.as_ref().map(|drag| drag.node)
+        && let Some(at) = canvas.layout_of(node)
+    {
+        let result = move_node_gesture(
+            canvas,
+            actions.saved,
+            &mut inputs.vfx_drag,
+            &mut move_intents,
+            material_graph::GraphMovement {
+                node,
+                at,
+                finished: true,
+            },
+        );
+        inputs.vfx_link_problem = result.err().map(|problem| problem.to_string());
+    } else if !move_seen && inputs.vfx_drag.is_some() {
+        inputs.vfx_drag = None;
+    }
+    actions.intents.extend(connect_intents);
+    actions.intents.extend(move_intents);
 }
 
 fn active_node_alerts(
@@ -1621,6 +1675,7 @@ fn target_picker(ui: &mut egui::Ui, capabilities: &VfxAuthoringCapabilities, cur
         });
 }
 
+#[derive(Clone)]
 enum SavedCanvas {
     Stage {
         reference: String,
@@ -1630,6 +1685,42 @@ enum SavedCanvas {
     Module {
         reference: String,
     },
+}
+
+/// Saved VFX node drag awaiting one typed move command at pointer release.
+pub struct VfxDragState {
+    saved: SavedCanvas,
+    node: NodeKey,
+    initial: Layout,
+}
+
+impl VfxDragState {
+    fn matches_open(&self, panels: &Panels<'_>) -> bool {
+        match &self.saved {
+            SavedCanvas::Stage {
+                reference,
+                emitter,
+                stage,
+            } => {
+                panels.saved_vfx_document_reference == Some(reference.as_str())
+                    && panels
+                        .specialised
+                        .active_vfx_stage()
+                        .is_some_and(|(index, active)| {
+                            active == *stage
+                                && panels
+                                    .specialised
+                                    .vfx_document()
+                                    .and_then(|document| document.emitters.get(index))
+                                    .is_some_and(|current| current.name == *emitter)
+                        })
+            }
+            SavedCanvas::Module { reference } => {
+                panels.saved_vfx_module_reference == Some(reference.as_str())
+                    && panels.specialised.active_vfx_module().is_some()
+            }
+        }
+    }
 }
 
 fn saved_canvas(panels: &Panels<'_>) -> Option<SavedCanvas> {
@@ -1859,6 +1950,78 @@ fn disconnect_link(
     };
     intents.push(intent);
     Ok(())
+}
+
+fn move_node_gesture(
+    canvas: &mut GraphCanvas,
+    saved: Option<&SavedCanvas>,
+    drag: &mut Option<VfxDragState>,
+    intents: &mut Vec<Intent>,
+    movement: material_graph::GraphMovement,
+) -> Result<()> {
+    if !movement.finished {
+        if !movement.at.x.is_finite() || !movement.at.y.is_finite() {
+            return Err(Problem::new(
+                "move a VFX node",
+                "canvas position must be finite",
+            ));
+        }
+        if drag.is_none()
+            && let Some(saved) = saved
+        {
+            let initial = canvas.layout_of(movement.node).ok_or_else(|| {
+                Problem::new("move a VFX node", "the selected node has no canvas layout")
+            })?;
+            *drag = Some(VfxDragState {
+                saved: saved.clone(),
+                node: movement.node,
+                initial,
+            });
+        }
+        return canvas.move_to(movement.node, movement.at);
+    }
+    let Some(state) = drag.take() else {
+        return Ok(());
+    };
+    if state.node != movement.node {
+        *drag = Some(state);
+        return Ok(());
+    }
+    let at = canvas
+        .layout_of(state.node)
+        .ok_or_else(|| Problem::new("move a VFX node", "the dragged node has no canvas layout"))?;
+    if at == state.initial {
+        return Ok(());
+    }
+    intents.push(move_node_intent(&state.saved, state.node, at));
+    Ok(())
+}
+
+fn move_node_intent(saved: &SavedCanvas, node: NodeKey, at: Layout) -> Intent {
+    let arguments = Arguments::new()
+        .with(
+            "node",
+            Value::Int(i64::try_from(node.ordinal()).unwrap_or(i64::MAX)),
+        )
+        .with("x", Value::Float(at.x))
+        .with("y", Value::Float(at.y));
+    match saved {
+        SavedCanvas::Stage {
+            reference,
+            emitter,
+            stage,
+        } => Intent::Invoke(
+            "vfx.node.move".into(),
+            arguments
+                .with("reference", Value::Text(reference.clone()))
+                .with("emitter", Value::Text(emitter.clone()))
+                .with("stage", Value::Text(stage.label().to_ascii_lowercase())),
+        ),
+        SavedCanvas::Module { reference } => Intent::Invoke(
+            "vfx.module.node.move".into(),
+            arguments.with("reference", Value::Text(reference.clone())),
+        ),
+    }
 }
 
 fn add_palette_node(
@@ -2230,6 +2393,99 @@ mod tests {
         assert_eq!(canvas.links().count(), 0);
         assert!(disconnect_link(&mut canvas, Some(&stage), &mut intents, &link).is_err());
         assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn saved_vfx_drag_moves_locally_then_queues_one_typed_command() {
+        let mut canvas = GraphCanvas::new(1);
+        canvas.load(Catalogue::new(vec![NodeType::new("vfx.constant", Vec::new())]).unwrap());
+        let node = canvas.add("vfx.constant", Layout::default()).unwrap();
+        let stage = SavedCanvas::Stage {
+            reference: "effects/sparks.cyvfxdoc".into(),
+            emitter: "embers".into(),
+            stage: Stage::Spawn,
+        };
+        let mut drag = None;
+        let mut intents = Vec::new();
+        for at in [Layout { x: 8.0, y: 10.0 }, Layout { x: 12.0, y: 15.0 }] {
+            move_node_gesture(
+                &mut canvas,
+                Some(&stage),
+                &mut drag,
+                &mut intents,
+                material_graph::GraphMovement {
+                    node,
+                    at,
+                    finished: false,
+                },
+            )
+            .unwrap();
+            assert!(drag.is_some());
+            assert!(intents.is_empty());
+        }
+        assert_eq!(canvas.layout_of(node), Some(Layout { x: 12.0, y: 15.0 }));
+        move_node_gesture(
+            &mut canvas,
+            None,
+            &mut drag,
+            &mut intents,
+            material_graph::GraphMovement {
+                node,
+                at: Layout { x: 12.0, y: 15.0 },
+                finished: true,
+            },
+        )
+        .unwrap();
+        assert!(drag.is_none());
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved drag must invoke a command");
+        };
+        assert_eq!(command, "vfx.node.move");
+        assert_eq!(arguments.text("reference"), Some("effects/sparks.cyvfxdoc"));
+        assert_eq!(arguments.text("emitter"), Some("embers"));
+        assert_eq!(arguments.text("stage"), Some("spawn"));
+        assert_eq!(arguments.get("node"), Some(&Value::Int(1)));
+        assert_eq!(arguments.get("x"), Some(&Value::Float(12.0)));
+        assert_eq!(arguments.get("y"), Some(&Value::Float(15.0)));
+        assert!(intents.is_empty());
+
+        let module = SavedCanvas::Module {
+            reference: "effects/shared.cyvfxmodule".into(),
+        };
+        move_node_gesture(
+            &mut canvas,
+            Some(&module),
+            &mut drag,
+            &mut intents,
+            material_graph::GraphMovement {
+                node,
+                at: Layout { x: 20.0, y: 25.0 },
+                finished: false,
+            },
+        )
+        .unwrap();
+        move_node_gesture(
+            &mut canvas,
+            None,
+            &mut drag,
+            &mut intents,
+            material_graph::GraphMovement {
+                node,
+                at: Layout { x: 20.0, y: 25.0 },
+                finished: true,
+            },
+        )
+        .unwrap();
+        let Intent::Invoke(command, arguments) = intents.remove(0) else {
+            panic!("saved module drag must invoke a command");
+        };
+        assert_eq!(command, "vfx.module.node.move");
+        assert_eq!(
+            arguments.text("reference"),
+            Some("effects/shared.cyvfxmodule")
+        );
+        assert_eq!(arguments.get("x"), Some(&Value::Float(20.0)));
+        assert_eq!(arguments.get("y"), Some(&Value::Float(25.0)));
     }
 
     #[test]

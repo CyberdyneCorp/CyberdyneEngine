@@ -59,6 +59,13 @@ This ledger records executable evidence for issue #15. It is incomplete until ev
 - **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib selected_vfx_wire_disconnection_uses_the_same_commands_as_mcp` — 1 targeted test passed on macOS.
 - **Red mutation:** temporarily make `disconnect_link` remove a wire directly from the saved canvas. The test failed because the saved canvas lost its wire before any command ran. Restoring command routing made it pass. The mutation is not committed.
 
+## Desktop VFX node drag command parity
+
+- **Desktop path:** `saved_vfx_drag_moves_locally_then_queues_one_typed_command` checks that intermediate drag positions update the displayed canvas without an intent, and release queues one `vfx.node.move` or `vfx.module.node.move` with the saved asset identity, node, and final position. A draft without a saved path moves locally.
+- **Journal path:** `typed_vfx_drag_release_skips_whole_document_save` checks that release retains only the typed move intent and does not prepend a whole-document save.
+- **Green command:** `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib saved_vfx_drag_moves_locally_then_queues_one_typed_command` and `cargo test --manifest-path editor/Cargo.toml -p cy-editor-shell --lib typed_vfx_drag_release_skips_whole_document_save` — each targeted test passed on macOS.
+- **Red mutations:** temporarily omit the release `intents.push`; the first test failed because no move intent was queued. Temporarily remove the journal's typed move suppression; the second test failed because release produced two intents instead of one. Both mutations were restored.
+
 ## Vertex material save and history through MCP
 
 - **Wire path:** `vertex_material_canvas_saves_and_undoes_over_mcp` assigns the material to a scene mesh, saves a vertex graph through `material.graph.save`, and checks that the request carries `StaticMesh`. It receives the engine-authored canonical graph, reads the editable canvas through MCP, then checks that one undo removes both project files and redo restores both.

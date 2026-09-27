@@ -129,6 +129,15 @@ pub(crate) fn external_import_intent(
     }
 }
 
+/// Whether the VFX canvas appeared in the current frame.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum VfxCanvasVisibility {
+    /// The canvas was not drawn.
+    Hidden,
+    /// The canvas was drawn.
+    Visible,
+}
+
 /// The text a person has typed into a panel's own field.
 ///
 /// Presentation state, and it lives beside the panels rather than in a view model for the reason
@@ -177,6 +186,10 @@ pub struct Inputs {
     pub vfx_link_source: Option<(u64, u32, String, String)>,
     /// Last rejected VFX connection.
     pub vfx_link_problem: Option<String>,
+    /// Saved-asset move held across drag frames so one release produces one undo entry.
+    pub vfx_drag: Option<vfx_graph::VfxDragState>,
+    /// Whether the VFX canvas was rendered this frame; hidden drags fall back to document save.
+    pub vfx_drag_seen: VfxCanvasVisibility,
     /// Last rejected VFX property edit.
     pub vfx_property_problem: Option<String>,
     /// New VFX system name entered in the panel.
@@ -319,6 +332,8 @@ impl Default for Inputs {
             vfx_filter: String::new(),
             vfx_link_source: None,
             vfx_link_problem: None,
+            vfx_drag: None,
+            vfx_drag_seen: VfxCanvasVisibility::Hidden,
             vfx_property_problem: None,
             vfx_system_name: "NewVfx".into(),
             vfx_emitter_name: "Emitter0".into(),
