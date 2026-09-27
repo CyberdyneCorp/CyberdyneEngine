@@ -279,6 +279,23 @@ function(cy_render_declare_tests)
         DEPENDENCIES cy::rendering-graph cy::rendering-sky cy::rhi cy::rhi-null cy::rhi-vulkan)
     target_include_directories(cy_test_render_world_aerial_perspective
                                PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
+
+    # AERIAL PERSPECTIVE ON THE SHADED SEA. `atmosphere-sky-and-clouds` — "Aerial perspective",
+    # for the water `samples/10-world/shaders/water.slang` draws. The same frame's committed SPIR-V
+    # and water device half, a level sea beside level land under the atmosphere's own sky: the
+    # water receives the processor's table once, with no step at the shoreline and the land's
+    # in-scattering far out, near water keeps its colour, and off is the water's shader before.
+    cy_add_test(
+        NAME world_water_aerial_perspective
+        KIND render
+        SOURCES
+            "${cy_render_tests_dir}/test_world_water_aerial_perspective.cpp"
+            "${CMAKE_SOURCE_DIR}/samples/10-world/water_surface.cpp"
+        DEPENDENCIES
+            cy::rendering-graph cy::rendering-sky cy::rhi cy::rhi-null cy::rhi-vulkan cy::water
+            cy::world)
+    target_include_directories(cy_test_render_world_water_aerial_perspective
+                               PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
 endfunction()
 
 cy_render_declare_tests()
