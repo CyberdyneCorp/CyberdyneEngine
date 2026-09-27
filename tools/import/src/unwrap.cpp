@@ -42,6 +42,8 @@
 
 #include <cy/import/mesh.h>
 
+#include "unwrap_counter.h"
+
 #include <xatlas.h>
 
 #include <cmath>
@@ -176,6 +178,7 @@ Expected<Uv2Report, Error> generate_uv2(MeshData& mesh, const Uv2Options& option
     pack_options.bruteForce = false;
     pack_options.createImage = false;
 
+    note_uv2_unwrap();
     xatlas::ComputeCharts(atlas.get(), chart_options);
     xatlas::PackCharts(atlas.get(), pack_options);
 

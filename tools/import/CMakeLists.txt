@@ -72,6 +72,7 @@ cy_add_module(
         src/report.cpp
         src/sidecar.cpp
         src/unwrap.cpp
+        src/unwrap_cache.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
     ${cy_import_animation_definitions}

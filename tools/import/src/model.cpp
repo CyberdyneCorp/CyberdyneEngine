@@ -66,7 +66,10 @@ Status finish_mesh(MeshData& mesh, const ModelBuildOptions& options, ImportResul
     }
 
     if (options.generate_lightmap_uvs) {
-        Expected<Uv2Report, Error> unwrapped = generate_uv2(mesh, options.uv2);
+        // Through the process's unwrap cache: a reimport whose source changed and whose geometry did
+        // not copies the previous unwrap rather than running xatlas again. See `Uv2Cache`.
+        Expected<Uv2Report, Error> unwrapped =
+            generate_uv2_cached(mesh, options.uv2, &Uv2Cache::process());
         if (!unwrapped) {
             // An unwrap that fails is a fact about the mesh — a surface with no parameterisation, a
             // density that will not fit — and not a reason to lose the mesh. The lightmap

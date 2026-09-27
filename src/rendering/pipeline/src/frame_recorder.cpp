@@ -146,7 +146,7 @@ void record_extensions(FrameRecorder& recorder, const PassContext& context, Fram
 
 /// The vertex buffers one geometry pass binds, in binding order.
 struct StreamSet {
-    rhi::BufferHandle buffers[3];
+    rhi::BufferHandle buffers[kForwardPassStreamCount];
     usize count = 0;
 
     /// Bind the set. `deformed` null binds every stream from its start. Non-null, it is a depth
@@ -155,7 +155,7 @@ struct StreamSet {
     /// its own window, because a vertex buffer offset cannot be negative and the previous half of
     /// a double-buffered output is below the current one on every other frame.
     void bind(rhi::CommandBuffer& commands, DrawGeometry* deformed) const noexcept {
-        u64 offsets[3] = {0, 0, 0};
+        u64 offsets[kForwardPassStreamCount] = {0, 0, 0, 0};
         if (deformed != nullptr) {
             const i32 base = deformed->vertex_offset < deformed->previous_vertex_offset
                                  ? deformed->vertex_offset
@@ -185,9 +185,12 @@ struct StreamSet {
         set.buffers[kPreviousPositionStream] = geometry.streams[kPositionStream];
         set.count = kDepthPassStreamCount;
     } else {
-        for (u32 stream = 0; stream < kForwardPassStreamCount; ++stream) {
-            set.buffers[stream] = geometry.streams[stream];
-        }
+        set.buffers[kPositionStream] = geometry.streams[kPositionStream];
+        set.buffers[kNormalStream] = geometry.streams[kNormalStream];
+        set.buffers[kUvStream] = geometry.streams[kUvStream];
+        // The lightmap coordinates, or UV0 in their place: see `GeometrySource::lightmap_uvs`.
+        set.buffers[kLightmapUvStream] =
+            geometry.lightmap_uvs.is_null() ? geometry.streams[kUvStream] : geometry.lightmap_uvs;
         set.count = kForwardPassStreamCount;
     }
     return set;

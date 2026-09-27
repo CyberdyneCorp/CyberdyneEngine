@@ -49,10 +49,10 @@
 // `render::VertexStream` splits a mesh into streams so "a shadow pass over an interleaved vertex
 // reads normals, UVs and colours it will not use" stops being true. The depth pipeline below binds
 // streams 0 and 1 — it writes a normal and a velocity target and reads no texture coordinate — plus
-// the previous positions its per-object motion is derived from, and the forward pipelines bind 0, 1
-// and 2, which is `render::kDepthPassStreams` made structural
-// rather than documented. `kDepthPassStreamCount` and `kForwardPassStreamCount` below are those two
-// numbers, declared once because the pipeline and the recorder must agree about them.
+// the previous positions its per-object motion is derived from, and the forward pipelines bind 0, 1,
+// 2 and the lightmap's 3, which is `render::kDepthPassStreams` made structural rather than
+// documented. `kDepthPassStreamCount` and `kForwardPassStreamCount` below are those two numbers,
+// declared once because the pipeline and the recorder must agree about them.
 //
 // **`render::PackedNormalTangent` is two pairs of 16-bit SIGNED NORMALISED components and
 // `rhi::Format` has no `Rgba16Snorm`.** So the normal stream this module binds is `Rgba16Sfloat`,
@@ -146,7 +146,7 @@ inline constexpr u32 kPassBindingVelocity = 3;
 inline constexpr u32 kPassBindingDepth = 4;
 inline constexpr u32 kPassBindingCount = 5;
 
-/// The vertex stream bindings, in `render::VertexStream`'s own order.
+/// The vertex stream bindings, in `render::VertexStream`'s own order, and then the lightmap's.
 inline constexpr u32 kPositionStream = 0;
 inline constexpr u32 kNormalStream = 1;
 inline constexpr u32 kUvStream = 2;
@@ -156,10 +156,15 @@ inline constexpr u32 kUvStream = 2;
 /// position stream bound a second time for a rigid mesh, or the other half of a skinned mesh's
 /// double-buffered output (`DrawGeometry::previous_vertex_offset`).
 inline constexpr u32 kPreviousPositionStream = 2;
+/// The cooked `TexCoords2` stream. `render::VertexStream` has no entry for it — the render server
+/// streams UV0 and nothing else — so it is the forward pipelines' own fourth binding, filled from
+/// `GeometrySource::lightmap_uvs` or, where a source has none, from its UV0 buffer.
+inline constexpr u32 kLightmapUvStream = 3;
 
 inline constexpr u32 kPositionStreamStride = 12;  // Rgb32Sfloat
 inline constexpr u32 kNormalStreamStride = 8;     // Rgba16Sfloat: octahedral normal, then tangent
 inline constexpr u32 kUvStreamStride = 8;         // Rg32Sfloat
+inline constexpr u32 kLightmapUvStreamStride = 8;  // Rg32Sfloat
 
 /// How many streams each pass binds, declared ONCE because two files have to agree about it.
 ///
@@ -171,8 +176,12 @@ inline constexpr u32 kUvStreamStride = 8;         // Rg32Sfloat
 ///
 /// THREE FOR THE DEPTH PASS since per-object motion: position, the packed normal, and the previous
 /// positions at `kPreviousPositionStream`. Still no UVs.
+///
+/// The forward passes take the lightmap coordinates as a fourth stream. A draw without a lightmap
+/// never reads them, and the recorder binds UV0 there for a source that has none, so every caller
+/// that predates the stream binds what it always bound and draws what it always drew.
 inline constexpr u32 kDepthPassStreamCount = 3;
-inline constexpr u32 kForwardPassStreamCount = 3;
+inline constexpr u32 kForwardPassStreamCount = 4;
 
 /// Encode a normal and a tangent into one 8-byte normal-stream vertex.
 ///
@@ -299,6 +308,16 @@ struct alignas(16) FrameViewData {
     ///
     /// APPENDED, for the reason `material_textures` gives.
     u32 motion_control[4] = {0xFFFFFFFFU, 0, 0, 0};
+    /// The baked lightmap atlas. x, y, z: the set 0 texture slots of its planes; w: the encoding,
+    /// `lightmap_bake::LightmapMode` plus one, where zero — the default — draws every surface as
+    /// it was whatever its draw's `gi_address` says. `lightmaps::write_lightmaps` fills this and
+    /// the field after it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 lightmap_control[4] = {kNoMaterialTexture, kNoMaterialTexture, kNoMaterialTexture, 0};
+    /// x: a page's side in texels. y: pages, stacked down the texture. z: the gutter, in texels.
+    /// w: reserved.
+    u32 lightmap_layout[4] = {0, 0, 0, 0};
 };
 
 /// `motion_control[0]` when a frame carries no previous instance rows — `cy/frame.slang`'s
@@ -310,10 +329,12 @@ inline constexpr u32 kNoPreviousInstances = 0xFFFFFFFFU;
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 560, "CyFrameData's std140 block is 560 bytes");
+static_assert(sizeof(FrameViewData) == 592, "CyFrameData's std140 block is 592 bytes");
 static_assert(offsetof(FrameViewData, decal_control) == 512);
 static_assert(offsetof(FrameViewData, volumetric_fog_control) == 528);
 static_assert(offsetof(FrameViewData, motion_control) == 544);
+static_assert(offsetof(FrameViewData, lightmap_control) == 560);
+static_assert(offsetof(FrameViewData, lightmap_layout) == 576);
 static_assert(offsetof(FrameViewData, soft_shadow_control) == 432);
 static_assert(offsetof(FrameViewData, soft_shadow_shape) == 448);
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);

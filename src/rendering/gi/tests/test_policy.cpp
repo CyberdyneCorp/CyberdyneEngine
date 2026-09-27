@@ -116,6 +116,28 @@ CY_TEST_CASE("a lightmapped surface takes one bounce and not two") {
         exclusion_for(GiMode::Dynamic, true, true) & source_bit(RadianceSource::RadianceCache), 0U);
 }
 
+CY_TEST_CASE("a lightmapped surface in Baked mode takes its lightmap, not a mean with the volume") {
+    // REGRESSION, M11.e: `Baked` excluded only the dynamic sources, so a lightmapped surface in an
+    // irradiance volume resolved to the mean of the two — 0.75 here, where the lightmap says 0.5.
+    RadianceSample lightmap;
+    lightmap.source = RadianceSource::Lightmap;
+    lightmap.radiance = Vec3{0.5F, 0.5F, 0.5F};
+    lightmap.confidence = 1.0F;
+    RadianceSample volume;
+    volume.source = RadianceSource::IrradianceVolume;
+    volume.radiance = Vec3{1.0F, 1.0F, 1.0F};
+    volume.confidence = 1.0F;
+    const RadianceSample samples[2] = {lightmap, volume};
+
+    const ResolveResult lightmapped = combine({samples, 2}, exclusion_for(GiMode::Baked, true, true));
+    CY_CHECK_NEAR(lightmapped.radiance.x, 0.5F, 1e-5F);
+    CY_CHECK_EQ(lightmapped.sources_used, source_bit(RadianceSource::Lightmap));
+    // A dynamic object in the same volume still takes the probes: "lit by interpolated probe
+    // irradiance, not by the lightmap".
+    const ResolveResult dynamic = combine({samples, 2}, exclusion_for(GiMode::Baked, false, true));
+    CY_CHECK_NE(dynamic.sources_used & source_bit(RadianceSource::IrradianceVolume), 0U);
+}
+
 CY_TEST_CASE("the far field transitions over a ramp rather than at a boundary") {
     const ErrorTargets targets;
     CY_CHECK_EQ(far_field_weight(0.0F, targets), 0.0F);
