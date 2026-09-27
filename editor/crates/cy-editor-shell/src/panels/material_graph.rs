@@ -1612,6 +1612,8 @@ mod tests {
                 .with_stage_mask(SURFACE_STAGE),
             NodeType::identified(2, 1, "material.offset".into(), vec![])
                 .with_stage_mask(VERTEX_STAGE),
+            NodeType::identified(4, 1, "material.vertex_interpolant".into(), vec![])
+                .with_stage_mask(VERTEX_STAGE),
             NodeType::identified(3, 1, "material.sin".into(), vec![])
                 .with_stage_mask(SURFACE_STAGE | VERTEX_STAGE),
         ])
@@ -1625,7 +1627,11 @@ mod tests {
         );
         assert_eq!(
             palette_names(&canvas, "", VERTEX_STAGE),
-            ["material.offset", "material.sin"]
+            [
+                "material.offset",
+                "material.sin",
+                "material.vertex_interpolant"
+            ]
         );
     }
 

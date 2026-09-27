@@ -105,6 +105,7 @@ CY_TEST_CASE("graph_material: stage compatibility comes from the engine palette"
     using cy::graph::material::material_node_stage_mask;
     CY_CHECK_EQ(material_node_stage_mask("material.output"), 1U);
     CY_CHECK_EQ(material_node_stage_mask("material.vertex_output"), 2U);
+    CY_CHECK_EQ(material_node_stage_mask("material.vertex_interpolant"), 2U);
     CY_CHECK_EQ(material_node_stage_mask("material.diffuse"), 1U);
     CY_CHECK_EQ(material_node_stage_mask("material.texture_sample"), 1U);
     CY_CHECK_EQ(material_node_stage_mask("material.custom"), 1U);
