@@ -9,6 +9,7 @@
 #include <cy/core/math/projection.h>
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
+#include <cy/rendering/decals/decal_table.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/pipeline/frame_bindings.h>
@@ -599,7 +600,11 @@ struct U32x3 {
 /// backend still compiles this file.
 struct Stage::Device {
     explicit Device(Allocator& allocator) noexcept
-        : aerial(allocator), sky_view(allocator), aerial_words(allocator), assembly(allocator) {}
+        : aerial(allocator),
+          sky_view(allocator),
+          aerial_words(allocator),
+          decal_words(allocator),
+          assembly(allocator) {}
 
     Expected<rhi::Device*, Error> handle = fail(ErrorCode::Unavailable, "not created");
     rhi::BackendSelection selection{};
@@ -637,6 +642,12 @@ struct Stage::Device {
     /// `aerial_volume()` and holding a switched-off header until a frame with aerial perspective
     /// writes a table.
     rhi::BufferHandle aerial_table;
+    /// Binding 3: `decals::pack_decal_table()`'s words. A header's worth of zeroes — no table —
+    /// until a frame with the ground marker writes one.
+    rhi::BufferHandle decal_table;
+    /// The marker, and the words it packed into, kept so a frame does not allocate for them.
+    cy::rendering::DecalInstance marker;
+    Array<u32> decal_words;
 
     // --- THE ATMOSPHERE, INTEGRATED FOR THIS CAMERA. `atmosphere-sky-and-clouds`, "Aerial
     // perspective". Both are built from the world's own `Atmosphere` and `AtmosphereTables` — the
@@ -991,8 +1002,8 @@ constexpr u64 kPlaceholderCloudShadowWords = 16;
 
 Status Stage::create_cloud_shadow_binding() noexcept {
     rhi::Device& device = *device_->handle.value();
-    rhi::DescriptorBinding bindings[3] = {};
-    for (u32 index = 0; index < 3; ++index) {
+    rhi::DescriptorBinding bindings[4] = {};
+    for (u32 index = 0; index < 4; ++index) {
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
@@ -1000,7 +1011,7 @@ Status Stage::create_cloud_shadow_binding() noexcept {
     }
     rhi::DescriptorSetLayoutDescription set_description;
     set_description.name = "world cloud shadow";
-    set_description.bindings = Span<const rhi::DescriptorBinding>(bindings, 3);
+    set_description.bindings = Span<const rhi::DescriptorBinding>(bindings, 4);
     auto set_layout = device.create_descriptor_set_layout(set_description);
     if (!set_layout) {
         return make_unexpected(set_layout.error());
@@ -1048,12 +1059,24 @@ Status Stage::create_cloud_shadow_binding() noexcept {
     std::memcpy(device.buffer_mapped_pointer(*aerial), device_->aerial_words.data(),
                 device_->aerial_words.size() * sizeof(Vec4));
 
+    // THE DECAL TABLE STARTS EMPTY: zeroes are no table at all — the magic word is missing — and
+    // the lit path reads one word and leaves every surface as it was lit.
+    description.name = "world decal table";
+    description.size = cy::rendering::decals::kDecalHeaderWords * sizeof(u32);
+    auto decals = device.create_buffer(description);
+    if (!decals) {
+        return make_unexpected(decals.error());
+    }
+    device_->decal_table = *decals;
+    decal_bytes_ = description.size;
+    std::memset(device.buffer_mapped_pointer(*decals), 0, static_cast<usize>(description.size));
+
     auto set = device.allocate_descriptor_set(device_->world_set_layout, false);
     if (!set) {
         return make_unexpected(set.error());
     }
     device_->world_set = *set;
-    rhi::DescriptorWrite writes[3] = {};
+    rhi::DescriptorWrite writes[4] = {};
     writes[0].binding = 0;
     writes[0].kind = rhi::DescriptorKind::StorageBuffer;
     writes[0].buffer = device_->cloud_shadow_field;
@@ -1063,8 +1086,43 @@ Status Stage::create_cloud_shadow_binding() noexcept {
     writes[2].binding = 2;
     writes[2].kind = rhi::DescriptorKind::StorageBuffer;
     writes[2].buffer = device_->aerial_table;
+    writes[3].binding = 3;
+    writes[3].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[3].buffer = device_->decal_table;
     return device.update_descriptor_set(device_->world_set,
-                                        Span<const rhi::DescriptorWrite>(writes, 3));
+                                        Span<const rhi::DescriptorWrite>(writes, 4));
+}
+
+Status Stage::upload_decals(Span<const u32> words) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    const u64 bytes = words.size() * sizeof(u32);
+    if (bytes > decal_bytes_) {
+        // Grown as the cloud shadow field grows, and for the same reason it is safe here: every
+        // previous frame is idle before `shoot()` uploads, and this frame records after this.
+        rhi::BufferDescription description;
+        description.name = "world decal table";
+        description.size = bytes;
+        description.usage = rhi::BufferUsage::Storage;
+        description.memory = rhi::MemoryUse::Upload;
+        auto grown = device.create_buffer(description);
+        if (!grown) {
+            return make_unexpected(grown.error());
+        }
+        rhi::DescriptorWrite write;
+        write.binding = 3;
+        write.kind = rhi::DescriptorKind::StorageBuffer;
+        write.buffer = *grown;
+        if (Status updated = device.update_descriptor_set(
+                device_->world_set, Span<const rhi::DescriptorWrite>(&write, 1));
+            !updated) {
+            device.destroy_buffer(*grown);
+            return updated;
+        }
+        device.destroy_buffer(device_->decal_table);
+        device_->decal_table = *grown;
+        decal_bytes_ = bytes;
+    }
+    return upload_bytes(device, device_->decal_table, words.data(), bytes);
 }
 
 Status Stage::upload_cloud_shadow(const World& world) noexcept {
@@ -2087,6 +2145,28 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     view.cull.fov_y_radians = kFieldOfView;
     view.lights = Span<const cy::render::LightDescription>(&device_->sun, 1);
     view.sun_direction = normalised(lighting.sun_travel);
+    if (ground_marker_) {
+        // THE MARKER IS WHERE THE CAMERA LOOKS: the world's middle, on the ground, in the frame's
+        // world-relative space (x and z from the middle, y absolute). Its size is authored — an
+        // RTS move order's ring, 50 m across so it reads at this orbit's kilometre — and its box is
+        // 40 m deep so it reaches the ground over the relief under it; the angle fade leaves the
+        // steep faces inside it bare. The distance fade is set past the orbit's farthest point:
+        // a free parameter, and it exists so a marker far from the camera costs nothing.
+        cy::rendering::DecalInstance& marker = device_->marker;
+        marker = cy::rendering::DecalInstance{};
+        marker.id = 1;
+        marker.center = Vec3{0.0F, world.ground_height(middle.x, middle.z), 0.0F};
+        marker.axis_x = Vec3{1.0F, 0.0F, 0.0F};
+        marker.axis_y = Vec3{0.0F, 0.0F, -1.0F};
+        marker.axis_z = Vec3{0.0F, 1.0F, 0.0F};
+        marker.half_extent = Vec3{25.0F, 25.0F, 20.0F};
+        marker.fade_start = 3000.0F;
+        marker.fade_end = 4000.0F;
+        marker.weights.albedo = 1.0F;
+        marker.weights.normal = 0.0F;
+        marker.weights.roughness = 0.0F;
+        view.decals = Span<const cy::rendering::DecalInstance>(&device_->marker, 1);
+    }
 
     // IMPORTED WITH `Undefined`, and that is the truth rather than a shortcut: the resolve clears
     // the image, so last frame's contents are discarded and the graph derives the transition from
@@ -2225,6 +2305,42 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     }
     out.frame_passes = report.passes_declared;
     out.post_stages = report.post_stages;
+    if (ground_marker_) {
+        // A PAINTED MARKER, not a light: a yellow road paint's linear albedo, lit by the sun
+        // through the same cloud shadow and seen through the same air as the ground it is on.
+        cy::rendering::decals::DecalMaterial paint;
+        paint.albedo = Vec3{0.80F, 0.55F, 0.06F};
+        paint.shape = cy::rendering::decals::DecalShape::Ring;
+        paint.shape_a = 0.8F;
+        paint.shape_b = 0.1F;
+        const cy::rendering::assembly::AssemblyDescription& described =
+            device_->assembly.description();
+        auto grid = cy::rendering::make_cluster_grid(described.clusters, width_, height_,
+                                                     described.near_plane, described.far_plane);
+        if (!grid) {
+            (void)device.end_frame();
+            return make_unexpected(grid.error());
+        }
+        cy::rendering::decals::DecalTableInput table;
+        table.decals = Span<const cy::rendering::DecalInstance>(&device_->marker, 1);
+        table.order = device_->assembly.decal_order();
+        table.materials = Span<const cy::rendering::decals::DecalMaterial>(&paint, 1);
+        table.clusters = &device_->assembly.clusters();
+        table.grid = *grid;
+        table.view = camera;
+        table.width = width_;
+        table.height = height_;
+        if (Status packed = cy::rendering::decals::pack_decal_table(table, device_->decal_words);
+            !packed) {
+            (void)device.end_frame();
+            return packed;
+        }
+        if (Status uploaded = upload_decals(device_->decal_words.span()); !uploaded) {
+            (void)device.end_frame();
+            return uploaded;
+        }
+        out.decal_assignments = report.decal_assignments;
+    }
 
     // The resources the callbacks draw into are the FRAME's, and they are named only after
     // `assemble` has declared them.
@@ -2587,6 +2703,7 @@ void Stage::close() noexcept {
         device.destroy_buffer(device_->cloud_shadow_placement);
         device_->water.destroy(device);
         device.destroy_buffer(device_->aerial_table);
+        device.destroy_buffer(device_->decal_table);
         if (!device_->world_set_layout.is_null()) {
             device.destroy_descriptor_set_layout(device_->world_set_layout);
         }

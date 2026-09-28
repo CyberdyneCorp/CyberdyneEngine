@@ -15,6 +15,8 @@
 //                    [--bloom]                      the shot's bloom grade in the post chain
 //                    [--look <file.cygrade>]        a committed look, graded after the tone curve
 //                    [--depth-of-field <target>]    focused on a target the shot names
+//                    [--decals on|off]              the shot's `decal` lines, applied before
+//                    lighting
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -220,6 +222,13 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cy_sample_beauty: --soft-shadows is `on` or `off`\n");
         return 1;
     }
+    // DECALS. Off by default, which is the published M11.c frame; `on` is what `just
+    // capture-beauty-decals` photographs beside it.
+    const std::string decals = option(argc, argv, "--decals", "off");
+    if (decals != "on" && decals != "off") {
+        std::fprintf(stderr, "cy_sample_beauty: --decals is `on` or `off`\n");
+        return 1;
+    }
     // A CONTROL, not a quality setting: `--albedo-levels 1` photographs the shot with level 0 of
     // every albedo map's cooked chain and nothing beneath it. See `Stage::limit_albedo_levels`.
     const u32 albedo_levels = option_number(argc, argv, "--albedo-levels", 0);
@@ -296,6 +305,10 @@ int main(int argc, char** argv) {
     std::printf("soft shadows  %s, sun angular radius %.5f rad, contact reach %.2f m\n",
                 soft_shadows.c_str(), static_cast<double>(shot.sun_angular_radius),
                 static_cast<double>(shot.contact_length));
+    stage.set_decals(decals == "on");
+    std::printf("decals        %s, %llu in the shot over %llu decal materials\n", decals.c_str(),
+                static_cast<unsigned long long>(shot.decals.size()),
+                static_cast<unsigned long long>(shot.decal_materials.size()));
     stage.limit_albedo_levels(albedo_levels);
     if (bloom) {
         stage.enable_bloom(shot);

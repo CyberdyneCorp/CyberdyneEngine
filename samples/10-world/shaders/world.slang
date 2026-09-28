@@ -66,6 +66,19 @@
 // perspective off byte-identical to the frame before it existed.
 //
 // ================================================================================================
+// DECALS CHANGE THE GROUND BEFORE IT IS LIT
+// ================================================================================================
+//
+// `rendering-lighting-and-shadows` — "Decals": projected boxes writing into the surface BEFORE
+// lighting. This path's surface is the per-vertex colour and the normal, so those are what a decal
+// writes, through `cy/decal.slang`, from `decals::pack_decal_table`'s words in binding 3 — with the
+// lists the frame's assembly assigned, because this pipeline binds no cluster buffers. The result
+// is lit by the same sun, through the same cloud shadow, and seen through the same air as the
+// ground under it. Water is not a receiver: its colour is the ocean's, and a marker painted on a
+// wave would be drawn somewhere the wave is not. A table with no decals in it, which is what the
+// binding holds until a frame uploads one, reads one word and leaves every surface as it was.
+//
+// ================================================================================================
 // REGENERATING
 // ================================================================================================
 //
@@ -87,6 +100,7 @@
 
 import cy.aerial_perspective;
 import cy.cloud_shadow;
+import cy.decal;
 import cy.field;
 
 struct WorldPush
@@ -126,6 +140,10 @@ struct WorldCloudShadow
     /// `sky::pack_aerial_perspective()`'s words for this frame's camera, or its header alone with
     /// the `enabled` word zero when aerial perspective is off.
     StructuredBuffer<float4> aerial;
+    /// `decals::pack_decal_table()`'s words for this frame, with the assembly's cluster lists in
+    /// them, or zeroes — no table, and no decal — when the frame has none. APPENDED, so the three
+    /// bindings above keep their numbers.
+    StructuredBuffer<uint> decals;
 };
 
 [[vk::binding(0, 0)]]
@@ -191,6 +209,20 @@ float sunThroughClouds(float3 world)
     return cyCloudShadowAtImage(image, world.x + placement.x, world.y, world.z + placement.y);
 }
 
+/// The decal table in binding 3. A storage buffer rather than the bindless table the engine's frame
+/// reads it from, because this pipeline has no texture table; the words are the same words.
+struct WorldDecalSource : ICyDecalSource
+{
+    uint word(uint index)
+    {
+        return cloudShadow.decals[index];
+    }
+    float mask(uint slot, float2 uv)
+    {
+        return 1.0;
+    }
+};
+
 /// The lit radiance as the eye receives it, through the air between. See the header comment.
 float3 throughAir(float3 lit, float3 world)
 {
@@ -223,11 +255,32 @@ float4 worldFragment(VertexOutput input) : SV_Target
         normal = -normal;
     }
 
+    // DECALS, BEFORE THE LIGHT: on land only — see the header comment.
+    float3 albedo = input.color;
+    WorldDecalSource decals;
+    if (push.sun.a <= 0.0 && cyDecalCount(decals) > 0u)
+    {
+        CyDecalReceiver receiver;
+        receiver.relativePosition = input.world;
+        receiver.geometricNormal = normal;
+        receiver.eyeDistance = length(input.world - push.eye.xyz);
+        receiver.channels = 1u;
+        CyDecalSurface decalled;
+        decalled.albedo = albedo;
+        decalled.roughness = 1.0;
+        decalled.metallic = 0.0;
+        decalled.emission = float3(0.0);
+        decalled.normal = normal;
+        cyApplyTableDecals(decals, receiver, input.clip.xy, decalled);
+        albedo = decalled.albedo;
+        normal = decalled.normal;
+    }
+
     // The sun reaching this surface: the atmosphere's share is already in `push.sun`, and the
     // cloud deck's is the field's, sampled here. See the header comment for why only this term.
     let direct = push.sun.rgb * sunThroughClouds(input.world);
     let lambert = saturate(dot(normal, -push.light.xyz));
-    float3 lit = input.color * (push.ambient.rgb + (direct * lambert));
+    float3 lit = albedo * (push.ambient.rgb + (direct * lambert));
 
     if (push.sun.a > 0.0)
     {

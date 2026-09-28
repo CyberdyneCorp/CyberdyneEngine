@@ -1234,6 +1234,69 @@ capture-soft-shadows *args:
         "${images}/soft-shadows-beauty-off.png" "${images}/soft-shadows-beauty-on.png" \
         "${images}/soft-shadows-beauty-detail.png"
 
+# DECALS, PHOTOGRAPHED WHERE THEY ARE USED: the beauty shot with its `decal` lines off and on —
+# scorch marks on the gravel, moss at the pillars' feet — and `samples/10-world` without and with its
+# ground marker. The same compiled programs and the same frame each time; only the decals change.
+# The published M11.c still is not touched. Needs a graphics device, and says so and writes nothing
+# without one.
+# Photograph decals in the beauty shot and on the world's terrain. Usage: just capture-decals [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-decals *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    world="${build_dir}/samples/10-world/cy_sample_world"
+    for tool in "${sample}" "${world}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-decals: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/decals"
+    rm -rf "${work}"
+    mkdir -p "${work}/frames" docs/design/images
+    trap 'rm -rf "${work}/frames"' EXIT
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    images=docs/design/images
+    for setting in off on; do
+        echo "==> capture     beauty shot, decals ${setting}"
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --decals "${setting}" --still "${images}/decals-beauty-${setting}.png" \
+            ${rest} | tee "${work}/beauty-${setting}.log"
+        if [ ! -f "${images}/decals-beauty-${setting}.png" ]; then
+            echo "capture-decals: no picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+
+    # THE WORLD: a short take and one still from it, the same seed and the same frame both times.
+    for setting in off on; do
+        marker=()
+        if [ "${setting}" = on ]; then
+            marker=(--ground-marker)
+        fi
+        echo "==> capture     world, ground marker ${setting}"
+        rm -rf "${work}/frames" && mkdir -p "${work}/frames"
+        "${world}" --frames "${work}/frames" --still "${images}/decals-world-${setting}.png" \
+            --seconds 1 --fps 8 --still-frame 3 --width 1280 --height 720 \
+            ${marker[@]+"${marker[@]}"} | tee "${work}/world-${setting}.log"
+        if [ ! -f "${images}/decals-world-${setting}.png" ]; then
+            echo "capture-decals: no world picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/decals-beauty-off.png" "${images}/decals-beauty-on.png" \
+        "${images}/decals-world-off.png" "${images}/decals-world-on.png"
+
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #
 # Task 8.1 is "one project — built, cooked, packaged and LAUNCHED FROM A SINGLE RECIPE", and the

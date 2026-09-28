@@ -79,6 +79,10 @@ constexpr u32 kShadowExtent = 2048;
 constexpr f32 kFarPlane = 400.0F;
 /// The width of the full-frame sensor the shot's horizontal field of view is quoted for.
 constexpr f32 kSensorWidthMm = 36.0F;
+constexpr f32 kNearPlane = 0.08F;
+/// The frame's cluster grid: 16-pixel tiles, 8 depth slices, 24 elements a cluster. One constant
+/// because the decal table is reserved from it before the frame that uses it exists.
+constexpr cy::rendering::ClusterGridConfig kClusterConfig{16, 8, 24};
 
 [[nodiscard]] f64 now_millis() noexcept {
     return std::chrono::duration<f64, std::milli>(
@@ -141,9 +145,12 @@ struct FrameConstants {
     /// `BeautyFrame::softShadow` and `softControl`, read only by `sceneFragmentSoft`.
     f32 soft_shadow[4] = {};
     u32 soft_control[4] = {};
+    /// `BeautyFrame::decalControl`: the decal table's slot in the material table — or none, the
+    /// default and the frame M11.c published — its rows, and `kDecalListsInTable`.
+    u32 decal_control[4] = {0xFFFFFFFFU, 0, 0, 0};
 };
 
-static_assert(sizeof(FrameConstants) == 224, "BeautyFrame is fourteen 16-byte rows");
+static_assert(sizeof(FrameConstants) == 240, "BeautyFrame is fifteen 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -221,6 +228,13 @@ struct Stage::Device {
     rendering::contact_shadows::ContactShadowPass contact;
     /// The depth of field gather, created only when the run named a focus target.
     rendering::depth_of_field::DepthOfFieldPass dof;
+    /// The decal table, created only when the run asked for decals, and the shot's decals in the
+    /// shot camera's relative space — the space the geometry is baked in. See `Stage::set_decals`.
+    rendering::decals::DecalTableTexture decal_table;
+    std::vector<rendering::DecalInstance> decals;
+    std::vector<rendering::decals::DecalMaterial> decal_materials;
+    std::vector<u32> decal_order;
+    rendering::FrameResourceRead decal_read;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -275,6 +289,7 @@ Stage::~Stage() {
             device_->occlusion.destroy();
             device_->contact.destroy();
             device_->dof.destroy();
+            device_->decal_table.shutdown();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->grading.shutdown();
@@ -998,6 +1013,9 @@ namespace {
 /// How many slots the material table declares. Nine are written; the rest repeat slot zero, so no
 /// descriptor in the array is left unwritten and `BindlessPartiallyBound` is not required.
 constexpr u32 kTableSlots = 16;
+/// The table slot the decal table is bound at when a run asks for decals: the last, which no
+/// material texture reaches — nine are written.
+constexpr u32 kDecalTableSlot = kTableSlots - 1U;
 
 /// The std140 layout slangc produces for `CyMaterialParams`, MEASURED with `spirv-dis` rather than
 /// assumed:
@@ -1151,6 +1169,11 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         return make_unexpected(table_set.error());
     }
     device_->table_set = *table_set;
+    if (decals_) {
+        if (Status made = create_decals(shot); !made) {
+            return made;
+        }
+    }
     std::vector<rhi::DescriptorWrite> writes;
     for (u32 slot = 0; slot < kTableSlots; ++slot) {
         rhi::DescriptorWrite write;
@@ -1158,6 +1181,9 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         write.array_index = slot;
         write.kind = rhi::DescriptorKind::SampledTexture;
         write.texture_view = device_->views[slot < device_->views.size() ? slot : 0];
+        if (decals_ && slot == kDecalTableSlot) {
+            write.texture_view = device_->decal_table.view();
+        }
         writes.push_back(write);
     }
     rhi::DescriptorWrite sampler_write;
@@ -1986,15 +2012,70 @@ void write_sun_matrix(f32 out[4][4], Vec3 to_sun, Vec3 centre, f32 extent) noexc
 
 }  // namespace
 
+Status Stage::create_decals(const Shot& shot) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    device_->decals.clear();
+    device_->decal_materials.clear();
+    for (const ShotDecalMaterial& material : shot.decal_materials) {
+        device_->decal_materials.push_back(material.material);
+    }
+    for (const ShotDecal& placed : shot.decals) {
+        rendering::DecalInstance decal;
+        // Spawn order, as a budget would number them: the order's tie-break.
+        decal.id = device_->decals.size() + 1U;
+        // RELATIVE TO THE SHOT'S CAMERA, which is the space every vertex is baked in and the
+        // space the assembly's view is expressed in.
+        decal.center = subtract(placed.position, shot.camera_position);
+        const Vec3 facing = normalise(placed.facing);
+        const Vec3 across = normalise(cross3(placed.up, facing));
+        decal.axis_z = facing;
+        decal.axis_x = across;
+        decal.axis_y = cross3(facing, across);
+        decal.half_extent = Vec3{placed.width * 0.5F, placed.height * 0.5F, placed.depth * 0.5F};
+        decal.sort_order = placed.order;
+        decal.fade_angle_radians = placed.fade_angle_degrees * std::numbers::pi_v<f32> / 180.0F;
+        // Everything the material states, over everything the receiver had — metallic included,
+        // because soot or moss over copper is not a metal. Emission is the one channel neither of
+        // the shot's decal materials writes.
+        decal.weights.albedo = 1.0F;
+        decal.weights.normal = 1.0F;
+        decal.weights.roughness = 1.0F;
+        decal.weights.metallic = 1.0F;
+        decal.weights.emission = 0.0F;
+        for (usize index = 0; index < shot.decal_materials.size(); ++index) {
+            if (shot.decal_materials[index].key == placed.material) {
+                decal.material_index = static_cast<u32>(index);
+            }
+        }
+        device_->decals.push_back(decal);
+    }
+
+    // RESERVED FROM THE GRID, because the texture's view is written into the material table once,
+    // below, and the table is uploaded inside frames where it cannot be recreated: the header, the
+    // records, a list header per cluster, and at most one entry per decal per cluster.
+    Expected<cy::rendering::ClusterGrid, Error> grid =
+        cy::rendering::make_cluster_grid(kClusterConfig, width_, height_, kNearPlane, kFarPlane);
+    if (!grid.has_value()) {
+        return make_unexpected(grid.error());
+    }
+    const usize decal_count = device_->decals.size();
+    const usize per_cluster = 2U + std::min<usize>(decal_count, grid->max_elements_per_cluster);
+    const usize words = rendering::decals::kDecalHeaderWords +
+                        (decal_count * rendering::decals::kDecalRecordWords) +
+                        (static_cast<usize>(grid->cluster_count()) * per_cluster);
+    device_->decal_table.initialize(device, *allocator_);
+    return device_->decal_table.reserve(rendering::decals::decal_table_rows(words));
+}
+
 Status Stage::create_frame() noexcept {
     rhi::Device& device = *device_->handle.value();
 
     AssemblyDescription description;
     description.width = width_;
     description.height = height_;
-    description.near_plane = 0.08F;
+    description.near_plane = kNearPlane;
     description.far_plane = kFarPlane;
-    description.clusters = cy::rendering::ClusterGridConfig{16, 8, 24};
+    description.clusters = kClusterConfig;
     description.color_format = kSceneFormat;
     description.depth_format = kDepthFormat;
     description.material_capacity = 4;
@@ -2133,6 +2214,37 @@ Status Stage::set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection, 
     settings.lens.focus_distance = dot3(subtract(dof_focus_, eye_world), forward);
     device_->dof.set_settings(settings);
     return device_->dof.set_view(rendering::depth_of_field::DofView{projection, width_, height_});
+}
+
+Status Stage::stage_decals(const Mat4& camera) noexcept {
+    // THE TABLE IS IN THE SHOT CAMERA'S SPACE, the one the geometry is baked in and the view is
+    // expressed in: the origin is that camera, whichever eye the frame is drawn from, and the
+    // turntable's eye offset is the shader's to subtract for the distance fade.
+    const Span<const u32> order = device_->assembly.decal_order();
+    const cy::rendering::assembly::AssemblyDescription& description =
+        device_->assembly.description();
+    Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
+        description.clusters, width_, height_, description.near_plane, description.far_plane);
+    if (!grid.has_value()) {
+        return make_unexpected(grid.error());
+    }
+    rendering::decals::DecalTableInput input;
+    input.decals =
+        Span<const rendering::DecalInstance>(device_->decals.data(), device_->decals.size());
+    input.order = order;
+    input.materials = Span<const rendering::decals::DecalMaterial>(device_->decal_materials.data(),
+                                                                   device_->decal_materials.size());
+    input.origin = Vec3{0.0F, 0.0F, 0.0F};
+    input.clusters = &device_->assembly.clusters();
+    input.grid = *grid;
+    input.view = camera;
+    input.width = width_;
+    input.height = height_;
+    Array<u32> words(*allocator_);
+    if (Status packed = rendering::decals::pack_decal_table(input, words); !packed) {
+        return packed;
+    }
+    return device_->decal_table.stage(words.span());
 }
 
 Status Stage::create_contact() noexcept {
@@ -2293,6 +2405,11 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         constants.soft_control[1] = ambient_occlusion_ ? 1U : 0U;
         constants.soft_control[2] = 1U;
     }
+    if (decals_) {
+        constants.decal_control[0] = kDecalTableSlot;
+        constants.decal_control[1] = device_->decal_table.rows();
+        constants.decal_control[2] = rendering::decals::kDecalListsInTable;
+    }
     void* mapped = device.buffer_mapped_pointer(device_->frame_constants);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "the frame constants are not mapped");
@@ -2422,6 +2539,22 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     }
     sinks.passes[static_cast<usize>(FramePassKind::Opaque)] =
         cy::rendering::FramePassCallback{&record_scene, &scene};
+    if (decals_) {
+        // THE COPY IS DECLARED BEFORE THE ASSEMBLY DECLARES THE PASS THAT SAMPLES IT, so the graph
+        // orders the two; the words follow once the assembly has assigned the lists they carry.
+        view.decals =
+            Span<const rendering::DecalInstance>(device_->decals.data(), device_->decals.size());
+        const Expected<cy::rendering::ResourceId, Error> table =
+            device_->decal_table.declare_upload(graph);
+        if (!table.has_value()) {
+            (void)device.end_frame();
+            return make_unexpected(table.error());
+        }
+        device_->decal_read =
+            cy::rendering::FrameResourceRead{*table, rhi::Access::FragmentSampledRead};
+        sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =
+            Span<const cy::rendering::FrameResourceRead>(&device_->decal_read, 1);
+    }
     sinks.passes[static_cast<usize>(FramePassKind::Sky)] =
         cy::rendering::FramePassCallback{&record_sky, &scene};
     sinks.passes[static_cast<usize>(FramePassKind::Transparent)] =
@@ -2458,6 +2591,15 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     }
     report.frame_passes = assembly_report.passes_declared;
     report.post_stages = assembly_report.post_stages;
+    if (decals_) {
+        if (Status staged = stage_decals(camera); !staged) {
+            (void)device.end_frame();
+            return staged;
+        }
+        std::printf("decals        %u decals, %u (cluster, decal) assignments over %u clusters\n",
+                    assembly_report.decals, assembly_report.decal_assignments,
+                    assembly_report.clusters.clusters);
+    }
 
     const cy::rendering::FrameResources& resources = device_->assembly.resources();
     scene.color = resources.color;
