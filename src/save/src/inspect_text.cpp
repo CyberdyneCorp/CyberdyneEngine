@@ -8,6 +8,8 @@
 
 #include <cy/save/inspect.h>
 
+#include <cy/core/base/diagnostic_sink.h>
+
 #include <cstdarg>
 #include <cstdio>
 
@@ -16,7 +18,7 @@ namespace {
 
 /// Append formatted text. Truncation is refused rather than written: a report missing the end of a
 /// line would read as a report saying something else.
-[[gnu::format(printf, 2, 3)]] Status appendf(Array<char>& out, const char* format, ...) noexcept {
+CY_PRINTF_FORMAT(2, 3) Status appendf(Array<char>& out, const char* format, ...) noexcept {
     char line[512];
     va_list arguments;
     va_start(arguments, format);
