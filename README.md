@@ -49,6 +49,8 @@ their module README.
 | **Vulkan** — NVIDIA GeForce RTX 5060 | **Metal** — Apple M2 Max, max delta 1 | **D3D12** — AMD Radeon RX 6900 XT, max delta 1 |
 | ![The editor with a live textured FBX on Metal](docs/design/images/editor-live-textured-fbx-metal.png) | ![The material graph editor](docs/design/images/editor-material-graph-nodes-metal.png) | ![The open-world sample on an iPhone 16](docs/design/images/ios-open-world-iphone.png) |
 | **Editor** — a live FBX import on Metal ([`editor/`](editor/README.md)) | **Material graph** on the editor's canvas ([`material/`](src/rendering/material/README.md)) | **iOS** — open world on an iPhone 16 at 60 FPS ([building](docs/guides/building.md#ios)) |
+| ![A Mixamo character mid-run, skinned on the GPU](docs/design/images/animated-character.png) | ![The 500-model, 100-emitter RTS load on an iPhone 16](docs/design/images/ios-rts-load-iphone.png) | ![A generated world from M10](docs/design/images/m10-world.png) |
+| **Animation** — a Mixamo character imported from four FBX files, idle to walk to run to a death ([video](docs/design/videos/animated-character.mp4) · [`samples/09b-animated-character`](samples/09b-animated-character/README.md) · [`src/animation/`](src/animation/README.md)) | **GPU skinning** — 500 skinned models and 100 GPU emitters on an iPhone 16 ([building](docs/guides/building.md#rts-capacity-scene)) | **World** — generated from a seed, a day of weather ([video](docs/design/videos/m10-world.mp4) · [`samples/10-world`](samples/10-world/README.md)) |
 
 The three backend images are the M3 golden image, each labelled with the device that answered
 (`m11d5-three-backends-*.manifest`); that comparison is M11.d.5's closing artefact.
