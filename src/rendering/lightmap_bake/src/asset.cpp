@@ -23,6 +23,87 @@ constexpr usize kHeaderWords = 8;
     return u32{bytes[0]} | (u32{bytes[1]} << 8U) | (u32{bytes[2]} << 16U) | (u32{bytes[3]} << 24U);
 }
 
+[[nodiscard]] Status put_halves(Array<u8>& out, Span<const Vec4> texels) noexcept {
+    for (const Vec4& texel : texels) {
+        const f32 channels[4] = {texel.x, texel.y, texel.z, texel.w};
+        for (const f32 channel : channels) {
+            const u16 half = half_from_float(channel);
+            if (Status pushed = out.push_back(static_cast<u8>(half & 0xFFU)); !pushed) {
+                return pushed;
+            }
+            if (Status pushed = out.push_back(static_cast<u8>(half >> 8U)); !pushed) {
+                return pushed;
+            }
+        }
+    }
+    return ok();
+}
+
+void get_halves(const u8*& cursor, Span<Vec4> texels) noexcept {
+    const auto half_at = [&cursor]() {
+        const auto value = static_cast<u16>(u32{cursor[0]} | (u32{cursor[1]} << 8U));
+        cursor += 2;
+        return float_from_half(value);
+    };
+    for (Vec4& texel : texels) {
+        texel.x = half_at();
+        texel.y = half_at();
+        texel.z = half_at();
+        texel.w = half_at();
+    }
+}
+
+[[nodiscard]] Status put_shadow(Array<u8>& out, const BakedLightmap& lightmap) noexcept {
+    const auto channels = static_cast<u32>(lightmap.shadow_lights.size());
+    if (Status put = put_u32(out, channels); !put) {
+        return put;
+    }
+    for (const u64 id : lightmap.shadow_lights) {
+        if (Status put = put_u32(out, static_cast<u32>(id & 0xFFFFFFFFU)); !put) {
+            return put;
+        }
+        if (Status put = put_u32(out, static_cast<u32>(id >> 32U)); !put) {
+            return put;
+        }
+    }
+    return channels == 0U ? ok() : put_halves(out, lightmap.shadow_mask.texels.span());
+}
+
+/// The version 2 shadow section, after the texels. `remaining` is what is left of the payload.
+[[nodiscard]] Status get_shadow(const u8* cursor, usize remaining, BakedLightmap& out) noexcept {
+    out.shadow_lights.clear();
+    out.shadow_mask = LightmapTexels();
+    if (remaining < 4U) {
+        return fail(ErrorCode::InvalidArgument, "a lightmap payload without its shadow section");
+    }
+    const u32 channels = get_u32(cursor);
+    const u64 texels = u64{out.texels.width} * out.texels.height;
+    const u64 expected = 4U + (u64{channels} * 8U) + (channels == 0U ? 0U : texels * 8U);
+    if (channels > kMaxShadowMaskLights || expected != remaining) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a lightmap payload whose shadow section disagrees with its length");
+    }
+    cursor += 4;
+    for (u32 channel = 0; channel < channels; ++channel) {
+        const u64 id = u64{get_u32(cursor)} | (u64{get_u32(cursor + 4)} << 32U);
+        cursor += 8;
+        if (Status pushed = out.shadow_lights.push_back(id); !pushed) {
+            return pushed;
+        }
+    }
+    if (channels == 0U) {
+        return ok();
+    }
+    out.shadow_mask.width = out.texels.width;
+    out.shadow_mask.height = out.texels.height;
+    out.shadow_mask.planes = 1;
+    if (Status sized = out.shadow_mask.texels.resize(static_cast<usize>(texels)); !sized) {
+        return sized;
+    }
+    get_halves(cursor, out.shadow_mask.texels.span());
+    return ok();
+}
+
 }  // namespace
 
 Status encode_lightmap_asset(const BakedLightmap& lightmap, Array<u8>& out) noexcept {
@@ -52,19 +133,10 @@ Status encode_lightmap_asset(const BakedLightmap& lightmap, Array<u8>& out) noex
             return put;
         }
     }
-    for (const Vec4& texel : texels.texels) {
-        const f32 channels[4] = {texel.x, texel.y, texel.z, texel.w};
-        for (const f32 channel : channels) {
-            const u16 half = half_from_float(channel);
-            if (Status pushed = out.push_back(static_cast<u8>(half & 0xFFU)); !pushed) {
-                return pushed;
-            }
-            if (Status pushed = out.push_back(static_cast<u8>(half >> 8U)); !pushed) {
-                return pushed;
-            }
-        }
+    if (Status put = put_halves(out, texels.texels.span()); !put) {
+        return put;
     }
-    return ok();
+    return put_shadow(out, lightmap);
 }
 
 Status decode_lightmap_asset(Span<const u8> payload, BakedLightmap& out) noexcept {
@@ -75,7 +147,8 @@ Status decode_lightmap_asset(Span<const u8> payload, BakedLightmap& out) noexcep
     for (usize word = 0; word < kHeaderWords; ++word) {
         header[word] = get_u32(payload.data() + (word * 4U));
     }
-    if (header[0] != kLightmapAssetMagic || header[1] != kLightmapAssetVersion) {
+    if (header[0] != kLightmapAssetMagic || header[1] < kLightmapAssetOldestVersion ||
+        header[1] > kLightmapAssetVersion) {
         return fail(ErrorCode::InvalidArgument, "not a lightmap payload of this version");
     }
     if (header[2] >= static_cast<u32>(LightmapMode::Count) ||
@@ -86,7 +159,10 @@ Status decode_lightmap_asset(Span<const u8> payload, BakedLightmap& out) noexcep
     const u64 height = u64{header[3]} * header[4];
     const u64 texel_count = width * height * header[6];
     const u64 expected = ((u64{kHeaderWords} + header[7]) * 4U) + (texel_count * 8U);
-    if (width == 0 || height == 0 || expected != payload.size()) {
+    // Version 1 ends with the texels; version 2 has its shadow section after them.
+    const bool sized_right =
+        header[1] == 1U ? expected == payload.size() : expected <= payload.size();
+    if (width == 0 || height == 0 || !sized_right) {
         return fail(ErrorCode::InvalidArgument,
                     "a lightmap payload whose length disagrees with its header");
     }
@@ -108,19 +184,14 @@ Status decode_lightmap_asset(Span<const u8> payload, BakedLightmap& out) noexcep
     if (Status sized = out.texels.texels.resize(static_cast<usize>(texel_count)); !sized) {
         return sized;
     }
-    const auto half_at = [&cursor]() {
-        const auto value = static_cast<u16>(u32{cursor[0]} | (u32{cursor[1]} << 8U));
-        cursor += 2;
-        return float_from_half(value);
-    };
-    for (Vec4& texel : out.texels.texels) {
-        texel.x = half_at();
-        texel.y = half_at();
-        texel.z = half_at();
-        texel.w = half_at();
-    }
+    get_halves(cursor, out.texels.texels.span());
     out.coverage.clear();
-    return ok();
+    out.shadow_lights.clear();
+    out.shadow_mask = LightmapTexels();
+    if (header[1] == 1U) {
+        return ok();
+    }
+    return get_shadow(cursor, payload.size() - static_cast<usize>(expected), out);
 }
 
 u16 half_from_float(f32 value) noexcept {

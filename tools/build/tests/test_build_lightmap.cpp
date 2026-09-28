@@ -83,8 +83,9 @@ constexpr const char* kDescription =
     "  upstream \"import:quad\"\n"
     "  output \"derived/level.lightmap\"\n";
 
-/// A wall of four quads' size standing on a floor quad, lit by one point light.
-[[nodiscard]] std::string level_description(float intensity) {
+/// A wall of four quads' size standing on a floor quad, lit by one point light. `mobility` is the
+/// light line's optional trailing word; empty leaves it out.
+[[nodiscard]] std::string level_description(float intensity, std::string_view mobility = {}) {
     std::string text =
         "cylightmap 1\n"
         "mode directional\n"
@@ -93,7 +94,11 @@ constexpr const char* kDescription =
         "density 4\n"
         "page 128\n"
         "sky 0.2 0.25 0.3\n";
-    text += "light point 0 1 1.5 " + std::to_string(intensity) + " 20 1 1 1\n";
+    text += "light point 0 1 1.5 " + std::to_string(intensity) + " 20 1 1 1";
+    if (!mobility.empty()) {
+        text += " " + std::string(mobility);
+    }
+    text += "\n";
     text +=
         "material \"white\" 0.7 0.7 0.7\n"
         "material \"red\" 0.8 0.1 0.1\n";
@@ -230,4 +235,43 @@ CY_TEST_CASE("a lightmap description naming a mesh no upstream produced fails th
     CY_REQUIRE(report.has_value());
     CY_CHECK_FALSE(report->succeeded());
     CY_CHECK(result_for(*report, "lightmap:level")->outcome != NodeOutcome::Ran);
+}
+
+CY_TEST_CASE("a lightmap light line takes a mobility, and a misspelt one fails the node") {
+    // No word: stationary, so the cooked lightmap has its shadow-mask channel.
+    Project stationary("content-lightmap-stationary");
+    BuildService first;
+    const Expected<BuildReport, Error> defaulted = stationary.build(first);
+    CY_REQUIRE(defaulted.has_value());
+    CY_REQUIRE(defaulted->succeeded());
+    const std::string with_mask = artefact_of(*defaulted, first.artefacts(), "lightmap:level");
+    rendering::lightmap_bake::BakedLightmap decoded;
+    CY_REQUIRE(rendering::lightmap_bake::decode_lightmap_asset(
+                   Span<const u8>(reinterpret_cast<const u8*>(with_mask.data()), with_mask.size()),
+                   decoded)
+                   .has_value());
+    CY_CHECK_EQ(decoded.shadow_lights.size(), 1U);
+
+    // `static`: its direct term is baked, and there is no mask.
+    Project fixed("content-lightmap-static");
+    fixed.write("levels/level.cylightmap", level_description(20.0F, "static"));
+    BuildService second;
+    const Expected<BuildReport, Error> baked = fixed.build(second);
+    CY_REQUIRE(baked.has_value());
+    CY_REQUIRE(baked->succeeded());
+    const std::string without_mask = artefact_of(*baked, second.artefacts(), "lightmap:level");
+    CY_REQUIRE(
+        rendering::lightmap_bake::decode_lightmap_asset(
+            Span<const u8>(reinterpret_cast<const u8*>(without_mask.data()), without_mask.size()),
+            decoded)
+            .has_value());
+    CY_CHECK(decoded.shadow_lights.empty());
+
+    // A misspelling is refused, not baked as the default.
+    Project misspelt("content-lightmap-misspelt");
+    misspelt.write("levels/level.cylightmap", level_description(20.0F, "stationery"));
+    BuildService third;
+    const Expected<BuildReport, Error> refused = misspelt.build(third);
+    CY_REQUIRE(refused.has_value());
+    CY_CHECK_FALSE(refused->succeeded());
 }

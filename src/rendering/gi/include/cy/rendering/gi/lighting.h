@@ -28,6 +28,21 @@ namespace cy::rendering::gi {
 /// A light, as illumination sees it. Deliberately not `render::Light`: this module needs position,
 /// direction, colour and a radius, and taking the renderer's full light record would make the
 /// illumination system depend on the shape of the lighting server's struct.
+/// What a light's placement and intensity may do at runtime, and so what of it a lightmap may bake.
+/// `rendering-global-illumination` — "Lightmap baking" ("a shadow mask allowing stationary lights
+/// to keep dynamic direct light with baked shadows").
+enum class LightMobility : u8 {
+    /// Fixed position, intensity and colour at runtime: the bake takes its direct term as well as
+    /// its bounce, and the frame shades it no further.
+    Static = 0,
+    /// Fixed position, runtime intensity and colour. The bake takes its bounce and its SHADOW MASK;
+    /// its direct term stays the frame's, shadowed by the mask. The default, because it is what a
+    /// light with no mobility was before mobility existed.
+    Stationary,
+    /// Anything may change. Nothing of it is baked; the dynamic GI owns it.
+    Movable,
+};
+
 struct GiLight {
     Vec3 position{0.0F, 0.0F, 0.0F};
     /// The direction the light travels, for a directional light.
@@ -48,6 +63,8 @@ struct GiLight {
     bool directional = false;
     /// The identity an invalidation is attributed to when this light changes.
     u64 id = 0;
+    /// Read by the lightmap bake only; every real-time consumer shades every light.
+    LightMobility mobility = LightMobility::Stationary;
 };
 
 /// Whether the segment between two points is blocked.
