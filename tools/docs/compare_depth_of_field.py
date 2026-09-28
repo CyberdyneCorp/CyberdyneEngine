@@ -55,9 +55,15 @@ def box(image: Image.Image, name: str) -> tuple[int, int, int, int]:
 
 
 def detail(image: Image.Image, name: str) -> float:
-    """The mean squared Laplacian of luminance inside the target's box."""
-    grey = image.convert("L").crop(box(image, name))
-    laplacian = grey.filter(ImageFilter.Kernel((3, 3), (0, 1, 0, 1, -4, 1, 0, 1, 0), 1, 128))
+    """The mean squared Laplacian of luminance inside the target's box.
+
+    Filtered over the whole frame and THEN cropped: PIL's kernel filter copies an image's edge
+    pixels through unfiltered, so filtering the crop would count each border pixel's raw luminance
+    as detail, and on a dark or bright target that border is most of the measure.
+    """
+    grey = image.convert("L")
+    kernel = ImageFilter.Kernel((3, 3), (0, 1, 0, 1, -4, 1, 0, 1, 0), 1, 128)
+    laplacian = grey.filter(kernel).crop(box(image, name))
     values = list(laplacian.getdata())
     return sum((value - 128) ** 2 for value in values) / max(len(values), 1)
 
