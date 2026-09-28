@@ -227,7 +227,7 @@ Status before_assemble(rendering::RenderGraph& graph, rendering::assembly::Assem
     if (Status set = run->pass->set_view(blur_view(*run->scene, run->previous_eye)); !set) {
         return set;
     }
-    view.motion_blur = run->pass->declare_target(graph);
+    view.motion_blur = run->pass->import_target(graph);
     sinks.motion_blur = run->pass->stage();
     return ok();
 }
@@ -799,7 +799,11 @@ CY_TEST_CASE("(d) a closed shutter is the frame without the stage, byte for byte
     CY_CHECK_GT(with_stage.report().passes_declared, without_stage.report().passes_declared);
     save("motion-blur-closed-shutter.png", with_stage.pixels());
 
-    // The control: an open shutter is a different frame.
+    // The control: an open shutter is a different frame. ALSO THE REGRESSION CASE for
+    // `frame_recorder.cpp`'s `bind_frame_sets`, which bound the post-process's descriptor sets
+    // before its pipeline: after the gather's compute dispatch they went to the compute bind point,
+    // the resolve sampled the temporal pass's set, and this frame came out identical to the one
+    // without the stage — so did the closed-shutter check above, vacuously.
     RunOptions open = closed;
     open.settings = shutter(180.0F);
     MotionRun blurred(fixture, open);

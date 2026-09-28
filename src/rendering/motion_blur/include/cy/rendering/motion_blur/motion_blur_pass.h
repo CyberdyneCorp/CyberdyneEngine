@@ -27,7 +27,7 @@
 //     // per frame, before `FrameAssembly::assemble`, with `post.motion_blur`:
 //     pass.set_settings(settings_for_camera(settings, camera.shutter_seconds, frame_seconds));
 //     pass.set_view({width, height, projection, relative_to_clip, previous_relative_to_clip});
-//     view.motion_blur = pass.declare_target(graph);
+//     view.motion_blur = pass.import_target(graph);
 //     sinks.motion_blur = pass.stage();
 
 #include <cy/backends/rhi/device.h>
@@ -85,13 +85,8 @@ public:
     [[nodiscard]] Status set_view(const MotionBlurView& view) noexcept;
     [[nodiscard]] const MotionBlurConstants& constants() const noexcept { return constants_; }
 
-    /// Declare this frame's target in its graph, before the frame is declared.
-    ///
-    /// A FRAME TRANSIENT, NOT AN IMPORTED IMAGE. Nothing reads the blur after the frame, and a
-    /// persistent target imported into the graph did not reach the post-process: sampled there
-    /// through the executor's view it read as the temporal history it was blurred from, while a
-    /// copy out of it held the blur (the module README records the measurement).
-    [[nodiscard]] ResourceId declare_target(RenderGraph& graph) noexcept;
+    /// Import the persistent target into this frame's graph, before the frame is declared.
+    [[nodiscard]] ResourceId import_target(RenderGraph& graph) noexcept;
 
     /// The frame's hook: the stage declared as this module's three passes.
     [[nodiscard]] FrameStageDeclaration stage() noexcept;
@@ -100,6 +95,7 @@ public:
     /// the ones this pass was prepared for — no velocity, no colour, another extent.
     [[nodiscard]] PassId declare(RenderGraph& graph, const ScreenSpaceStageInputs& inputs) noexcept;
 
+    [[nodiscard]] rhi::TextureViewHandle target_view() const noexcept { return target_view_; }
     [[nodiscard]] static constexpr rhi::Format target_format() noexcept {
         return rhi::Format::Rgba16Sfloat;
     }
@@ -153,9 +149,11 @@ private:
     rhi::PipelineLayoutHandle pipeline_layouts_[kStageCount];
     rhi::ComputePipelineHandle pipelines_[kStageCount];
 
+    rhi::TextureHandle target_;
+    rhi::TextureViewHandle target_view_;
     rhi::BufferHandle readbacks_[kCopyCount];
 
-    ResourceId target_ = kInvalidResource;
+    ResourceId imported_ = kInvalidResource;
     Step steps_[kStageCount]{};
     Readback copies_[kCopyCount]{};
 };

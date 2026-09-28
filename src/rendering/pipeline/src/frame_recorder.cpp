@@ -87,8 +87,17 @@ void set_full_viewport(rhi::CommandBuffer& commands, u32 width, u32 height) noex
 /// transparent stage with no transparent meshes is the ordinary case rather than a rare one. The
 /// first version of this bound only inside `draw_layer`, and the symptom was seventeen
 /// "uses set #1 but that set is not bound" on a frame whose transparent layer happened to be empty.
+///
+/// THE PASS'S PIPELINE IS BOUND FIRST, because a descriptor set binds to the bind point of the last
+/// pipeline the command buffer bound (`VulkanCommandBuffer::bind_descriptor_sets`). A frame stage
+/// that dispatches compute between two graphics passes — motion blur between the temporal resolve
+/// and the post-process — left that bind point at COMPUTE, so the post-process's sets went there,
+/// the resolve drew with the temporal pass's set 2 still bound to graphics, and the frame showed
+/// the history instead of the blur at every shutter angle (`render.motion_blur` (d)'s open-shutter
+/// control, and a Vulkan validation error and a crash in `samples/12-beauty --motion-blur`).
 void bind_frame_sets(rhi::CommandBuffer& commands, const FramePipelines& pipelines,
-                     const FrameBindings& bindings) noexcept {
+                     const FrameBindings& bindings, FramePipelineKind kind) noexcept {
+    commands.bind_graphics_pipeline(pipelines.pipeline(kind));
     commands.bind_descriptor_sets(pipelines.layout(), 0, bindings.sets());
 }
 
@@ -310,7 +319,8 @@ void record_depth_prepass(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(colors, color_count);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    FramePipelineKind::Depth);
     draw_layer(recorder, context, FramePipelineKind::Depth, render::SortLayer::Opaque,
                recorder.mutable_report().prepass_draws);
     record_extensions(recorder, context, FramePassKind::DepthPrepass, description.width,
@@ -330,7 +340,8 @@ void record_shadow(const PassContext& context, void* user) noexcept {
     info.depth_attachment = depth_attachment(*context.executor, recorder.shadow_depth(), true);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, recorder.shadow_extent(), recorder.shadow_extent());
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    FramePipelineKind::Shadow);
     u32 draws = 0;
     draw_layer(recorder, context, FramePipelineKind::Shadow, render::SortLayer::Opaque, draws);
     context.commands->end_rendering();
@@ -351,7 +362,8 @@ void record_opaque(const PassContext& context, void* user) noexcept {
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, false);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    FramePipelineKind::Opaque);
     draw_layer(recorder, context, FramePipelineKind::Opaque, render::SortLayer::Opaque,
                recorder.mutable_report().opaque_draws);
     record_extensions(recorder, context, FramePassKind::Opaque, description.width,
@@ -373,8 +385,13 @@ void record_transparent(const PassContext& context, void* user) noexcept {
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, false);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
-    if (!recorder.pipelines()->pipeline(FramePipelineKind::Transparent).is_null()) {
+    // With no transparent pipeline the opaque one stands in for the bind point: the extensions
+    // below still read the frame's sets 0 and 1 at the graphics bind point.
+    const bool transparent =
+        !recorder.pipelines()->pipeline(FramePipelineKind::Transparent).is_null();
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    transparent ? FramePipelineKind::Transparent : FramePipelineKind::Opaque);
+    if (transparent) {
         draw_layer(recorder, context, FramePipelineKind::Transparent,
                    render::SortLayer::Transparent, recorder.mutable_report().transparent_draws);
     }
@@ -408,11 +425,8 @@ void record_temporal(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and a
-    // compute stage before this one (depth of field, bloom) would take them otherwise.
-    context.commands->bind_graphics_pipeline(
-        recorder.pipelines()->pipeline(FramePipelineKind::Temporal));
-    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings,
+                    FramePipelineKind::Temporal);
     context.commands->draw(3, 1, 0, 0);
     record_extensions(recorder, context, FramePassKind::Temporal, description.width,
                       description.height, true);
@@ -444,11 +458,7 @@ void record_post_process(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and a
-    // compute stage before this one (depth of field, bloom) would take them otherwise.
-    context.commands->bind_graphics_pipeline(
-        recorder.pipelines()->pipeline(FramePipelineKind::Resolve));
-    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings, FramePipelineKind::Resolve);
     // One oversized triangle, its positions derived from `SV_VertexID`. No vertex buffer, which is
     // why this pipeline has no vertex bindings at all.
     context.commands->draw(3, 1, 0, 0);

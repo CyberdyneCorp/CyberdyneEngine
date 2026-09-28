@@ -1814,8 +1814,9 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and depth
-    // of field's compute dispatches run just before this pass.
+    // The pipeline BEFORE the sets: a set binds to the bind point of the last pipeline bound, and
+    // depth of field's or motion blur's compute dispatches run just before this pass
+    // (`frame_recorder.cpp`'s `bind_frame_sets` says what that cost).
     context.commands->bind_graphics_pipeline(
         state->pipelines->pipeline(FramePipelineKind::Resolve));
     context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
@@ -2706,7 +2707,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
             (void)device.end_frame();
             return set;
         }
-        view.motion_blur = device_->motion_blur.declare_target(graph);
+        view.motion_blur = device_->motion_blur.import_target(graph);
         sinks.motion_blur = device_->motion_blur.stage();
     }
     if (has_prepass()) {

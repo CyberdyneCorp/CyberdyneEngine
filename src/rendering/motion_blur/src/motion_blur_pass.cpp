@@ -239,6 +239,26 @@ Status MotionBlurPass::create_pipeline(Stage stage) noexcept {
 }
 
 Status MotionBlurPass::create_resources() noexcept {
+    rhi::TextureDescription target;
+    target.name = "motion blur";
+    target.format = target_format();
+    target.extent = rhi::Extent3D{desc_.width, desc_.height, 1};
+    target.usage =
+        rhi::TextureUsage::Sampled | rhi::TextureUsage::Storage | rhi::TextureUsage::TransferSource;
+    Expected<rhi::TextureHandle, Error> texture = device_->create_texture(target);
+    if (!texture.has_value()) {
+        return make_unexpected(texture.error());
+    }
+    target_ = *texture;
+    rhi::TextureViewDescription view;
+    view.name = "motion blur";
+    view.texture = target_;
+    Expected<rhi::TextureViewHandle, Error> made = device_->create_texture_view(view);
+    if (!made.has_value()) {
+        return make_unexpected(made.error());
+    }
+    target_view_ = *made;
+
     if (!desc_.readback) {
         return ok();
     }
@@ -261,6 +281,12 @@ Status MotionBlurPass::create_resources() noexcept {
 void MotionBlurPass::destroy() noexcept {
     if (device_ == nullptr) {
         return;
+    }
+    if (!target_view_.is_null()) {
+        device_->destroy_texture_view(target_view_);
+    }
+    if (!target_.is_null()) {
+        device_->destroy_texture(target_);
     }
     for (rhi::BufferHandle& buffer : readbacks_) {
         if (!buffer.is_null()) {
@@ -286,7 +312,9 @@ void MotionBlurPass::destroy() noexcept {
         set_layouts_[stage] = {};
         shaders_[stage] = {};
     }
-    target_ = kInvalidResource;
+    target_view_ = {};
+    target_ = {};
+    imported_ = kInvalidResource;
     device_ = nullptr;
     allocator_ = nullptr;
 }
@@ -305,15 +333,16 @@ Status MotionBlurPass::set_view(const MotionBlurView& view) noexcept {
     return ok();
 }
 
-ResourceId MotionBlurPass::declare_target(RenderGraph& graph) noexcept {
+ResourceId MotionBlurPass::import_target(RenderGraph& graph) noexcept {
     TextureRequest request;
     request.name = "motion blur";
     request.format = target_format();
     request.width = desc_.width;
     request.height = desc_.height;
-    // The gather writes every texel, and the usage is what the frame's passes declare of it.
-    target_ = graph.create_texture(request);
-    return target_;
+    request.extra_usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferSource;
+    // UNDEFINED EVERY FRAME, and it is the truth: the gather writes every texel.
+    imported_ = graph.import_texture(request, target_, rhi::ImageUse::Undefined);
+    return imported_;
 }
 
 FrameStageDeclaration MotionBlurPass::stage() noexcept {
@@ -329,7 +358,7 @@ PassId MotionBlurPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs&
     // Each refusal is a frame that would otherwise blur with motion nothing wrote, or post-process
     // a target nothing wrote.
     if (device_ == nullptr || view_.width == 0 || inputs.target == kInvalidResource ||
-        inputs.target != target_ || inputs.velocity == kInvalidResource ||
+        inputs.target != imported_ || inputs.velocity == kInvalidResource ||
         inputs.color == kInvalidResource || inputs.depth == kInvalidResource ||
         inputs.width != desc_.width || inputs.height != desc_.height) {
         return kInvalidPass;
