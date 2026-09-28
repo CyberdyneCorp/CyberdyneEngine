@@ -156,14 +156,16 @@ void trace_canvas(const detail::TraceContext& context, const LightmapBakeSetting
     }
 }
 
-/// Enough passes to fill the widest gutter and the unwrap's own padding: every rectangle is
-/// filled out to its edge.
+/// Passes until every texel that can be filled is: the dilation stops on the first pass that fills
+/// nothing, so the bound only has to be one no rectangle can need more than — its longest side. A
+/// fixed count (four gutters) left the strip of a floor under a wall standing on it black in its
+/// middle, and that black bled into the floor visible beside the wall.
 [[nodiscard]] u32 dilation_passes(const LightmapBakeSettings& settings,
                                   const BakedLightmap& lightmap) noexcept {
     if (settings.dilation_passes != 0) {
         return settings.dilation_passes;
     }
-    return std::max(16U, lightmap.gutter_texels * 4U);
+    return lightmap.page_size;
 }
 
 [[nodiscard]] Status seed(const gi::PathTracer& path, const TraceWorld& world,

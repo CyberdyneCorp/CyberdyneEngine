@@ -147,7 +147,7 @@ Status pack_atlas(Span<const AtlasObject> objects, const AtlasSettings& settings
             size_of(objects[index], settings, out.block_texels, out.gutter_texels);
         order[index] = static_cast<u32>(index);
     }
-    std::stable_sort(order.begin(), order.end(), [&](u32 a, u32 b) {
+    std::ranges::stable_sort(order, [&](u32 a, u32 b) {
         return out.placements[a].block_height > out.placements[b].block_height;
     });
 
@@ -194,7 +194,8 @@ Vec2 atlas_coordinate(u32 address, Vec2 uv2, u32 page_size, u32 gutter_texels) n
     if (!decode_address(address, placement)) {
         return Vec2{0.0F, 0.0F};
     }
-    const auto block = static_cast<f32>(page_size / kAddressBlocks);
+    // A page is a power of two of at least kAddressBlocks texels, so the division is exact.
+    const auto block = static_cast<f32>(page_size) / static_cast<f32>(kAddressBlocks);
     const auto gutter = static_cast<f32>(gutter_texels);
     const Vec2 origin{(static_cast<f32>(placement.block_x) * block) + gutter,
                       (static_cast<f32>(placement.block_y) * block) + gutter};

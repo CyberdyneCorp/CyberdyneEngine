@@ -15,7 +15,7 @@ namespace {
 /// Texel centres a conservative texel may be from its triangle, in texels: half the diagonal, so
 /// every texel the triangle touches at all is taken.
 constexpr f32 kConservativeReach = 0.7072F;
-/// Object-space quantum two seam endpoints are the same point at, in metres.
+/// World-space quantum two seam endpoints are the same point at, in metres.
 constexpr f32 kWeldQuantum = 1.0e-4F;
 /// The cosine above which two vertex normals are one smooth surface, so a seam between them is a
 /// parameterisation seam rather than a hard edge whose two sides are lit differently on purpose.
@@ -207,13 +207,15 @@ void rasterise_triangle(Canvas& canvas, const RasterTriangle& triangle, u32 owne
     }
 }
 
-/// An edge of one triangle, keyed by its welded object-space endpoints.
+/// An edge of one placed triangle, keyed by its welded WORLD-space endpoints, so an edge two
+/// objects share is found as readily as one two charts of one object share.
 struct EdgeRecord {
     i32 key[6] = {};
-    u32 from = 0;
-    u32 to = 0;
-    /// True when `from` is the lower endpoint of the key.
-    bool forward = true;
+    /// Index into the placed instances.
+    u32 placed = 0;
+    /// The endpoints' vertices, low end of the key first.
+    u32 low = 0;
+    u32 high = 0;
 };
 
 [[nodiscard]] i32 quantise(f32 value) noexcept {
@@ -228,76 +230,128 @@ struct EdgeRecord {
     return std::equal(a.key, a.key + 6, b.key);
 }
 
-[[nodiscard]] bool normals_agree(const BakeMesh& mesh, u32 a, u32 b) noexcept {
-    if (a >= mesh.normals.size() || b >= mesh.normals.size()) {
-        return true;
-    }
-    return dot(mesh.normals[a], mesh.normals[b]) >= kSmoothCosine;
+/// The record of edge `from -> to` of a placed mesh, its key the welded world endpoints in order.
+[[nodiscard]] EdgeRecord make_edge(const Placed& placed, u32 which, u32 from, u32 to) noexcept {
+    const Vec3 p = transform_point(placed.transform, placed.mesh->positions[from]);
+    const Vec3 q = transform_point(placed.transform, placed.mesh->positions[to]);
+    const i32 kp[3] = {quantise(p.x), quantise(p.y), quantise(p.z)};
+    const i32 kq[3] = {quantise(q.x), quantise(q.y), quantise(q.z)};
+    const bool forward = !key_less(kq, kp);
+    const i32* low = forward ? kp : kq;
+    const i32* high = forward ? kq : kp;
+    EdgeRecord edge;
+    edge.placed = which;
+    edge.low = forward ? from : to;
+    edge.high = forward ? to : from;
+    std::copy(low, low + 3, edge.key);
+    std::copy(high, high + 3, edge.key + 3);
+    return edge;
 }
 
-/// Every seam of one instance, as atlas coordinates on both sides.
-[[nodiscard]] Status find_seams(const Placed& placed, u32 page_size, u32 gutter,
-                                Array<SeamEdge>& seams) noexcept {
+[[nodiscard]] Status collect_edges(const Placed& placed, u32 which,
+                                   Array<EdgeRecord>& edges) noexcept {
     const BakeMesh& mesh = *placed.mesh;
     if (mesh.uv2.size() < mesh.positions.size()) {
         return ok();
     }
-    Array<EdgeRecord> edges;
-    if (Status reserved = edges.reserve(mesh.indices.size()); !reserved) {
-        return reserved;
-    }
     for (usize at = 0; at + 2U < mesh.indices.size(); at += 3U) {
         for (u32 corner = 0; corner < 3U; ++corner) {
-            EdgeRecord edge;
-            edge.from = mesh.indices[at + corner];
-            edge.to = mesh.indices[at + ((corner + 1U) % 3U)];
-            if (edge.from >= mesh.positions.size() || edge.to >= mesh.positions.size()) {
+            const u32 from = mesh.indices[at + corner];
+            const u32 to = mesh.indices[at + ((corner + 1U) % 3U)];
+            if (from >= mesh.positions.size() || to >= mesh.positions.size()) {
                 continue;
             }
-            const Vec3 p = mesh.positions[edge.from];
-            const Vec3 q = mesh.positions[edge.to];
-            const i32 kp[3] = {quantise(p.x), quantise(p.y), quantise(p.z)};
-            const i32 kq[3] = {quantise(q.x), quantise(q.y), quantise(q.z)};
-            edge.forward = !key_less(kq, kp);
-            const i32* low = edge.forward ? kp : kq;
-            const i32* high = edge.forward ? kq : kp;
-            std::copy(low, low + 3, edge.key);
-            std::copy(high, high + 3, edge.key + 3);
-            if (Status pushed = edges.push_back(edge); !pushed) {
+            if (Status pushed = edges.push_back(make_edge(placed, which, from, to)); !pushed) {
                 return pushed;
             }
         }
     }
-    std::stable_sort(edges.begin(), edges.end(), [](const EdgeRecord& a, const EdgeRecord& b) {
+    return ok();
+}
+
+[[nodiscard]] Vec3 vertex_normal(const Placed& placed, u32 vertex) noexcept {
+    return world_normal(placed, vertex, Vec3{0.0F, 0.0F, 0.0F});
+}
+
+/// Whether two matched edges are a seam the bake must reconcile: the same surface on both sides
+/// (smooth normals at both ends), stored in two places in the atlas — two charts of one object,
+/// or two objects that meet.
+[[nodiscard]] bool is_seam(Span<const Placed> placed, const EdgeRecord& a,
+                           const EdgeRecord& b) noexcept {
+    const Placed& pa = placed[a.placed];
+    const Placed& pb = placed[b.placed];
+    if (a.placed == b.placed && a.low == b.low && a.high == b.high) {
+        return false;  // one edge of two triangles of one chart: no seam at all
+    }
+    if (a.placed == b.placed && pa.mesh->uv2[a.low] == pb.mesh->uv2[b.low] &&
+        pa.mesh->uv2[a.high] == pb.mesh->uv2[b.high]) {
+        return false;  // split for another attribute, one place in the atlas
+    }
+    const auto agree = [&](u32 va, u32 vb) {
+        const Vec3 na = vertex_normal(pa, va);
+        const Vec3 nb = vertex_normal(pb, vb);
+        // A mesh without normals leaves the decision to the geometry: treat it as smooth.
+        return length_squared(na) == 0.0F || length_squared(nb) == 0.0F ||
+               dot(na, nb) >= kSmoothCosine;
+    };
+    return agree(a.low, b.low) && agree(a.high, b.high);
+}
+
+[[nodiscard]] SeamEdge seam_between(Span<const Placed> placed, const EdgeRecord& a,
+                                    const EdgeRecord& b, u32 page_size, u32 gutter) noexcept {
+    const Placed& pa = placed[a.placed];
+    const Placed& pb = placed[b.placed];
+    SeamEdge seam;
+    seam.a0 = atlas_coordinate(pa.address, pa.mesh->uv2[a.low], page_size, gutter);
+    seam.a1 = atlas_coordinate(pa.address, pa.mesh->uv2[a.high], page_size, gutter);
+    seam.b0 = atlas_coordinate(pb.address, pb.mesh->uv2[b.low], page_size, gutter);
+    seam.b1 = atlas_coordinate(pb.address, pb.mesh->uv2[b.high], page_size, gutter);
+    return seam;
+}
+
+/// The seams among records that share one world edge.
+[[nodiscard]] Status add_run_seams(Span<const Placed> placed, Span<const EdgeRecord> run,
+                                   u32 page_size, u32 gutter, Array<SeamEdge>& seams) noexcept {
+    for (usize first = 0; first < run.size(); ++first) {
+        for (usize second = first + 1U; second < run.size(); ++second) {
+            if (!is_seam(placed, run[first], run[second])) {
+                continue;
+            }
+            if (Status pushed = seams.push_back(
+                    seam_between(placed, run[first], run[second], page_size, gutter));
+                !pushed) {
+                return pushed;
+            }
+        }
+    }
+    return ok();
+}
+
+/// Every seam of the level, as atlas coordinates on both sides.
+[[nodiscard]] Status find_seams(Span<const Placed> placed, u32 page_size, u32 gutter,
+                                Array<SeamEdge>& seams) noexcept {
+    Array<EdgeRecord> edges;
+    for (u32 which = 0; which < placed.size(); ++which) {
+        if (Status collected = collect_edges(placed[which], which, edges); !collected) {
+            return collected;
+        }
+    }
+    std::ranges::stable_sort(edges, [](const EdgeRecord& a, const EdgeRecord& b) {
         return std::lexicographical_compare(a.key, a.key + 6, b.key, b.key + 6);
     });
-    for (usize at = 0; at + 1U < edges.size(); ++at) {
-        const EdgeRecord& first = edges[at];
-        const EdgeRecord& second = edges[at + 1U];
-        if (!same_key(first, second)) {
-            continue;
+    // Every pair within a run of equal keys, not only neighbours: where two boxes meet, one world
+    // edge is four records — each box's front face and each box's touching side — and the two
+    // front faces need not sort next to each other.
+    for (usize begin = 0; begin < edges.size();) {
+        usize end = begin + 1U;
+        while (end < edges.size() && same_key(edges[begin], edges[end])) {
+            ++end;
         }
-        // Both edges' endpoints in key order: low end, then high end.
-        const u32 a_low = first.forward ? first.from : first.to;
-        const u32 a_high = first.forward ? first.to : first.from;
-        const u32 b_low = second.forward ? second.from : second.to;
-        const u32 b_high = second.forward ? second.to : second.from;
-        const bool shared = a_low == b_low && a_high == b_high;
-        const bool split_uv =
-            mesh.uv2[a_low] != mesh.uv2[b_low] || mesh.uv2[a_high] != mesh.uv2[b_high];
-        if (shared || !split_uv || !normals_agree(mesh, a_low, b_low) ||
-            !normals_agree(mesh, a_high, b_high)) {
-            continue;
+        const Span<const EdgeRecord> run(edges.data() + begin, end - begin);
+        if (Status added = add_run_seams(placed, run, page_size, gutter, seams); !added) {
+            return added;
         }
-        SeamEdge seam;
-        seam.a0 = atlas_coordinate(placed.address, mesh.uv2[a_low], page_size, gutter);
-        seam.a1 = atlas_coordinate(placed.address, mesh.uv2[a_high], page_size, gutter);
-        seam.b0 = atlas_coordinate(placed.address, mesh.uv2[b_low], page_size, gutter);
-        seam.b1 = atlas_coordinate(placed.address, mesh.uv2[b_high], page_size, gutter);
-        if (Status pushed = seams.push_back(seam); !pushed) {
-            return pushed;
-        }
-        at += 1U;
+        begin = end;
     }
     return ok();
 }
@@ -380,6 +434,7 @@ Status rasterise(const LightmapScene& scene, const BakedLightmap& lightmap, Canv
         canvas.moments[index] = TexelMoments{};
     }
     seams.clear();
+    Array<Placed> placed;
     u32 chart_base = 0;
     for (u32 index = 0; index < scene.instances.size(); ++index) {
         const u32 address = lightmap.addresses[index];
@@ -387,25 +442,24 @@ Status rasterise(const LightmapScene& scene, const BakedLightmap& lightmap, Canv
             continue;
         }
         const BakeInstance& instance = scene.instances[index];
-        Placed placed;
-        placed.mesh = &scene.meshes[instance.mesh];
-        placed.transform = instance.transform;
+        Placed one;
+        one.mesh = &scene.meshes[instance.mesh];
+        one.transform = instance.transform;
         Expected<Mat4, Error> inverted = inverse(instance.transform);
-        placed.normal_transform =
+        one.normal_transform =
             inverted.has_value() ? transpose(inverted.value()) : instance.transform;
-        placed.instance = index;
-        placed.address = address;
-        if (Status drawn = rasterise_instance(placed, lightmap.page_size, lightmap.gutter_texels,
+        one.instance = index;
+        one.address = address;
+        if (Status drawn = rasterise_instance(one, lightmap.page_size, lightmap.gutter_texels,
                                               chart_base, canvas);
             !drawn) {
             return drawn;
         }
-        if (Status found = find_seams(placed, lightmap.page_size, lightmap.gutter_texels, seams);
-            !found) {
-            return found;
+        if (Status pushed = placed.push_back(one); !pushed) {
+            return pushed;
         }
     }
-    return ok();
+    return find_seams(placed.span(), lightmap.page_size, lightmap.gutter_texels, seams);
 }
 
 }  // namespace cy::rendering::lightmap_bake::detail

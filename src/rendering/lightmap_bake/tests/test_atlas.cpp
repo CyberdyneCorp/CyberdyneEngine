@@ -38,7 +38,7 @@ CY_TEST_CASE("every object of a level lands in shared pages, and no two rectangl
     std::vector<AtlasObject> objects;
     for (u32 index = 0; index < 40; ++index) {
         AtlasObject object;
-        object.surface_area = 2.0F + static_cast<f32>(index % 7U) * 3.0F;
+        object.surface_area = 2.0F + (static_cast<f32>(index % 7U) * 3.0F);
         object.aspect = index % 3U == 0U ? 2.0F : 1.0F;
         objects.push_back(object);
     }

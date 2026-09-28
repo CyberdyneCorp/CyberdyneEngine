@@ -172,17 +172,34 @@ void save(const char* name, const std::vector<u32>& texels) noexcept {
     }
 }
 
-/// The first plane of a lightmap as a picture: each page side by side is too wide, so the stacked
-/// texture as it is, exposed to its own mean and tonemapped. For the README, not for an assertion.
+/// The rows of the stacked atlas some rectangle reaches: the picture is cropped to them, because a
+/// level that uses the top fifth of its page would otherwise be a black square.
+[[nodiscard]] u32 used_rows(const bake::BakedLightmap& lightmap) noexcept {
+    const u32 block = lightmap.page_size / bake::kAddressBlocks;
+    u32 rows = 1;
+    for (const u32 address : lightmap.addresses) {
+        bake::AtlasPlacement placement;
+        if (bake::decode_address(address, placement)) {
+            rows = std::max(rows, (placement.page * lightmap.page_size) +
+                                      ((placement.block_y + placement.block_height) * block));
+        }
+    }
+    return std::min(rows, lightmap.texels.height);
+}
+
+/// The first plane of a lightmap as a picture: the stacked texture cropped to its used rows,
+/// exposed to its own mean and tonemapped. For the README, not for an assertion.
 void save_atlas(const char* name, const bake::BakedLightmap& lightmap) noexcept {
     const bake::LightmapTexels& texels = lightmap.texels;
+    const u32 rows = used_rows(lightmap);
+    const usize count = usize{texels.width} * rows;
     f64 total = 0.0;
-    for (usize index = 0; index < usize{texels.width} * texels.height; ++index) {
+    for (usize index = 0; index < count; ++index) {
         total += static_cast<f64>(texels.texels[index].y);
     }
-    const f64 mean = total / static_cast<f64>(usize{texels.width} * texels.height);
+    const f64 mean = total / static_cast<f64>(count);
     const f64 scale = mean > 0.0 ? 0.5 / mean : 1.0;
-    std::vector<u32> pixels(usize{texels.width} * texels.height);
+    std::vector<u32> pixels(count);
     for (usize index = 0; index < pixels.size(); ++index) {
         const Vec4 texel = texels.texels[index];
         const auto encode = [scale](f32 texel_value) {
@@ -195,7 +212,7 @@ void save_atlas(const char* name, const bake::BakedLightmap& lightmap) noexcept 
     }
     render_test::Image image(allocator());
     if (!render_test::adopt(image, Span<const u32>(pixels.data(), pixels.size()), texels.width,
-                            texels.height)
+                            rows)
              .has_value()) {
         return;
     }
@@ -206,7 +223,7 @@ void save_atlas(const char* name, const bake::BakedLightmap& lightmap) noexcept 
     char path[1024];
     (void)std::snprintf(path, sizeof(path), "%s/%s", directory, name);
     if (render_test::write_png(path, image).has_value()) {
-        std::fprintf(stderr, "wrote %s (%ux%u)\n", path, texels.width, texels.height);
+        std::fprintf(stderr, "wrote %s (%ux%u)\n", path, texels.width, rows);
     }
 }
 
@@ -262,7 +279,7 @@ constexpr f32 kCellPadding = 0.1F;
 /// `CubeMesh` places its vertices at.
 [[nodiscard]] Vec2 cube_uv2(u32 face, f32 u, f32 v) noexcept {
     const auto column = static_cast<f32>(face % 3U);
-    const auto row = static_cast<f32>(face / 3U);
+    const auto row = static_cast<f32>(face >= 3U ? 1U : 0U);
     const f32 inner = 1.0F - (2.0F * kCellPadding);
     return Vec2{(column + kCellPadding + (((u * 0.5F) + 0.5F) * inner)) / 3.0F,
                 (row + kCellPadding + (((v * 0.5F) + 0.5F) * inner)) / 2.0F};
@@ -353,7 +370,12 @@ struct CornerBake {
         // the scale gives the top the density the others get.
         // The small cubes get four times the density, so each face's cell is sixteen texels wide
         // rather than four and its padding more than a texel.
-        instance.resolution_scale = box == kFloor ? 1.7F : (box >= kCubeNear ? 4.0F : 1.0F);
+        instance.resolution_scale = 1.0F;
+        if (box == kFloor) {
+            instance.resolution_scale = 1.7F;
+        } else if (box >= kCubeNear) {
+            instance.resolution_scale = 4.0F;
+        }
         instance.id = box;
         instances.push_back(instance);
     }
@@ -369,7 +391,9 @@ struct CornerBake {
 
     bake::LightmapBakeSettings settings;
     settings.mode = mode;
-    settings.atlas.page_size = 512;
+    // One 256 page holds the corner; a 512 one was four fifths empty and every pass over the
+    // atlas paid for the empty part.
+    settings.atlas.page_size = 256;
     settings.atlas.texel_density = 2.5F;
     settings.trace.bounces = 1;
     settings.trace.samples = 24;

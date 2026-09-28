@@ -97,7 +97,7 @@ struct LightmapBakeSettings {
     bool denoise = true;
     /// The denoiser's a-trous passes. Each doubles the reach; two reach three texels.
     u32 denoise_passes = 2;
-    /// Passes of border dilation. Zero derives it from the gutter and the widest padding.
+    /// Passes of border dilation. Zero: until nothing more can be filled.
     u32 dilation_passes = 0;
     bool reconcile_seams = true;
     /// Conjugate-gradient iterations of the seam solve. A seam converges in about as many as its

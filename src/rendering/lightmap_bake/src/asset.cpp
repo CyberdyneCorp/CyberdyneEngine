@@ -30,7 +30,7 @@ Status encode_lightmap_asset(const BakedLightmap& lightmap, Array<u8>& out) noex
     const LightmapTexels& texels = lightmap.texels;
     const usize values = texels.texels.size() * 4U;
     if (Status reserved =
-            out.reserve((kHeaderWords + lightmap.addresses.size()) * 4U + (values * 2U));
+            out.reserve(((kHeaderWords + lightmap.addresses.size()) * 4U) + (values * 2U));
         !reserved) {
         return reserved;
     }
@@ -85,7 +85,7 @@ Status decode_lightmap_asset(Span<const u8> payload, BakedLightmap& out) noexcep
     const u64 width = header[3];
     const u64 height = u64{header[3]} * header[4];
     const u64 texel_count = width * height * header[6];
-    const u64 expected = (u64{kHeaderWords} + header[7]) * 4U + (texel_count * 8U);
+    const u64 expected = ((u64{kHeaderWords} + header[7]) * 4U) + (texel_count * 8U);
     if (width == 0 || height == 0 || expected != payload.size()) {
         return fail(ErrorCode::InvalidArgument,
                     "a lightmap payload whose length disagrees with its header");

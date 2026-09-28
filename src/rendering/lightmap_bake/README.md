@@ -32,11 +32,16 @@ No device: every case in `tests/` runs headless, as `cy::rendering-gi`'s do. The
    path's representation. Emission is light; a masked material passes rays through its holes, a
    transparent one stops them with its opacity. A texel whose hemisphere mostly meets back faces is
    inside a neighbour and is left for the dilation.
-4. **Denoise** each moment channel with `denoise::Denoiser`, the chart id as the hard boundary.
-5. **Dilate** each rectangle from its own texels out to its edge: padding and gutter hold light, so a
-   bilinear tap or a mip level at a border never reads black.
-6. **Reconcile seams**: where two charts share a smooth edge, both sides' bilinear footprints are
-   moved to their common value.
+4. **Denoise** each moment channel with `denoise::Denoiser`, the chart id as the hard boundary, over
+   a two-pass cascade (a reach of three texels): the default reach flattened a floor lit from one
+   side toward its mean.
+5. **Dilate** each rectangle from its own texels out to its edge, ONE CHART AT A TIME: a padding
+   texel takes the chart most of its known neighbours belong to, and a buried texel its own chart,
+   so a texel between a floor and a wall never carries a mix of the two lights and normals. It runs
+   until nothing more can be filled.
+6. **Reconcile seams**: where two charts — of one object, or of two objects that meet — share a
+   smooth edge in the world, the smallest change to the texels that makes both sides' bilinear
+   readings agree, solved by conjugate gradients.
 7. **Seed** the surface cache, the radiance cache and the reflection probes from the same tracer.
 
 ## Units, and the one convention that differs
@@ -63,9 +68,11 @@ map's response in indirect light.
 
 | Case | Measured |
 |---|---|
-| texels against the path tracer's ground truth | MEASURED_GROUND_TRUTH |
-| normal maps respond (directional, SH L1), irradiance does not | MEASURED_NORMAL_MAP |
-| seams dilated and reconciled | MEASURED_SEAM |
+| texels against the path tracer's ground truth | relative error 0.046 over 24 points (bound 0.10), 32 samples per texel denoised against 512 at the point |
+| normal maps respond (directional, SH L1), irradiance does not | a 40 degree tilt toward a bright wall: truth +32%, directional +26%, SH L1 +26%, irradiance 0% |
+| seams dilated and reconciled, within one object | worst disagreement 52% of the mean unreconciled, 0.03% reconciled (bound 1%) |
+| the seam where two objects meet | 63% unreconciled, 0.04% reconciled |
+| a wide buried strip filled from its own chart | no dark texel, and the directional factor at the floor's own normal exactly one |
 | emissive light, alpha-tested and transparent occlusion, buried texels | see the suite |
 | the caches' seeds from the same run | every probe valid on the first frame |
 | the cooked payload round-trips and is deterministic | byte for byte |
@@ -73,9 +80,21 @@ map's response in indirect light.
 `unit.render_lightmap_atlas` holds the packer: shared pages, no overlaps, per-object scaling, the
 block grid and the gutter, and the address word.
 
+## What it costs
+
+The corner `render.lightmaps` bakes — six boxes, 10 649 texels in one 256 page, 24 samples and one
+bounce — takes 0.9 s on one core of the development machine, and 512 KiB on the device as
+irradiance (1 MiB directional, 1.5 MiB SH L1). Most of the time is the path tracer's material
+lookup: a hit takes its material from the nearest surface card within a metre, and the bake builds
+cards at `surfel_spacing` (at most 1.2 m, so every hit finds one). Halving the spacing from 1 m to
+0.5 m tripled a room's bake.
+
 ## What is not here
 
 The shadow mask and a `Stationary` light mobility; incremental rebakes of one moved object's region
 (the build graph's content key re-bakes a changed level whole); a device bake; mip levels in the
-uploaded atlas (the gutter is laid out for them). Each is exempt by name in
+uploaded atlas (the gutter is laid out for them); and a check that an unwrap's own chart padding
+survives the rectangle it is given — the importer pads charts in texels at its own texel density,
+and a rectangle sized at a lower one shrinks that padding, which is what the device suite's small
+cubes did before their resolution scale was raised. Each is exempt by name in
 `tools/roadmap/requirements-coverage.toml`, naming #36's next slice.

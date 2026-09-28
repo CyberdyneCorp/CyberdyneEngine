@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace cy::rendering::lightmap_bake::detail {
 namespace {
@@ -184,9 +185,9 @@ public:
                 }
             }
         }
-        std::sort(texels_.begin(), texels_.end());
+        std::ranges::sort(texels_);
         const auto kept =
-            static_cast<usize>(std::unique(texels_.begin(), texels_.end()) - texels_.begin());
+            static_cast<usize>(std::ranges::unique(texels_).begin() - texels_.begin());
         while (texels_.size() > kept) {
             texels_.pop_back();
         }
@@ -229,8 +230,7 @@ public:
 private:
     [[nodiscard]] Status add_texel(usize texel) noexcept { return texels_.push_back(texel); }
     [[nodiscard]] usize column_of(usize texel) const noexcept {
-        return static_cast<usize>(std::lower_bound(texels_.begin(), texels_.end(), texel) -
-                                  texels_.begin());
+        return static_cast<usize>(std::ranges::lower_bound(texels_, texel) - texels_.begin());
     }
 
     Span<const SeamSample> samples_;
@@ -321,45 +321,71 @@ struct Fill {
     u32 chart = kNoOwner;
 };
 
+/// The texel `(dx, dy)` from `(x, y)`, or false off the canvas.
+[[nodiscard]] bool neighbour_of(const Canvas& canvas, u32 x, u32 y, i32 dx, i32 dy,
+                                usize& out) noexcept {
+    const i32 nx = static_cast<i32>(x) + dx;
+    const i32 ny = static_cast<i32>(y) + dy;
+    if (nx < 0 || ny < 0 || std::cmp_greater_equal(nx, canvas.width) ||
+        std::cmp_greater_equal(ny, canvas.height)) {
+        return false;
+    }
+    out = canvas.index(static_cast<u32>(nx), static_cast<u32>(ny));
+    return true;
+}
+
+/// Counts of the charts among at most eight neighbours.
+class ChartTally {
+public:
+    void add(u32 chart) noexcept {
+        u32 slot = 0;
+        while (slot < distinct_ && charts_[slot] != chart) {
+            ++slot;
+        }
+        if (slot == distinct_) {
+            charts_[distinct_++] = chart;
+        }
+        counts_[slot] += 1U;
+    }
+
+    /// The most frequent chart, the lowest id on a tie; `kNoOwner` when none was added.
+    [[nodiscard]] u32 majority() const noexcept {
+        u32 best = kNoOwner;
+        u32 best_count = 0;
+        for (u32 slot = 0; slot < distinct_; ++slot) {
+            const bool more = counts_[slot] > best_count;
+            const bool tie_lower = counts_[slot] == best_count && charts_[slot] < best;
+            if (more || tie_lower) {
+                best = charts_[slot];
+                best_count = counts_[slot];
+            }
+        }
+        return best;
+    }
+
+private:
+    u32 charts_[8] = {};
+    u32 counts_[8] = {};
+    u32 distinct_ = 0;
+};
+
 /// The chart most of a texel's known neighbours in its own rectangle belong to, the lowest id on a
 /// tie so the fill is reproducible; `kNoOwner` when it has none.
 [[nodiscard]] u32 majority_chart(const Canvas& canvas, const Array<u8>& known, u32 x, u32 y,
                                  u32 owner) noexcept {
-    u32 charts[8] = {};
-    u32 counts[8] = {};
-    u32 distinct = 0;
+    ChartTally tally;
     for (i32 dy = -1; dy <= 1; ++dy) {
         for (i32 dx = -1; dx <= 1; ++dx) {
-            const i32 nx = static_cast<i32>(x) + dx;
-            const i32 ny = static_cast<i32>(y) + dy;
-            if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= static_cast<i32>(canvas.width) ||
-                ny >= static_cast<i32>(canvas.height)) {
+            usize neighbour = 0;
+            if ((dx == 0 && dy == 0) || !neighbour_of(canvas, x, y, dx, dy, neighbour)) {
                 continue;
             }
-            const usize neighbour = canvas.index(static_cast<u32>(nx), static_cast<u32>(ny));
-            const TexelSurface& texel = canvas.surfaces[neighbour];
-            if (known[neighbour] == 0U || texel.owner != owner) {
-                continue;
+            if (known[neighbour] != 0U && canvas.surfaces[neighbour].owner == owner) {
+                tally.add(canvas.surfaces[neighbour].chart);
             }
-            u32 slot = 0;
-            while (slot < distinct && charts[slot] != texel.chart) {
-                ++slot;
-            }
-            if (slot == distinct) {
-                charts[distinct++] = texel.chart;
-            }
-            counts[slot] += 1U;
         }
     }
-    u32 best = kNoOwner;
-    u32 best_count = 0;
-    for (u32 slot = 0; slot < distinct; ++slot) {
-        if (counts[slot] > best_count || (counts[slot] == best_count && charts[slot] < best)) {
-            best = charts[slot];
-            best_count = counts[slot];
-        }
-    }
-    return best;
+    return tally.majority();
 }
 
 /// The fill for one unknown texel: the mean of its known neighbours of ONE CHART in its own
@@ -387,13 +413,10 @@ struct Fill {
     f32 weight = 0.0F;
     for (i32 dy = -1; dy <= 1; ++dy) {
         for (i32 dx = -1; dx <= 1; ++dx) {
-            const i32 nx = static_cast<i32>(x) + dx;
-            const i32 ny = static_cast<i32>(y) + dy;
-            if (nx < 0 || ny < 0 || nx >= static_cast<i32>(canvas.width) ||
-                ny >= static_cast<i32>(canvas.height)) {
+            usize neighbour = 0;
+            if (!neighbour_of(canvas, x, y, dx, dy, neighbour)) {
                 continue;
             }
-            const usize neighbour = canvas.index(static_cast<u32>(nx), static_cast<u32>(ny));
             const TexelSurface& texel = canvas.surfaces[neighbour];
             if (known[neighbour] == 0U || texel.owner != owner || texel.chart != chart) {
                 continue;

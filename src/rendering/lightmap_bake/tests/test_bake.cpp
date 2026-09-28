@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 #include <vector>
 
 namespace {
@@ -211,7 +212,7 @@ struct Baked {
 }
 
 [[nodiscard]] Vec3 tilt(Vec3 normal, Vec3 toward, f32 degrees) {
-    const f32 radians = degrees * 3.14159265F / 180.0F;
+    const f32 radians = degrees * std::numbers::pi_v<f32> / 180.0F;
     return cy::normalize((normal * std::cos(radians)) + (toward * std::sin(radians)));
 }
 
@@ -324,6 +325,12 @@ CY_TEST_CASE("directional and SH L1 lightmaps keep a normal map's response; irra
 
     // SH L1: per channel, so tilting toward the red wall turns the colour red as the truth does.
     const std::vector<Vec3> sh = read(LightmapMode::ShL1);
+    const auto gain = [&](const std::vector<Vec3>& values) {
+        return luminance(values[1]) / luminance(values[0]);
+    };
+    CY_TEST_MESSAGE("tilted 40 degrees toward the bright wall: truth x"
+                    << gain(truth) << ", directional x" << gain(directional) << ", SH L1 x"
+                    << gain(sh) << ", irradiance x" << gain(irradiance));
     CY_CHECK_GT(luminance(sh[1]), luminance(sh[0]) * 1.05F);
     CY_CHECK_GT(sh[1].x / sh[1].z, (sh[0].x / sh[0].z) * 1.05F);
     CY_CHECK_LT(std::fabs(luminance(sh[1]) - luminance(truth[1])),
@@ -418,6 +425,61 @@ CY_TEST_CASE("texels at a seam are dilated and reconciled so the seam does not s
     CY_CHECK_GT(empty, 0U);  // there is padding to fill...
     CY_CHECK_EQ(dark, 0U);   // ...and all of it is filled
     CY_CHECK_GT(reconciled.report.texels_dilated, 0U);
+}
+
+CY_TEST_CASE("where two objects meet, the edge they share is a seam and is reconciled") {
+    // Two 2 m floor tiles side by side, each its own object with its own rectangle: the edge at
+    // x = 0 is stored twice in the atlas, in two rectangles that are not neighbours. The first
+    // version looked for seams inside one object only, and the back wall of `render.lightmaps`,
+    // two boxes side by side, showed the line between them.
+    const QuadMesh quad;
+    const std::vector<BakeMesh> meshes = {quad.mesh()};
+    const std::vector<BakeMaterial> materials = {BakeMaterial{Vec3{0.7F, 0.7F, 0.7F}}};
+    std::vector<BakeInstance> instances(3);
+    instances[0].transform = place({1, 0, 0}, {0, 1, 0}, 2.0F, 2.0F, Vec3{-1.0F, 0.0F, 0.0F});
+    instances[1].transform = place({1, 0, 0}, {0, 1, 0}, 2.0F, 2.0F, Vec3{1.0F, 0.0F, 0.0F});
+    // A wall across the far end, for bounce; it meets the tiles at a hard edge, which is no seam.
+    instances[2].transform = place({1, 0, 0}, {0, 0, 1}, 4.0F, 2.0F, Vec3{0.0F, 1.0F, -1.0F});
+    std::vector<gi::GiLight> lights(1);
+    lights[0].position = Vec3{0.5F, 1.5F, 0.3F};
+    lights[0].intensity = 20.0F;
+    lights[0].range = 20.0F;
+    LightmapScene scene;
+    scene.meshes = {meshes.data(), meshes.size()};
+    scene.materials = {materials.data(), materials.size()};
+    scene.instances = {instances.data(), instances.size()};
+    scene.lights = {lights.data(), lights.size()};
+
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.trace.samples = 8;
+    settings.denoise = false;
+    settings.atlas.texel_density = 6.0F;
+    // Along x = 0: the left tile's u = 1 and the right tile's u = 0, at the same v.
+    const auto disagreement = [&](const BakedLightmap& lightmap) {
+        f32 worst = 0.0F;
+        f32 mean = 0.0F;
+        for (u32 step = 0; step <= 16; ++step) {
+            const f32 v = static_cast<f32>(step) / 16.0F;
+            const Vec3 left =
+                sample_lightmap(lightmap, lightmap.addresses[0], Vec2{1.0F, v}, Vec3{0, 1, 0});
+            const Vec3 right =
+                sample_lightmap(lightmap, lightmap.addresses[1], Vec2{0.0F, v}, Vec3{0, 1, 0});
+            worst = std::max(worst, std::fabs(luminance(left) - luminance(right)));
+            mean += luminance(left);
+        }
+        return worst / (mean / 17.0F);
+    };
+    const Baked reconciled = bake(scene, settings);
+    settings.reconcile_seams = false;
+    const Baked raw = bake(scene, settings);
+    const f32 before = disagreement(raw.lightmap);
+    const f32 after = disagreement(reconciled.lightmap);
+    CY_TEST_MESSAGE("seam between objects: " << reconciled.report.seam_edges << " edge(s), "
+                                             << before << " unreconciled, " << after
+                                             << " reconciled");
+    CY_CHECK_EQ(reconciled.report.seam_edges, 1U);
+    CY_CHECK_GT(before, 0.02F);
+    CY_CHECK_LT(after, 0.01F);
 }
 
 // --- Emission, alpha tests and transparency ----------------------------------------------------
@@ -520,7 +582,7 @@ struct ShadowStage {
 
 CY_TEST_CASE("an alpha-tested surface shadows through its coverage, a transparent one partly") {
     ShadowStage stage;
-    const f32 sun = 10.0F / 3.14159265F;  // E / pi under a 10 lux sun
+    const f32 sun = 10.0F / std::numbers::pi_v<f32>;  // E / pi under a 10 lux sun
 
     // Solid panel: the floor under it is dark, the floor beside it is lit.
     const Baked solid = bake(stage.scene(), ShadowStage::settings());
@@ -573,6 +635,112 @@ CY_TEST_CASE(
     const Vec3 value =
         sample_lightmap(baked.lightmap, baked.lightmap.addresses[kFloor], under, Vec3{0, 1, 0});
     CY_CHECK_GT(luminance(value), 0.0F);
+}
+
+namespace {
+
+/// Two charts in one unwrap: a 4 m floor (normal +y) in the left of the UV2 square and a wall
+/// (normal +x) in the right, so the floor's right edge in the atlas borders the wall's padding.
+struct FloorAndWallMesh {
+    std::vector<Vec3> positions = {{-2.0F, 0.0F, -2.0F}, {-2.0F, 0.0F, 2.0F}, {2.0F, 0.0F, 2.0F},
+                                   {2.0F, 0.0F, -2.0F},  {3.0F, 0.0F, -2.0F}, {3.0F, 4.0F, -2.0F},
+                                   {3.0F, 4.0F, 2.0F},   {3.0F, 0.0F, 2.0F}};
+    std::vector<Vec3> normals = {{0, 1, 0}, {0, 1, 0}, {0, 1, 0}, {0, 1, 0},
+                                 {1, 0, 0}, {1, 0, 0}, {1, 0, 0}, {1, 0, 0}};
+    std::vector<Vec2> uv2 = {{0.05F, 0.05F}, {0.05F, 0.95F}, {0.45F, 0.95F}, {0.45F, 0.05F},
+                             {0.55F, 0.05F}, {0.95F, 0.05F}, {0.95F, 0.95F}, {0.55F, 0.95F}};
+    std::vector<cy::u32> indices = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
+
+    [[nodiscard]] BakeMesh mesh() const {
+        BakeMesh out;
+        out.positions = {positions.data(), positions.size()};
+        out.normals = {normals.data(), normals.size()};
+        out.uv2 = {uv2.data(), uv2.size()};
+        out.indices = {indices.data(), indices.size()};
+        out.uv_coverage = 0.72F;
+        return out;
+    }
+};
+
+/// A closed box of outward quads that receives no lightmap: what buries the texels under it.
+void add_box(std::vector<BakeInstance>& instances, Vec3 centre, Vec3 half) {
+    const Vec3 x{1, 0, 0};
+    const Vec3 y{0, 1, 0};
+    const Vec3 z{0, 0, 1};
+    const Mat4 faces[6] = {place(x, -y, 2 * half.x, 2 * half.z, centre - (y * half.y)),
+                           place(x, y, 2 * half.x, 2 * half.z, centre + (y * half.y)),
+                           place(y, -x, 2 * half.y, 2 * half.z, centre - (x * half.x)),
+                           place(y, x, 2 * half.y, 2 * half.z, centre + (x * half.x)),
+                           place(x, -z, 2 * half.x, 2 * half.y, centre - (z * half.z)),
+                           place(x, z, 2 * half.x, 2 * half.y, centre + (z * half.z))};
+    for (const Mat4& face : faces) {
+        BakeInstance instance;
+        instance.mesh = 1;
+        instance.transform = face;
+        instance.receives_lightmap = false;
+        instances.push_back(instance);
+    }
+}
+
+}  // namespace
+
+CY_TEST_CASE("a wide buried strip is filled from its own chart, not the padding beside it") {
+    // REGRESSION: the dilation ran a fixed four gutters' worth of passes and filled a texel from
+    // every known neighbour in its rectangle, whichever chart it belonged to. A crate standing on
+    // the floor's edge buries a strip of floor 26 texels wide that borders the wall chart's
+    // padding: the strip's middle stayed black, and its edge took the WALL's light and normal, so
+    // a directional read at the floor's own normal was no longer the floor's light.
+    const FloorAndWallMesh level;
+    const QuadMesh quad;
+    const std::vector<BakeMesh> meshes = {level.mesh(), quad.mesh()};
+    const std::vector<BakeMaterial> materials = {BakeMaterial{Vec3{0.7F, 0.7F, 0.7F}}};
+    std::vector<BakeInstance> instances(1);
+    add_box(instances, Vec3{1.3F, 0.5F, 0.0F}, Vec3{0.9F, 0.5F, 2.2F});
+    std::vector<gi::GiLight> lights(1);
+    lights[0].position = Vec3{-1.0F, 3.0F, 0.0F};
+    lights[0].intensity = 30.0F;
+    lights[0].range = 20.0F;
+    LightmapScene scene;
+    scene.meshes = {meshes.data(), meshes.size()};
+    scene.materials = {materials.data(), materials.size()};
+    scene.instances = {instances.data(), instances.size()};
+    scene.lights = {lights.data(), lights.size()};
+    scene.sky.zenith = Vec3{0.2F, 0.2F, 0.2F};
+    scene.sky.horizon = scene.sky.zenith;
+    scene.sky.ground = scene.sky.zenith;
+
+    LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    settings.atlas.page_size = 256;
+    // 16 texels a metre on the floor: the buried strip is 26 texels wide, filled from one side.
+    settings.atlas.texel_density = 24.0F;
+    settings.trace.bounces = 1;
+    settings.trace.samples = 4;
+    settings.denoise = false;
+    const Baked baked = bake(scene, settings);
+    CY_REQUIRE(baked.report.texels_buried > 200U);
+
+    const BakedLightmap& lightmap = baked.lightmap;
+    const u32 address = lightmap.addresses[0];
+    u32 dark = 0;
+    f32 worst = 0.0F;
+    for (u32 row = 0; row <= 20; ++row) {
+        const f32 v = 0.1F + (0.8F * static_cast<f32>(row) / 20.0F);
+        // Across the buried strip: world x from 0.4 to 2, the floor's u from 0.29 to 0.45.
+        for (u32 column = 0; column <= 16; ++column) {
+            const Vec2 uv{0.29F + (0.16F * static_cast<f32>(column) / 16.0F), v};
+            const Vec2 at =
+                atlas_coordinate(address, uv, lightmap.page_size, lightmap.gutter_texels);
+            dark += sample_plane(lightmap.texels, 0, at).y <= 0.0F ? 1U : 0U;
+            // At the floor's own normal the directional factor is one, if what is read is floor.
+            const Vec4 first = sample_plane(lightmap.texels, 0, at);
+            const Vec3 read = sample_lightmap(lightmap, address, uv, Vec3{0.0F, 1.0F, 0.0F});
+            worst = std::max(worst, std::fabs(read.y - first.y) / std::max(first.y, 1.0e-6F));
+        }
+    }
+    CY_TEST_MESSAGE("buried strip: " << dark << " dark samples, worst directional factor error "
+                                     << worst);
+    CY_CHECK_EQ(dark, 0U);
+    CY_CHECK_LT(worst, 0.01F);
 }
 
 // --- The seeds ---------------------------------------------------------------------------------

@@ -512,7 +512,10 @@ std::vector<std::pair<std::string, std::string>> cooked_files(const std::string&
                    &walk)
                    .has_value());
     for (auto& [name, bytes] : walk.files) {
-        bytes = read_text(directory + "/" + name);
+        std::string path = directory;
+        path += '/';
+        path += name;
+        bytes = read_text(path);
     }
     return walk.files;
 }
