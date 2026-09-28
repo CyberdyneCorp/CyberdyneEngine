@@ -448,6 +448,7 @@ the hero image above and `just run-ship` packages and launches `samples/11-ship`
 
 | | |
 |---|---|
+| [Animation guide](docs/guides/animation.md) | Skeletons, clips, compiled pose programs, retargeting, GPU skinning and ragdolls |
 | [Slang guide](docs/guides/slang.md) | Slang, and how the engine compiles and uses its shaders |
 | [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |

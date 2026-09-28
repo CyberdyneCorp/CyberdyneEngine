@@ -15,6 +15,7 @@
 |---|---|
 | [Guides index](guides/README.md) | Task-oriented walkthroughs for contributors |
 | [Building and running](guides/building.md) | Toolchains, Linux, the macOS Metal editor, iOS, CI targets |
+| [Animation in CyberEngine](guides/animation.md) | How characters are imported, animated, retargeted and skinned, and what is not built yet |
 | [Slang in CyberEngine](guides/slang.md) | How the engine's shaders are written, compiled, embedded and tested |
 
 **Design**
