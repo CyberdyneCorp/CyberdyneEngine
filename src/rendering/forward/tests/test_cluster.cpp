@@ -349,3 +349,35 @@ CY_TEST_CASE("assignment uses a decal's oriented box, so a slab lands in fewer c
         CY_CHECK_LE(boxed.count, round.count);
     }
 }
+
+CY_TEST_CASE("tile row 0 is the top of the image, as the fragment's pixel row is") {
+    // REGRESSION. `cy/cluster.slang`'s `clusterCoordOf` takes the tile row from the fragment's
+    // pixel row, and pixel row 0 is the top: the Vulkan viewport's Y flip puts view-space up there.
+    // `cluster_bounds` counted rows from the bottom, so every list was mirrored across the image's
+    // horizontal centre line against the lookup — a decal on the floor was assigned to tiles in the
+    // sky, and the forward frame drew none of it.
+    const ClusterGrid grid = small_grid();  // 2 x 2 tiles
+    const cy::f32 tan_half = std::tan(1.0471975512F * 0.5F);
+    ClusterElement light;
+    // Above and right of the axis at three metres, where the visible half-height is 1.73 m: its
+    // normalised coordinates are (+0.46, +0.58), so its pixel is in the top-right tile, row 0.
+    light.view_position = cy::Vec3{0.8F, 1.0F, -3.0F};
+    light.radius = 0.2F;
+    light.payload_index = 5;
+    ClusterAssignment assignment(allocator());
+    CY_REQUIRE(cy::rendering::assign_clusters(grid, cy::Span<const ClusterElement>(&light, 1),
+                                              cy::render::kAllLayers, tan_half, 1.0F, assignment)
+                   .has_value());
+    cy::u32 top = 0;
+    cy::u32 bottom = 0;
+    for (cy::u32 slice = 0; slice < grid.dimensions[2]; ++slice) {
+        top += header_of(assignment, cy::rendering::cluster_index_of(grid, 1, 0, slice),
+                         ClusterElementType::Light)
+                   .count;
+        bottom += header_of(assignment, cy::rendering::cluster_index_of(grid, 1, 1, slice),
+                            ClusterElementType::Light)
+                      .count;
+    }
+    CY_CHECK_GT(top, 0U);
+    CY_CHECK_EQ(bottom, 0U);
+}

@@ -187,10 +187,15 @@ Aabb cluster_bounds(const ClusterGrid& grid, u32 x, u32 y, u32 slice, f32 tan_ha
         ((static_cast<f32>(x) / static_cast<f32>(grid.dimensions[0])) * 2.0F) - 1.0F;
     const f32 tile_max_x =
         ((static_cast<f32>(x + 1) / static_cast<f32>(grid.dimensions[0])) * 2.0F) - 1.0F;
-    const f32 tile_min_y =
-        ((static_cast<f32>(y) / static_cast<f32>(grid.dimensions[1])) * 2.0F) - 1.0F;
+    // TILE ROW 0 IS THE TOP OF THE IMAGE, as pixel row 0 is: `cy/cluster.slang`'s `clusterCoordOf`
+    // divides the fragment's pixel row by the extent, and the Vulkan viewport's Y flip puts
+    // normalised +Y (view-space up) at the top. Counting rows from the bottom here mirrored every
+    // list vertically against the lookup, so a fragment read the list of the tile across the
+    // horizontal centre line from it.
     const f32 tile_max_y =
-        ((static_cast<f32>(y + 1) / static_cast<f32>(grid.dimensions[1])) * 2.0F) - 1.0F;
+        1.0F - ((static_cast<f32>(y) / static_cast<f32>(grid.dimensions[1])) * 2.0F);
+    const f32 tile_min_y =
+        1.0F - ((static_cast<f32>(y + 1) / static_cast<f32>(grid.dimensions[1])) * 2.0F);
 
     const f32 tan_x = tan_half_fov_y * aspect;
     const f32 min_x = math::min(tile_min_x * tan_x * near_depth, tile_min_x * tan_x * far_depth);
