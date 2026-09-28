@@ -41,8 +41,8 @@ and no surface that is seen through fog.
 - `samples/12-beauty` gains `--fog on|off` and the shot's `fog` lines: the Colonnade's shafts, lit by
   the same sun through the same shadow map as the surfaces. `samples/10-world` gains `--fog` and the
   grade file's valley haze, composited with the atmosphere's table and bound where it was.
-- Tests: `unit.rendering_fog`, `integration.rendering_fog_air`, `render.volumetric_fog`, and two cases
-  in `unit.render_forward`.
+- Tests: `unit.rendering_fog`, `integration.rendering_fog_march`, `integration.rendering_fog_air`,
+  `render.volumetric_fog`, and two cases in `unit.render_forward`.
 
 ## What does not change, and what is still not built
 
