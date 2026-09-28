@@ -196,14 +196,17 @@ instance orb copper at 1.35 0 -3.4 yaw 0 uv 1.0 normal 1.2
 # cushion of eight. The shapes and their two parameters are authored — a burn's outline and a
 # growth's patches are what an artist paints into a mask — and so is where each decal is.
 #
-# Two scorch marks on the gravel, one lapping against the fallen block by the left pillars — its
-# vertical faces are past the fade angle and are left bare — and moss at the feet of the three
-# nearest pillars, projected from the side the camera sees, fading round each column's curve.
+# Two scorch marks on the gravel — one in the open ground between the orb and the block to its
+# right, one lapping against the blocks left of the orb, whose vertical faces are past the fade
+# angle and are left bare — and moss at the feet of the three nearest pillars, projected from the
+# side the camera sees, fading round each column's curve. PLACED WHERE THE CAMERA SEES GRAVEL: the
+# first draft put the larger mark at z = -6, below the bottom of the frame, where almost none of it
+# was drawn.
 decal-material scorch albedo 0.030 0.028 0.026 roughness 0.95 metallic 0 shape splat 4.0 0.4 relief 0.002 edge 0.3
 decal-material moss albedo 0.045 0.085 0.022 roughness 0.9 metallic 0 shape patches 5.0 0.46 relief 0.008 edge 0.3
 
-decal scorch at 0.4 0 -6.0 facing 0 1 0 up 0 0 1 size 2.4 2.0 0.5 order 0
-decal scorch at -1.1 0 -0.4 facing 0 1 0 up 1 0 1 size 1.8 1.8 0.6 order 1
+decal scorch at -0.5 0 2.2 facing 0 1 0 up 0 0 1 size 2.6 3.2 0.5 order 0
+decal scorch at 2.6 0 0.2 facing 0 1 0 up 1 0 1 size 2.2 2.2 0.6 order 1
 decal moss at -3.6 0.9 -4.0 facing 0.6 0.25 -0.8 up 0 1 0 size 2.8 1.8 3.8 fade-angle 75
 decal moss at 3.6 0.9 -4.0 facing -0.6 0.25 -0.8 up 0 1 0 size 2.8 1.8 3.8 fade-angle 75
 decal moss at -3.6 0.7 1.0 facing 0.7 0.2 -0.7 up 0 1 0 size 2.8 1.4 3.8 fade-angle 75
