@@ -2,9 +2,11 @@
 #
 #   rendering_fog     KIND unit. The medium (Koschmieder's visibility, the height fog's profile,
 #                     every volume shape, a mixture's phase), the constants' refusals, the header
-#                     against the aerial perspective table's, the march against the single-
-#                     scattering integral and a closed form, the empty medium's exact identity, the
-#                     lookup against the march, and the shadow lookup. No device.
+#                     against the aerial perspective table's, and the shadow lookup. No device.
+#
+#   rendering_fog_march KIND integration. The march against the single-scattering integral and a
+#                     closed form, the empty medium's exact identity, and the lookup against the
+#                     march. Integration because each marches whole columns, a few ms of CPU.
 #
 #   rendering_fog_air KIND integration. The march composited with the atmosphere's own froxel
 #                     table: an empty fog reproduces the table, a switched-off table leaves the fog
@@ -46,6 +48,11 @@ function(cy_fog_declare_tests)
         KIND unit
         SOURCES "${tests_dir}/test_fog.cpp"
         DEPENDENCIES cy::rendering-fog cy::rendering-sky)
+    cy_add_test(
+        NAME rendering_fog_march
+        KIND integration
+        SOURCES "${tests_dir}/test_fog_march.cpp"
+        DEPENDENCIES cy::rendering-fog)
     cy_add_test(
         NAME rendering_fog_air
         KIND integration
