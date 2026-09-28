@@ -1,0 +1,147 @@
+# Mutations applied to the shipped sources, each rebuilt (SPIR-V/MSL regenerated for shader
+# mutations with slangc 2026.9.2, by the invocation each shader's header documents), run, and
+# restored; md5 of every touched file verified identical after restore.
+# Driver: apply -> regen -> cmake --build build/decals --target cy_test_render_decals -> run the
+# suite binary on the case the mutation targets -> restore -> regen -> md5.
+# Host: Linux Mint 22.1, NVIDIA RTX 5060 (Vulkan 1.4), Development build, shared with other builds.
+
+## render.decals (src/rendering/shaders/cy/frame.slang, cy/decal.slang, and the C++ that feeds them)
+
+
+== a-off-path-changed: src/rendering/shaders/cy/frame.slang: '    var normal = normalize(input.normal);' -> '    var normal = normalize(input.normal + float3(0.0, 1.0e-3, 0.0));'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:206: ERROR: CHECK_EQ( comparison.max_channel_delta, 0U ) is NOT correct!
+[doctest] test cases: 1 | 0 passed | 1 failed | 8 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 1 at (98, 249)
+restored (frame.slang md5 10be20badacac244936a3f1c7ad3f507, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== b-no-channel-test: src/rendering/shaders/cy/decal.slang: 'if ((source.word(base + 28u) & receiver.channels) == 0u)' -> 'if (false)'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:742: ERROR: CHECK_EQ( differing(off, elsewhere), usize{0} ) is NOT correct!
+[doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
+(b) a decal in every channel changes 2181 pixels, 22 assignments
+(b) layer none: 0 pixels differ, 0 assignments
+(b) characters only: 2181 pixels differ, 22 assignments
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== b-layer-none-assigned: src/rendering/assembly/src/frame_assembly.cpp: 'element.layer_mask = decal.channels;' -> 'element.layer_mask = ~0U;'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:730: ERROR: CHECK_EQ( report.decal_assignments, 0U ) is NOT correct!
+[doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
+(b) a decal in every channel changes 2181 pixels, 22 assignments
+(b) layer none: 0 pixels differ, 22 assignments
+(b) characters only: 0 pixels differ, 22 assignments
+restored (frame_assembly.cpp md5 1ba056cc81b22438efb4af270a160085: identical)
+
+== b-no-distance-fade: src/rendering/shaders/cy/decal.slang: '    if (metres >= farEdge)\n    {\n        return 0.0;' -> '    if (metres >= farEdge)\n    {\n        return 1.0;'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:750: ERROR: CHECK_EQ( differing(off, faded), usize{0} ) is NOT correct!
+[doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
+(b) a decal in every channel changes 2181 pixels, 22 assignments
+(b) layer none: 0 pixels differ, 0 assignments
+(b) characters only: 0 pixels differ, 22 assignments
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== c-box-too-large: src/rendering/shaders/cy/decal.slang: 'if (any(abs(local) > 1.0))' -> 'if (any(abs(local) > 1.25))'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:802: ERROR: CHECK_EQ( changed_outside, 0U ) is NOT correct!
+[doctest] test cases: 1 | 0 passed | 1 failed | 8 skipped
+(c) 3296 pixels changed; 396 changed outside the box; 1634 well inside, 0 of them unchanged
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+# Not a falsifier of (d), recorded as run: the albedo it adds as emission is a radiance of about
+# one, which the frame's exposure for a sunlit scene rounds to nothing (the counts are unchanged).
+# d-unshadowed-sun below is the one that tests the claim.
+== d-decal-composited-as-emission: src/rendering/shaders/cy/decal.slang: 'surface.emission = lerp(surface.emission, emission, amount * wordFloat(source, base + 27u));' -> 'surface.emission = lerp(surface.emission, albedo, amount * wordFloat(source, base + 7u));'
+exit 0 (GREEN - NOT FALSIFIED)
+[doctest] test cases:  1 |  1 passed | 0 failed | 8 skipped
+(d) decalled umbra 877 (877 equal to sun-off), decalled lit 2795 (0 equal to sun-off); mean brightness umbra 471.0 lit 611.3
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== e-no-angle-fade: src/rendering/shaders/cy/decal.slang: 'if (cosine <= 0.0 || cosine <= limit)' -> 'if (cosine < -2.0)'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:926: ERROR: CHECK_EQ( face_changed, 0U ) is NOT correct!
+[doctest] test cases: 1 | 0 passed | 1 failed | 8 skipped
+(e) front face inside the box: 792 (792 changed); floor: 1549 (1549 changed)
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== f-order-reversed: src/rendering/lighting/src/decals.cpp: 'return a.sort_order < b.sort_order;' -> 'return a.sort_order > b.sort_order;'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:986: ERROR: CHECK_EQ( blue_wins, overlap ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:987: ERROR: CHECK_EQ( red_wins, overlap ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:1006: ERROR: CHECK_EQ( differing(forwards, blue_over), usize{0} ) is NOT correct!
+[doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
+(f) 840 overlap pixels; blue later covers 0, red later covers 0
+restored (decals.cpp md5 af79bfac4d2d0f22383bc505105fd686: identical)
+
+== f-tie-on-array-order: src/rendering/lighting/src/decals.cpp: 'return a.id < b.id;' -> 'return left < right;'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1005: ERROR: CHECK_EQ( differing(forwards, backwards), usize{0} ) is NOT correct!
+[doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
+(f) 840 overlap pixels; blue later covers 840, red later covers 840
+restored (decals.cpp md5 af79bfac4d2d0f22383bc505105fd686: identical)
+
+== g-box-rejects-too-much: src/rendering/forward/src/cluster.cpp: 'if (std::fabs(offsets[axis]) > reach + halves[axis]) {' -> 'if (std::fabs(offsets[axis]) > (reach * 0.25F) + halves[axis]) {'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1052: ERROR: CHECK_EQ( differing(clustered, walked), usize{0} ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:1053: ERROR: CHECK_EQ( differing(table_lists, walked), usize{0} ) is NOT correct!
+[doctest] test cases:  1 | 0 passed | 1 failed | 8 skipped
+(g) 5 decals, 24 (cluster, decal) assignments over 3240 clusters; clustered vs walked 919, table lists vs walked 919, decalled pixels 3914
+restored (cluster.cpp md5 85e44d3d0276a07c958c1b7ce443e293: identical)
+
+== g-table-list-offset-added-twice: src/rendering/shaders/cy/decal.slang: '    return source.word(index);' -> '    return source.word(source.word(7u) + index);'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1053: ERROR: CHECK_EQ( differing(table_lists, walked), usize{0} ) is NOT correct!
+[doctest] test cases:  1 | 0 passed | 1 failed | 8 skipped
+(g) 5 decals, 99 (cluster, decal) assignments over 3240 clusters; clustered vs walked 0, table lists vs walked 3463, decalled pixels 3914
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== g-cluster-rows-from-bottom: src/rendering/forward/src/cluster.cpp: '    const f32 tile_max_y =\n        1.0F - ((static_cast<f32>(y) / static_cast<f32>(grid.dimensions[1])) * 2.0F);\n    const f32 tile_min_y =\n        1.0F - ((static_cast<f32>(y + 1) / static_cast<f32>(grid.dimensions[1])) * 2.0F);' -> '    const f32 tile_min_y =\n        ((static_cast<f32>(y) / static_cast<f32>(grid.dimensions[1])) * 2.0F) - 1.0F;\n    const f32 tile_max_y =\n        ((static_cast<f32>(y + 1) / static_cast<f32>(grid.dimensions[1])) * 2.0F) - 1.0F;'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1052: ERROR: CHECK_EQ( differing(clustered, walked), usize{0} ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:1053: ERROR: CHECK_EQ( differing(table_lists, walked), usize{0} ) is NOT correct!
+[doctest] test cases:  1 | 0 passed | 1 failed | 8 skipped
+(g) 5 decals, 99 (cluster, decal) assignments over 3240 clusters; clustered vs walked 3914, table lists vs walked 3914, decalled pixels 3914
+restored (cluster.cpp md5 85e44d3d0276a07c958c1b7ce443e293: identical)
+
+== h-decals-capped-at-64: src/rendering/assembly/src/frame_assembly.cpp: 'for (u32 rank = 0; rank < decal_order_.size(); ++rank) {' -> 'for (u32 rank = 0; rank < decal_order_.size() && rank < 64U; ++rank) {'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1102: ERROR: CHECK_GT( run.report().decal_assignments, 1000U ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:1103: ERROR: CHECK_GT( run.report().clusters.overflow, 0U ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:1104: ERROR: CHECK_GT( differing(empty.pixels(), run.pixels()), usize{5000} ) is NOT correct!
+[doctest] test cases: 1 | 0 passed | 1 failed | 8 skipped
+(h) opaque draws without decals 2, with 20000 decals 2; 252 assignments, overflow 0; 343 pixels changed
+restored (frame_assembly.cpp md5 1ba056cc81b22438efb4af270a160085: identical)
+
+== i-no-relief: src/rendering/shaders/cy/decal.slang: 'if (relief > 0.0)' -> 'if (relief > 1.0e9)'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1134: ERROR: CHECK_GT( differing(off, tilted), usize{100} ) is NOT correct!
+[doctest] test cases: 1 | 0 passed | 1 failed | 8 skipped
+(i) relief changes 0 pixels; zero relief changes 0
+restored (decal.slang md5 7037249bd9ca1828d4194bce15c91fd3, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+
+# Ineffective as written, recorded as run: surface.albedo already holds the decalled albedo at
+# that line, so the difference it scales is zero. Superseded by d-unshadowed-sun.
+== d-unshadowed-composite: src/rendering/shaders/cy/frame.slang: '    surface.emission = decalled.emission;\n    normal = decalled.normal;' -> '    surface.emission = decalled.emission + abs(decalled.albedo - surface.albedo) * cyLights[cyFrame.shadowControl.y].color * cyLights[cyFrame.shadowControl.y].intensity * 0.1;\n    normal = decalled.normal;'
+exit 0 (GREEN - NOT FALSIFIED)
+[doctest] test cases:  1 |  1 passed | 0 failed | 8 skipped
+(d) decalled umbra 877 (877 equal to sun-off), decalled lit 2795 (0 equal to sun-off); mean brightness umbra 471.0 lit 611.3
+restored (frame.slang md5 10be20badacac244936a3f1c7ad3f507, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+
+== d-unshadowed-sun: src/rendering/shaders/cy/frame.slang: '    surface.albedo = decalled.albedo;\n    surface.roughness = clamp(decalled.roughness, 0.02, 1.0);\n    surface.metallic = saturate(decalled.metallic);\n    surface.emission = decalled.emission;' -> '    let unshadowed = abs(decalled.albedo - surface.albedo) * cyLights[cyFrame.shadowControl.y].color * cyLights[cyFrame.shadowControl.y].intensity * 0.1;\n    surface.albedo = decalled.albedo;\n    surface.roughness = clamp(decalled.roughness, 0.02, 1.0);\n    surface.metallic = saturate(decalled.metallic);\n    surface.emission = decalled.emission + unshadowed;'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:872: ERROR: CHECK_EQ( umbra_matching_dark, umbra ) is NOT correct!
+[doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
+(d) decalled umbra 877 (0 equal to sun-off), decalled lit 2795 (0 equal to sun-off); mean brightness umbra 490.0 lit 624.2
+restored (frame.slang md5 10be20badacac244936a3f1c7ad3f507, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
+== unmutated after restore: exit 0 (all nine cases)
+
+## unit.render_forward (src/rendering/forward/src/cluster.cpp)
+
+== cluster-rows-from-bottom: cluster.cpp as it was on main (tile row 0 at normalised -Y)
+exit 1 (RED)
+src/rendering/forward/tests/test_cluster.cpp:381: ERROR: CHECK_GT( top, 0U ) is NOT correct!
+src/rendering/forward/tests/test_cluster.cpp:382: ERROR: CHECK_EQ( bottom, 0U ) is NOT correct!
+[doctest] test cases: 1 | 0 passed | 1 failed | 45 skipped
+restored (the fixed cluster.cpp copied back; unit.render_forward 46 of 46 passed)
