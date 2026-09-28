@@ -1,0 +1,165 @@
+Mutations that turn the lightmap suites red, Development build, Vulkan (RTX 5060). Each mutation
+was applied, its suite rebuilt and run, the file restored and md5-verified; a mutation in
+cy/frame.slang also regenerated the frame's SPIR-V and MSL, which were restored and verified with
+it. Listed under each: the cases that failed.
+
+Not provable on the device and proved on the host instead: the shading normal's response in the
+directional and SH L1 decode. The device suite's corner has no normal-mapped surface, so at every
+pixel the shading normal is the geometric one and the tilt term is zero there (a mutation dropping
+`/ w` from the frame's directional decode survived). m03 holds the encoding's response in
+integration.render_lightmap_bake, and render.lightmaps (b) holds the frame's term to the host's.
+
+== m01_gutter_floor: src/rendering/lightmap_bake/src/atlas.cpp
+<   return std::max(2U, 1U << levels);
+>   return 1U << levels;
+TEST CASE:  rectangles sit on the block grid with a gutter that survives the declared mips
+test cases:   5 |   4 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m02_lights_not_over_pi: src/rendering/lightmap_bake/src/bake.cpp
+<   light.intensity /= std::numbers::pi_v<f32>;
+>   light.intensity /= 1.0F;
+TEST CASE:  an alpha-tested surface shadows through its coverage, a transparent one partly
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m03_mean_direction: src/rendering/lightmap_bake/src/trace.cpp
+<   return tangential / std::max(cosine, kMinResponseCosine);
+>   return direction + (tangential * 0.0F);
+TEST CASE:  directional and SH L1 lightmaps keep a normal map's response; irradiance does not
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m04_default_cascade: src/rendering/lightmap_bake/src/postprocess.cpp
+<   config.max_passes = std::max(1U, passes);
+>   config.max_passes = std::max(5U, passes);
+TEST CASE:  a small room bakes to texels that match the path tracer's ground truth
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m05_no_seam_solve: src/rendering/lightmap_bake/src/postprocess.cpp
+<   if (apply && !samples.empty()) {
+>   if (apply && samples.empty()) {
+TEST CASE:  texels at a seam are dilated and reconciled so the seam does not show
+TEST CASE:  where two objects meet, the edge they share is a seam and is reconciled
+test cases:  10 |   8 passed | 2 failed | 0 skipped
+RESTORED md5 ok
+
+== m06_seams_within_objects: src/rendering/lightmap_bake/src/raster.cpp
+<   if (a.placed == b.placed && a.low == b.low && a.high == b.high) {
+>   if (a.placed != b.placed || (a.low == b.low && a.high == b.high)) {
+TEST CASE:  where two objects meet, the edge they share is a seam and is reconciled
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m07_nothing_buried: src/rendering/lightmap_bake/src/trace.cpp
+<   return static_cast<f32>(back_faces) >
+>   return back_faces == ~0U && static_cast<f32>(back_faces) >
+TEST CASE:  a texel buried in a neighbouring object is rejected and filled from its own surface
+TEST CASE:  a wide buried strip is filled from its own chart, not the padding beside it
+test cases:  10 |   8 passed | 2 failed | 0 skipped
+RESTORED md5 ok
+
+== m08_no_alpha_test: src/rendering/lightmap_bake/src/scene.cpp
+<   if (material.mask->sample(uv) < material.alpha_cutoff) {
+>   if (material.mask->sample(uv) < -1.0F) {
+TEST CASE:  an alpha-tested surface shadows through its coverage, a transparent one partly
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m09_no_emission: src/rendering/lightmap_bake/src/trace.cpp
+<   surfel.emission = emission;
+>   surfel.emission = emission * 0.0F;
+TEST CASE:  directional and SH L1 lightmaps keep a normal map's response; irradiance does not
+TEST CASE:  an emissive surface lights the room with no placed light at all
+test cases:  10 |   8 passed |  2 failed | 0 skipped
+RESTORED md5 ok
+
+== m10_no_seeds: src/rendering/lightmap_bake/src/bake.cpp
+<   if (seeds.surfaces == nullptr || seeds.radiance == nullptr) {
+>   if (seeds.surfaces != nullptr || seeds.radiance == nullptr) {
+TEST CASE:  the lightmap bake seeds the dynamic caches from the same run
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m11_payload_w: src/rendering/lightmap_bake/src/asset.cpp
+<   texel.w = half_at();
+>   texel.w = half_at() * 0.5F;
+TEST CASE:  the cooked lightmap round-trips, and an unchanged level bakes to the same bytes
+test cases:  10 |   9 passed |   1 failed | 0 skipped
+RESTORED md5 ok
+
+== m12_fixed_dilation: src/rendering/lightmap_bake/src/bake.cpp
+<   return lightmap.page_size;
+>   return std::max(16U, lightmap.gutter_texels * 4U);
+TEST CASE:  a wide buried strip is filled from its own chart, not the padding beside it
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m13_fill_mixes_charts: src/rendering/lightmap_bake/src/postprocess.cpp
+<   texel.owner != owner || texel.chart != chart) {
+>   texel.owner != owner) {
+TEST CASE:  a wide buried strip is filled from its own chart, not the padding beside it
+test cases:  10 |   9 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m14_baked_mean_with_volume: src/rendering/gi/src/resolve.cpp
+<   it had baked.
+<               if (surface_has_lightmap) {
+>   it had baked.
+>               if (surface_has_lightmap && mode != GiMode::Baked) {
+TEST CASE:  a lightmapped surface in Baked mode takes its lightmap, not a mean with the volume
+test cases:  15 |  14 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m15_no_unwrap_cache: tools/import/src/unwrap_cache.cpp
+<   if (cache->find(key, mesh, report)) {
+>   if (cache->size() == ~usize{0} && cache->find(key, mesh, report)) {
+TEST CASE:  unwrap: the same geometry through the cache is the same unwrap and no second run
+test cases:   14 |   13 passed | 1 failed | 0 skipped
+TEST CASE:  unwrap: an unchanged reimport runs no unwrap, nor does one that moved no geometry
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m16_truncated_cook: tools/build/src/lightmap_producer.cpp
+<   return context.write(node.outputs.front(), payload.data(), payload.size());
+>   return context.write(node.outputs.front(), payload.data(), payload.size() - 1U);
+TEST CASE:  a level bakes to a cooked lightmap, and an unchanged level bakes nothing
+test cases:   6 |   5 passed | 1 failed | 1 skipped
+RESTORED md5 ok
+
+== m17_write_under_probe: src/rendering/lightmaps/src/lightmap_textures.cpp
+<   if (frame_ambient_source(mode, true, true) != AmbientSource::Lightmap) {
+>   if (frame_ambient_source(mode, true, true) == AmbientSource::Sky) {
+TEST CASE:  write_lightmaps fills the words a mode admits, and leaves the frame alone otherwise
+test cases:  2 |  1 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m18_upload_every_time: src/rendering/lightmaps/src/lightmap_textures.cpp
+<   if (planes_ != 0 && fingerprint == fingerprint_) {
+>   if (planes_ == ~0U && fingerprint == fingerprint_) {
+TEST CASE:  (f) an unchanged lightmap is not uploaded again
+test cases:  6 |  5 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m19_shader_no_gutter: src/rendering/shaders/cy/frame.slang
+<   let texel = corner + gutter + uv2 * (extent - 2.0 * gutter)
+>   let texel = corner + uv2 * (extent - 2.0 * gutter)
+TEST CASE:  (e) the directional and SH L1 encodings draw irradiance at the geometric normal
+test cases:  6 |  5 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m20_shader_unaddressed_lit: src/rendering/shaders/cy/frame.slang
+<   if (draw.giAddress != 0u && cyFrame.lightmapControl.w != kCyLightmapNone)
+>   if (cyFrame.lightmapControl.w != kCyLightmapNone)
+TEST CASE:  (c) no lightmap is the frame before lightmaps existed, byte for byte
+TEST CASE:  (d) with a volume bound too, a lightmapped surface takes the lightmap alone
+test cases:  6 |  4 passed | 2 failed | 0 skipped
+RESTORED md5 ok
+
+== m21_shader_direction_plane: src/rendering/shaders/cy/frame.slang
+<   let direction = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.y, uv, 0.0);
+>   let direction = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.x, uv, 0.0);
+TEST CASE:  (e) the directional and SH L1 encodings draw irradiance at the geometric normal
+test cases:  6 |  5 passed | 1 failed | 0 skipped
+RESTORED md5 ok

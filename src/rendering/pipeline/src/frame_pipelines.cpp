@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <iterator>
 
 namespace cy::rendering::pipeline {
 namespace {
@@ -309,11 +310,13 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
         {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
         {kNormalStream, kNormalStreamStride, rhi::VertexInputRate::PerVertex},
         {kUvStream, kUvStreamStride, rhi::VertexInputRate::PerVertex},
+        {kLightmapUvStream, kLightmapUvStreamStride, rhi::VertexInputRate::PerVertex},
     };
     const rhi::VertexAttribute forward_attributes[] = {
         {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
+        {3, kLightmapUvStream, rhi::Format::Rg32Sfloat, 0},
     };
     // The depth pipeline's third attribute is LAST FRAME'S POSITION, which `cyDepthVertex` derives
     // per-object motion from — see `kPreviousPositionStream`.
@@ -327,6 +330,8 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kPreviousPositionStream, rhi::Format::Rgb32Sfloat, 0},
     };
+    static_assert(std::size(forward_bindings) == kForwardPassStreamCount);
+    static_assert(std::size(depth_bindings) == kDepthPassStreamCount);
     const rhi::VertexBinding* bindings = depth_only ? depth_bindings : forward_bindings;
     const rhi::VertexAttribute* attributes = depth_only ? depth_attributes : forward_attributes;
     // THE DEPTH PIPELINE'S STREAMS ARE NOT THE FORWARD ONES, and the constants are

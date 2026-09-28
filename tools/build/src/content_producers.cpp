@@ -2,6 +2,8 @@
 
 #include <cy/build/content_producers.h>
 
+#include "lightmap_producer.h"
+
 #include <cy/build/graph.h>
 #include <cy/cook/pipeline.h>
 #include <cy/core/assets/hash.h>
@@ -319,6 +321,13 @@ private:
 Status add_content_producers(ProducerRegistry& registry, const ecs::World* world) noexcept {
     g_cook_world.store(world, std::memory_order_release);
     if (Status added = registry.add(Producer{"import", kImportProducerVersion, produce_import,
+                                             /*distributable=*/true});
+        !added) {
+        return added;
+    }
+    // Distributable: a bake is a pure function of its description and its upstream bundles, and
+    // `bake_lightmaps` draws its samples from a fixed sequence rather than the machine's.
+    if (Status added = registry.add(Producer{"lightmap", kLightmapProducerVersion, produce_lightmap,
                                              /*distributable=*/true});
         !added) {
         return added;

@@ -38,6 +38,7 @@
 // the TEXTURE rather than the tangents, because a per-mesh fix would leave the two disagreeing for
 // any material shared between meshes.
 
+#include <cy/core/assets/hash.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/math/shapes.h>
@@ -326,6 +327,63 @@ struct Uv2Report {
 /// Fails with `InvalidArgument` on a mesh with no triangles or with options outside their ranges.
 [[nodiscard]] Expected<Uv2Report, Error> generate_uv2(MeshData& mesh,
                                                       const Uv2Options& options) noexcept;
+
+/// How many unwraps `generate_uv2` has run in this process. What "the cached unwrap was reused"
+/// is observed by: a reimport that reused it leaves this number where it was.
+[[nodiscard]] u64 uv2_unwrap_count() noexcept;
+
+/// The identity of an unwrap's input: every attribute array the unwrap reads or carries, the
+/// sections, and every `Uv2Options` field. Two meshes with one key unwrap to one result, byte for
+/// byte, because the unwrap is deterministic (`test_unwrap.cpp` holds it to that).
+[[nodiscard]] assets::ContentHash uv2_geometry_key(const MeshData& mesh,
+                                                   const Uv2Options& options) noexcept;
+
+/// Unwraps kept by geometry key. `asset-import-pipeline` — "Mesh processing"; and
+/// `rendering-global-illumination` — "UV2 and chart packing": "WHEN a mesh is reimported without
+/// geometry changes THEN the cached UV2 unwrap SHALL be reused."
+///
+/// TWO LAYERS DO THAT, AND THIS IS THE SECOND. An UNCHANGED source never reaches an importer at
+/// all: its derivation key hits the cook cache, or the build graph's node is not run, and neither
+/// runs an unwrap (`import_pipeline`'s "an unchanged reimport runs no unwrap" is the case). What
+/// the source key cannot see is a source whose BYTES changed and whose geometry did not — a
+/// material renamed, a node moved in a scene file — and that re-runs the importer. `finish_mesh`
+/// looks the welded mesh up here first, so that import copies the previous unwrap instead of
+/// running xatlas again.
+///
+/// PROCESS-WIDE AND BOUNDED: an editor session or one `cy_build` run reuses unwraps across every
+/// import it makes, and the oldest entry is dropped past `kCapacity`. Thread-safe, because the
+/// pipeline imports on the job system.
+class Uv2Cache {
+public:
+    static constexpr usize kCapacity = 256;
+
+    Uv2Cache() noexcept;
+    ~Uv2Cache();
+    Uv2Cache(const Uv2Cache&) = delete;
+    Uv2Cache& operator=(const Uv2Cache&) = delete;
+
+    /// The unwrapped mesh and its report for `key`, or false.
+    [[nodiscard]] bool find(const assets::ContentHash& key, MeshData& out,
+                            Uv2Report& report) noexcept;
+    [[nodiscard]] Status store(const assets::ContentHash& key, const MeshData& unwrapped,
+                               const Uv2Report& report) noexcept;
+    [[nodiscard]] usize size() const noexcept;
+    [[nodiscard]] u64 hits() const noexcept;
+    void clear() noexcept;
+
+    /// The process's one cache.
+    [[nodiscard]] static Uv2Cache& process() noexcept;
+
+private:
+    struct State;
+    State* state_ = nullptr;
+};
+
+/// `generate_uv2` through `cache`: a hit replaces `mesh` with the cached unwrap and runs nothing.
+/// A null cache is `generate_uv2`.
+[[nodiscard]] Expected<Uv2Report, Error> generate_uv2_cached(MeshData& mesh,
+                                                             const Uv2Options& options,
+                                                             Uv2Cache* cache) noexcept;
 
 // --- Convex decomposition ------------------------------------------------------------------------
 

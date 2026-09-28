@@ -217,6 +217,14 @@ public struct CyFrameData
     /// camera motion alone, arithmetic for arithmetic what it always wrote. yzw: reserved.
     /// `pipeline::FrameBindings::upload` fills it from the rows it uploaded the frame before.
     public uint4 motionControl;
+    /// The baked lightmap atlas, appended for the reason `materialTextures` gives. x, y, z: the
+    /// frame texture slots of its planes (`lightmap_bake::LightmapTexels`), unused ones
+    /// `kCyNoMaterialTexture`. w: the encoding — `kCyLightmapNone`, the default, which draws every
+    /// surface as it was whatever its draw's `giAddress` says.
+    public uint4 lightmapControl;
+    /// x: a page's side in texels. y: pages, stacked down the texture. z: the gutter around every
+    /// rectangle's interior, in texels. w: reserved.
+    public uint4 lightmapLayout;
 };
 
 /// `motionControl.x` when the frame carries no previous instance rows.
@@ -245,6 +253,12 @@ static const uint kCyDecalRanksClusters = 2u;
 /// nothing. Zero cannot: zero is a perfectly good slot of the global table, and a material block
 /// that was never written would name it.
 public static const uint kCyNoMaterialTexture = 0xFFFFFFFFu;
+
+/// `lightmapControl.w`: `lightmap_bake::LightmapMode` plus one, so zero is "no lightmap".
+public static const uint kCyLightmapNone = 0u;
+public static const uint kCyLightmapIrradiance = 1u;
+public static const uint kCyLightmapDirectional = 2u;
+public static const uint kCyLightmapShL1 = 3u;
 
 /// `GpuDrawInstance` — 32 bytes, the per-draw indirection `first_instance` names.
 public struct CyDrawInstance
@@ -545,11 +559,18 @@ public struct CyForwardVertex
     public float3 normal : TEXCOORD1;
     public float2 uv : TEXCOORD2;
     public nointerpolation uint drawIndex : TEXCOORD3;
+    /// The cooked `TexCoords2` stream: the mesh's own lightmap unit square, which the draw's
+    /// `giAddress` places in the atlas. Appended, so the interpolants above keep their locations.
+    public float2 lightmapUv : TEXCOORD4;
 };
 
+/// THE FOURTH STREAM IS ALWAYS BOUND. A geometry source with no lightmap coordinates binds its UV0
+/// buffer there (`FrameRecorder`), which is read and never used: a draw reads `lightmapUv` only when
+/// its `giAddress` names a rectangle, and a mesh without UV2 is never given one.
 [shader("vertex")]
 public CyForwardVertex cyForwardVertex(float3 modelPosition : POSITION,
-                                       float4 packedNormal : NORMAL, float2 uv : TEXCOORD0)
+                                       float4 packedNormal : NORMAL, float2 uv : TEXCOORD0,
+                                       float2 lightmapUv : TEXCOORD1)
 {
     let draw = cyDrawInstances[cyDraw.drawIndex];
     let instance = cyInstances[draw.instanceSlot];
@@ -563,6 +584,7 @@ public CyForwardVertex cyForwardVertex(float3 modelPosition : POSITION,
     output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
     output.uv = uv;
     output.drawIndex = cyDraw.drawIndex;
+    output.lightmapUv = lightmapUv;
     return output;
 }
 
@@ -922,6 +944,53 @@ struct CyFrameFogVolume : ICyFogVolumeSource
     }
 };
 
+// --- The lightmap -------------------------------------------------------------------------------
+//
+// A TRANSCRIPTION of `lightmap_bake::atlas_coordinate` and `sample_lightmap`: the draw's
+// `giAddress` is the rectangle — seven bits each of block x, block y, width and height, and the
+// page plus one — and the mesh's UV2 spans its interior, one gutter in from each edge. The host is
+// the reference and `render.lightmaps` holds the two to the same picture.
+
+static const uint kCyLightmapBlocks = 128u;
+
+/// Where UV2 lands in the stacked atlas, normalised to the texture.
+float2 lightmapCoordinate(uint address, float2 uv2)
+{
+    let pageSize = float(cyFrame.lightmapLayout.x);
+    let block = float(cyFrame.lightmapLayout.x / kCyLightmapBlocks);
+    let gutter = float(cyFrame.lightmapLayout.z);
+    let page = float((address >> 28u) - 1u);
+    let corner = float2(float(address & 127u), float((address >> 7u) & 127u)) * block;
+    let extent = float2(float(((address >> 14u) & 127u) + 1u),
+                        float(((address >> 21u) & 127u) + 1u)) * block;
+    let texel = corner + gutter + uv2 * (extent - 2.0 * gutter) + float2(0.0, page * pageSize);
+    return texel / float2(pageSize, pageSize * float(cyFrame.lightmapLayout.y));
+}
+
+/// The ambient radiance the atlas holds for this surface, decoded by the encoding. `normal` is the
+/// shading normal: the directional and SH L1 encodings respond to it, irradiance does not.
+float3 lightmapAmbient(uint address, float2 uv2, float3 normal)
+{
+    let uv = lightmapCoordinate(address, uv2);
+    let first = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.x, uv, 0.0);
+    let mode = cyFrame.lightmapControl.w;
+    if (mode == kCyLightmapDirectional)
+    {
+        let direction = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.y, uv, 0.0);
+        let factor = max(0.0, 1.0 + dot(direction.xyz, normal)) / max(direction.w, 1.0e-3);
+        return first.rgb * factor;
+    }
+    if (mode == kCyLightmapShL1)
+    {
+        let green = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.y, uv, 0.0);
+        let blue = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.z, uv, 0.0);
+        return float3(max(0.0, first.w + dot(first.xyz, normal)),
+                      max(0.0, green.w + dot(green.xyz, normal)),
+                      max(0.0, blue.w + dot(blue.xyz, normal)));
+    }
+    return first.rgb;
+}
+
 [shader("fragment")]
 public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
@@ -950,8 +1019,19 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     // option is on, and with no occlusion slot the arithmetic below is the frame's as it was.
     // THE IRRADIANCE VOLUME REPLACES THE FLAT AMBIENT, and AO still multiplies what it replaced
     // with. With no volume slot the ambient is the frame's as it was.
+    //
+    // A LIGHTMAPPED SURFACE TAKES THE LIGHTMAP AND NOTHING ELSE: `gi::exclusion_for()`'s rule, which
+    // `lightmaps::write_lightmaps` consulted before it set `lightmapControl.w` — a mode that
+    // excludes lightmaps leaves it at `kCyLightmapNone`, and every mode that admits one excludes
+    // the volume for the surface that has it. The lightmap already holds the sky and the bounces,
+    // so it replaces the flat ambient as the volume does, and a surface without one is lit exactly
+    // as before.
     var ambientRadiance = cyFrame.ambientAndOcclusion.rgb;
-    if (cyFrame.probeVolumeControl.x != kCyNoMaterialTexture)
+    if (draw.giAddress != 0u && cyFrame.lightmapControl.w != kCyLightmapNone)
+    {
+        ambientRadiance = lightmapAmbient(draw.giAddress, input.lightmapUv, normal);
+    }
+    else if (cyFrame.probeVolumeControl.x != kCyNoMaterialTexture)
     {
         ambientRadiance = probeVolumeAmbient(input.relativePosition, normal, ambientRadiance);
     }

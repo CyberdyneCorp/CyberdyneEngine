@@ -59,8 +59,12 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/content_producers.cpp
+        src/lightmap_producer.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::build-graph cy::import cy::cook-pipeline)
+    PUBLIC_DEPENDENCIES cy::build-graph cy::import cy::cook-pipeline
+    # The lightmap producer's bake. Layer 4 under a layer-7 tool, which may link anything; the
+    # runtime never links this target.
+    PRIVATE_DEPENDENCIES cy::rendering-lightmap-bake)
 
 cy_add_module(
     NAME cy_build

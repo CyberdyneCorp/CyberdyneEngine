@@ -107,11 +107,14 @@ what is not covered.
 
 ## What is here at Working, and what is not
 
-Not implemented, and not claimed anywhere in the code: **lightmap atlases**. UV2 unwrapping, chart
-packing, border dilation and the atlas format are a cook-side pipeline nothing in the tree has at
-M7. `bake.h` says so at the top of the file. A `Lightmap` radiance source exists and
-`exclusion_for()` handles it correctly, so a lightmap that arrives later slots into the resolve
-without changing it — but nothing here produces one.
+**Lightmap atlases are built, one module up** (M11.e, #36): `src/rendering/lightmap_bake/` packs a
+level's UV2 charts into shared pages, path traces every texel through this module's `PathTracer`
+over a triangle `SceneTracer` of its own, denoises, dilates and stitches, and seeds the caches here
+from the same run; `src/rendering/lightmaps/` samples the result in the frame. This module gained
+nothing but a corrected row: `exclusion_for(Baked, has_lightmap)` excluded only the dynamic
+sources, so a lightmapped surface inside a volume resolved to the mean of the two — it now
+excludes the volume (`render_gi`'s "a lightmapped surface in Baked mode takes its lightmap").
+The shadow mask, light mobility and incremental rebakes are not built.
 
 The **screen tier's colour input is last frame's**, which is why its confidence is capped below one.
 The **hardware tier executes on the CPU** for the reason above.
