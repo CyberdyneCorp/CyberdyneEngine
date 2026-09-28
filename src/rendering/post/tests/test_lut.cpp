@@ -56,6 +56,11 @@ CY_TEST_CASE("a .cube file parses in its own order, and a malformed one is refus
     CY_CHECK_NEAR(middle.y, 0.8F, 1e-6F);
     CY_CHECK_NEAR(middle.z, 0.2F, 1e-6F);
 
+    // Wrapped outside the array: two adjacent literals inside an initialiser list read as a missing
+    // comma to AppleClang's -Wstring-concatenation and to clang-tidy.
+    const char* const inverted_domain =
+        "LUT_3D_SIZE 2\nDOMAIN_MIN 1 1 1\nDOMAIN_MAX 0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n"
+        "0 0 0\n0 0 0\n0 0 0\n";
     const char* refused[] = {
         "LUT_1D_SIZE 2\n0 0 0\n1 1 1\n",
         "0 0 0\n",
@@ -63,9 +68,7 @@ CY_TEST_CASE("a .cube file parses in its own order, and a malformed one is refus
         "LUT_3D_SIZE 1\n0 0 0\n",
         "LUT_3D_SIZE 2\n0 0 0\n0 0 x\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n",
         "LUT_3D_SIZE 2\nGAMMA 2.2\n",
-        // NOLINTNEXTLINE(bugprone-suspicious-missing-comma): one literal, wrapped.
-        "LUT_3D_SIZE 2\nDOMAIN_MIN 1 1 1\nDOMAIN_MAX 0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n"
-        "0 0 0\n0 0 0\n0 0 0\n",
+        inverted_domain,
     };
     for (const char* bad : refused) {
         CubeLut rejected(allocator());
