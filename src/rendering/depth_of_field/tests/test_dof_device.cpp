@@ -226,7 +226,8 @@ struct Result {
         for (u32 y = kSize / 4U; y < (3U * kSize) / 4U; ++y) {
             total += static_cast<f64>(at(x, y));
         }
-        return static_cast<f32>(total / static_cast<f64>(kSize / 2U));
+        constexpr f64 kRows = static_cast<f64>(kSize) / 2.0;
+        return static_cast<f32>(total / kRows);
     }
 };
 
@@ -421,14 +422,16 @@ private:
 /// lies to the right of it: the profile a disc blur gives a step.
 [[nodiscard]] f32 disc_share(f32 offset, f32 radius) noexcept {
     const f32 s = math::clamp(offset / radius, -1.0F, 1.0F);
-    return 0.5F + ((s * std::sqrt(1.0F - (s * s))) + std::asin(s)) / math::kPi;
+    return 0.5F + (((s * std::sqrt(1.0F - (s * s))) + std::asin(s)) / math::kPi);
 }
 
 /// The radius whose disc profile best fits the measured step from `low` to `high` about kEdge.
 [[nodiscard]] f32 fit_disc_radius(const Result& result, f32 low, f32 high, u32 reach) noexcept {
     f32 best = 0.0F;
     f64 best_error = std::numeric_limits<f64>::max();
-    for (f32 radius = 1.0F; radius <= 40.0F; radius += 0.05F) {
+    // Radii from 1 to 40 pixels in twentieths, counted in integers.
+    for (u32 step = 20; step <= 800; ++step) {
+        const f32 radius = static_cast<f32>(step) * 0.05F;
         f64 error = 0.0;
         for (u32 x = kEdge - reach; x < kEdge + reach; ++x) {
             // Texel x's centre is x + 1/2; the edge is between texels kEdge - 1 and kEdge.

@@ -65,7 +65,7 @@ CY_TEST_CASE("the radius in pixels is half the thin-lens circle of confusion tim
         const f32 expected =
             0.5F * circle_of_confusion(settings.lens, distance) * static_cast<f32>(kHeight);
         CY_CHECK_NEAR(coc_radius_pixels(*constants, distance), expected,
-                      1.0e-4F * std::fabs(expected) + 1.0e-5F);
+                      (1.0e-4F * std::fabs(expected)) + 1.0e-5F);
     }
     // Negative in front of the focus plane, zero on it, positive behind it, and the sky — at
     // infinity — is the limit K.
