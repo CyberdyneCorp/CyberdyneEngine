@@ -217,6 +217,11 @@ public static const uint kCySoftShadowContact = 2u;
 public static const uint kCyDecalListsInTable = 1u;
 public static const uint kCyDecalWalkAll = 2u;
 
+/// Where `applyFrameDecals` reads the rank of its i-th decal from.
+static const uint kCyDecalRanksAll = 0u;
+static const uint kCyDecalRanksTable = 1u;
+static const uint kCyDecalRanksClusters = 2u;
+
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
 ///
 /// It is `rhi::kInvalidBindlessIndex` — `~0u` — spelled on the shader side, because the value in
@@ -814,36 +819,48 @@ void applyFrameDecals(inout Surface surface, inout float3 normal, float3 relativ
     decalled.emission = surface.emission;
     decalled.normal = normal;
 
+    // ONE LOOP, WHEREVER THE RANKS COME FROM: the walk over every decal, the table's own lists
+    // and the assembly's cluster lists differ only in which rank slot `i` names, so the decal
+    // itself is applied from one call site rather than one per source.
     let flags = cyFrame.decalControl.z;
+    let count = cyDecalCount(source);
+    var mode = kCyDecalRanksAll;
+    var list = uint2(0u, count);
     if ((flags & kCyDecalWalkAll) != 0u)
     {
-        cyApplyAllDecals(source, receiver, decalled);
+        mode = kCyDecalRanksAll;
     }
     else if ((flags & kCyDecalListsInTable) != 0u)
     {
-        cyApplyTableDecals(source, receiver, fragmentCentre, decalled);
+        mode = kCyDecalRanksTable;
+        list = count != 0u ? cyDecalTableList(source, relativePosition, fragmentCentre) : uint2(0u);
     }
     else if (cyFrame.counts.w != 0 && cyFrame.clusterGrid.dimensions.z != 0)
     {
-        let count = cyDecalCount(source);
         let extent = uint2(cyFrame.extentAndInverse.xy);
         let coord = clusterCoordOf(cyFrame.clusterGrid, uint2(fragmentCentre), extent,
                                    viewDepthOf(relativePosition));
         let cluster = clusterIndexOf(cyFrame.clusterGrid, coord);
-        let header = cyClusterHeaders[cluster * cyFrame.counts.z + 1u];
-        for (uint slot = 0; slot < header.y; ++slot)
-        {
-            let rank = cyClusterIndices[header.x + slot];
-            if (rank < count)
-            {
-                cyApplyDecal(source, rank, receiver, decalled);
-            }
-        }
+        mode = kCyDecalRanksClusters;
+        list = cyClusterHeaders[cluster * cyFrame.counts.z + 1u];
     }
-    else
+    // Otherwise no grid: the declared fallback the light loop takes, for the same reason, and
+    // every decal is walked.
+    for (uint slot = 0; slot < list.y; ++slot)
     {
-        // No grid: the declared fallback the light loop takes, for the same reason.
-        cyApplyAllDecals(source, receiver, decalled);
+        var rank = slot;
+        if (mode == kCyDecalRanksTable)
+        {
+            rank = cyDecalTableListEntry(source, list.x + slot);
+        }
+        else if (mode == kCyDecalRanksClusters)
+        {
+            rank = cyClusterIndices[list.x + slot];
+        }
+        if (rank < count)
+        {
+            cyApplyDecal(source, rank, receiver, decalled);
+        }
     }
 
     surface.albedo = decalled.albedo;

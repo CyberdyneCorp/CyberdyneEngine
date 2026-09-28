@@ -45,7 +45,8 @@
 //     24 fade start  25 fade end    26 metallic weight  27 emission weight
 //     28 channels    29 shape       30 shape parameter a 31 shape parameter b
 //     32 mask texture slot          33 relief, metres   34 edge softness      35 seed
-//   then, when word 5 is 1, one (offset, count) pair per cluster, and the ranks those name
+//   then, when word 5 is 1, one (offset, count) pair per cluster — the offset a table word, not
+//   relative to word 7 — and the ranks those name
 //
 // The axes are stored DIVIDED by their half-extents, so a position's coordinates in the box are
 // three dot products and "inside" is all three in [-1, 1].
@@ -328,10 +329,11 @@ public uint2 cyDecalTableList<S : ICyDecalSource>(S source, float3 relativePosit
     return uint2(source.word(header), source.word(header + 1u));
 }
 
-/// The rank a table-carried list names at `slot`.
-public uint cyDecalTableListEntry<S : ICyDecalSource>(S source, uint slot)
+/// The rank a table-carried list holds at table word `index`: a list's offset is already into the
+/// table (word 7 is only where the first list starts), so nothing is added to it here.
+public uint cyDecalTableListEntry<S : ICyDecalSource>(S source, uint index)
 {
-    return source.word(source.word(7u) + slot);
+    return source.word(index);
 }
 
 /// Every decal in the receiver's cluster, in application order, through the lists the table
