@@ -7,9 +7,13 @@
 - [x] Add `gi/card_lighting.h`: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot`, `CardGather`.
 - [x] Add the headless cases to `integration.render_gi_pipeline`: the journal, the snapshot against the cache's lookup, the shadow map against the field, the seam in the composed system.
 - [x] Add `cy::rendering-gi-gpu`: `GpuGiScene` (the page table, the brick pool, the cards, the grid, the trace batch) and `GpuSurfaceShading` (the shade and commit dispatches).
-- [x] Add the shaders and commit their SPIR-V and MSL through `shaders/regenerate.py`; `just build-shaders --strict src samples` reports `target_refusals=0`.
-- [x] Add `render.gi_gpu`: the trace, the incremental upload, the card radiance in the room and under the shadow-mapped sun, the budget, and the side-by-side image; prove each red by a mutation.
-- [x] Publish the side-by-side image, update the module READMEs and the requirements map, and validate this change.
+- [x] Add the shaders and `shaders/regenerate.py`.
+- [ ] Compile them, commit `src/gi_gpu_spirv.h` and `src/gi_gpu_msl.h` through `regenerate.py`, and check `just build-shaders --strict src samples` reports `target_refusals=0`.
+- [ ] Build `cy::rendering-gi-gpu` and its suite in the debug and dev profiles; clang-tidy the new C++.
+- [x] Write `render.gi_gpu`: the trace, the incremental upload, the card radiance in the room and under the shadow-mapped sun, the budget, and the side-by-side image.
+- [ ] Run `render.gi_gpu` on the RTX 5060, fill the measured table in the module README, prove each case red by the mutation its header names (md5-verified restore), and record the mutations in `tools/roadmap/falsifiability.toml`.
+- [x] Update the module READMEs and the requirements map, and validate this change with `--strict`.
+- [ ] Publish the side-by-side image at `docs/design/images/gi-gpu-surface-cache.png`.
 - [ ] Stage 3: the radiance cache and the tracing tiers on the device (issue #35).
 - [ ] Stage 4: the per-pixel resolve, the denoiser transcription, per-frame staging, the frame's shadow cascade, and the composite at `probeVolumeAmbient` (issue #35).
 - [ ] Stage 5: the device cost in `GiBudget` and the arbiter's lever ladders (issue #35).

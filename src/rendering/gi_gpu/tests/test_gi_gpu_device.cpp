@@ -33,16 +33,17 @@
 // stated beside each bound — the shape `render.skinning` uses.
 //
 // ================================================================================================
-// THE MUTATIONS THIS SUITE WAS PROVED AGAINST
+// THE MUTATIONS THIS SUITE IS TO BE PROVED AGAINST
 // ================================================================================================
 //
-// Each applied to the finished tree, run, restored and md5-verified:
+// Each to be applied to the finished tree, run, restored and md5-verified, and recorded in
+// tools/roadmap/falsifiability.toml with the case it turns red:
 //
-//   gi_gpu_common.slang giTrilinear: `tz` -> `ty`                RED: the trace case.
-//   gpu_scene.cpp upload_field: always `full`                     RED: the incremental case.
-//   gi_cards.slang: `accumulated = albedo * incoming` -> `incoming`  RED: both radiance cases.
-//   gi_gpu_common.slang giOccluded: the shadow-map branch removed  RED: the shadow-map case.
-//   surface_cache.cpp select(): the budget limit dropped           RED: the budget case.
+//   gi_gpu_common.slang giTrilinear: `tz` -> `ty`                   the trace case.
+//   gpu_scene.cpp upload_field: always `full`                        the incremental case.
+//   gi_cards.slang: `accumulated = albedo * incoming` -> `incoming`  both radiance cases.
+//   gi_gpu_common.slang giOccluded: the shadow-map branch removed    the shadow-map case.
+//   surface_cache.cpp select(): the budget limit dropped             the budget case.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/core/math/matrix.h>

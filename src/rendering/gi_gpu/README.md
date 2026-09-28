@@ -8,11 +8,11 @@ tree draws reads anything this module writes.
 **Governed by**: `rendering-global-illumination` — "Surface cache", "Distance field
 representation", "Incremental invalidation". Change: `openspec/changes/add-gpu-gi-surface-cache/`.
 
-![Host and device surface cache](../../../docs/design/images/gi-gpu-surface-cache.png)
-
-The lit cards of `render.gi_gpu`'s courtyard — a floor, a pillar casting the sun's shadow through a
-shadow map, a red wall, a blue lamp — after four frames of the update, splatted as discs: the host
-surface cache on the left, the device one on the right.
+`render.gi_gpu`'s last case writes the lit cards of its courtyard — a floor, a pillar casting the
+sun's shadow through a shadow map, a red wall, a blue lamp — after four frames of the update,
+splatted as discs: the host surface cache on the left, the device one on the right. The published
+copy goes to `docs/design/images/gi-gpu-surface-cache.png` once the suite has run on a device; it
+is not there yet.
 
 ## The files
 
@@ -66,16 +66,17 @@ all three.
 
 ## How close the device is to the host
 
-Measured on the RTX 5060 (`render.gi_gpu`, Vulkan):
+To be measured on the RTX 5060 (`render.gi_gpu`, Vulkan). **Not yet run**: the suite has not
+executed on a device, so the rows below are the quantities it prints, not results.
 
 | | |
 |---|---|
-| sphere trace, 1 024 rays in the room | MEASURED_TRACE |
-| door moved | MEASURED_DOOR |
-| room, six converged frames, direct | MEASURED_ROOM_DIRECT |
-| room, six converged frames, accumulated | MEASURED_ROOM_BOUNCE |
-| courtyard under the shadow-mapped sun, direct | MEASURED_YARD_DIRECT |
-| budget 48 over 402 pages | exactly the host selection each frame, every page valid after 9 frames |
+| sphere trace, 1 024 rays in the room | hit/miss disagreements, hits beyond 1 mm, worst 1 - n.n |
+| door moved | bricks re-solved and uploaded, of the window |
+| room, six converged frames, direct | mean and worst relative difference, pages beyond 1e-3 |
+| room, six converged frames, accumulated | mean and worst relative difference, pages beyond 1e-2 |
+| courtyard under the shadow-mapped sun, direct | mean and worst relative difference, pages beyond 1e-3 |
+| budget 48 over the room's pages | the host selection each frame; every page valid after ceil(pages / 48) frames |
 
 ## What is not here
 
