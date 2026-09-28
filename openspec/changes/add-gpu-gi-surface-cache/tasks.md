@@ -8,6 +8,7 @@
 - [x] Add the headless cases to `integration.render_gi_pipeline`: the journal, the snapshot against the cache's lookup, the shadow map against the field, the seam in the composed system.
 - [x] Add `cy::rendering-gi-gpu`: `GpuGiScene` (the page table, the brick pool, the cards, the grid, the trace batch) and `GpuSurfaceShading` (the shade and commit dispatches).
 - [x] Add the shaders and `shaders/regenerate.py`.
+- [x] Skip the module at configure time while either generated header is missing, so the default build does not stop on it.
 - [ ] Compile them, commit `src/gi_gpu_spirv.h` and `src/gi_gpu_msl.h` through `regenerate.py`, and check `just build-shaders --strict src samples` reports `target_refusals=0`.
 - [ ] Build `cy::rendering-gi-gpu` and its suite in the debug and dev profiles; clang-tidy the new C++.
 - [x] Write `render.gi_gpu`: the trace, the incremental upload, the card radiance in the room and under the shadow-mapped sun, the budget, and the side-by-side image.

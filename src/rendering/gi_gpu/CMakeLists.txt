@@ -15,6 +15,16 @@
 # THE SPIR-V AND MSL ARE CHECKED IN, not compiled by the build, for the reason
 # src/rendering/skinning/CMakeLists.txt gives. shaders/regenerate.py rewrites src/gi_gpu_spirv.h and
 # src/gi_gpu_msl.h.
+# Until regenerate.py has produced both headers, the module is not configured at all: gpu_scene.cpp
+# includes them, and a default build must not stop on a missing file. Nothing else links it yet.
+foreach(_cy_gi_gpu_header gi_gpu_spirv.h gi_gpu_msl.h)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/${_cy_gi_gpu_header}")
+        message(STATUS "cy::rendering-gi-gpu skipped: src/${_cy_gi_gpu_header} not generated yet "
+                       "(run shaders/regenerate.py)")
+        return()
+    endif()
+endforeach()
+
 cy_add_module(
     NAME cy_rendering_gi_gpu
     LAYER rendering

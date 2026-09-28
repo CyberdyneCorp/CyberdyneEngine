@@ -25,6 +25,10 @@ is not there yet.
 | `shaders/gi_cards.slang` | `cyGiShadeCards` and `cyGiCommitCards`: the card update, in two dispatches |
 | `shaders/regenerate.py` | recompiles the three entry points and rewrites `src/gi_gpu_spirv.h` and `src/gi_gpu_msl.h` |
 
+**Not configured until those two headers exist.** `CMakeLists.txt` returns before `cy_add_module`
+while either is missing, so a default build of the tree skips this module and its suite rather than
+stopping on a missing include. Running `regenerate.py` and committing the headers turns it on.
+
 ## Three modules, one seam each
 
 | Module | Owns | Knows nothing of |
