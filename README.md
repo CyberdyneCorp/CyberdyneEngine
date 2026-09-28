@@ -447,6 +447,7 @@ the hero image above and `just run-ship` packages and launches `samples/11-ship`
 | | |
 |---|---|
 | [Slang guide](docs/guides/slang.md) | Slang, and how the engine compiles and uses its shaders |
+| [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |
 | [Roadmap](docs/ROADMAP.md) | The milestone ladder, exit criteria and the invariants that cannot wait |
 | [Specification index](openspec/specs/README.md) | The 76 capabilities, in reading order |
