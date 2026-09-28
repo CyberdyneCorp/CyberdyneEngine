@@ -36,8 +36,9 @@ and no surface that is seen through fog.
   `FrameFeatures::volumetric_fog`, the producer seam `FrameDescription::volumetric_fog_stage` and the
   imported target; `FrameAssembly` switches it on from the post chain's `volumetric_fog` and passes
   the producer through `FrameSinks::volumetric_fog`.
-- `cy/frame.slang` appends `volumetricFogControl` to `CyFrameData` (528 bytes); with a volume slot
-  the forward fragment is attenuated and added to through it, without one it is the frame as it was.
+- `cy/frame.slang` appends `volumetricFogControl` to `CyFrameData` after `decalControl` (528 → 544
+  bytes); with a volume slot the forward fragment is attenuated and added to through it, without one
+  it is the frame as it was.
 - `samples/12-beauty` gains `--fog on|off` and the shot's `fog` lines: the Colonnade's shafts, lit by
   the same sun through the same shadow map as the surfaces. `samples/10-world` gains `--fog` and the
   grade file's valley haze, composited with the atmosphere's table and bound where it was.

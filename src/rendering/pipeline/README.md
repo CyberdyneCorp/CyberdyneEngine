@@ -138,7 +138,7 @@ fragment and the fullscreen resolve and temporal entries came out byte-identical
 
 ## Volumetric fog — `FrameViewData::volumetric_fog_control`
 
-One word appended after `probe_volume_params` (the block is 528 bytes), defaulted to "none". A caller
+One word appended after `decal_control` (the block is 544 bytes), defaulted to "none". A caller
 that runs `fog::FogPass` names its volume at a slot of set 0's texture table and writes the slot into
 `.x`; `cy/frame.slang`'s forward fragment then multiplies its colour by the transmittance between
 the surface and the eye and adds the in-scattering, through `cy/volumetric_fog.slang`, which reads
