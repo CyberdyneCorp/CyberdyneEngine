@@ -11,6 +11,11 @@
 //     u32 pages          u32 gutter     u32 planes      u32 address count
 //     u32 addresses[address count]
 //     u16 texels[planes * page size * page size * pages * 4]
+//     u32 shadow channels                                          version 2 onward
+//     u64 shadow light ids[shadow channels], as two u32 low first
+//     u16 shadow mask[page size * page size * pages * 4]           when shadow channels > 0
+//
+// Version 1 payloads — no shadow section — still decode, to a lightmap with no mask.
 //
 // Little-endian throughout, and nothing in it depends on the machine or the time it was baked, so a
 // bake that is re-run over an unchanged level produces the same bytes — which is what lets the
@@ -24,7 +29,9 @@
 namespace cy::rendering::lightmap_bake {
 
 inline constexpr u32 kLightmapAssetMagic = 0x4D4C5943U;  // "CYLM"
-inline constexpr u32 kLightmapAssetVersion = 1;
+inline constexpr u32 kLightmapAssetVersion = 2;
+/// The oldest version `decode_lightmap_asset` still reads.
+inline constexpr u32 kLightmapAssetOldestVersion = 1;
 
 [[nodiscard]] Status encode_lightmap_asset(const BakedLightmap& lightmap, Array<u8>& out) noexcept;
 /// Fails with `InvalidArgument` on a payload that is not a lightmap of this version or whose sizes

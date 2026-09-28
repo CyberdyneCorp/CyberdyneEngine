@@ -131,7 +131,9 @@ from the same run; `src/rendering/lightmaps/` samples the result in the frame. T
 nothing but a corrected row: `exclusion_for(Baked, has_lightmap)` excluded only the dynamic
 sources, so a lightmapped surface inside a volume resolved to the mean of the two — it now
 excludes the volume (`render_gi`'s "a lightmapped surface in Baked mode takes its lightmap").
-The shadow mask, light mobility and incremental rebakes are not built.
+`GiLight::mobility` (`Static`, `Stationary`, `Movable`) is read by the lightmap bake alone, which bakes a
+stationary light's shadow mask and rebakes a moved object's region incrementally; every consumer
+in this module still shades every light.
 
 The **screen tier's colour input is last frame's**, which is why its confidence is capped below one.
 The **hardware tier executes on the CPU** for the reason above.

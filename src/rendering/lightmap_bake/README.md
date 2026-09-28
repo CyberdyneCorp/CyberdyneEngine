@@ -89,12 +89,50 @@ lookup: a hit takes its material from the nearest surface card within a metre, a
 cards at `surfel_spacing` (at most 1.2 m, so every hit finds one). Halving the spacing from 1 m to
 0.5 m tripled a room's bake.
 
+## Light mobility and the shadow mask
+
+Each `gi::GiLight` carries a `gi::LightMobility`, and the bake honours it per light:
+- `Static`: its direct term at the receiver is baked with its bounce.
+- `Stationary`, the default: its bounce is baked, its direct term stays the frame's, and the bake
+  writes a SHADOW-MASK channel for it — the fraction of the light's extent (`radius`) each texel
+  sees, over `kShadowMaskSamples` points.
+- `Movable`: nothing, not even its bounce; the dynamic caches own it.
+
+A level that sets no mobility bakes the same texel planes, byte for byte, that it baked before
+mobility existed (`add-lightmap-mobility-and-rebake/evidence`). `LightmapContent::DirectAndIndirect`
+now means "bake the direct term of every light that is not `Movable`", and writes no mask.
+
+The mask is `BakedLightmap::shadow_mask`: one RGBA plane, a channel per stationary light in scene
+order, with `shadow_lights` naming each channel's light; a fifth stationary light is refused. It is
+dilated within each chart like the texels. It is NOT denoised: fully lit and fully shadowed texels
+are exact, and a soft penumbra carries sampling grain in steps of 1/64. It is NOT seam-reconciled:
+the seam solve's step lengths come from one inner product over every moment
+field, so adding the mask to it would move every existing bake's texels. The cooked asset carries it
+from format version 2; version 1 payloads still decode, with no mask.
+
+## Incremental rebake
+
+`rebake_lightmaps` takes the previous bake and what moved (each moved instance and its bounds before
+the move). It re-solves every object that moved and every object with a surface texel within
+`influence_metres` of a moved object's old or new bounds, and copies every texel of every other
+object from the previous bake byte for byte. The OBJECT is the unit because the denoiser, the
+dilation and the seam solve are all chart-bounded. A seam between a re-solved object and a kept one is
+left as the previous bake reconciled it (`report.boundary_seams`). If the level no longer packs to the
+same rectangles, or the mode, the page layout or the stationary lights changed, the rebake runs a
+full bake and says why in `report.fallback`.
+
+## Chart padding
+
+After rasterising, the bake measures, per object, the gap in empty texels between its distinct
+charts on its own raster, and lists every object below `report.required_chart_gap` — two texels of
+the coarsest protected mip level — in `report.padding_short`. With `refuse_short_padding` it refuses
+the level instead. The default settings DO report shortfalls: the importer unwraps at 16 texels per
+metre with a two-texel padding, and a level bakes at 8 with two protected mips. That is the finding
+the check exists for.
+
 ## What is not here
 
-The shadow mask and a `Stationary` light mobility; incremental rebakes of one moved object's region
-(the build graph's content key re-bakes a changed level whole); a device bake; mip levels in the
-uploaded atlas (the gutter is laid out for them); and a check that an unwrap's own chart padding
-survives the rectangle it is given — the importer pads charts in texels at its own texel density,
-and a rectangle sized at a lower one shrinks that padding, which is what the device suite's small
-cubes did before their resolution scale was raised. Each is exempt by name in
-`tools/roadmap/requirements-coverage.toml`, naming #36's next slice.
+The frame's use of the shadow mask — the forward shader reading the mask plane for a stationary
+light's direct term — and the mask's upload; a device bake; mip levels in the uploaded atlas (the
+gutter is laid out for them); the editor's bake command and texel-density view. Each is exempt by
+name in `tools/roadmap/requirements-coverage.toml`.

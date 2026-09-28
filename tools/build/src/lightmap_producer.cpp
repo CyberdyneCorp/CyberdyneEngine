@@ -27,8 +27,10 @@
 //     seed 12345
 //     sky 0.2 0.25 0.3              a uniform sky radiance, or:
 //     sky 0.3 0.4 0.6 0.5 0.5 0.5 0.1 0.1 0.1   zenith, horizon, ground
-//     light directional <dx dy dz> <intensity> <r g b>
-//     light point <px py pz> <intensity> <range> <r g b>
+//     light directional <dx dy dz> <intensity> <r g b> [static | stationary | movable]
+//     light point <px py pz> <intensity> <range> <r g b> [static | stationary | movable]
+//
+// A light with no mobility word is stationary (`gi::LightMobility`'s default).
 //     material "white" <r g b> [emission <r g b>] [opacity <a>]
 //     instance "derived/room.bundle" "mesh/Room" "white" <scale> <12 floats, 3x4 row-major>
 //
@@ -136,21 +138,44 @@ struct LevelDescription {
     return ok();
 }
 
-void parse_light(const text::Line& line, LevelDescription& level) {
+/// The optional mobility word after a light's colour. Unknown words are an error rather than
+/// ignored, so a misspelt `stationery` does not silently bake as the default.
+[[nodiscard]] Status parse_mobility(std::string_view word, gi::LightMobility& out) {
+    if (word.empty() || word == "stationary") {
+        out = gi::LightMobility::Stationary;
+    } else if (word == "static") {
+        out = gi::LightMobility::Static;
+    } else if (word == "movable") {
+        out = gi::LightMobility::Movable;
+    } else {
+        return fail(ErrorCode::InvalidArgument,
+                    "a lightmap light's mobility is not static, stationary or movable");
+    }
+    return ok();
+}
+
+[[nodiscard]] Status parse_light(const text::Line& line, LevelDescription& level) {
     gi::GiLight light;
     light.id = level.lights.size() + 1U;
+    usize mobility_at = 0;
     if (line.word(1) == "directional") {
         light.directional = true;
         light.direction = triple(line, 2);
         light.intensity = number(line, 5);
         light.colour = triple(line, 6);
+        mobility_at = 9;
     } else {
         light.position = triple(line, 2);
         light.intensity = number(line, 5);
         light.range = number(line, 6);
         light.colour = triple(line, 7);
+        mobility_at = 10;
+    }
+    if (Status parsed = parse_mobility(line.word(mobility_at), light.mobility); !parsed) {
+        return parsed;
     }
     level.lights.push_back(light);
+    return ok();
 }
 
 void parse_material(const text::Line& line, LevelDescription& level) {
@@ -257,7 +282,9 @@ void parse_material(const text::Line& line, LevelDescription& level) {
         const text::Line& line = (*lines)[index];
         const std::string_view key = line.word(0);
         if (key == "light") {
-            parse_light(line, level);
+            if (Status parsed = parse_light(line, level); !parsed) {
+                return parsed;
+            }
         } else if (key == "material") {
             parse_material(line, level);
         } else if (key == "instance") {

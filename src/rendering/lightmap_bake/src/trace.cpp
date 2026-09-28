@@ -65,6 +65,43 @@ constexpr f32 kMaxCardSpacing = 1.2F;
     return tangential / std::max(cosine, kMinResponseCosine);
 }
 
+/// A point on the light's extent as seen from `origin`, for one shadow-mask sample: on a disc of
+/// `radius` facing the origin for a punctual light, and `reach` metres along a direction inside the
+/// cone of angular radius `radius` for a directional one. Uniform in the disc's area.
+[[nodiscard]] Vec3 light_sample_point(const gi::GiLight& light, Vec3 origin, f32 reach,
+                                      u32& sequence) noexcept {
+    const Vec3 toward = direction_to(light, origin);
+    Vec3 tangent = std::abs(toward.y) < 0.99F ? cross(Vec3{0.0F, 1.0F, 0.0F}, toward)
+                                              : cross(Vec3{1.0F, 0.0F, 0.0F}, toward);
+    tangent = normalized_or(tangent, Vec3{1.0F, 0.0F, 0.0F});
+    const Vec3 bitangent = cross(toward, tangent);
+    const f32 radius = std::sqrt(hashed_unit(sequence));
+    const f32 angle = 6.2831853F * hashed_unit(sequence);
+    const Vec3 offset =
+        (tangent * (radius * std::cos(angle))) + (bitangent * (radius * std::sin(angle)));
+    if (light.directional) {
+        // An angular radius: the offset tilts the direction by up to `radius` radians.
+        return origin + (normalized_or(toward + (offset * light.radius), toward) * reach);
+    }
+    return light.position + (offset * light.radius);
+}
+
+/// The fraction of the light's extent visible from `origin`. A point light is one test.
+[[nodiscard]] f32 light_visibility(const MeshSceneTracer& tracer, const gi::GiLight& light,
+                                   Vec3 origin, Vec3 normal, f32 reach, u32 sequence) noexcept {
+    if (dot(direction_to(light, origin), normal) <= 0.0F) {
+        return 0.0F;  // behind the surface: nothing of the light reaches it
+    }
+    const u32 samples = light.radius > 0.0F ? kShadowMaskSamples : 1U;
+    u32 visible = 0;
+    for (u32 index = 0; index < samples; ++index) {
+        if (!tracer.occluded(origin, light_sample_point(light, origin, reach, sequence))) {
+            visible += 1U;
+        }
+    }
+    return static_cast<f32>(visible) / static_cast<f32>(samples);
+}
+
 void accumulate(TexelMoments& moments, Vec3 radiance, Vec3 direction, Vec3 normal,
                 f32 weight) noexcept {
     const f32 lum = luminance(radiance);
@@ -144,16 +181,42 @@ TexelMoments trace_moments(const TraceContext& context, Vec3 position, Vec3 norm
                                                      settings.trace.max_distance_metres, sequence);
         accumulate(moments, radiance, direction, normal, weight);
     }
-    if (settings.content == LightmapContent::DirectAndIndirect) {
-        // The placed lights at the receiver, one at a time so each carries its own direction. The
-        // lights are already divided by pi, so this is E / pi like the rest of the texel.
-        for (const gi::GiLight& light : context.lights) {
-            const Vec3 direct = gi::shaded_direct(Span<const gi::GiLight>(&light, 1), position,
-                                                  normal, context.tracer);
-            accumulate(moments, direct, direction_to(light, position), normal, 1.0F);
+    // The baked lights at the receiver, one at a time so each carries its own direction. The
+    // lights are already divided by pi, so this is E / pi like the rest of the texel.
+    for (const gi::GiLight& light : context.lights) {
+        if (!bakes_direct(light, settings.content)) {
+            continue;
         }
+        const Vec3 direct =
+            gi::shaded_direct(Span<const gi::GiLight>(&light, 1), position, normal, context.tracer);
+        accumulate(moments, direct, direction_to(light, position), normal, 1.0F);
     }
     return moments;
+}
+
+bool bakes_direct(const gi::GiLight& light, LightmapContent content) noexcept {
+    switch (light.mobility) {
+        case gi::LightMobility::Static:
+            return true;
+        case gi::LightMobility::Stationary:
+            return content == LightmapContent::DirectAndIndirect;
+        case gi::LightMobility::Movable:
+            break;
+    }
+    return false;
+}
+
+Vec4 trace_shadow_mask(const TraceContext& context, Vec3 position, Vec3 normal,
+                       u32 sequence) noexcept {
+    f32 channels[4] = {1.0F, 1.0F, 1.0F, 1.0F};
+    const Vec3 origin = position + (normal * kSurfaceOffset);
+    const f32 reach = context.settings->trace.max_distance_metres;
+    for (usize channel = 0; channel < context.stationary.size() && channel < 4U; ++channel) {
+        channels[channel] =
+            light_visibility(*context.tracer, context.stationary[channel], origin, normal, reach,
+                             sequence ^ (static_cast<u32>(channel + 1U) * 0x68E31DA4U));
+    }
+    return Vec4{channels[0], channels[1], channels[2], channels[3]};
 }
 
 bool buried(const TraceContext& context, Vec3 position, Vec3 normal, u32 sequence) noexcept {

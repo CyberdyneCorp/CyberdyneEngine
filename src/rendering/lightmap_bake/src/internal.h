@@ -62,6 +62,10 @@ struct Canvas {
     u32 height = 0;
     Array<TexelSurface> surfaces;
     Array<TexelMoments> moments;
+    /// The shadow mask, one RGBA per texel; empty when no light is stationary. Kept apart from the
+    /// moments so the seam solve, whose step lengths come from an inner product over every moment
+    /// field, still produces exactly the texels it did before the mask existed.
+    Array<Vec4> shadow;
 
     [[nodiscard]] usize index(u32 x, u32 y) const noexcept { return (usize{y} * width) + x; }
 };
@@ -84,10 +88,21 @@ struct SeamEdge {
 struct TraceContext {
     const gi::PathTracer* path = nullptr;
     const MeshSceneTracer* tracer = nullptr;
-    /// The lights the path tracer was built with, already scaled by 1/pi.
+    /// The lights the path tracer was built with, already scaled by 1/pi: every light that is not
+    /// `Movable`.
     Span<const gi::GiLight> lights;
+    /// The stationary lights in shadow-mask channel order, as the caller gave them.
+    Span<const gi::GiLight> stationary;
     const LightmapBakeSettings* settings = nullptr;
 };
+
+/// Whether a light's direct term at the receiver is baked into the texels.
+[[nodiscard]] bool bakes_direct(const gi::GiLight& light, LightmapContent content) noexcept;
+
+/// The texel's shadow mask: per stationary light, the fraction of its extent visible from
+/// `position`; 1 in a channel no light has.
+[[nodiscard]] Vec4 trace_shadow_mask(const TraceContext& context, Vec3 position, Vec3 normal,
+                                     u32 sequence) noexcept;
 
 [[nodiscard]] TexelMoments trace_moments(const TraceContext& context, Vec3 position, Vec3 normal,
                                          u32 sequence, u32 samples) noexcept;
@@ -98,6 +113,10 @@ struct TraceContext {
 /// Surface cards for the GI scene the path tracer resolves materials through.
 [[nodiscard]] Status build_surfels(const LightmapScene& scene, const MeshSceneTracer& tracer,
                                    f32 spacing, gi::GiScene& out) noexcept;
+
+/// Instances with two distinct charts closer than `gap` empty texels in their rectangle, in
+/// instance order.
+[[nodiscard]] Status short_padding(const Canvas& canvas, u32 gap, Array<u32>& out) noexcept;
 
 /// `passes` is the a-trous cascade length: each pass doubles the reach, so two reach three texels.
 [[nodiscard]] Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 passes) noexcept;

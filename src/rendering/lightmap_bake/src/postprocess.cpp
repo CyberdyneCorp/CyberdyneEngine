@@ -317,8 +317,37 @@ private:
 struct Fill {
     usize texel = 0;
     TexelMoments moments;
+    /// The chart's own visibility, when the canvas carries a shadow mask.
+    Vec4 shadow{1.0F, 1.0F, 1.0F, 1.0F};
     Vec3 normal{0.0F, 1.0F, 0.0F};
     u32 chart = kNoOwner;
+};
+
+/// A dilated texel's neighbours, summed: their moments, their shadow mask when the canvas has one,
+/// and their normals.
+struct NeighbourSum {
+    TexelMoments moments;
+    Vec4 shadow{0.0F, 0.0F, 0.0F, 0.0F};
+    Vec3 normal{0.0F, 0.0F, 0.0F};
+    f32 weight = 0.0F;
+
+    void add(const Canvas& canvas, usize neighbour) noexcept {
+        add_moments(moments, canvas.moments[neighbour], 1.0F);
+        if (!canvas.shadow.empty()) {
+            shadow = shadow + canvas.shadow[neighbour];
+        }
+        normal = normal + canvas.surfaces[neighbour].normal;
+        weight += 1.0F;
+    }
+
+    void average_into(const Canvas& canvas, Fill& out) const noexcept {
+        add_moments(out.moments, moments, 1.0F / weight);
+        if (!canvas.shadow.empty()) {
+            out.shadow = shadow * (1.0F / weight);
+        }
+        // The normal travels with the light: the directional planes are encoded against it.
+        out.normal = normalized_or(normal, Vec3{0.0F, 1.0F, 0.0F});
+    }
 };
 
 /// The texel `(dx, dy)` from `(x, y)`, or false off the canvas.
@@ -408,9 +437,7 @@ private:
     if (chart == kNoOwner) {
         return false;
     }
-    TexelMoments sum;
-    Vec3 normal_sum{0.0F, 0.0F, 0.0F};
-    f32 weight = 0.0F;
+    NeighbourSum sum;
     for (i32 dy = -1; dy <= 1; ++dy) {
         for (i32 dx = -1; dx <= 1; ++dx) {
             usize neighbour = 0;
@@ -421,19 +448,15 @@ private:
             if (known[neighbour] == 0U || texel.owner != owner || texel.chart != chart) {
                 continue;
             }
-            add_moments(sum, canvas.moments[neighbour], 1.0F);
-            normal_sum = normal_sum + texel.normal;
-            weight += 1.0F;
+            sum.add(canvas, neighbour);
         }
     }
-    if (weight <= 0.0F) {
+    if (sum.weight <= 0.0F) {
         return false;
     }
     out.texel = index;
     out.chart = chart;
-    add_moments(out.moments, sum, 1.0F / weight);
-    // The normal travels with the light: the directional planes are encoded against it.
-    out.normal = normalized_or(normal_sum, Vec3{0.0F, 1.0F, 0.0F});
+    sum.average_into(canvas, out);
     return true;
 }
 
@@ -463,7 +486,98 @@ private:
     return float_from_half(half_from_float(value));
 }
 
+void apply_fill(Canvas& canvas, const Fill& fill) noexcept {
+    canvas.moments[fill.texel] = fill.moments;
+    if (!canvas.shadow.empty()) {
+        canvas.shadow[fill.texel] = fill.shadow;
+    }
+    canvas.surfaces[fill.texel].normal = fill.normal;
+    canvas.surfaces[fill.texel].chart = fill.chart;
+}
+
+/// Whether a covered texel touches something that is not its own chart: only such a texel can be
+/// the nearest point of its chart to another chart, so only those are searched from.
+[[nodiscard]] bool chart_border(const Canvas& canvas, u32 x, u32 y) noexcept {
+    const TexelSurface& texel = canvas.surfaces[canvas.index(x, y)];
+    constexpr i32 kSteps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (const auto& step : kSteps) {
+        usize neighbour = 0;
+        if (!neighbour_of(canvas, x, y, step[0], step[1], neighbour)) {
+            return true;
+        }
+        const TexelSurface& other = canvas.surfaces[neighbour];
+        if (!has_surface(other) || other.chart != texel.chart) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Whether another chart of the same object is within `gap` texels of `(x, y)`: a Chebyshev
+/// distance of at most `gap`, which is fewer than `gap` empty texels between them.
+[[nodiscard]] bool other_chart_within(const Canvas& canvas, u32 x, u32 y, u32 gap) noexcept {
+    const TexelSurface& texel = canvas.surfaces[canvas.index(x, y)];
+    const auto reach = static_cast<i32>(gap);
+    for (i32 dy = -reach; dy <= reach; ++dy) {
+        for (i32 dx = -reach; dx <= reach; ++dx) {
+            usize neighbour = 0;
+            if (!neighbour_of(canvas, x, y, dx, dy, neighbour)) {
+                continue;
+            }
+            const TexelSurface& other = canvas.surfaces[neighbour];
+            if (has_surface(other) && other.owner == texel.owner && other.chart != texel.chart) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// Flag the owner of `(x, y)` when it is a chart border with another of its owner's charts within
+/// `gap` texels. An owner already flagged is not searched again.
+[[nodiscard]] Status mark_if_short(const Canvas& canvas, u32 x, u32 y, u32 gap,
+                                   Array<u8>& short_owner) noexcept {
+    const TexelSurface& texel = canvas.surfaces[canvas.index(x, y)];
+    if (!has_surface(texel) || texel.owner == kNoOwner) {
+        return ok();
+    }
+    if (texel.owner >= short_owner.size()) {
+        if (Status sized = short_owner.resize(texel.owner + 1U); !sized) {
+            return sized;
+        }
+    }
+    if (short_owner[texel.owner] == 0U && chart_border(canvas, x, y) &&
+        other_chart_within(canvas, x, y, gap)) {
+        short_owner[texel.owner] = 1U;
+    }
+    return ok();
+}
+
 }  // namespace
+
+Status short_padding(const Canvas& canvas, u32 gap, Array<u32>& out) noexcept {
+    out.clear();
+    // One flag per owner, found from its chart borders. Measured on the raster rather than read off
+    // the unwrap: the cooked mesh records no unwrap resolution, and this is the padding the bake
+    // actually drew — after the rectangle scaled the unwrap to the level's density.
+    Array<u8> short_owner;
+    for (u32 y = 0; y < canvas.height; ++y) {
+        for (u32 x = 0; x < canvas.width; ++x) {
+            if (Status marked = mark_if_short(canvas, x, y, gap, short_owner); !marked) {
+                return marked;
+            }
+        }
+    }
+    for (u32 owner = 0; owner < short_owner.size(); ++owner) {
+        if (short_owner[owner] == 0U) {
+            continue;
+        }
+        if (Status pushed = out.push_back(owner); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
 
 Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 passes) noexcept {
     const usize texels = canvas.surfaces.size();
@@ -573,9 +687,7 @@ u32 dilate(Canvas& canvas, u32 passes) noexcept {
             break;
         }
         for (const Fill& fill : fills) {
-            canvas.moments[fill.texel] = fill.moments;
-            canvas.surfaces[fill.texel].normal = fill.normal;
-            canvas.surfaces[fill.texel].chart = fill.chart;
+            apply_fill(canvas, fill);
             known[fill.texel] = 1U;
         }
         filled += static_cast<u32>(fills.size());

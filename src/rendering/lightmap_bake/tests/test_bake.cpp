@@ -21,13 +21,16 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
+#include <string_view>
 #include <vector>
 
 namespace {
 
 using namespace cy::rendering::lightmap_bake;  // NOLINT(google-build-using-namespace)
 namespace gi = cy::rendering::gi;
+using cy::Aabb;
 using cy::f32;
+using cy::f64;
 using cy::Mat4;
 using cy::u32;
 using cy::u64;
@@ -856,4 +859,418 @@ CY_TEST_CASE("the cooked lightmap round-trips, and an unchanged level bakes to t
     }
     // A truncated payload is refused rather than read past.
     CY_CHECK_FALSE(decode_lightmap_asset({a.data(), a.size() - 2}, decoded).has_value());
+}
+
+// --- Light mobility and the shadow mask (`add-lightmap-mobility-and-rebake`) -------------------
+
+namespace {
+
+/// The room with one point light near the ceiling and, below it, a small horizontal blocker facing
+/// the floor: the floor straight under the lamp is in its shadow, and the floor at x = 1.2 sees the
+/// lamp past the blocker's +x edge with half a metre to spare. The blocker owns a lightmap whose
+/// every texel faces away from the lamp, so its whole chart — and its dilated gutter — is shadow.
+struct ShadowRoom {
+    Room room;
+    Vec3 lamp{-0.6F, 1.0F, 0.0F};
+
+    explicit ShadowRoom(gi::LightMobility mobility) {
+        room.point_light(lamp, 30.0F);
+        room.lights.back().mobility = mobility;
+        BakeInstance blocker;
+        blocker.mesh = 0;
+        blocker.material = static_cast<u32>(room.materials.size());
+        blocker.transform =
+            place(Vec3{1, 0, 0}, Vec3{0, -1, 0}, 0.8F, 0.8F, Vec3{-0.8F, 0.3F, 0.0F});
+        blocker.id = room.instances.size();
+        room.instances.push_back(blocker);
+        room.materials.push_back(BakeMaterial{Vec3{0.7F, 0.7F, 0.7F}});
+    }
+
+    /// A floor point: under the blocker, or out in the open on the +x side.
+    [[nodiscard]] Vec2 shadowed_uv() const { return Vec2{0.35F, 0.5F}; }
+    [[nodiscard]] Vec2 lit_uv() const { return Vec2{0.8F, 0.5F}; }
+    [[nodiscard]] Vec3 floor_point(Vec2 uv) const {
+        return quad_point(room.instances[kFloor].transform, uv);
+    }
+};
+
+/// Whether atlas texel `index` lies in the rectangle `address` names.
+[[nodiscard]] bool in_rectangle(const BakedLightmap& lightmap, u32 address, usize index) {
+    AtlasPlacement placement;
+    if (!decode_address(address, placement)) {
+        return false;
+    }
+    const u32 block = lightmap.page_size / kAddressBlocks;
+    const auto x = static_cast<u32>(index % lightmap.texels.width);
+    const auto y = static_cast<u32>(index / lightmap.texels.width);
+    const u32 top = (placement.page * lightmap.page_size) + (placement.block_y * block);
+    const u32 left = placement.block_x * block;
+    return x >= left && x < left + (placement.block_width * block) && y >= top &&
+           y < top + (placement.block_height * block);
+}
+
+/// The blocker's instance index in `ShadowRoom`.
+constexpr u32 kBlockerInstance = kFaces;
+
+[[nodiscard]] f32 mask_at(const Baked& baked, u64 light, Vec2 uv, u32 instance = kFloor) {
+    const Vec2 coordinate =
+        atlas_coordinate(baked.lightmap.addresses[instance], uv, baked.lightmap.page_size,
+                         baked.lightmap.gutter_texels);
+    return sample_shadow_mask(baked.lightmap, light, coordinate);
+}
+
+[[nodiscard]] bool same_texels(const LightmapTexels& a, const LightmapTexels& b) {
+    return a.width == b.width && a.height == b.height && a.planes == b.planes &&
+           a.texels.size() == b.texels.size() &&
+           std::equal(a.texels.begin(), a.texels.end(), b.texels.begin(), [](Vec4 p, Vec4 q) {
+               return p.x == q.x && p.y == q.y && p.z == q.z && p.w == q.w;
+           });
+}
+
+[[nodiscard]] f32 mean_luminance(const LightmapTexels& texels) {
+    f64 total = 0.0;
+    const usize plane = usize{texels.width} * texels.height;
+    for (usize at = 0; at < plane; ++at) {
+        const Vec4 texel = texels.texels[at];
+        total += static_cast<f64>(luminance(Vec3{texel.x, texel.y, texel.z}));
+    }
+    return static_cast<f32>(total / static_cast<f64>(std::max<usize>(plane, 1)));
+}
+
+}  // namespace
+
+CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not its direct term") {
+    const ShadowRoom stationary(gi::LightMobility::Stationary);
+    const LightmapScene scene = stationary.room.scene();
+    const LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    const Baked baked = bake(scene, settings);
+    const u64 light = stationary.room.lights.front().id;
+
+    CY_REQUIRE_EQ(baked.lightmap.shadow_lights.size(), 1U);
+    CY_CHECK_EQ(baked.lightmap.shadow_lights[0], light);
+    const f32 in_shadow = mask_at(baked, light, stationary.shadowed_uv());
+    const f32 in_light = mask_at(baked, light, stationary.lit_uv());
+    CY_TEST_MESSAGE("shadow mask: " << in_shadow << " under the blocker, " << in_light
+                                    << " in the open");
+    CY_CHECK_LT(in_shadow, 0.1F);
+    CY_CHECK_GT(in_light, 0.9F);
+    // The mask is dilated with the texels: every texel of the blocker's rectangle — its chart, all
+    // shadow, and the gutter the dilation fills from it — holds the chart's shadow, not the unlit
+    // default a texel starts at. A coarser mip level averages exactly those gutter texels.
+    const usize plane = usize{baked.lightmap.shadow_mask.width} * baked.lightmap.shadow_mask.height;
+    u32 rectangle = 0;
+    u32 lit_in_rectangle = 0;
+    for (usize index = 0; index < plane; ++index) {
+        if (in_rectangle(baked.lightmap, baked.lightmap.addresses[kBlockerInstance], index)) {
+            rectangle += 1U;
+            lit_in_rectangle += baked.lightmap.shadow_mask.texels[index].x > 0.05F ? 1U : 0U;
+        }
+    }
+    CY_TEST_MESSAGE("blocker rectangle: " << lit_in_rectangle << " of " << rectangle
+                                          << " texels unshadowed");
+    CY_CHECK_GT(rectangle, 0U);
+    CY_CHECK_EQ(lit_in_rectangle, 0U);
+
+    // The texels are the indirect light only: they match the path tracer's own indirect-only
+    // answer at the lit point, and a Static bake of the same room — which adds the direct term —
+    // is far brighter there.
+    const Vec3 normal{0.0F, 1.0F, 0.0F};
+    const Vec2 lit = stationary.lit_uv();
+    const Vec3 texel =
+        sample_lightmap(baked.lightmap, baked.lightmap.addresses[kFloor], lit, normal);
+    const std::vector<Vec3> truth =
+        reference(scene, settings, {stationary.floor_point(lit)}, {normal}, 1024);
+    CY_TEST_MESSAGE("stationary texel " << luminance(texel) << " against indirect-only truth "
+                                        << luminance(truth[0]));
+    CY_CHECK_LT(std::fabs(luminance(texel) - luminance(truth[0])), 0.25F * luminance(truth[0]));
+
+    // A Static bake of the same room adds exactly the direct term: the difference between the two
+    // texels is the light's shadowed direct term at the point, over pi (a texel holds E / pi).
+    const ShadowRoom as_static(gi::LightMobility::Static);
+    const Baked static_baked = bake(as_static.room.scene(), settings);
+    const Vec3 static_texel = sample_lightmap(static_baked.lightmap,
+                                              static_baked.lightmap.addresses[kFloor], lit, normal);
+    MeshSceneTracer occluder;
+    CY_REQUIRE(occluder.build(scene).has_value());
+    const f32 direct =
+        luminance(gi::shaded_direct(cy::Span<const gi::GiLight>(stationary.room.lights.data(), 1),
+                                    stationary.floor_point(lit), normal, &occluder)) /
+        std::numbers::pi_v<f32>;
+    const f32 added = luminance(static_texel) - luminance(texel);
+    CY_TEST_MESSAGE("static adds " << added << " over stationary; the direct term over pi is "
+                                   << direct);
+    CY_CHECK_GT(direct, 0.1F * luminance(texel));
+    CY_CHECK_LT(std::fabs(added - direct), 0.15F * direct);
+
+    // The runtime's half: the light's unshadowed direct term, at whatever intensity the frame gives
+    // it, times the baked mask, is the path tracer's shadowed direct term — in the shadow and out
+    // of it, and at three times the baked intensity with nothing re-baked.
+    for (const f32 scale : {1.0F, 3.0F}) {
+        gi::GiLight runtime = stationary.room.lights.front();
+        runtime.intensity *= scale;
+        const cy::Span<const gi::GiLight> one(&runtime, 1);
+        MeshSceneTracer tracer;
+        CY_REQUIRE(tracer.build(scene).has_value());
+        for (const Vec2 uv : {stationary.shadowed_uv(), stationary.lit_uv()}) {
+            const Vec3 point = stationary.floor_point(uv);
+            const Vec3 open = gi::shaded_direct(one, point, normal, nullptr);
+            const Vec3 shadowed = gi::shaded_direct(one, point, normal, &tracer);
+            const Vec3 from_mask = open * mask_at(baked, light, uv);
+            CY_CHECK_LE(std::fabs(luminance(from_mask) - luminance(shadowed)),
+                        0.05F * std::max(luminance(open), 1.0e-4F));
+        }
+    }
+}
+
+CY_TEST_CASE("a movable light bakes nothing, not even its bounce") {
+    const ShadowRoom movable(gi::LightMobility::Movable);
+    const Baked baked = bake(movable.room.scene(), small_settings(LightmapMode::Irradiance));
+    CY_CHECK(baked.lightmap.shadow_lights.empty());
+    CY_CHECK(baked.lightmap.shadow_mask.texels.empty());
+    // A closed room with a black sky and no emission: with its only light movable, nothing is left.
+    const f32 mean = mean_luminance(baked.lightmap.texels);
+    CY_TEST_MESSAGE("movable-only room: mean texel luminance " << mean);
+    CY_CHECK_LT(mean, 1.0e-5F);
+
+    const ShadowRoom stationary(gi::LightMobility::Stationary);
+    const Baked lit = bake(stationary.room.scene(), small_settings(LightmapMode::Irradiance));
+    CY_CHECK_GT(mean_luminance(lit.lightmap.texels), 100.0F * std::max(mean, 1.0e-7F));
+}
+
+CY_TEST_CASE("a static light bakes exactly what DirectAndIndirect baked before mobility existed") {
+    const ShadowRoom as_static(gi::LightMobility::Static);
+    const LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    const Baked static_baked = bake(as_static.room.scene(), settings);
+
+    // The pre-mobility spelling: every light's direct term through the content switch.
+    const ShadowRoom stationary(gi::LightMobility::Stationary);
+    LightmapBakeSettings legacy = settings;
+    legacy.content = LightmapContent::DirectAndIndirect;
+    const Baked legacy_baked = bake(stationary.room.scene(), legacy);
+
+    CY_CHECK(same_texels(static_baked.lightmap.texels, legacy_baked.lightmap.texels));
+    // Neither writes a mask: the static light has no channel, and DirectAndIndirect bakes every
+    // non-movable light's direct term, leaving nothing for a mask to shadow.
+    CY_CHECK(static_baked.lightmap.shadow_lights.empty());
+    CY_CHECK(legacy_baked.lightmap.shadow_lights.empty());
+}
+
+CY_TEST_CASE("a fifth stationary light is refused by name") {
+    Room room;
+    for (u32 index = 0; index < kMaxShadowMaskLights + 1U; ++index) {
+        room.point_light(Vec3{-1.5F + static_cast<f32>(index) * 0.7F, 1.0F, 0.0F}, 10.0F);
+    }
+    BakedLightmap out;
+    LightmapBakeReport report;
+    const cy::Status baked = bake_lightmaps(room.scene(), small_settings(LightmapMode::Irradiance),
+                                            nullptr, out, report);
+    CY_REQUIRE_FALSE(baked.has_value());
+    CY_CHECK_EQ(baked.error().code, cy::ErrorCode::OutOfRange);
+
+    room.lights.back().mobility = gi::LightMobility::Movable;
+    CY_CHECK(
+        bake_lightmaps(room.scene(), small_settings(LightmapMode::Irradiance), nullptr, out, report)
+            .has_value());
+    CY_CHECK_EQ(out.shadow_lights.size(), kMaxShadowMaskLights);
+}
+
+CY_TEST_CASE("the cooked lightmap carries the shadow mask, and a version 1 payload still decodes") {
+    const ShadowRoom stationary(gi::LightMobility::Stationary);
+    const Baked baked = bake(stationary.room.scene(), small_settings(LightmapMode::Irradiance));
+    cy::Array<u8> payload;
+    CY_REQUIRE(encode_lightmap_asset(baked.lightmap, payload).has_value());
+    BakedLightmap decoded;
+    CY_REQUIRE(decode_lightmap_asset(payload.span(), decoded).has_value());
+    CY_CHECK(same_texels(decoded.texels, baked.lightmap.texels));
+    CY_CHECK(same_texels(decoded.shadow_mask, baked.lightmap.shadow_mask));
+    CY_REQUIRE_EQ(decoded.shadow_lights.size(), 1U);
+    CY_CHECK_EQ(decoded.shadow_lights[0], baked.lightmap.shadow_lights[0]);
+
+    // A version 1 payload is a version 2 one with no shadow section and the old version word.
+    const ShadowRoom movable(gi::LightMobility::Movable);
+    const Baked plain = bake(movable.room.scene(), small_settings(LightmapMode::Irradiance));
+    CY_REQUIRE(encode_lightmap_asset(plain.lightmap, payload).has_value());
+    std::vector<u8> old(payload.begin(), payload.end() - 4);  // drop "0 shadow channels"
+    old[4] = 1;
+    old[5] = old[6] = old[7] = 0;
+    BakedLightmap from_old;
+    CY_REQUIRE(decode_lightmap_asset({old.data(), old.size()}, from_old).has_value());
+    CY_CHECK(same_texels(from_old.texels, plain.lightmap.texels));
+    CY_CHECK(from_old.shadow_lights.empty());
+}
+
+// --- Incremental rebake -----------------------------------------------------------------------
+
+namespace {
+
+/// Four floor tiles ten metres apart under an open sky, and a small receiving blocker hovering over
+/// the first. Moving the blocker reaches the first tile and nothing else.
+struct TileLevel {
+    QuadMesh quad;
+    std::vector<BakeMesh> meshes;
+    std::vector<BakeMaterial> materials{BakeMaterial{Vec3{0.6F, 0.6F, 0.6F}}};
+    std::vector<BakeInstance> instances;
+    static constexpr u32 kBlocker = 4;
+
+    TileLevel() {
+        meshes.push_back(quad.mesh());
+        for (u32 tile = 0; tile < 4U; ++tile) {
+            BakeInstance instance;
+            instance.transform = place(Vec3{1, 0, 0}, Vec3{0, 1, 0}, 2.0F, 2.0F,
+                                       Vec3{10.0F * static_cast<f32>(tile), 0.0F, 0.0F});
+            instance.id = tile;
+            instances.push_back(instance);
+        }
+        BakeInstance blocker;
+        blocker.transform = blocker_at(0.0F);
+        blocker.id = kBlocker;
+        instances.push_back(blocker);
+    }
+
+    [[nodiscard]] static Mat4 blocker_at(f32 x) {
+        return place(Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.8F, 0.8F, Vec3{x, 0.4F, 0.0F});
+    }
+
+    [[nodiscard]] LightmapScene scene() const {
+        LightmapScene out;
+        out.meshes = {meshes.data(), meshes.size()};
+        out.materials = {materials.data(), materials.size()};
+        out.instances = {instances.data(), instances.size()};
+        return out;  // the default sky: an open level lit by it alone
+    }
+};
+
+[[nodiscard]] LightmapBakeSettings tile_settings() {
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.atlas.texel_density = 12.0F;
+    return settings;
+}
+
+}  // namespace
+
+CY_TEST_CASE("moving one object re-solves its region and keeps every other texel byte for byte") {
+    TileLevel level;
+    const LightmapBakeSettings settings = tile_settings();
+    const Baked before = bake(level.scene(), settings);
+
+    const Aabb old_bounds = Aabb::from_min_max(Vec3{-0.4F, 0.4F, -0.4F}, Vec3{0.4F, 0.4F, 0.4F});
+    level.instances[TileLevel::kBlocker].transform = TileLevel::blocker_at(0.5F);
+    const u32 moved = TileLevel::kBlocker;
+    LightmapRebakeRequest request;
+    request.moved_instances = {&moved, 1};
+    request.previous_bounds = {&old_bounds, 1};
+    request.influence_metres = 2.0F;
+
+    BakedLightmap after;
+    LightmapBakeReport report;
+    CY_REQUIRE(rebake_lightmaps(level.scene(), settings, before.lightmap, request, after, report)
+                   .has_value());
+    CY_TEST_MESSAGE("rebake: incremental "
+                    << report.incremental << ", objects " << report.objects_rebaked << " of "
+                    << level.instances.size() << ", rays " << report.rays << " against "
+                    << before.report.rays << " for the bake");
+    CY_REQUIRE(report.incremental);
+    CY_CHECK_EQ(report.objects_rebaked, 2U);  // the blocker and the tile under it
+    CY_CHECK_LT(report.rays, before.report.rays);
+
+    // Every texel that changed is inside the blocker's or the first tile's rectangle.
+    const usize texels = usize{after.texels.width} * after.texels.height;
+    u32 changed = 0;
+    u32 changed_elsewhere = 0;
+    for (usize index = 0; index < texels; ++index) {
+        const Vec4 a = before.lightmap.texels.texels[index];
+        const Vec4 b = after.texels.texels[index];
+        if (a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w) {
+            continue;
+        }
+        changed += 1U;
+        if (!in_rectangle(after, after.addresses[0], index) &&
+            !in_rectangle(after, after.addresses[TileLevel::kBlocker], index)) {
+            changed_elsewhere += 1U;
+        }
+    }
+    CY_CHECK_GT(changed, 0U);
+    CY_CHECK_EQ(changed_elsewhere, 0U);
+
+    // The re-solved region agrees with a full bake of the moved level.
+    const Baked full = bake(level.scene(), settings);
+    const Vec3 up{0.0F, 1.0F, 0.0F};
+    for (const u32 object : {0U, TileLevel::kBlocker}) {
+        for (const Vec2 uv : {Vec2{0.25F, 0.5F}, Vec2{0.5F, 0.5F}, Vec2{0.75F, 0.5F}}) {
+            const f32 rebaked = luminance(sample_lightmap(after, after.addresses[object], uv, up));
+            const f32 truth =
+                luminance(sample_lightmap(full.lightmap, full.lightmap.addresses[object], uv, up));
+            CY_CHECK_LE(std::fabs(rebaked - truth), 0.02F * std::max(truth, 1.0e-4F));
+        }
+    }
+}
+
+CY_TEST_CASE("a rebake with nothing moved traces nothing and changes nothing") {
+    const TileLevel level;
+    const LightmapBakeSettings settings = tile_settings();
+    const Baked before = bake(level.scene(), settings);
+    BakedLightmap after;
+    LightmapBakeReport report;
+    CY_REQUIRE(rebake_lightmaps(level.scene(), settings, before.lightmap, LightmapRebakeRequest{},
+                                after, report)
+                   .has_value());
+    CY_CHECK(report.incremental);
+    CY_CHECK_EQ(report.objects_rebaked, 0U);
+    CY_CHECK_EQ(report.rays, 0U);
+    CY_CHECK(same_texels(after.texels, before.lightmap.texels));
+    CY_CHECK(std::equal(after.coverage.begin(), after.coverage.end(),
+                        before.lightmap.coverage.begin(), before.lightmap.coverage.end()));
+}
+
+CY_TEST_CASE("a rebake whose level no longer packs the same falls back to a full bake") {
+    TileLevel level;
+    const LightmapBakeSettings settings = tile_settings();
+    const Baked before = bake(level.scene(), settings);
+    level.instances[2].resolution_scale = 3.0F;  // a bigger rectangle: every placement may move
+    BakedLightmap after;
+    LightmapBakeReport report;
+    CY_REQUIRE(rebake_lightmaps(level.scene(), settings, before.lightmap, LightmapRebakeRequest{},
+                                after, report)
+                   .has_value());
+    CY_CHECK_FALSE(report.incremental);
+    CY_CHECK(std::string_view(report.fallback) ==
+             "the level no longer packs to the same rectangles");
+    const Baked full = bake(level.scene(), settings);
+    CY_CHECK(same_texels(after.texels, full.lightmap.texels));
+}
+
+// --- Chart padding ----------------------------------------------------------------------------
+
+CY_TEST_CASE("an unwrap's chart padding is checked against the rectangle the atlas gives it") {
+    // One object of two charts 0.1 of its UV square apart. At a low density the rectangle squeezes
+    // that gap below the two texels bilinear filtering needs; at a high one it survives.
+    const SeamMesh seam;
+    std::vector<BakeMesh> meshes{seam.mesh()};
+    std::vector<BakeMaterial> materials{BakeMaterial{}};
+    std::vector<BakeInstance> instances(1);
+    LightmapScene scene;
+    scene.meshes = {meshes.data(), meshes.size()};
+    scene.materials = {materials.data(), materials.size()};
+    scene.instances = {instances.data(), instances.size()};
+
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.atlas.mip_levels = 0;
+    settings.trace.samples = 4;
+
+    settings.atlas.texel_density = 8.0F;
+    const Baked squeezed = bake(scene, settings);
+    CY_CHECK_EQ(squeezed.report.required_chart_gap, 2U);
+    CY_REQUIRE_EQ(squeezed.report.padding_short.size(), 1U);
+    CY_CHECK_EQ(squeezed.report.padding_short[0], 0U);
+
+    settings.atlas.texel_density = 96.0F;
+    const Baked roomy = bake(scene, settings);
+    CY_CHECK(roomy.report.padding_short.empty());
+
+    // And with the setting on, the squeezed level is refused rather than baked.
+    settings.atlas.texel_density = 8.0F;
+    settings.refuse_short_padding = true;
+    BakedLightmap out;
+    LightmapBakeReport report;
+    CY_CHECK_FALSE(bake_lightmaps(scene, settings, nullptr, out, report).has_value());
 }
