@@ -11,6 +11,7 @@
 #include "motion_measure.h"
 
 #include <cy/core/math/projection.h>
+#include <cy/core/math/quat.h>
 #include <cy/rendering/motion_blur/motion_blur.h>
 #include <cy/test/test.h>
 
@@ -318,4 +319,46 @@ CY_TEST_CASE("the tile maxima are the longest vectors, and their neighbourhoods 
         const bool reached = tile >= 2U && tile <= 5U;
         CY_CHECK_NEAR(std::fabs(neighbours[tile].x), reached ? kMotion * 0.5F : 0.0F, 1e-4F);
     }
+}
+
+CY_TEST_CASE("a turning camera blurs the sky under an infinite projection to finite colour") {
+    // REGRESSION. Under `perspective_reversed_z_infinite` m22 is zero, and the filter's view depth
+    // of a sky texel, `m32 / (0 + m22)`, was infinity: two sky texels then ordered as `inf - inf`,
+    // every weight between them was NaN, and a turning camera painted its whole sky NaN.
+    const Mat4 infinite = perspective_reversed_z_infinite(
+        0.9F, static_cast<f32>(kWidth) / static_cast<f32>(kHeight), 0.1F);
+    MotionBlurView view;
+    view.width = kWidth;
+    view.height = kHeight;
+    view.projection = infinite;
+    view.relative_to_clip = infinite;
+    view.previous_relative_to_clip =
+        infinite * Mat4::from_quat(Quat::from_axis_angle(Vec3{0.0F, 1.0F, 0.0F}, 0.05F));
+    MotionBlurSettings settings;
+    settings.shutter_angle_degrees = 360.0F;
+    Expected<MotionBlurConstants, Error> constants = make_motion_blur_constants(settings, view);
+    CY_REQUIRE(constants.has_value());
+
+    Frame frame = make_frame(Moving::Bar, true);
+    for (u32 y = 0; y < kHeight; ++y) {
+        for (u32 x = 0; x < kWidth; ++x) {
+            const usize at = (static_cast<usize>(y) * kWidth) + x;
+            if (!on_bar(x)) {
+                frame.depth[at] = 0.0F;  // the sky: nothing drawn, the cleared far plane
+            }
+        }
+    }
+    const std::vector<Vec4> out = blurred(frame, *constants);
+    usize non_finite = 0;
+    f32 smeared = 0.0F;
+    for (usize at = 0; at < kPixels; ++at) {
+        non_finite += static_cast<usize>(!std::isfinite(out[at].x) || !std::isfinite(out[at].y) ||
+                                         !std::isfinite(out[at].z));
+        if (frame.depth[at] == 0.0F) {
+            smeared = std::fmax(smeared, std::fabs(out[at].x - frame.color[at].x));
+        }
+    }
+    CY_CHECK_EQ(non_finite, usize{0});
+    // And the sky did blur: the turn is several pixels, across two-pixel stripes.
+    CY_CHECK_GT(smeared, 0.1F);
 }

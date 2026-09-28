@@ -219,3 +219,22 @@ pixel for pixel; on, 2073328 of 2073600 pixels change, 255428 darker by more tha
 `just capture-volumetric-fog` writes `docs/design/images/volumetric-fog-beauty-{off,on,detail}.png`
 and `volumetric-fog-beauty-on.manifest`, and `tools/docs/compare_volumetric_fog.py` fails it unless
 the off picture is `m11c-beauty-shot.png`'s pixels exactly.
+
+## Motion blur, off and on
+
+`--motion-blur <degrees>` puts `rendering-post-processing`'s motion blur into the frame at step 8,
+at that shutter angle, and `--orbit-still <path> --orbit-frame <n>` photographs frame `n` of the
+turntable after drawing frame `n - 1`, so the frame has the orbit's motion — one and a half degrees
+of camera turn about the shot's target — and the embers have drifted one step. On, the program
+records the depth and normal prepass through `scenePrepassMotionFragment`, which writes the frame's
+motion vectors from this render's camera and the last one's; the scene still shades through
+`sceneFragment`, the published frame's own entry point. `motion_blur::MotionBlurPass` blurs the
+scene colour before exposure, so the embers and the sky are streaked with the rest of the picture —
+the sky, which the prepass does not draw, as the far plane moving with the camera. Off is the frame
+the turntable always drew.
+
+| Motion blur off | Motion blur on, 180-degree shutter |
+|---|---|
+| ![](../../docs/design/images/motion-blur-beauty-off.png) | ![](../../docs/design/images/motion-blur-beauty-on.png) |
+
+`just capture-beauty-motion-blur` writes `docs/design/images/motion-blur-beauty-{off,on}.png`.

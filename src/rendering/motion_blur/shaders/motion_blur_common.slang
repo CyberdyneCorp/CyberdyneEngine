@@ -28,10 +28,16 @@ struct CyMotionBlurConstants
 
 [[vk::push_constant]] CyMotionBlurConstants cyMotionBlur;
 
+/// `kSkyViewDepth` in motion_blur.cpp: the sky under an infinite projection, whose m22 is zero.
+/// Finite, so two sky texels order as one surface rather than as `inf - inf`.
+static const float kCyMotionBlurSkyDepth = 1.0e30;
+
 /// Reversed-Z depth to positive view depth in metres: -z = m32 / (d + m22).
 float cyMotionBlurViewDepth(float depth)
 {
-    return cyMotionBlur.depth.y / (depth + cyMotionBlur.depth.x);
+    let denominator = depth + cyMotionBlur.depth.x;
+    return denominator > 0.0 ? min(cyMotionBlur.depth.y / denominator, kCyMotionBlurSkyDepth)
+                             : kCyMotionBlurSkyDepth;
 }
 
 /// Where last frame's camera saw this pixel's own depth, as a motion in pixels pointing at the

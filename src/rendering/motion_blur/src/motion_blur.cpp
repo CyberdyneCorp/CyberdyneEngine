@@ -24,10 +24,18 @@ namespace {
     return (static_cast<usize>(y) * inputs.width) + x;
 }
 
+/// The view depth of a texel no surface covered under an INFINITE projection, whose m22 is zero and
+/// whose far plane `m32 / (0 + m22)` is a division by zero. Finite, so two sky texels compare as
+/// one surface instead of as `inf - inf`, a NaN that poisoned every weight it touched; and farther
+/// than any surface a frame draws.
+constexpr f32 kSkyViewDepth = 1.0e30F;
+
 /// Reversed-Z depth to positive view depth in metres. Zero, the cleared far plane, is the far
 /// plane's distance — farther than every surface, which is what the ordering below wants of it.
 [[nodiscard]] f32 view_depth(const MotionBlurConstants& constants, f32 depth) noexcept {
-    return constants.depth[1] / (depth + constants.depth[0]);
+    const f32 denominator = depth + constants.depth[0];
+    return denominator > 0.0F ? math::min(constants.depth[1] / denominator, kSkyViewDepth)
+                              : kSkyViewDepth;
 }
 
 [[nodiscard]] f32 row_dot(const f32 row[4], const Vec4& v) noexcept {
