@@ -572,7 +572,7 @@ public:
             }
         }
         for (rhi::BufferHandle buffer :
-             {vertices_, colours_, field_, placement_, aerial_, readback_}) {
+             {vertices_, colours_, field_, placement_, aerial_, readback_, decals_off_}) {
             if (!buffer.is_null()) {
                 device_.destroy_buffer(buffer);
             }
@@ -617,6 +617,7 @@ private:
     rhi::BufferHandle placement_;
     rhi::BufferHandle aerial_;
     rhi::BufferHandle readback_;
+    rhi::BufferHandle decals_off_;
     sample::WaterSurface surface_;
     sample::WaterParams params_;
     /// An unbuilt table's words: the header alone, switched off.
@@ -695,10 +696,10 @@ constexpr rhi::VertexAttribute kAttributes[3] = {{0, 0, rhi::Format::Rgb32Sfloat
                                                  {2, 1, rhi::Format::Rgb32Sfloat, 0}};
 
 cy::Status WaterAirScene::prepare_world_pipeline() noexcept {
-    // Set 0 exactly as the stage makes it: the cloud shadow field, its placement and the aerial
-    // perspective table, for the fragment stage.
-    rhi::DescriptorBinding bindings[3] = {};
-    for (u32 index = 0; index < 3; ++index) {
+    // Set 0 exactly as the stage makes it: the cloud shadow field, its placement, the aerial
+    // perspective table and the decal table, for the fragment stage.
+    rhi::DescriptorBinding bindings[4] = {};
+    for (u32 index = 0; index < 4; ++index) {
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
@@ -706,7 +707,7 @@ cy::Status WaterAirScene::prepare_world_pipeline() noexcept {
     }
     rhi::DescriptorSetLayoutDescription set_description;
     set_description.name = "world set";
-    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 3);
+    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 4);
     auto set_layout = device_.create_descriptor_set_layout(set_description);
     if (!set_layout) {
         return cy::make_unexpected(set_layout.error());
@@ -741,7 +742,7 @@ cy::Status WaterAirScene::prepare_world_pipeline() noexcept {
 
 cy::Status WaterAirScene::prepare_before_pipeline() noexcept {
     // The sample's water surface first, whose layout the pipeline from before shares: it reads
-    // bindings 0 and 1 of set 0 and never binding 2, and a layout may declare a binding its
+    // bindings 0 and 1 of set 0 and never binding 2 or 3, and a layout may declare a binding its
     // shaders never touch.
     if (cy::Status made =
             surface_.create(device_, set_layout_, rhi::Format::Rgba16Sfloat, kWidth, kHeight);
@@ -776,7 +777,11 @@ cy::Status WaterAirScene::prepare_buffers() noexcept {
                          rhi::BufferUsage::Storage, rhi::MemoryUse::Upload);
     auto readback = buffer("scene readback", static_cast<u64>(kTexels) * 4 * sizeof(u16),
                            rhi::BufferUsage::TransferDestination, rhi::MemoryUse::Readback);
-    if (!vertices || !colours || !field || !placement || !aerial || !readback) {
+    // Binding 3: the decal table, empty — zeroes are no table, and the lit path leaves every
+    // surface as it was. The sample binds the same until a frame with its ground marker writes one.
+    auto decals_off = buffer("decal table off", sizeof(u32) * 24, rhi::BufferUsage::Storage,
+                             rhi::MemoryUse::Upload);
+    if (!vertices || !colours || !field || !placement || !aerial || !readback || !decals_off) {
         return cy::fail(cy::ErrorCode::OutOfMemory, "a water scene buffer did not allocate");
     }
     vertices_ = *vertices;
@@ -785,6 +790,8 @@ cy::Status WaterAirScene::prepare_buffers() noexcept {
     placement_ = *placement;
     aerial_ = *aerial;
     readback_ = *readback;
+    decals_off_ = *decals_off;
+    std::memset(device_.buffer_mapped_pointer(decals_off_), 0, sizeof(u32) * 24);
     // Cloud shadows off: the placement's `enabled` word is zero and the field is never read.
     std::memset(device_.buffer_mapped_pointer(field_), 0, 16 * sizeof(u32));
     std::memset(device_.buffer_mapped_pointer(placement_), 0, 4 * sizeof(f32));
@@ -804,14 +811,14 @@ cy::Status WaterAirScene::prepare() noexcept {
         return cy::make_unexpected(set.error());
     }
     set_ = *set;
-    rhi::DescriptorWrite writes[3] = {};
-    const rhi::BufferHandle bound[3] = {field_, placement_, aerial_};
-    for (u32 index = 0; index < 3; ++index) {
+    rhi::DescriptorWrite writes[4] = {};
+    const rhi::BufferHandle bound[4] = {field_, placement_, aerial_, decals_off_};
+    for (u32 index = 0; index < 4; ++index) {
         writes[index].binding = index;
         writes[index].kind = rhi::DescriptorKind::StorageBuffer;
         writes[index].buffer = bound[index];
     }
-    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 3));
+    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 4));
 }
 
 cy::Status WaterAirScene::upload(const Scene& scene, const Shot& shot) noexcept {
