@@ -1363,17 +1363,21 @@ capture-world-fog *args:
     fi
 
     # THE AERIAL PERSPECTIVE PAIR'S TAKE: one simulated day in 192 frames at 960x540, and frame 60,
-    # the morning — the hour a radiation mist lies in the valleys.
+    # 11:56 on the take's clock, the sun at about 24 degrees.
+    # The sample draws only when it is given a frames directory; the take's frames are scratch.
     images=docs/design/images
+    work="${build_dir}/world-fog"
     mkdir -p "${images}"
+    trap 'rm -rf "${work}"' EXIT
     for setting in off on; do
         echo "==> capture     world fog ${setting}"
         flags=()
         if [ "${setting}" = on ]; then
             flags=(--fog)
         fi
+        rm -rf "${work}" && mkdir -p "${work}"
         "${sample}" --width 960 --height 540 --seconds 24 --fps 8 --still-frame 60 \
-            --still "${images}/volumetric-fog-world-${setting}.png" \
+            --frames "${work}" --still "${images}/volumetric-fog-world-${setting}.png" \
             ${flags[@]+"${flags[@]}"} ${rest}
         rm -f "${images}/volumetric-fog-world-${setting}.png.manifest.txt"
     done
