@@ -3,7 +3,7 @@
 """Turn the compiled volumetric fog march into the checked-in C++ header.
 
 The pass must exist in a build with no shader compiler — `CY_SHADER_SLANG` is off in Profile and
-Shipping — so volumetric_fog.slang is compiled once and embedded; this script is how that is done
+Shipping — so fog_march.slang is compiled once and embedded; this script is how that is done
 reproducibly rather than by pasting numbers. It is src/rendering/skinning/shaders/embed_spirv.py
 with this module's namespace, kept separate for the reason that one gives.
 
@@ -22,7 +22,7 @@ HEADER = """// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled SPIR-V for the volumetric fog march. GENERATED — do not edit by hand.
 //
-// Produced by src/rendering/fog/shaders/embed_spirv.py from volumetric_fog.slang, whose
+// Produced by src/rendering/fog/shaders/embed_spirv.py from fog_march.slang, whose
 // header comment carries the slangc invocations. Checked in rather than compiled by the build
 // because the pass must exist in a build with NO shader compiler at all.
 

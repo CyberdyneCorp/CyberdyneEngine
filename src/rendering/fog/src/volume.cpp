@@ -100,7 +100,7 @@ struct PlaneTaps {
 }
 
 /// The air between two distances along a ray, as a homogeneous medium: `fogAirStretch` in
-/// volumetric_fog.slang.
+/// fog_march.slang.
 struct AirStretch {
     Vec3 extinction{0.0F, 0.0F, 0.0F};
     Vec3 source{0.0F, 0.0F, 0.0F};

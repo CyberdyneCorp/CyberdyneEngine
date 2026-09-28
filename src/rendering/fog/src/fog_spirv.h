@@ -2,7 +2,7 @@
 #pragma once
 // Compiled SPIR-V for the volumetric fog march. GENERATED — do not edit by hand.
 //
-// Produced by src/rendering/fog/shaders/embed_spirv.py from volumetric_fog.slang, whose
+// Produced by src/rendering/fog/shaders/embed_spirv.py from fog_march.slang, whose
 // header comment carries the slangc invocations. Checked in rather than compiled by the build
 // because the pass must exist in a build with NO shader compiler at all.
 

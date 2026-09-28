@@ -50,7 +50,7 @@
 //
 // which runs, from the repository root:
 //
-//   slangc src/rendering/fog/shaders/volumetric_fog.slang -I src/rendering/shaders \
+//   slangc src/rendering/fog/shaders/fog_march.slang -I src/rendering/shaders \
 //          -entry cyVolumetricFog -stage compute -target spirv -profile spirv_1_5 -o fog.spv
 //   slangc ... -target metal -o fog.metal
 //

@@ -123,7 +123,7 @@ inline constexpr u32 kFogConstantWords =
 /// right and tan x, up and tan y, the volume's shape, its planes and sub-steps, and the eye.
 inline constexpr u32 kFogHeaderTexels = 6;
 
-/// `volumetric_fog.slang`'s constant block, word for word. `pack_fog_constants` is its only writer.
+/// `fog_march.slang`'s constant block, word for word. `pack_fog_constants` is its only writer.
 struct FogConstants {
     Vec4 words[kFogConstantWords] = {};
 };
@@ -194,7 +194,7 @@ struct HostShadowMap {
 [[nodiscard]] f32 fog_shadow_visibility(const FogShadow& shadow, const HostShadowMap& map,
                                         Vec3 relative_position) noexcept;
 
-/// `volumetric_fog.slang`'s march over one column, transcribed: `transmittance` and
+/// `fog_march.slang`'s march over one column, transcribed: `transmittance` and
 /// `in_scattering` receive one value per slice. `map` is read only when `shadow.enabled`.
 ///
 /// With `air`, the atmosphere's froxel table built for the same camera, it is the table variant's

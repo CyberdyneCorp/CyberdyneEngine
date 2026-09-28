@@ -16,7 +16,7 @@ using rhi::Access;
 using rhi::QueueKind;
 
 constexpr u32 kGroupSize = 8;
-/// volumetric_fog.slang's set, in the `ParameterBlock`'s field order — which is also the
+/// fog_march.slang's set, in the `ParameterBlock`'s field order — which is also the
 /// argument-buffer id Metal assigns: the shadow map and the constants, then the texture, or the
 /// table and the atmosphere's table.
 constexpr u32 kTextureBindings = 3;

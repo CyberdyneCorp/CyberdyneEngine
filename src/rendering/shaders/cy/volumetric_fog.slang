@@ -3,7 +3,7 @@
 // standard library.
 //
 // `rendering-post-processing` — "Volumetric fog": the volume is filled and integrated front to back
-// by src/rendering/fog/shaders/volumetric_fog.slang; this module is the other end, the lookup a
+// by src/rendering/fog/shaders/fog_march.slang; this module is the other end, the lookup a
 // shading pass makes to apply it to a surface. There is no fog colour and no fog distance here: the
 // transmittance and in-scattering are what the medium between the eye and the point did.
 //

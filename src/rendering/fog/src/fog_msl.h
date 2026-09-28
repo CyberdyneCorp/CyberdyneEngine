@@ -6,7 +6,7 @@
 
 namespace cy::rendering::fog {
 
-/// volumetric_fog.metal, 12414 bytes.
+/// volumetric_fog.metal, 12409 bytes.
 inline constexpr char kVolumetricFogMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -29,7 +29,7 @@ struct KernelContext_0
 };
 
 
-#line 88 "src/rendering/fog/shaders/volumetric_fog.slang"
+#line 88 "src/rendering/fog/shaders/fog_march.slang"
 float4 fogWord_0(uint index_0, KernelContext_0 thread* kernelContext_0)
 {
     return kernelContext_0->cyFogSet_0->words_0[index_0];
@@ -662,14 +662,14 @@ float fogShadowVisibility_0(float3 relative_0, KernelContext_0 thread* kernelCon
 
 )cy_msl";
 
-/// volumetric_fog_table.metal, 19887 bytes.
+/// volumetric_fog_table.metal, 19877 bytes.
 inline constexpr char kVolumetricFogTableMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 69 "src/rendering/fog/shaders/volumetric_fog.slang"
+#line 69 "src/rendering/fog/shaders/fog_march.slang"
 struct CyFogSet_default_0
 {
     texture2d<float, access::sample> shadowMap_0;
@@ -908,7 +908,7 @@ CyAerialPerspective_0 cyAerialPerspectiveAt_0(float4 device* table_words_2, floa
 }
 
 
-#line 236 "src/rendering/fog/shaders/volumetric_fog.slang"
+#line 236 "src/rendering/fog/shaders/fog_march.slang"
 void fogAirStretch_0(float3 direction_0, float nearDistance_0, float farDistance_0, float3 thread* extinction_0, float3 thread* source_0, KernelContext_0 thread* kernelContext_2)
 {
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Recompile volumetric_fog.slang and rewrite the two committed headers.
+"""Recompile fog_march.slang and rewrite the two committed headers.
 
 Run from anywhere; the paths are resolved from this file. `--slangc` is the compiler, normally the
 one a Development build stages at <build>/Development/bin/slangc.
@@ -28,7 +28,7 @@ MODULES = (
     ("volumetric_fog_table", "cyVolumetricFog", "kVolumetricFogTableSpirv",
      "kVolumetricFogTableMsl", ("-D", "CY_FOG_AIR_TABLE=1")),
 )
-SOURCE = "volumetric_fog.slang"
+SOURCE = "fog_march.slang"
 
 
 def main() -> int:
