@@ -52,22 +52,25 @@ class McpTimeoutTests(unittest.TestCase):
         self.assertEqual(self.mcp.call("resources/read", seconds=0.5), {"ready": True})
 
     def test_capture_retries_a_window_waiting_for_its_first_frame(self) -> None:
-        from PIL import Image
-
-        pixels = io.BytesIO()
-        Image.new("RGB", (1, 1), (255, 0, 0)).save(pixels, format="PNG")
+        pixels = b"captured PNG payload"
+        image = Mock()
+        image.convert.return_value = image
+        image.getpixel.return_value = (255, 0, 0)
+        pillow = SimpleNamespace(Image=SimpleNamespace(open=Mock(return_value=image)))
         replies = iter([
             {"content": [{"text": "the editor window presented no frame within 2000 ms"}]},
             {"contents": [
-                {"mimeType": "image/png", "blob": base64.b64encode(pixels.getvalue()).decode()},
+                {"mimeType": "image/png", "blob": base64.b64encode(pixels).decode()},
                 {"text": "first frame"},
             ]},
         ])
         self.mcp.call = lambda method, params: next(replies)
-        with patch("mcp_window.time.sleep") as pause:
+        with patch.dict(sys.modules, {"PIL": pillow}), patch("mcp_window.time.sleep") as pause:
             image, description = self.mcp.capture("editor:window")
         self.assertEqual(image.getpixel((0, 0)), (255, 0, 0))
         self.assertEqual(description, "first frame")
+        self.assertEqual(pillow.Image.open.call_args.args[0].getvalue(), pixels)
+        image.convert.assert_called_once_with("RGB")
         pause.assert_called_once()
 
 
