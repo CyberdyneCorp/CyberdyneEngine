@@ -9,13 +9,21 @@
 | [Risks and deferrals](roadmap/risks.md) | The register, the spike at the head of each milestone, and where deferred scope re-enters |
 | [`roadmap/status.yaml`](roadmap/status.yaml) | The authoritative per-capability status record |
 
+**Guides**
+
+| | |
+|---|---|
+| [Guides index](guides/README.md) | Task-oriented walkthroughs for contributors |
+| [Building and running](guides/building.md) | Toolchains, Linux, the macOS Metal editor, iOS, CI targets |
+| [Slang in CyberEngine](guides/slang.md) | How the engine's shaders are written, compiled, embedded and tested |
+
 **Design**
 
 | | |
 |---|---|
 | [Editor visual language](design/editor-visual-language.md) | How the editor looks, what its colours mean, and what it calls things — with the reference imagery |
 
-The engine itself is specified in [`openspec/specs/`](../openspec/specs/README.md) — 74 capabilities
+The engine itself is specified in [`openspec/specs/`](../openspec/specs/README.md) — 76 capabilities
 stating what is being built and why. Those specifications are the contract; this directory explains
 the order of construction and nothing more.
 
@@ -25,6 +33,6 @@ the order of construction and nothing more.
 |---|---|
 | What is being built, and why? | [`openspec/specs/`](../openspec/specs/README.md) |
 | In what order, and what closes each step? | [`docs/ROADMAP.md`](ROADMAP.md) and [`delivery-roadmap`](../openspec/specs/delivery-roadmap/spec.md) |
-| What is implemented today? | [`docs/roadmap/status.yaml`](roadmap/status.yaml), reported by `just roadmap::status` |
+| What is implemented today? | [`docs/roadmap/status.yaml`](roadmap/status.yaml), reported by `just roadmap-status` |
 | What is being changed right now? | [`openspec/changes/`](../openspec/changes/) |
 | How do I run anything? | `just` — every developer task is a recipe |
