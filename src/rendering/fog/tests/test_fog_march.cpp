@@ -39,7 +39,7 @@ FogSettings small_settings() noexcept {
     return settings;
 }
 
-FogLight daylight() noexcept {
+FogLight fog_daylight() noexcept {
     FogLight light;
     light.to_sun = normalize(Vec3{0.3F, 0.6F, -0.74F});
     light.sun_illuminance = Vec3{1.0F, 0.95F, 0.85F};
@@ -97,7 +97,7 @@ CY_TEST_CASE("the march converges to the single-scattering integral") {
     const FogSettings settings = small_settings();
     FogView view;
     view.world_offset = Vec3{0.0F, 3.0F, 0.0F};
-    const FogLight light = daylight();
+    const FogLight light = fog_daylight();
     FogMedium medium;
     medium.height.extinction = 0.06F;
     medium.height.base_height = 0.0F;
@@ -161,7 +161,7 @@ CY_TEST_CASE("the march converges to the single-scattering integral") {
 
 CY_TEST_CASE("an empty medium leaves transmittance exactly one and in-scattering exactly zero") {
     const FogSettings settings = small_settings();
-    const std::vector<Vec4> texels = march_volume(settings, FogView{}, daylight(), FogMedium{});
+    const std::vector<Vec4> texels = march_volume(settings, FogView{}, fog_daylight(), FogMedium{});
     CY_REQUIRE_FALSE(texels.empty());
     const FogTextureExtent extent = fog_texture_extent(settings.volume);
     for (usize index = extent.width; index < texels.size(); ++index) {
@@ -181,7 +181,7 @@ CY_TEST_CASE("an empty medium leaves transmittance exactly one and in-scattering
 CY_TEST_CASE("the lookup starts at the eye and meets each column at its slices' far edges") {
     const FogSettings settings = small_settings();
     const FogView view;
-    const FogLight light = daylight();
+    const FogLight light = fog_daylight();
     FogMedium medium;
     medium.height.extinction = 0.05F;
     medium.height.base_height = 100.0F;
