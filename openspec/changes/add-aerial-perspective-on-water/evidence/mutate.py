@@ -20,7 +20,7 @@ OUT = ROOT / "openspec/changes/add-aerial-perspective-on-water/evidence/falsific
 MUTATIONS = [
     ("a-reflection-hazed-twice", "let surface = (fresnel * reflected) +",
      "let surface = (fresnel * reflected * air.transmittance) +"),
-    ("b-bed-hazed-twice", "if (airOn && bentDepth > 0.0)", "if (false && airOn && bentDepth > 0.0)"),
+    ("b-bed-hazed-twice", "if (kAir && bentDepth > 0.0)", "if (false && bentDepth > 0.0)"),
     ("c-in-scattering-under-the-mirror", "((1.0 - fresnel) * air.inScattering);",
      "air.inScattering;"),
     ("d-air-at-half-the-distance",
@@ -30,8 +30,7 @@ MUTATIONS = [
      "(own * min(air.transmittance, float3(0.99)))"),
     ("f-off-path-changed", "float3 lit = lerp(refracted, reflected, fresnel);",
      "float3 lit = lerp(refracted, reflected, fresnel * 0.999);"),
-    ("g-water-ignores-the-table", "let airOn = cyAerialPerspectiveEnabled(table);",
-     "let airOn = false;"),
+    ("g-water-ignores-the-table", "if (cyAerialPerspectiveEnabled(table))", "if (false)"),
 ]
 
 
