@@ -49,7 +49,7 @@ build/editor/development/cy_editor_control_probe \
   --host /tmp/cy-metal-control.sock --width 1183 --height 677
 ```
 
-The root [README](../../../README.md#building-and-running-the-metal-editor-on-macos) has the full
+The [building guide](../../../docs/guides/building.md#macos-building-and-running-the-metal-editor) has the full
 two-terminal engine and graphical-editor workflow.
 
 ## macOS hardware evidence

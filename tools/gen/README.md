@@ -37,6 +37,15 @@ detects them at configure time and says so.
     pip install --user clang==18.1.8
     sudo apt install libclang1-18          # Debian and Ubuntu
 
+**macOS.** libclang loaded into Python finds neither the SDK nor its own builtin headers, so
+`parse.py` adds `-isysroot` (from `SDKROOT`, else `xcrun --show-sdk-path`) and `-resource-dir` (the
+library's own `lib/clang/<major>`, else Apple clang's). The library must also be new enough for the
+SDK's libc++: libclang 18 cannot parse the macOS 27 SDK's `<type_traits>`, so there the probe fails
+and the build compiles the committed metadata. To regenerate on such a Mac, point `CY_LIBCLANG` at a
+newer LLVM, e.g. `CY_LIBCLANG=/opt/homebrew/opt/llvm/lib/libclang.dylib`.
+
+`CY_REFLECT_CLANG_ARGS` appends frontend arguments (shell-split) to every parse and to the probe.
+
 ## Recipes
 
 ```

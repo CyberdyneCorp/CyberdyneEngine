@@ -10,8 +10,8 @@
 >
 > CTest entry: `smoke.editor_window`. Needs a display; **skips loudly** where there is none.
 >
-> On macOS, use the native Metal runtime and IOSurface editor transport documented in the root
-> [README](../../README.md#building-and-running-the-metal-editor-on-macos).
+> On macOS, use the native Metal runtime and IOSurface editor transport documented in the
+> [building guide](../../docs/guides/building.md#macos-building-and-running-the-metal-editor).
 
 ![The editor's viewport showing the engine's rendered world, with a transform gizmo on the selected
 object](../../docs/design/images/editor-viewport-engine-frame.png)
