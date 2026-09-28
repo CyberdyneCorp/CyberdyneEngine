@@ -81,6 +81,8 @@ src/rendering/decals/tests/test_decals_device.cpp:1005: ERROR: CHECK_EQ( differi
 (f) 840 overlap pixels; blue later covers 840, red later covers 840
 restored (decals.cpp md5 af79bfac4d2d0f22383bc505105fd686: identical)
 
+# Against oriented_box_touches before its clang-tidy rewrite; g-box-rejects-too-much-2 below is the
+# same mutation of the rewritten function.
 == g-box-rejects-too-much: src/rendering/forward/src/cluster.cpp: 'if (std::fabs(offsets[axis]) > reach + halves[axis]) {' -> 'if (std::fabs(offsets[axis]) > (reach * 0.25F) + halves[axis]) {'
 exit 1 (RED)
 src/rendering/decals/tests/test_decals_device.cpp:1052: ERROR: CHECK_EQ( differing(clustered, walked), usize{0} ) is NOT correct!
@@ -135,7 +137,6 @@ src/rendering/decals/tests/test_decals_device.cpp:872: ERROR: CHECK_EQ( umbra_ma
 [doctest] test cases:  1 |  0 passed | 1 failed | 8 skipped
 (d) decalled umbra 877 (0 equal to sun-off), decalled lit 2795 (0 equal to sun-off); mean brightness umbra 490.0 lit 624.2
 restored (frame.slang md5 10be20badacac244936a3f1c7ad3f507, frame_spirv.h md5 b7c1b6a2b2bd2a886b966ca85c89b387, frame_msl.h md5 c0a3c64fd216f7b00b6cb22fa1704360: identical)
-== unmutated after restore: exit 0 (all nine cases)
 
 ## unit.render_forward (src/rendering/forward/src/cluster.cpp)
 
@@ -145,3 +146,12 @@ src/rendering/forward/tests/test_cluster.cpp:381: ERROR: CHECK_GT( top, 0U ) is 
 src/rendering/forward/tests/test_cluster.cpp:382: ERROR: CHECK_EQ( bottom, 0U ) is NOT correct!
 [doctest] test cases: 1 | 0 passed | 1 failed | 45 skipped
 restored (the fixed cluster.cpp copied back; unit.render_forward 46 of 46 passed)
+
+== g-box-rejects-too-much-2: src/rendering/forward/src/cluster.cpp: 'std::fabs(offset.x) > reach.x + half.x' -> 'std::fabs(offset.x) > (reach.x * 0.25F) + half.x'
+exit 1 (RED)
+src/rendering/decals/tests/test_decals_device.cpp:1052: ERROR: CHECK_EQ( differing(clustered, walked), usize{0} ) is NOT correct!
+src/rendering/decals/tests/test_decals_device.cpp:1053: ERROR: CHECK_EQ( differing(table_lists, walked), usize{0} ) is NOT correct!
+[doctest] test cases:  1 | 0 passed | 1 failed | 8 skipped
+(g) 5 decals, 55 (cluster, decal) assignments over 3240 clusters; clustered vs walked 327, table lists vs walked 327, decalled pixels 3914
+restored (cluster.cpp md5 fdfd2050e27700efa7305b8dd2405a53: identical)
+== unmutated after restore: exit 0 (all nine cases)

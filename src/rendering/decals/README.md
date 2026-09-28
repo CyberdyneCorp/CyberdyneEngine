@@ -61,10 +61,11 @@ authored parameters — a painted mask would be the same decision in a texture.
 
 ## Tests
 
-**Status: none of these has been built or run yet.** The committed SPIR-V and MSL headers
-(`frame_spirv.h`, `frame_msl.h`, `world_spirv.h`, `world_msl.h`) predate `cy/decal.slang`, so
-until they are regenerated the device frame draws no decal, `references/decals_off.png` does not
-exist yet, and no case below has been proved red by a mutation.
+Built and run in Development and Debug on an RTX 5060 (Vulkan, validation and synchronisation
+validation on, 0 errors). Every device case below has been proved red by a mutation of the code it
+names and green again once restored: `openspec/changes/add-decals/evidence/falsification.txt`.
+`references/decals_off.png` was drawn by this suite against main's `frame_spirv.h`, before the
+header was regenerated (`evidence/frame-identity.txt`).
 
 - `unit.rendering_decals` — the table word for word: the header, a record relative to the origin in
   double precision, the lists copied out of an assignment, and the refusals.
@@ -77,7 +78,19 @@ exist yet, and no case below has been proved red by a mutation.
   inside it; in the receiver's umbra a decal is exactly what it is with the sun off; a steep face
   inside the box is untouched; a later decal covers an earlier one and the array order changes
   nothing; the clustered frame is the frame that walks every decal; twenty thousand decals record
-  no draw of their own; relief tilts the normal and zero relief changes nothing.
+  no draw of their own; relief tilts the normal and zero relief changes nothing. At case (h)'s
+  density — 312 marks a square metre — every floor cluster is at the grid's 32-element cap, so the
+  lists keep the nearest and count the rest as overflow; the case requires that, not a list holding
+  all twenty thousand.
+
+Two defects the device suite found, each with its regression case: `cluster_bounds` counted tile
+rows from the bottom of the image while `clusterCoordOf` counts pixel rows from the top, so every
+cluster list — lights included — was read mirrored across the horizontal centre line
+(`unit.render_forward`, "tile row 0 is the top of the image"); and `cyDecalTableListEntry` added
+word 7 to a list offset that is already a table word (`render.decals` (g), the table's own lists).
+
+The beauty shot's `--decals off` frame is byte-identical to the published
+`docs/design/images/m11c-beauty-shot.png`.
 
 ## What is not here
 
