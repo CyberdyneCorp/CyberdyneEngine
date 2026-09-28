@@ -296,6 +296,7 @@ Stage::~Stage() {
             device_->contact.destroy();
             device_->dof.destroy();
             device_->decal_table.shutdown();
+            device_->fog.destroy();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->grading.shutdown();
@@ -1576,7 +1577,13 @@ struct SceneState {
     u32 height = 0;
 };
 
-void bind_common(const PassContext& context, const SceneState& state) noexcept {
+/// Binds `pipeline`, then the three sets every scene entry point shares. THE PIPELINE FIRST: the
+/// RHI binds a set at the bind point of the last pipeline the command buffer bound, so sets bound
+/// before any graphics pipeline, right after a compute stage such as the fog's march, land on the
+/// compute bind point and the draw finds set 0 unbound.
+void bind_common(const PassContext& context, const SceneState& state,
+                 rhi::GraphicsPipelineHandle pipeline) noexcept {
+    context.commands->bind_graphics_pipeline(pipeline);
     const rhi::DescriptorSetHandle sets[3] = {state.table, state.shadow, state.view};
     context.commands->bind_descriptor_sets(state.layout, 0,
                                            Span<const rhi::DescriptorSetHandle>(sets, 3));
@@ -1608,12 +1615,17 @@ void record_scene(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    bind_common(context, *state);
 
     const u64 offset = 0;
     for (usize index = 0; index < state->batch_count; ++index) {
         const Stage::Batch& batch = state->batches[index];
-        context.commands->bind_graphics_pipeline(state->prepass ? batch.occluded : batch.pipeline);
+        const rhi::GraphicsPipelineHandle pipeline =
+            state->prepass ? batch.occluded : batch.pipeline;
+        if (index == 0) {
+            bind_common(context, *state, pipeline);
+        } else {
+            context.commands->bind_graphics_pipeline(pipeline);
+        }
         context.commands->bind_descriptor_sets(
             state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
         context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
@@ -1648,11 +1660,14 @@ void record_prepass(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    bind_common(context, *state);
     const u64 offset = 0;
     for (usize index = 0; index < state->batch_count; ++index) {
         const Stage::Batch& batch = state->batches[index];
-        context.commands->bind_graphics_pipeline(batch.prepass);
+        if (index == 0) {
+            bind_common(context, *state, batch.prepass);
+        } else {
+            context.commands->bind_graphics_pipeline(batch.prepass);
+        }
         context.commands->bind_descriptor_sets(
             state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
         context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
@@ -1686,8 +1701,7 @@ void record_sky(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    bind_common(context, *state);
-    context.commands->bind_graphics_pipeline(state->sky_pipeline);
+    bind_common(context, *state, state->sky_pipeline);
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->sky_vertices, 1),
                                           Span<const u64>(&offset, 1));
