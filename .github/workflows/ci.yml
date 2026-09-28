@@ -919,8 +919,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install the pinned LLVM tooling
-        run: pip install clang-format==22.1.8 clang-tidy==22.1.8
+      # Pillow for the recipe selftest's `_ship-stills` case, which reads the committed stills.
+      - name: Install the pinned LLVM tooling and Pillow
+        run: pip install clang-format==22.1.8 clang-tidy==22.1.8 Pillow
       - name: Install the window-system headers
         run: |
           sudo apt-get update
