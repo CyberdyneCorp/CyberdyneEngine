@@ -985,8 +985,10 @@ CY_TEST_CASE(
         }
         for (u32 entry = 0; entry < decal.count; ++entry) {
             const u32 rank = clusters.indices[decal.offset + entry];
-            CY_REQUIRE(rank < 3U);
-            saw[rank] = true;
+            CY_CHECK_LT(rank, 3U);
+            if (rank < 3U) {
+                saw[rank] = true;
+            }
             if (entry > 0U) {
                 CY_CHECK_LT(clusters.indices[decal.offset + entry - 1U], rank);
             }

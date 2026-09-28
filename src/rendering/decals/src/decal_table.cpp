@@ -7,6 +7,7 @@
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -80,10 +81,7 @@ void write_record(const DecalInstance& decal, const DecalMaterial& material, Vec
     put3(record, kCentre, relative(decal.center, origin));
     // `decal_angle_fade`'s clamp: pi/2 would be no fade at all, and the cosine of exactly pi/2 is
     // not quite zero in f32, so the limit stops a hair short of it as the host's does.
-    const f32 angle =
-        decal.fade_angle_radians < 0.0F
-            ? 0.0F
-            : (decal.fade_angle_radians > 1.5707F ? 1.5707F : decal.fade_angle_radians);
+    const f32 angle = std::clamp(decal.fade_angle_radians, 0.0F, 1.5707F);
     put(record, kFadeCosine, std::cos(angle));
     put3(record, kAxisX, scaled_axis(decal.axis_x, decal.half_extent.x, Vec3{1.0F, 0.0F, 0.0F}));
     put3(record, kAxisY, scaled_axis(decal.axis_y, decal.half_extent.y, Vec3{0.0F, 1.0F, 0.0F}));
@@ -276,7 +274,9 @@ Status pack_decal_table(const DecalTableInput& input, Array<u32>& words) noexcep
     const u32 lists_offset = kDecalHeaderWords + (count * kDecalRecordWords);
     const u32 clusters = input.clusters != nullptr ? input.grid.cluster_count() : 0U;
     words.clear();
-    if (Status sized = words.resize(static_cast<usize>(lists_offset) + (clusters * 2U)); !sized) {
+    if (Status sized =
+            words.resize(static_cast<usize>(lists_offset) + (static_cast<usize>(clusters) * 2U));
+        !sized) {
         return sized;
     }
     for (u32& word : words) {
@@ -285,8 +285,9 @@ Status pack_decal_table(const DecalTableInput& input, Array<u32>& words) noexcep
     write_header(input, lists_offset, lists_offset + (clusters * 2U), words.data());
     for (u32 rank = 0; rank < count; ++rank) {
         const DecalInstance& decal = input.decals[input.order[rank]];
-        write_record(decal, input.materials[decal.material_index], input.origin,
-                     words.data() + kDecalHeaderWords + (rank * kDecalRecordWords));
+        write_record(
+            decal, input.materials[decal.material_index], input.origin,
+            words.data() + kDecalHeaderWords + (static_cast<usize>(rank) * kDecalRecordWords));
     }
     if (input.clusters == nullptr) {
         return ok();
