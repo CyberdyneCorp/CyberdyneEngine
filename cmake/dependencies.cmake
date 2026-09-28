@@ -334,8 +334,30 @@ function(cy__slang_allow_exceptions directory)
         if(type STREQUAL "INTERFACE_LIBRARY" OR type STREQUAL "UTILITY")
             continue()
         endif()
-        target_compile_options(${target} PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:-fexceptions> $<$<COMPILE_LANGUAGE:CXX>:-frtti>)
+        if(MSVC)
+            # MSVC WARNS rather than taking the last of /EHs-c- and /EHsc (D9025), and a second
+            # _HAS_EXCEPTIONS definition is a redefinition, so on MSVC the engine's items are REMOVED
+            # from the target's own copy of the directory properties and the defaults put back.
+            # Without this every Slang target compiled with /EHs-c-: the compiler said so (C4530),
+            # and the first exception slang-fiddle threw ended the process with 0xC0000409, which
+            # stopped every Windows build that enabled CY_SHADER_SLANG.
+            get_target_property(options ${target} COMPILE_OPTIONS)
+            if(options)
+                list(REMOVE_ITEM options
+                    "$<$<COMPILE_LANGUAGE:CXX>:/EHs-c->" "$<$<COMPILE_LANGUAGE:CXX>:/GR->")
+                set_property(TARGET ${target} PROPERTY COMPILE_OPTIONS "${options}")
+            endif()
+            get_target_property(definitions ${target} COMPILE_DEFINITIONS)
+            if(definitions)
+                list(REMOVE_ITEM definitions "$<$<COMPILE_LANGUAGE:CXX>:_HAS_EXCEPTIONS=0>")
+                set_property(TARGET ${target} PROPERTY COMPILE_DEFINITIONS "${definitions}")
+            endif()
+            target_compile_options(${target} PRIVATE
+                $<$<COMPILE_LANGUAGE:CXX>:/EHsc> $<$<COMPILE_LANGUAGE:CXX>:/GR>)
+        else()
+            target_compile_options(${target} PRIVATE
+                $<$<COMPILE_LANGUAGE:CXX>:-fexceptions> $<$<COMPILE_LANGUAGE:CXX>:-frtti>)
+        endif()
     endforeach()
     get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
     foreach(child IN LISTS children)
@@ -383,7 +405,7 @@ function(cy__slang_place_dxc)
 endfunction()
 
 function(cy__finalise_slang target)
-    if(NOT MSVC AND slang_SOURCE_DIR)
+    if(slang_SOURCE_DIR)
         cy__slang_allow_exceptions("${slang_SOURCE_DIR}")
     endif()
     cy__slang_place_dxc()
