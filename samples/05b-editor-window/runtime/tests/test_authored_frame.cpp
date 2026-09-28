@@ -1033,7 +1033,10 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
 
         std::ifstream saved_file(std::string(CY_TEST_PROJECT) + "/" + reference);
         CY_REQUIRE(saved_file.good());
-        const std::string saved(std::istreambuf_iterator<char>{saved_file}, {});
+        std::string saved;
+        for (char character; saved_file.get(character);) {
+            saved.push_back(character);
+        }
         CY_REQUIRE(frame.preview(reference, saved));
         rhi::null::clear_command_log(**device);
         CY_REQUIRE(frame.render(world, view));
