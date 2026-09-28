@@ -66,6 +66,14 @@ deformed on the device — its previous vertices, which `DrawGeometry::previous_
 in the other half of a double-buffered output such as `skinning::SkinnedBuffers`. Nothing asks a
 system for its motion.
 
+## The sky
+
+A texel the prepass left cleared (reversed-Z depth 0) is the sky: its motion is the far plane's
+reprojection, which is the camera's rotation alone. Its view depth is clamped to a finite
+`kSkyViewDepth`, because under `perspective_reversed_z_infinite` the far plane `m32 / m22` divides
+by zero and two sky texels would order as `inf - inf`; `unit.rendering_motion_blur`'s `a turning
+camera blurs the sky under an infinite projection to finite colour` is the regression case.
+
 ## The suites
 
 | Suite | Kind | What it proves |
