@@ -195,3 +195,25 @@ frame keeps its target's detail and loses the other's (`tools/docs/compare_depth
 `docs/design/images/depth-of-field-beauty-{sphere,column}.manifest` are the focused frames'
 provenance; their post-stage lists name `DepthOfField` at step 7, before `Tonemap`. The embers are
 drawn without depth, so the stage blurs each by the surface behind it.
+
+## Volumetric fog, off and on
+
+`--fog on|off` is the setting, off by default. On, the post chain's `volumetric_fog` stage is
+switched on and declared through `fog::FogPass`: a froxel volume — 160 by 90 columns, 96 slices out
+to the shot's `fog far`, four sub-steps a slice — marched through the shot's height fog, lit by the
+same sun through the same shadow map and by the same sky term the surfaces are shaded with, and
+every scene and sky fragment is seen through it (`throughFog` in `shaders/beauty.slang`). Where a
+column stands between the sun and the air, the froxels behind it scatter no sunlight: the shafts
+between the Colonnade's columns. The haze is content, in `shot.cyshot`'s `fog` lines — a
+meteorological visibility, a base altitude and scale height, an albedo and a Henyey-Greenstein
+`g` — and nothing else about it is tunable.
+
+| Fog off | Fog on |
+|---|---|
+| ![](../../docs/design/images/volumetric-fog-beauty-off.png) | ![](../../docs/design/images/volumetric-fog-beauty-on.png) |
+
+![Off, on, and the difference amplified eight times](../../docs/design/images/volumetric-fog-beauty-detail.png)
+
+`just capture-volumetric-fog` writes `docs/design/images/volumetric-fog-beauty-{off,on,detail}.png`
+and `volumetric-fog-beauty-on.manifest`, and `tools/docs/compare_volumetric_fog.py` fails it unless
+the off picture is `m11c-beauty-shot.png`'s pixels exactly.

@@ -179,6 +179,24 @@ no table, so its surface is not attenuated by the air in front of it; the dome's
 the air in front of them (the requirement's "and to volumetric media"), and the engine's forward
 frame (`cy/frame.slang`) reads no table.
 
+## Volumetric fog: a valley haze
+
+![a morning mist in the valleys](../../docs/design/images/volumetric-fog-world-on.png)
+![the same frame without it](../../docs/design/images/volumetric-fog-world-off.png)
+
+`--fog` fills a froxel volume — 96 by 54 columns and 64 slices out to the dome, four sub-steps a
+slice — with a height fog whose numbers are `frame.cypost`'s `fog-*` lines: a meteorological
+visibility at sea level, a scale height, an albedo and a Henyey-Greenstein `g`, the quantities of a
+radiation mist. The medium is lit by the lit path's own sun and ambient. `fog::FogPass` writes it in
+the ATMOSPHERE TABLE's layout with the air composited in: each slice's stretch of air is read out of
+`sky::AerialPerspectiveTable` along the fog's rays and marched with the mist, so binding 2 names the
+fog's table in place of the atmosphere's and `shaders/world.slang` does not change. The march is
+declared before the water's pictures, which are drawn with the lit path and read the same table.
+
+**Not applied:** this world has no directional shadow map, so the mist is lit unshadowed; the shaded
+sea and the dome read no table, as for aerial perspective. Off — the default — declares nothing and
+binds the atmosphere's table as before, so the frame is the one drawn before fog existed.
+
 ## The three tasks this artefact answers
 
 **7.1 — the world.** Above. Run it and read the report it prints; every number in it is read back
@@ -368,6 +386,7 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--no-cloud-shadows` | attenuate the sun once, at the viewer, as before cloud shadows existed; the frame is byte-identical to that build's |
 | `--no-aerial-perspective` | no air between the surfaces and the eye, and the stand-in clear sky, as before aerial perspective existed; the frame is byte-identical to that build's |
 | `--ground-marker` | an RTS move order's ring projected onto the terrain where the camera looks: one decal, ranked and assigned to clusters by the frame's assembly and applied to the ground's colour before the sun lights it (`src/rendering/decals/`). Without it the table in binding 3 is empty and the frame is the one before decals |
+| `--fog` | a valley haze of `frame.cypost`'s `fog-*` medium, composited with the atmosphere; off is the frame before |
 | `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
 | `--quiet-wait-s <s>` | how long `--quiet-host` waits for a quiet host before failing. Default 600 |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |
