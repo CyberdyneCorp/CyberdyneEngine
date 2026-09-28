@@ -129,6 +129,8 @@ struct Frame {
 }
 
 [[nodiscard]] bool same_bits(const Vec4& a, const Vec4& b) noexcept {
+    // A closed shutter's copy is claimed bit for bit; comparing values would assert less.
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
     return std::memcmp(&a, &b, sizeof(Vec4)) == 0;
 }
 

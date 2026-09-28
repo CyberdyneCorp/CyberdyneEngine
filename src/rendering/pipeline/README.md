@@ -164,6 +164,13 @@ the smaller of the two starts and offsets each binding to its own half, because 
 offset cannot be negative. The five `frame.slang` entries that read the block were regenerated; the
 shadow fragment and the fullscreen resolve and temporal entries came out byte-identical.
 
+**The recorder binds each pass's pipeline before its descriptor sets** (`bind_frame_sets` takes the
+pass's `FramePipelineKind`). A Vulkan set binds to the bind point of the last pipeline bound, and a
+compute stage between two graphics passes — motion blur between the temporal resolve and the
+post-process — left it at compute: the post-process's sets went there and the resolve sampled the
+temporal pass's set, so the blur never reached the frame. `render.motion_blur` (d)'s open-shutter
+control is the regression case.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same

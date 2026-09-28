@@ -36,8 +36,10 @@ blurred.
   declared by its producer through `FrameStageDeclaration`; `ScreenSpaceStageInputs` gains the
   velocity and the colour the chain has reached. `FrameAssembly` passes it through
   (`AssemblyView::motion_blur`, `FrameSinks::motion_blur`).
-- Tests: `unit.rendering_motion_blur` and `render.motion_blur`, each image case proven red by a
-  mutation.
+- Tests: `unit.rendering_motion_blur` (the instance history), `integration.rendering_motion_blur`
+  (the host reference) and `render.motion_blur`, each image case proven red by a mutation.
+- `pipeline::FrameRecorder` binds each pass's pipeline before its descriptor sets, which a compute
+  stage between two graphics passes needs on Vulkan.
 
 ## Scope
 

@@ -28,6 +28,8 @@ Allocator& allocator() noexcept {
 }
 
 [[nodiscard]] bool same(const InstanceTransform& a, const InstanceTransform& b) noexcept {
+    // A bitwise identity is the property under test; members compared as values would be weaker.
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
     return std::memcmp(&a, &b, sizeof(InstanceTransform)) == 0;
 }
 

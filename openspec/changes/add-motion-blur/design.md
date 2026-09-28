@@ -53,8 +53,18 @@ The camera's share of a pixel's motion is where last frame's camera saw the pixe
 remainder is the object's, which is how the two scales separate. A texel the prepass left cleared is
 the sky, and moves with the camera alone.
 
-A pixel whose neighbourhood blurs less than half a pixel is copied, not reconstructed, which makes a
-closed shutter byte-identical to no stage.
+A pixel whose neighbourhood blurs less than half a pixel is copied, not reconstructed. A closed
+shutter is byte-identical to no stage; the copy is a saving rather than the reason, because every
+tap of a still neighbourhood lands on the pixel itself.
+
+McGuire's cone does not produce the linear ramp of a physical shutter: the profile ahead of a moving
+edge falls off faster, and the blur's reach stops short of half the shutter-open motion by the cone's
+last percent (5 of 7 px at 180 degrees, 11 of 14 at 360, on the device). The requirement is written
+to that: the reach is bounded by the shutter and scales with it.
+
+A tap is weighted by the distance between its texel and the pixel, not by the length of the offset
+that found it: an offset under half a pixel rounds onto the neighbour, which otherwise weighs as the
+pixel itself and bleeds into still texels beside an edge.
 
 ## Free parameters
 

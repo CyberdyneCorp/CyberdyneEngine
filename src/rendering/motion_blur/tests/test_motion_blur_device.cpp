@@ -487,7 +487,7 @@ struct Span2 {
 [[nodiscard]] u32 box_row(const FrameScene& scene, Vec3 centre) noexcept {
     const Vec4 clip = scene.projection() * Vec4{centre.x - scene.eye().x, centre.y - scene.eye().y,
                                                 centre.z + kBoxHalf - scene.eye().z, 1.0F};
-    return static_cast<u32>((0.5F - (clip.y / clip.w) * 0.5F) * static_cast<f32>(kHeight));
+    return static_cast<u32>((0.5F - ((clip.y / clip.w) * 0.5F)) * static_cast<f32>(kHeight));
 }
 
 [[nodiscard]] usize differing(const std::vector<u32>& a, const std::vector<u32>& b) noexcept {

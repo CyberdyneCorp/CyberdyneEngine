@@ -11,9 +11,13 @@ namespace {
 /// Whether two rows place a mesh identically. Bitwise, because "the same placement" here means
 /// "the prepass computes the same position", and that is a statement about bits.
 [[nodiscard]] bool same_placement(const InstanceTransform& a, const InstanceTransform& b) noexcept {
+    // `bugprone-suspicious-memory-comparison` is right that a float has no unique representation,
+    // and that is the point here, as the comment above says.
+    // NOLINTBEGIN(bugprone-suspicious-memory-comparison)
     return std::memcmp(a.row0, b.row0, sizeof(a.row0)) == 0 &&
            std::memcmp(a.row1, b.row1, sizeof(a.row1)) == 0 &&
            std::memcmp(a.row2, b.row2, sizeof(a.row2)) == 0;
+    // NOLINTEND(bugprone-suspicious-memory-comparison)
 }
 
 /// Whether slot `slot` holds the same instance it held last frame.
