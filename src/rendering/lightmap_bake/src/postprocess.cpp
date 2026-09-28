@@ -34,8 +34,7 @@ enum class Channel : u8 { Mean, LuminanceDirection, Red, Green, Blue };
 [[nodiscard]] Span<const Channel> channels_of(LightmapMode mode) noexcept {
     static constexpr Channel kIrradiance[] = {Channel::Mean};
     static constexpr Channel kDirectional[] = {Channel::Mean, Channel::LuminanceDirection};
-    static constexpr Channel kShL1[] = {Channel::Mean, Channel::Red, Channel::Green,
-                                        Channel::Blue};
+    static constexpr Channel kShL1[] = {Channel::Mean, Channel::Red, Channel::Green, Channel::Blue};
     switch (mode) {
         case LightmapMode::Directional:
             return {kDirectional, 2};
@@ -111,7 +110,7 @@ struct Footprint {
     u64 count = 0;
     for (usize index = 0; index < canvas.surfaces.size(); ++index) {
         if (has_surface(canvas.surfaces[index])) {
-            total += luminance(canvas.moments[index].mean);
+            total += static_cast<f64>(luminance(canvas.moments[index].mean));
             count += 1;
         }
     }
@@ -155,26 +154,264 @@ struct SeamSample {
     return worst;
 }
 
-/// One minimum-norm step moving both footprints to the same bilinear value.
-void solve_sample(Canvas& canvas, const SeamSample& sample) noexcept {
-    const TexelMoments a = sample_footprint(canvas, sample.a);
-    const TexelMoments b = sample_footprint(canvas, sample.b);
-    f32 norm = 0.0F;
-    for (u32 corner = 0; corner < 4U; ++corner) {
-        norm += (sample.a.weights[corner] * sample.a.weights[corner]) +
-                (sample.b.weights[corner] * sample.b.weights[corner]);
+[[nodiscard]] f32 inner(const TexelMoments& a, const TexelMoments& b) noexcept {
+    f32 sum = dot(a.mean, b.mean) + dot(a.luminance_direction, b.luminance_direction) +
+              (a.luminance * b.luminance);
+    for (u32 channel = 0; channel < 3U; ++channel) {
+        sum += dot(a.channel_direction[channel], b.channel_direction[channel]);
     }
-    if (norm <= 1.0e-8F) {
-        return;
+    return sum;
+}
+
+/// The ridge added to C C^T in the seam solve: a hundred-thousandth of a footprint's squared norm,
+/// which is between a half and two.
+constexpr f32 kSeamRidge = 1.0e-5F;
+
+/// The seam constraints as a sparse matrix over the texels they touch: row s is sample s's
+/// footprint on side a minus its footprint on side b, so `C x = 0` is "every seam sample reads the
+/// same value from both sides".
+class SeamSystem {
+public:
+    [[nodiscard]] Status build(Span<const SeamSample> samples) noexcept {
+        samples_ = samples;
+        for (const SeamSample& sample : samples) {
+            for (u32 corner = 0; corner < 4U; ++corner) {
+                if (Status added = add_texel(sample.a.texels[corner]); !added) {
+                    return added;
+                }
+                if (Status added = add_texel(sample.b.texels[corner]); !added) {
+                    return added;
+                }
+            }
+        }
+        std::sort(texels_.begin(), texels_.end());
+        const auto kept =
+            static_cast<usize>(std::unique(texels_.begin(), texels_.end()) - texels_.begin());
+        while (texels_.size() > kept) {
+            texels_.pop_back();
+        }
+        return ok();
     }
-    TexelMoments difference = a;
-    add_moments(difference, b, -1.0F);
-    for (u32 corner = 0; corner < 4U; ++corner) {
-        add_moments(canvas.moments[sample.a.texels[corner]], difference,
-                    -sample.a.weights[corner] / norm);
-        add_moments(canvas.moments[sample.b.texels[corner]], difference,
-                    sample.b.weights[corner] / norm);
+
+    [[nodiscard]] usize rows() const noexcept { return samples_.size(); }
+    [[nodiscard]] usize columns() const noexcept { return texels_.size(); }
+    [[nodiscard]] usize texel(usize column) const noexcept { return texels_[column]; }
+
+    /// out = C x, x over the touched texels.
+    void apply(Span<const TexelMoments> x, Span<TexelMoments> out) const noexcept {
+        for (usize row = 0; row < samples_.size(); ++row) {
+            TexelMoments value;
+            for (u32 corner = 0; corner < 4U; ++corner) {
+                add_moments(value, x[column_of(samples_[row].a.texels[corner])],
+                            samples_[row].a.weights[corner]);
+                add_moments(value, x[column_of(samples_[row].b.texels[corner])],
+                            -samples_[row].b.weights[corner]);
+            }
+            out[row] = value;
+        }
     }
+
+    /// out = C^T y.
+    void apply_transpose(Span<const TexelMoments> y, Span<TexelMoments> out) const noexcept {
+        for (TexelMoments& value : out) {
+            value = TexelMoments{};
+        }
+        for (usize row = 0; row < samples_.size(); ++row) {
+            for (u32 corner = 0; corner < 4U; ++corner) {
+                add_moments(out[column_of(samples_[row].a.texels[corner])], y[row],
+                            samples_[row].a.weights[corner]);
+                add_moments(out[column_of(samples_[row].b.texels[corner])], y[row],
+                            -samples_[row].b.weights[corner]);
+            }
+        }
+    }
+
+private:
+    [[nodiscard]] Status add_texel(usize texel) noexcept { return texels_.push_back(texel); }
+    [[nodiscard]] usize column_of(usize texel) const noexcept {
+        return static_cast<usize>(std::lower_bound(texels_.begin(), texels_.end(), texel) -
+                                  texels_.begin());
+    }
+
+    Span<const SeamSample> samples_;
+    Array<usize> texels_;
+};
+
+/// The smallest change to the seam texels that makes every constraint hold: x = x0 - C^T y with
+/// (C C^T) y = C x0, solved by conjugate gradients. Every moment channel is solved at once — the
+/// matrix is the same for all of them, so the stacked system is still symmetric positive
+/// semi-definite and the inner product is the sum over channels. A row-by-row projection (Kaczmarz)
+/// was the first version, and on a seam whose footprints overlap it converged too slowly to
+/// matter: 8 sweeps left 4.6% of the mean, 512 still 0.5%.
+[[nodiscard]] Status solve_seams(Canvas& canvas, Span<const SeamSample> samples,
+                                 u32 iterations) noexcept {
+    SeamSystem system;
+    if (Status built = system.build(samples); !built) {
+        return built;
+    }
+    Array<TexelMoments> x;
+    Array<TexelMoments> z;
+    Array<TexelMoments> y;
+    Array<TexelMoments> r;
+    Array<TexelMoments> p;
+    Array<TexelMoments> mp;
+    for (Array<TexelMoments>* vector : {&x, &z}) {
+        if (Status sized = vector->resize(system.columns()); !sized) {
+            return sized;
+        }
+    }
+    for (Array<TexelMoments>* vector : {&y, &r, &p, &mp}) {
+        if (Status sized = vector->resize(system.rows()); !sized) {
+            return sized;
+        }
+    }
+    for (usize column = 0; column < system.columns(); ++column) {
+        x[column] = canvas.moments[system.texel(column)];
+    }
+    system.apply(x.span(), r.span());  // r = C x0 - (C C^T) 0
+    f32 residual = 0.0F;
+    for (usize row = 0; row < system.rows(); ++row) {
+        p[row] = r[row];
+        residual += inner(r[row], r[row]);
+    }
+    // Converged is relative to where it started. Overlapping footprints make rows dependent, so
+    // C C^T is singular, and iterating past convergence divides round-off by round-off; the small
+    // ridge keeps the step finite on the way there.
+    const f32 converged = residual * 1.0e-12F;
+    for (u32 iteration = 0; iteration < iterations && residual > converged; ++iteration) {
+        system.apply_transpose(p.span(), z.span());
+        system.apply(z.span(), mp.span());
+        for (usize row = 0; row < system.rows(); ++row) {
+            add_moments(mp[row], p[row], kSeamRidge);
+        }
+        f32 curvature = 0.0F;
+        for (usize row = 0; row < system.rows(); ++row) {
+            curvature += inner(p[row], mp[row]);
+        }
+        if (curvature <= 1.0e-20F) {
+            break;
+        }
+        const f32 step = residual / curvature;
+        f32 next = 0.0F;
+        for (usize row = 0; row < system.rows(); ++row) {
+            add_moments(y[row], p[row], step);
+            add_moments(r[row], mp[row], -step);
+            next += inner(r[row], r[row]);
+        }
+        const f32 ratio = next / residual;
+        for (usize row = 0; row < system.rows(); ++row) {
+            TexelMoments direction = r[row];
+            add_moments(direction, p[row], ratio);
+            p[row] = direction;
+        }
+        residual = next;
+    }
+    system.apply_transpose(y.span(), z.span());
+    for (usize column = 0; column < system.columns(); ++column) {
+        add_moments(canvas.moments[system.texel(column)], z[column], -1.0F);
+    }
+    return ok();
+}
+
+/// One texel the dilation fills in a pass.
+struct Fill {
+    usize texel = 0;
+    TexelMoments moments;
+    Vec3 normal{0.0F, 1.0F, 0.0F};
+    u32 chart = kNoOwner;
+};
+
+/// The chart most of a texel's known neighbours in its own rectangle belong to, the lowest id on a
+/// tie so the fill is reproducible; `kNoOwner` when it has none.
+[[nodiscard]] u32 majority_chart(const Canvas& canvas, const Array<u8>& known, u32 x, u32 y,
+                                 u32 owner) noexcept {
+    u32 charts[8] = {};
+    u32 counts[8] = {};
+    u32 distinct = 0;
+    for (i32 dy = -1; dy <= 1; ++dy) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            const i32 nx = static_cast<i32>(x) + dx;
+            const i32 ny = static_cast<i32>(y) + dy;
+            if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= static_cast<i32>(canvas.width) ||
+                ny >= static_cast<i32>(canvas.height)) {
+                continue;
+            }
+            const usize neighbour = canvas.index(static_cast<u32>(nx), static_cast<u32>(ny));
+            const TexelSurface& texel = canvas.surfaces[neighbour];
+            if (known[neighbour] == 0U || texel.owner != owner) {
+                continue;
+            }
+            u32 slot = 0;
+            while (slot < distinct && charts[slot] != texel.chart) {
+                ++slot;
+            }
+            if (slot == distinct) {
+                charts[distinct++] = texel.chart;
+            }
+            counts[slot] += 1U;
+        }
+    }
+    u32 best = kNoOwner;
+    u32 best_count = 0;
+    for (u32 slot = 0; slot < distinct; ++slot) {
+        if (counts[slot] > best_count || (counts[slot] == best_count && charts[slot] < best)) {
+            best = charts[slot];
+            best_count = counts[slot];
+        }
+    }
+    return best;
+}
+
+/// The fill for one unknown texel: the mean of its known neighbours of ONE CHART in its own
+/// rectangle. One chart, because a rectangle holds every chart of its object and the padding
+/// between two of them is read by both sides' bilinear taps: a fill that mixed a floor's moments
+/// with a wall's, and their normals, would be encoded against a normal neither chart has, and a
+/// directional texel read at the floor's own normal would no longer be the floor's light.
+[[nodiscard]] bool fill_from_neighbours(const Canvas& canvas, const Array<u8>& known, u32 x, u32 y,
+                                        Fill& out) noexcept {
+    const usize index = canvas.index(x, y);
+    const u32 owner = canvas.surfaces[index].owner;
+    if (known[index] != 0U || owner == kNoOwner) {
+        return false;
+    }
+    // A BURIED texel is its own chart's surface and is filled from that chart alone: the strip of a
+    // floor under a wall standing on it borders the floor's padding, which the first passes fill
+    // from whatever chart the unwrap put beside it.
+    const u32 own = canvas.surfaces[index].chart;
+    const u32 chart = own != kNoOwner ? own : majority_chart(canvas, known, x, y, owner);
+    if (chart == kNoOwner) {
+        return false;
+    }
+    TexelMoments sum;
+    Vec3 normal_sum{0.0F, 0.0F, 0.0F};
+    f32 weight = 0.0F;
+    for (i32 dy = -1; dy <= 1; ++dy) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            const i32 nx = static_cast<i32>(x) + dx;
+            const i32 ny = static_cast<i32>(y) + dy;
+            if (nx < 0 || ny < 0 || nx >= static_cast<i32>(canvas.width) ||
+                ny >= static_cast<i32>(canvas.height)) {
+                continue;
+            }
+            const usize neighbour = canvas.index(static_cast<u32>(nx), static_cast<u32>(ny));
+            const TexelSurface& texel = canvas.surfaces[neighbour];
+            if (known[neighbour] == 0U || texel.owner != owner || texel.chart != chart) {
+                continue;
+            }
+            add_moments(sum, canvas.moments[neighbour], 1.0F);
+            normal_sum = normal_sum + texel.normal;
+            weight += 1.0F;
+        }
+    }
+    if (weight <= 0.0F) {
+        return false;
+    }
+    out.texel = index;
+    out.chart = chart;
+    add_moments(out.moments, sum, 1.0F / weight);
+    // The normal travels with the light: the directional planes are encoded against it.
+    out.normal = normalized_or(normal_sum, Vec3{0.0F, 1.0F, 0.0F});
+    return true;
 }
 
 [[nodiscard]] Vec4 encode_plane(const TexelMoments& moments, Vec3 normal, LightmapMode mode,
@@ -184,8 +421,8 @@ void solve_sample(Canvas& canvas, const SeamSample& sample) noexcept {
         return Vec4{mean.x, mean.y, mean.z, 1.0F};
     }
     if (mode == LightmapMode::Directional) {
-        // The luminance-weighted mean direction scaled by its directionality, and the geometric
-        // normal's own factor, so `1 + v . n` over `w` is one at the geometric normal.
+        // The luminance's tilt gradient relative to the luminance, and the geometric normal's own
+        // factor, so `1 + v . n` over `w` is one at the geometric normal.
         const f32 lum = luminance(mean);
         const Vec3 v = lum > 1.0e-8F ? moments.luminance_direction / lum : Vec3{};
         return Vec4{v.x, v.y, v.z, std::max(1.0F + dot(v, normal), 1.0e-3F)};
@@ -205,7 +442,7 @@ void solve_sample(Canvas& canvas, const SeamSample& sample) noexcept {
 
 }  // namespace
 
-Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 /*samples*/) noexcept {
+Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 passes) noexcept {
     const usize texels = canvas.surfaces.size();
     Array<f32> depth;
     Array<Vec3> normals;
@@ -241,6 +478,14 @@ Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 /*samples*/) noexc
     if (Status sized = denoiser.resize(canvas.width, canvas.height); !sized) {
         return sized;
     }
+    // A SHORT CASCADE. With no history the denoiser takes each texel's variance from its 3x3
+    // neighbourhood, and across a lightmap chart that neighbourhood holds the light's real gradient
+    // as well as the sampling noise: the default five-pass reach flattened a floor lit from one
+    // side into its mean. Every texel already carries many samples, so the filter's job is the
+    // residual grain, which a reach of a few texels removes.
+    denoise::SignalConfig config = denoise::default_config(denoise::SignalKind::IndirectDiffuse);
+    config.max_passes = std::max(1U, passes);
+    denoiser.configure(denoise::SignalKind::IndirectDiffuse, config);
     denoise::GuidanceBuffers guidance;
     guidance.width = canvas.width;
     guidance.height = canvas.height;
@@ -288,67 +533,29 @@ u32 dilate(Canvas& canvas, u32 passes) noexcept {
     for (usize index = 0; index < canvas.surfaces.size(); ++index) {
         known[index] = has_surface(canvas.surfaces[index]) ? 1U : 0U;
     }
-    Array<usize> frontier;
-    Array<TexelMoments> fills;
-    Array<Vec3> fill_normals;
+    Array<Fill> fills;
     u32 filled = 0;
     for (u32 pass = 0; pass < passes; ++pass) {
-        frontier.clear();
         fills.clear();
-        fill_normals.clear();
         for (u32 y = 0; y < canvas.height; ++y) {
             for (u32 x = 0; x < canvas.width; ++x) {
-                const usize index = canvas.index(x, y);
-                const TexelSurface& texel = canvas.surfaces[index];
-                if (known[index] != 0U || texel.owner == kNoOwner) {
-                    continue;
-                }
-                TexelMoments sum;
-                Vec3 normal_sum{0.0F, 0.0F, 0.0F};
-                f32 weight = 0.0F;
-                for (i32 dy = -1; dy <= 1; ++dy) {
-                    for (i32 dx = -1; dx <= 1; ++dx) {
-                        const i32 nx = static_cast<i32>(x) + dx;
-                        const i32 ny = static_cast<i32>(y) + dy;
-                        if (nx < 0 || ny < 0 || nx >= static_cast<i32>(canvas.width) ||
-                            ny >= static_cast<i32>(canvas.height)) {
-                            continue;
-                        }
-                        const usize neighbour =
-                            canvas.index(static_cast<u32>(nx), static_cast<u32>(ny));
-                        // Only the texel's own rectangle: a gutter is filled from its object.
-                        if (known[neighbour] == 0U ||
-                            canvas.surfaces[neighbour].owner != texel.owner) {
-                            continue;
-                        }
-                        add_moments(sum, canvas.moments[neighbour], 1.0F);
-                        normal_sum = normal_sum + canvas.surfaces[neighbour].normal;
-                        weight += 1.0F;
-                    }
-                }
-                if (weight <= 0.0F) {
-                    continue;
-                }
-                TexelMoments average;
-                add_moments(average, sum, 1.0F / weight);
-                // The normal travels with the light: the directional planes are encoded against it.
-                if (!frontier.push_back(index).has_value() ||
-                    !fills.push_back(average).has_value() ||
-                    !fill_normals.push_back(normalized_or(normal_sum, Vec3{0.0F, 1.0F, 0.0F}))
-                         .has_value()) {
+                Fill fill;
+                if (fill_from_neighbours(canvas, known, x, y, fill) &&
+                    !fills.push_back(fill).has_value()) {
                     return filled;
                 }
             }
         }
-        if (frontier.empty()) {
+        if (fills.empty()) {
             break;
         }
-        for (usize at = 0; at < frontier.size(); ++at) {
-            canvas.moments[frontier[at]] = fills[at];
-            canvas.surfaces[frontier[at]].normal = fill_normals[at];
-            known[frontier[at]] = 1U;
+        for (const Fill& fill : fills) {
+            canvas.moments[fill.texel] = fill.moments;
+            canvas.surfaces[fill.texel].normal = fill.normal;
+            canvas.surfaces[fill.texel].chart = fill.chart;
+            known[fill.texel] = 1U;
         }
-        filled += static_cast<u32>(frontier.size());
+        filled += static_cast<u32>(fills.size());
     }
     return filled;
 }
@@ -361,11 +568,10 @@ u32 reconcile_seams(Canvas& canvas, Span<const SeamEdge> seams, u32 iterations, 
     }
     const f32 scale = std::max(mean_covered_luminance(canvas), 1.0e-6F);
     error_before = worst_disagreement(canvas, samples.span()) / scale;
-    if (apply) {
-        for (u32 iteration = 0; iteration < iterations; ++iteration) {
-            for (const SeamSample& sample : samples) {
-                solve_sample(canvas, sample);
-            }
+    if (apply && !samples.empty()) {
+        if (!solve_seams(canvas, samples.span(), iterations).has_value()) {
+            error_after = error_before;
+            return 0;
         }
     }
     error_after = worst_disagreement(canvas, samples.span()) / scale;

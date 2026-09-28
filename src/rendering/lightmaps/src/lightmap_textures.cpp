@@ -28,8 +28,7 @@ void record_upload(const PassContext& context, void* user) noexcept {
     const auto* recording = static_cast<const UploadRecording*>(user);
     for (u32 plane = 0; plane < recording->planes; ++plane) {
         rhi::BufferTextureCopy region;
-        region.buffer_offset =
-            u64{plane} * recording->width * recording->height * 4U * sizeof(u16);
+        region.buffer_offset = u64{plane} * recording->width * recording->height * 4U * sizeof(u16);
         region.texture_extent = rhi::Extent3D{recording->width, recording->height, 1};
         context.commands->copy_buffer_to_texture(recording->staging, recording->textures[plane],
                                                  Span<const rhi::BufferTextureCopy>(&region, 1));

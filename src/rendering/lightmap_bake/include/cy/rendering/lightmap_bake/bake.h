@@ -28,17 +28,19 @@
 // WHAT IS STORED, AND IN WHICH UNITS
 // ================================================================================================
 //
-// A texel stores the AMBIENT RADIANCE the frame multiplies a surface's albedo by — the mean incoming
-// radiance over the cosine hemisphere, E / pi — which is what `cy/frame.slang`'s ambient term and
-// its irradiance volume already hold. Three encodings, `LightmapMode`:
+// A texel stores the AMBIENT RADIANCE the frame multiplies a surface's albedo by — the mean
+// incoming radiance over the cosine hemisphere, E / pi — which is what `cy/frame.slang`'s ambient
+// term and its irradiance volume already hold. Three encodings, `LightmapMode`:
 //
 //   Irradiance    one RGBA texel: E(n) / pi about the geometric normal. The cheapest and blind to a
 //                 normal map.
-//   Directional   the same, plus the luminance-weighted mean incoming direction scaled by its
-//                 directionality, `v`, and `w = 1 + v . n_geometric`. A shading normal n reads
-//                 `rgb * max(0, 1 + v . n) / w`: exact at the geometric normal, and a normal map
-//                 tilting toward the light brightens it. Two texels.
-//   ShL1          the same fit per colour channel — `a_c + b_c . n` — so a coloured wall on one side
+//   Directional   the same, plus `v`, the relative gradient of its luminance as the normal tilts
+//                 (estimated from the same samples: see `trace.cpp`'s tilt response), and
+//                 `w = 1 + v . n_geometric`. A shading normal n reads `rgb * max(0, 1 + v . n) /
+//                 w`: exact at the geometric normal, right to first order around it, so a normal
+//                 map tilting toward the light brightens it. Two texels.
+//   ShL1          the same fit per colour channel — `a_c + b_c . n` — so a coloured wall on one
+//   side
 //                 of a surface tilts the colour as well as the brightness. Three texels.
 //
 // `gi::PathTracer` bounces with `albedo * irradiance`, the surface cache's convention; a Lambertian
@@ -93,11 +95,14 @@ struct LightmapBakeSettings {
     gi::BakeSettings trace{};
     /// Off for reference comparison: the raw path-traced texels.
     bool denoise = true;
+    /// The denoiser's a-trous passes. Each doubles the reach; two reach three texels.
+    u32 denoise_passes = 2;
     /// Passes of border dilation. Zero derives it from the gutter and the widest padding.
     u32 dilation_passes = 0;
     bool reconcile_seams = true;
-    /// Gauss-Seidel sweeps of the seam solve.
-    u32 seam_iterations = 8;
+    /// Conjugate-gradient iterations of the seam solve. A seam converges in about as many as its
+    /// samples have distinct footprints; the solve stops early when it has.
+    u32 seam_iterations = 32;
     /// Spacing of the surface cards the path tracer resolves materials through, in metres.
     f32 surfel_spacing = 0.25F;
     /// A texel whose hemisphere rays meet back faces more often than this is inside geometry.

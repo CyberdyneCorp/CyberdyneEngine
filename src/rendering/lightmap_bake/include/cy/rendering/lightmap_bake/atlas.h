@@ -11,13 +11,13 @@
 // ONE RECTANGLE PER OBJECT, AND THE UNWRAP INSIDE IT
 // ================================================================================================
 //
-// The importer unwraps each mesh into its own unit square (`cy::import::generate_uv2`, over xatlas),
-// with padding between that mesh's charts. A level places many instances of those meshes, so what
-// is packed here is one RECTANGLE per placed object, sized from the object's world area, the global
-// texel density and the object's own resolution scale; the mesh's UV2 square is mapped into the
-// rectangle's interior by a scale and an offset. That keeps one mesh's UV2 stream shared by every
-// instance of it — the frame reads the cooked `TexCoords2` stream unchanged and applies the
-// instance's rectangle — which is the arrangement that lets a thousand rocks share one vertex
+// The importer unwraps each mesh into its own unit square (`cy::import::generate_uv2`, over
+// xatlas), with padding between that mesh's charts. A level places many instances of those meshes,
+// so what is packed here is one RECTANGLE per placed object, sized from the object's world area,
+// the global texel density and the object's own resolution scale; the mesh's UV2 square is mapped
+// into the rectangle's interior by a scale and an offset. That keeps one mesh's UV2 stream shared
+// by every instance of it — the frame reads the cooked `TexCoords2` stream unchanged and applies
+// the instance's rectangle — which is the arrangement that lets a thousand rocks share one vertex
 // buffer and still own a thousand regions of the atlas.
 //
 // ================================================================================================
@@ -35,8 +35,9 @@
 // THE ADDRESS IS ONE WORD, AND THAT IS WHAT THE DRAW LIST ALREADY CARRIES
 // ================================================================================================
 //
-// `GpuDrawInstance::gi_address` is "lightmap or GI volume addressing, opaque to" the forward module.
-// A rectangle on the block grid is four seven-bit numbers and a page, which fits in it exactly:
+// `GpuDrawInstance::gi_address` is "lightmap or GI volume addressing, opaque to" the forward
+// module. A rectangle on the block grid is four seven-bit numbers and a page, which fits in it
+// exactly:
 //
 //     bits  0..6   block x        bits 14..20  block width - 1
 //     bits  7..13  block y        bits 21..27  block height - 1

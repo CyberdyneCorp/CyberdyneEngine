@@ -39,14 +39,24 @@ hemisphere. A texel stores that — for the placed lights' direct term too only 
 exists.
 
 - **Irradiance**: `E(n_g) / pi`. One RGBA plane.
-- **Directional**: the same, plus `v`, the luminance-weighted mean incoming direction scaled by its
-  directionality, and `w = 1 + v . n_g`. A shading normal reads `rgb * max(0, 1 + v . n) / w`:
-  exact at the geometric normal, brighter toward the light. Two planes.
+- **Directional**: the same, plus `v`, the gradient of the luminance of `E(n) / pi` as the normal
+  tilts, over that luminance, and `w = 1 + v . n_g`. A shading normal reads
+  `rgb * max(0, 1 + v . n) / w`: exact at the geometric normal and right to first order around it.
+  Two planes.
 - **SH L1**: the same fit per channel, `a_c + b_c . n`, so a normal tilted toward a coloured wall
   turns the colour too. Three planes.
 
-The trace accumulates linear moments (the mean, luminance times direction, each channel times
-direction), and the denoiser, the dilation and the seam solve all operate on the moments; the planes
+The gradient is estimated from the same cosine-weighted samples as the mean: each sample adds its
+radiance times its TILT RESPONSE, the tangential part of its direction over its cosine (floored at
+0.1), whose expectation is the derivative of `E(n) / pi` at the geometric normal — for a single
+light, exactly `tan` of its angle. The first version stored the plain luminance-weighted mean
+direction, which is what several engines' directional lightmaps store; on a floor lit mostly from
+above and partly by a bright wall it points nearly straight up, and tilting a normal toward the wall
+then DARKENED it where the path tracer says it brightens by a third. The unit case
+"directional and SH L1 lightmaps keep a normal map's response" is that scene.
+
+The trace accumulates linear moments (the mean, luminance times the tilt response, each channel
+times it), and the denoiser, the dilation and the seam solve all operate on the moments; the planes
 are encoded last and rounded through half precision, so the host sampler reads exactly what the
 device does.
 
@@ -54,10 +64,18 @@ device does.
 
 The denoiser runs once per moment channel over the whole stacked atlas, with no history (an atlas
 is one frame) and the chart id as the hard boundary: two charts adjacent in the atlas are strangers
-in the world. Dilation then fills every rectangle to its edge from its own texels only. Seams are
+in the world. Its cascade is SHORT — two passes, a reach of three texels. With no history it takes
+each texel's variance from its 3x3 neighbourhood, which across a chart holds the light's real
+gradient as well as the noise, and the default reach flattened a floor lit from one side toward its
+mean: against the path tracer the room's relative error was 0.067 raw, 0.040 at two passes and
+0.078 at three. Dilation then fills every rectangle to its edge from its own texels only. Seams are
 edges two charts of one object share in space with smooth normals and different UV2 (a hard edge's
-two sides are lit differently on purpose and are left alone); both sides' bilinear footprints are
-moved to their common value by a few Gauss-Seidel sweeps of the minimum-norm correction.
+two sides are lit differently on purpose and are left alone); the correction is the
+smallest change to the seam texels that makes every seam sample read one value from both sides,
+`x = x0 - C^T y` with `(C C^T + ridge) y = C x0`, solved by conjugate gradients over every moment
+channel at once. A row-by-row projection (Kaczmarz) was the first version and converged too slowly on
+overlapping footprints to be useful: 4.6% of the mean after 8 sweeps, still 0.5% after 512, where
+the conjugate gradients reach 0.006% in 16 iterations.
 
 ## Which ambient source the frame takes
 

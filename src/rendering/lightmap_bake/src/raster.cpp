@@ -140,10 +140,10 @@ void write_texel(Canvas& canvas, const RasterTriangle& triangle, u32 owner, u32 
     TexelSurface& texel = canvas.surfaces[canvas.index(x, y)];
     texel.position = (triangle.world[0] * weights[0]) + (triangle.world[1] * weights[1]) +
                      (triangle.world[2] * weights[2]);
-    texel.normal = normalized_or((triangle.normals[0] * weights[0]) +
-                                     (triangle.normals[1] * weights[1]) +
-                                     (triangle.normals[2] * weights[2]),
-                                 triangle.normals[0]);
+    texel.normal =
+        normalized_or((triangle.normals[0] * weights[0]) + (triangle.normals[1] * weights[1]) +
+                          (triangle.normals[2] * weights[2]),
+                      triangle.normals[0]);
     texel.owner = owner;
     texel.chart = triangle.chart;
     texel.state = TexelState::Surface;
@@ -155,8 +155,7 @@ void write_texel(Canvas& canvas, const RasterTriangle& triangle, u32 owner, u32 
 void rasterise_triangle(Canvas& canvas, const RasterTriangle& triangle, u32 owner, const u32 lo[2],
                         const u32 hi[2]) noexcept {
     const Vec2 low = cwise_min(triangle.atlas[0], cwise_min(triangle.atlas[1], triangle.atlas[2]));
-    const Vec2 high =
-        cwise_max(triangle.atlas[0], cwise_max(triangle.atlas[1], triangle.atlas[2]));
+    const Vec2 high = cwise_max(triangle.atlas[0], cwise_max(triangle.atlas[1], triangle.atlas[2]));
     const auto clamp_axis = [](f32 value, u32 from, u32 to) {
         const f32 clamped = std::clamp(value, static_cast<f32>(from), static_cast<f32>(to));
         return static_cast<u32>(clamped);
@@ -173,8 +172,8 @@ void rasterise_triangle(Canvas& canvas, const RasterTriangle& triangle, u32 owne
                 return;
             }
             TexelSurface& texel = canvas.surfaces[canvas.index(x, y)];
-            const bool inside = weights[0] >= -1.0e-6F && weights[1] >= -1.0e-6F &&
-                                weights[2] >= -1.0e-6F;
+            const bool inside =
+                weights[0] >= -1.0e-6F && weights[1] >= -1.0e-6F && weights[2] >= -1.0e-6F;
             if (inside) {
                 if (texel.state != TexelState::Surface || texel.conservative) {
                     write_texel(canvas, triangle, owner, x, y, weights, false, 0.0F);
@@ -284,8 +283,8 @@ struct EdgeRecord {
         const u32 b_low = second.forward ? second.from : second.to;
         const u32 b_high = second.forward ? second.to : second.from;
         const bool shared = a_low == b_low && a_high == b_high;
-        const bool split_uv = mesh.uv2[a_low] != mesh.uv2[b_low] ||
-                              mesh.uv2[a_high] != mesh.uv2[b_high];
+        const bool split_uv =
+            mesh.uv2[a_low] != mesh.uv2[b_low] || mesh.uv2[a_high] != mesh.uv2[b_high];
         if (shared || !split_uv || !normals_agree(mesh, a_low, b_low) ||
             !normals_agree(mesh, a_high, b_high)) {
             continue;
@@ -346,9 +345,9 @@ void claim_rectangle(Canvas& canvas, u32 owner, const u32 lo[2], const u32 hi[2]
         if (!usable) {
             continue;
         }
-        const Vec3 face = normalized_or(cross(triangle.world[1] - triangle.world[0],
-                                              triangle.world[2] - triangle.world[0]),
-                                        Vec3{0.0F, 1.0F, 0.0F});
+        const Vec3 face = normalized_or(
+            cross(triangle.world[1] - triangle.world[0], triangle.world[2] - triangle.world[0]),
+            Vec3{0.0F, 1.0F, 0.0F});
         for (u32 corner = 0; corner < 3U; ++corner) {
             triangle.normals[corner] = world_normal(placed, mesh.indices[at + corner], face);
         }

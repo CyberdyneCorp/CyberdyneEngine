@@ -530,7 +530,8 @@ CY_TEST_CASE("unwrap: an unchanged reimport runs no unwrap, nor does one that mo
     write_file(harness.project + "/models/quad.bin", quad_buffer(1.0f));
     ImportOptions options;
     const OptionsSchema schema = gltf_options();
-    CY_REQUIRE(options.set(schema, "generate-lightmap-uvs", OptionValue::of_bool(true)).has_value());
+    CY_REQUIRE(
+        options.set(schema, "generate-lightmap-uvs", OptionValue::of_bool(true)).has_value());
     ImportSettings settings;
     settings.options = &options;
     Uv2Cache::process().clear();
@@ -554,8 +555,8 @@ CY_TEST_CASE("unwrap: an unchanged reimport runs no unwrap, nor does one that mo
     CY_CHECK(uv2_unwrap_count() == before + 1);
 
     // 2. THE SOURCE CHANGED AND THE GEOMETRY DID NOT: a generator string in the document. The key
-    // misses and the importer runs — and the unwrap is the cached one, so xatlas does not, and every
-    // cooked file is the same, UV2 included.
+    // misses and the importer runs — and the unwrap is the cached one, so xatlas does not, and
+    // every cooked file is the same, UV2 included.
     std::string edited = gltf_with_external_buffer("quad.bin");
     const std::string marker = R"("version":"2.0")";
     edited.replace(edited.find(marker), marker.size(),

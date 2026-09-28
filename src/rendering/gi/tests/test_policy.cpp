@@ -129,7 +129,8 @@ CY_TEST_CASE("a lightmapped surface in Baked mode takes its lightmap, not a mean
     volume.confidence = 1.0F;
     const RadianceSample samples[2] = {lightmap, volume};
 
-    const ResolveResult lightmapped = combine({samples, 2}, exclusion_for(GiMode::Baked, true, true));
+    const ResolveResult lightmapped =
+        combine({samples, 2}, exclusion_for(GiMode::Baked, true, true));
     CY_CHECK_NEAR(lightmapped.radiance.x, 0.5F, 1e-5F);
     CY_CHECK_EQ(lightmapped.sources_used, source_bit(RadianceSource::Lightmap));
     // A dynamic object in the same volume still takes the probes: "lit by interpolated probe

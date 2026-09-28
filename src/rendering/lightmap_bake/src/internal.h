@@ -46,9 +46,11 @@ struct TexelSurface {
 struct TexelMoments {
     /// The mean incoming radiance over the cosine hemisphere: E / pi.
     Vec3 mean{0.0F, 0.0F, 0.0F};
-    /// The mean of luminance times direction.
+    /// The mean of luminance times the tilt response (the tangential direction over its cosine):
+    /// the gradient of the luminance of E / pi as the shading normal tilts away from the geometric
+    /// one. See `trace.cpp`.
     Vec3 luminance_direction{0.0F, 0.0F, 0.0F};
-    /// The mean of each channel times direction.
+    /// The same per colour channel.
     Vec3 channel_direction[3] = {};
     /// The mean luminance.
     f32 luminance = 0.0F;
@@ -97,7 +99,8 @@ struct TraceContext {
 [[nodiscard]] Status build_surfels(const LightmapScene& scene, const MeshSceneTracer& tracer,
                                    f32 spacing, gi::GiScene& out) noexcept;
 
-[[nodiscard]] Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 samples) noexcept;
+/// `passes` is the a-trous cascade length: each pass doubles the reach, so two reach three texels.
+[[nodiscard]] Status denoise_moments(Canvas& canvas, LightmapMode mode, u32 passes) noexcept;
 /// Returns how many texels it filled.
 [[nodiscard]] u32 dilate(Canvas& canvas, u32 passes) noexcept;
 /// Reconcile the seams; returns the samples it solved over, and the errors before and after.

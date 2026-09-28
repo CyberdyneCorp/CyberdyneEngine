@@ -171,6 +171,24 @@ post-process — left it at compute: the post-process's sets went there and the 
 temporal pass's set, so the blur never reached the frame. `render.motion_blur` (d)'s open-shutter
 control is the regression case.
 
+## The lightmap — `FrameViewData::lightmap_*` and the fourth vertex stream
+
+Two words appended after `motion_control` (the block is 592 bytes), defaulted to "none". A caller
+that runs `lightmaps::LightmapTextures` names the atlas planes at slots of set 0's texture table and
+calls `lightmaps::write_lightmaps`, which writes the slots, the encoding and the page layout — or
+nothing, under a GI mode that `gi::exclusion_for()` says excludes lightmaps. A draw finds its
+rectangle in `GpuDrawInstance::gi_address`, which the draw list has always carried.
+
+THE FORWARD PIPELINES TAKE A FOURTH STREAM, the cooked `TexCoords2`, at binding and location 3
+(`kLightmapUvStream`, `TEXCOORD1`). `GeometrySource::lightmap_uvs` supplies it; a source that has none
+gets its UV0 buffer bound there, which no draw reads, because a draw reads `lightmapUv` only when
+its `gi_address` names a rectangle. So `kForwardPassStreamCount` is four and every caller that
+predates the stream binds what it bound and draws what it drew — `render.lightmaps` (c) holds the
+corner with no lightmap to a reference drawn by the frame shader before lightmaps existed. The
+depth and shadow passes are unchanged. The frame's modules were regenerated for the longer block and
+the new interpolant; the fullscreen resolve and temporal entries came out byte-identical.
+`render.lightmaps` renders this module's scene with it.
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same

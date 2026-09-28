@@ -16,6 +16,7 @@ namespace {
 using namespace cy::rendering::lightmap_bake;  // NOLINT(google-build-using-namespace)
 using cy::f32;
 using cy::u32;
+using cy::usize;
 using cy::Vec2;
 
 [[nodiscard]] AtlasLayout pack(const std::vector<AtlasObject>& objects,
@@ -43,13 +44,16 @@ CY_TEST_CASE("every object of a level lands in shared pages, and no two rectangl
     }
     AtlasSettings settings;
     settings.page_size = 256;
-    settings.texel_density = 4.0F;
+    // Dense enough that the level fills most of a page: occupancy is measured over every page
+    // opened, so a level that uses a fifth of its only page reports a fifth whatever the packer
+    // did.
+    settings.texel_density = 8.0F;
     const AtlasLayout layout = pack(objects, settings);
 
-    // Shared: forty objects in far fewer pages than forty.
+    // Shared: forty objects in far fewer pages than forty, and tightly.
     CY_CHECK_GE(layout.pages, 1U);
     CY_CHECK_LT(layout.pages, 4U);
-    CY_CHECK_GT(layout.occupancy, 0.3F);
+    CY_CHECK_GT(layout.occupancy, 0.5F);
     for (usize a = 0; a < layout.placements.size(); ++a) {
         const AtlasPlacement& placement = layout.placements[a];
         CY_CHECK_LE(placement.block_x + placement.block_width, kAddressBlocks);

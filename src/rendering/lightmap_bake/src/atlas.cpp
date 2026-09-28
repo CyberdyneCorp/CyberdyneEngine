@@ -111,7 +111,8 @@ private:
 }  // namespace
 
 u32 gutter_for(const AtlasSettings& settings) noexcept {
-    const u32 block = page_size_valid(settings.page_size) ? settings.page_size / kAddressBlocks : 1U;
+    const u32 block =
+        page_size_valid(settings.page_size) ? settings.page_size / kAddressBlocks : 1U;
     const auto block_levels = static_cast<u32>(std::countr_zero(block));
     const u32 levels = std::min(settings.mip_levels, block_levels);
     return std::max(2U, 1U << levels);
@@ -129,8 +130,8 @@ Status pack_atlas(Span<const AtlasObject> objects, const AtlasSettings& settings
     out.settings = settings;
     out.block_texels = settings.page_size / kAddressBlocks;
     out.gutter_texels = gutter_for(settings);
-    out.mip_levels = std::min(settings.mip_levels,
-                              static_cast<u32>(std::countr_zero(out.block_texels)));
+    out.mip_levels =
+        std::min(settings.mip_levels, static_cast<u32>(std::countr_zero(out.block_texels)));
     out.placements.clear();
     out.clamped_objects = 0;
     if (Status sized = out.placements.resize(objects.size()); !sized) {

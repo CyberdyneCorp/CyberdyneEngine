@@ -178,19 +178,20 @@ void save_atlas(const char* name, const bake::BakedLightmap& lightmap) noexcept 
     const bake::LightmapTexels& texels = lightmap.texels;
     f64 total = 0.0;
     for (usize index = 0; index < usize{texels.width} * texels.height; ++index) {
-        total += texels.texels[index].y;
+        total += static_cast<f64>(texels.texels[index].y);
     }
     const f64 mean = total / static_cast<f64>(usize{texels.width} * texels.height);
     const f64 scale = mean > 0.0 ? 0.5 / mean : 1.0;
     std::vector<u32> pixels(usize{texels.width} * texels.height);
     for (usize index = 0; index < pixels.size(); ++index) {
         const Vec4 texel = texels.texels[index];
-        const auto encode = [scale](f32 value) {
+        const auto encode = [scale](f32 texel_value) {
+            const f64 value = static_cast<f64>(texel_value);
             const f64 mapped = (value * scale) / (1.0 + (value * scale));
             return static_cast<u32>(std::clamp(std::pow(mapped, 1.0 / 2.2), 0.0, 1.0) * 255.0);
         };
-        pixels[index] = encode(texel.x) | (encode(texel.y) << 8U) | (encode(texel.z) << 16U) |
-                        0xFF000000U;
+        pixels[index] =
+            encode(texel.x) | (encode(texel.y) << 8U) | (encode(texel.z) << 16U) | 0xFF000000U;
     }
     render_test::Image image(allocator());
     if (!render_test::adopt(image, Span<const u32>(pixels.data(), pixels.size()), texels.width,
@@ -247,8 +248,11 @@ void place_box(u32 which, Vec3& centre, f32& half, void*) noexcept {
 /// `pipeline_test::CubeMesh`'s faces, in its order, and the tangent it builds each from.
 constexpr Vec3 kFaceNormals[6] = {Vec3{1, 0, 0},  Vec3{-1, 0, 0}, Vec3{0, 1, 0},
                                   Vec3{0, -1, 0}, Vec3{0, 0, 1},  Vec3{0, 0, -1}};
-/// Each face's cell leaves this share of the cell on every side as chart padding.
-constexpr f32 kCellPadding = 0.06F;
+/// Each face's cell leaves this share of the cell on every side as chart padding. With the
+/// resolution scales `bake_corner` gives, it is at least one and a half texels on every box, which
+/// is what keeps a bilinear tap at a face's edge on its own face: at 0.06 the small cubes' cells
+/// were four texels wide with a quarter-texel of padding, and their edges read the next face.
+constexpr f32 kCellPadding = 0.1F;
 
 [[nodiscard]] Vec3 face_tangent(Vec3 normal) noexcept {
     return std::fabs(normal.y) > 0.5F ? Vec3{1.0F, 0.0F, 0.0F} : Vec3{0.0F, 1.0F, 0.0F};
@@ -347,7 +351,9 @@ struct CornerBake {
         instance.transform = box_transform(boxes[box]);
         // The slab's six faces share one rectangle equally and its top is nearly half its area:
         // the scale gives the top the density the others get.
-        instance.resolution_scale = box == kFloor ? 1.7F : 1.0F;
+        // The small cubes get four times the density, so each face's cell is sixteen texels wide
+        // rather than four and its padding more than a texel.
+        instance.resolution_scale = box == kFloor ? 1.7F : (box >= kCubeNear ? 4.0F : 1.0F);
         instance.id = box;
         instances.push_back(instance);
     }
@@ -371,9 +377,9 @@ struct CornerBake {
     settings.surfel_spacing = 0.5F;
     auto out = std::make_unique<CornerBake>();
     const auto started = std::chrono::steady_clock::now();
-    const Status status = bake::bake_lightmaps(scene, settings, nullptr, out->lightmap, out->report);
-    out->seconds =
-        std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count();
+    const Status status =
+        bake::bake_lightmaps(scene, settings, nullptr, out->lightmap, out->report);
+    out->seconds = std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count();
     if (!status) {
         std::fprintf(stderr, "lightmaps: the corner bake failed: %s\n", status.error().message);
         return nullptr;
@@ -437,9 +443,8 @@ void configure_corner(rendering::assembly::AssemblyDescription& description, voi
 Status before_assemble(rendering::RenderGraph&, rendering::assembly::AssemblyView& view,
                        rendering::assembly::FrameSinks&, void* user) noexcept {
     auto* corner = static_cast<Corner*>(user);
-    view.lights = corner->options.frame_sun
-                      ? Span<const render::LightDescription>(&corner->sun, 1)
-                      : Span<const render::LightDescription>();
+    view.lights = corner->options.frame_sun ? Span<const render::LightDescription>(&corner->sun, 1)
+                                            : Span<const render::LightDescription>();
     view.sun_direction = normalize(-kSunTravel);
     view.cut = true;
     return ok();
@@ -469,8 +474,8 @@ void whiten(Corner& corner, pipeline::FrameUpload& upload) noexcept {
         corner.instances[box].tint[1] = albedo.y;
         corner.instances[box].tint[2] = albedo.z;
     }
-    upload.instances = Span<const pipeline::InstanceTransform>(corner.instances.data(),
-                                                               corner.instances.size());
+    upload.instances =
+        Span<const pipeline::InstanceTransform>(corner.instances.data(), corner.instances.size());
 }
 
 /// Every draw of a lightmapped box carries its rectangle, as a surface query would have set it.
@@ -530,8 +535,8 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
 /// One corner, the lightmap baked from its boxes, and the frame measured.
 class CornerRun {
 public:
-    CornerRun(DeviceFixture& fixture, RunOptions options) : device_(&fixture.device()),
-                                                           scene_(allocator()) {
+    CornerRun(DeviceFixture& fixture, RunOptions options)
+        : device_(&fixture.device()), scene_(allocator()) {
         corner_.scene = &scene_;
         corner_.options = options;
         corner_.textures = &textures_;
@@ -1106,8 +1111,8 @@ CY_TEST_CASE("(d) with a volume bound too, a lightmapped surface takes the light
             ++lightmapped_count;
         }
     }
-    const i32 lightmapped_delta = worst_channel_delta(alone.pixels(), combined.pixels(),
-                                                      &lightmapped);
+    const i32 lightmapped_delta =
+        worst_channel_delta(alone.pixels(), combined.pixels(), &lightmapped);
     const i32 dynamic_delta = worst_channel_delta(alone.pixels(), combined.pixels(), &dynamic);
     std::fprintf(stderr,
                  "(d) adding the volume: lightmapped pixels (%u) move by %d at most, the far "

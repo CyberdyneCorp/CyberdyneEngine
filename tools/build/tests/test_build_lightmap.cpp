@@ -84,21 +84,25 @@ constexpr const char* kDescription =
 
 /// A wall of four quads' size standing on a floor quad, lit by one point light.
 [[nodiscard]] std::string level_description(float intensity) {
-    std::string text = "cylightmap 1\n"
-                       "mode directional\n"
-                       "bounces 1\n"
-                       "samples 8\n"
-                       "density 4\n"
-                       "page 128\n"
-                       "sky 0.2 0.25 0.3\n";
+    std::string text =
+        "cylightmap 1\n"
+        "mode directional\n"
+        "bounces 1\n"
+        "samples 8\n"
+        "density 4\n"
+        "page 128\n"
+        "sky 0.2 0.25 0.3\n";
     text += "light point 0 1 1.5 " + std::to_string(intensity) + " 20 1 1 1\n";
-    text += "material \"white\" 0.7 0.7 0.7\n"
-            "material \"red\" 0.8 0.1 0.1\n";
+    text +=
+        "material \"white\" 0.7 0.7 0.7\n"
+        "material \"red\" 0.8 0.1 0.1\n";
     // A 4 m wall in the XY plane, and the same quad turned to be a floor in front of it.
-    text += "instance \"derived/quad.bundle\" \"mesh/Panel\" \"red\" 1 "
-            "4 0 0 -2  0 4 0 0  0 0 4 0\n";
-    text += "instance \"derived/quad.bundle\" \"mesh/Panel\" \"white\" 1 "
-            "4 0 0 -2  0 0 4 0  0 -4 0 4\n";
+    text +=
+        "instance \"derived/quad.bundle\" \"mesh/Panel\" \"red\" 1 "
+        "4 0 0 -2  0 4 0 0  0 0 4 0\n";
+    text +=
+        "instance \"derived/quad.bundle\" \"mesh/Panel\" \"white\" 1 "
+        "4 0 0 -2  0 0 4 0  0 -4 0 4\n";
     return text;
 }
 
@@ -183,8 +187,7 @@ CY_TEST_CASE("a level bakes to a cooked lightmap, and an unchanged level bakes n
     // The artefact IS a cooked lightmap: two instances addressed, two directional planes.
     rendering::lightmap_bake::BakedLightmap decoded;
     CY_REQUIRE(rendering::lightmap_bake::decode_lightmap_asset(
-                   Span<const u8>(reinterpret_cast<const u8*>(baked.data()), baked.size()),
-                   decoded)
+                   Span<const u8>(reinterpret_cast<const u8*>(baked.data()), baked.size()), decoded)
                    .has_value());
     CY_CHECK(decoded.mode == rendering::lightmap_bake::LightmapMode::Directional);
     CY_REQUIRE(decoded.addresses.size() == 2);
@@ -217,8 +220,9 @@ CY_TEST_CASE("a level bakes to a cooked lightmap, and an unchanged level bakes n
 CY_TEST_CASE("a lightmap description naming a mesh no upstream produced fails the node") {
     Project project("content-lightmap-missing");
     std::string broken = level_description(20.0F);
-    broken += "instance \"derived/quad.bundle\" \"mesh/Nothing\" \"white\" 1 "
-              "1 0 0 0  0 1 0 0  0 0 1 0\n";
+    broken +=
+        "instance \"derived/quad.bundle\" \"mesh/Nothing\" \"white\" 1 "
+        "1 0 0 0  0 1 0 0  0 0 1 0\n";
     project.write("levels/level.cylightmap", broken);
     BuildService service;
     const Expected<BuildReport, Error> report = project.build(service);

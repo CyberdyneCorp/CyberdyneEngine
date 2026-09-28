@@ -106,7 +106,8 @@ using detail::TexelSurface;
 }
 
 /// The lights the path tracer is built with: the caller's, divided by pi. See bake.h.
-[[nodiscard]] Status frame_lights(Span<const gi::GiLight> lights, Array<gi::GiLight>& out) noexcept {
+[[nodiscard]] Status frame_lights(Span<const gi::GiLight> lights,
+                                  Array<gi::GiLight>& out) noexcept {
     out.clear();
     for (gi::GiLight light : lights) {
         light.intensity /= std::numbers::pi_v<f32>;
@@ -244,23 +245,23 @@ Status bake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& se
     trace_canvas(context, settings, canvas, report);
 
     if (settings.denoise) {
-        if (Status denoised = detail::denoise_moments(canvas, settings.mode, settings.trace.samples);
+        if (Status denoised =
+                detail::denoise_moments(canvas, settings.mode, settings.denoise_passes);
             !denoised) {
             return denoised;
         }
     }
     report.texels_dilated = detail::dilate(canvas, dilation_passes(settings, out));
     report.seam_edges = static_cast<u32>(seams.size());
-    report.seam_samples =
-        detail::reconcile_seams(canvas, seams.span(), settings.seam_iterations,
-                                settings.reconcile_seams, report.seam_error_before,
-                                report.seam_error_after);
+    report.seam_samples = detail::reconcile_seams(
+        canvas, seams.span(), settings.seam_iterations, settings.reconcile_seams,
+        report.seam_error_before, report.seam_error_after);
 
     out.texels.width = canvas.width;
     out.texels.height = canvas.height;
     out.texels.planes = lightmap_planes(settings.mode);
-    if (Status sized = out.texels.texels.resize(usize{out.texels.planes} * canvas.width *
-                                                canvas.height);
+    if (Status sized =
+            out.texels.texels.resize(usize{out.texels.planes} * canvas.width * canvas.height);
         !sized) {
         return sized;
     }
@@ -306,9 +307,8 @@ Status reference_ambient(const LightmapScene& scene, const LightmapBakeSettings&
     for (usize index = 0; index < positions.size(); ++index) {
         // A sequence the bake never uses, so the reference is an independent draw.
         const u32 sequence = texel_sequence(settings.trace.seed ^ 0x51ED270BU, index);
-        const detail::TexelMoments moments =
-            detail::trace_moments(context, positions[index], normalize(normals[index]), sequence,
-                                  settings.trace.samples);
+        const detail::TexelMoments moments = detail::trace_moments(
+            context, positions[index], normalize(normals[index]), sequence, settings.trace.samples);
         if (Status pushed = out.push_back(moments.mean); !pushed) {
             return pushed;
         }

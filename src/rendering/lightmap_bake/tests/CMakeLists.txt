@@ -40,7 +40,7 @@ function(cy_lightmap_bake_declare_tests)
         KIND integration
         SOURCES "${tests_dir}/test_bake.cpp"
         DEPENDENCIES cy::rendering-lightmap-bake cy::rendering-gi)
-    target_include_directories(cy_test_render_lightmap_bake
+    target_include_directories(cy_test_integration_render_lightmap_bake
                                PRIVATE "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests")
 endfunction()
 

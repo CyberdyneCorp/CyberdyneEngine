@@ -235,10 +235,9 @@ void parse_material(const text::Line& line, LevelDescription& level) {
     for (u32 index = 0; index < 12U; ++index) {
         rows[index] = number(line, 5U + index);
     }
-    instance.transform = Mat4::from_columns(Vec4{rows[0], rows[4], rows[8], 0.0F},
-                                            Vec4{rows[1], rows[5], rows[9], 0.0F},
-                                            Vec4{rows[2], rows[6], rows[10], 0.0F},
-                                            Vec4{rows[3], rows[7], rows[11], 1.0F});
+    instance.transform = Mat4::from_columns(
+        Vec4{rows[0], rows[4], rows[8], 0.0F}, Vec4{rows[1], rows[5], rows[9], 0.0F},
+        Vec4{rows[2], rows[6], rows[10], 0.0F}, Vec4{rows[3], rows[7], rows[11], 1.0F});
     instance.id = level.instances.size();
     level.instances.push_back(instance);
     return ok();
@@ -250,8 +249,7 @@ void parse_material(const text::Line& line, LevelDescription& level) {
     if (!lines) {
         return make_unexpected(lines.error());
     }
-    if (lines->empty() || lines->front().word(0) != "cylightmap" ||
-        lines->front().word(1) != "1") {
+    if (lines->empty() || lines->front().word(0) != "cylightmap" || lines->front().word(1) != "1") {
         return fail(ErrorCode::InvalidArgument, "not a `cylightmap 1` description");
     }
     for (usize index = 1; index < lines->size(); ++index) {
@@ -285,10 +283,9 @@ Status produce_lightmap(NodeContext& context) {
         return read;
     }
     auto level = std::make_unique<LevelDescription>();
-    if (Status parsed =
-            parse(context,
-                  std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
-                  *level);
+    if (Status parsed = parse(
+            context, std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
+            *level);
         !parsed) {
         context.diagnose(Severity::Error, "lightmap-description", parsed.error().message,
                          node.sources.front());

@@ -142,9 +142,7 @@ public:
     [[nodiscard]] bool trace_triangle(Vec3 origin, Vec3 direction, f32 max_distance, f32& t,
                                       u32& triangle, bool& back_face) const noexcept;
 
-    [[nodiscard]] Span<const WorldTriangle> triangles() const noexcept {
-        return triangles_.span();
-    }
+    [[nodiscard]] Span<const WorldTriangle> triangles() const noexcept { return triangles_.span(); }
     [[nodiscard]] u64 rays() const noexcept { return rays_; }
 
 private:

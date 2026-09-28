@@ -327,8 +327,8 @@ Status add_content_producers(ProducerRegistry& registry, const ecs::World* world
     }
     // Distributable: a bake is a pure function of its description and its upstream bundles, and
     // `bake_lightmaps` draws its samples from a fixed sequence rather than the machine's.
-    if (Status added = registry.add(Producer{"lightmap", kLightmapProducerVersion,
-                                             produce_lightmap, /*distributable=*/true});
+    if (Status added = registry.add(Producer{"lightmap", kLightmapProducerVersion, produce_lightmap,
+                                             /*distributable=*/true});
         !added) {
         return added;
     }

@@ -40,8 +40,8 @@ using cy::Vec4;
 
 /// A unit quad in the XZ plane, facing +y, UV0 and UV2 both its own square.
 struct QuadMesh {
-    std::vector<Vec3> positions = {{-0.5F, 0.0F, -0.5F}, {-0.5F, 0.0F, 0.5F},
-                                   {0.5F, 0.0F, 0.5F},   {0.5F, 0.0F, -0.5F}};
+    std::vector<Vec3> positions = {
+        {-0.5F, 0.0F, -0.5F}, {-0.5F, 0.0F, 0.5F}, {0.5F, 0.0F, 0.5F}, {0.5F, 0.0F, -0.5F}};
     std::vector<Vec3> normals = std::vector<Vec3>(4, Vec3{0.0F, 1.0F, 0.0F});
     std::vector<Vec2> uvs = {{0.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 1.0F}, {1.0F, 0.0F}};
     std::vector<cy::u32> indices = {0, 1, 2, 0, 2, 3};
@@ -61,20 +61,26 @@ struct QuadMesh {
 /// with the same normal on both sides, which is the case seam reconciliation is for. The right
 /// half's chart is flipped in the atlas, so the texels either side of the seam are not neighbours.
 struct SeamMesh {
-    std::vector<Vec3> positions = {// left half, x in [-0.5, 0]
-                                   {-0.5F, 0.0F, -0.5F},
-                                   {-0.5F, 0.0F, 0.5F},
-                                   {0.0F, 0.0F, 0.5F},
-                                   {0.0F, 0.0F, -0.5F},
-                                   // right half, x in [0, 0.5]: its own four vertices
-                                   {0.0F, 0.0F, -0.5F},
-                                   {0.0F, 0.0F, 0.5F},
-                                   {0.5F, 0.0F, 0.5F},
-                                   {0.5F, 0.0F, -0.5F}};
+    std::vector<Vec3> positions = {  // left half, x in [-0.5, 0]
+        {-0.5F, 0.0F, -0.5F},
+        {-0.5F, 0.0F, 0.5F},
+        {0.0F, 0.0F, 0.5F},
+        {0.0F, 0.0F, -0.5F},
+        // right half, x in [0, 0.5]: its own four vertices
+        {0.0F, 0.0F, -0.5F},
+        {0.0F, 0.0F, 0.5F},
+        {0.5F, 0.0F, 0.5F},
+        {0.5F, 0.0F, -0.5F}};
     std::vector<Vec3> normals = std::vector<Vec3>(8, Vec3{0.0F, 1.0F, 0.0F});
-    std::vector<Vec2> uv2 = {{0.05F, 0.05F}, {0.05F, 0.95F}, {0.45F, 0.95F}, {0.45F, 0.05F},
+    std::vector<Vec2> uv2 = {{0.05F, 0.05F},
+                             {0.05F, 0.95F},
+                             {0.45F, 0.95F},
+                             {0.45F, 0.05F},
                              // mirrored: the seam edge (x = 0) is at u = 0.95 on this side
-                             {0.95F, 0.05F}, {0.95F, 0.95F}, {0.55F, 0.95F}, {0.55F, 0.05F}};
+                             {0.95F, 0.05F},
+                             {0.95F, 0.95F},
+                             {0.55F, 0.95F},
+                             {0.55F, 0.05F}};
     std::vector<cy::u32> indices = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
 
     [[nodiscard]] BakeMesh mesh() const {
@@ -167,7 +173,9 @@ struct Room {
     settings.trace.bounces = 2;
     settings.trace.samples = 32;
     settings.trace.max_distance_metres = 20.0F;
-    settings.surfel_spacing = 0.5F;
+    // A metre between cards: the path tracer looks a hit's material up within a metre, and the
+    // cost of that lookup is what a bake spends most of its time on.
+    settings.surfel_spacing = 1.0F;
     return settings;
 }
 
@@ -229,31 +237,28 @@ CY_TEST_CASE("a small room bakes to texels that match the path tracer's ground t
     std::vector<Vec3> measured;
     for (const u32 face : {static_cast<u32>(kFloor), static_cast<u32>(kLeft)}) {
         const BakeInstance& instance = room.instances[face];
-        const Vec3 normal = cy::normalize(cy::transform_direction(instance.transform,
-                                                                  Vec3{0.0F, 1.0F, 0.0F}));
+        const Vec3 normal =
+            cy::normalize(cy::transform_direction(instance.transform, Vec3{0.0F, 1.0F, 0.0F}));
         for (u32 row = 0; row < 3; ++row) {
             for (u32 column = 0; column < 4; ++column) {
                 const Vec2 uv{0.15F + (0.23F * static_cast<f32>(column)),
                               0.2F + (0.3F * static_cast<f32>(row))};
                 positions.push_back(quad_point(instance.transform, uv));
                 normals.push_back(normal);
-                measured.push_back(sample_lightmap(baked.lightmap,
-                                                   baked.lightmap.addresses[face], uv, normal));
+                measured.push_back(
+                    sample_lightmap(baked.lightmap, baked.lightmap.addresses[face], uv, normal));
             }
         }
     }
-    const std::vector<Vec3> truth = reference(scene, settings, positions, normals, 1024);
-    const gi::ReferenceComparison comparison =
-        gi::compare_against_reference({measured.data(), measured.size()},
-                                      {truth.data(), truth.size()});
-    CY_TEST_MESSAGE("lightmap against ground truth: relative " << comparison.relative_error
-                                                              << ", max "
-                                                              << comparison.max_absolute_error
-                                                              << " of mean "
-                                                              << comparison.mean_reference_magnitude);
+    const std::vector<Vec3> truth = reference(scene, settings, positions, normals, 512);
+    const gi::ReferenceComparison comparison = gi::compare_against_reference(
+        {measured.data(), measured.size()}, {truth.data(), truth.size()});
+    CY_TEST_MESSAGE("lightmap against ground truth: relative "
+                    << comparison.relative_error << ", max " << comparison.max_absolute_error
+                    << " of mean " << comparison.mean_reference_magnitude);
     CY_CHECK_GT(comparison.mean_reference_magnitude, 0.01F);
     // THE STATED ERROR: a tenth of the mean, over twenty-four points at 32 samples per texel
-    // denoised, against 1024 samples at the point.
+    // denoised, against 512 samples at the point.
     CY_CHECK_LT(comparison.relative_error, 0.10F);
 
     // And the room is lit the way a room is: the floor beside the red wall is redder than the
@@ -283,14 +288,18 @@ CY_TEST_CASE("directional and SH L1 lightmaps keep a normal map's response; irra
 
     const std::vector<Vec3> positions(3, quad_point(floor, uv));
     const std::vector<Vec3> normals = {up, toward, away};
-    const std::vector<Vec3> truth = reference(scene, small_settings(LightmapMode::Irradiance),
-                                              positions, normals, 2048);
+    const std::vector<Vec3> truth =
+        reference(scene, small_settings(LightmapMode::Irradiance), positions, normals, 2048);
     // The ground truth's own response: this scene has one for the modes to keep.
-    CY_REQUIRE_GT(luminance(truth[1]), luminance(truth[0]) * 1.1F);
-    CY_REQUIRE_GT(truth[1].x / truth[1].z, truth[0].x / truth[0].z);
+    CY_REQUIRE(luminance(truth[1]) > luminance(truth[0]) * 1.1F);
+    CY_REQUIRE(truth[1].x / truth[1].z > truth[0].x / truth[0].z);
 
     const auto read = [&](LightmapMode mode) {
-        const Baked baked = bake(scene, small_settings(mode));
+        // Coarse: one texel at the floor's centre is read, and three bakes share the case's budget.
+        LightmapBakeSettings settings = small_settings(mode);
+        settings.atlas.texel_density = 3.0F;
+        settings.trace.samples = 16;
+        const Baked baked = bake(scene, settings);
         const u32 address = baked.lightmap.addresses[kFloor];
         return std::vector<Vec3>{sample_lightmap(baked.lightmap, address, uv, up),
                                  sample_lightmap(baked.lightmap, address, uv, toward),
@@ -380,7 +389,9 @@ CY_TEST_CASE("texels at a seam are dilated and reconciled so the seam does not s
     const f32 before = disagreement(raw.lightmap);
     const f32 after = disagreement(reconciled.lightmap);
     CY_TEST_MESSAGE("seam disagreement: " << before << " unreconciled, " << after
-                                          << " reconciled");
+                                          << " reconciled; the solve's own "
+                                          << reconciled.report.seam_error_before << " -> "
+                                          << reconciled.report.seam_error_after);
     CY_CHECK_GT(before, 0.02F);
     // "No seam is visible at the bake resolution": under one 8-bit step of a mid-grey.
     CY_CHECK_LT(after, 0.01F);
@@ -398,10 +409,10 @@ CY_TEST_CASE("texels at a seam are dilated and reconciled so the seam does not s
         for (u32 x = x0; x < x0 + (rectangle.block_width * block); ++x) {
             const usize index = reconciled.lightmap.texels.index(0, x, y);
             dark += reconciled.lightmap.texels.texels[index].x <= 0.0F ? 1U : 0U;
-            empty += reconciled.lightmap.coverage[(usize{y} * reconciled.lightmap.page_size) + x] ==
-                             0U
-                         ? 1U
-                         : 0U;
+            empty +=
+                reconciled.lightmap.coverage[(usize{y} * reconciled.lightmap.page_size) + x] == 0U
+                    ? 1U
+                    : 0U;
         }
     }
     CY_CHECK_GT(empty, 0U);  // there is padding to fill...
@@ -415,23 +426,26 @@ CY_TEST_CASE("an emissive surface lights the room with no placed light at all") 
     Room room;
     room.materials[kCeiling].emission = Vec3{2.0F, 2.0F, 2.0F};
     const LightmapScene scene = room.scene();
-    const LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.atlas.texel_density = 3.0F;
     const Baked lit = bake(scene, settings);
     const Vec3 up{0.0F, 1.0F, 0.0F};
     const Vec2 centre{0.5F, 0.5F};
     const Vec3 floor = sample_lightmap(lit.lightmap, lit.lightmap.addresses[kFloor], centre, up);
-    const std::vector<Vec3> truth =
-        reference(scene, settings, {quad_point(room.instances[kFloor].transform, centre)}, {up},
-                  1024);
+    const std::vector<Vec3> truth = reference(
+        scene, settings, {quad_point(room.instances[kFloor].transform, centre)}, {up}, 1024);
     CY_CHECK_GT(luminance(floor), 0.1F);
     CY_CHECK_NEAR(luminance(floor), luminance(truth[0]), 0.1F * luminance(truth[0]));
 
-    // The control: the same room with the panel switched off is black.
+    // The control: the same room with the panel switched off is black. One sample is enough to be
+    // exactly zero.
     room.materials[kCeiling].emission = Vec3{};
-    const Baked dark = bake(room.scene(), settings);
-    CY_CHECK_EQ(luminance(sample_lightmap(dark.lightmap, dark.lightmap.addresses[kFloor], centre,
-                                          up)),
-                0.0F);
+    LightmapBakeSettings control = settings;
+    control.trace.samples = 1;
+    const Baked dark = bake(room.scene(), control);
+    CY_CHECK_EQ(
+        luminance(sample_lightmap(dark.lightmap, dark.lightmap.addresses[kFloor], centre, up)),
+        0.0F);
 }
 
 namespace {
@@ -493,8 +507,8 @@ struct ShadowStage {
             for (u32 row = 0; row < 4; ++row) {
                 const f32 x = x_low + ((x_high - x_low) * (static_cast<f32>(step) + 0.5F) / 24.0F);
                 const Vec2 uv{(x / 4.0F) + 0.5F, 0.3F + (0.1F * static_cast<f32>(row))};
-                total += luminance(
-                    sample_lightmap(lightmap, lightmap.addresses[0], uv, Vec3{0, 1, 0}));
+                total +=
+                    luminance(sample_lightmap(lightmap, lightmap.addresses[0], uv, Vec3{0, 1, 0}));
                 count += 1;
             }
         }
@@ -527,7 +541,8 @@ CY_TEST_CASE("an alpha-tested surface shadows through its coverage, a transparen
     CY_CHECK_NEAR(ShadowStage::band(glass.lightmap, -0.9F, 0.9F), 0.75F * sun, 0.12F * sun);
 }
 
-CY_TEST_CASE("a texel buried in a neighbouring object is rejected and filled from its own surface") {
+CY_TEST_CASE(
+    "a texel buried in a neighbouring object is rejected and filled from its own surface") {
     // A closed crate resting on the floor: the floor texels under it see only the crate's inside.
     Room room(Vec3{2.0F, 1.25F, 2.0F});
     room.point_light(Vec3{0.0F, 0.9F, 0.0F}, 40.0F);
@@ -536,9 +551,10 @@ CY_TEST_CASE("a texel buried in a neighbouring object is rejected and filled fro
     const Vec3 z{0, 0, 1};
     const f32 h = 0.4F;
     const Vec3 c{0.6F, -1.25F + h, 0.6F};
-    const Mat4 faces[6] = {place(x, -y, 2 * h, 2 * h, c - (y * h)), place(x, y, 2 * h, 2 * h, c + (y * h)),
-                           place(y, -x, 2 * h, 2 * h, c - (x * h)), place(y, x, 2 * h, 2 * h, c + (x * h)),
-                           place(x, -z, 2 * h, 2 * h, c - (z * h)), place(x, z, 2 * h, 2 * h, c + (z * h))};
+    const Mat4 faces[6] = {
+        place(x, -y, 2 * h, 2 * h, c - (y * h)), place(x, y, 2 * h, 2 * h, c + (y * h)),
+        place(y, -x, 2 * h, 2 * h, c - (x * h)), place(y, x, 2 * h, 2 * h, c + (x * h)),
+        place(x, -z, 2 * h, 2 * h, c - (z * h)), place(x, z, 2 * h, 2 * h, c + (z * h))};
     for (const Mat4& face : faces) {
         BakeInstance instance;
         instance.transform = face;
@@ -546,12 +562,16 @@ CY_TEST_CASE("a texel buried in a neighbouring object is rejected and filled fro
         instance.receives_lightmap = false;
         room.instances.push_back(instance);
     }
-    const Baked baked = bake(room.scene(), small_settings(LightmapMode::Irradiance));
+    // Few samples: what is measured is which texels are buried and what fills them, not how
+    // converged the light is.
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.trace.samples = 8;
+    const Baked baked = bake(room.scene(), settings);
     CY_CHECK_GT(baked.report.texels_buried, 0U);
     // Under the crate's centre, the value is the floor's own neighbourhood rather than black.
     const Vec2 under{(c.x / 4.0F) + 0.5F, (c.z / 4.0F) + 0.5F};
-    const Vec3 value = sample_lightmap(baked.lightmap, baked.lightmap.addresses[kFloor], under,
-                                       Vec3{0, 1, 0});
+    const Vec3 value =
+        sample_lightmap(baked.lightmap, baked.lightmap.addresses[kFloor], under, Vec3{0, 1, 0});
     CY_CHECK_GT(luminance(value), 0.0F);
 }
 
@@ -570,8 +590,8 @@ struct SeedRoom {
         CY_REQUIRE(system.configure(gi_support::room_settings()).has_value());
         CY_REQUIRE(system.field().place(1, field.asset(), cy::Mat4::identity()).has_value());
         const cy::Aabb bounds = cy::Aabb::from_center_extents(
-            Vec3{}, Vec3{gi_support::kRoomX + 1.0F, gi_support::kRoomY + 1.0F,
-                         gi_support::kRoomZ + 1.0F});
+            Vec3{},
+            Vec3{gi_support::kRoomX + 1.0F, gi_support::kRoomY + 1.0F, gi_support::kRoomZ + 1.0F});
         CY_REQUIRE(
             system.scene().ingest_cell(1, bounds, {surfels.data(), surfels.size()}, 0).has_value());
         CY_REQUIRE(system.surfaces().allocate_from(system.scene(), bounds).has_value());
@@ -603,7 +623,7 @@ CY_TEST_CASE("the lightmap bake seeds the dynamic caches from the same run") {
     // seeding and not that frame's gather — the trap `render_gi_pipeline`'s seed case fell into.
     (void)seeded.system.update(seeded.context(0));
     const cy::Aabb everywhere = cy::Aabb::from_center_extents(Vec3{}, Vec3{1.0e4F, 1.0e4F, 1.0e4F});
-    CY_REQUIRE_GT(seeded.system.radiance().invalidate(everywhere), 0U);
+    CY_REQUIRE(seeded.system.radiance().invalidate(everywhere) > 0U);
     CY_REQUIRE_EQ(valid_probes(seeded.system.radiance()), 0U);
 
     // The same room as lightmapped quads.

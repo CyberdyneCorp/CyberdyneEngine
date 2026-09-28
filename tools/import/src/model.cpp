@@ -66,8 +66,8 @@ Status finish_mesh(MeshData& mesh, const ModelBuildOptions& options, ImportResul
     }
 
     if (options.generate_lightmap_uvs) {
-        // Through the process's unwrap cache: a reimport whose source changed and whose geometry did
-        // not copies the previous unwrap rather than running xatlas again. See `Uv2Cache`.
+        // Through the process's unwrap cache: a reimport whose source changed and whose geometry
+        // did not copies the previous unwrap rather than running xatlas again. See `Uv2Cache`.
         Expected<Uv2Report, Error> unwrapped =
             generate_uv2_cached(mesh, options.uv2, &Uv2Cache::process());
         if (!unwrapped) {

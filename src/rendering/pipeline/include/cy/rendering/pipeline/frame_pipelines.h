@@ -161,9 +161,9 @@ inline constexpr u32 kPreviousPositionStream = 2;
 /// `GeometrySource::lightmap_uvs` or, where a source has none, from its UV0 buffer.
 inline constexpr u32 kLightmapUvStream = 3;
 
-inline constexpr u32 kPositionStreamStride = 12;  // Rgb32Sfloat
-inline constexpr u32 kNormalStreamStride = 8;     // Rgba16Sfloat: octahedral normal, then tangent
-inline constexpr u32 kUvStreamStride = 8;         // Rg32Sfloat
+inline constexpr u32 kPositionStreamStride = 12;   // Rgb32Sfloat
+inline constexpr u32 kNormalStreamStride = 8;      // Rgba16Sfloat: octahedral normal, then tangent
+inline constexpr u32 kUvStreamStride = 8;          // Rg32Sfloat
 inline constexpr u32 kLightmapUvStreamStride = 8;  // Rg32Sfloat
 
 /// How many streams each pass binds, declared ONCE because two files have to agree about it.

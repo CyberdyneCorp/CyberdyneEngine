@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Which ambient source a surface takes in the frame, and the view-block words. `unit.lightmap_frame`.
+// Which ambient source a surface takes in the frame, and the view-block words.
+// `unit.lightmap_frame`.
 
 #include <cy/rendering/lightmaps/lightmap_textures.h>
 #include <cy/test/test.h>
@@ -42,7 +43,8 @@ CY_TEST_CASE("the frame's ambient source is read off gi::exclusion_for") {
     CY_CHECK_EQ(frame_ambient_source(gi::GiMode::None, true, true), AmbientSource::Sky);
 }
 
-CY_TEST_CASE("write_lightmaps fills the words a mode admits, and leaves the frame alone otherwise") {
+CY_TEST_CASE(
+    "write_lightmaps fills the words a mode admits, and leaves the frame alone otherwise") {
     const bake::BakedLightmap lightmap = directional_lightmap();
     const cy::rhi::BindlessIndex slots[2] = {40, 41};
 

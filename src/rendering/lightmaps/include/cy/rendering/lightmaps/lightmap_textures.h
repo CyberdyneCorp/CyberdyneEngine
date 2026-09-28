@@ -68,9 +68,7 @@ public:
     [[nodiscard]] bool ready() const noexcept { return planes_ != 0; }
     [[nodiscard]] u32 uploads() const noexcept { return uploads_; }
     /// Bytes the planes occupy on the device.
-    [[nodiscard]] u64 device_bytes() const noexcept {
-        return u64{width_} * height_ * planes_ * 8U;
-    }
+    [[nodiscard]] u64 device_bytes() const noexcept { return u64{width_} * height_ * planes_ * 8U; }
 
 private:
     [[nodiscard]] Status recreate(u32 width, u32 height, u32 planes) noexcept;
@@ -110,7 +108,7 @@ enum class AmbientSource : u8 {
 /// page layout. Writes nothing — the frame draws every surface as it was — when `mode` does not
 /// admit lightmaps. `slots` holds one slot per plane of the lightmap.
 [[nodiscard]] Status write_lightmaps(Span<const rhi::BindlessIndex> slots,
-                                     const lightmap_bake::BakedLightmap& lightmap,
-                                     gi::GiMode mode, pipeline::FrameViewData& view) noexcept;
+                                     const lightmap_bake::BakedLightmap& lightmap, gi::GiMode mode,
+                                     pipeline::FrameViewData& view) noexcept;
 
 }  // namespace cy::rendering::lightmaps

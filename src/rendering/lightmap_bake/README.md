@@ -51,7 +51,7 @@ placed lights' direct term at the receiver, because the frame shades every light
 | Mode | Planes | A shading normal `n` reads |
 |---|---|---|
 | Irradiance | 1 | `rgb`, whatever `n` is |
-| Directional | 2 | `rgb * max(0, 1 + v . n) / w`, with `v` the luminance-weighted mean incoming direction scaled by its directionality and `w = 1 + v . n_geometric` |
+| Directional | 2 | `rgb * max(0, 1 + v . n) / w`, with `v` the luminance's gradient as the normal tilts, over the luminance, and `w = 1 + v . n_geometric` |
 | SH L1 | 3 | per channel `max(0, a + b . n)`, the same fit per colour |
 
 All three are exact at the geometric normal. The directional and SH L1 forms are what keep a normal

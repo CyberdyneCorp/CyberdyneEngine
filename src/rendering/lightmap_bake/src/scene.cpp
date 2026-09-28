@@ -87,8 +87,7 @@ Status MeshSceneTracer::build(const LightmapScene& scene) noexcept {
         }
         const BakeMesh& mesh = scene.meshes[instance.mesh];
         for (usize at = 0; at + 2U < mesh.indices.size(); at += 3U) {
-            const u32 corners[3] = {mesh.indices[at], mesh.indices[at + 1U],
-                                    mesh.indices[at + 2U]};
+            const u32 corners[3] = {mesh.indices[at], mesh.indices[at + 1U], mesh.indices[at + 2U]};
             if (corners[0] >= mesh.positions.size() || corners[1] >= mesh.positions.size() ||
                 corners[2] >= mesh.positions.size()) {
                 return fail(ErrorCode::InvalidArgument,

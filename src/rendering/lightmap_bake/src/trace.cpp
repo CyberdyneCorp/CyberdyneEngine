@@ -15,6 +15,14 @@ constexpr u32 kBuriedRays = 12;
 /// Ray origins leave the surface by this much along the normal, in metres: the path tracer's own
 /// bounce offset.
 constexpr f32 kSurfaceOffset = 1.0e-3F;
+/// The floor under a sample's cosine in the tilt response: a sample within about 6 degrees of the
+/// horizon counts as if it were at 6 degrees.
+constexpr f32 kMinResponseCosine = 0.1F;
+/// The widest card spacing the bake builds. `gi::PathTracer` resolves a hit's material from the
+/// nearest card within ONE METRE, and a card is at most two thirds of its cell's longest edge from
+/// any point of the cell, so cards any sparser than this could leave a hit with no material —
+/// grey, and not emissive, whatever the surface is.
+constexpr f32 kMaxCardSpacing = 1.2F;
 
 /// The counter hash `gi::PathTracer` draws with, so a texel's sequence advances the same way
 /// whichever of the two calls consumes it.
@@ -47,26 +55,40 @@ constexpr f32 kSurfaceOffset = 1.0e-3F;
     return normalized_or(light.position - position, Vec3{0.0F, 1.0F, 0.0F});
 }
 
-void accumulate(TexelMoments& moments, Vec3 radiance, Vec3 direction, f32 weight) noexcept {
+/// The incoming radiance's first-order response to tilting the normal, per sample: the tangential
+/// part of the direction over its cosine. Averaged over cosine-weighted samples this is the
+/// gradient of E(n) / pi at the geometric normal, and for a single light it is exactly
+/// `tan(angle)` toward it. The cosine is floored so a grazing sample cannot dominate the mean.
+[[nodiscard]] Vec3 tilt_response(Vec3 direction, Vec3 normal) noexcept {
+    const f32 cosine = dot(direction, normal);
+    const Vec3 tangential = direction - (normal * cosine);
+    return tangential / std::max(cosine, kMinResponseCosine);
+}
+
+void accumulate(TexelMoments& moments, Vec3 radiance, Vec3 direction, Vec3 normal,
+                f32 weight) noexcept {
     const f32 lum = luminance(radiance);
+    const Vec3 response = tilt_response(direction, normal);
     moments.mean = moments.mean + (radiance * weight);
     moments.luminance = moments.luminance + (lum * weight);
-    moments.luminance_direction = moments.luminance_direction + (direction * (lum * weight));
-    moments.channel_direction[0] = moments.channel_direction[0] + (direction * (radiance.x * weight));
-    moments.channel_direction[1] = moments.channel_direction[1] + (direction * (radiance.y * weight));
-    moments.channel_direction[2] = moments.channel_direction[2] + (direction * (radiance.z * weight));
+    moments.luminance_direction = moments.luminance_direction + (response * (lum * weight));
+    moments.channel_direction[0] =
+        moments.channel_direction[0] + (response * (radiance.x * weight));
+    moments.channel_direction[1] =
+        moments.channel_direction[1] + (response * (radiance.y * weight));
+    moments.channel_direction[2] =
+        moments.channel_direction[2] + (response * (radiance.z * weight));
 }
 
 /// Cards over one triangle: the centroids of an n-by-n subdivision, n chosen from the spacing.
 [[nodiscard]] Status add_triangle_cards(const WorldTriangle& triangle, const BakeMaterial& material,
                                         f32 spacing, Array<gi::Surfel>& out) noexcept {
-    const f32 longest = std::max({length(triangle.v1 - triangle.v0),
-                                  length(triangle.v2 - triangle.v1),
-                                  length(triangle.v0 - triangle.v2)});
+    const f32 longest =
+        std::max({length(triangle.v1 - triangle.v0), length(triangle.v2 - triangle.v1),
+                  length(triangle.v0 - triangle.v2)});
     const u32 steps = std::max(1U, static_cast<u32>(std::ceil(longest / spacing)));
-    const f32 area =
-        0.5F * length(cross(triangle.v1 - triangle.v0, triangle.v2 - triangle.v0)) /
-        static_cast<f32>(steps * steps);
+    const f32 area = 0.5F * length(cross(triangle.v1 - triangle.v0, triangle.v2 - triangle.v0)) /
+                     static_cast<f32>(steps * steps);
     const auto card = [&](f32 a, f32 b, Vec3 normal, Vec3 emission) {
         gi::Surfel surfel;
         const f32 fa = a / static_cast<f32>(steps);
@@ -86,15 +108,13 @@ void accumulate(TexelMoments& moments, Vec3 radiance, Vec3 direction, f32 weight
         for (u32 b = 0; a + b < steps; ++b) {
             // Both faces: a lightmap scene's surfaces reflect light arriving at either, and only
             // the front one emits.
-            const f32 centres[2][2] = {{static_cast<f32>(a) + (1.0F / 3.0F),
-                                        static_cast<f32>(b) + (1.0F / 3.0F)},
-                                       {static_cast<f32>(a) + (2.0F / 3.0F),
-                                        static_cast<f32>(b) + (2.0F / 3.0F)}};
+            const f32 centres[2][2] = {
+                {static_cast<f32>(a) + (1.0F / 3.0F), static_cast<f32>(b) + (1.0F / 3.0F)},
+                {static_cast<f32>(a) + (2.0F / 3.0F), static_cast<f32>(b) + (2.0F / 3.0F)}};
             const u32 count = a + b + 1U < steps ? 2U : 1U;
             for (u32 which = 0; which < count; ++which) {
-                if (Status added =
-                        card(centres[which][0], centres[which][1], triangle.normal,
-                             material.emission);
+                if (Status added = card(centres[which][0], centres[which][1], triangle.normal,
+                                        material.emission);
                     !added) {
                     return added;
                 }
@@ -120,19 +140,17 @@ TexelMoments trace_moments(const TraceContext& context, Vec3 position, Vec3 norm
     const Vec3 origin = position + (normal * kSurfaceOffset);
     for (u32 index = 0; index < count; ++index) {
         const Vec3 direction = cosine_direction(normal, sequence);
-        const Vec3 radiance =
-            context.path->radiance(origin, direction, settings.trace.bounces,
-                                   settings.trace.max_distance_metres, sequence);
-        accumulate(moments, radiance, direction, weight);
+        const Vec3 radiance = context.path->radiance(origin, direction, settings.trace.bounces,
+                                                     settings.trace.max_distance_metres, sequence);
+        accumulate(moments, radiance, direction, normal, weight);
     }
     if (settings.content == LightmapContent::DirectAndIndirect) {
         // The placed lights at the receiver, one at a time so each carries its own direction. The
         // lights are already divided by pi, so this is E / pi like the rest of the texel.
         for (const gi::GiLight& light : context.lights) {
-            const Vec3 direct =
-                gi::shaded_direct(Span<const gi::GiLight>(&light, 1), position, normal,
-                                  context.tracer);
-            accumulate(moments, direct, direction_to(light, position), 1.0F);
+            const Vec3 direct = gi::shaded_direct(Span<const gi::GiLight>(&light, 1), position,
+                                                  normal, context.tracer);
+            accumulate(moments, direct, direction_to(light, position), normal, 1.0F);
         }
     }
     return moments;
@@ -147,8 +165,8 @@ bool buried(const TraceContext& context, Vec3 position, Vec3 normal, u32 sequenc
         u32 triangle = 0;
         bool back_face = false;
         if (context.tracer->trace_triangle(origin, direction,
-                                           context.settings->trace.max_distance_metres, t,
-                                           triangle, back_face) &&
+                                           context.settings->trace.max_distance_metres, t, triangle,
+                                           back_face) &&
             back_face) {
             back_faces += 1U;
         }
@@ -164,15 +182,16 @@ Status build_surfels(const LightmapScene& scene, const MeshSceneTracer& tracer, 
     bool first = true;
     for (const WorldTriangle& triangle : tracer.triangles()) {
         if (Status added = add_triangle_cards(triangle, scene.materials[triangle.material],
-                                              std::max(spacing, 0.01F), surfels);
+                                              std::clamp(spacing, 0.01F, kMaxCardSpacing), surfels);
             !added) {
             return added;
         }
-        const Aabb box = Aabb::from_min_max(
-            cwise_min(triangle.v0, cwise_min(triangle.v1, triangle.v2)),
-            cwise_max(triangle.v0, cwise_max(triangle.v1, triangle.v2)));
-        bounds = first ? box : Aabb::from_min_max(cwise_min(bounds.min, box.min),
-                                                  cwise_max(bounds.max, box.max));
+        const Aabb box =
+            Aabb::from_min_max(cwise_min(triangle.v0, cwise_min(triangle.v1, triangle.v2)),
+                               cwise_max(triangle.v0, cwise_max(triangle.v1, triangle.v2)));
+        bounds = first ? box
+                       : Aabb::from_min_max(cwise_min(bounds.min, box.min),
+                                            cwise_max(bounds.max, box.max));
         first = false;
     }
     return out.ingest_cell(0, bounds, surfels.span(), 0);
