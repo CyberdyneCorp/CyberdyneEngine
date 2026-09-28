@@ -312,6 +312,27 @@ CY_TEST_CASE("the camera's share and the objects' are scaled apart") {
             std::fmax(smeared, std::fabs(panned[at].x - frame.color[at].x) / frame.color[at].x);
     }
     CY_CHECK_GT(smeared, 0.2F);
+
+    // AND THE OTHER WAY ROUND, under a still camera: a bar moving on its own is the objects'
+    // share alone, so objects-only blurs it and camera-only leaves every pixel as it was.
+    const Frame moving_bar = make_frame(Moving::Bar, true);
+    Expected<MotionBlurConstants, Error> still_objects =
+        make_motion_blur_constants(objects_only, still_view());
+    Expected<MotionBlurConstants, Error> still_camera =
+        make_motion_blur_constants(camera_only, still_view());
+    CY_REQUIRE(still_objects.has_value());
+    CY_REQUIRE(still_camera.has_value());
+    const std::vector<Vec4> object_blur = blurred(moving_bar, *still_objects);
+    const std::vector<Vec4> camera_blur = blurred(moving_bar, *still_camera);
+    f32 object_change = 0.0F;
+    f32 camera_change = 0.0F;
+    for (usize at = 0; at < kPixels; ++at) {
+        const f32 base = moving_bar.color[at].x;
+        object_change = std::fmax(object_change, std::fabs(object_blur[at].x - base) / base);
+        camera_change = std::fmax(camera_change, std::fabs(camera_blur[at].x - base) / base);
+    }
+    CY_CHECK_GT(object_change, 0.2F);
+    CY_CHECK_LT(camera_change, 1e-5F);
 }
 
 CY_TEST_CASE("the tile maxima are the longest vectors, and their neighbourhoods reach one tile") {
