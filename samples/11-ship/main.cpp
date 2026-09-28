@@ -189,7 +189,8 @@ void print_coverage(std::FILE* out, const std::vector<CoverageLine>& lines,
                  "plan 0x%016llx\n",
                  report.submits, report.passes_recorded, report.barriers,
                  static_cast<unsigned long long>(report.plan_hash));
-    std::fprintf(out, "  validation errors  %u\n", report.validation_errors);
+    std::fprintf(out, "  validation errors  %llu\n",
+                 static_cast<unsigned long long>(report.validation_errors));
     if (!report.not_evaluated.empty()) {
         std::fprintf(out, "  NOT EVALUATED      %s\n", report.not_evaluated.c_str());
     }
@@ -382,9 +383,9 @@ int main(int argc, char** argv) {
         // README.md, "The two hazards this artefact found" — and `smoke.ship_present` pins them.
         // `ship.py` reads a 3 as a GAP — named, counted and non-zero.
         std::fprintf(stderr,
-                     "%s: the frame tripped %u validation error(s). It drew and presented; see "
+                     "%s: the frame tripped %llu validation error(s). It drew and presented; see "
                      "samples/11-ship/README.md for what they are and whose they are.\n",
-                     kTag, report.validation_errors);
+                     kTag, static_cast<unsigned long long>(report.validation_errors));
         return 3;
     }
     return 0;
