@@ -670,9 +670,11 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
                                FramePassKind::DepthOfField, "depth of field",
                                resources_.depth_of_field, state.current_color);
         state.current_color = resources_.depth_of_field;
-    // 8. Motion blur: after the temporal resolve, which it reads, and before bloom, so a streak of
-    // a bright light blooms as the light it is. Its producer's last pass writes the target and the
-    // chain continues from it.
+    }
+
+    // 8. Motion blur: after the temporal resolve and depth of field, whose colour it reads, and
+    // before bloom, so a streak of a bright light blooms as the light it is. Its producer's last
+    // pass writes the target and the chain continues from it.
     if (features.motion_blur) {
         resources_.motion_blur = description.motion_blur_target;
         declare_produced_stage(graph, state, description.motion_blur_stage,

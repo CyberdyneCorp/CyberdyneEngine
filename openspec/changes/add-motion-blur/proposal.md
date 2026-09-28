@@ -22,11 +22,11 @@ blurred.
   (`pipeline/instance_history.h`), rebases them to this frame's camera, and writes each row's
   previous placement after the current rows in the one instance buffer. A stable identity per row
   (`FrameUpload::instance_ids`) and a history cut discard what is not the same instance's history.
-- `cy/frame.slang` appends `motionControl` to the frame block (512 to 528 bytes). The depth vertex
-  pushes each vertex through its previous placement and through its PREVIOUS POSITION — a third
-  vertex binding, which is the position stream again for a rigid mesh and, for a mesh deformed on
-  the device, the other half of its double-buffered output, named by the new
-  `DrawGeometry::previous_vertex_offset`. With no previous rows the expression is the one the
+- `cy/frame.slang` appends `motionControl` to the frame block after `volumetricFogControl` (544 to
+  560 bytes). The depth vertex pushes each vertex through its previous placement and through its
+  PREVIOUS POSITION — a third vertex binding, which is the position stream again for a rigid mesh
+  and, for a mesh deformed on the device, the other half of its double-buffered output, named by the
+  new `DrawGeometry::previous_vertex_offset`. With no previous rows the expression is the one the
   prepass always evaluated. The frame's committed SPIR-V and MSL are regenerated.
 - A new module, `src/rendering/motion_blur/`: tile max, neighbour max and a McGuire-style gather,
   with committed SPIR-V and MSL, a host reference written expression for expression, and a

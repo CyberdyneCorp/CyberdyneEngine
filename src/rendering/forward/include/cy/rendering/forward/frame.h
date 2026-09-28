@@ -165,8 +165,9 @@ enum class FramePassKind : u8 {
     /// the chain has reached (`ScreenSpaceStageInputs::source`) and the depth, and whose last pass
     /// writes `FrameResources::depth_of_field`, the colour every later stage reads.
     DepthOfField,
-    /// Step 8 of `rendering-post-processing`: motion blur, on the temporal resolve's linear HDR
-    /// colour and before bloom, so a streak blooms as the light it is. Declared by its producer
+    /// Step 8 of `rendering-post-processing`: motion blur, on the linear HDR colour the chain has
+    /// reached (depth of field's, or the temporal resolve's) and before bloom, so a streak blooms
+    /// as the light it is. Declared by its producer
     /// (`src/rendering/motion_blur/`) through `FrameStageDeclaration` — a tile reduction, a
     /// neighbourhood maximum and a gather are three dispatches, and only the graph can put a
     /// barrier between them.
@@ -248,8 +249,9 @@ struct ScreenSpaceStageInputs {
     /// The prepass motion vectors, for a stage after the shading — motion blur. Invalid when the
     /// prepass writes none. Appended, as `draw_instances` is.
     ResourceId velocity = kInvalidResource;
-    /// The colour the post chain has reached at this stage — the temporal resolve's output, for
-    /// motion blur — which a stage that filters the picture reads. Appended, as above.
+    /// The colour the post chain has reached at this stage — depth of field's or the temporal
+    /// resolve's output, for motion blur — which a stage that filters the picture reads. Appended,
+    /// as above.
     ResourceId color = kInvalidResource;
 };
 

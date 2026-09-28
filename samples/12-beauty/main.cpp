@@ -364,6 +364,7 @@ int main(int argc, char** argv) {
         std::printf("depth of field focused on %s at (%.2f, %.2f, %.2f), f/%.1f\n", focus.c_str(),
                     static_cast<double>(target->x), static_cast<double>(target->y),
                     static_cast<double>(target->z), static_cast<double>(shot.dof_f_number));
+    }
     if (!motion_blur.empty()) {
         const f32 degrees = std::strtof(motion_blur.c_str(), nullptr);
         stage.set_motion_blur(true, degrees);
