@@ -60,6 +60,10 @@ def frame_argument_buffers(source: str, name: str) -> str:
     return source
 
 
+#: The longest string literal every compiler this header meets accepts: MSVC's, in bytes.
+MAX_STRING_LITERAL = 16380
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(f"usage: {sys.argv[0]} <output.h> <name>=<module.metal> ...", file=sys.stderr)
@@ -77,8 +81,20 @@ def main() -> int:
         source = frame_argument_buffers(path.read_text(encoding="utf-8"), name)
         if ")cy_msl\"" in source:
             raise ValueError(f"{path}: source contains the raw-string delimiter")
-        lines.append(f"/// {path.name}, {len(source.encode('utf-8'))} bytes.\n")
-        lines.append(f'inline constexpr char {name}[] = R"cy_msl({source})cy_msl";\n\n')
+        encoded = source.encode("utf-8")
+        lines.append(f"/// {path.name}, {len(encoded)} bytes.\n")
+        if len(encoded) < MAX_STRING_LITERAL:
+            lines.append(f'inline constexpr char {name}[] = R"cy_msl({source})cy_msl";\n\n')
+            continue
+        # A module this long is a NUL-terminated byte array, not a string literal: clang's
+        # -Woverlength-strings refuses a literal over 65536 bytes and MSVC one over 16380, and
+        # callers read `sizeof(name) - 1` either way.
+        lines.append(f"inline constexpr char {name}[] = {{\n")
+        data = list(encoded) + [0]
+        for start in range(0, len(data), 16):
+            row = ", ".join(f"0x{byte:02X}" for byte in data[start:start + 16])
+            lines.append(f"    {row},\n")
+        lines.append("};\n\n")
     lines.append("}  // namespace cy::rendering::pipeline\n")
     pathlib.Path(sys.argv[1]).write_text("".join(lines), encoding="utf-8")
     return 0
