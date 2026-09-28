@@ -55,6 +55,23 @@ namespace cy::rendering::gi {
 /// device lookup (`card_lighting.h`, `cy::rendering-gi-gpu`) must apply the same cone.
 inline constexpr f32 kCardLookupAlignment = 0.25F;
 
+/// Whether a lookup candidate beats the best so far. The score is squared distance over alignment;
+/// equal scores — two coincident cards, a hit exactly on both, where the score is zero for each —
+/// go to the better-aligned card and then to the lower handle. Every card lookup (the cache's, the
+/// snapshot's, the device's) ranks with this one rule, so which card answers never depends on the
+/// order a spatial index visits them in.
+[[nodiscard]] constexpr bool card_lookup_prefers(f32 score, f32 alignment, u32 handle,
+                                                 f32 best_score, f32 best_alignment,
+                                                 u32 best) noexcept {
+    if (score != best_score) {
+        return score < best_score;
+    }
+    if (alignment != best_alignment) {
+        return alignment > best_alignment;
+    }
+    return handle < best;
+}
+
 /// One cached surface. The fields are the specification's list, in its order.
 struct SurfacePage {
     Vec3 position{0.0F, 0.0F, 0.0F};

@@ -149,6 +149,42 @@ CY_TEST_CASE("a traced hit is a cache lookup and the red wall bleeds") {
     CY_CHECK_GT(cache.diagnostics().lookup_misses, 0U);
 }
 
+// A REGRESSION. The lookup ranked candidates by squared distance over alignment and kept the first
+// strictly better one, so a hit exactly on an edge — where a floor card and a wall card coincide —
+// scored zero against both and was answered by whichever the spatial index visited first: a floor
+// hit read the wall's radiance for one allocation order and the floor's for the other.
+CY_TEST_CASE("a hit on two coincident cards reads the one it faces, in either allocation order") {
+    Surfel floor;
+    floor.position = Vec3{1.0F, 0.0F, 2.0F};
+    floor.normal = Vec3{0.0F, 1.0F, 0.0F};
+    floor.emission = Vec3{1.0F, 0.0F, 0.0F};
+    Surfel wall = floor;
+    wall.normal = Vec3{1.0F, 0.0F, 0.0F};
+    wall.emission = Vec3{0.0F, 0.0F, 1.0F};
+
+    // Mostly up, a little toward the wall: both cards are inside the cone.
+    const Vec3 hit_normal = cy::normalized_or(Vec3{0.3F, 0.95F, 0.0F}, floor.normal);
+    for (const bool floor_first : {true, false}) {
+        SurfaceCache cache;
+        CY_REQUIRE(cache.allocate(floor_first ? floor : wall).has_value());
+        CY_REQUIRE(cache.allocate(floor_first ? wall : floor).has_value());
+        SurfaceUpdateContext context;
+        context.frame = 1;
+        (void)cache.update_all(context);
+
+        Vec3 radiance{};
+        u32 age = 0;
+        CY_REQUIRE(cache.radiance_at(floor.position, hit_normal, radiance, age));
+        CY_CHECK_EQ(radiance.x, 1.0F);
+        CY_CHECK_EQ(radiance.z, 0.0F);
+        // Tilted the other way the wall is the better-aligned card and answers instead.
+        const Vec3 wall_normal = cy::normalized_or(Vec3{0.95F, 0.3F, 0.0F}, wall.normal);
+        CY_REQUIRE(cache.radiance_at(floor.position, wall_normal, radiance, age));
+        CY_CHECK_EQ(radiance.z, 1.0F);
+        CY_CHECK_EQ(radiance.x, 0.0F);
+    }
+}
+
 CY_TEST_CASE("bounces accumulate over frames") {
     // "WHEN cached radiance is fed back into the gather THEN successive frames SHALL approximate
     // additional bounces, converging toward a multi-bounce solution."

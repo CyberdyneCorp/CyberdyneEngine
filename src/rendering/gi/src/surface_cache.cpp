@@ -336,6 +336,7 @@ bool SurfaceCache::radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
     const Aabb box{position - extent, position + extent};
     u32 best = ~0U;
     f32 best_score = 1.0e9F;
+    f32 best_alignment = 0.0F;
     const f32 radius_squared = lookup_radius_ * lookup_radius_;
     index_.query_aabb(box, [&](u32 /*proxy*/, u64 user_data) {
         const u32 handle = static_cast<u32>(user_data);
@@ -356,9 +357,13 @@ bool SurfaceCache::radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
         if (squared > radius_squared) {
             return true;
         }
+        // A hit exactly ON two coincident cards scores zero against both, whatever their
+        // alignment, so the tie falls to the better-aligned card and then to the lower handle —
+        // never to the order the index happens to visit them in.
         const f32 score = squared / alignment;
-        if (score < best_score) {
+        if (card_lookup_prefers(score, alignment, handle, best_score, best_alignment, best)) {
             best_score = score;
+            best_alignment = alignment;
             best = handle;
         }
         return true;
