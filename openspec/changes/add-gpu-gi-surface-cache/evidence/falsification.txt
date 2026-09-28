@@ -1,0 +1,101 @@
+render.gi_gpu and integration.render_gi_pipeline mutations, Development build (build/gpugi), Vulkan
+on the RTX 5060. Each mutation was applied, the gi_gpu SPIR-V/MSL regenerated through
+shaders/regenerate.py where the mutation is in a shader, the affected suites rebuilt and run, the
+file restored (headers regenerated again) and the source plus both headers md5-verified against the
+original. A host mutation is run against both suites, since render.gi_gpu links cy::rendering-gi.
+
+== m1_trilinear_z: src/rendering/gi_gpu/shaders/gi_gpu_common.slang
+<     return giLerp(giLerp(c00, c10, ty), giLerp(c01, c11, ty), tz);
+>     return giLerp(giLerp(c00, c10, ty), giLerp(c01, c11, ty), ty);
+[cy_test_render_gi_gpu]
+TEST CASE:  a moved object re-uploads only the bricks it touched
+TEST CASE:  the device card radiance matches the host surface cache
+TEST CASE:  the lit surface cache cards, host and device side by side
+TEST CASE:  the shadow map shadows the device cards as it shadows the host ones
+TEST CASE:  the uploaded field traces as the host field does
+test cases:    6 |    1 passed |  5 failed | 0 skipped
+RESTORED md5 ok
+
+== m2_always_full: src/rendering/gi_gpu/src/gpu_scene.cpp
+<     report.full = !field_uploaded_ ||
+>     report.full = true || !field_uploaded_ ||
+[cy_test_render_gi_gpu]
+TEST CASE:  a moved object re-uploads only the bricks it touched
+test cases:    6 |    5 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m3_drop_albedo: src/rendering/gi_gpu/shaders/gi_cards.slang
+<         accumulated = albedo.xyz * incoming;
+>         accumulated = incoming;
+[cy_test_render_gi_gpu]
+TEST CASE:  the device card radiance matches the host surface cache
+TEST CASE:  the lit surface cache cards, host and device side by side
+TEST CASE:  the shadow map shadows the device cards as it shadows the host ones
+test cases:    6 |    3 passed |  3 failed | 0 skipped
+RESTORED md5 ok
+
+== m4_no_shadow_map: src/rendering/gi_gpu/shaders/gi_gpu_common.slang
+<     if (giScene.constants[kGiShadowEnabled].x != 0u && dot(offset / span, -dir) > kGiShadowAlignment) {
+>     if (false && giScene.constants[kGiShadowEnabled].x != 0u && dot(offset / span, -dir) > kGiShadowAlignment) {
+[cy_test_render_gi_gpu]
+TEST CASE:  the lit surface cache cards, host and device side by side
+TEST CASE:  the shadow map shadows the device cards as it shadows the host ones
+test cases:    6 |    4 passed | 2 failed | 0 skipped
+RESTORED md5 ok
+
+== m5_no_budget: src/rendering/gi/src/surface_cache.cpp
+<     const usize limit = all ? selected.size() : std::min<usize>(selected.size(), context.budget);
+>     const usize limit = all ? selected.size() : selected.size();
+[cy_test_render_gi_gpu]
+TEST CASE:  the device card update shades the budgeted selection and nothing else
+test cases:     6 |     5 passed |  1 failed | 0 skipped
+RESTORED md5 ok
+
+
+== m6_device_gather_unlifted: src/rendering/gi_gpu/shaders/gi_gpu_common.slang
+<     const float3 origin = position + (normal * voxel);
+>     const float3 origin = position;
+[cy_test_render_gi_gpu]
+TEST CASE:  the device card radiance matches the host surface cache
+TEST CASE:  the lit surface cache cards, host and device side by side
+TEST CASE:  the shadow map shadows the device cards as it shadows the host ones
+test cases:    6 |    3 passed |  3 failed | 0 skipped
+RESTORED md5 ok
+
+== m7_device_tie_by_handle: src/rendering/gi_gpu/shaders/gi_gpu_common.slang
+<                                         : alignment != bestAlignment ? alignment > bestAlignment
+>                                         : false ? alignment > bestAlignment
+[cy_test_render_gi_gpu]
+test cases:    6 |    6 passed | 0 failed | 0 skipped
+RESTORED md5 ok
+
+== m8_host_tie_first_visited: src/rendering/gi/src/surface_cache.cpp
+<         if (card_lookup_prefers(score, alignment, handle, best_score, best_alignment, best)) {
+>         if (score < best_score) {
+[cy_test_integration_render_gi_pipeline]
+TEST CASE:  a hit on two coincident cards reads the one it faces, in either allocation order
+TEST CASE:  the card snapshot answers a lookup with the card the surface cache would
+test cases:   39 |   37 passed | 2 failed | 0 skipped
+[cy_test_render_gi_gpu]
+test cases:    6 |    6 passed | 0 failed | 0 skipped
+RESTORED md5 ok
+
+== m9_host_gather_unlifted: src/rendering/gi/src/card_lighting.cpp
+<     const Vec3 origin = position + (normal * voxel);
+>     const Vec3 origin = position;
+[cy_test_integration_render_gi_pipeline]
+TEST CASE:  a gather ray is never answered by the surface it leaves
+test cases:   39 |   38 passed |  1 failed | 0 skipped
+[cy_test_render_gi_gpu]
+TEST CASE:  the device card radiance matches the host surface cache
+TEST CASE:  the lit surface cache cards, host and device side by side
+TEST CASE:  the shadow map shadows the device cards as it shadows the host ones
+test cases:    6 |    3 passed |  3 failed | 0 skipped
+RESTORED md5 ok
+
+m7 SURVIVES, and is recorded as such: no render.gi_gpu case puts a traced hit exactly on two
+coincident cards at zero distance, which is the only place the alignment tie-break decides. The
+rule is held on the host by `a hit on two coincident cards reads the one it faces, in either
+allocation order` (m8) and by `the card snapshot answers a lookup with the card the surface cache
+would`; the device transcription is the same three-way comparison, reviewed against
+`card_lookup_prefers`.

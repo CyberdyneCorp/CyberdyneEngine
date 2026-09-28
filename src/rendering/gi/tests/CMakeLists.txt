@@ -13,6 +13,9 @@
 #                       visibility term stops, the tiers and their confidence, the reflection
 #                       capture, the bake's seeding, and a frame of the composed system. Every case
 #                       traces real rays through a real field; that is what an integration test is.
+#                       Also the host half of the device surface cache (issue #35): the field's
+#                       change journal, the card snapshot against the cache's own lookup, the shadow
+#                       map against the field, and the shading seam `system.h` chooses CPU or GPU by.
 #   render_gi_signals   the five stochastic signals the denoiser declares, PRODUCED — indirect
 #                       diffuse, indirect specular, ray-traced shadows, ambient occlusion and
 #                       stochastic direct — and each routed through `denoise::Denoiser`. M11.c task
@@ -56,6 +59,7 @@ function(cy_render_gi_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/test_caches.cpp"
+            "${tests_dir}/test_card_lighting.cpp"
             "${tests_dir}/test_field.cpp"
             "${tests_dir}/test_system.cpp"
             "${tests_dir}/test_tiers.cpp"

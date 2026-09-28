@@ -140,6 +140,17 @@ public:
     void set_sky_term(const SkyTerm& sky) noexcept;
     [[nodiscard]] const SkyTerm& sky_term() const noexcept { return settings_.sky; }
 
+    /// Shade the surface cache somewhere else, or on the host again with null.
+    ///
+    /// THE CPU-OR-GPU CHOICE, and the only one this class makes. The cache keeps its allocation,
+    /// invalidation, selection and lookup; the backend — `cy::rendering-gi-gpu`'s device shading
+    /// is one — does the arithmetic on the pages the cache selected, and its results land at the
+    /// next `update()`. That is one frame of latency in the bounce, the same latency swapping steps
+    /// 6 and 7 below would cost. See `SurfaceShadingBackend` for the contract.
+    void set_surface_shading(SurfaceShadingBackend* backend) noexcept {
+        surfaces_.set_shading_backend(backend);
+    }
+
     // The named subsystems. Public because they are separate subsystems and not private state:
     // a renderer ingests cells into the scene, a residency system places distance fields, and an
     // editor inspects the caches, and none of that should go through a forwarding method here.

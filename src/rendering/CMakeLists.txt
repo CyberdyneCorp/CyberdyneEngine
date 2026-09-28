@@ -104,6 +104,10 @@ add_subdirectory(denoise)
 # consumes raytracing/ as one tier and denoise/ as its reconstruction.
 add_subdirectory(gi)
 
+# CyberGI on the device (issue #35): the field and the surface cards uploaded, and the card
+# lighting in compute. Straight after gi/ and graph/, the two modules it depends on.
+add_subdirectory(gi_gpu)
+
 # CyberTemporal: ONE temporal framework — jitter, derived motion vectors, history, invalidation and
 # reprojection — consumed by everything stochastic rather than reimplemented per effect. Task 8.3.
 # Before post/ because the post chain's antialiasing and upscaling stages are two of its consumers.

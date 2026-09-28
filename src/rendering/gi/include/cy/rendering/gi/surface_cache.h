@@ -49,6 +49,29 @@
 
 namespace cy::rendering::gi {
 
+/// How well a card's normal must agree with a hit's before the card may answer for it. A quarter is
+/// a 75-degree cone: wide enough that a hit whose normal the field blended at an edge still finds
+/// its own surface, and narrow enough that a card facing across the hit cannot. Public because the
+/// device lookup (`card_lighting.h`, `cy::rendering-gi-gpu`) must apply the same cone.
+inline constexpr f32 kCardLookupAlignment = 0.25F;
+
+/// Whether a lookup candidate beats the best so far. The score is squared distance over alignment;
+/// equal scores — two coincident cards, a hit exactly on both, where the score is zero for each —
+/// go to the better-aligned card and then to the lower handle. Every card lookup (the cache's, the
+/// snapshot's, the device's) ranks with this one rule, so which card answers never depends on the
+/// order a spatial index visits them in.
+[[nodiscard]] constexpr bool card_lookup_prefers(f32 score, f32 alignment, u32 handle,
+                                                 f32 best_score, f32 best_alignment,
+                                                 u32 best) noexcept {
+    if (score != best_score) {
+        return score < best_score;
+    }
+    if (alignment != best_alignment) {
+        return alignment > best_alignment;
+    }
+    return handle < best;
+}
+
 /// One cached surface. The fields are the specification's list, in its order.
 struct SurfacePage {
     Vec3 position{0.0F, 0.0F, 0.0F};
@@ -72,6 +95,12 @@ struct SurfacePage {
     /// Set by the renderer's feedback: this page affects a visible surface.
     bool visible = false;
     bool live = false;
+    /// Bumped by every change the host makes to the page — allocation, release, invalidation — and
+    /// by nothing a shading pass does. A device mirror compares it against the revision it last
+    /// uploaded, which is what makes the card upload incremental; a shading backend compares it
+    /// against the revision it submitted, which is how a result for a page that was invalidated
+    /// while it was in flight is dropped rather than undoing the invalidation.
+    u32 revision = 0;
 };
 
 struct SurfaceUpdateReport {
@@ -104,6 +133,41 @@ struct SurfaceUpdateContext {
     /// A page not serviced within this many frames is forced into the update set. The progress
     /// guarantee: no valid page is starved indefinitely by higher-priority work.
     u64 max_age_frames = 240;
+};
+
+/// WHO SHADES THE PAGES THE SCHEDULER PICKED. The seam a device surface cache replaces the host one
+/// behind (`cy::rendering-gi-gpu`), so `system.h` chooses CPU or GPU by installing one pointer and
+/// nothing else in this module learns a device exists.
+///
+/// The cache keeps everything that is a DECISION — allocation, invalidation, the prioritised,
+/// budgeted selection, the lookup a traced hit resolves through — and hands the backend only the
+/// arithmetic. That is what keeps the host implementation below the oracle: the selection a device
+/// shades is the selection this file would have shaded, computed by the same function.
+///
+/// Asynchronous by construction. `submit` hands over this update's selection; the work runs when
+/// the caller executes its frame, and `retire` folds the results back into the pages. The cache
+/// calls `retire` at the start of its next update, so the caller's contract is that the frame that
+/// ran the previous submission has completed by then (its fence was waited on). A result for a page
+/// whose `revision` moved while it was in flight is discarded.
+class SurfaceShadingBackend {
+public:
+    SurfaceShadingBackend() = default;
+    SurfaceShadingBackend(const SurfaceShadingBackend&) = delete;
+    SurfaceShadingBackend(SurfaceShadingBackend&&) = delete;
+    SurfaceShadingBackend& operator=(const SurfaceShadingBackend&) = delete;
+    SurfaceShadingBackend& operator=(SurfaceShadingBackend&&) = delete;
+    virtual ~SurfaceShadingBackend() = default;
+
+    /// Take this update's selection. `pages` is every page the cache holds, indexed by handle, so a
+    /// backend may mirror what changed; `selected` is the handles to shade, in priority order and
+    /// no longer than the budget. Returns how many it accepted: a backend sized for fewer pages
+    /// than the budget takes a prefix, which is still the highest-priority work.
+    [[nodiscard]] virtual u32 submit(Span<const SurfacePage> pages, Span<const u32> selected,
+                                     const SurfaceUpdateContext& context) noexcept = 0;
+
+    /// Write the results of the last submission into `pages`: `direct`, `accumulated`, `error`,
+    /// `valid` and `last_update_frame`. Returns how many pages it wrote.
+    virtual u32 retire(Span<SurfacePage> pages) noexcept = 0;
 };
 
 /// Shaded radiance for world surfaces.
@@ -139,6 +203,28 @@ public:
     /// subsystem, and what a bake's seeding uses.
     SurfaceUpdateReport update_all(const SurfaceUpdateContext& context) noexcept;
 
+    /// The prioritised selection one update shades, in order: every live page older than
+    /// `context.max_age_frames` first (the progress guarantee), then by visibility, validity, error
+    /// and age, then by handle. `all` takes every live page and otherwise the first
+    /// `context.budget`. Writes `pages_invalid`, `queue_depth` and `oldest_unserviced_age` into
+    /// `report`. A static function over the page array so a device backend, and a test holding one
+    /// to its budget, run the one selection there is.
+    [[nodiscard]] static Status select(Span<const SurfacePage> pages,
+                                       const SurfaceUpdateContext& context, bool all,
+                                       Array<u32>& selected, SurfaceUpdateReport& report) noexcept;
+
+    /// Shade the selected pages somewhere else. Null restores the host shading. See
+    /// `SurfaceShadingBackend` for the contract; installing one does not touch any page.
+    void set_shading_backend(SurfaceShadingBackend* backend) noexcept { backend_ = backend; }
+    [[nodiscard]] SurfaceShadingBackend* shading_backend() const noexcept { return backend_; }
+
+    /// Fold the backend's completed results into the pages now, rather than at the next update.
+    /// A no-op with no backend. Returns how many pages it wrote.
+    u32 collect() noexcept;
+
+    /// Every page slot, live or not, indexed by handle. What a device mirror uploads from.
+    [[nodiscard]] Span<const SurfacePage> pages() const noexcept { return pages_.span(); }
+
     // --- RadianceLookup --------------------------------------------------------------------------
 
     [[nodiscard]] bool radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
@@ -166,6 +252,7 @@ private:
 
     Array<SurfacePage> pages_;
     Array<u32> proxies_;
+    SurfaceShadingBackend* backend_ = nullptr;
     Array<u32> free_pages_;
     DynamicBvh index_;
     u32 live_pages_ = 0;
