@@ -208,7 +208,7 @@ the water is the mirrored dome alone) and lit.
 | at the shoreline the haze has no step | the water column beside the land receives the land column's in-scattering within 3% on every row seen more than a degree below the horizon |
 | far water takes the land's in-scattering | the same beyond 2 km, where the haze is more than four times the nearest row's |
 | near water is left as it was lit | from 2 m up, every water texel within 10 m moves by under 0.001 with the table on |
-| off, the frame is the frame before | with the table's `enabled` word zero, dark and lit, every texel is bit-identical to the frame drawn with water.slang's fragment stage pinned before this change (`water_before_aerial_perspective_spirv.h`); with it on, more than 2000 texels move |
+| off, the frame is the frame before | with the table's `enabled` word zero, dark and lit, every texel is bit-identical to the frame drawn with water.slang's fragment stage pinned before this change (`water_before_aerial_perspective_spirv.h`); with it on, more than 2000 water texels move (a liveness count, not the formula: the water ignoring the table still moves 7501, which the first three cases catch) |
 
 Measured on the RTX 5060, Development and Debug alike: water 0.00067 and land 0.00066 from the
 table against 0.004; 46 shoreline rows from 0.66 to 11.2 km, worst 2.8% against 3%; far haze 13
