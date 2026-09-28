@@ -47,13 +47,20 @@ struct StageShader {
                 kMotionBlurNeighbourMaxMsl,
                 sizeof(kMotionBlurNeighbourMaxMsl) - 1,
                 2};
-        default:
+        case 2:
             return {"motion blur gather",
                     "cyMotionBlurGather",
                     {kMotionBlurGatherSpirv, sizeof(kMotionBlurGatherSpirv) / sizeof(u32)},
                     kMotionBlurGatherMsl,
                     sizeof(kMotionBlurGatherMsl) - 1,
                     5};
+        default:
+            return {"motion blur readback copy",
+                    "cyMotionBlurCopy",
+                    {kMotionBlurCopySpirv, sizeof(kMotionBlurCopySpirv) / sizeof(u32)},
+                    kMotionBlurCopyMsl,
+                    sizeof(kMotionBlurCopyMsl) - 1,
+                    2};
     }
 }
 
@@ -150,7 +157,9 @@ Status MotionBlurPass::create(Allocator& allocator, rhi::Device& device,
     allocator_ = &allocator;
     device_ = &device;
     desc_ = desc;
-    for (u32 stage = 0; stage < kStageCount; ++stage) {
+    // The readback copy exists only for a pass that reads back.
+    const u32 stages = desc.readback ? u32{kStageCount} : u32{kCopy};
+    for (u32 stage = 0; stage < stages; ++stage) {
         if (Status created = create_pipeline(static_cast<Stage>(stage)); !created) {
             destroy();
             return created;
@@ -230,26 +239,6 @@ Status MotionBlurPass::create_pipeline(Stage stage) noexcept {
 }
 
 Status MotionBlurPass::create_resources() noexcept {
-    rhi::TextureDescription target;
-    target.name = "motion blur";
-    target.format = target_format();
-    target.extent = rhi::Extent3D{desc_.width, desc_.height, 1};
-    target.usage =
-        rhi::TextureUsage::Sampled | rhi::TextureUsage::Storage | rhi::TextureUsage::TransferSource;
-    Expected<rhi::TextureHandle, Error> texture = device_->create_texture(target);
-    if (!texture.has_value()) {
-        return make_unexpected(texture.error());
-    }
-    target_ = *texture;
-    rhi::TextureViewDescription view;
-    view.name = "motion blur";
-    view.texture = target_;
-    Expected<rhi::TextureViewHandle, Error> made = device_->create_texture_view(view);
-    if (!made.has_value()) {
-        return make_unexpected(made.error());
-    }
-    target_view_ = *made;
-
     if (!desc_.readback) {
         return ok();
     }
@@ -272,12 +261,6 @@ Status MotionBlurPass::create_resources() noexcept {
 void MotionBlurPass::destroy() noexcept {
     if (device_ == nullptr) {
         return;
-    }
-    if (!target_view_.is_null()) {
-        device_->destroy_texture_view(target_view_);
-    }
-    if (!target_.is_null()) {
-        device_->destroy_texture(target_);
     }
     for (rhi::BufferHandle& buffer : readbacks_) {
         if (!buffer.is_null()) {
@@ -303,9 +286,7 @@ void MotionBlurPass::destroy() noexcept {
         set_layouts_[stage] = {};
         shaders_[stage] = {};
     }
-    target_view_ = {};
-    target_ = {};
-    imported_ = kInvalidResource;
+    target_ = kInvalidResource;
     device_ = nullptr;
     allocator_ = nullptr;
 }
@@ -324,16 +305,15 @@ Status MotionBlurPass::set_view(const MotionBlurView& view) noexcept {
     return ok();
 }
 
-ResourceId MotionBlurPass::import_target(RenderGraph& graph) noexcept {
+ResourceId MotionBlurPass::declare_target(RenderGraph& graph) noexcept {
     TextureRequest request;
     request.name = "motion blur";
     request.format = target_format();
     request.width = desc_.width;
     request.height = desc_.height;
-    request.extra_usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferSource;
-    // UNDEFINED EVERY FRAME, and it is the truth: the gather writes every texel.
-    imported_ = graph.import_texture(request, target_, rhi::ImageUse::Undefined);
-    return imported_;
+    // The gather writes every texel, and the usage is what the frame's passes declare of it.
+    target_ = graph.create_texture(request);
+    return target_;
 }
 
 FrameStageDeclaration MotionBlurPass::stage() noexcept {
@@ -349,7 +329,7 @@ PassId MotionBlurPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs&
     // Each refusal is a frame that would otherwise blur with motion nothing wrote, or post-process
     // a target nothing wrote.
     if (device_ == nullptr || view_.width == 0 || inputs.target == kInvalidResource ||
-        inputs.target != imported_ || inputs.velocity == kInvalidResource ||
+        inputs.target != target_ || inputs.velocity == kInvalidResource ||
         inputs.color == kInvalidResource || inputs.depth == kInvalidResource ||
         inputs.width != desc_.width || inputs.height != desc_.height) {
         return kInvalidPass;
@@ -369,6 +349,13 @@ PassId MotionBlurPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs&
         steps_[stage] = base;
         steps_[stage].stage = static_cast<Stage>(stage);
     }
+    if (desc_.readback) {
+        request.format = target_format();
+        request.width = desc_.width;
+        request.height = desc_.height;
+        request.name = "motion blur input copy";
+        steps_[kCopy].copy = graph.create_texture(request);
+    }
     const PassId first = graph.add_pass("motion blur tile max", QueueKind::Graphics)
                              .read(inputs.velocity, Access::ComputeSampledRead)
                              .read(inputs.depth, Access::ComputeSampledRead)
@@ -387,6 +374,10 @@ PassId MotionBlurPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs&
         .write(inputs.target, Access::ComputeStorageWrite)
         .record(&record_step, &steps_[kGather]);
     if (desc_.readback) {
+        graph.add_pass("motion blur readback copy", QueueKind::Graphics)
+            .read(inputs.color, Access::ComputeSampledRead)
+            .write(steps_[kCopy].copy, Access::ComputeStorageWrite)
+            .record(&record_step, &steps_[kCopy]);
         declare_readbacks(graph, inputs);
     }
     return first;
@@ -394,7 +385,7 @@ PassId MotionBlurPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs&
 
 void MotionBlurPass::declare_readbacks(RenderGraph& graph,
                                        const ScreenSpaceStageInputs& inputs) noexcept {
-    const ResourceId sources[kCopyCount] = {inputs.color, inputs.velocity, inputs.depth,
+    const ResourceId sources[kCopyCount] = {steps_[kCopy].copy, inputs.velocity, inputs.depth,
                                             inputs.target};
     const u64 pixels = static_cast<u64>(desc_.width) * desc_.height;
     for (u32 copy = 0; copy < kCopyCount; ++copy) {
@@ -436,6 +427,11 @@ void MotionBlurPass::record_step(const PassContext& context, void* user) noexcep
     } else if (stage == kNeighbourMax) {
         writes[count++] = sampled(0, executor.view(step->tiles));
         writes[count++] = storage(1, executor.view(step->neighbours));
+    } else if (stage == kCopy) {
+        writes[count++] = sampled(0, executor.view(step->color));
+        writes[count++] = storage(1, executor.view(step->copy));
+        across = groups(self.desc_.width);
+        down = groups(self.desc_.height);
     } else {
         writes[count++] = sampled(0, executor.view(step->color));
         writes[count++] = sampled(1, executor.view(step->velocity));

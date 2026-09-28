@@ -243,8 +243,8 @@ struct AssemblyView {
     /// The volumetric fog volume's storage, imported by its producer
     /// (`fog::FogPass::import_target`). Read only when the post chain enables volumetric fog.
     ResourceId volumetric_fog = kInvalidResource;
-    /// The motion-blurred colour's storage, imported by its producer
-    /// (`motion_blur::MotionBlurPass::import_target`). Read only when the post chain enables
+    /// The motion-blurred colour's storage, declared in the frame's graph by its producer
+    /// (`motion_blur::MotionBlurPass::declare_target`). Read only when the post chain enables
     /// motion blur, and then required.
     ResourceId motion_blur = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport

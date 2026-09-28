@@ -2706,7 +2706,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
             (void)device.end_frame();
             return set;
         }
-        view.motion_blur = device_->motion_blur.import_target(graph);
+        view.motion_blur = device_->motion_blur.declare_target(graph);
         sinks.motion_blur = device_->motion_blur.stage();
     }
     if (has_prepass()) {

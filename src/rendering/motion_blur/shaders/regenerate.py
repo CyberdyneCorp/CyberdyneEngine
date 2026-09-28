@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Recompile the three motion blur dispatches and rewrite the two committed headers.
+"""Recompile the motion blur dispatches and rewrite the two committed headers.
 
 Run from anywhere; the paths are resolved from this file. `--slangc` is the compiler, normally the
 one a Development build stages at <build>/Development/bin/slangc.
 
     python3 src/rendering/motion_blur/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 
-which runs, from the repository root, for each of tile_max, neighbour_max and gather:
+which runs, from the repository root, for each of tile_max, neighbour_max, gather and copy (the
+readback-only copy of the gather's colour input):
 
     slangc src/rendering/motion_blur/shaders/motion_blur_<stem>.slang -I src/rendering/shaders \
            -entry <entry> -stage compute -target spirv -profile spirv_1_5 -o <stem>.spv
@@ -35,6 +36,7 @@ MODULES = (
      "kMotionBlurNeighbourMaxMsl"),
     ("motion_blur_gather", "cyMotionBlurGather", "kMotionBlurGatherSpirv",
      "kMotionBlurGatherMsl"),
+    ("motion_blur_copy", "cyMotionBlurCopy", "kMotionBlurCopySpirv", "kMotionBlurCopyMsl"),
 )
 
 
