@@ -32,7 +32,7 @@ in `cy/frame.slang` sampled one (#36).
   `lightmap` producer in the build graph that bakes a `cylightmap 1` level description over its
   upstream import bundles, so an unchanged level is never re-baked.
 - **The frame.** `cy::rendering-lightmaps` uploads the planes and writes two appended frame words
-  (`FrameViewData` 512 → 544 bytes). The forward pipelines take the cooked `TexCoords2` stream as a
+  (`FrameViewData` 560 → 592 bytes, after `motionControl`). The forward pipelines take the cooked `TexCoords2` stream as a
   fourth vertex stream (UV0 bound in its place for a source without one), and the forward fragment
   takes a lightmapped draw's ambient from `lightmapAmbient` where the irradiance volume's was. Which
   source a surface takes is read off `gi::exclusion_for()`.

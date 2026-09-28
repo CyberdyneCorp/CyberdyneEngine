@@ -49,8 +49,8 @@
 // `render::VertexStream` splits a mesh into streams so "a shadow pass over an interleaved vertex
 // reads normals, UVs and colours it will not use" stops being true. The depth pipeline below binds
 // streams 0 and 1 — it writes a normal and a velocity target and reads no texture coordinate — plus
-// the previous positions its per-object motion is derived from, and the forward pipelines bind 0, 1,
-// 2 and the lightmap's 3, which is `render::kDepthPassStreams` made structural rather than
+// the previous positions its per-object motion is derived from, and the forward pipelines bind 0,
+// 1, 2 and the lightmap's 3, which is `render::kDepthPassStreams` made structural rather than
 // documented. `kDepthPassStreamCount` and `kForwardPassStreamCount` below are those two numbers,
 // declared once because the pipeline and the recorder must agree about them.
 //

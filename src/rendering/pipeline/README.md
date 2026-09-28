@@ -185,8 +185,9 @@ gets its UV0 buffer bound there, which no draw reads, because a draw reads `ligh
 its `gi_address` names a rectangle. So `kForwardPassStreamCount` is four and every caller that
 predates the stream binds what it bound and draws what it drew — `render.lightmaps` (c) holds the
 corner with no lightmap to a reference drawn by the frame shader before lightmaps existed. The
-depth and shadow passes are unchanged. The frame's modules were regenerated for the longer block and
-the new interpolant; the fullscreen resolve and temporal entries came out byte-identical.
+depth pass keeps its three streams and the shadow pass its one. The frame's modules were
+regenerated for the longer block and the new interpolant; the fullscreen resolve and temporal
+entries came out byte-identical.
 `render.lightmaps` renders this module's scene with it.
 
 ## What is measured and recorded rather than hidden
