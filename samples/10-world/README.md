@@ -181,8 +181,7 @@ frame (`cy/frame.slang`) reads no table.
 
 ## Volumetric fog: a valley haze
 
-![a morning mist in the valleys](../../docs/design/images/volumetric-fog-world-on.png)
-![the same frame without it](../../docs/design/images/volumetric-fog-world-off.png)
+*The before/after pictures are not captured yet: `just capture-volumetric-fog` and `just capture-world-fog` write them to `docs/design/images/` once the module builds.*
 
 `--fog` fills a froxel volume — 96 by 54 columns and 64 slices out to the dome, four sub-steps a
 slice — with a height fog whose numbers are `frame.cypost`'s `fog-*` lines: a meteorological

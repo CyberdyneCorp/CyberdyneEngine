@@ -208,11 +208,7 @@ between the Colonnade's columns. The haze is content, in `shot.cyshot`'s `fog` l
 meteorological visibility, a base altitude and scale height, an albedo and a Henyey-Greenstein
 `g` — and nothing else about it is tunable.
 
-| Fog off | Fog on |
-|---|---|
-| ![](../../docs/design/images/volumetric-fog-beauty-off.png) | ![](../../docs/design/images/volumetric-fog-beauty-on.png) |
-
-![Off, on, and the difference amplified eight times](../../docs/design/images/volumetric-fog-beauty-detail.png)
+*The before/after pictures are not captured yet: `just capture-volumetric-fog` and `just capture-world-fog` write them to `docs/design/images/` once the module builds.*
 
 `just capture-volumetric-fog` writes `docs/design/images/volumetric-fog-beauty-{off,on,detail}.png`
 and `volumetric-fog-beauty-on.manifest`, and `tools/docs/compare_volumetric_fog.py` fails it unless

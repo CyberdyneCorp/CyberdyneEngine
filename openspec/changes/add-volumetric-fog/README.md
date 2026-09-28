@@ -5,14 +5,11 @@ frame's own sun through the directional shadow map and with its ambient term, in
 back, and every surface is seen through it. Where an occluder stands between the sun and the air, the
 froxels behind it scatter no sunlight: the light shafts between the Colonnade's columns.
 
-![the Colonnade with volumetric fog](../../../docs/design/images/volumetric-fog-beauty-on.png)
-![the same frame before](../../../docs/design/images/volumetric-fog-beauty-off.png)
 
 In `samples/10-world` the same march writes the atmosphere's own froxel table with the fog
 composited in, so a morning mist lies in the valleys under the air that was already there.
 
-![a valley haze in the world's morning](../../../docs/design/images/volumetric-fog-world-on.png)
-![the same frame before](../../../docs/design/images/volumetric-fog-world-off.png)
-
-Off is the frame before, byte for byte. Every device case was seen red under a mutation
-(`evidence/falsification.txt`).
+**Status: written, not yet built.** The fog shaders' embedded SPIR-V and MSL (`fog_spirv.h`,
+`fog_msl.h`) and the frame shader's regenerated headers are not committed, so `cy_rendering_fog`
+does not compile yet; the off reference, the device cases' mutation proofs and the pictures are
+open tasks (3.1, 4.2, 5.2, 5.4, 6.1). The requirement stays exempt until they are done.

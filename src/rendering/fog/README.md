@@ -7,6 +7,10 @@ back, and applied to every surface the frame draws.
 **Governed by**: `rendering-post-processing` — "Volumetric fog", and `add-volumetric-fog`'s
 "Volumetric fog executes on the device".
 
+**Status: written, not yet built.** `src/fog_spirv.h` and `src/fog_msl.h` are not committed, so the
+module does not compile until `shaders/regenerate.py` has been run; the tests below describe what
+they check, not results that have been observed.
+
 ## The files
 
 | File | What it holds |
