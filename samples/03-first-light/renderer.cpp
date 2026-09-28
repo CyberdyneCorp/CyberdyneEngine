@@ -133,13 +133,18 @@ struct Renderer::MaterialState {
 
 namespace {
 
-/// Draw every caster with the same material vertex deformation as the visible pass.
-void draw_shadow_objects(const PassContext& context, Renderer::PassState& state) noexcept {
+/// Bind the shared vertex and index buffers. AFTER a pipeline, every time one is bound: D3D12 takes
+/// the stride from the bound pipeline and drops a vertex-buffer bind that has none
+/// (`render.null_frame` holds every pass to that order).
+void bind_geometry(const PassContext& context, const Renderer::PassState& state) noexcept {
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
                                           Span<const u64>(&offset, 1));
     context.commands->bind_index_buffer(state.indices, 0, false);
+}
 
+/// Draw every caster with the same material vertex deformation as the visible pass.
+void draw_shadow_objects(const PassContext& context, Renderer::PassState& state) noexcept {
     rhi::PipelineLayoutHandle layout = state.layout;
     const void* bound = nullptr;
     bool any_bound = false;
@@ -162,6 +167,7 @@ void draw_shadow_objects(const PassContext& context, Renderer::PassState& state)
                 context.commands->bind_descriptor_sets(state.material_layout, 0, sets);
                 layout = state.material_layout;
             }
+            bind_geometry(context, state);
             bound = material;
             any_bound = true;
         }
@@ -195,11 +201,6 @@ rhi::PipelineLayoutHandle bind_forward_material(
 }
 
 void draw_forward_objects(const PassContext& context, Renderer::PassState& state) noexcept {
-    const u64 offset = 0;
-    context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
-                                          Span<const u64>(&offset, 1));
-    context.commands->bind_index_buffer(state.indices, 0, false);
-
     // BIND ON A CHANGE OF MATERIAL, NOT PER OBJECT. The view travels in the descriptor-bound
     // uniform buffer and reaches every draw through memory, which is the late-latch seam
     // `render.xr_prerequisites` measures as one descriptor bind per pass. Rebinding per object
@@ -218,6 +219,7 @@ void draw_forward_objects(const PassContext& context, Renderer::PassState& state
                          ? bind_forward_material(context, state, state.forward_pipeline, nullptr)
                          : bind_forward_material(context, state, material->pipeline,
                                                  &material->descriptor_set);
+            bind_geometry(context, state);
             bound = material;
             any_bound = true;
         }

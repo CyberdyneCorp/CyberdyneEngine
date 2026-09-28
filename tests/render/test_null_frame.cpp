@@ -136,6 +136,39 @@ CY_TEST_CASE("render.null_frame: the sample's frame runs with no GPU at all") {
     CY_CHECK_EQ(count_of(fixture.device(), cy::rhi::null::CommandKind::CopyTextureToBuffer), 1U);
 }
 
+// D3D12 takes a vertex buffer's stride from the bound pipeline, so a vertex-buffer bind that comes
+// before any pipeline in its pass is dropped (`D3D12CommandBuffer::bind_vertex_buffers`). The
+// first-light shadow pass did that once, and every WARP capture lost the small casters' shadows.
+CY_TEST_CASE("render.null_frame: every pass binds a pipeline before its vertex buffers") {
+    NullFrame fixture;
+    CY_REQUIRE(fixture.ready());
+
+    Scene scene(fixture.allocator());
+    CY_REQUIRE(scene.build(SceneDescription{}).has_value());
+    Renderer renderer(fixture.allocator(), fixture.device());
+    CY_REQUIRE(renderer.prepare(scene, fixture.options()).has_value());
+
+    cy::rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(renderer.render(scene, scene.camera_at(0.0F)).has_value());
+
+    cy::u32 early_binds = 0;
+    cy::u32 vertex_binds = 0;
+    bool pipeline_in_pass = false;
+    for (const cy::rhi::null::RecordedCommand& command :
+         cy::rhi::null::command_log(fixture.device())) {
+        if (command.kind == cy::rhi::null::CommandKind::BeginRendering) {
+            pipeline_in_pass = false;
+        } else if (command.kind == cy::rhi::null::CommandKind::BindGraphicsPipeline) {
+            pipeline_in_pass = true;
+        } else if (command.kind == cy::rhi::null::CommandKind::BindVertexBuffers) {
+            ++vertex_binds;
+            early_binds += pipeline_in_pass ? 0U : 1U;
+        }
+    }
+    CY_CHECK_GT(vertex_binds, 0U);
+    CY_CHECK_EQ(early_binds, 0U);
+}
+
 CY_TEST_CASE("render.null_frame: every barrier in the stream is the graph's") {
     NullFrame fixture;
     CY_REQUIRE(fixture.ready());
