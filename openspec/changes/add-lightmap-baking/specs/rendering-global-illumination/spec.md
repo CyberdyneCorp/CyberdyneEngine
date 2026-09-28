@@ -24,9 +24,14 @@ content-keyed, so an unchanged level is not re-baked.
 - **AND** an irradiance-only lightmap SHALL return the same value for every shading normal
 
 #### Scenario: Seams are not visible at the bake resolution
-- **WHEN** two charts of one object meet along a smooth edge
+- **WHEN** two charts of one object, or two objects, meet along a smooth edge
 - **THEN** bilinear reads either side of the seam SHALL agree to within one 8-bit step of a mid-grey
 - **AND** every texel of the object's rectangle, gutter included, SHALL hold light
+
+#### Scenario: A buried texel takes its own surface's light
+- **WHEN** part of a chart is buried inside another object, next to another chart's padding
+- **THEN** every buried texel SHALL be filled from its own chart, however wide the buried region
+- **AND** a directional read there at the chart's own normal SHALL equal its irradiance
 
 #### Scenario: An unchanged level is not re-baked
 - **WHEN** a level whose description and meshes did not change is built again

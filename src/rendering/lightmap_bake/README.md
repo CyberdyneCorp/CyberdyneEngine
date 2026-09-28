@@ -69,7 +69,7 @@ map's response in indirect light.
 | Case | Measured |
 |---|---|
 | texels against the path tracer's ground truth | relative error 0.046 over 24 points (bound 0.10), 32 samples per texel denoised against 512 at the point |
-| normal maps respond (directional, SH L1), irradiance does not | a 40 degree tilt toward a bright wall: truth +32%, directional +26%, SH L1 +26%, irradiance 0% |
+| normal maps respond (directional, SH L1), irradiance does not | a 40 degree tilt toward a bright wall: truth +32%, directional +27%, SH L1 +27%, irradiance 0% |
 | seams dilated and reconciled, within one object | worst disagreement 52% of the mean unreconciled, 0.03% reconciled (bound 1%) |
 | the seam where two objects meet | 63% unreconciled, 0.04% reconciled |
 | a wide buried strip filled from its own chart | no dark texel, and the directional factor at the floor's own normal exactly one |

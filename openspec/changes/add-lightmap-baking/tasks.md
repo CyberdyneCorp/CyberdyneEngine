@@ -10,3 +10,6 @@
 - [x] Add `integration.render_lightmap_bake`, `unit.render_lightmap_atlas`, `unit.lightmap_frame` and `render.lightmaps`, each case proved red by a mutation.
 - [x] Pin the frame without a lightmap to a committed reference drawn by the pre-change frame shader.
 - [x] Publish before/after images with the bake time and the atlas memory, update the READMEs and the requirements map, and validate this change.
+- [x] Store the directional and SH L1 planes as the tilt response of the texel's light, so a normal tilted toward a bright wall brightens as the path tracer says.
+- [x] Denoise over a short cascade, solve seams by conjugate gradients, find seams between objects as well as charts, and dilate one chart at a time until nothing more can be filled, with a regression case for the buried strip.
+- [x] Record every mutation that turns a suite red in `evidence/falsification.txt`.

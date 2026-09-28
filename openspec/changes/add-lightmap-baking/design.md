@@ -52,7 +52,7 @@ radiance times its TILT RESPONSE, the tangential part of its direction over its 
 light, exactly `tan` of its angle. The first version stored the plain luminance-weighted mean
 direction, which is what several engines' directional lightmaps store; on a floor lit mostly from
 above and partly by a bright wall it points nearly straight up, and tilting a normal toward the wall
-then DARKENED it where the path tracer says it brightens by a third. The unit case
+then DARKENED it where the path tracer says it brightens by a third. The integration case
 "directional and SH L1 lightmaps keep a normal map's response" is that scene.
 
 The trace accumulates linear moments (the mean, luminance times the tilt response, each channel

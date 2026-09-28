@@ -15,7 +15,14 @@ forward pass samples at its ambient term, the view-block words that describe the
 under one 100 000 lux sun — baked by `lightmap_bake::bake_lightmaps` from the same boxes. The back
 wall and the cubes' fronts face the camera and receive no direct light, so what they show is the
 ambient term. With the lightmap the back wall is lit by the sunlit floor and turns red beside the
-red wall, and the cube beside it does too. BAKE_NUMBERS
+red wall, and the cube beside it does too.
+
+The bake behind the right-hand picture: six boxes, one 256 x 256 page, 10 649 texels traced at 24
+samples and one bounce, 8 881 more filled by dilation, about 0.5 million rays, in 0.9 s on one core
+of the development machine; 512 KiB on the device as irradiance (Rgba16Sfloat), 1 MiB directional,
+1.5 MiB SH L1. The atlas itself, first plane, cropped to the rows the corner uses:
+
+![The corner's atlas](../../../docs/design/images/lightmaps-atlas.png)
 
 ## Three modules, one seam each
 
