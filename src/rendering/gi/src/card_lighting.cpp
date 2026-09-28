@@ -150,7 +150,7 @@ Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept 
         }
     }
     u32 running = 0;
-    for (u32 bucket = 0; bucket < buckets; ++bucket) {
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
         ranges_[bucket * 2U] = running;
         running += ranges_[(bucket * 2U) + 1U];
     }
@@ -161,7 +161,7 @@ Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept 
     if (Status sized = cursor.resize(buckets); !sized) {
         return sized;
     }
-    for (u32 bucket = 0; bucket < buckets; ++bucket) {
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
         cursor[bucket] = ranges_[bucket * 2U];
     }
     for (u32 handle = 0; handle < pages.size(); ++handle) {

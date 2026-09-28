@@ -170,8 +170,8 @@ public:
             for (i32 y = lo[1]; y <= hi[1]; ++y) {
                 for (i32 x = lo[0]; x <= hi[0]; ++x) {
                     const u32 bucket = bucket_of(x, y, z, buckets);
-                    const u32 first = ranges_[bucket * 2U];
-                    const u32 count = ranges_[(bucket * 2U) + 1U];
+                    const u32 first = ranges_[static_cast<usize>(bucket) * 2U];
+                    const u32 count = ranges_[(static_cast<usize>(bucket) * 2U) + 1U];
                     for (u32 item = first; item < first + count; ++item) {
                         fn(items_[item]);
                     }

@@ -331,7 +331,7 @@ struct Agreement {
 };
 
 [[nodiscard]] f64 relative(Vec3 a, Vec3 b) noexcept {
-    const f64 scale = std::max<f64>(std::max(length(a), length(b)), 1.0e-3);
+    const f64 scale = std::max({static_cast<f64>(length(a)), static_cast<f64>(length(b)), 1.0e-3});
     return static_cast<f64>(length(a - b)) / scale;
 }
 
@@ -637,7 +637,7 @@ CY_TEST_CASE("the shadow map shadows the device cards as it shadows the host one
             cy::rendering::gi::direct_radiance(courtyard.lamp, page.position, page.normal);
         if (in_shadow) {
             shadowed += 1;
-            CY_CHECK_LT(page.direct.y, sun_only.y * 0.5F + lamp_only.y + 1.0e-3F);
+            CY_CHECK_LT(page.direct.y, (sun_only.y * 0.5F) + lamp_only.y + 1.0e-3F);
         } else {
             sunlit += 1;
         }
@@ -741,7 +741,7 @@ void splat(const SurfaceCache& cache, u32 width, u32 height, u32 x_offset, u32 s
         const Vec3 radiance = SurfaceCache::outgoing(page);
         const auto channel = [](f32 value) {
             const f32 mapped = std::pow(value / (1.0F + value), 1.0F / 2.2F);
-            return static_cast<u32>(std::clamp(mapped, 0.0F, 1.0F) * 255.0F + 0.5F);
+            return static_cast<u32>(std::lround(std::clamp(mapped, 0.0F, 1.0F) * 255.0F));
         };
         const u32 colour = channel(radiance.x) | (channel(radiance.y) << 8U) |
                            (channel(radiance.z) << 16U) | 0xFF000000U;

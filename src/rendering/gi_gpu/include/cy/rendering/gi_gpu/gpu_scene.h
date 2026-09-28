@@ -160,24 +160,26 @@ public:
 private:
     friend class GpuSurfaceShading;
 
+    // The descriptor bindings first, in `GiSceneSet` order, then the two readback buffers no
+    // shader binds.
     enum Binding : u32 {
         kConstants = 0,
-        kPageTable,
-        kBricks,
-        kCards,
-        kCardState,
-        kGridRanges,
-        kGridItems,
-        kLights,
-        kShadowDepths,
-        kSelection,
-        kResults,
-        kRays,
-        kHits,
-        kBindingCount,
-        kResultsReadback = kBindingCount,
-        kHitsReadback,
-        kBufferCount,
+        kPageTable = 1,
+        kBricks = 2,
+        kCards = 3,
+        kCardState = 4,
+        kGridRanges = 5,
+        kGridItems = 6,
+        kLights = 7,
+        kShadowDepths = 8,
+        kSelection = 9,
+        kResults = 10,
+        kRays = 11,
+        kHits = 12,
+        kBindingCount = 13,
+        kResultsReadback = 13,
+        kHitsReadback = 14,
+        kBufferCount = 15,
     };
     enum Pipeline : u32 {
         kTrace = 0,
