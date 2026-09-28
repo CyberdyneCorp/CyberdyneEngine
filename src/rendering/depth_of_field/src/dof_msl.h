@@ -524,7 +524,7 @@ struct KernelContext_0
 
 )cy_msl";
 
-/// cyDofGather.metal, 8563 bytes.
+/// cyDofGather.metal, 8805 bytes.
 inline constexpr char kDofGatherMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -577,351 +577,363 @@ uint cyDofRings_0(float radius_0, KernelContext_0 thread* kernelContext_1)
 }
 
 
-#line 113
-uint cyDofTapCount_0(uint rings_0)
+#line 78
+float cyDofSpan_0(float radius_1, uint rings_0)
 {
-    return 1U + 3U * rings_0 * (rings_0 + 1U);
+    float _S2 = float(rings_0);
+
+#line 80
+    return (radius_1 + 0.5) * (_S2 + 0.5) / _S2;
 }
 
 
-#line 75
-float3 cyDofTap_0(uint index_0, uint rings_1, float radius_1)
+#line 122
+uint cyDofTapCount_0(uint rings_1)
+{
+    return 1U + 3U * rings_1 * (rings_1 + 1U);
+}
+
+
+#line 84
+float3 cyDofTap_0(uint index_0, uint rings_2, float radius_2)
 {
 
-#line 75
-    uint _S2;
+#line 84
+    uint _S3;
 
-    float _S3 = radius_1 / (float(rings_1) + 0.5);
+    float _S4 = radius_2 / (float(rings_2) + 0.5);
     if(index_0 == 0U)
     {
-        return float3(0.0, 0.0, 0.78539818525314331 * _S3 * _S3);
+        return float3(0.0, 0.0, 0.78539818525314331 * _S4 * _S4);
     }
 
-#line 80
+#line 89
     uint ring_0 = 1U;
 
 
     for(;;)
     {
 
-#line 83
-        uint _S4 = 3U * ring_0;
+#line 92
+        uint _S5 = 3U * ring_0;
 
-#line 83
-        _S2 = _S4;
+#line 92
+        _S3 = _S5;
 
-#line 83
-        uint _S5 = ring_0 + 1U;
+#line 92
+        uint _S6 = ring_0 + 1U;
 
-#line 83
-        if(index_0 >= (1U + _S4 * _S5))
+#line 92
+        if(index_0 >= (1U + _S5 * _S6))
         {
         }
         else
         {
 
-#line 83
+#line 92
             break;
         }
 
-#line 83
-        ring_0 = _S5;
+#line 92
+        ring_0 = _S6;
 
-#line 83
+#line 92
     }
 
-#line 88
-    uint _S6 = 6U * ring_0;
-    float _S7 = float(index_0 - (1U + _S2 * (ring_0 - 1U)));
+#line 97
+    uint _S7 = 6U * ring_0;
+    float _S8 = float(index_0 - (1U + _S3 * (ring_0 - 1U)));
 
-#line 89
-    float _S8;
+#line 98
+    float _S9;
 
-#line 89
+#line 98
     if((ring_0 & 1U) != 0U)
     {
 
-#line 89
-        _S8 = 0.0;
+#line 98
+        _S9 = 0.0;
 
-#line 89
+#line 98
     }
     else
     {
 
-#line 89
-        _S8 = 0.5;
+#line 98
+        _S9 = 0.5;
 
-#line 89
+#line 98
     }
-    float _S9 = 6.28318548202514648 * ((_S7 + _S8) / float(_S6));
-    float _S10 = float(ring_0) * _S3;
-    return float3(_S10 * cos(_S9), _S10 * sin(_S9), 1.04719758033752441 * _S3 * _S3);
+    float _S10 = 6.28318548202514648 * ((_S8 + _S9) / float(_S7));
+    float _S11 = float(ring_0) * _S4;
+    return float3(_S11 * cos(_S10), _S11 * sin(_S10), 1.04719758033752441 * _S4 * _S4);
 }
 
 
 #line 55
 float cyDofApertureExtent_0(float angle_0, KernelContext_0 thread* kernelContext_2)
 {
-    float _S11 = kernelContext_2->cyDof_0->aperture_0.x;
-    if(_S11 < 1.0)
+    float _S12 = kernelContext_2->cyDof_0->aperture_0.x;
+    if(_S12 < 1.0)
     {
         return 1.0;
     }
-    float _S12 = 6.28318548202514648 / _S11;
-    float _S13 = angle_0 - kernelContext_2->cyDof_0->aperture_0.y;
+    float _S13 = 6.28318548202514648 / _S12;
+    float _S14 = angle_0 - kernelContext_2->cyDof_0->aperture_0.y;
 
-    float _S14 = 0.5 * _S12;
+    float _S15 = 0.5 * _S13;
 
 #line 65
-    return cos(_S14) / cos(_S13 - _S12 * floor(_S13 / _S12) - _S14);
+    return cos(_S15) / cos(_S14 - _S13 * floor(_S14 / _S13) - _S15);
 }
 
 
-#line 98
-float cyDofReach_0(float2 offset_0, float radius_2, KernelContext_0 thread* kernelContext_3)
+#line 107
+float cyDofReach_0(float2 offset_0, float radius_3, KernelContext_0 thread* kernelContext_3)
 {
-    float _S15 = length(offset_0);
+    float _S16 = length(offset_0);
 
-#line 100
-    float _S16;
+#line 109
+    float _S17;
 
-    if(_S15 > 0.0)
+    if(_S16 > 0.0)
     {
 
-#line 102
-        float _S17 = cyDofApertureExtent_0(atan2(- offset_0.y, - offset_0.x), kernelContext_3);
+#line 111
+        float _S18 = cyDofApertureExtent_0(atan2(- offset_0.y, - offset_0.x), kernelContext_3);
 
-#line 102
-        _S16 = _S17;
+#line 111
+        _S17 = _S18;
 
-#line 102
+#line 111
     }
     else
     {
 
-#line 102
-        _S16 = 1.0;
+#line 111
+        _S17 = 1.0;
 
-#line 102
+#line 111
     }
-    return saturate(radius_2 * _S16 - _S15 + 0.5);
+    return saturate(radius_3 * _S17 - _S16 + 0.5);
 }
 
 
 #line 67 "src/rendering/depth_of_field/shaders/dof_gather.slang"
 float3 cyDofGatherFar_0(int2 pixel_0, float4 centre_0, KernelContext_0 thread* kernelContext_4)
 {
-    float _S18 = centre_0.w;
+    float _S19 = centre_0.w;
 
 #line 69
-    if(_S18 <= (kernelContext_4->cyDof_0->lens_0.w))
+    if(_S19 <= (kernelContext_4->cyDof_0->lens_0.w))
     {
         return centre_0.xyz;
     }
-    float _S19 = _S18 * 0.5;
+    float _S20 = _S19 * 0.5;
 
 #line 73
-    uint _S20 = cyDofRings_0(_S19, kernelContext_4);
+    uint _S21 = cyDofRings_0(_S20, kernelContext_4);
 
-    float3 _S21 = float3(0.0) ;
+    float _S22 = cyDofSpan_0(_S20, _S21);
+    float3 _S23 = float3(0.0) ;
 
-#line 75
+#line 76
     uint index_1 = 0U;
 
-#line 75
-    float3 colour_0 = _S21;
+#line 76
+    float3 colour_0 = _S23;
 
-#line 75
+#line 76
     float weight_0 = 0.0;
 
     for(;;)
     {
 
-#line 77
-        if(index_1 < (cyDofTapCount_0(_S20)))
+#line 78
+        if(index_1 < (cyDofTapCount_0(_S21)))
         {
         }
         else
         {
 
-#line 77
+#line 78
             break;
         }
-        float3 _S22 = cyDofTap_0(index_1, _S20, _S19);
-        int2 _S23 = int2(round(_S22.xy));
+        float3 _S24 = cyDofTap_0(index_1, _S21, _S22);
+        int2 _S25 = int2(round(_S24.xy));
 
-#line 80
-        float4 _S24 = cyDofLayerAt_0(pixel_0 + _S23, kernelContext_4);
+#line 81
+        float4 _S26 = cyDofLayerAt_0(pixel_0 + _S25, kernelContext_4);
 
-        float _S25 = _S24.w;
+        float _S27 = _S26.w;
 
-#line 82
-        if(_S25 <= (kernelContext_4->cyDof_0->lens_0.w))
+#line 83
+        if(_S27 <= (kernelContext_4->cyDof_0->lens_0.w))
         {
             index_1 = index_1 + 1U;
 
-#line 77
+#line 78
             continue;
         }
 
-#line 86
-        float _S26 = _S25 * 0.5;
-        float _S27 = _S22.z;
-
 #line 87
-        float _S28 = cyDofReach_0(float2(_S23), _S26, kernelContext_4);
+        float _S28 = _S27 * 0.5;
+        float _S29 = _S24.z;
 
-#line 87
-        float _S29 = _S27 * _S28 / (kernelContext_4->cyDof_0->aperture_0.z * _S26 * _S26);
+#line 88
+        float _S30 = cyDofReach_0(float2(_S25), _S28, kernelContext_4);
 
-        float weight_1 = weight_0 + _S29;
+#line 88
+        float _S31 = _S29 * _S30 / (kernelContext_4->cyDof_0->aperture_0.z * _S28 * _S28);
 
-#line 89
-        colour_0 = colour_0 + _S24.xyz * float3(_S29) ;
+        float weight_1 = weight_0 + _S31;
 
-#line 89
+#line 90
+        colour_0 = colour_0 + _S26.xyz * float3(_S31) ;
+
+#line 90
         weight_0 = weight_1;
 
-#line 77
+#line 78
         index_1 = index_1 + 1U;
 
-#line 77
+#line 78
     }
 
-#line 91
+#line 92
     if(weight_0 > 0.0)
     {
 
-#line 91
+#line 92
         colour_0 = colour_0 / float3(weight_0) ;
 
-#line 91
+#line 92
     }
     else
     {
 
-#line 91
+#line 92
         colour_0 = centre_0.xyz;
 
-#line 91
+#line 92
     }
 
-#line 91
+#line 92
     return colour_0;
 }
 
 
-#line 107 "src/rendering/depth_of_field/shaders/dof_common.slang"
+#line 116 "src/rendering/depth_of_field/shaders/dof_common.slang"
 float cyDofDefocus_0(float radiusPixels_0, KernelContext_0 thread* kernelContext_5)
 {
     return saturate(abs(radiusPixels_0) - kernelContext_5->cyDof_0->lens_0.w);
 }
 
-
-#line 95 "src/rendering/depth_of_field/shaders/dof_gather.slang"
+)cy_msl"
+    R"cy_msl(
+#line 96 "src/rendering/depth_of_field/shaders/dof_gather.slang"
 float4 cyDofGatherNear_0(int2 pixel_1, KernelContext_0 thread* kernelContext_6)
 {
 
-#line 95
-    texture2d<float, access::sample> _S30 = kernelContext_6->cyDofGatherSet_0->tiles_1;
+#line 96
+    texture2d<float, access::sample> _S32 = kernelContext_6->cyDofGatherSet_0->tiles_1;
 
-    uint2 _S31 = uint2(pixel_1) / uint2(kernelContext_6->cyDof_0->tiles_0.x) ;
+    uint2 _S33 = uint2(pixel_1) / uint2(kernelContext_6->cyDof_0->tiles_0.x) ;
 
-)cy_msl"
-    R"cy_msl(#line 97
-    int3 _S32 = int3(int2(_S31), int(0));
+#line 98
+    int3 _S34 = int3(int2(_S33), int(0));
 
-#line 97
-    float _S33 = ((_S30).read(vec<uint,2>(((_S32)).xy), uint(((_S32)).z))).x;
-    if(_S33 <= (kernelContext_6->cyDof_0->lens_0.w))
+#line 98
+    float _S35 = ((_S32).read(vec<uint,2>(((_S34)).xy), uint(((_S34)).z))).x;
+    if(_S35 <= (kernelContext_6->cyDof_0->lens_0.w))
     {
         return float4(0.0) ;
     }
-    float _S34 = _S33 * 0.5;
+    float _S36 = _S35 * 0.5;
 
-#line 102
-    uint _S35 = cyDofRings_0(_S34, kernelContext_6);
+#line 103
+    uint _S37 = cyDofRings_0(_S36, kernelContext_6);
 
-    float3 _S36 = float3(0.0) ;
+    float _S38 = cyDofSpan_0(_S36, _S37);
+    float3 _S39 = float3(0.0) ;
 
-#line 104
+#line 106
     uint index_2 = 0U;
 
-#line 104
-    float3 colour_1 = _S36;
+#line 106
+    float3 colour_1 = _S39;
 
-#line 104
+#line 106
     float coverage_0 = 0.0;
 
     for(;;)
     {
 
-#line 106
-        if(index_2 < (cyDofTapCount_0(_S35)))
+#line 108
+        if(index_2 < (cyDofTapCount_0(_S37)))
         {
         }
         else
         {
 
-#line 106
+#line 108
             break;
         }
-        float3 _S37 = cyDofTap_0(index_2, _S35, _S34);
-        int2 _S38 = int2(round(_S37.xy));
-
-#line 109
-        float4 _S39 = cyDofLayerAt_0(pixel_1 + _S38, kernelContext_6);
-
-        float _S40 = _S39.w;
+        float3 _S40 = cyDofTap_0(index_2, _S37, _S38);
+        int2 _S41 = int2(round(_S40.xy));
 
 #line 111
-        if(_S40 >= (- kernelContext_6->cyDof_0->lens_0.w))
+        float4 _S42 = cyDofLayerAt_0(pixel_1 + _S41, kernelContext_6);
+
+        float _S43 = _S42.w;
+
+#line 113
+        if(_S43 >= (- kernelContext_6->cyDof_0->lens_0.w))
         {
             index_2 = index_2 + 1U;
 
-#line 106
+#line 108
             continue;
         }
 
-#line 115
-        float _S41 = - _S40 * 0.5;
-        float _S42 = _S37.z;
+#line 117
+        float _S44 = - _S43 * 0.5;
+        float _S45 = _S40.z;
 
-#line 116
-        float _S43 = cyDofReach_0(float2(_S38), _S41, kernelContext_6);
+#line 118
+        float _S46 = cyDofReach_0(float2(_S41), _S44, kernelContext_6);
 
-#line 116
-        float _S44 = _S42 * _S43 / (kernelContext_6->cyDof_0->aperture_0.z * _S41 * _S41);
+#line 118
+        float _S47 = _S45 * _S46 / (kernelContext_6->cyDof_0->aperture_0.z * _S44 * _S44);
 
-#line 116
-        float _S45 = cyDofDefocus_0(_S40, kernelContext_6);
+#line 118
+        float _S48 = cyDofDefocus_0(_S43, kernelContext_6);
 
-#line 116
-        float _S46 = _S44 * _S45;
+#line 118
+        float _S49 = _S47 * _S48;
 
 
-        float coverage_1 = coverage_0 + _S46;
-
-#line 119
-        colour_1 = colour_1 + _S39.xyz * float3(_S46) ;
-
-#line 119
-        coverage_0 = coverage_1;
-
-#line 106
-        index_2 = index_2 + 1U;
-
-#line 106
-    }
+        float coverage_1 = coverage_0 + _S49;
 
 #line 121
+        colour_1 = colour_1 + _S42.xyz * float3(_S49) ;
+
+#line 121
+        coverage_0 = coverage_1;
+
+#line 108
+        index_2 = index_2 + 1U;
+
+#line 108
+    }
+
+#line 123
     if(coverage_0 <= 0.0)
     {
         return float4(0.0) ;
     }
-    float _S47 = saturate(coverage_0);
-    return float4(colour_1 / float3(coverage_0)  * float3(_S47) , _S47);
+    float _S50 = saturate(coverage_0);
+    return float4(colour_1 / float3(coverage_0)  * float3(_S50) , _S50);
 }
 
 
@@ -929,55 +941,55 @@ float4 cyDofGatherNear_0(int2 pixel_1, KernelContext_0 thread* kernelContext_6)
 [[kernel]] void cyDofGather(uint3 thread_0 [[thread_position_in_grid]], CyDofConstants_0 constant* cyDof_1 [[buffer(0)]], CyDofGatherSet_default_0 constant* cyDofGatherSet_1 [[buffer(1)]])
 {
 
-#line 131
+#line 133
     thread KernelContext_0 kernelContext_7;
 
-#line 131
+#line 133
     (&kernelContext_7)->cyDof_0 = cyDof_1;
 
-#line 131
+#line 133
     (&kernelContext_7)->cyDofGatherSet_0 = cyDofGatherSet_1;
 
-#line 131
-    bool _S48;
+#line 133
+    bool _S51;
 
     if((thread_0.x) >= (cyDof_1->extent_0.z))
     {
 
-#line 133
-        _S48 = true;
+#line 135
+        _S51 = true;
 
-#line 133
+#line 135
     }
     else
     {
 
-#line 133
-        _S48 = (thread_0.y) >= (cyDof_1->extent_0.w);
+#line 135
+        _S51 = (thread_0.y) >= (cyDof_1->extent_0.w);
 
-#line 133
+#line 135
     }
 
-#line 133
-    if(_S48)
+#line 135
+    if(_S51)
     {
         return;
     }
-    uint2 _S49 = thread_0.xy;
+    uint2 _S52 = thread_0.xy;
 
-#line 137
-    int2 _S50 = int2(_S49);
+#line 139
+    int2 _S53 = int2(_S52);
 
-#line 137
-    float4 _S51 = cyDofLayerAt_0(_S50, &kernelContext_7);
+#line 139
+    float4 _S54 = cyDofLayerAt_0(_S53, &kernelContext_7);
 
-#line 137
-    float3 _S52 = cyDofGatherFar_0(_S50, _S51, &kernelContext_7);
-    (&kernelContext_7)->cyDofGatherSet_0->farField_0.write(float4(_S52, 1.0),_S49);
+#line 139
+    float3 _S55 = cyDofGatherFar_0(_S53, _S54, &kernelContext_7);
+    (&kernelContext_7)->cyDofGatherSet_0->farField_0.write(float4(_S55, 1.0),_S52);
 
-#line 138
-    float4 _S53 = cyDofGatherNear_0(_S50, &kernelContext_7);
-    (&kernelContext_7)->cyDofGatherSet_0->nearField_0.write(_S53,_S49);
+#line 140
+    float4 _S56 = cyDofGatherNear_0(_S53, &kernelContext_7);
+    (&kernelContext_7)->cyDofGatherSet_0->nearField_0.write(_S56,_S52);
     return;
 }
 
@@ -1067,7 +1079,7 @@ float cyDofRadiusAtDepth_0(float depth_3, KernelContext_0 thread* kernelContext_
 }
 
 
-#line 107
+#line 116
 float cyDofDefocus_0(float radiusPixels_0, KernelContext_0 thread* kernelContext_3)
 {
     return saturate(abs(radiusPixels_0) - kernelContext_3->cyDof_0->lens_0.w);

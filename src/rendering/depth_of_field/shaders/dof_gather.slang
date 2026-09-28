@@ -72,11 +72,12 @@ float3 cyDofGatherFar(int2 pixel, float4 centre)
     }
     let radius = centre.a * 0.5;
     let rings = cyDofRings(radius);
+    let span = cyDofSpan(radius, rings);
     float3 colour = float3(0.0);
     float weight = 0.0;
     for (uint index = 0; index < cyDofTapCount(rings); ++index)
     {
-        let tap = cyDofTap(index, rings, radius);
+        let tap = cyDofTap(index, rings, span);
         let offset = int2(round(tap.xy));
         let taken = cyDofLayerAt(pixel + offset);
         if (taken.a <= cyDof.lens.w)
@@ -101,11 +102,12 @@ float4 cyDofGatherNear(int2 pixel)
     }
     let radius = reach * 0.5;
     let rings = cyDofRings(radius);
+    let span = cyDofSpan(radius, rings);
     float3 colour = float3(0.0);
     float coverage = 0.0;
     for (uint index = 0; index < cyDofTapCount(rings); ++index)
     {
-        let tap = cyDofTap(index, rings, radius);
+        let tap = cyDofTap(index, rings, span);
         let offset = int2(round(tap.xy));
         let taken = cyDofLayerAt(pixel + offset);
         if (taken.a >= -cyDof.lens.w)

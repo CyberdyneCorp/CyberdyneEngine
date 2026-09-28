@@ -335,9 +335,9 @@ const ShotMaterial* Shot::material(std::string_view key) const noexcept {
     return nullptr;
 }
 
-const Vec3* Shot::focus_target(std::string_view name) const noexcept {
+const Vec3* Shot::focus_target(std::string_view target) const noexcept {
     for (const auto& [key, position] : focus_targets) {
-        if (key == name) {
+        if (key == target) {
             return &position;
         }
     }

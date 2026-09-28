@@ -71,6 +71,15 @@ uint cyDofRings(float radius)
     return min(uint(ceil(max(radius, 1.0))), uint(cyDof.aperture.w));
 }
 
+/// The radius a gather of `rings` rings spans for a blur of `radius` texels: its outermost ring on
+/// the outer edge of `cyDofReach`'s ramp, half a texel beyond the disc. Spanning only the disc would
+/// put that ring half a spacing INSIDE it, and every texel past it — a polygon's corners as much as
+/// a circle's rim — would be cut off, drawing any aperture as the tap grid's circle.
+float cyDofSpan(float radius, uint rings)
+{
+    return (radius + 0.5) * (float(rings) + 0.5) / float(rings);
+}
+
 /// Tap `index` of a gather of `rings` rings over `radius`: xy the offset, z the area it stands for.
 float3 cyDofTap(uint index, uint rings, float radius)
 {

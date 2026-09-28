@@ -137,6 +137,11 @@ u32 gather_rings(f32 radius, u32 max_rings) noexcept {
     return rings < max_rings ? rings : max_rings;
 }
 
+f32 gather_span(f32 radius, u32 rings) noexcept {
+    const auto count = static_cast<f32>(rings);
+    return (radius + 0.5F) * (count + 0.5F) / count;
+}
+
 GatherTap gather_tap(u32 index, u32 rings, f32 radius) noexcept {
     const f32 spacing = radius / (static_cast<f32>(rings) + 0.5F);
     GatherTap tap;

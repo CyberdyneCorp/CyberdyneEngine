@@ -204,7 +204,7 @@ struct Shot {
 
     [[nodiscard]] const ShotMaterial* material(std::string_view key) const noexcept;
     /// A named focus target, or null.
-    [[nodiscard]] const Vec3* focus_target(std::string_view name) const noexcept;
+    [[nodiscard]] const Vec3* focus_target(std::string_view target) const noexcept;
 };
 
 /// What one run measured and produced.

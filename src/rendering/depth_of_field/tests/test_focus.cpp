@@ -172,6 +172,21 @@ CY_TEST_CASE("the gather's taps cover the disc once") {
     CY_CHECK_EQ(gather_rings(30.0F, 6), 6U);
 }
 
+CY_TEST_CASE("a gather's outermost ring reaches the rim of the disc it gathers") {
+    // Regression: the taps spanned the disc itself, which puts the outermost ring half a spacing
+    // inside its rim, so every texel beyond it went unsampled and six blades drew the tap grid's
+    // circle. Spanning the disc plus the reach's half-texel ramp puts that ring on the ramp's edge.
+    for (const f32 radius : {1.0F, 3.4F, 6.84F, 12.0F}) {
+        for (u32 rings = 1; rings <= 8; ++rings) {
+            const f32 span = gather_span(radius, rings);
+            const GatherTap outer = gather_tap(gather_taps(rings) - 1U, rings, span);
+            const f32 reach =
+                std::sqrt((outer.offset.x * outer.offset.x) + (outer.offset.y * outer.offset.y));
+            CY_CHECK_NEAR(reach, radius + 0.5F, 1.0e-4F * (radius + 1.0F));
+        }
+    }
+}
+
 CY_TEST_CASE("the tiles are as wide as the largest radius") {
     const Expected<DofConstants, Error> constants =
         make_dof_constants(lens_settings(), perspective_view());

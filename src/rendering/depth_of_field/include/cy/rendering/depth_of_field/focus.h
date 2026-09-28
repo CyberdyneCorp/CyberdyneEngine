@@ -145,6 +145,11 @@ static_assert(sizeof(DofConstants) == 80, "dof_common.slang's constants are 80 b
     return 1U + (3U * rings * (rings + 1U));
 }
 
+/// The radius a gather of `rings` rings spans for a blur of `radius` texels: the outermost ring on
+/// the outer edge of the reach's one-texel ramp, half a texel beyond the disc, so the aperture's
+/// rim is sampled rather than cut off by the rings. `cyDofSpan`.
+[[nodiscard]] f32 gather_span(f32 radius, u32 rings) noexcept;
+
 /// One tap of a gather of `rings` rings over radius `radius`: its offset and the area of the disc
 /// it stands for. Tap 0 is the centre; ring k holds 6k taps at radius k R / (rings + 1/2). The
 /// areas sum to pi R^2. `cyDofTap`.
