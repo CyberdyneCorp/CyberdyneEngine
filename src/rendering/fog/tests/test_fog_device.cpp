@@ -735,8 +735,8 @@ CY_TEST_CASE("froxels in an occluder's shadow scatter no sunlight and the open o
                  "column (%u, %u)\n",
                  shadowed, shadowed_dark, open, open_lit, best_run, best_column[0], best_column[1]);
     // The case has a subject: shadow volumes crossing open air, and the open air around them.
-    CY_REQUIRE_GT(shadowed, 200U);
-    CY_REQUIRE_GT(open, 2000U);
+    CY_REQUIRE(shadowed > 200U);
+    CY_REQUIRE(open > 2000U);
     CY_CHECK_GT(static_cast<f32>(shadowed_dark), 0.97F * static_cast<f32>(shadowed));
     CY_CHECK_GT(static_cast<f32>(open_lit), 0.97F * static_cast<f32>(open));
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
@@ -817,7 +817,7 @@ CY_TEST_CASE("the device's volume is the single-scattering integral over the med
                  "worst %.3g\n",
                  compared, static_cast<double>(worst_reference),
                  static_cast<double>(worst_reference_t), static_cast<double>(worst_march));
-    CY_REQUIRE_GT(compared, 100U);
+    CY_REQUIRE(compared > 100U);
     CY_CHECK_LT(worst_reference, 1e-2F);
     CY_CHECK_LT(worst_reference_t, 2e-3F);
     CY_CHECK_LT(worst_march, 1e-3F);
@@ -894,8 +894,8 @@ CY_TEST_CASE("a surface seen through fog is attenuated with its distance") {
             }
         }
     }
-    CY_REQUIRE_GT(near_count, 500U);
-    CY_REQUIRE_GT(far_count, 500U);
+    CY_REQUIRE(near_count > 500U);
+    CY_REQUIRE(far_count > 500U);
     const f32 near_ratio = near_sum / static_cast<f32>(near_count);
     const f32 far_ratio = far_sum / static_cast<f32>(far_count);
     std::fprintf(stderr,
