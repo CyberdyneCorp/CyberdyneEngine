@@ -114,7 +114,13 @@ needs from the host side: the field's change journal (`generation`, `last_change
 a `revision` per surface page, the scheduler as a shared function (`SurfaceCache::select`), the
 `SurfaceShadingBackend` seam `IlluminationSystem::set_surface_shading` installs, and
 `card_lighting.h` — the host functions the dispatches transcribe, which `render.gi_gpu` holds them
-to. Nothing is composited into the frame yet; see that module's README for what is and is not built.
+to. Nothing is composited into the frame yet; see that module's README for what is measured.
+
+Two host changes came out of running it. `CardGather` lifts each ray's origin one voxel off the card
+before leaving at `t_min`, so a grazing ray cannot be answered by the surface it leaves. And every
+card lookup — `SurfaceCache::radiance_at`, `CardSnapshot::find` and the shader — ranks candidates
+with `card_lookup_prefers`: score, then alignment, then handle. Before it, a hit exactly on two
+coincident cards (an edge) scored zero against both and went to whichever the index visited first.
 
 ## What is here at Working, and what is not
 

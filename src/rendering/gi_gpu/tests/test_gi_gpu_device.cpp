@@ -33,17 +33,19 @@
 // stated beside each bound — the shape `render.skinning` uses.
 //
 // ================================================================================================
-// THE MUTATIONS THIS SUITE IS TO BE PROVED AGAINST
+// THE MUTATIONS THIS SUITE IS PROVED AGAINST
 // ================================================================================================
 //
-// Each to be applied to the finished tree, run, restored and md5-verified, and recorded in
-// tools/roadmap/falsifiability.toml with the case it turns red:
+// Each applied to the tree, run on the RTX 5060, restored and md5-verified; the full record, with
+// every case each one turns red, is openspec/changes/add-gpu-gi-surface-cache/evidence/
+// falsification.txt:
 //
-//   gi_gpu_common.slang giTrilinear: `tz` -> `ty`                   the trace case.
+//   gi_gpu_common.slang giTrilinear: `tz` -> `ty`                   the trace case, and four more.
 //   gpu_scene.cpp upload_field: always `full`                        the incremental case.
 //   gi_cards.slang: `accumulated = albedo * incoming` -> `incoming`  both radiance cases.
 //   gi_gpu_common.slang giOccluded: the shadow-map branch removed    the shadow-map case.
 //   surface_cache.cpp select(): the budget limit dropped             the budget case.
+//   gi_gpu_common.slang giGather: the origin not lifted off the card both radiance cases.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/core/math/matrix.h>
@@ -456,7 +458,7 @@ CY_TEST_CASE("the uploaded field traces as the host field does") {
     // A closed room: every ray hits a wall, so a dispatch that never ran — every answer a miss —
     // disagrees on all of them rather than agreeing by absence.
     CY_CHECK_GT(agreement.hits, agreement.rays * 9U / 10U);
-    // MEASURED on the reference machine: 0 disagreements, 0 hits beyond a millimetre.
+    // MEASURED on the RTX 5060: 0 disagreements, 0 hits beyond a millimetre, worst |dt| 9.5e-7 m.
     CY_CHECK_LE(agreement.hit_disagreements, agreement.rays / 100U);
     CY_CHECK_LE(agreement.t_beyond, agreement.hits / 100U);
     CY_CHECK_LT(agreement.worst_normal, 0.02F);
@@ -572,8 +574,9 @@ CY_TEST_CASE("the device card radiance matches the host surface cache") {
         std::fprintf(stderr, "frame %llu\n", static_cast<unsigned long long>(frame));
         print("  direct", direct);
         print("  accumulated", bounce);
-        // MEASURED: direct mean ~1e-7, the bounce mean ~1e-3 at frame six — a gather ray that
-        // grazes a wall on one side and not the other is the whole of it.
+        // MEASURED on the RTX 5060: direct mean 3.6e-8, the bounce mean 3.7e-8 at frame six, no
+        // page beyond either tolerance. The bounds leave room for a driver that contracts
+        // differently; a transcription error lands orders of magnitude above them.
         CY_CHECK_LE(direct.beyond, direct.compared / 100U);
         CY_CHECK_LT(direct.mean_relative, 1.0e-3);
         CY_CHECK_LE(bounce.beyond, bounce.compared / 20U);
