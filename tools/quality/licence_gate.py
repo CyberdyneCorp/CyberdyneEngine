@@ -108,7 +108,10 @@ def sources(root: Path) -> list[str]:
         for path in base.rglob("*"):
             if not path.is_file() or path.suffix not in SUFFIXES or _pruned(path, root):
                 continue
-            relative = str(path.relative_to(root))
+            # as_posix(), not str(): the baseline file and EXCLUDED are written with forward
+            # slashes, and str() yields backslashes on Windows — which matches nothing, so the
+            # gate reported every baselined file as a new violation when run from a Windows tree.
+            relative = path.relative_to(root).as_posix()
             if any(relative.startswith(prefix) for prefix in EXCLUDED):
                 continue
             found.append(relative)

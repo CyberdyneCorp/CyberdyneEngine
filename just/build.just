@@ -507,8 +507,14 @@ _jobs:
 _job-slots:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ -n "${CI:-}" ] || [ "${CY_JOB_POOL:-ON}" = "OFF" ] || ! command -v python3 >/dev/null 2>&1 \
-        || [ "$(uname -s)" = "Windows_NT" ] || [[ "$(uname -s)" == MINGW* ]]; then
+    # Windows answers `uname -s` in more than one spelling, and the pool is wired on none of them.
+    # Git Bash says MINGW64_NT-*, but a `just` shebang recipe runs through MSYS's env and says
+    # MSYS_NT-* — which the MINGW-only test missed, so every Windows caller was handed a slot prefix
+    # and then failed trying to run it.
+    case "$(uname -s)" in
+        Windows_NT | MINGW* | MSYS* | CYGWIN*) exit 0 ;;
+    esac
+    if [ -n "${CI:-}" ] || [ "${CY_JOB_POOL:-ON}" = "OFF" ] || ! command -v python3 >/dev/null 2>&1; then
         exit 0
     fi
     echo "python3 -I -S {{root}}/tools/workflow/job_slot.py --slots $(bash "{{root}}/tools/workflow/jobs.sh" machine) --"
