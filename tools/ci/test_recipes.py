@@ -24,6 +24,7 @@ import argparse
 import os
 import pathlib
 import re
+import select
 import shutil
 import signal
 import subprocess
@@ -269,20 +270,17 @@ def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
     build_commands = "\n".join(
         line for line in build_body if not line.lstrip().startswith("#")
     )
-    if "command -v lockf" not in build_commands:
+    if "source tools/workflow/build_lock.sh" not in build_commands or \
+            "cy_build_lock " not in build_commands:
         failures.append(
-            f"{build_file.name}: `build-engine` has no lockf path; macOS does not ship flock"
+            f"{build_file.name}: `build-engine` does not take tools/workflow/build_lock.sh's lock"
         )
-    for token, purpose in (
-        ('ln -s "$$" "${fallback_lock}"', "an atomic fallback lock"),
-        ('kill -0 "${owner}"', "stale-owner detection"),
-        ("trap release_fallback_lock EXIT", "fallback-lock cleanup"),
-    ):
-        if token not in build_commands:
-            failures.append(
-                f"{build_file.name}: `build-engine` has no {purpose}; hosted macOS ships neither "
-                "the flock nor lockf command"
-            )
+    lock_script = (root / "tools" / "workflow" / "build_lock.sh").read_text(encoding="utf-8")
+    if "command -v lockf" not in lock_script:
+        failures.append("tools/workflow/build_lock.sh has no lockf path; macOS does not ship flock")
+    for pattern, feature in forbidden:
+        if re.search(pattern, lock_script):
+            failures.append(f"tools/workflow/build_lock.sh uses Bash 4 {feature}")
     return failures
 
 
@@ -345,6 +343,108 @@ def swift_package_tests_cannot_be_silently_omitted(root: pathlib.Path) -> list[s
             "the driver's real --test command"
         )
     return failures
+
+
+def swift_module_builds_hold_one_swiftpm_lock(root: pathlib.Path) -> list[str]:
+    """Two SwiftPM builds on one machine must not run at once.
+
+    Every package shares SwiftPM's per-user cache, and two builds resolving swift-syntax together
+    race on its prebuilts manifest. CI's linux-arm64 legs failed that way when Ninja built the
+    04-character and 13-rts-api game modules concurrently: "prebuilts/swift-syntax/...json already
+    exists in file system". The driver serialises its Swift commands on one lock; this case runs
+    a command through it and checks that the lock is held while the command runs.
+    """
+    if sys.platform == "win32":
+        return []
+    import fcntl
+    import importlib.util
+
+    path = root / "bindings" / "swift" / "tools" / "cy_swift_module.py"
+    spec = importlib.util.spec_from_file_location("cy_swift_module_under_test", path)
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    with tempfile.TemporaryDirectory() as scratch:
+        driver.SWIFTPM_LOCK = pathlib.Path(scratch) / "swiftpm.lock"
+        held = []
+        real_run = driver.subprocess.run
+
+        def probe_the_lock(*_args, **_kwargs):
+            with driver.SWIFTPM_LOCK.open("a") as other:
+                try:
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(other, fcntl.LOCK_UN)
+                    held.append(False)
+                except BlockingIOError:
+                    held.append(True)
+            return subprocess.CompletedProcess([], 0, "", "")
+
+        driver.subprocess.run = probe_the_lock
+        try:
+            driver.swift(["swift", "build"])
+        finally:
+            driver.subprocess.run = real_run
+    if held != [True]:
+        return ["cy_swift_module.py runs a Swift command without holding the SwiftPM lock, so "
+                "concurrent game-module builds race on SwiftPM's shared prebuilts cache"]
+    return []
+
+
+def the_build_lock_fallback_is_acquired_and_waited_on(root: pathlib.Path) -> list[str]:
+    """Without flock or lockf, a build takes the tree's lock, and a second build waits for it.
+
+    GitHub's macOS image and Git Bash on Windows have neither executable, so both take the
+    fallback. It used to be `ln -s <pid> <lock>`, which Git Bash cannot create for a target that
+    does not exist: every Windows CI build announced "another build holds build/dev" on a fresh
+    runner and waited on nobody until the six-hour limit cancelled it. This case runs the fallback
+    with a PATH that has no flock or lockf and checks that it acquires a free lock, reaps one left
+    by a dead process, and makes a second holder wait until the first exits.
+    """
+    if sys.platform == "win32":
+        return []
+    lock_script = root / "tools" / "workflow" / "build_lock.sh"
+    with tempfile.TemporaryDirectory() as scratch_name:
+        scratch = pathlib.Path(scratch_name)
+        tools = scratch / "bin"
+        tools.mkdir()
+        for tool in ("bash", "mkdir", "cat", "rm", "sleep"):
+            found = shutil.which(tool)
+            if found is None:
+                return [f"`{tool}` is not on PATH, so the build lock cannot be exercised"]
+            (tools / tool).symlink_to(found)
+        # Git Bash's `ln -s` refuses a target that does not exist, as a PID is: model that here.
+        (tools / "ln").write_text("#!/bin/sh\nexit 1\n")
+        (tools / "ln").chmod(0o755)
+        environment = {"PATH": str(tools), "HOME": scratch_name}
+        tree = scratch / "tree"
+
+        def holder(seconds: float) -> subprocess.Popen:
+            return subprocess.Popen(
+                [str(tools / "bash"), "-c",
+                 f'source "{lock_script}"; cy_build_lock "{tree}"; echo acquired; '
+                 f"sleep {seconds}"],
+                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        failures = []
+        (tree / ".cy-build.lock.pid").mkdir(parents=True)
+        (tree / ".cy-build.lock.pid" / "owner").write_text("999999\n")
+        first = holder(1.5)
+        ready, _, _ = select.select([first.stdout], [], [], 20)
+        if not ready or first.stdout.readline().strip() != "acquired":
+            first.kill()
+            return ["the build lock fallback never acquired a free tree, or one whose owner is dead"]
+        second = holder(0)
+        try:
+            _, waited = second.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            second.kill()
+            failures.append("a second build still waits after the first released the build lock")
+            waited = ""
+        first.wait(timeout=20)
+        if "another build holds" not in waited:
+            failures.append("a second build did not wait while the first held the build lock")
+        if (tree / ".cy-build.lock.pid").exists():
+            failures.append("the build lock fallback is left behind after its owner exits")
+        return failures
 
 
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
@@ -1166,6 +1266,10 @@ def main() -> int:
         ),
         "Swift package tests cannot be silently omitted": (
             swift_package_tests_cannot_be_silently_omitted
+        ),
+        "Swift module builds hold one SwiftPM lock": swift_module_builds_hold_one_swiftpm_lock,
+        "the build lock works without flock or lockf": (
+            the_build_lock_fallback_is_acquired_and_waited_on
         ),
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
