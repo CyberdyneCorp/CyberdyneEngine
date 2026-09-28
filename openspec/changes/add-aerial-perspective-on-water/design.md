@@ -97,8 +97,8 @@ table into binding 2 of that set every frame. The only change is the third membe
 
 - The reflection of a hill is hazed along a slightly shorter path than the mirrored one. Stated in
   the shader and the sample README with its size.
-- The un-haze divides by T. The floor keeps it finite; within the sample's world T never gets near
-  it.
+- The un-haze divides by T. The floor keeps it finite, and the result is multiplied by the surface's
+  own transmittance again on the way out.
 
 ## Backends
 
