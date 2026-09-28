@@ -4,6 +4,12 @@
 the first consumer of `temporal-rendering`'s per-object motion vectors other than the temporal
 resolve.
 
+**Status: written, not yet built.** The committed SPIR-V and MSL for this module
+(`motion_blur_spirv.h`, `motion_blur_msl.h`) and the frame's regenerated `frame_spirv.h` /
+`frame_msl.h` are not generated yet, and the case (e) references in `tests/references/` are not
+rendered, so neither `unit.rendering_motion_blur` nor `render.motion_blur` has run. The requirement
+stays exempt in `tools/roadmap/requirements-coverage.toml` until they do.
+
 ## What it does
 
 Three compute dispatches over the prepass velocity target, at the frame's own

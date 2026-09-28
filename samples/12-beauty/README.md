@@ -233,8 +233,5 @@ scene colour before exposure, so the embers and the sky are streaked with the re
 the sky, which the prepass does not draw, as the far plane moving with the camera. Off is the frame
 the turntable always drew.
 
-| Motion blur off | Motion blur on, 180-degree shutter |
-|---|---|
-| ![](../../docs/design/images/motion-blur-beauty-off.png) | ![](../../docs/design/images/motion-blur-beauty-on.png) |
-
-`just capture-beauty-motion-blur` writes `docs/design/images/motion-blur-beauty-{off,on}.png`.
+`just capture-beauty-motion-blur` writes `docs/design/images/motion-blur-beauty-{off,on}.png`. Those
+images are not published yet: the mode has not been built or run.
