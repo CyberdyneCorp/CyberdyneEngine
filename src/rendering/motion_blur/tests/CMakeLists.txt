@@ -1,13 +1,16 @@
 # src/rendering/motion_blur/tests/ — per-object motion and motion blur, on the host and on a device.
 #
-#   rendering_motion_blur   KIND unit. The shutter arithmetic, the constants, and the host reference
-#                           filter over synthetic frames: a bar moving across a still background
-#                           streaks by the shutter's fraction of its motion and leaves the
-#                           background untouched, a still foreground stays sharp over a moving
-#                           background, the camera and object scales separate, and a closed
-#                           shutter copies every pixel. Also `pipeline::InstanceHistory`: last
-#                           frame's rows kept, rebased to the new camera, and discarded on a cut or a
-#                           recycled slot. No device.
+#   rendering_motion_blur   KIND unit. `pipeline::InstanceHistory`: last frame's rows kept, rebased
+#                           to the new camera, and discarded on a cut or a recycled slot. No device.
+#
+#   rendering_motion_blur   KIND integration. The shutter arithmetic, the constants, and the host
+#                           reference filter over synthetic frames: a bar moving across a still
+#                           background streaks by the shutter's fraction of its motion and leaves
+#                           the background untouched, a still foreground stays sharp over a moving
+#                           background, the camera and object scales separate, and a closed shutter
+#                           copies every pixel. No device. INTEGRATION, NOT UNIT: the reference
+#                           filters a 192x24 frame with fifteen taps a pixel, one to two
+#                           milliseconds a case, and the unit budget is one.
 #
 #   motion_blur             KIND render, Vulkan only. The frame the pipeline suites render with a
 #                           box moving across it: its velocity is its screen displacement and the
@@ -26,7 +29,7 @@ set_property(GLOBAL PROPERTY CY_MOTION_BLUR_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DI
 
 function(cy_motion_blur_declare_tests)
     get_property(tests_dir GLOBAL PROPERTY CY_MOTION_BLUR_TESTS_DIR)
-    foreach(kind IN ITEMS unit render)
+    foreach(kind IN ITEMS unit integration render)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -43,9 +46,14 @@ function(cy_motion_blur_declare_tests)
     cy_add_test(
         NAME rendering_motion_blur
         KIND unit
-        SOURCES "${tests_dir}/test_motion_blur.cpp" "${tests_dir}/test_instance_history.cpp"
+        SOURCES "${tests_dir}/test_instance_history.cpp"
         DEPENDENCIES cy::rendering-motion-blur cy::rendering-pipeline)
-    target_include_directories(cy_test_unit_rendering_motion_blur PRIVATE "${tests_dir}")
+    cy_add_test(
+        NAME rendering_motion_blur
+        KIND integration
+        SOURCES "${tests_dir}/test_motion_blur.cpp"
+        DEPENDENCIES cy::rendering-motion-blur)
+    target_include_directories(cy_test_integration_rendering_motion_blur PRIVATE "${tests_dir}")
 
     if(NOT CY_RENDERER_VULKAN)
         return()

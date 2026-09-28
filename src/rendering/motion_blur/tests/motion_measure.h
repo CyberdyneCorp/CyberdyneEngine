@@ -61,4 +61,27 @@ namespace cy::motion_test {
     return std::fabs(ninety - ten) / 0.8F;
 }
 
+/// How far ahead of a moving edge the blur reaches: the distance from the edge to the far side of
+/// the farthest texel, within `reach` of it, that the blur moved at least `fraction` of the way
+/// from its unblurred value toward the moving object's colour `object`. A shutter open while the
+/// edge travels `2 * radius` pixels reaches `radius`.
+///
+/// WHY THIS AND NOT THE RAMP. A physical shutter integrates coverage, and its streak is a linear
+/// ramp — what `edge_ramp_pixels` measures. The reconstruction filter's is not: McGuire's weights
+/// let a nearer surface cover a farther one along a cone, so the profile ahead of a moving edge
+/// falls off faster than linearly, and its 10 %-to-90 % width is no measure of how far the blur
+/// goes. Where the blur stops is: it is the streak's length, and the cone's last percent is all
+/// it loses.
+[[nodiscard]] inline f32 smear_reach(const std::vector<f32>& input, const std::vector<f32>& output,
+                                     u32 edge, u32 reach, f32 object, f32 fraction) noexcept {
+    f32 farthest = 0.0F;
+    for (u32 x = edge; x < edge + reach && x < input.size(); ++x) {
+        const f32 span = object - input[x];
+        if (std::fabs(span) > 1e-6F && (output[x] - input[x]) / span >= fraction) {
+            farthest = static_cast<f32>(x + 1U - edge);
+        }
+    }
+    return farthest;
+}
+
 }  // namespace cy::motion_test
