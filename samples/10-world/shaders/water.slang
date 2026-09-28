@@ -310,8 +310,13 @@ float foamBreakup(float2 xz, float seconds)
     return 0.5 + 0.5 * saturate(coarse * 0.65 + fine * 0.35);
 }
 
-[shader("fragment")]
-float4 waterFragment(VertexOutput input) : SV_Target
+/// The water's colour, with the air in front of it when `kAir` and exactly as it was drawn before
+/// aerial perspective when not. Two copies chosen once in the entry point, the off copy the body
+/// from before operation for operation. One body branching on the table's word as it went — with
+/// the same arithmetic on the off path — moved one sea pixel by one 8-bit step on 14 of 192 frames
+/// of the sample's day with aerial perspective off, which is the driver's code generation and not
+/// the arithmetic; these two copies compare 192 of 192 (`evidence/frame-identity.txt`).
+float4 shadeWater<let kAir : bool>(VertexOutput input, CyAerialPerspectiveTable table)
 {
     let params = water.params[0];
 
@@ -354,10 +359,8 @@ float4 waterFragment(VertexOutput input) : SV_Target
     // --- THE COLUMN: Beer-Lambert over the path, plus what the column scatters back. The same
     // arithmetic as `water::water_column_colour()`, with the body's own coefficients.
     let transmittance = exp(-params.extinction.rgb * path);
-    let table = aerialTable();
-    let airOn = cyAerialPerspectiveEnabled(table);
     float3 bedRadiance = untonemap(water.refraction.Load(int3(bentPixel, 0)).rgb);
-    if (airOn && bentDepth > 0.0)
+    if (kAir && bentDepth > 0.0)
     {
         bedRadiance = bedBeforeAir(table, bedRadiance, bed);
     }
@@ -380,10 +383,12 @@ float4 waterFragment(VertexOutput input) : SV_Target
     let reflected = untonemap(water.reflection.Load(int3(reflectedPixel, 0)).rgb);
     let f0 = params.inScatter.w;
     let fresnel = f0 + (1.0 - f0) * pow(1.0 - saturate(dot(normal, toEye)), 5.0);
+    float3 lit = lerp(refracted, reflected, fresnel);
 
     // world.slang's glitter lobe, unchanged, so the sun's path on the sea is the one it always was.
     let half = normalize(-push.light.xyz + toEye);
     let glitter = direct * pow(saturate(dot(normal, half)), 120.0) * push.sun.a;
+    lit += glitter;
 
     // --- FOAM: the shoreline's, from the depth of the column under this pixel, and the open sea's
     // breaking foam the device foam pass already wrote into the vertex colour.
@@ -396,15 +401,24 @@ float4 waterFragment(VertexOutput input) : SV_Target
     let open = saturate((input.color.r - 0.02) / 0.83);
     let foam = max(shore, open);
     let foamRadiance = 0.9 * (push.ambient.rgb + direct * lambert);
-    if (airOn)
+    if (kAir)
     {
         return float4(tonemap(seenThroughAir(table, input.world, refracted, reflected, fresnel,
                                              glitter, foamRadiance, foam)),
                       1.0);
     }
 
-    float3 lit = lerp(refracted, reflected, fresnel);
-    lit += glitter;
     lit = lerp(lit, foamRadiance, foam);
     return float4(tonemap(lit), 1.0);
+}
+
+[shader("fragment")]
+float4 waterFragment(VertexOutput input) : SV_Target
+{
+    let table = aerialTable();
+    if (cyAerialPerspectiveEnabled(table))
+    {
+        return shadeWater<true>(input, table);
+    }
+    return shadeWater<false>(input, table);
 }

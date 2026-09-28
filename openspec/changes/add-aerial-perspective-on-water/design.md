@@ -80,11 +80,20 @@ multiplied by the surface's own transmittance, the same small number, on its way
 
 ### Off is exact
 
-When the table's `enabled` word is zero the shader reads nothing from it and returns through the
-arithmetic it had before, `lerp(refracted, reflected, fresnel)`, `+ glitter`, `lerp(…, foam)`, in
-that order: the formula above with T = 1 and S = 0 is the same number mathematically but not
+When the table's `enabled` word is zero the shader reads nothing more from it and returns through
+the arithmetic it had before, `lerp(refracted, reflected, fresnel)`, `+ glitter`, `lerp(…, foam)`,
+in that order: the formula above with T = 1 and S = 0 is the same number mathematically but not
 bit for bit, so it is not used for off. `render.world_water_aerial_perspective` pins the water's
 fragment stage from before this change and compares every texel, dark and lit.
+
+The same arithmetic is not enough on its own. The first version kept one body that branched on the
+word as it went, and with aerial perspective off the sample's day differed from main's in one sea
+pixel by one 8-bit step on 14 of 192 frames. The test scene never showed it. The body is therefore
+`shadeWater<let kAir : bool>`, with the entry point choosing `shadeWater<true>` or
+`shadeWater<false>` once, and the off copy is the old body operation for operation. With that, the
+off frames match main's 192 of 192. The investigation is in `evidence/frame-identity.txt`: moving
+the off composition back into place with the runtime branch kept still gave 14 frames, so what the
+driver generates depends on the shape of the code, not on its arithmetic.
 
 ### Set 0, binding 2, is already there
 
