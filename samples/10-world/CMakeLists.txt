@@ -73,6 +73,8 @@ cy_add_module(
         cy::pcg
         cy::pcg-adapters
         cy::rendering-assembly
+        cy::rendering-decals
+        cy::rendering-fog
         cy::rendering-graph
         cy::rendering-pipeline
         cy::rendering-sky

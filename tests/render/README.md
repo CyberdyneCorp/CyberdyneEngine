@@ -192,6 +192,39 @@ Each was seen red under a shader mutation, regenerated and restored:
 and `render.world_water` bind the table switched off, because the pipeline's set 0 now has that
 third binding.
 
+## Aerial perspective on the shaded sea — `render.world_water_aerial_perspective`
+
+Draws a level sea to the left of the view's centre line and level land to the right, a shallow bed
+under the water and a dome coloured from the atmosphere's clear sky, with `samples/10-world`'s
+committed world and water SPIR-V and the sample's own water device half, in the three passes
+`Stage::declare_water` declares. The table is `sky::pack_aerial_perspective()` of the processor's
+`AerialPerspectiveTable` for the same camera, bound at set 0, binding 2, where the stage binds it.
+Each claim is measured from frames that differ only in the table, dark (sun and ambient zero, so
+the water is the mirrored dome alone) and lit.
+
+| Case | Asserts |
+|---|---|
+| the device applies the table to the water once | from 300 m up, every water texel, dark and lit, is `F reflected + T own + (1 - F) S` with T and S from `sample_at()` at its surface point, and every land texel `lit T + S`, within 0.004 after the tone map — not the bed hazed twice, and not the already-hazed reflection attenuated again |
+| at the shoreline the haze has no step | the water column beside the land receives the land column's in-scattering within 3% on every row seen more than a degree below the horizon |
+| far water takes the land's in-scattering | the same beyond 2 km, where the haze is more than four times the nearest row's |
+| near water is left as it was lit | from 2 m up, every water texel within 10 m moves by under 0.001 with the table on |
+| off, the frame is the frame before | with the table's `enabled` word zero, dark and lit, every texel is bit-identical to the frame drawn with water.slang's fragment stage pinned before this change (`water_before_aerial_perspective_spirv.h`); with it on, more than 2000 water texels move (a liveness count, not the formula: the water ignoring the table still moves 7501, which the first three cases catch) |
+
+Measured on the RTX 5060, Development and Debug alike: water 0.00067 and land 0.00066 from the
+table against 0.004; 46 shoreline rows from 0.66 to 11.2 km, worst 2.8% against 3%; far haze 13
+times the nearest row's; near water moved by 0.00049 against 0.001; 0 texels off, and all 7680 water
+texels moved on. Each case is seen red under at least one of seven shader mutations, applied,
+regenerated, run and restored md5-verified by
+`openspec/changes/add-aerial-perspective-on-water/evidence/mutate.py`
+(`evidence/falsification.txt`). The shoreline tolerance has little margin: dividing the water's
+change by `1 - F` near the horizon amplifies the half-float's rounding.
+
+**What the suite does not see.** A water shader that ignores the table still moves 7501 water
+texels with it on, because its two pictures are drawn through the air; the formula and shoreline
+cases catch that. And a one-texel difference in the sample's frame with aerial perspective off
+(driver code generation, `evidence/frame-identity.txt`) did not show up in this scene. The guard for
+that is the sample's frame-by-frame comparison against main.
+
 ## The artefact's air — `render.vfx`, whose reference lives here
 
 M11.c task 6.3, `m11c:vfx-in-the-shot`. **The case is declared by `src/vfx/tests/CMakeLists.txt`

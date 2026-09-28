@@ -1,0 +1,42 @@
+# samples/10-world, Development, Vulkan, NVIDIA GeForce RTX 5060, 960x540, default seed,
+# --seconds 24 --fps 8 (192 frames, one simulated day). Host shared with other builds.
+
+before      origin/main d9456049 water shaders (water.slang, water_spirv.h, water_msl.h from main
+            copied over this tree's, cy_sample_world rebuilt), --frames
+before-off  the same build, --no-aerial-perspective --frames
+off         this change, --no-aerial-perspective --frames
+on          this change, --frames
+
+Nothing else in cy_sample_world differs between this change and main: the change touches only
+those three files under samples/.
+
+frame-by-frame cmp, before-off vs off:  192 frames, 0 differ
+frame-by-frame cmp, before vs on:       192 frames, 191 differ (frame 154, night, is identical)
+determinism, off taken twice:           192 frames, 0 differ
+authoritative take digest:              0x3DE89D039348ECB5 in all four
+RHI validation errors:                  0 (before), 0 (before-off), 0 (off), 0 (on)
+change over the lower half of the frame (the sea and the near land), 8-bit, before vs on:
+  frame 60   mean absolute 0.79, largest 12, 89991 pixels changed; the upper half unchanged
+  frame 100  mean absolute 0.35, largest 6, 89361 pixels changed; the upper half unchanged
+
+THE FIRST OFF TAKE WAS NOT IDENTICAL, AND WHY. water.slang as first written kept one body and
+branched on the table's `enabled` word as it went (`if (airOn && bentDepth > 0.0)`, and an early
+`if (airOn) return` before composing `lerp`, `+ glitter`, `lerp` for off). With the table off, 14 of
+192 frames (4, 9, 12, 41, 53, 68, 69, 72, 80, 113, 125, 167, 171, 180) differed from before-off in
+exactly one sea pixel each, by one 8-bit step. The sample is deterministic (above), so this was the
+shader. Moving the off composition back to where the old shader did it, with the runtime branch
+kept, still gave 14 of 192. Two copies of the body chosen once in the entry point —
+`shadeWater<true>` and `shadeWater<false>`, the off copy the old body operation for operation —
+give 0 of 192, and so did those two copies with the flag read at run time inside each; so the
+difference is the driver's code generation for the one-body shape, not the arithmetic. The
+committed shader is the two-copy one.
+
+render.world_water_aerial_perspective does not see this: its level sea has no waves, cloud
+shadows or foam, and its off case stayed at 0 differing texels under the one-body shader, and under
+it again with the sample's shoreline foam and caustics switched on in the suite's scene. The guard
+for the sample's frame is this comparison, as it is for `add-aerial-perspective`.
+
+published from this take:
+  docs/design/images/water-aerial-perspective-day-{on,off}.png    frame 60, morning
+  docs/design/images/water-aerial-perspective-dusk-{on,off}.png   frame 100, dusk
+  (off is the before build's default frame: the land hazed, the sea not)

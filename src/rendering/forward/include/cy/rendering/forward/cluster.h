@@ -154,7 +154,25 @@ struct ClusterElement {
     u32 payload_index = 0;
     u32 layer_mask = 0xFFFFFFFFU;
     ClusterElementType type = ClusterElementType::Light;
+    /// AN ORIENTED BOX, which is the bound `rendering-forward-clustered` names for decals: "sphere
+    /// for point lights and wide spot lights, cone for narrow spot lights, oriented box for
+    /// decals". The box's three half-axes in view space, each already scaled by its half-extent, so
+    /// the box is `view_position + a·box_axes[0] + b·box_axes[1] + c·box_axes[2]` for a, b, c in
+    /// [-1, 1].
+    ///
+    /// Ignored unless `oriented_box`. `radius` must still bound it — the sphere test runs first,
+    /// because it rejects most clusters for less arithmetic — and the box then rejects what the
+    /// sphere could not: a decal is a thin slab, and its bounding sphere is mostly empty.
+    Vec3 box_axes[3] = {Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, 0.0F}};
+    bool oriented_box = false;
 };
+
+/// Whether an oriented box touches an axis-aligned one, by separating axes — the three of the
+/// AABB and the three of the box. The nine edge-cross axes are not tested, so the answer is
+/// CONSERVATIVE: it can say "touches" for a box that misses a corner, and it never says "misses"
+/// for one that touches, which is the only direction a cluster list may be wrong in.
+[[nodiscard]] bool oriented_box_touches(Vec3 center, const Vec3 (&half_axes)[3],
+                                        const Aabb& bounds) noexcept;
 
 /// Whether a spot of this half-angle is bounded as a cone or as a sphere. See
 /// `kSpotConeThresholdRadians`.

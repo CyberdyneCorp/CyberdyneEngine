@@ -100,6 +100,7 @@
 #include <cy/rendering/gpu_culling/cull_pass.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/lighting/decals.h>
 #include <cy/rendering/lighting/lights.h>
 #include <cy/rendering/material/material.h>
 #include <cy/rendering/post/chain.h>
@@ -239,6 +240,13 @@ struct AssemblyView {
     /// (`contact_shadows::ContactShadowPass::import_target`). Read only with
     /// `AssemblyDescription::contact_shadows`.
     ResourceId contact_shadows = kInvalidResource;
+    /// The volumetric fog volume's storage, imported by its producer
+    /// (`fog::FogPass::import_target`). Read only when the post chain enables volumetric fog.
+    ResourceId volumetric_fog = kInvalidResource;
+    /// The motion-blurred colour's storage, imported by its producer
+    /// (`motion_blur::MotionBlurPass::import_target`). Read only when the post chain enables
+    /// motion blur, and then required.
+    ResourceId motion_blur = kInvalidResource;
     /// Signalled to the temporal framework rather than inferred. A cinematic cut and a teleport
     /// both invalidate history and neither is a camera that moved fast.
     bool cut = false;
@@ -246,6 +254,15 @@ struct AssemblyView {
     /// the assembly has no virtual texture attached. Uploaded once per frame, because the sampling
     /// shader reads the buffer and not this.
     const vt::PageTable* page_table = nullptr;
+    /// The decals this view sees — `DecalBudget::decals()`, or any span of them. Empty, which is
+    /// what every caller before decals reached the frame passed, assigns none.
+    ///
+    /// ASSIGNED TO CLUSTERS AS THEIR OWN ELEMENT TYPE, beside the lights and by the same pass:
+    /// `rendering-lighting-and-shadows` — "Decals SHALL participate in cluster assignment as a
+    /// distinct element type". Each is bounded by its oriented box, and the index a cluster list
+    /// records is the decal's RANK IN APPLICATION ORDER (`decal_order()`), so a list is walked in
+    /// sort order by construction: `assign_clusters` writes every list ascending.
+    Span<const DecalInstance> decals;
 };
 
 /// What the caller supplies for the parts the assembly does not own: how a mesh becomes draws, and
@@ -270,6 +287,16 @@ struct FrameSinks {
     /// The producer that declares the selection outline stage. Required when the description asks
     /// for selection outlines; the frame refuses to build without it.
     FrameStageDeclaration selection_outlines;
+    /// The producer that declares the depth of field stage — `depth_of_field::DepthOfFieldPass`.
+    /// Required when `post.depth_of_field` puts the stage in the chain; the frame refuses to build
+    /// without it.
+    FrameStageDeclaration depth_of_field;
+    /// The producer that declares the volumetric fog stage. Required when the post chain enables
+    /// volumetric fog; the frame refuses to build without it.
+    FrameStageDeclaration volumetric_fog;
+    /// The producer that declares the motion blur stage — `motion_blur::MotionBlurPass::stage()`.
+    /// Required when the post chain has motion blur in it; the frame refuses to build without it.
+    FrameStageDeclaration motion_blur;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
@@ -343,6 +370,13 @@ struct AssemblyReport {
     /// Filled by `execute`. Zero after `assemble` alone.
     ExecutionResult execution;
     bool executed = false;
+
+    /// The decals the view handed over, and how many (cluster, decal) pairs the assignment wrote —
+    /// the number that says decals are "a distinct element type" in the lists rather than a claim.
+    /// A decal whose channels the view does not render is counted in the first and never in the
+    /// second.
+    u32 decals = 0;
+    u32 decal_assignments = 0;
 };
 
 /// Where one shadow-casting light was, so that "it moved" is a comparison rather than a guess.
@@ -445,6 +479,10 @@ public:
     /// forward frame has passes for. A half-open range into `draws().items`.
     [[nodiscard]] Span<const render::DrawItem> layer(render::SortLayer layer) const noexcept;
     [[nodiscard]] const ClusterAssignment& clusters() const noexcept { return clusters_; }
+    /// The view's decals in APPLICATION ORDER, as indices into `AssemblyView::decals`: entry `r` is
+    /// the decal a cluster list names by rank `r`. `decal_application_order`'s — ascending sort
+    /// order, ties on id — so the order is total and independent of the array the caller passed.
+    [[nodiscard]] Span<const u32> decal_order() const noexcept { return decal_order_.span(); }
     [[nodiscard]] Span<const GpuLight> lights() const noexcept { return lights_.span(); }
     [[nodiscard]] const MaterialTable& materials() const noexcept { return materials_; }
     [[nodiscard]] MaterialTable& materials() noexcept { return materials_; }
@@ -468,6 +506,7 @@ private:
     [[nodiscard]] Status build_draws(const FrameSinks& sinks, AssemblyReport& out) noexcept;
     [[nodiscard]] Status check_materials(AssemblyReport& out) noexcept;
     [[nodiscard]] Status build_lights(const AssemblyView& view, AssemblyReport& out) noexcept;
+    [[nodiscard]] Status add_decal_elements(const AssemblyView& view, AssemblyReport& out) noexcept;
     [[nodiscard]] Status request_shadow_pages(const AssemblyView& view,
                                               AssemblyReport& out) noexcept;
     /// Dirty what a light's own motion invalidated, before the pages are requested. Returns the
@@ -500,6 +539,8 @@ private:
     Array<GpuLight> lights_;
     Array<ClusterElement> elements_;
     ClusterAssignment clusters_;
+    /// See `decal_order()`.
+    Array<u32> decal_order_;
 
     // The other five of the eight.
     MaterialTable materials_;

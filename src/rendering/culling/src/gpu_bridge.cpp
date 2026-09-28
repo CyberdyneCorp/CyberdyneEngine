@@ -197,6 +197,12 @@ Status apply_gpu_cull(const SpatialIndex& index, const GpuCullPublication& publi
         visible.importance = entry.importance;
 
         const u32 flags = index.flags()[slot];
+        // CARRIED AS `cull_view()` CARRIES THEM. Until this line the device path routed on the
+        // flags and dropped them, so every survivor of a GPU cull reached `build_draw_list` with no
+        // flags — not skinned, not a shadow receiver — and with an all-ones layer mask, and the two
+        // cull paths the header calls interchangeable drew different frames.
+        visible.flags = flags;
+        visible.layer_mask = index.layer_masks()[slot];
         Array<VisibleInstance>& list =
             (flags & kSpatialTransparent) != 0U ? results.transparent : results.opaque;
         if (Status pushed = list.push_back(visible); !pushed) {

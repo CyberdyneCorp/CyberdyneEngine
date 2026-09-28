@@ -87,8 +87,17 @@ void set_full_viewport(rhi::CommandBuffer& commands, u32 width, u32 height) noex
 /// transparent stage with no transparent meshes is the ordinary case rather than a rare one. The
 /// first version of this bound only inside `draw_layer`, and the symptom was seventeen
 /// "uses set #1 but that set is not bound" on a frame whose transparent layer happened to be empty.
+///
+/// THE PASS'S PIPELINE IS BOUND FIRST, because a descriptor set binds to the bind point of the last
+/// pipeline the command buffer bound (`VulkanCommandBuffer::bind_descriptor_sets`). A frame stage
+/// that dispatches compute between two graphics passes — motion blur between the temporal resolve
+/// and the post-process — left that bind point at COMPUTE, so the post-process's sets went there,
+/// the resolve drew with the temporal pass's set 2 still bound to graphics, and the frame showed
+/// the history instead of the blur at every shutter angle (`render.motion_blur` (d)'s open-shutter
+/// control, and a Vulkan validation error and a crash in `samples/12-beauty --motion-blur`).
 void bind_frame_sets(rhi::CommandBuffer& commands, const FramePipelines& pipelines,
-                     const FrameBindings& bindings) noexcept {
+                     const FrameBindings& bindings, FramePipelineKind kind) noexcept {
+    commands.bind_graphics_pipeline(pipelines.pipeline(kind));
     commands.bind_descriptor_sets(pipelines.layout(), 0, bindings.sets());
 }
 
@@ -179,6 +188,55 @@ void bind_draw_pipeline(FrameRecorder& recorder, rhi::CommandBuffer& commands,
     }
 }
 
+/// The vertex buffers one geometry pass binds, in binding order.
+struct StreamSet {
+    rhi::BufferHandle buffers[3];
+    usize count = 0;
+
+    /// Bind the set. `deformed` null binds every stream from its start. Non-null, it is a depth
+    /// draw of a mesh whose previous vertices sit elsewhere in the same streams: the draw's own
+    /// `vertex_offset` becomes the SMALLER of the two windows' starts and each binding is offset to
+    /// its own window, because a vertex buffer offset cannot be negative and the previous half of
+    /// a double-buffered output is below the current one on every other frame.
+    void bind(rhi::CommandBuffer& commands, DrawGeometry* deformed) const noexcept {
+        u64 offsets[3] = {0, 0, 0};
+        if (deformed != nullptr) {
+            const i32 base = deformed->vertex_offset < deformed->previous_vertex_offset
+                                 ? deformed->vertex_offset
+                                 : deformed->previous_vertex_offset;
+            const auto current = static_cast<u64>(deformed->vertex_offset - base);
+            const auto previous = static_cast<u64>(deformed->previous_vertex_offset - base);
+            offsets[kPositionStream] = current * kPositionStreamStride;
+            offsets[kNormalStream] = current * kNormalStreamStride;
+            offsets[kPreviousPositionStream] = previous * kPositionStreamStride;
+            deformed->vertex_offset = base;
+        }
+        commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(buffers, count),
+                                     Span<const u64>(offsets, count));
+    }
+};
+
+[[nodiscard]] StreamSet streams_for(const GeometrySource& geometry,
+                                    FramePipelineKind pipeline) noexcept {
+    StreamSet set;
+    if (pipeline == FramePipelineKind::Shadow) {
+        set.buffers[0] = geometry.streams[kPositionStream];
+        set.count = 1U;
+    } else if (pipeline == FramePipelineKind::Depth) {
+        set.buffers[kPositionStream] = geometry.streams[kPositionStream];
+        set.buffers[kNormalStream] = geometry.streams[kNormalStream];
+        // The previous positions of a rigid mesh ARE its positions: the same buffer, bound again.
+        set.buffers[kPreviousPositionStream] = geometry.streams[kPositionStream];
+        set.count = kDepthPassStreamCount;
+    } else {
+        for (u32 stream = 0; stream < kForwardPassStreamCount; ++stream) {
+            set.buffers[stream] = geometry.streams[stream];
+        }
+        set.count = kForwardPassStreamCount;
+    }
+    return set;
+}
+
 /// One geometry pass: bind the state, walk the layer, draw what has geometry.
 void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipelineKind pipeline,
                 render::SortLayer layer, u32& counter) noexcept {
@@ -189,9 +247,12 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
         return;
     }
     rhi::CommandBuffer& commands = *context.commands;
-    DrawBindingState bound{{}, recorder.pipelines()->layout(), {}};
+    const rhi::GraphicsPipelineHandle pass_pipeline = recorder.pipelines()->pipeline(pipeline);
+    commands.bind_graphics_pipeline(pass_pipeline);
+    DrawBindingState bound{pass_pipeline, recorder.pipelines()->layout(), {}};
 
-    // TWO STREAMS FOR THE DEPTH PASS, NOT ONE — position and the packed normal.
+    // THREE STREAMS FOR THE DEPTH PASS, NOT ONE — position, the packed normal, and the previous
+    // positions per-object motion is derived from (the position stream again, for a rigid mesh).
     //
     // A REGRESSION FIXED HERE RATHER THAN WORKED AROUND, and it was three commits old when M11.c
     // task 3.7 found it. `6514c3d` ("Execute temporal anti-aliasing in frame pipeline") gave the
@@ -203,18 +264,16 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     // red in this tree since 20 September while the binary built on the 19th still passes.
     // The number here is the pipeline's own, so the two cannot disagree again.
     const bool depth_only = pipeline == FramePipelineKind::Depth;
-    const u64 offsets[3] = {0, 0, 0};
-    usize stream_count = kForwardPassStreamCount;
-    if (pipeline == FramePipelineKind::Shadow) {
-        stream_count = 1U;
-    } else if (depth_only) {
-        stream_count = kDepthPassStreamCount;
-    }
-    commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(geometry.streams, stream_count),
-                                 Span<const u64>(offsets, stream_count));
-    usize bound_streams = stream_count;
+    const StreamSet streams = streams_for(geometry, pipeline);
+    streams.bind(commands, nullptr);
+    // A MATERIAL VARIANT THAT ASKS FOR STREAMS READS THE FORWARD ONES, whatever the pass: a graph
+    // vertex program may read the UVs, and it derives its previous position by evaluating the
+    // graph at the previous time rather than from `kPreviousPositionStream`.
+    const StreamSet forward = streams_for(geometry, FramePipelineKind::Opaque);
+    usize forward_bound = 0;
 
     rhi::BufferHandle bound_indices;
+    bool offsets_moved = false;
     for (u32 offset = 0; offset < range.count; ++offset) {
         const u32 index = range.first + offset;
         if (pipeline == FramePipelineKind::Shadow &&
@@ -232,13 +291,24 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
             ++recorder.mutable_report().skipped_draws;
             continue;
         }
-        const usize wanted_streams =
-            selected.vertex_streams == 0 ? stream_count : selected.vertex_streams;
-        if (wanted_streams != bound_streams) {
-            commands.bind_vertex_buffers(
-                0, Span<const rhi::BufferHandle>(geometry.streams, wanted_streams),
-                Span<const u64>(offsets, wanted_streams));
-            bound_streams = wanted_streams;
+        if (selected.vertex_streams != 0) {
+            if (forward_bound != selected.vertex_streams) {
+                StreamSet requested = forward;
+                requested.count = selected.vertex_streams;
+                requested.bind(commands, nullptr);
+                forward_bound = selected.vertex_streams;
+                offsets_moved = false;
+            }
+        } else {
+            // A DEFORMED MESH IN THE PREPASS reads two windows of one stream; everything else reads
+            // the streams from their start, as it always did. See `StreamSet::bind`.
+            const bool deformed =
+                depth_only && draw.has_previous_vertices && !draw.indices.is_null();
+            if (deformed || offsets_moved || forward_bound != 0) {
+                streams.bind(commands, deformed ? &draw : nullptr);
+                offsets_moved = deformed;
+                forward_bound = 0;
+            }
         }
         bind_draw_pipeline(recorder, commands, selected, bound);
         const DrawPush push{index};
@@ -319,7 +389,8 @@ void record_depth_prepass(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(colors, color_count);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    FramePipelineKind::Depth);
     draw_layer(recorder, context, FramePipelineKind::Depth, render::SortLayer::Opaque,
                recorder.mutable_report().prepass_draws);
     record_extensions(recorder, context, FramePassKind::DepthPrepass, description.width,
@@ -339,7 +410,8 @@ void record_shadow(const PassContext& context, void* user) noexcept {
     info.depth_attachment = depth_attachment(*context.executor, recorder.shadow_depth(), true);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, recorder.shadow_extent(), recorder.shadow_extent());
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    FramePipelineKind::Shadow);
     u32 draws = 0;
     draw_layer(recorder, context, FramePipelineKind::Shadow, render::SortLayer::Opaque, draws);
     context.commands->end_rendering();
@@ -360,7 +432,8 @@ void record_opaque(const PassContext& context, void* user) noexcept {
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, false);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    FramePipelineKind::Opaque);
     draw_layer(recorder, context, FramePipelineKind::Opaque, render::SortLayer::Opaque,
                recorder.mutable_report().opaque_draws);
     record_extensions(recorder, context, FramePassKind::Opaque, description.width,
@@ -382,8 +455,13 @@ void record_transparent(const PassContext& context, void* user) noexcept {
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, false);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());
-    if (!recorder.pipelines()->pipeline(FramePipelineKind::Transparent).is_null()) {
+    // With no transparent pipeline the opaque one stands in for the bind point: the extensions
+    // below still read the frame's sets 0 and 1 at the graphics bind point.
+    const bool transparent =
+        !recorder.pipelines()->pipeline(FramePipelineKind::Transparent).is_null();
+    bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
+                    transparent ? FramePipelineKind::Transparent : FramePipelineKind::Opaque);
+    if (transparent) {
         draw_layer(recorder, context, FramePipelineKind::Transparent,
                    render::SortLayer::Transparent, recorder.mutable_report().transparent_draws);
     }
@@ -417,9 +495,8 @@ void record_temporal(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
-    context.commands->bind_graphics_pipeline(
-        recorder.pipelines()->pipeline(FramePipelineKind::Temporal));
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings,
+                    FramePipelineKind::Temporal);
     context.commands->draw(3, 1, 0, 0);
     record_extensions(recorder, context, FramePassKind::Temporal, description.width,
                       description.height, true);
@@ -451,9 +528,7 @@ void record_post_process(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
-    context.commands->bind_graphics_pipeline(
-        recorder.pipelines()->pipeline(FramePipelineKind::Resolve));
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings, FramePipelineKind::Resolve);
     // One oversized triangle, its positions derived from `SV_VertexID`. No vertex buffer, which is
     // why this pipeline has no vertex bindings at all.
     context.commands->draw(3, 1, 0, 0);
@@ -634,6 +709,12 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     upload.view.temporal_jitter[1] = report.jitter.y;
     upload.view.temporal_jitter[2] = assembly.temporal().jitter().previous().x;
     upload.view.temporal_jitter[3] = assembly.temporal().jitter().previous().y;
+
+    // PER-OBJECT MOTION'S TWO INPUTS, both already held by the temporal framework: how far the
+    // camera moved, which rebases last frame's camera-relative rows, and whether history survived.
+    upload.camera_motion = assembly.temporal().view().camera_position -
+                           assembly.temporal().previous_view().camera_position;
+    upload.motion_cut = report.temporal_invalidated;
 
     upload.lights = assembly.lights();
     upload.cluster_headers = clusters.headers.span();

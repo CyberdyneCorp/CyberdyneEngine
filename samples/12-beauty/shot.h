@@ -62,11 +62,14 @@
 #include <cy/backends/rhi/handles.h>
 #include <cy/backends/rhi/pipeline.h>
 #include <cy/core/base/expected.h>
+#include <cy/core/math/matrix.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/import/mesh.h>
 #include <cy/rendering/assembly/capture_manifest.h>
+#include <cy/rendering/decals/decal_table.h>
+#include <cy/rendering/fog/medium.h>
 #include <cy/rendering/post/effects.h>
 
 #include <string>
@@ -142,6 +145,31 @@ struct Instance {
 };
 
 /// The committed scene: `content/beauty/shot.cyshot`, parsed.
+/// A decal's material: `decal-material <key> albedo r g b roughness v metallic v shape <box|splat|
+/// ring|patches> a b relief metres edge fraction`. What it WRITES into the surface before the
+/// light loop sees it — linear albedo, perceptual roughness — so every number is a surface
+/// property rather than a colour on screen. Read only by a capture that asks for decals.
+struct ShotDecalMaterial {
+    std::string key;
+    rendering::decals::DecalMaterial material;
+};
+
+/// One decal: `decal <material> at x y z facing x y z up x y z size width height depth
+/// [order n] [fade-angle degrees]`. `facing` is the projection's normal — the direction the
+/// decalled surface faces — and `up` orients the mark within it; `size` is the full extent across
+/// and up the mark, `depth` the full thickness of the projector's box along `facing`.
+struct ShotDecal {
+    std::string material;
+    Vec3 position{0.0F, 0.0F, 0.0F};
+    Vec3 facing{0.0F, 1.0F, 0.0F};
+    Vec3 up{0.0F, 0.0F, 1.0F};
+    f32 width = 1.0F;
+    f32 height = 1.0F;
+    f32 depth = 0.5F;
+    i32 order = 0;
+    f32 fade_angle_degrees = 60.0F;
+};
+
 struct Shot {
     std::string name;
     Vec3 camera_position{0.0F, 1.6F, 0.0F};
@@ -187,14 +215,38 @@ struct Shot {
     f32 bloom_scatter = 0.7F;
     u32 bloom_levels = 6;
 
+    /// Depth of field, when a run names a focus target (`--depth-of-field <name>`). The lens is the
+    /// camera's own — the focal length its field of view implies on a full-frame sensor 36 mm wide
+    /// — and the f-number is content; the focus distance is the named target's distance along the
+    /// view axis, which is what autofocus on an entity measures. The published still has none.
+    f32 dof_f_number = 1.4F;
+    std::vector<std::pair<std::string, Vec3>> focus_targets;
+
+    /// The air, when a run switches volumetric fog on (`--fog on`): a height fog stated in the
+    /// units a weather report uses. `fog_visibility_metres` is the meteorological visibility at
+    /// and below `fog_base_height` — Koschmieder's `sigma_t = 3.912 / V` — and the density falls
+    /// by e every `fog_scale_height` metres above it. The albedo and the Henyey-Greenstein `g` are
+    /// those of haze droplets. `fog_far_metres` is how deep the froxel volume reaches: past it the
+    /// air is clear, so it is set beyond the deepest thing the camera sees.
+    f32 fog_visibility_metres = 0.0F;
+    f32 fog_base_height = 0.0F;
+    f32 fog_scale_height = 20.0F;
+    f32 fog_albedo = 0.95F;
+    f32 fog_anisotropy = 0.7F;
+    f32 fog_far_metres = 48.0F;
+
     std::vector<ShotMaterial> materials;
     std::vector<std::pair<std::string, std::string>> meshes;
     std::vector<Instance> instances;
+    std::vector<ShotDecalMaterial> decal_materials;
+    std::vector<ShotDecal> decals;
 
     /// Parse the committed file. Every refusal names the line.
     [[nodiscard]] static Expected<Shot, Error> read(const char* path, std::string& problem);
 
     [[nodiscard]] const ShotMaterial* material(std::string_view key) const noexcept;
+    /// A named focus target, or null.
+    [[nodiscard]] const Vec3* focus_target(std::string_view target) const noexcept;
 };
 
 /// What one run measured and produced.
@@ -284,6 +336,30 @@ public:
         contact_thickness_ = shot.contact_thickness;
     }
 
+    /// DECALS, before `stage_shot`. Off — the default, and the published M11.c frame — draws
+    /// exactly the frame this program always drew. On hands the shot's `decal` lines to the
+    /// assembly, which ranks them and assigns them to its clusters beside the lights; the table
+    /// with the assembly's lists in it is uploaded into the frame's own graph, and `beauty.slang`
+    /// applies the decals to each surface before the sun and the sky light it.
+    void set_decals(bool enabled) noexcept { decals_ = enabled; }
+
+    /// VOLUMETRIC FOG, before `stage_shot`. Off — the default, and the published M11.c frame —
+    /// draws exactly the frame this program always drew. On switches the post chain's
+    /// `volumetric_fog` stage on, declares it through `fog::FogPass` — a froxel volume marched
+    /// through the shot's height fog, lit by the same sun through the same shadow map and by the
+    /// same sky term the surfaces are — and every scene and sky fragment is seen through it.
+    void set_fog(bool enabled, const Shot& shot) noexcept;
+    /// MOTION BLUR, before `stage_shot`. Off — the default, and the published M11.c frame — draws
+    /// exactly the frame this program always drew. On adds the depth and normal prepass with the
+    /// frame's motion vectors — `scenePrepassMotionFragment`, from this frame's and the last
+    /// render's camera — and declares the frame's `MotionBlur` stage at `shutter_degrees`, recorded
+    /// by `motion_blur::MotionBlurPass`. The first render has no last one and does not move; a
+    /// turntable frame's motion is the orbit's step.
+    void set_motion_blur(bool enabled, f32 shutter_degrees) noexcept {
+        motion_blur_ = enabled;
+        shutter_degrees_ = shutter_degrees;
+    }
+
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
     /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
@@ -304,6 +380,15 @@ public:
     /// Call it before `stage_shot`. Null, the default, is the frame M11.c published; a look that
     /// bakes to the identity is recognised and draws that frame too.
     void enable_grading(const char* look_path) noexcept { look_path_ = look_path; }
+
+    /// Put depth of field into the frame's post chain at step 7, focused on `focus_world` with the
+    /// shot's f-number, through `depth_of_field::DepthOfFieldPass`. Call it before `stage_shot`.
+    /// Off by default, and off is the frame M11.c published.
+    void enable_depth_of_field(const Shot& shot, Vec3 focus_world) noexcept {
+        dof_enabled_ = true;
+        dof_f_number_ = shot.dof_f_number;
+        dof_focus_ = focus_world;
+    }
 
     /// Draw ONE frame and write BOTH images out of it.
     ///
@@ -334,9 +419,22 @@ private:
     [[nodiscard]] Status create_frame() noexcept;
     [[nodiscard]] Status create_occlusion() noexcept;
     [[nodiscard]] Status create_contact() noexcept;
+    /// This frame's lens for the depth of field pass: the camera's, focused on the named target.
+    [[nodiscard]] Status set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection,
+                                            Vec3 eye_world, Vec3 target_world) noexcept;
+    /// The shot's decals, in the shot camera's space, and the table texture reserved for them.
+    [[nodiscard]] Status create_decals(const Shot& shot) noexcept;
+    /// Pack this frame's table — the assembly's ranks and lists — into the upload declared for it.
+    [[nodiscard]] Status stage_decals(const Mat4& camera) noexcept;
+    [[nodiscard]] Status create_fog() noexcept;
     /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
     /// reads it.
-    [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
+    /// Whether the frame has a depth and normal prepass: ambient occlusion, the contact trace or
+    /// motion blur reads it.
+    [[nodiscard]] bool has_prepass() const noexcept {
+        return ambient_occlusion_ || soft_shadows_ || motion_blur_;
+    }
+    [[nodiscard]] Status create_motion_blur() noexcept;
     [[nodiscard]] Status create_grading(rhi::Device& device) noexcept;
     [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
                                                     const rhi::GraphicsPipelineDescription& scene,
@@ -359,16 +457,29 @@ private:
     f32 occlusion_radius_ = 0.0F;
     f32 occlusion_power_ = 1.0F;
     bool soft_shadows_ = false;
+    bool decals_ = false;
     f32 sun_angular_radius_ = 0.0F;
     f32 contact_length_ = 0.0F;
     f32 contact_thickness_ = 0.0F;
+    bool motion_blur_ = false;
+    f32 shutter_degrees_ = 180.0F;
+    /// The last render's baked-space to clip transform, which this render's motion is measured
+    /// from. Unset before the first render, which then has none and does not move.
+    Mat4 previous_world_to_clip_ = Mat4::identity();
+    bool has_previous_view_ = false;
     u32 width_ = 0;
     u32 height_ = 0;
     u32 supersample_ = 1;
     u32 albedo_level_limit_ = 0;
     rendering::BloomSettings bloom_{};
     bool bloom_enabled_ = false;
+    bool fog_enabled_ = false;
+    rendering::fog::FogMedium fog_medium_{};
+    f32 fog_far_metres_ = 48.0F;
     const char* look_path_ = nullptr;
+    bool dof_enabled_ = false;
+    f32 dof_f_number_ = 1.4F;
+    Vec3 dof_focus_{0.0F, 0.0F, 0.0F};
     bool available_ = false;
     Array<u32> pixels_;
 };

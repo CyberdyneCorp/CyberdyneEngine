@@ -658,3 +658,232 @@ CY_TEST_CASE("selection outlines without a producer or a prepass are refused") {
     ForwardFrame refusing_frame(allocator());
     CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
 }
+
+namespace {
+
+/// A stand-in for `depth_of_field::DepthOfFieldPass`: it records what the frame handed it and
+/// declares the shape the real producer does — a half-resolution pass over the source colour and
+/// the depth, and a composite that writes the stage's target.
+struct FocusProducer {
+    cy::rendering::ScreenSpaceStageInputs seen{};
+    cy::rendering::PassId composite = kInvalidPass;
+    bool refuse = false;
+};
+
+cy::rendering::PassId declare_focus(RenderGraph& graph,
+                                    const cy::rendering::ScreenSpaceStageInputs& inputs,
+                                    void* user) noexcept {
+    auto* producer = static_cast<FocusProducer*>(user);
+    producer->seen = inputs;
+    if (producer->refuse) {
+        return kInvalidPass;
+    }
+    cy::rendering::TextureRequest request;
+    request.name = "depth of field gather";
+    request.format = cy::rhi::Format::Rgba16Sfloat;
+    request.width = inputs.width / 2U;
+    request.height = inputs.height / 2U;
+    const cy::rendering::ResourceId gathered = graph.create_texture(request);
+    const cy::rendering::PassId gather =
+        graph.add_pass("depth of field gather", cy::rhi::QueueKind::Graphics)
+            .read(inputs.source, cy::rhi::Access::ComputeSampledRead)
+            .read(inputs.depth, cy::rhi::Access::ComputeSampledRead)
+            .write(gathered, cy::rhi::Access::ComputeStorageWrite)
+            .id();
+    producer->composite = graph.add_pass("depth of field composite", cy::rhi::QueueKind::Graphics)
+                              .read(gathered, cy::rhi::Access::ComputeSampledRead)
+                              .read(inputs.source, cy::rhi::Access::ComputeSampledRead)
+                              .write(inputs.target, cy::rhi::Access::ComputeStorageWrite)
+                              .id();
+    return gather;
+}
+
+}  // namespace
+
+CY_TEST_CASE("depth of field sits after the temporal resolve and before bloom and exposure") {
+    // Off, neither the stage nor its target exists.
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    FrameDescription description = make_description();
+    description.features.temporal = true;
+    description.features.bloom = true;
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_CHECK_FALSE(declared(plain_frame, FramePassKind::DepthOfField));
+    CY_CHECK_EQ(plain_frame.resources().depth_of_field, kInvalidResource);
+
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    FocusProducer producer;
+    description.features.depth_of_field = true;
+    description.depth_of_field_stage =
+        cy::rendering::FrameStageDeclaration{&declare_focus, &producer};
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_REQUIRE(declared(frame, FramePassKind::DepthOfField));
+    // Step 7: after the temporal resolve (step 5) and before bloom (step 9), which is before the
+    // exposure the post-process applies.
+    CY_CHECK_LT(position_of(frame, FramePassKind::Temporal),
+                position_of(frame, FramePassKind::DepthOfField));
+    CY_CHECK_LT(position_of(frame, FramePassKind::DepthOfField),
+                position_of(frame, FramePassKind::Bloom));
+    CY_CHECK_LT(position_of(frame, FramePassKind::DepthOfField),
+                position_of(frame, FramePassKind::PostProcess));
+
+    // Handed the temporal history as its source, the single-sample depth, and a target of its own.
+    const cy::rendering::FrameResources& resources = frame.resources();
+    CY_CHECK_EQ(producer.seen.source, resources.temporal_history);
+    CY_CHECK_EQ(producer.seen.depth, resources.depth);
+    CY_REQUIRE_NE(resources.depth_of_field, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.target, resources.depth_of_field);
+    CY_CHECK_EQ(producer.seen.width, description.width);
+    CY_CHECK_EQ(producer.seen.height, description.height);
+    // The stage's last pass is declared before bloom's first, which reads what it wrote.
+    CY_REQUIRE_NE(producer.composite, kInvalidPass);
+    CY_CHECK_LT(producer.composite, frame.pass_of(FramePassKind::Bloom));
+    CY_CHECK(graph.compile(compile_options()).has_value());
+
+    // Without bloom, the post-process reads what depth of field wrote.
+    description.features.bloom = false;
+    RenderGraph unbloomed(allocator());
+    ForwardFrame unbloomed_frame(allocator());
+    CY_REQUIRE(unbloomed_frame.build(unbloomed, description).has_value());
+    CY_CHECK_EQ(unbloomed_frame.resources().post_source,
+                unbloomed_frame.resources().depth_of_field);
+}
+
+CY_TEST_CASE("depth of field without a producer, or multisampled without a prepass, is refused") {
+    FrameDescription description = make_description();
+    description.features.depth_of_field = true;
+    RenderGraph unproduced(allocator());
+    ForwardFrame unproduced_frame(allocator());
+    const cy::Status unproduced_status = unproduced_frame.build(unproduced, description);
+    CY_REQUIRE_FALSE(unproduced_status.has_value());
+    CY_CHECK(std::strstr(unproduced_status.error().message, "producer") != nullptr);
+
+    FocusProducer producer;
+    description.depth_of_field_stage =
+        cy::rendering::FrameStageDeclaration{&declare_focus, &producer};
+    description.features.depth_prepass = false;
+    description.features.msaa_samples = 4;
+    RenderGraph multisampled(allocator());
+    ForwardFrame multisampled_frame(allocator());
+    const cy::Status refused = multisampled_frame.build(multisampled, description);
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK(std::strstr(refused.error().message, "single-sample depth") != nullptr);
+
+    // Without MSAA the opaque pass writes the single-sample depth itself, so no prepass is needed.
+    description.features.msaa_samples = 1;
+    RenderGraph single(allocator());
+    ForwardFrame single_frame(allocator());
+    CY_CHECK(single_frame.build(single, description).has_value());
+
+    // A producer that refuses fails the frame rather than leaving the blur out.
+    producer.refuse = true;
+    RenderGraph refusing(allocator());
+    ForwardFrame refusing_frame(allocator());
+    CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
+}
+
+namespace {
+
+/// A stand-in for `fog::FogPass`: one compute pass reading the shadow map it was told about and
+/// writing the volume the frame imported.
+struct FogProducer {
+    cy::rendering::ScreenSpaceStageInputs seen{};
+    cy::rendering::ResourceId shadow = kInvalidResource;
+    bool refuse = false;
+};
+
+cy::rendering::PassId declare_fog(RenderGraph& graph,
+                                  const cy::rendering::ScreenSpaceStageInputs& inputs,
+                                  void* user) noexcept {
+    auto* producer = static_cast<FogProducer*>(user);
+    producer->seen = inputs;
+    if (producer->refuse) {
+        return kInvalidPass;
+    }
+    return graph.add_pass("volumetric fog", cy::rhi::QueueKind::Graphics)
+        .read(producer->shadow, cy::rhi::Access::ComputeSampledRead)
+        .write(inputs.target, cy::rhi::Access::ComputeStorageWrite)
+        .id();
+}
+
+}  // namespace
+
+CY_TEST_CASE("volumetric fog is produced after the shadow map and read by the opaque pass") {
+    // Off, the stage does not exist and nothing is read — the frame every caller before it built.
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    FrameDescription description = make_description();
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_CHECK_FALSE(declared(plain_frame, FramePassKind::VolumetricFog));
+    CY_CHECK_EQ(plain_frame.resources().volumetric_fog, kInvalidResource);
+
+    RenderGraph graph(allocator());
+    cy::rendering::TextureRequest request;
+    request.name = "shadow color";
+    request.format = cy::rhi::Format::R32Sfloat;
+    request.width = 256;
+    request.height = 256;
+    const auto shadow = graph.create_texture(request);
+    request.name = "shadow depth";
+    request.format = cy::rhi::Format::D32Sfloat;
+    const auto shadow_depth = graph.create_texture(request);
+    request.name = "fog volume";
+    request.format = cy::rhi::Format::Rgba32Sfloat;
+    request.width = 64;
+    request.height = 1 + (18 * 16);
+    request.extra_usage = cy::rhi::TextureUsage::Storage;
+    const auto volume = graph.create_texture(request);
+
+    FogProducer producer;
+    producer.shadow = shadow;
+    description.shadow_color = shadow;
+    description.shadow_depth = shadow_depth;
+    description.features.volumetric_fog = true;
+    description.volumetric_fog_target = volume;
+    description.volumetric_fog_stage =
+        cy::rendering::FrameStageDeclaration{&declare_fog, &producer};
+    ForwardFrame frame(allocator());
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_REQUIRE(declared(frame, FramePassKind::VolumetricFog));
+    CY_CHECK_EQ(frame.resources().volumetric_fog, volume);
+    CY_CHECK_EQ(producer.seen.target, volume);
+    // After the pass that writes the map it marches through, before the pass that reads it.
+    CY_CHECK_LT(position_of(frame, FramePassKind::Shadow),
+                position_of(frame, FramePassKind::VolumetricFog));
+    CY_CHECK_LT(position_of(frame, FramePassKind::VolumetricFog),
+                position_of(frame, FramePassKind::Opaque));
+    bool opaque_reads = false;
+    for (const cy::rendering::Use& use : graph.pass_uses(frame.pass_of(FramePassKind::Opaque))) {
+        opaque_reads |=
+            use.resource == volume && use.access == cy::rhi::Access::FragmentSampledRead;
+    }
+    CY_CHECK(opaque_reads);
+    // No prepass is needed: the volume is the view's and the shadow map's, not the depth's.
+    CY_CHECK_EQ(frame.prepass_mode(), PrepassMode::DepthOnly);
+    CY_CHECK(graph.compile(compile_options()).has_value());
+}
+
+CY_TEST_CASE("volumetric fog without its producer is refused, and so is a producer that refuses") {
+    FrameDescription description = make_description();
+    description.features.volumetric_fog = true;
+    RenderGraph unproduced(allocator());
+    ForwardFrame unproduced_frame(allocator());
+    const cy::Status refused = unproduced_frame.build(unproduced, description);
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK(std::strstr(refused.error().message, "volumetric fog") != nullptr);
+
+    RenderGraph refusing(allocator());
+    cy::rendering::TextureRequest request;
+    request.name = "fog volume";
+    request.format = cy::rhi::Format::Rgba32Sfloat;
+    request.width = 64;
+    request.height = 64;
+    FogProducer producer;
+    producer.refuse = true;
+    description.volumetric_fog_target = refusing.create_texture(request);
+    description.volumetric_fog_stage =
+        cy::rendering::FrameStageDeclaration{&declare_fog, &producer};
+    ForwardFrame refusing_frame(allocator());
+    CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
+}

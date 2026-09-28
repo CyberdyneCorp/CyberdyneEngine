@@ -87,6 +87,18 @@ because the opaque pass would sample an image nothing wrote. The feature derives
 prepass, whose normal lifts the trace off its surface. `src/rendering/contact_shadows/` is the
 producer.
 
+## A fourth, before shading: volumetric fog
+
+`FramePassKind::VolumetricFog` sits after the shadow pass and the screen-space passes and before the
+opaque pass: `rendering-post-processing`'s step 3, "volumetric fog composite", which a forward
+renderer composites per surface — the opaque pass multiplies each surface by the volume's
+transmittance and adds its in-scattering. The frame hands `ScreenSpaceStageInputs` to
+`FrameDescription::volumetric_fog_stage` with `target` set to the imported
+`volumetric_fog_target`, and the opaque pass declares the read: a sampled read of a texture, or a
+storage read of a buffer when a caller composites the fog into the atmosphere's table. It needs no
+prepass — the volume is a function of the view and the shadow map, not of the depth — and `build()`
+refuses the feature without a producer and a target. `src/rendering/fog/` is the producer.
+
 ## A third, after the tone curve: selection outlines
 
 `FramePassKind::SelectionOutlines` sits after the post-process and before the interface: an outline
@@ -99,6 +111,29 @@ pass reads and writes the target, so the interface loads the outlined colour. `b
 feature without a producer, and without the depth prepass: a marked surface is found hidden by
 comparing it with the prepass depth. `src/rendering/selection/` is the producer.
 
+## A fourth, in the post chain: depth of field
+
+`FramePassKind::DepthOfField` is step 7 of `rendering-post-processing`'s chain: after the temporal
+resolve, so it blurs a converged image, and before bloom, so a defocused highlight blooms as the
+disc it became. It is the first produced stage that writes a NEW colour rather than a term another
+pass samples: the frame creates `FrameResources::depth_of_field` (full resolution, the scene
+colour's format, storage-writable) and hands it to `FrameDescription::depth_of_field_stage` as
+`target`, with the colour the chain has reached as `ScreenSpaceStageInputs::source` — appended, as
+`draw_instances` was. Every later stage, bloom and the post-process included, reads the target.
+`build()` refuses the feature without a producer, and on a multisampled frame without the prepass,
+whose depth resolve is the only single-sample depth such a frame has; a single-sample frame without
+the prepass reads the depth its opaque pass wrote. `src/rendering/depth_of_field/` is the producer.
+## A fourth, in the post chain: motion blur
+
+`FramePassKind::MotionBlur` is step 8 of `rendering-post-processing`'s chain — after the temporal
+resolve, whose output it reads and whose history it never touches, and before bloom, so a streak of
+a bright light blooms as the light it is. The frame hands `ScreenSpaceStageInputs` to
+`FrameDescription::motion_blur_stage` with `velocity` set to the prepass motion vectors and `color`
+to the colour the chain has reached, and the producer's last pass writes the imported
+`motion_blur_target`, which the chain continues from. `build()` refuses the feature without a
+producer and a target. The feature derives the `DepthNormalVelocity` prepass, as it always did.
+`src/rendering/motion_blur/` is the producer.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in
@@ -106,6 +141,12 @@ The specification requires it to run as a compute pass, and `frame.h` declares o
 one place the specification's numbers live — the 60° spot threshold, the bounded per-cluster count,
 deterministic nearest-kept dropping, the camera-inside-a-light case. The cost is that two
 implementations of one algorithm can drift; the mitigation is that this one is the reference.
+
+**Tile row 0 is the top of the image.** `cy/cluster.slang`'s `clusterCoordOf` takes a fragment's
+tile from its pixel row, and after the Vulkan viewport's Y flip pixel row 0 is view-space up, so
+`cluster_bounds` maps row 0 to normalised +Y. It used to map it to -Y, which mirrored every list
+against the lookup. `render.pipeline` and `render.golden` pass under either convention; a floor
+decal read the lists of the sky above it and drew nothing, which is how it was found. `unit.render_forward`'s "tile row 0 is the top of the image" pins it.
 
 ## Why the sort exists twice
 

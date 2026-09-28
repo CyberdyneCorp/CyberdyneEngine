@@ -10,13 +10,13 @@
 
 namespace cy::rendering::selection {
 
-/// cyOutlineMaskVertex.metal, 4590 bytes.
+/// cyOutlineMaskVertex.metal, 4677 bytes.
 inline constexpr char kOutlineMaskVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 231 "src/rendering/shaders/cy/frame.slang"
+#line 263 "src/rendering/shaders/cy/frame.slang"
 struct CyInstanceTransform_0
 {
     float4 row0_0;
@@ -26,7 +26,7 @@ struct CyInstanceTransform_0
 };
 
 
-#line 311
+#line 343
 float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
 {
     float4 _S1 = float4(modelPosition_0, 1.0);
@@ -46,7 +46,7 @@ struct ClusterGrid_0
 };
 
 
-#line 113 "src/rendering/shaders/cy/frame.slang"
+#line 115 "src/rendering/shaders/cy/frame.slang"
 struct CyFrameData_0
 {
     float4 relativeToClipRow0_0;
@@ -80,6 +80,9 @@ struct CyFrameData_0
     uint4 probeVolumeControl_0;
     float4 probeVolumeOrigin_0;
     float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
 };
 
 
@@ -97,7 +100,7 @@ struct Light_0
 };
 
 
-#line 218 "src/rendering/shaders/cy/frame.slang"
+#line 250 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -111,7 +114,7 @@ struct CyDrawInstance_0
 };
 
 
-#line 240
+#line 272
 struct CyFrameViewSet_default_0
 {
     CyFrameData_0 constant* frame_0;
@@ -124,7 +127,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 285
+#line 317
 struct CyDrawPush_0
 {
     uint drawIndex_0;
@@ -139,7 +142,7 @@ struct KernelContext_0
 };
 
 
-#line 295 "src/rendering/shaders/cy/frame.slang"
+#line 327 "src/rendering/shaders/cy/frame.slang"
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -147,14 +150,14 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 298
+#line 330
 struct cyOutlineMaskVertex_Result_0
 {
     float4 position_0 [[position]];
 };
 
 
-#line 298
+#line 330
 struct vertexInput_0
 {
     float3 modelPosition_1 [[attribute(0)]];
@@ -219,7 +222,7 @@ struct pixelOutput_0
 };
 
 
-#line 285 "src/rendering/shaders/cy/frame.slang"
+#line 317 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawPush_0
 {
     uint drawIndex_0;

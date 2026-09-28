@@ -99,9 +99,13 @@ cy_add_module(
         cy::import
         cy::rendering-assembly
         cy::rendering-contact-shadows
+        cy::rendering-depth-of-field
+        cy::rendering-decals
+        cy::rendering-fog
         cy::rendering-grading
         cy::rendering-graph
         cy::rendering-lighting
+        cy::rendering-motion-blur
         cy::rendering-occlusion
         cy::rendering-particles
         cy::rendering-pipeline

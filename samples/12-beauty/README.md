@@ -11,6 +11,8 @@
 > just capture-beauty-bloom                         # the same shot with and without bloom
 > just capture-soft-shadows                         # the shot with soft and contact shadows off and on
 > just capture-beauty-grading                       # the shot ungraded, warm and cool
+> just capture-beauty-depth-of-field                # the shot focused on the sphere and on a column
+> just capture-decals                               # the shot with its decals off and on (and the world's ground marker)
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -171,3 +173,66 @@ published, and `just capture-beauty-grading` fails unless `grading-beauty-none.p
 `docs/design/images/grading-beauty-{warm,cool}.manifest` are the graded frames' provenance; their
 post-stage lists name `ColourGrading` at step 12, after `Tonemap`.
 
+## Depth of field, on the sphere and on a far column
+
+`--depth-of-field <target>` puts depth of field into the frame's post chain at step 7, before bloom,
+through `depth_of_field::DepthOfFieldPass`, focused on one of the targets the shot file names:
+`sphere`, the copper orb 8 m out, and `column`, the colonnade's last pillar on the right of the frame,
+33 m out. The lens is the camera's own — the focal length the shot's 42-degree horizontal field of
+view implies on a 36 mm full-frame sensor, cropped to this image's aspect — at the shot's f/1.4, and
+the focus distance is the target's distance along the view axis. Nothing else is chosen: the blur
+of every pixel is the thin-lens circle of confusion at its depth. Without the flag the stage is
+absent and the frame is the one M11.c published; `just capture-beauty-depth-of-field` fails unless
+`depth-of-field-beauty-off.png` is `m11c-beauty-shot.png`'s pixels exactly, and unless each focused
+frame keeps its target's detail and loses the other's (`tools/docs/compare_depth_of_field.py`).
+
+| Focused on the sphere | Focused on the far column |
+|---|---|
+| ![](../../docs/design/images/depth-of-field-beauty-sphere.png) | ![](../../docs/design/images/depth-of-field-beauty-column.png) |
+
+![The sphere and the column, each without the stage, focused on the sphere and focused on the column](../../docs/design/images/depth-of-field-beauty-detail.png)
+
+`docs/design/images/depth-of-field-beauty-{sphere,column}.manifest` are the focused frames'
+provenance; their post-stage lists name `DepthOfField` at step 7, before `Tonemap`. The embers are
+drawn without depth, so the stage blurs each by the surface behind it.
+
+## Volumetric fog, off and on
+
+`--fog on|off` is the setting, off by default. On, the post chain's `volumetric_fog` stage is
+switched on and declared through `fog::FogPass`: a froxel volume — 160 by 90 columns, 96 slices out
+to the shot's `fog far`, four sub-steps a slice — marched through the shot's height fog, lit by the
+same sun through the same shadow map and by the same sky term the surfaces are shaded with, and
+every scene and sky fragment is seen through it (`throughFog` in `shaders/beauty.slang`). Where a
+column stands between the sun and the air, the froxels behind it scatter no sunlight: the shafts
+between the Colonnade's columns. The haze is content, in `shot.cyshot`'s `fog` lines — a
+meteorological visibility, a base altitude and scale height, an albedo and a Henyey-Greenstein
+`g` — and nothing else about it is tunable.
+
+![the Colonnade through volumetric fog](../../docs/design/images/volumetric-fog-beauty-on.png)
+![the same shot with fog off, M11.c's published pixels](../../docs/design/images/volumetric-fog-beauty-off.png)
+![off, on, and the difference amplified eight times](../../docs/design/images/volumetric-fog-beauty-detail.png)
+
+Captured with `just capture-volumetric-fog` on Vulkan: the off picture is `m11c-beauty-shot.png`
+pixel for pixel; on, 2073328 of 2073600 pixels change, 255428 darker by more than one step and
+1651930 brighter by more than one step, the largest by 120 of 255, with 0 validation errors.
+
+`just capture-volumetric-fog` writes `docs/design/images/volumetric-fog-beauty-{off,on,detail}.png`
+and `volumetric-fog-beauty-on.manifest`, and `tools/docs/compare_volumetric_fog.py` fails it unless
+the off picture is `m11c-beauty-shot.png`'s pixels exactly.
+
+## Motion blur, off and on
+
+`--motion-blur <degrees>` puts `rendering-post-processing`'s motion blur into the frame at step 8,
+at that shutter angle, and `--orbit-still <path> --orbit-frame <n>` photographs frame `n` of the
+turntable after drawing frame `n - 1`, so the frame has the orbit's motion — one and a half degrees
+of camera turn about the shot's target — and the embers have drifted one step. On, the program
+records the depth and normal prepass through `scenePrepassMotionFragment`, which writes the frame's
+motion vectors from this render's camera and the last one's; the scene still shades through
+`sceneFragment`, the published frame's own entry point. `motion_blur::MotionBlurPass` blurs the
+scene colour before exposure, so the embers and the sky are streaked with the rest of the picture —
+the sky, which the prepass does not draw, as the far plane moving with the camera. Off is the frame
+the turntable always drew.
+
+`just capture-beauty-motion-blur` writes `docs/design/images/motion-blur-beauty-{off,on}.png`:
+frame 20 of the 240-frame orbit, drawn after frame 19, with 0 validation errors. On, the columns'
+masonry and the embers streak along the orbit's direction, most at the frame's edges.

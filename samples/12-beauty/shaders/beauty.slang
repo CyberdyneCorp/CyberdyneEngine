@@ -51,8 +51,10 @@
 
 import cy.material;
 import cy.brdf;
+import cy.decal;
 import cy.packing;
 import cy.shadow;
+import cy.volumetric_fog;
 
 // THIS FILE IS A PIXEL STAGE, SO IT SAYS SO BEFORE THE MATERIAL IS INCLUDED. The generated prelude's
 // `cy_material_sample` takes the IMPLICIT level of detail only under `CY_MATERIAL_PIXEL_STAGE`, and
@@ -108,6 +110,24 @@ struct BeautyFrame
     /// x: the filter's taps. y: 1 when the ambient occlusion term is bound and read. z: 1 when the
     /// contact term is. w: unused.
     uint4 softControl;
+    /// DECALS: x the material table slot holding the decal table, or 0xFFFFFFFF — the default,
+    /// which draws the frame this file always drew. y: the table texture's rows. z: flags, of which
+    /// this file reads none — the lists are always the table's, because this program binds no
+    /// cluster buffers. APPENDED, like `softShadow`.
+    uint4 decalControl;
+    /// VOLUMETRIC FOG, read by every scene and sky entry point: x is 1 when `fog::FogPass`'s volume
+    /// is bound at (set 1, binding 4) and every fragment is seen through it, and 0 — the published
+    /// frame — when it is not, which leaves every fragment exactly as it was. APPENDED, for the
+    /// reason `softShadow` gives. yzw: unused.
+    uint4 fogControl;
+    /// MOTION BLUR, read only by `scenePrepassMotionFragment`: LAST FRAME'S baked-space to clip
+    /// transform, as `viewProjection` is this frame's. The geometry is baked once and the camera is
+    /// what moves, so this and `viewProjection` are the whole of the frame's motion. APPENDED, so
+    /// every entry point that predates it reads the block it always read.
+    float4 previousViewProjection0;
+    float4 previousViewProjection1;
+    float4 previousViewProjection2;
+    float4 previousViewProjection3;
 };
 
 [[vk::binding(0, 2)]]
@@ -266,6 +286,74 @@ float softSunVisibility(float3 relativePosition, float3 geometricNormal, float2 
 /// `sceneFragmentSoft`, and only when `softControl.z` says it was written.
 [[vk::binding(3, 1)]] Texture2D<float4> contactShadows;
 
+/// The decal table, read out of the material table at the slot `decalControl.x` names: one word per
+/// texel, as `decals::DecalTableTexture` uploaded it.
+struct BeautyDecalSource : ICyDecalSource
+{
+    uint word(uint index)
+    {
+        let uv = cyDecalWordUv(index, frame.decalControl.y);
+        return cyDecalWordFromTexel(cyMaterialSampleTextureLevel(frame.decalControl.x, uv, 0.0));
+    }
+    float mask(uint slot, float2 uv)
+    {
+        return cyMaterialSampleTextureLevel(slot, uv, 0.0).a;
+    }
+};
+
+/// The decals that reach this pixel, applied to the material's surface and to the shading normal
+/// the normal map produced — BEFORE the sun and the sky light either. The receiver's position is
+/// in the shot camera's space, which is the table's; its distance is from the eye actually drawn
+/// from, which the turntable moves.
+void applyDecals(inout Surface surface, inout float3 shadingNormal, float3 geometricNormal,
+                 float3 relativePosition, float2 pixel)
+{
+    BeautyDecalSource source;
+    CyDecalReceiver receiver;
+    receiver.relativePosition = relativePosition;
+    receiver.geometricNormal = geometricNormal;
+    receiver.eyeDistance = length(relativePosition - frame.eye.xyz);
+    // Every surface in the shot is in the default layer.
+    receiver.channels = 1u;
+    CyDecalSurface decalled;
+    decalled.albedo = surface.albedo;
+    decalled.roughness = surface.roughness;
+    decalled.metallic = surface.metallic;
+    decalled.emission = surface.emission;
+    decalled.normal = shadingNormal;
+    cyApplyTableDecals(source, receiver, pixel, decalled);
+    surface.albedo = decalled.albedo;
+    surface.roughness = clamp(decalled.roughness, 0.02, 1.0);
+    surface.metallic = saturate(decalled.metallic);
+    surface.emission = decalled.emission;
+    shadingNormal = decalled.normal;
+}
+
+/// THE FOG VOLUME, `fog::FogPass`'s target: `cy.volumetric_fog`'s layout, read texel by texel —
+/// the lookup interpolates the columns and the slices itself.
+[[vk::binding(4, 1)]] Texture2D<float4> fogVolume;
+
+struct BeautyFogVolume : ICyFogVolumeSource
+{
+    float4 texel(int2 coordinate)
+    {
+        return fogVolume.Load(int3(coordinate, 0));
+    }
+};
+
+/// A fragment's radiance as the eye receives it through the fog: attenuated by what the medium
+/// between transmits and added to by what it scatters toward the eye. `relativePosition` is in
+/// the space the geometry is baked into, which is the space the volume's columns start from.
+float4 throughFog(float4 shaded, float3 relativePosition)
+{
+    if (frame.fogControl.x == 0u)
+    {
+        return shaded;
+    }
+    BeautyFogVolume volume;
+    return float4(cyApplyFog(volume, shaded.rgb, relativePosition), shaded.a);
+}
+
 /// The surface's shading, with the ambient term's visibility supplied by the caller: 1 for
 /// `sceneFragment`, the ambient occlusion term for `sceneFragmentOccluded`. The sun's visibility is
 /// the hard 3x3 filter's unless the caller supplies its own — `sceneFragmentSoft` does.
@@ -314,6 +402,14 @@ float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunO
                                   (geometricNormal * tangentNormal.z));
     }
 
+    // DECALS CHANGE THE SURFACE BEFORE IT IS LIT: the scorch in a pillar's shadow is as dark as the
+    // gravel around it. No table, the default, and nothing here runs.
+    if (frame.decalControl.x != 0xFFFFFFFFu)
+    {
+        applyDecals(surface, shadingNormal, geometricNormal, input.relativePosition,
+                    input.position.xy);
+    }
+
     float3 view = normalize(frame.eye.xyz - input.relativePosition);
     float3 light = normalize(frame.sunDirection.xyz);
     float normalDotLight = saturate(dot(shadingNormal, light));
@@ -352,7 +448,7 @@ float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunO
 [shader("fragment")]
 float4 sceneFragment(SceneVarying input) : SV_Target
 {
-    return shadeScene(input, 1.0);
+    return throughFog(shadeScene(input, 1.0), input.relativePosition);
 }
 
 /// The same surface with the ambient occlusion term applied to its sky light. The target is the
@@ -361,7 +457,7 @@ float4 sceneFragment(SceneVarying input) : SV_Target
 float4 sceneFragmentOccluded(SceneVarying input) : SV_Target
 {
     let visibility = ambientOcclusion.Load(int3(int2(input.position.xy), 0)).a;
-    return shadeScene(input, visibility);
+    return throughFog(shadeScene(input, visibility), input.relativePosition);
 }
 
 /// SOFT AND CONTACT SHADOWS: the sun through `cy.shadow`'s percentage-closer soft filter, darkened
@@ -384,7 +480,7 @@ float4 sceneFragmentSoft(SceneVarying input) : SV_Target
     {
         ambient = ambientOcclusion.Load(int3(pixel, 0)).a;
     }
-    return shadeSceneWithSun(input, ambient, sun);
+    return throughFog(shadeSceneWithSun(input, ambient, sun), input.relativePosition);
 }
 
 /// THE DEPTH AND NORMAL PREPASS the ambient occlusion stage reads, drawn with `sceneVertex` so its
@@ -395,6 +491,35 @@ float4 sceneFragmentSoft(SceneVarying input) : SV_Target
 float4 scenePrepassFragment(SceneVarying input) : SV_Target
 {
     return float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
+}
+
+/// The same prepass with the frame's motion vectors, for motion blur: the normal as above, and in
+/// the second target where this surface was LAST frame, in normalised screen space pointing at the
+/// past — `temporal-rendering`'s convention and the one `cy/frame.slang`'s prepass writes. Drawn
+/// with `sceneVertex`, like the prepass above, so the depth the scene pass tests is this pass's;
+/// both positions are pushed through the interpolated baked-space position, which is exact per
+/// pixel. No jitter to remove: this frame is supersampled and runs no temporal stage.
+struct BeautyPrepassMotion
+{
+    float4 normalRoughness : SV_Target0;
+    float2 velocity : SV_Target1;
+};
+
+[shader("fragment")]
+BeautyPrepassMotion scenePrepassMotionFragment(SceneVarying input)
+{
+    let point = float4(input.relativePosition, 1.0);
+    let current = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
+                            frame.viewProjection3, point);
+    let previous = transform(frame.previousViewProjection0, frame.previousViewProjection1,
+                             frame.previousViewProjection2, frame.previousViewProjection3, point);
+    let currentNdc = current.xy / current.w;
+    let previousNdc = previous.xy / previous.w;
+    BeautyPrepassMotion output;
+    output.normalRoughness = float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
+    output.velocity = float2((previousNdc.x - currentNdc.x) * 0.5,
+                             (currentNdc.y - previousNdc.y) * 0.5);
+    return output;
 }
 
 // --- The sky --------------------------------------------------------------------------------------
@@ -408,6 +533,9 @@ struct SkyVarying
 {
     float4 position : SV_Position;
     float3 radiance : TEXCOORD0;
+    /// The dome's point, camera-relative, for the fog in front of it: the lookup clamps it to the
+    /// volume's far plane, so the sky is seen through the fog the volume holds and none beyond.
+    float3 relativePosition : TEXCOORD1;
 };
 
 [shader("vertex")]
@@ -417,11 +545,12 @@ SkyVarying skyVertex(float3 position : POSITION, float3 radiance : COLOR0)
     output.position = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
                                 frame.viewProjection3, float4(position, 1.0));
     output.radiance = radiance;
+    output.relativePosition = position;
     return output;
 }
 
 [shader("fragment")]
 float4 skyFragment(SkyVarying input) : SV_Target
 {
-    return float4(input.radiance, 1.0);
+    return throughFog(float4(input.radiance, 1.0), input.relativePosition);
 }

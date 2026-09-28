@@ -1,0 +1,26 @@
+# render.decals case (a): the frame with no decal table against the frame before the change.
+# Development, Vulkan, NVIDIA RTX 5060, 480x270, pipeline_test::FrameScene with a 2048 directional
+# shadow map and one box on the floor, temporal anti-aliasing on, jitter pinned.
+
+reference   src/rendering/decals/tests/references/decals_off.png
+drawn by    this branch rebased on origin/main d9456049, BEFORE the headers were regenerated:
+            src/rendering/pipeline/shaders/frame_spirv.h identical to main's (git diff empty), run
+            as `CY_RENDER_UPDATE_GOLDEN=1 cy_test_render_decals --test-case='(a)*'`
+            (FrameViewData only gained decal_control at its end; the old shader reads the prefix)
+after       regenerated frame shader with cy/decal.slang, no table bound:
+            (a) against the frame before the change: 0 differing (0 off edge), worst delta 0
+            the case requires max_channel_delta == 0, not compare()'s one-step tolerance; mutation
+            a-off-path-changed (a 1e-3 tilt of the normal) is red on worst delta 1
+also        (b) a decal whose layer is none, one in the characters channel only, and one faded out by
+            distance each leave the frame byte-identical to no decal (0 pixels differ)
+
+regeneration  slangc 2026.9.2 (build/decals/Development/bin/slangc), each shader's documented
+              invocation, run from the repository root; the same invocations applied to an export
+              of origin/main reproduce main's frame_spirv.h, frame_msl.h, world_spirv.h and
+              world_msl.h byte for byte, and selection's regenerate.py reproduces its headers.
+              particle_spirv.h and strip_spirv.h are NOT regenerated: on main they already differ
+              from what their source compiles to (they predate the 464- and 512-byte CyFrameData);
+              they read a prefix of the block and are left for a change of their own.
+strict set    just build-shaders --profile dev --strict src samples:
+              modules=51 entry_points=71 artefacts=213 comparisons=213 disagreements=0 failures=0
+              target_refusals=0

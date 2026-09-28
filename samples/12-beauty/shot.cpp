@@ -126,6 +126,34 @@ void read_bloom(Shot& shot, std::string_view field, std::string_view& rest) {
     }
 }
 
+void read_depth_of_field(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "f-number") {
+        shot.dof_f_number = to_float(take(rest));
+    } else if (field == "focus") {
+        std::string name(take(rest));
+        const f32 x = to_float(take(rest));
+        const f32 y = to_float(take(rest));
+        const f32 z = to_float(take(rest));
+        shot.focus_targets.emplace_back(std::move(name), Vec3{x, y, z});
+    }
+}
+
+void read_fog(Shot& shot, std::string_view field, std::string_view& rest) {
+    if (field == "visibility") {
+        shot.fog_visibility_metres = to_float(take(rest));
+    } else if (field == "base-height") {
+        shot.fog_base_height = to_float(take(rest));
+    } else if (field == "scale-height") {
+        shot.fog_scale_height = to_float(take(rest));
+    } else if (field == "albedo") {
+        shot.fog_albedo = to_float(take(rest));
+    } else if (field == "anisotropy") {
+        shot.fog_anisotropy = to_float(take(rest));
+    } else if (field == "far") {
+        shot.fog_far_metres = to_float(take(rest));
+    }
+}
+
 void read_material(Shot& shot, std::string_view& rest) {
     const std::string_view key = take(rest);
     const std::string_view field = take(rest);
@@ -162,6 +190,87 @@ void read_instance(Shot& shot, std::string_view& rest) {
         }
     }
     shot.instances.push_back(instance);
+}
+
+[[nodiscard]] rendering::decals::DecalShape shape_named(std::string_view name) noexcept {
+    if (name == "splat") {
+        return rendering::decals::DecalShape::Splat;
+    }
+    if (name == "ring") {
+        return rendering::decals::DecalShape::Ring;
+    }
+    if (name == "patches") {
+        return rendering::decals::DecalShape::Patches;
+    }
+    return name == "box" ? rendering::decals::DecalShape::Box
+                         : rendering::decals::DecalShape::Count;
+}
+
+/// `decal-material <key> <field> <values>...`, any number of fields on the line.
+[[nodiscard]] bool read_decal_material(Shot& shot, std::string_view& rest) {
+    ShotDecalMaterial entry;
+    entry.key = std::string(take(rest));
+    rendering::decals::DecalMaterial& material = entry.material;
+    while (!rest.empty()) {
+        const std::string_view field = take(rest);
+        if (field.empty()) {
+            break;
+        }
+        if (field == "albedo") {
+            material.albedo = to_vec3(rest);
+        } else if (field == "roughness") {
+            material.roughness = to_float(take(rest));
+        } else if (field == "metallic") {
+            material.metallic = to_float(take(rest));
+        } else if (field == "emission") {
+            material.emission = to_vec3(rest);
+        } else if (field == "shape") {
+            material.shape = shape_named(take(rest));
+            material.shape_a = to_float(take(rest));
+            material.shape_b = to_float(take(rest));
+        } else if (field == "relief") {
+            material.relief_metres = to_float(take(rest));
+        } else if (field == "edge") {
+            material.edge_softness = to_float(take(rest));
+        } else if (field == "seed") {
+            material.seed = static_cast<u32>(to_unsigned(take(rest)));
+        } else {
+            return false;
+        }
+    }
+    shot.decal_materials.push_back(entry);
+    return material.shape != rendering::decals::DecalShape::Count;
+}
+
+/// `decal <material> at x y z facing x y z up x y z size w h depth [order n] [fade-angle deg]`.
+[[nodiscard]] bool read_decal(Shot& shot, std::string_view& rest) {
+    ShotDecal decal;
+    decal.material = std::string(take(rest));
+    while (!rest.empty()) {
+        const std::string_view field = take(rest);
+        if (field.empty()) {
+            break;
+        }
+        if (field == "at") {
+            decal.position = to_vec3(rest);
+        } else if (field == "facing") {
+            decal.facing = to_vec3(rest);
+        } else if (field == "up") {
+            decal.up = to_vec3(rest);
+        } else if (field == "size") {
+            decal.width = to_float(take(rest));
+            decal.height = to_float(take(rest));
+            decal.depth = to_float(take(rest));
+        } else if (field == "order") {
+            decal.order = static_cast<i32>(to_float(take(rest)));
+        } else if (field == "fade-angle") {
+            decal.fade_angle_degrees = to_float(take(rest));
+        } else {
+            return false;
+        }
+    }
+    shot.decals.push_back(decal);
+    return true;
 }
 
 /// Does the scene's camera and grade agree with `embers.h`'s copy of them?
@@ -252,6 +361,11 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             shot.exposure_stops = to_float(take(line));
         } else if (keyword == "bloom") {
             read_bloom(shot, take(line), line);
+        } else if (keyword == "depth-of-field") {
+            const std::string_view field = take(line);
+            read_depth_of_field(shot, field, line);
+        } else if (keyword == "fog") {
+            read_fog(shot, take(line), line);
         } else if (keyword == "material") {
             read_material(shot, line);
         } else if (keyword == "mesh") {
@@ -259,6 +373,19 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             shot.meshes.emplace_back(key, std::string(take(line)));
         } else if (keyword == "instance") {
             read_instance(shot, line);
+        } else if (keyword == "decal-material") {
+            if (!read_decal_material(shot, line)) {
+                problem =
+                    "a `decal-material` line with a field or a shape the format does not "
+                    "define";
+                return make_unexpected(
+                    Error{ErrorCode::InvalidArgument, "decal material", line_number});
+            }
+        } else if (keyword == "decal") {
+            if (!read_decal(shot, line)) {
+                problem = "a `decal` line with a field the format does not define";
+                return make_unexpected(Error{ErrorCode::InvalidArgument, "decal", line_number});
+            }
         } else {
             problem =
                 std::string("a keyword the shot format does not define: ") + std::string(keyword);
@@ -288,6 +415,18 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             return make_unexpected(Error{ErrorCode::InvalidArgument, "unknown material", 0});
         }
     }
+    // A decal naming a material nobody declared would be drawn with whatever material slot zero
+    // holds, which is the same failure as an instance naming an undeclared material.
+    for (const ShotDecal& decal : shot.decals) {
+        bool found = false;
+        for (const ShotDecalMaterial& material : shot.decal_materials) {
+            found = found || material.key == decal.material;
+        }
+        if (!found) {
+            problem = "a decal names a decal material the shot does not declare: " + decal.material;
+            return make_unexpected(Error{ErrorCode::InvalidArgument, "unknown decal material", 0});
+        }
+    }
     for (const ShotMaterial& material : shot.materials) {
         if (material.graph_path.empty() || material.albedo_path.empty() ||
             material.normal_path.empty() || material.data_path.empty()) {
@@ -315,6 +454,15 @@ const ShotMaterial* Shot::material(std::string_view key) const noexcept {
     for (const ShotMaterial& material : materials) {
         if (material.key == key) {
             return &material;
+        }
+    }
+    return nullptr;
+}
+
+const Vec3* Shot::focus_target(std::string_view target) const noexcept {
+    for (const auto& [key, position] : focus_targets) {
+        if (key == target) {
+            return &position;
         }
     }
     return nullptr;

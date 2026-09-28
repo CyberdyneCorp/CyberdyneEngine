@@ -77,6 +77,18 @@ struct DrawGeometry {
     u32 first_index = 0;
     i32 vertex_offset = 0;
     u32 vertex_count = 0;
+    /// Where LAST FRAME'S vertices of this draw begin in the same streams, for a mesh deformed on
+    /// the device — `skinning::SkinPass::previous_vertex_offset()`, the other half of its
+    /// double-buffered output. The depth prepass reads them as `kPreviousPositionStream` and
+    /// derives the draw's motion from them, which is `temporal-rendering`'s "skinned motion is
+    /// correct without extra work": the previous pose is already stored and this names it.
+    ///
+    /// FALSE, THE DEFAULT, IS A RIGID MESH: the previous positions are the current ones, the
+    /// position stream bound a second time, and the motion is the placement's alone. Appended, so
+    /// a brace-initialised lookup written before it keeps its meaning. Read for INDEXED draws: a
+    /// non-indexed draw is recorded from vertex zero and has no offset to move.
+    bool has_previous_vertices = false;
+    i32 previous_vertex_offset = 0;
 };
 
 /// Where a draw's geometry comes from. False means "this draw has nothing to draw", which is a
@@ -106,8 +118,9 @@ struct DrawPipelineSelection {
     rhi::GraphicsPipelineHandle pipeline;
     rhi::PipelineLayoutHandle layout;
     rhi::DescriptorSetHandle material_set;
-    /// 0 keeps the pass default (shadow 1, depth 2, forward 3). A graph vertex program may
-    /// request three streams in depth or shadow when its offset reads normal or UV.
+    /// 0 keeps the pass default (shadow: position; depth: position, normal, previous position;
+    /// forward: position, normal, UV). Non-zero binds that many FORWARD streams, whatever the pass:
+    /// a graph vertex program reads normal or UV and evaluates its own previous position.
     u8 vertex_streams = 0;
 };
 

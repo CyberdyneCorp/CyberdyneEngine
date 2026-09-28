@@ -18,7 +18,7 @@
 //
 // The consequence worth stating: a pass with no callback still declares its resources, and the
 // graph still derives every barrier around it. So a frame can be built, compiled and asserted on
-// with no device, no shaders and no draws — which is what `unit.forward_frame` does, and it is the
+// with no device, no shaders and no draws — which is what `unit.render_forward` does, and it is the
 // reason the pass order is a test rather than a diagram.
 //
 // ================================================================================================
@@ -89,6 +89,10 @@ struct FrameFeatures {
     /// is a declared pass and the read is a declared read.
     bool transparent_refraction = false;
     bool post_process = true;
+    /// Depth of field: a gather driven by the physical circle of confusion, between the temporal
+    /// stage and bloom — `FramePassKind::DepthOfField`, declared by its producer
+    /// (`src/rendering/depth_of_field/`). Off by default, and absent rather than skipped when off.
+    bool depth_of_field = false;
     /// Bloom's downsample and upsample chain, between the temporal stage and the post-process that
     /// applies exposure — `bloom_chain.h`. Off by default, and absent rather than skipped when off.
     bool bloom = false;
@@ -106,6 +110,11 @@ struct FrameFeatures {
     bool virtual_geometry = false;
     /// 1, 2, 4 or 8. Above 1 the colour and depth are resolved before the screen-space passes.
     u32 msaa_samples = 1;
+    /// Volumetric fog: a froxel volume marched through the medium, lit through the directional
+    /// shadow map, which the opaque pass reads to attenuate and add to every surface —
+    /// `FramePassKind::VolumetricFog`. Off by default, and absent when off. Needs no prepass: the
+    /// volume is a function of the view and the shadow map, not of the depth.
+    bool volumetric_fog = false;
 };
 
 /// The mode the features require. See the header comment for why this is derived.
@@ -136,6 +145,13 @@ enum class FramePassKind : u8 {
     /// refinement without placing it, and it reads what the other screen-space passes read.
     ContactShadows,
     ScreenSpaceGi,
+    /// Volumetric fog: the froxel volume filled, lit and integrated, declared by its producer
+    /// (`src/rendering/fog/`) through `FrameStageDeclaration` as the contact shadows are. It is
+    /// `rendering-post-processing`'s step 3, "volumetric fog composite", and it sits HERE rather
+    /// than after shading because a forward renderer composites fog per surface: the opaque pass
+    /// multiplies each surface by the volume's transmittance and adds its in-scattering. After the
+    /// shadow pass, whose map it reads, and before the opaque pass, which reads it.
+    VolumetricFog,
     Opaque,
     Sky,
     ScreenSpaceReflections,
@@ -143,6 +159,19 @@ enum class FramePassKind : u8 {
     Transparent,
     Resolve,
     Temporal,
+    /// Step 7 of `rendering-post-processing`: depth of field, on linear HDR after the temporal
+    /// resolve and before bloom and exposure. Declared by its producer
+    /// (`src/rendering/depth_of_field/`) through `FrameStageDeclaration`, which reads the colour
+    /// the chain has reached (`ScreenSpaceStageInputs::source`) and the depth, and whose last pass
+    /// writes `FrameResources::depth_of_field`, the colour every later stage reads.
+    DepthOfField,
+    /// Step 8 of `rendering-post-processing`: motion blur, on the linear HDR colour the chain has
+    /// reached (depth of field's, or the temporal resolve's) and before bloom, so a streak blooms
+    /// as the light it is. Declared by its producer
+    /// (`src/rendering/motion_blur/`) through `FrameStageDeclaration` — a tile reduction, a
+    /// neighbourhood maximum and a gather are three dispatches, and only the graph can put a
+    /// barrier between them.
+    MotionBlur,
     /// Step 9 of `rendering-post-processing`: bloom, on linear HDR before exposure. Several graph
     /// passes, one callback — `ForwardFrame::bloom()` says which step a pass is.
     Bloom,
@@ -213,6 +242,17 @@ struct ScreenSpaceStageInputs {
     /// again — the selection mask — and must declare the read. Invalid when the frame has none.
     /// Appended, so a brace-initialised caller written before it keeps its meaning.
     ResourceId draw_instances = kInvalidResource;
+    /// The colour a post-chain stage reads — the scene-referred colour the chain has reached, for
+    /// a stage that writes a new one into `target`. Invalid for every stage that is not one.
+    /// Appended, like `draw_instances`.
+    ResourceId source = kInvalidResource;
+    /// The prepass motion vectors, for a stage after the shading — motion blur. Invalid when the
+    /// prepass writes none. Appended, as `draw_instances` is.
+    ResourceId velocity = kInvalidResource;
+    /// The colour the post chain has reached at this stage — depth of field's or the temporal
+    /// resolve's output, for motion blur — which a stage that filters the picture reads. Appended,
+    /// as above.
+    ResourceId color = kInvalidResource;
 };
 
 /// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
@@ -248,6 +288,11 @@ struct FrameResources {
     ResourceId reflections = kInvalidResource;
     ResourceId temporal_previous = kInvalidResource;
     ResourceId temporal_history = kInvalidResource;
+    /// The colour depth of field wrote: full resolution, the scene colour's format. Only with
+    /// `FrameFeatures::depth_of_field`.
+    ResourceId depth_of_field = kInvalidResource;
+    /// The motion-blurred colour, imported by its producer. Only with `FrameFeatures::motion_blur`.
+    ResourceId motion_blur = kInvalidResource;
     ResourceId post_color = kInvalidResource;
     /// The scene-referred colour the post-process reads: `color`, the temporal history, or the
     /// bloomed colour, whichever stage ran last before exposure.
@@ -265,6 +310,9 @@ struct FrameResources {
     /// stored complemented so that a cleared texel reads as "no surface". Only with
     /// `FrameFeatures::virtual_geometry`.
     ResourceId visibility = kInvalidResource;
+    /// The volumetric fog volume, imported by its producer. Only with
+    /// `FrameFeatures::volumetric_fog`.
+    ResourceId volumetric_fog = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -319,6 +367,20 @@ struct FrameDescription {
     /// post chain ended in — the output, when post-processing tonemapped into it — which its last
     /// pass reads and writes. Like the contact shadows, there is no single-pass fallback.
     FrameStageDeclaration selection_outlines_stage;
+    /// The producer that declares the depth of field stage: handed the colour the chain has
+    /// reached as `source` and `FrameResources::depth_of_field` as `target`, which its last pass
+    /// must write. No single-pass fallback, as for the outlines.
+    FrameStageDeclaration depth_of_field_stage;
+    /// The volumetric fog volume and the producer that declares its pass. Like the contact shadows
+    /// there is no single-pass fallback: with `features.volumetric_fog` and no producer, `build()`
+    /// refuses rather than declaring a pass nothing records.
+    ResourceId volumetric_fog_target = kInvalidResource;
+    FrameStageDeclaration volumetric_fog_stage;
+    /// The motion blur target, imported by its producer, and the producer that declares the stage's
+    /// passes. With `features.motion_blur` both are required — there is no single-pass stand-in —
+    /// and the post chain continues from the target.
+    ResourceId motion_blur_target = kInvalidResource;
+    FrameStageDeclaration motion_blur_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;
@@ -376,7 +438,8 @@ private:
     /// Hand a stage to the producer that declares its passes, and record the first of them.
     void declare_produced_stage(RenderGraph& graph, const BuildState& state,
                                 const FrameStageDeclaration& producer, FramePassKind kind,
-                                const char* name, ResourceId target) noexcept;
+                                const char* name, ResourceId target,
+                                ResourceId source = kInvalidResource) noexcept;
 
     Array<FramePass> passes_;
     FrameResources resources_{};

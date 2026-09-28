@@ -108,7 +108,10 @@ Status FrameBindings::create_slot(rhi::Device& device, u32 index) noexcept {
          rhi::BufferUsage::Storage, &slot.cluster_indices},
         {"cy frame draws", u64{capacity_.draws} * sizeof(GpuDrawInstance),
          rhi::BufferUsage::Storage | rhi::BufferUsage::TransferSource, &slot.draws},
-        {"cy frame instances", u64{capacity_.instances} * sizeof(InstanceTransform),
+        // TWICE THE CAPACITY: this frame's rows and, after them, each row's previous placement —
+        // `instance_history.h`. One buffer rather than two keeps the view set's layout, and every
+        // shader compiled against it, exactly as it was.
+        {"cy frame instances", u64{capacity_.instances} * 2U * sizeof(InstanceTransform),
          rhi::BufferUsage::Storage, &slot.instances},
         {"cy frame materials", u64{capacity_.material_bytes}, rhi::BufferUsage::Storage,
          &slot.materials},
@@ -242,10 +245,18 @@ Status FrameBindings::upload(u32 frame_slot, const FrameUpload& upload) noexcept
     rhi::Device& device = *device_;
     const Slot& slot = slots_[frame_slot];
 
+    // The instances first, because where their previous rows begin is a word of the view block.
+    Expected<u32, Error> previous_rows = write_instances(slot, upload);
+    if (!previous_rows.has_value()) {
+        return make_unexpected(previous_rows.error());
+    }
+    FrameViewData view = upload.view;
+    view.motion_control[0] = *previous_rows;
+
     if (Status written = copy_value(device, slot.globals, upload.globals); !written) {
         return written;
     }
-    if (Status written = copy_value(device, slot.view, upload.view); !written) {
+    if (Status written = copy_value(device, slot.view, view); !written) {
         return written;
     }
     if (Status written = copy_span(device, slot.lights, upload.lights, capacity_.lights,
@@ -270,11 +281,6 @@ Status FrameBindings::upload(u32 frame_slot, const FrameUpload& upload) noexcept
         !written) {
         return written;
     }
-    if (Status written = copy_span(device, slot.instances, upload.instances, capacity_.instances,
-                                   "frame bindings: more instances than the ring was sized for");
-        !written) {
-        return written;
-    }
     if (Status written =
             copy_span(device, slot.materials, upload.materials, capacity_.material_bytes,
                       "frame bindings: the material table is larger than the ring");
@@ -289,6 +295,31 @@ Status FrameBindings::upload(u32 frame_slot, const FrameUpload& upload) noexcept
     staged_draw_bytes_ = upload.draws.size() * sizeof(GpuDrawInstance);
     ++uploads_;
     return ok();
+}
+
+Expected<u32, Error> FrameBindings::write_instances(const Slot& slot,
+                                                    const FrameUpload& upload) noexcept {
+    const Span<const InstanceTransform> rows = upload.instances;
+    if (Status written = copy_span(*device_, slot.instances, rows, capacity_.instances,
+                                   "frame bindings: more instances than the ring was sized for");
+        !written) {
+        return make_unexpected(written.error());
+    }
+    if (rows.empty()) {
+        history_.reset();
+        return kNoPreviousInstances;
+    }
+    // The previous rows go straight into the ring after the current ones, so there is no second
+    // copy of them anywhere; `copy_span` above has already proved the buffer is mapped.
+    auto* mapped = static_cast<InstanceTransform*>(device_->buffer_mapped_pointer(slot.instances));
+    const Span<InstanceTransform> previous(mapped + rows.size(), rows.size());
+    if (Status advanced = history_.advance(rows, upload.instance_ids, upload.camera_motion,
+                                           upload.motion_cut, previous);
+        !advanced) {
+        return make_unexpected(advanced.error());
+    }
+    // OFF STILL KEEPS THE ROWS, so a frame that turns it on has a previous frame to derive from.
+    return upload.object_motion ? static_cast<u32>(rows.size()) : kNoPreviousInstances;
 }
 
 rhi::BufferHandle FrameBindings::staged_lights() const noexcept {
@@ -450,6 +481,7 @@ void FrameBindings::shutdown() noexcept {
     for (rhi::DescriptorSetHandle& set : sets_) {
         set = rhi::DescriptorSetHandle{};
     }
+    history_.reset();
     device_ = nullptr;
     pipelines_ = nullptr;
     slot_count_ = 0;

@@ -941,6 +941,105 @@ capture-beauty-bloom *args:
     python3 tools/docs/collect_beauty_shot.py docs/design/images/bloom-beauty-off.png \
         docs/design/images/bloom-beauty-on.png
 
+# THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
+# embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far
+# column — the two focus targets `content/beauty/shot.cyshot` names. Depth of field runs at step 7,
+# before bloom. tools/docs/compare_depth_of_field.py fails the recipe unless the frame without the
+# stage is M11.c's still byte for byte, and unless each focused frame is sharper than the other where
+# it is focused and softer where it is not; it writes the two side by side and a crop of each target.
+# Needs a graphics device, and says so and writes nothing without one.
+# Photograph the beauty shot focused on the sphere and on a far column. Usage: just capture-beauty-depth-of-field [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-depth-of-field *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-depth-of-field: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-depth-of-field"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    echo "==> capture     without depth of field"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+        --still docs/design/images/depth-of-field-beauty-off.png ${rest}
+    for target in sphere column; do
+        echo "==> capture     focused on the ${target}"
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --depth-of-field "${target}" \
+            --still "docs/design/images/depth-of-field-beauty-${target}.png" \
+            --manifest "docs/design/images/depth-of-field-beauty-${target}.manifest" ${rest}
+    done
+
+    echo "==> compare     off against M11.c's still, and each focus against the other"
+    python3 tools/docs/compare_depth_of_field.py \
+        --off docs/design/images/depth-of-field-beauty-off.png \
+        --sphere docs/design/images/depth-of-field-beauty-sphere.png \
+        --column docs/design/images/depth-of-field-beauty-column.png \
+        --reference docs/design/images/m11c-beauty-shot.png \
+        --pair docs/design/images/depth-of-field-beauty-pair.png \
+        --detail docs/design/images/depth-of-field-beauty-detail.png
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/depth-of-field-beauty-off.png \
+        docs/design/images/depth-of-field-beauty-sphere.png \
+        docs/design/images/depth-of-field-beauty-column.png
+
+# THE BEAUTY SHOT IN MOTION, WITH AND WITHOUT MOTION BLUR: one frame of the turntable — the camera
+# a step round its orbit from the frame before, the embers a step on — photographed without the
+# stage and with it at a 180-degree shutter, from one set of compiled programs. The first frame of
+# a run has no motion, so each capture draws the frame before and writes the one after. Needs a
+# graphics device, and says so and writes nothing without one.
+# Photograph a turntable frame of the beauty shot with and without motion blur. Usage: just capture-beauty-motion-blur [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-motion-blur *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-motion-blur: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-motion-blur"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    # Thirty degrees round the orbit, one and a half degrees a frame: the camera turns about the
+    # shot's target, so the motion is fastest at the frame's edges and slowest at its centre.
+    orbit=(--orbit-frame 20 --frames-count 240)
+    echo "==> capture     a turntable frame without motion blur"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" "${orbit[@]}" \
+        --orbit-still docs/design/images/motion-blur-beauty-off.png ${rest}
+    echo "==> capture     the same frame at a 180-degree shutter"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" "${orbit[@]}" \
+        --motion-blur 180 --orbit-still docs/design/images/motion-blur-beauty-on.png ${rest}
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/motion-blur-beauty-off.png \
+        docs/design/images/motion-blur-beauty-on.png
+
 # THE BEAUTY SHOT UNGRADED AND UNDER ITS TWO LOOKS: the same scene, the same compiled programs and the
 # same settled embers, photographed without a look and with `content/beauty/looks/warm.cygrade`
 # (the parametric controls alone) and `cool.cygrade` (a white balance and an exported-style `.cube`,
@@ -1177,6 +1276,156 @@ capture-soft-shadows *args:
     python3 tools/docs/collect_beauty_shot.py \
         "${images}/soft-shadows-beauty-off.png" "${images}/soft-shadows-beauty-on.png" \
         "${images}/soft-shadows-beauty-detail.png"
+
+# DECALS, PHOTOGRAPHED WHERE THEY ARE USED: the beauty shot with its `decal` lines off and on —
+# scorch marks on the gravel, moss at the pillars' feet — and `samples/10-world` without and with its
+# ground marker. The same compiled programs and the same frame each time; only the decals change.
+# The published M11.c still is not touched. Needs a graphics device, and says so and writes nothing
+# without one.
+# Photograph decals in the beauty shot and on the world's terrain. Usage: just capture-decals [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-decals *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    world="${build_dir}/samples/10-world/cy_sample_world"
+    for tool in "${sample}" "${world}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-decals: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/decals"
+    rm -rf "${work}"
+    mkdir -p "${work}/frames" docs/design/images
+    trap 'rm -rf "${work}/frames"' EXIT
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    images=docs/design/images
+    for setting in off on; do
+        echo "==> capture     beauty shot, decals ${setting}"
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --decals "${setting}" --still "${images}/decals-beauty-${setting}.png" \
+            ${rest} | tee "${work}/beauty-${setting}.log"
+        if [ ! -f "${images}/decals-beauty-${setting}.png" ]; then
+            echo "capture-decals: no picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+
+    # THE WORLD: a short take and one still from it, the same seed and the same frame both times.
+    for setting in off on; do
+        marker=()
+        if [ "${setting}" = on ]; then
+            marker=(--ground-marker)
+        fi
+        echo "==> capture     world, ground marker ${setting}"
+        rm -rf "${work}/frames" && mkdir -p "${work}/frames"
+        "${world}" --frames "${work}/frames" --still "${images}/decals-world-${setting}.png" \
+            --seconds 1 --fps 8 --still-frame 3 --width 1280 --height 720 \
+            ${marker[@]+"${marker[@]}"} | tee "${work}/world-${setting}.log"
+        if [ ! -f "${images}/decals-world-${setting}.png" ]; then
+            echo "capture-decals: no world picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/decals-beauty-off.png" "${images}/decals-beauty-on.png" \
+        "${images}/decals-world-off.png" "${images}/decals-world-on.png"
+
+# Photograph the beauty shot with volumetric fog off and on. Usage: just capture-volumetric-fog [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-volumetric-fog *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-volumetric-fog: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-volumetric-fog"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    images=docs/design/images
+    for setting in off on; do
+        echo "==> capture     volumetric fog ${setting}"
+        manifest=()
+        if [ "${setting}" = on ]; then
+            manifest=(--manifest "${images}/volumetric-fog-beauty-on.manifest")
+        fi
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --fog "${setting}" \
+            --still "${images}/volumetric-fog-beauty-${setting}.png" \
+            ${manifest[@]+"${manifest[@]}"} ${rest} | tee "${work}/${setting}.log"
+        if [ ! -f "${images}/volumetric-fog-beauty-${setting}.png" ]; then
+            echo "capture-volumetric-fog: no picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+    python3 tools/docs/compare_volumetric_fog.py \
+        --off "${images}/volumetric-fog-beauty-off.png" \
+        --on "${images}/volumetric-fog-beauty-on.png" \
+        --reference "${images}/m11c-beauty-shot.png" \
+        --detail "${images}/volumetric-fog-beauty-detail.png"
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/volumetric-fog-beauty-off.png" "${images}/volumetric-fog-beauty-on.png" \
+        "${images}/volumetric-fog-beauty-detail.png"
+
+# Photograph samples/10-world's morning with and without the valley haze. Usage: just capture-world-fog [--profile <p>] [--width <n>] [--height <n>]
+capture-world-fog *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/10-world/cy_sample_world"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-world-fog: ${sample} was not built." >&2
+        exit 1
+    fi
+
+    # THE AERIAL PERSPECTIVE PAIR'S TAKE: one simulated day in 192 frames at 960x540, and frame 60,
+    # 11:56 on the take's clock, the sun at about 24 degrees.
+    # The sample draws only when it is given a frames directory; the take's frames are scratch.
+    images=docs/design/images
+    work="${build_dir}/world-fog"
+    mkdir -p "${images}"
+    trap 'rm -rf "${work}"' EXIT
+    for setting in off on; do
+        echo "==> capture     world fog ${setting}"
+        flags=()
+        if [ "${setting}" = on ]; then
+            flags=(--fog)
+        fi
+        rm -rf "${work}" && mkdir -p "${work}"
+        "${sample}" --width 960 --height 540 --seconds 24 --fps 8 --still-frame 60 \
+            --frames "${work}" --still "${images}/volumetric-fog-world-${setting}.png" \
+            ${flags[@]+"${flags[@]}"} ${rest}
+        rm -f "${images}/volumetric-fog-world-${setting}.png.manifest.txt"
+    done
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/volumetric-fog-world-off.png" "${images}/volumetric-fog-world-on.png"
 
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #

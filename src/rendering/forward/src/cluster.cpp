@@ -3,6 +3,7 @@
 #include <cy/core/base/assert.h>
 #include <cy/core/math/scalar.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cy::rendering {
@@ -44,6 +45,9 @@ namespace {
 [[nodiscard]] bool element_touches(const ClusterElement& element, const Aabb& bounds) noexcept {
     if (distance_squared_to(bounds, element.view_position) > element.radius * element.radius) {
         return false;
+    }
+    if (element.oriented_box) {
+        return oriented_box_touches(element.view_position, element.box_axes, bounds);
     }
     if (element.cone_cos >= 1.0F) {
         return true;
@@ -184,10 +188,15 @@ Aabb cluster_bounds(const ClusterGrid& grid, u32 x, u32 y, u32 slice, f32 tan_ha
         ((static_cast<f32>(x) / static_cast<f32>(grid.dimensions[0])) * 2.0F) - 1.0F;
     const f32 tile_max_x =
         ((static_cast<f32>(x + 1) / static_cast<f32>(grid.dimensions[0])) * 2.0F) - 1.0F;
-    const f32 tile_min_y =
-        ((static_cast<f32>(y) / static_cast<f32>(grid.dimensions[1])) * 2.0F) - 1.0F;
+    // TILE ROW 0 IS THE TOP OF THE IMAGE, as pixel row 0 is: `cy/cluster.slang`'s `clusterCoordOf`
+    // divides the fragment's pixel row by the extent, and the Vulkan viewport's Y flip puts
+    // normalised +Y (view-space up) at the top. Counting rows from the bottom here mirrored every
+    // list vertically against the lookup, so a fragment read the list of the tile across the
+    // horizontal centre line from it.
     const f32 tile_max_y =
-        ((static_cast<f32>(y + 1) / static_cast<f32>(grid.dimensions[1])) * 2.0F) - 1.0F;
+        1.0F - ((static_cast<f32>(y) / static_cast<f32>(grid.dimensions[1])) * 2.0F);
+    const f32 tile_min_y =
+        1.0F - ((static_cast<f32>(y + 1) / static_cast<f32>(grid.dimensions[1])) * 2.0F);
 
     const f32 tan_x = tan_half_fov_y * aspect;
     const f32 min_x = math::min(tile_min_x * tan_x * near_depth, tile_min_x * tan_x * far_depth);
@@ -201,6 +210,34 @@ Aabb cluster_bounds(const ClusterGrid& grid, u32 x, u32 y, u32 slice, f32 tan_ha
     // produces an empty box and a frame with no lights, which is why it is written out.
     return Aabb::from_min_max(Vec3{math::min(min_x, max_x), math::min(min_y, max_y), -far_depth},
                               Vec3{math::max(min_x, max_x), math::max(min_y, max_y), -near_depth});
+}
+
+bool oriented_box_touches(Vec3 center, const Vec3 (&half_axes)[3], const Aabb& bounds) noexcept {
+    const Vec3 half = bounds.half_extents();
+    const Vec3 offset = center - bounds.center();
+    // The AABB's own three axes: the oriented box's extent along world axis i is the sum of its
+    // half-axes' absolute components on it.
+    const Vec3 reach{
+        std::fabs(half_axes[0].x) + std::fabs(half_axes[1].x) + std::fabs(half_axes[2].x),
+        std::fabs(half_axes[0].y) + std::fabs(half_axes[1].y) + std::fabs(half_axes[2].y),
+        std::fabs(half_axes[0].z) + std::fabs(half_axes[1].z) + std::fabs(half_axes[2].z)};
+    if (std::fabs(offset.x) > reach.x + half.x || std::fabs(offset.y) > reach.y + half.y ||
+        std::fabs(offset.z) > reach.z + half.z) {
+        return false;
+    }
+    // The oriented box's three axes: its own extent along one is that half-axis' length, and the
+    // AABB's is its half-extents projected onto the unit axis. A degenerate axis separates nothing.
+    const auto separates = [&](const Vec3& axis) noexcept {
+        const f32 extent = length(axis);
+        if (extent <= 0.0F) {
+            return false;
+        }
+        const Vec3 unit = axis * (1.0F / extent);
+        const f32 aabb_reach = (half.x * std::fabs(unit.x)) + (half.y * std::fabs(unit.y)) +
+                               (half.z * std::fabs(unit.z));
+        return std::fabs(dot(offset, unit)) > extent + aabb_reach;
+    };
+    return std::ranges::none_of(half_axes, separates);
 }
 
 bool element_is_cone(f32 outer_half_angle_radians) noexcept {

@@ -70,6 +70,13 @@ layer realizes that declaration as two persistent RGBA16F images and executes a 
 in `FramePassKind::Temporal`; `FrameAssembly` imports, marks and swaps them only after successful
 execution. `HistoryResource::bytes()` remains the accounting figure for diagnostics.
 
-The per-pixel motion vector pass remains in the forward frame: the depth prepass derives camera
-motion from current and previous unjittered transforms and writes the velocity attachment that the
-temporal resolve reads.
+The per-pixel motion vector pass remains in the forward frame, and since `add-motion-blur` it
+derives PER-OBJECT motion as well as the camera's: `pipeline::FrameBindings` keeps the instance rows
+it uploaded last frame (`pipeline/instance_history.h`), rebases them by the camera displacement this
+framework reports, and writes each row's previous placement after the current rows; the depth
+prepass pushes every vertex through its previous placement and its previous position — the same
+stream for a rigid mesh, the other half of a double-buffered output for a deformed one — and writes
+the velocity attachment the temporal resolve and the motion blur stage read. A row with no history
+(first seen, a recycled slot, or a cut this framework reported) carries camera motion alone. With no
+previous rows the arithmetic is the camera-only prepass's, byte for byte; `render.motion_blur` pins
+that and measures the moving case against the geometry.

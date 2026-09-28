@@ -39,6 +39,42 @@
 // dome is in it, so wherever no hill is reflected the sky already is.
 //
 // ================================================================================================
+// THE AIR IN FRONT OF THE WATER, APPLIED ONCE
+// ================================================================================================
+//
+// `atmosphere-sky-and-clouds` — "Aerial perspective": distance attenuation "SHALL be produced by
+// the atmosphere model" and "applied to opaque shading". The sea is read through the same table
+// the land is, `sky::AerialPerspectiveTable` through `cy/aerial_perspective.slang`, bound as the
+// third binding of set 0 exactly as world.slang binds it. What makes the water different from the
+// land is that two of its three terms were ALREADY drawn through the air by world.slang's lit path,
+// so applying the table to the finished colour would haze them twice:
+//
+//   the refraction   the bed was hazed over the whole line from the eye to the bed, but the only
+//                    air on that line is in front of the surface; below it is water. So the stored
+//                    bed is taken back to the radiance it was lit with — the table's own
+//                    transmittance and in-scattering at the bed's position, inverted — before the
+//                    column is laid over it, and the column's result is then seen through the air
+//                    between the eye and the surface, once.
+//   the reflection   a reflected hill was hazed over its distance from the eye, which is the
+//                    length of the mirrored ray eye -> surface -> hill short by a fraction
+//                    2 h e / r^2 for a hill h metres up, an eye e metres up and r metres away:
+//                    already the air of the whole reflected path, the part in front of the surface
+//                    included. The mirrored
+//                    dome is the sky itself, which is the in-scattering of the whole path to space.
+//                    So the reflected picture is NOT attenuated again, and only the rest of the
+//                    surface's in-scattering is added, weighted by what the mirror does not cover.
+//
+// With T and S the table's transmittance and in-scattering between the eye and the surface, and F
+// the Fresnel weight, the eye then receives
+//
+//   F reflected + T ((1 - F) refracted + glitter) + (1 - F) S
+//
+// which is `T L + S` for the surface's own light L when the reflected picture holds T R + S for
+// the reflected light R — the land's rule, term for term — and foam, which covers the surface,
+// takes `T foam + S`. With the table's `enabled` word zero nothing is read and the colour is the
+// one this shader drew before the air was applied, operation for operation.
+//
+// ================================================================================================
 // REGENERATING
 // ================================================================================================
 //
@@ -58,6 +94,7 @@
 //          kWaterFragmentMsl=water_fragment.metal
 //   clang-format -i water_spirv.h water_msl.h
 
+import cy.aerial_perspective;
 import cy.cloud_shadow;
 import cy.field;
 import cy.noise;
@@ -115,6 +152,8 @@ struct WaterCloudShadow
 {
     StructuredBuffer<uint> field;
     StructuredBuffer<float4> placement;
+    /// `sky::pack_aerial_perspective()`'s words for this frame's camera, world.slang's binding 2.
+    StructuredBuffer<float4> aerial;
 };
 
 /// Set 1: what only the water reads.
@@ -190,6 +229,35 @@ float sunThroughClouds(float3 world)
     return cyCloudShadowAtImage(image, world.x + placement.x, world.y, world.z + placement.y);
 }
 
+CyAerialPerspectiveTable aerialTable()
+{
+    CyAerialPerspectiveTable table;
+    table.words = cloudShadow.aerial;
+    return table;
+}
+
+/// The bed's radiance as it was lit, from the refraction picture's, which world.slang drew through
+/// the air over the whole line to the bed. See the header comment.
+float3 bedBeforeAir(CyAerialPerspectiveTable table, float3 stored, float3 bed)
+{
+    let air = cyAerialPerspectiveAt(table, bed - push.eye.xyz);
+    return max(stored - air.inScattering, float3(0.0)) / max(air.transmittance, float3(1e-4));
+}
+
+/// The surface as the eye receives it through the air in front of it, the reflected picture's
+/// own air left as it was drawn. See the header comment.
+float3 seenThroughAir(CyAerialPerspectiveTable table, float3 world, float3 refracted,
+                      float3 reflected, float fresnel, float3 glitter, float3 foamRadiance,
+                      float foam)
+{
+    let air = cyAerialPerspectiveAt(table, world - push.eye.xyz);
+    let own = ((1.0 - fresnel) * refracted) + glitter;
+    let surface = (fresnel * reflected) + (own * air.transmittance) +
+                  ((1.0 - fresnel) * air.inScattering);
+    let foamSeen = (foamRadiance * air.transmittance) + air.inScattering;
+    return lerp(surface, foamSeen, foam);
+}
+
 /// The world-relative position a pixel of the refraction picture holds, from its stored depth.
 float3 worldAt(WaterParams params, float2 pixelCentre, float depth)
 {
@@ -242,8 +310,13 @@ float foamBreakup(float2 xz, float seconds)
     return 0.5 + 0.5 * saturate(coarse * 0.65 + fine * 0.35);
 }
 
-[shader("fragment")]
-float4 waterFragment(VertexOutput input) : SV_Target
+/// The water's colour, with the air in front of it when `kAir` and exactly as it was drawn before
+/// aerial perspective when not. Two copies chosen once in the entry point, the off copy the body
+/// from before operation for operation. One body branching on the table's word as it went — with
+/// the same arithmetic on the off path — moved one sea pixel by one 8-bit step on 14 of 192 frames
+/// of the sample's day with aerial perspective off, which is the driver's code generation and not
+/// the arithmetic; these two copies compare 192 of 192 (`evidence/frame-identity.txt`).
+float4 shadeWater<let kAir : bool>(VertexOutput input, CyAerialPerspectiveTable table)
 {
     let params = water.params[0];
 
@@ -287,6 +360,10 @@ float4 waterFragment(VertexOutput input) : SV_Target
     // arithmetic as `water::water_column_colour()`, with the body's own coefficients.
     let transmittance = exp(-params.extinction.rgb * path);
     float3 bedRadiance = untonemap(water.refraction.Load(int3(bentPixel, 0)).rgb);
+    if (kAir && bentDepth > 0.0)
+    {
+        bedRadiance = bedBeforeAir(table, bedRadiance, bed);
+    }
     if (params.surface.z > 0.0 && bentDepth > 0.0)
     {
         // Caustics move only the SUN's share of the bed's light, weakened by the water the sun
@@ -310,7 +387,8 @@ float4 waterFragment(VertexOutput input) : SV_Target
 
     // world.slang's glitter lobe, unchanged, so the sun's path on the sea is the one it always was.
     let half = normalize(-push.light.xyz + toEye);
-    lit += direct * pow(saturate(dot(normal, half)), 120.0) * push.sun.a;
+    let glitter = direct * pow(saturate(dot(normal, half)), 120.0) * push.sun.a;
+    lit += glitter;
 
     // --- FOAM: the shoreline's, from the depth of the column under this pixel, and the open sea's
     // breaking foam the device foam pass already wrote into the vertex colour.
@@ -323,7 +401,24 @@ float4 waterFragment(VertexOutput input) : SV_Target
     let open = saturate((input.color.r - 0.02) / 0.83);
     let foam = max(shore, open);
     let foamRadiance = 0.9 * (push.ambient.rgb + direct * lambert);
-    lit = lerp(lit, foamRadiance, foam);
+    if (kAir)
+    {
+        return float4(tonemap(seenThroughAir(table, input.world, refracted, reflected, fresnel,
+                                             glitter, foamRadiance, foam)),
+                      1.0);
+    }
 
+    lit = lerp(lit, foamRadiance, foam);
     return float4(tonemap(lit), 1.0);
+}
+
+[shader("fragment")]
+float4 waterFragment(VertexOutput input) : SV_Target
+{
+    let table = aerialTable();
+    if (cyAerialPerspectiveEnabled(table))
+    {
+        return shadeWater<true>(input, table);
+    }
+    return shadeWater<false>(input, table);
 }

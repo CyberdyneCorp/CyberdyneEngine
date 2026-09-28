@@ -150,6 +150,17 @@ add_subdirectory(occlusion)
 # occlusion/ does, so it is read after forward/.
 add_subdirectory(contact_shadows)
 
+# VOLUMETRIC FOG AND LIGHT SHAFTS. `rendering-post-processing`'s "Volumetric fog": a froxel volume
+# filled with a height fog and authored volumes, lit by the sun through the shadow map, integrated
+# front to back into a texture the forward pass applies to every surface. It names the forward
+# frame's stage-declaration seam and the post chain's froxel arithmetic, so it is read after both.
+add_subdirectory(fog)
+# MOTION BLUR. `rendering-post-processing`'s "Motion blur": a tile reduction of the prepass
+# velocity, the neighbourhood's dominant direction and a depth-aware gather, after the temporal
+# resolve and before bloom. It names the forward frame's stage-declaration seam and the post chain's
+# shutter arithmetic, so it is read after forward/ and post/.
+add_subdirectory(motion_blur)
+
 # THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
 # this directory were linked by nothing but their own test binaries and nothing in the tree built a
 # frame out of them. This one does — it is the only module here that consumes another module's
@@ -174,12 +185,23 @@ add_subdirectory(particles)
 # is read after both.
 add_subdirectory(light_probes)
 
+# DECALS IN THE FRAME. `rendering-lighting-and-shadows`' projected box decals as a table the forward
+# pass reads, ranked and clustered by the assembly beside the lights, applied to the surface before
+# it is lit. It joins cy::rendering-lighting and cy::rendering-pipeline, so it is read after both.
+add_subdirectory(decals)
+
 # EXPOSURE AND COLOUR GRADING ON THE DEVICE. `rendering-post-processing`'s steps 6, 10, 11 and 12:
 # the luminance histogram and its adaptation as compute dispatches, and the graded resolve — exposure,
 # the tone curve and one lookup into a baked grading table — as the frame's post-process callback.
 # It names the forward frame's resources and the post chain's arithmetic; its device suite renders
 # pipeline/'s scene, so it is read after pipeline/.
 add_subdirectory(grading)
+
+# DEPTH OF FIELD ON THE DEVICE. `rendering-post-processing`'s step 7: the physical circle of confusion
+# the post chain derives, gathered as separate near and far fields at half resolution and composited
+# before bloom, through the forward frame's stage seam. Its device suite renders pipeline/'s scene, so
+# it is read after pipeline/.
+add_subdirectory(depth_of_field)
 
 # SELECTION OUTLINES AND UNIT HIGHLIGHTS. The engine's half of `editor-viewport-and-gizmos`' "selection
 # outlines, highlight rendering, and overlays": a mask of what a game marked and an edge pass over the

@@ -110,6 +110,23 @@ stage is the frame's own `fullscreenVertex`, which DXC refuses
 (`m11c:every-shader-reaches-every-target`, M11.d). A D3D12 bloom needs that vertex fix, embedded DXIL
 beside the SPIR-V and MSL, and set 2 mapped to its register space.
 
+## Depth of field, from the setting to the pixel
+
+The second stage of this chain with a device pass behind it. The lens stays here; the gather lives
+in its own module and reaches the frame through the stage seam:
+
+| Where | What |
+|---|---|
+| `PostChainConfig::depth_of_field` | the setting; off by default |
+| `effects.h` | `circle_of_confusion` — the thin-lens diameter, signed, as a fraction of the sensor height — and `track_focus` |
+| `src/rendering/forward/…/frame.h` | `FramePassKind::DepthOfField`, between the temporal stage and bloom, and the target every later stage reads |
+| `src/rendering/depth_of_field/` | the five dispatches: a half-resolution layer, the near field's tiles, the far and near gathers and the composite; `focus.h` twins every shader expression |
+
+**The pixels come from the lens.** The gather's radius is half `circle_of_confusion` times the
+image height, and `unit.render_dof` holds the device's expression to this module's function at every
+distance it samples. Scene-referred and before bloom: a defocused highlight is a disc of the light
+it carried, and bloom glows around the disc.
+
 ## What is here and what is not
 
 No device and no shader. What is here is the arithmetic that decides what each effect *does*, which
@@ -120,8 +137,9 @@ GPU.
 
 The gathers, the blurs, the histogram compute pass and the froxel volume itself are shaders, and
 they belong with the frame's passes. Bloom's downsample and upsample chain is the first of them to
-exist — see the section above — and the metering histogram is the second, in
-`src/rendering/grading/`; the others do not yet.
+exist — see the section above — the metering histogram is the second, in
+`src/rendering/grading/`, the depth of field gather the third, in `src/rendering/depth_of_field/`,
+and the froxel volume the fourth, in `src/rendering/fog/`; the others do not yet.
 
 Two stages of this chain are consumers of `src/rendering/temporal/` rather than implementations:
 `rendering-post-processing` says TAA "SHALL consume the temporal framework… It SHALL NOT implement
@@ -152,6 +170,15 @@ resolve applies the exposure, the tone curve and one lookup into a table `bake_d
 what a pre-tonemap table would want; `display_log_encode` spans the display range and is what the
 runtime's step-12 table uses. `bake_grading_lut` and `bake_display_lut` are the two bakes, and each
 has its own agreement test in `integration.render_post_bake`.
+
+## Volumetric fog on the device
+
+The fog stage's pass is in `src/rendering/fog/`, not here, and it calls this module's arithmetic
+rather than re-deriving it: the volume's slices are `froxel_slice_depth`, the medium's phase is
+`henyey_greenstein`, and every sub-step of the march is `integrate_froxel` — the same step
+`forward scattering brightens fog toward a light, and the integral conserves energy` pins here, now
+held to the single-scattering equation on a device by `render.volumetric_fog`.
+`PostChainConfig::volumetric_fog` switches the frame's `FramePassKind::VolumetricFog` stage on.
 
 ## Ambient occlusion on the device
 

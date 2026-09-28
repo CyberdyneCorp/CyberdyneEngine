@@ -27,25 +27,33 @@ Span<const DrawSurface> query_surfaces(const VisibleInstance& instance, void* us
 
 /// Where a draw's geometry is. One mesh in this scene, so the answer is the same for every draw —
 /// which is the honest shape of the seam: the LOOKUP is the caller's, not the data.
-bool cube_geometry(const render::DrawItem& /*item*/, const GpuDrawInstance& /*instance*/,
-                   void* user, DrawGeometry& out) noexcept {
+bool cube_geometry(const render::DrawItem& /*item*/, const GpuDrawInstance& instance, void* user,
+                   DrawGeometry& out) noexcept {
     auto* scene = static_cast<FrameScene*>(user);
     out.indices = scene->index_buffer();
     out.wide_indices = false;
     out.index_count = 36;
     out.first_index = 0;
     out.vertex_offset = 0;
+    // A DEFORMED BOX reads its current half of the doubled streams and names last frame's; every
+    // other box is the first half, rigid, exactly as before `deform_box` existed.
+    if (instance.instance_slot == scene->deformed_box()) {
+        const i32 upper = static_cast<i32>(kCubeVertices);
+        out.vertex_offset = scene->deformed_current_second() ? upper : 0;
+        out.previous_vertex_offset = scene->deformed_current_second() ? 0 : upper;
+        out.has_previous_vertices = true;
+    }
     return true;
 }
 
 [[nodiscard]] Status upload_bytes(rhi::Device& device, rhi::BufferHandle buffer, const void* source,
-                                  u64 bytes) noexcept {
+                                  u64 bytes, u64 offset = 0) noexcept {
     void* mapped = device.buffer_mapped_pointer(buffer);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "pipeline test: a geometry buffer is not mapped");
     }
     const auto* from = static_cast<const u8*>(source);
-    auto* to = static_cast<u8*>(mapped);
+    auto* to = static_cast<u8*>(mapped) + offset;
     for (u64 index = 0; index < bytes; ++index) {
         to[index] = from[index];
     }
@@ -97,6 +105,9 @@ Status FrameScene::create_geometry(rhi::Device& device) noexcept {
         rhi::BufferUsage usage;
         rhi::BufferHandle* out;
     };
+    // THE VERTEX STREAMS HOLD THE CUBE TWICE — the two halves `deform_box` draws a deformed box
+    // from — and every other draw reads the first half, so a scene that deforms nothing draws the
+    // bytes it always drew. The indices are the cube's once: a draw's vertex offset picks the half.
     const Request requests[] = {
         {"cube positions", mesh_.positions, sizeof(mesh_.positions), rhi::BufferUsage::Vertex,
          &positions_},
@@ -105,18 +116,45 @@ Status FrameScene::create_geometry(rhi::Device& device) noexcept {
         {"cube indices", mesh_.indices, sizeof(mesh_.indices), rhi::BufferUsage::Index, &indices_},
     };
     for (const Request& request : requests) {
+        const u32 copies = request.out == &indices_ ? 1U : 2U;
         Expected<rhi::BufferHandle, Error> made =
-            make_upload(device, request.name, request.bytes, request.usage);
+            make_upload(device, request.name, request.bytes * copies, request.usage);
         if (!made.has_value()) {
             return make_unexpected(made.error());
         }
         *request.out = *made;
-        if (Status written = upload_bytes(device, *request.out, request.source, request.bytes);
-            !written) {
-            return written;
+        for (u32 copy = 0; copy < copies; ++copy) {
+            if (Status written = upload_bytes(device, *request.out, request.source, request.bytes,
+                                              request.bytes * copy);
+                !written) {
+                return written;
+            }
         }
     }
     return ok();
+}
+
+Status FrameScene::deform_box(u32 which, Vec3 model_offset, bool current_second) noexcept {
+    if (!built_ || which == 0 || which >= kInstanceCount) {
+        return fail(ErrorCode::InvalidArgument,
+                    "pipeline test: only a built scene's boxes 1 to 11 can be deformed");
+    }
+    deformed_box_ = which;
+    deformed_second_ = current_second;
+    // This frame's half is the cube as it is; last frame's is the cube before it moved.
+    f32 previous[kCubeVertices * 3] = {};
+    for (u32 vertex = 0; vertex < kCubeVertices; ++vertex) {
+        previous[(vertex * 3U) + 0] = mesh_.positions[(vertex * 3U) + 0] - model_offset.x;
+        previous[(vertex * 3U) + 1] = mesh_.positions[(vertex * 3U) + 1] - model_offset.y;
+        previous[(vertex * 3U) + 2] = mesh_.positions[(vertex * 3U) + 2] - model_offset.z;
+    }
+    const u64 half = sizeof(mesh_.positions);
+    if (Status written =
+            upload_bytes(*device_, positions_, mesh_.positions, half, current_second ? half : 0U);
+        !written) {
+        return written;
+    }
+    return upload_bytes(*device_, positions_, previous, half, current_second ? 0U : half);
 }
 
 Status FrameScene::create_materials() noexcept {
@@ -206,9 +244,13 @@ Status FrameScene::fill_index() noexcept {
         // The half-diagonal of a cube of this half-extent: sqrt(3), which is what bounds a box
         // by a sphere and is spelled from the standard library rather than as a literal.
         entry.radius = half * std::numbers::sqrt3_v<f32>;
-        if (Expected<u32, Error> slot = index_.insert(entry); !slot.has_value()) {
+        Expected<u32, Error> slot = index_.insert(entry);
+        if (!slot.has_value()) {
             return make_unexpected(slot.error());
         }
+        index_slots_[which] = *slot;
+        centres_[which] = centre;
+        heights_[which] = floor ? 0.125F : half;
 
         // The instance's placement, model to CAMERA-RELATIVE. The camera is at the origin looking
         // down -Z in this scene, so the camera-relative position IS the position — which is the
@@ -218,9 +260,9 @@ Status FrameScene::fill_index() noexcept {
         transform.row0[0] = scale;
         transform.row1[1] = floor ? 0.25F : scale;
         transform.row2[2] = scale;
-        transform.row0[3] = centre.x;
-        transform.row1[3] = centre.y;
-        transform.row2[3] = centre.z;
+        transform.row0[3] = centre.x - eye_.x;
+        transform.row1[3] = centre.y - eye_.y;
+        transform.row2[3] = centre.z - eye_.z;
         transform.tint[0] = 1.0F;
         transform.tint[1] = 1.0F;
         transform.tint[2] = 1.0F;
@@ -376,6 +418,8 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     projection_ = perspective_reversed_z(0.9F, static_cast<f32>(kWidth) / static_cast<f32>(kHeight),
                                          description.near_plane, description.far_plane);
     view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
+    relative_view_ = view_;
+    set_eye(eye_);
 
     rhi::BufferDescription readback_description;
     readback_description.name = "pipeline readback";
@@ -444,7 +488,7 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
     view.view = view_;
     view.projection = projection_;
     view.cull.frustum = Frustum::from_view_projection(projection_ * view_);
-    view.cull.camera_position = Vec3{0.0F, 0.0F, 0.0F};
+    view.cull.camera_position = eye_;
     view.cull.camera_forward = Vec3{0.0F, 0.0F, -1.0F};
     view.cull.fov_y_radians = view.fov_y_radians;
     view.lights = lights_.span();
@@ -496,8 +540,9 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         // tonemaps. Zero stops photographs a physically-lit scene as a white rectangle, which is
         // exactly what the first run of this suite produced.
         globals.exposure_stops = -11.4F;
-        FrameUpload upload = upload_for(assembly_, out, projection_ * view_, view_,
-                                        instances_.span(), globals, material_offsets_);
+        FrameUpload upload =
+            upload_for(assembly_, out, projection_ * relative_view_, relative_view_,
+                       instances_.span(), globals, material_offsets_);
         // WHERE THE MATERIAL'S TEXTURE SLOTS ARE, which `upload_for` does not take: every caller
         // in the tree predates the field, and one that says nothing gets `kNoMaterialTexture` and
         // the constant-shaded frame it has always uploaded. See `bind_material_texture`.
@@ -576,6 +621,36 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         return ended;
     }
     return executed;
+}
+
+void FrameScene::place_row(u32 which) noexcept {
+    InstanceTransform& transform = instances_[which];
+    transform.row0[3] = centres_[which].x - eye_.x;
+    transform.row1[3] = centres_[which].y - eye_.y;
+    transform.row2[3] = centres_[which].z - eye_.z;
+}
+
+Status FrameScene::move_box(u32 which, Vec3 centre) noexcept {
+    if (which == 0 || which >= kInstanceCount || instances_.size() != kInstanceCount) {
+        return fail(ErrorCode::InvalidArgument,
+                    "pipeline test: only a built scene's boxes 1 to 11 can be moved");
+    }
+    centres_[which] = centre;
+    place_row(which);
+    const f32 half = instances_[which].row0[0] * 0.5F;
+    return index_.update(index_slots_[which],
+                         Aabb::from_center_extents(centre, Vec3{half, heights_[which], half}));
+}
+
+void FrameScene::set_eye(Vec3 eye) noexcept {
+    eye_ = eye;
+    // THE SAME ROTATION, MOVED: the scene always looks down -Z, and a view built from the eye and
+    // a target one metre ahead of it is `relative_view_` with the eye's translation — at the
+    // origin, the matrix this scene always used, bit for bit.
+    view_ = look_at(eye, Vec3{eye.x, eye.y, eye.z - 1.0F}, Vec3{0.0F, 1.0F, 0.0F});
+    for (u32 which = 0; which < instances_.size(); ++which) {
+        place_row(which);
+    }
 }
 
 Status FrameScene::bind_material_texture(rhi::BindlessIndex slot,

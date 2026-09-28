@@ -156,6 +156,24 @@ ones the sky lighting is composed from, on the world's workers. The lit fragment
 between it and the eye and adds the in-scattered light through `cy/aerial_perspective.slang`,
 divided by the same exposure as the sky. There is no fog colour and no fog distance anywhere.
 
+**The shaded sea reads the same table, and applies it once.** `shaders/water.slang` binds it where
+world.slang does — set 0, binding 2 — but its refraction and reflection pictures are drawn by
+world.slang, so they already carry air. The bed from the refraction picture is taken back to the
+radiance it was lit with by inverting the table at the bed before the water column is laid over
+it; the surface's own light (the column, the glitter, the foam) is then attenuated by the air
+between the eye and the surface; and the reflected picture, whose hills were hazed over their own
+distance and whose dome is the sky itself, is left as drawn, with only the in-scattering the mirror
+does not cover, `(1 - F) S`, added. So the sea hazes like the land beside it, with no step at the
+shoreline (`render.world_water_aerial_perspective`). `--no-aerial-perspective` still draws the sea
+as it was: 192 of 192 frames compare byte-identical to main's
+(`openspec/changes/add-aerial-perspective-on-water/evidence/`). At this world's scale the change is
+small, a mean of 0.8 of an 8-bit step over the lower half of the morning frame.
+
+![the sea through the air, mid-morning](../../docs/design/images/water-aerial-perspective-day-on.png)
+![the same frame before: the land hazed, the sea not](../../docs/design/images/water-aerial-perspective-day-off.png)
+![the sea through the air at dusk](../../docs/design/images/water-aerial-perspective-dusk-on.png)
+![the same dusk before](../../docs/design/images/water-aerial-perspective-dusk-off.png)
+
 **The dome is that atmosphere too.** With aerial perspective on, the dome's clear sky is
 `sky::IncrementalSkyView::update_aerial` over the same tables, and the device cloud pass composes
 its clouds over it instead of over the stand-in gradient. Without that, the terrain would fade toward
@@ -174,10 +192,34 @@ headless run builds no table.
 The dome's band below the horizon, past the world's edge, is now the planet's ground seen through
 the air — grey-brown at a ground albedo of 0.1 — where the stand-in drew more blue sky.
 
-**Not applied:** the shaded sea — `shaders/water.slang`, the default since water shading — reads
-no table, so its surface is not attenuated by the air in front of it; the dome's clouds are composed over the atmosphere's sky but are not attenuated by
+**Not applied:** the dome's clouds are composed over the atmosphere's sky but are not attenuated by
 the air in front of them (the requirement's "and to volumetric media"), and the engine's forward
-frame (`cy/frame.slang`) reads no table.
+frame (`cy/frame.slang`) reads no table. A reflected hill is hazed along the straight line from the
+eye to it rather than along the mirrored path, which is longer by about `2 h e / r` metres for a
+hill `h` metres up, an eye `e` metres up and `r` metres away: a hill 100 m high a kilometre off,
+seen from the orbit's 100 m, is hazed over a path 2% short.
+
+## Volumetric fog: a valley haze
+
+![the valley haze on](../../docs/design/images/volumetric-fog-world-on.png)
+![the same frame with fog off](../../docs/design/images/volumetric-fog-world-off.png)
+
+Captured with `just capture-world-fog`: frame 60 of the day take, 11:56 with the sun near 24
+degrees. At the committed 1.5 km visibility and 60 m scale height the midday haze is slight: 237400
+of 518400 pixels change, by at most 21 of 255 and 1.4 on average. 0 validation errors in both takes.
+
+`--fog` fills a froxel volume — 96 by 54 columns and 64 slices out to the dome, four sub-steps a
+slice — with a height fog whose numbers are `frame.cypost`'s `fog-*` lines: a meteorological
+visibility at sea level, a scale height, an albedo and a Henyey-Greenstein `g`, the quantities of a
+radiation mist. The medium is lit by the lit path's own sun and ambient. `fog::FogPass` writes it in
+the ATMOSPHERE TABLE's layout with the air composited in: each slice's stretch of air is read out of
+`sky::AerialPerspectiveTable` along the fog's rays and marched with the mist, so binding 2 names the
+fog's table in place of the atmosphere's and `shaders/world.slang` does not change. The march is
+declared before the water's pictures, which are drawn with the lit path and read the same table.
+
+**Not applied:** this world has no directional shadow map, so the mist is lit unshadowed; the shaded
+sea and the dome read no table, as for aerial perspective. Off — the default — declares nothing and
+binds the atmosphere's table as before, so the frame is the one drawn before fog existed.
 
 ## The three tasks this artefact answers
 
@@ -367,6 +409,8 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
 | `--no-cloud-shadows` | attenuate the sun once, at the viewer, as before cloud shadows existed; the frame is byte-identical to that build's |
 | `--no-aerial-perspective` | no air between the surfaces and the eye, and the stand-in clear sky, as before aerial perspective existed; the frame is byte-identical to that build's |
+| `--ground-marker` | an RTS move order's ring projected onto the terrain where the camera looks: one decal, ranked and assigned to clusters by the frame's assembly and applied to the ground's colour before the sun lights it (`src/rendering/decals/`). Without it the table in binding 3 is empty and the frame is the one before decals |
+| `--fog` | a valley haze of `frame.cypost`'s `fog-*` medium, composited with the atmosphere; off is the frame before |
 | `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
 | `--quiet-wait-s <s>` | how long `--quiet-host` waits for a quiet host before failing. Default 600 |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |

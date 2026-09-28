@@ -16,11 +16,14 @@
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/contact_shadows/contact_pass.h>
+#include <cy/rendering/depth_of_field/dof_pass.h>
+#include <cy/rendering/fog/fog_pass.h>
 #include <cy/rendering/grading/grading_renderer.h>
 #include <cy/rendering/grading/look_file.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/lighting/soft_shadows.h>
+#include <cy/rendering/motion_blur/motion_blur_pass.h>
 #include <cy/rendering/occlusion/occlusion_pass.h>
 #include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/particles/strip_renderer.h>
@@ -76,6 +79,12 @@ constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
 constexpr rhi::Format kDepthFormat = rhi::Format::D32Sfloat;
 constexpr u32 kShadowExtent = 2048;
 constexpr f32 kFarPlane = 400.0F;
+/// The width of the full-frame sensor the shot's horizontal field of view is quoted for.
+constexpr f32 kSensorWidthMm = 36.0F;
+constexpr f32 kNearPlane = 0.08F;
+/// The frame's cluster grid: 16-pixel tiles, 8 depth slices, 24 elements a cluster. One constant
+/// because the decal table is reserved from it before the frame that uses it exists.
+constexpr cy::rendering::ClusterGridConfig kClusterConfig{16, 8, 24};
 
 [[nodiscard]] f64 now_millis() noexcept {
     return std::chrono::duration<f64, std::milli>(
@@ -138,9 +147,17 @@ struct FrameConstants {
     /// `BeautyFrame::softShadow` and `softControl`, read only by `sceneFragmentSoft`.
     f32 soft_shadow[4] = {};
     u32 soft_control[4] = {};
+    /// `BeautyFrame::decalControl`: the decal table's slot in the material table — or none, the
+    /// default and the frame M11.c published — its rows, and `kDecalListsInTable`.
+    u32 decal_control[4] = {0xFFFFFFFFU, 0, 0, 0};
+    /// `BeautyFrame::fogControl`. x: 1 when the fog volume is bound and every fragment is seen
+    /// through it.
+    u32 fog_control[4] = {};
+    /// `BeautyFrame::previousViewProjection`, read only by `scenePrepassMotionFragment`.
+    f32 previous_view_projection[4][4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 224, "BeautyFrame is fourteen 16-byte rows");
+static_assert(sizeof(FrameConstants) == 320, "BeautyFrame is twenty 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -216,6 +233,19 @@ struct Stage::Device {
     /// The contact trace, created only when the run asked for soft shadows. See
     /// `Stage::set_soft_shadows`.
     rendering::contact_shadows::ContactShadowPass contact;
+    /// The depth of field gather, created only when the run named a focus target.
+    rendering::depth_of_field::DepthOfFieldPass dof;
+    /// The decal table, created only when the run asked for decals, and the shot's decals in the
+    /// shot camera's relative space — the space the geometry is baked in. See `Stage::set_decals`.
+    rendering::decals::DecalTableTexture decal_table;
+    std::vector<rendering::DecalInstance> decals;
+    std::vector<rendering::decals::DecalMaterial> decal_materials;
+    std::vector<u32> decal_order;
+    rendering::FrameResourceRead decal_read;
+    /// The fog volume, created only when the run asked for fog. See `Stage::set_fog`.
+    rendering::fog::FogPass fog;
+    /// Motion blur, created only when the run asked for it. See `Stage::set_motion_blur`.
+    rendering::motion_blur::MotionBlurPass motion_blur;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -269,6 +299,9 @@ Stage::~Stage() {
             device_->trails.shutdown();
             device_->occlusion.destroy();
             device_->contact.destroy();
+            device_->dof.destroy();
+            device_->decal_table.shutdown();
+            device_->fog.destroy();
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->grading.shutdown();
@@ -299,6 +332,18 @@ void Stage::enable_bloom(const Shot& shot) noexcept {
     bloom_.scatter = shot.bloom_scatter;
     bloom_.mip_count = shot.bloom_levels;
     bloom_enabled_ = true;
+}
+
+void Stage::set_fog(bool enabled, const Shot& shot) noexcept {
+    fog_enabled_ = enabled && shot.fog_visibility_metres > 0.0F;
+    fog_medium_ = rendering::fog::FogMedium{};
+    fog_medium_.height.extinction =
+        fog_enabled_ ? rendering::fog::extinction_for_visibility(shot.fog_visibility_metres) : 0.0F;
+    fog_medium_.height.base_height = shot.fog_base_height;
+    fog_medium_.height.scale_height = shot.fog_scale_height;
+    fog_medium_.height.albedo = Vec3{shot.fog_albedo, shot.fog_albedo, shot.fog_albedo};
+    fog_medium_.height.anisotropy = shot.fog_anisotropy;
+    fog_far_metres_ = shot.fog_far_metres;
 }
 
 Status Stage::open(u32 width, u32 height, u32 supersample) noexcept {
@@ -992,6 +1037,9 @@ namespace {
 /// How many slots the material table declares. Nine are written; the rest repeat slot zero, so no
 /// descriptor in the array is left unwritten and `BindlessPartiallyBound` is not required.
 constexpr u32 kTableSlots = 16;
+/// The table slot the decal table is bound at when a run asks for decals: the last, which no
+/// material texture reaches — nine are written.
+constexpr u32 kDecalTableSlot = kTableSlots - 1U;
 
 /// The std140 layout slangc produces for `CyMaterialParams`, MEASURED with `spirv-dis` rather than
 /// assumed:
@@ -1037,16 +1085,19 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
 
     // Binding 2 is the ambient occlusion term and binding 3 the contact term. Declared whatever the
     // run asked for, and written only when an entry point that reads them is drawn with: a binding
-    // no bound pipeline uses needs no descriptor.
-    const rhi::DescriptorBinding shadow_bindings[4] = {
+    // no bound pipeline uses needs no descriptor. Binding 4 is the fog volume, which EVERY scene
+    // and sky entry point names, so it always holds a view — a material's when the fog is off, and
+    // `fogControl.x` then says not to read it.
+    const rhi::DescriptorBinding shadow_bindings[5] = {
         {0, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {1, rhi::DescriptorKind::Sampler, 1, rhi::ShaderStage::Fragment, false},
         {2, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {3, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
+        {4, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
     };
     rhi::DescriptorSetLayoutDescription shadow;
     shadow.name = "beauty shadow";
-    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 4);
+    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 5);
     auto shadow_layout = device.create_descriptor_set_layout(shadow);
     if (!shadow_layout) {
         return make_unexpected(shadow_layout.error());
@@ -1145,6 +1196,11 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         return make_unexpected(table_set.error());
     }
     device_->table_set = *table_set;
+    if (decals_) {
+        if (Status made = create_decals(shot); !made) {
+            return made;
+        }
+    }
     std::vector<rhi::DescriptorWrite> writes;
     for (u32 slot = 0; slot < kTableSlots; ++slot) {
         rhi::DescriptorWrite write;
@@ -1152,6 +1208,9 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         write.array_index = slot;
         write.kind = rhi::DescriptorKind::SampledTexture;
         write.texture_view = device_->views[slot < device_->views.size() ? slot : 0];
+        if (decals_ && slot == kDecalTableSlot) {
+            write.texture_view = device_->decal_table.view();
+        }
         writes.push_back(write);
     }
     rhi::DescriptorWrite sampler_write;
@@ -1170,7 +1229,7 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         return make_unexpected(shadow_set.error());
     }
     device_->shadow_set = *shadow_set;
-    rhi::DescriptorWrite shadow_writes[2];
+    rhi::DescriptorWrite shadow_writes[3];
     shadow_writes[0].binding = 0;
     shadow_writes[0].kind = rhi::DescriptorKind::SampledTexture;
     shadow_writes[0].texture_view = device_->shadow_view;
@@ -1182,8 +1241,12 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     shadow_writes[1].binding = 1;
     shadow_writes[1].kind = rhi::DescriptorKind::Sampler;
     shadow_writes[1].sampler = device_->shadow_sampler;
+    shadow_writes[2].binding = 4;
+    shadow_writes[2].kind = rhi::DescriptorKind::SampledTexture;
+    shadow_writes[2].texture_view = device_->views[0];
+    shadow_writes[2].use = rhi::ImageUse::SampledRead;
     if (Status written = device.update_descriptor_set(
-            device_->shadow_set, Span<const rhi::DescriptorWrite>(shadow_writes, 2));
+            device_->shadow_set, Span<const rhi::DescriptorWrite>(shadow_writes, 3));
         !written) {
         return written;
     }
@@ -1455,8 +1518,15 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     // tests with the same comparison and does not write. Same vertex stage as the prepass, so the
     // depth it compares is the depth it produces. With soft shadows on it shades through
     // `sceneFragmentSoft`, which reads the ambient occlusion term too when that setting is on.
-    auto occluded_fragment =
-        fragment(soft_shadows_ ? "sceneFragmentSoft" : "sceneFragmentOccluded");
+    // With motion blur alone the scene shades through `sceneFragment` — the published frame's own
+    // entry point — against the prepass depth.
+    const char* shading = "sceneFragment";
+    if (soft_shadows_) {
+        shading = "sceneFragmentSoft";
+    } else if (ambient_occlusion_) {
+        shading = "sceneFragmentOccluded";
+    }
+    auto occluded_fragment = fragment(shading);
     if (!occluded_fragment) {
         return make_unexpected(occluded_fragment.error());
     }
@@ -1470,17 +1540,21 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     }
     occluded = *made;
 
-    // THE PREPASS: depth, and the geometric normal into the frame's `normal + roughness` target.
-    auto prepass_fragment = fragment("scenePrepassFragment");
+    // THE PREPASS: depth, and the geometric normal into the frame's `normal + roughness` target —
+    // and, with motion blur, the motion vectors into the frame's velocity target.
+    auto prepass_fragment =
+        fragment(motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment");
     if (!prepass_fragment) {
         return make_unexpected(prepass_fragment.error());
     }
-    rhi::ColorAttachmentState normal;
-    normal.format = cy::rendering::FrameDescription{}.normal_format;
+    rhi::ColorAttachmentState targets[2];
+    targets[0].format = cy::rendering::FrameDescription{}.normal_format;
+    targets[1].format = cy::rendering::FrameDescription{}.velocity_format;
     description = scene;
     description.name = "beauty depth and normal prepass";
     description.fragment_shader = *prepass_fragment;
-    description.color_attachments = Span<const rhi::ColorAttachmentState>(&normal, 1);
+    description.color_attachments =
+        Span<const rhi::ColorAttachmentState>(targets, motion_blur_ ? 2U : 1U);
     made = device.create_graphics_pipeline(description);
     if (!made) {
         return make_unexpected(made.error());
@@ -1514,12 +1588,20 @@ struct SceneState {
     /// With ambient occlusion on: the prepass's normal target, and whether the depth the scene
     /// pass tests is the prepass's rather than its own.
     ResourceId normal = kInvalidResource;
+    /// With motion blur on: the prepass's velocity target.
+    ResourceId velocity = kInvalidResource;
     bool prepass = false;
     u32 width = 0;
     u32 height = 0;
 };
 
-void bind_common(const PassContext& context, const SceneState& state) noexcept {
+/// Binds `pipeline`, then the three sets every scene entry point shares. THE PIPELINE FIRST: the
+/// RHI binds a set at the bind point of the last pipeline the command buffer bound, so sets bound
+/// before any graphics pipeline, right after a compute stage such as the fog's march, land on the
+/// compute bind point and the draw finds set 0 unbound.
+void bind_common(const PassContext& context, const SceneState& state,
+                 rhi::GraphicsPipelineHandle pipeline) noexcept {
+    context.commands->bind_graphics_pipeline(pipeline);
     const rhi::DescriptorSetHandle sets[3] = {state.table, state.shadow, state.view};
     context.commands->bind_descriptor_sets(state.layout, 0,
                                            Span<const rhi::DescriptorSetHandle>(sets, 3));
@@ -1551,12 +1633,17 @@ void record_scene(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    bind_common(context, *state);
 
     const u64 offset = 0;
     for (usize index = 0; index < state->batch_count; ++index) {
         const Stage::Batch& batch = state->batches[index];
-        context.commands->bind_graphics_pipeline(state->prepass ? batch.occluded : batch.pipeline);
+        const rhi::GraphicsPipelineHandle pipeline =
+            state->prepass ? batch.occluded : batch.pipeline;
+        if (index == 0) {
+            bind_common(context, *state, pipeline);
+        } else {
+            context.commands->bind_graphics_pipeline(pipeline);
+        }
         context.commands->bind_descriptor_sets(
             state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
         context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
@@ -1574,14 +1661,21 @@ void record_scene(const PassContext& context, void* user) noexcept {
 /// ambient occlusion setting is on, because the horizon search is its one reader.
 void record_prepass(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<SceneState*>(user);
-    rhi::RenderAttachment normal;
-    normal.view = state->executor->view(state->normal);
-    normal.load = rhi::LoadOp::Clear;
-    normal.store = rhi::StoreOp::Store;
+    rhi::RenderAttachment targets[2];
+    targets[0].view = state->executor->view(state->normal);
+    targets[0].load = rhi::LoadOp::Clear;
+    targets[0].store = rhi::StoreOp::Store;
+    // The velocity target, cleared to still: the sky the prepass does not draw has no motion here,
+    // and the blur reads a cleared texel as the far plane.
+    const bool velocity = state->velocity != kInvalidResource;
+    if (velocity) {
+        targets[1] = targets[0];
+        targets[1].view = state->executor->view(state->velocity);
+    }
 
     rhi::RenderingInfo info;
     info.render_area = rhi::Rect2D{0, 0, state->width, state->height};
-    info.color_attachments = Span<const rhi::RenderAttachment>(&normal, 1);
+    info.color_attachments = Span<const rhi::RenderAttachment>(targets, velocity ? 2U : 1U);
     info.depth_attachment.view = state->executor->view(state->depth);
     info.depth_attachment.load = rhi::LoadOp::Clear;
     info.depth_attachment.store = rhi::StoreOp::Store;
@@ -1591,11 +1685,14 @@ void record_prepass(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    bind_common(context, *state);
     const u64 offset = 0;
     for (usize index = 0; index < state->batch_count; ++index) {
         const Stage::Batch& batch = state->batches[index];
-        context.commands->bind_graphics_pipeline(batch.prepass);
+        if (index == 0) {
+            bind_common(context, *state, batch.prepass);
+        } else {
+            context.commands->bind_graphics_pipeline(batch.prepass);
+        }
         context.commands->bind_descriptor_sets(
             state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
         context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
@@ -1629,8 +1726,7 @@ void record_sky(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    bind_common(context, *state);
-    context.commands->bind_graphics_pipeline(state->sky_pipeline);
+    bind_common(context, *state, state->sky_pipeline);
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->sky_vertices, 1),
                                           Span<const u64>(&offset, 1));
@@ -1672,9 +1768,10 @@ void record_shadow(const PassContext& context, void* user) noexcept {
                                                  static_cast<f32>(kShadowExtent), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, kShadowExtent, kShadowExtent});
     const rhi::DescriptorSetHandle sets[3] = {state->table, state->shadow, state->view};
+    // The pipeline first, so the sets go to the graphics bind point after any compute pass.
+    context.commands->bind_graphics_pipeline(state->pipeline);
     context.commands->bind_descriptor_sets(state->layout, 0,
                                            Span<const rhi::DescriptorSetHandle>(sets, 3));
-    context.commands->bind_graphics_pipeline(state->pipeline);
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
                                           Span<const u64>(&offset, 1));
@@ -1717,9 +1814,12 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
+    // The pipeline BEFORE the sets: a set binds to the bind point of the last pipeline bound, and
+    // depth of field's or motion blur's compute dispatches run just before this pass
+    // (`frame_recorder.cpp`'s `bind_frame_sets` says what that cost).
     context.commands->bind_graphics_pipeline(
         state->pipelines->pipeline(FramePipelineKind::Resolve));
+    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
     context.commands->draw(3, 1, 0, 0);
     context.commands->end_rendering();
 }
@@ -1977,15 +2077,70 @@ void write_sun_matrix(f32 out[4][4], Vec3 to_sun, Vec3 centre, f32 extent) noexc
 
 }  // namespace
 
+Status Stage::create_decals(const Shot& shot) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    device_->decals.clear();
+    device_->decal_materials.clear();
+    for (const ShotDecalMaterial& material : shot.decal_materials) {
+        device_->decal_materials.push_back(material.material);
+    }
+    for (const ShotDecal& placed : shot.decals) {
+        rendering::DecalInstance decal;
+        // Spawn order, as a budget would number them: the order's tie-break.
+        decal.id = device_->decals.size() + 1U;
+        // RELATIVE TO THE SHOT'S CAMERA, which is the space every vertex is baked in and the
+        // space the assembly's view is expressed in.
+        decal.center = subtract(placed.position, shot.camera_position);
+        const Vec3 facing = normalise(placed.facing);
+        const Vec3 across = normalise(cross3(placed.up, facing));
+        decal.axis_z = facing;
+        decal.axis_x = across;
+        decal.axis_y = cross3(facing, across);
+        decal.half_extent = Vec3{placed.width * 0.5F, placed.height * 0.5F, placed.depth * 0.5F};
+        decal.sort_order = placed.order;
+        decal.fade_angle_radians = placed.fade_angle_degrees * std::numbers::pi_v<f32> / 180.0F;
+        // Everything the material states, over everything the receiver had — metallic included,
+        // because soot or moss over copper is not a metal. Emission is the one channel neither of
+        // the shot's decal materials writes.
+        decal.weights.albedo = 1.0F;
+        decal.weights.normal = 1.0F;
+        decal.weights.roughness = 1.0F;
+        decal.weights.metallic = 1.0F;
+        decal.weights.emission = 0.0F;
+        for (usize index = 0; index < shot.decal_materials.size(); ++index) {
+            if (shot.decal_materials[index].key == placed.material) {
+                decal.material_index = static_cast<u32>(index);
+            }
+        }
+        device_->decals.push_back(decal);
+    }
+
+    // RESERVED FROM THE GRID, because the texture's view is written into the material table once,
+    // below, and the table is uploaded inside frames where it cannot be recreated: the header, the
+    // records, a list header per cluster, and at most one entry per decal per cluster.
+    Expected<cy::rendering::ClusterGrid, Error> grid =
+        cy::rendering::make_cluster_grid(kClusterConfig, width_, height_, kNearPlane, kFarPlane);
+    if (!grid.has_value()) {
+        return make_unexpected(grid.error());
+    }
+    const usize decal_count = device_->decals.size();
+    const usize per_cluster = 2U + std::min<usize>(decal_count, grid->max_elements_per_cluster);
+    const usize words = rendering::decals::kDecalHeaderWords +
+                        (decal_count * rendering::decals::kDecalRecordWords) +
+                        (static_cast<usize>(grid->cluster_count()) * per_cluster);
+    device_->decal_table.initialize(device, *allocator_);
+    return device_->decal_table.reserve(rendering::decals::decal_table_rows(words));
+}
+
 Status Stage::create_frame() noexcept {
     rhi::Device& device = *device_->handle.value();
 
     AssemblyDescription description;
     description.width = width_;
     description.height = height_;
-    description.near_plane = 0.08F;
+    description.near_plane = kNearPlane;
     description.far_plane = kFarPlane;
-    description.clusters = cy::rendering::ClusterGridConfig{16, 8, 24};
+    description.clusters = kClusterConfig;
     description.color_format = kSceneFormat;
     description.depth_format = kDepthFormat;
     description.material_capacity = 4;
@@ -2007,6 +2162,10 @@ Status Stage::create_frame() noexcept {
         // THE CONTACT TRACE IS THE SECOND READER, and its stage is the frame's own
         // `FramePassKind::ContactShadows`, declared by `contact_shadows::ContactShadowPass`.
         description.contact_shadows = soft_shadows_;
+        // MOTION BLUR at step 8, after the (absent) temporal stage and before bloom. The prepass
+        // derives its mode from it and writes the velocity target `scenePrepassMotionFragment`
+        // fills.
+        description.post.motion_blur = motion_blur_;
     }
     description.sky = cy::rendering::sky::SkyTableQuality::Low;
     // PINNED, because a capture has to be reproducible.
@@ -2018,6 +2177,12 @@ Status Stage::create_frame() noexcept {
     // GRADING, ONLY WHEN A LOOK WAS NAMED: step 12, after the tone curve. The manifest then names
     // `ColourGrading`; without a look the chain is the one M11.c published.
     description.post.colour_grading = look_path_ != nullptr;
+    // DEPTH OF FIELD, ONLY WHEN A FOCUS TARGET WAS NAMED: step 7, before bloom. It reads the depth
+    // the opaque pass writes — the frame's own, with or without the prepass.
+    description.post.depth_of_field = dof_enabled_;
+    // FOG, ONLY WHEN ASKED FOR: step 3, declared at the frame's own `VolumetricFog` stage. Off,
+    // neither the pass nor its volume exists.
+    description.post.volumetric_fog = fog_enabled_;
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -2095,7 +2260,87 @@ Status Stage::create_frame() noexcept {
             return made;
         }
     }
+    if (dof_enabled_) {
+        if (Status made = device_->dof.create(
+                device, rendering::depth_of_field::DepthOfFieldPassDescription{width_, height_});
+            !made) {
+            return made;
+        }
+    }
+    if (fog_enabled_) {
+        if (Status made = create_fog(); !made) {
+            return made;
+        }
+    }
+    if (motion_blur_) {
+        if (Status made = create_motion_blur(); !made) {
+            return made;
+        }
+    }
     device_->frame_ready = true;
+    return ok();
+}
+
+Status Stage::set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection, Vec3 eye_world,
+                                 Vec3 target_world) noexcept {
+    // THE CAMERA'S OWN LENS. The shot's field of view is horizontal on a full-frame sensor, 36 mm
+    // wide; the sensor height this image's aspect crops from it and the vertical field of view
+    // give the focal length, so the circle of confusion is computed for the lens the projection
+    // draws with. Autofocus on a target is its distance along the view axis.
+    rendering::depth_of_field::DofSettings settings;
+    settings.lens.sensor_height_mm = kSensorWidthMm / aspect;
+    settings.lens.focal_length_mm = rendering::depth_of_field::focal_length_for_field_of_view(
+        fov_y, settings.lens.sensor_height_mm);
+    settings.lens.aperture = dof_f_number_;
+    const Vec3 forward = normalise(subtract(target_world, eye_world));
+    settings.lens.focus_distance = dot3(subtract(dof_focus_, eye_world), forward);
+    device_->dof.set_settings(settings);
+    return device_->dof.set_view(rendering::depth_of_field::DofView{projection, width_, height_});
+}
+
+Status Stage::stage_decals(const Mat4& camera) noexcept {
+    // THE TABLE IS IN THE SHOT CAMERA'S SPACE, the one the geometry is baked in and the view is
+    // expressed in: the origin is that camera, whichever eye the frame is drawn from, and the
+    // turntable's eye offset is the shader's to subtract for the distance fade.
+    const Span<const u32> order = device_->assembly.decal_order();
+    const cy::rendering::assembly::AssemblyDescription& description =
+        device_->assembly.description();
+    Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
+        description.clusters, width_, height_, description.near_plane, description.far_plane);
+    if (!grid.has_value()) {
+        return make_unexpected(grid.error());
+    }
+    rendering::decals::DecalTableInput input;
+    input.decals =
+        Span<const rendering::DecalInstance>(device_->decals.data(), device_->decals.size());
+    input.order = order;
+    input.materials = Span<const rendering::decals::DecalMaterial>(device_->decal_materials.data(),
+                                                                   device_->decal_materials.size());
+    input.origin = Vec3{0.0F, 0.0F, 0.0F};
+    input.clusters = &device_->assembly.clusters();
+    input.grid = *grid;
+    input.view = camera;
+    input.width = width_;
+    input.height = height_;
+    Array<u32> words(*allocator_);
+    if (Status packed = rendering::decals::pack_decal_table(input, words); !packed) {
+        return packed;
+    }
+    return device_->decal_table.stage(words.span());
+}
+
+Status Stage::create_motion_blur() noexcept {
+    rendering::motion_blur::MotionBlurPassDescription description;
+    description.width = width_;
+    description.height = height_;
+    if (Status made =
+            device_->motion_blur.create(*allocator_, *device_->handle.value(), description);
+        !made) {
+        return made;
+    }
+    rendering::motion_blur::MotionBlurSettings settings;
+    settings.shutter_angle_degrees = shutter_degrees_;
+    device_->motion_blur.set_settings(settings);
     return ok();
 }
 
@@ -2124,6 +2369,34 @@ Status Stage::create_contact() noexcept {
     writes[1].texture_view = device_->views[0];
     return device.update_descriptor_set(
         device_->shadow_set, Span<const rhi::DescriptorWrite>(writes, ambient_occlusion_ ? 1 : 2));
+}
+
+/// THE FROXEL VOLUME: 160 by 90 columns — twelve pixels a column at the published 1920 — and 96
+/// slices out to the shot's `fog far`, four sub-steps a slice, so a shaft between two columns 1.9
+/// m apart is several froxels wide wherever the camera sees one.
+Status Stage::create_fog() noexcept {
+    rhi::Device& device = *device_->handle.value();
+    rendering::fog::FogPassDescription description;
+    description.settings.volume.width = 160;
+    description.settings.volume.height = 90;
+    description.settings.volume.depth = 96;
+    description.settings.volume.near_plane = 0.0F;
+    description.settings.volume.far_plane = fog_far_metres_;
+    description.settings.volume.depth_exponent = 2.0F;
+    description.settings.steps_per_slice = 4;
+    if (Status made = device_->fog.create(*allocator_, device, description); !made) {
+        return made;
+    }
+    device_->fog.set_medium(fog_medium_);
+    // The volume is the pass's own and outlives every frame, so the set that names it is written
+    // once — before any command buffer has bound it.
+    rhi::DescriptorWrite write;
+    write.binding = 4;
+    write.kind = rhi::DescriptorKind::SampledTexture;
+    write.texture_view = device_->fog.target_view();
+    write.use = rhi::ImageUse::SampledRead;
+    return device.update_descriptor_set(device_->shadow_set,
+                                        Span<const rhi::DescriptorWrite>(&write, 1));
 }
 
 /// The graded resolve and the look's table. The table is baked on the host from the `.cygrade` and
@@ -2215,6 +2488,10 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
 
     FrameConstants constants;
     write_rows(constants.view_projection, world_to_clip);
+    // LAST RENDER'S CAMERA, or this one's when there was none: the first frame does not move.
+    const Mat4 previous_world_to_clip =
+        has_previous_view_ ? previous_world_to_clip_ : world_to_clip;
+    write_rows(constants.previous_view_projection, previous_world_to_clip);
     // The shadow volume is centred a little ahead of the camera, along the view direction, so the
     // 26 metres of extent the shot asks for are spent on what the frame can see.
     const Vec3 forward = normalise(subtract(target, eye));
@@ -2257,6 +2534,12 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         constants.soft_control[1] = ambient_occlusion_ ? 1U : 0U;
         constants.soft_control[2] = 1U;
     }
+    if (decals_) {
+        constants.decal_control[0] = kDecalTableSlot;
+        constants.decal_control[1] = device_->decal_table.rows();
+        constants.decal_control[2] = rendering::decals::kDecalListsInTable;
+    }
+    constants.fog_control[0] = fog_enabled_ ? 1U : 0U;
     void* mapped = device.buffer_mapped_pointer(device_->frame_constants);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "the frame constants are not mapped");
@@ -2380,12 +2663,75 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         view.contact_shadows = device_->contact.import_target(graph);
         sinks.contact_shadows = device_->contact.stage();
     }
+    if (fog_enabled_) {
+        // THE SAME SUN, THE SAME MAP, THE SAME SKY TERM the surfaces are shaded with: the fog is
+        // lit consistently with what it hangs in front of. The map was drawn by `prepare_shadow`
+        // and is imported in the state it left it in.
+        cy::rendering::TextureRequest shadow_request;
+        shadow_request.name = "beauty sun shadow";
+        shadow_request.format = kDepthFormat;
+        shadow_request.width = kShadowExtent;
+        shadow_request.height = kShadowExtent;
+        rendering::fog::FogFrame fog;
+        fog.shadow_resource =
+            graph.import_texture(shadow_request, device_->shadow, device_->shadow_layout);
+        fog.view = rendering::fog::fog_view_from(camera, fov_y, aspect, eye, shot.camera_position);
+        fog.light.to_sun = sun_direction_;
+        fog.light.sun_illuminance = sun_illuminance_;
+        fog.light.ambient_radiance = sky_irradiance_;
+        Mat4 sun_to_clip = Mat4::identity();
+        for (u32 row = 0; row < 4; ++row) {
+            for (u32 column = 0; column < 4; ++column) {
+                sun_to_clip.at(row, column) = constants.sun_to_clip[row][column];
+            }
+        }
+        fog.shadow.enabled = true;
+        fog.shadow.relative_to_uv = rendering::fog::shadow_uv_rows(sun_to_clip, false);
+        fog.shadow.bias = shot.shadow_bias;
+        fog.shadow.extent = kShadowExtent;
+        if (Status set = device_->fog.set_frame(fog); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        view.volumetric_fog = device_->fog.import_target(graph);
+        sinks.volumetric_fog = device_->fog.stage();
+    }
+    if (motion_blur_) {
+        rendering::motion_blur::MotionBlurView blur_view;
+        blur_view.width = width_;
+        blur_view.height = height_;
+        blur_view.projection = projection;
+        blur_view.relative_to_clip = world_to_clip;
+        blur_view.previous_relative_to_clip = previous_world_to_clip;
+        if (Status set = device_->motion_blur.set_view(blur_view); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        view.motion_blur = device_->motion_blur.import_target(graph);
+        sinks.motion_blur = device_->motion_blur.stage();
+    }
     if (has_prepass()) {
         sinks.passes[static_cast<usize>(FramePassKind::DepthPrepass)] =
             cy::rendering::FramePassCallback{&record_prepass, &scene};
     }
     sinks.passes[static_cast<usize>(FramePassKind::Opaque)] =
         cy::rendering::FramePassCallback{&record_scene, &scene};
+    if (decals_) {
+        // THE COPY IS DECLARED BEFORE THE ASSEMBLY DECLARES THE PASS THAT SAMPLES IT, so the graph
+        // orders the two; the words follow once the assembly has assigned the lists they carry.
+        view.decals =
+            Span<const rendering::DecalInstance>(device_->decals.data(), device_->decals.size());
+        const Expected<cy::rendering::ResourceId, Error> table =
+            device_->decal_table.declare_upload(graph);
+        if (!table.has_value()) {
+            (void)device.end_frame();
+            return make_unexpected(table.error());
+        }
+        device_->decal_read =
+            cy::rendering::FrameResourceRead{*table, rhi::Access::FragmentSampledRead};
+        sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =
+            Span<const cy::rendering::FrameResourceRead>(&device_->decal_read, 1);
+    }
     sinks.passes[static_cast<usize>(FramePassKind::Sky)] =
         cy::rendering::FramePassCallback{&record_sky, &scene};
     sinks.passes[static_cast<usize>(FramePassKind::Transparent)] =
@@ -2404,6 +2750,14 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         sinks.passes[static_cast<usize>(FramePassKind::Bloom)] =
             device_->bloom.sink(device_->assembly.frame().bloom());
     }
+    if (dof_enabled_) {
+        if (Status set = set_depth_of_field(fov_y, aspect, projection, eye_world, target_world);
+            !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        sinks.depth_of_field = device_->dof.stage();
+    }
 
     cy::rendering::SpatialIndex index(*allocator_);
     AssemblyReport assembly_report;
@@ -2414,11 +2768,21 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     }
     report.frame_passes = assembly_report.passes_declared;
     report.post_stages = assembly_report.post_stages;
+    if (decals_) {
+        if (Status staged = stage_decals(camera); !staged) {
+            (void)device.end_frame();
+            return staged;
+        }
+        std::printf("decals        %u decals, %u (cluster, decal) assignments over %u clusters\n",
+                    assembly_report.decals, assembly_report.decal_assignments,
+                    assembly_report.clusters.clusters);
+    }
 
     const cy::rendering::FrameResources& resources = device_->assembly.resources();
     scene.color = resources.color;
     scene.depth = resources.depth;
     scene.normal = resources.normal_roughness;
+    scene.velocity = resources.velocity;
     scene.prepass = has_prepass();
     air.color = resources.color;
     air.depth = resources.depth;
@@ -2528,6 +2892,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     if (Status ended = device.end_frame(); !ended && frame) {
         frame = ended;
     }
+    previous_world_to_clip_ = world_to_clip;
+    has_previous_view_ = true;
 
     if (frame) {
         CaptureProvenance provenance;

@@ -144,6 +144,9 @@ struct StageReport {
     /// frame has executed.
     cy::rendering::assembly::CaptureManifest manifest;
     bool manifest_valid = false;
+    /// The (cluster, decal) pairs the frame's assignment wrote for the ground marker: zero with the
+    /// marker off, and the number that says it was found through the clusters when on.
+    u32 decal_assignments = 0;
 };
 
 /// The device, the pipeline, the buffers and the picture.
@@ -208,6 +211,18 @@ public:
     /// shading existed, byte for byte.
     void set_water_shading(bool on) noexcept { water_shading_ = on; }
 
+    /// A GROUND MARKER — an RTS move order's ring — projected onto the terrain at the world's
+    /// middle, where the camera looks: a decal, ranked and clustered by the frame's assembly beside
+    /// its sun and applied to the ground's colour before the sun lights it. Off by default; off is
+    /// the frame this program drew before decals, byte for byte.
+    void set_ground_marker(bool on) noexcept { ground_marker_ = on; }
+    /// VOLUMETRIC FOG, before `stage_world`: a haze of the grade file's `fog-visibility` at sea
+    /// level, thinning by e every `fog-scale-height` above it, marched through `fog::FogPass` with
+    /// the atmosphere's own table composited in, and bound where the aerial perspective table was.
+    /// Off by default, and off is the frame this program drew before, byte for byte: no pass, and
+    /// binding 2 is the atmosphere's table as it was.
+    void set_fog(bool on) noexcept { fog_ = on; }
+
     void close() noexcept;
 
 private:
@@ -220,6 +235,9 @@ private:
     /// Upload this frame's cloud shadow field and where it sits, or say "off" when the world
     /// produces none.
     [[nodiscard]] Status upload_cloud_shadow(const World& world) noexcept;
+    /// Pack this frame's decal table — the marker and the assembly's lists — into binding 3, or
+    /// leave the empty table there when the marker is off.
+    [[nodiscard]] Status upload_decals(Span<const u32> words) noexcept;
     /// Integrate the world's atmosphere for this camera — the clear sky the dome is drawn with and
     /// the aerial perspective volume — and upload the volume. With aerial perspective off, nothing
     /// is integrated and the bound table stays switched off.
@@ -237,6 +255,8 @@ private:
     /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
     /// writes. M11.c task 3.1.
     [[nodiscard]] Status create_frame() noexcept;
+    /// The fog march and its table, bound at set 0 binding 2. Only with `set_fog(true)`.
+    [[nodiscard]] Status create_fog(const World& world) noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
     /// Refill geometry and CPU-authored foliage streams. Device passes replace the terrain, sky,
     /// and water colour ranges before the opaque draw consumes them.
@@ -254,6 +274,16 @@ private:
     u32 height_ = 0;
     bool available_ = false;
     bool water_shading_ = true;
+    bool ground_marker_ = false;
+    u64 decal_bytes_ = 0;
+    /// `set_fog` and the medium the grade file commits. See `samples/10-world/frame.cypost`.
+    bool fog_ = false;
+    f32 fog_visibility_metres_ = 1500.0F;
+    f32 fog_scale_height_ = 60.0F;
+    f32 fog_albedo_ = 0.95F;
+    f32 fog_anisotropy_ = 0.7F;
+    /// This frame's fog table in the graph, or `kInvalidResource`.
+    rendering::ResourceId fog_table_ = rendering::kInvalidResource;
 
     /// The static half: terrain geometry, uploaded once.
     u32 terrain_vertices_ = 0;

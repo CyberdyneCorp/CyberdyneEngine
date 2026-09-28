@@ -141,6 +141,16 @@ struct DecalProjection {
 [[nodiscard]] Vec3 blend_decal_normal(Vec3 receiver_normal, Vec3 decal_normal,
                                       f32 strength) noexcept;
 
+/// Order decals for application: ascending `sort_order`, ties on `id`. Writes indices into `out`,
+/// which must be at least `decals.size()` long, and returns how many were written — zero when `out`
+/// is too short.
+///
+/// THE ONE ORDERING, and it is a free function because two things apply decals and they must agree:
+/// `DecalBudget::application_order` for the set it owns, and the frame assembly for whatever span a
+/// view hands it. Both keys are the decal's own, so the order is TOTAL — two runs of one frame, or
+/// the same decals handed over in a different array order, apply identically.
+[[nodiscard]] u32 decal_application_order(Span<const DecalInstance> decals, Span<u32> out) noexcept;
+
 /// Why a decal left the set.
 enum class DecalEvictionCause : u8 {
     /// The budget was reached and this was the least worth keeping.

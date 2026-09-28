@@ -57,6 +57,34 @@ Span<const DrawSurface> default_surfaces(const VisibleInstance& instance, void* 
     return element;
 }
 
+/// The cluster element one decal becomes: its oriented box in view space, bounded by the sphere
+/// through its corners, and filtered by the decal's own channels — a decal that applies to no
+/// channel the view renders is in no list, which is what makes a decal layer of "none" cost
+/// nothing.
+[[nodiscard]] ClusterElement decal_element_of(const DecalInstance& decal, const Mat4& view,
+                                              u32 rank) noexcept {
+    ClusterElement element;
+    element.view_position = to_view_space(view, decal.center);
+    element.payload_index = rank;
+    element.layer_mask = decal.channels;
+    element.type = ClusterElementType::Decal;
+    element.oriented_box = true;
+    const Vec3 axes[3] = {decal.axis_x, decal.axis_y, decal.axis_z};
+    const f32 halves[3] = {decal.half_extent.x, decal.half_extent.y, decal.half_extent.z};
+    f32 radius_squared = 0.0F;
+    for (u32 axis = 0; axis < 3U; ++axis) {
+        const Vec3 unit = normalized_or(
+            axes[axis],
+            Vec3{axis == 0U ? 1.0F : 0.0F, axis == 1U ? 1.0F : 0.0F, axis == 2U ? 1.0F : 0.0F});
+        const f32 half = halves[axis] > 0.0F ? halves[axis] : 0.0F;
+        const Vec4 rotated = view * Vec4{unit.x * half, unit.y * half, unit.z * half, 0.0F};
+        element.box_axes[axis] = Vec3{rotated.x, rotated.y, rotated.z};
+        radius_squared += half * half;
+    }
+    element.radius = std::sqrt(radius_squared);
+    return element;
+}
+
 /// The update class a light's shadow pages are asked for under.
 ///
 /// A directional light's cascades cover the whole view and go stale the moment the camera moves, so
@@ -82,6 +110,7 @@ FrameAssembly::FrameAssembly(Allocator& allocator) noexcept
       lights_(allocator),
       elements_(allocator),
       clusters_(allocator),
+      decal_order_(allocator),
       materials_(allocator),
       shadows_(allocator),
       sky_(allocator),
@@ -275,12 +304,14 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features = FrameFeatures{};
     features.depth_prepass = description_.depth_prepass;
     features.ambient_occlusion = config.ambient_occlusion;
+    features.volumetric_fog = config.volumetric_fog;
     features.contact_shadows = description_.contact_shadows;
     features.selection_outlines = description_.selection_outlines;
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
     features.motion_blur = config.motion_blur;
     features.bloom = config.bloom;
+    features.depth_of_field = config.depth_of_field;
     features.bloom_levels = description_.bloom.mip_count;
     features.post_process = chain.count != 0;
     return ok();
@@ -439,6 +470,9 @@ Status FrameAssembly::build_lights(const AssemblyView& view, AssemblyReport& out
         }
     }
     out.lights = static_cast<u32>(lights_.size());
+    if (Status decals = add_decal_elements(view, out); !decals) {
+        return decals;
+    }
 
     const f32 tan_half_fov = std::tan(view.fov_y_radians * 0.5F);
     const f32 aspect = static_cast<f32>(description_.width) / static_cast<f32>(description_.height);
@@ -448,6 +482,33 @@ Status FrameAssembly::build_lights(const AssemblyView& view, AssemblyReport& out
         return assigned;
     }
     out.clusters = clusters_.stats;
+    out.decal_assignments = 0;
+    const u32 cluster_count = grid_.cluster_count();
+    for (u32 cluster = 0; cluster < cluster_count; ++cluster) {
+        const usize header = (static_cast<usize>(cluster) * kClusterElementTypeCount) +
+                             static_cast<usize>(ClusterElementType::Decal);
+        out.decal_assignments += clusters_.headers[header].count;
+    }
+    return ok();
+}
+
+Status FrameAssembly::add_decal_elements(const AssemblyView& view, AssemblyReport& out) noexcept {
+    decal_order_.clear();
+    out.decals = static_cast<u32>(view.decals.size());
+    if (view.decals.empty()) {
+        return ok();
+    }
+    if (Status sized = decal_order_.resize(view.decals.size()); !sized) {
+        return sized;
+    }
+    (void)decal_application_order(view.decals, decal_order_.span());
+    for (u32 rank = 0; rank < decal_order_.size(); ++rank) {
+        if (Status added = elements_.push_back(
+                decal_element_of(view.decals[decal_order_[rank]], view.view, rank));
+            !added) {
+            return added;
+        }
+    }
     return ok();
 }
 
@@ -678,6 +739,11 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.contact_shadows_target = view.contact_shadows;
     description.contact_shadows_stage = sinks.contact_shadows;
     description.selection_outlines_stage = sinks.selection_outlines;
+    description.depth_of_field_stage = sinks.depth_of_field;
+    description.volumetric_fog_target = view.volumetric_fog;
+    description.volumetric_fog_stage = sinks.volumetric_fog;
+    description.motion_blur_target = view.motion_blur;
+    description.motion_blur_stage = sinks.motion_blur;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =
