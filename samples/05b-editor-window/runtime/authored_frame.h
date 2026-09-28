@@ -145,6 +145,11 @@ private:
                                      const vfx::SimulationWorld* scene_vfx, Vec3 eye) noexcept;
 #endif
     void release_geometry() noexcept;
+    void sign_shading(const void* data, usize size) noexcept;
+    template <class T>
+    void sign_shading(const T& value) noexcept {
+        sign_shading(&value, sizeof(value));
+    }
 
     static Span<const rendering::DrawSurface> surfaces(const rendering::VisibleInstance& instance,
                                                        void* user) noexcept;
@@ -167,6 +172,11 @@ private:
     bool has_frame_time_ = false;
     bool has_previous_frame_ = false;
     bool history_cut_ = true;
+    // What the frame shades with, apart from where things are and what time it is: TAA keeps its
+    // history across a change of transform or time and must drop it across a change of lighting,
+    // material or preview, or the new frame is blended with the old scene's pixels.
+    u64 shading_signature_ = 0;
+    u64 previous_shading_signature_ = 0;
     Vec3 previous_eye_;
 
     rendering::assembly::FrameAssembly assembly_;

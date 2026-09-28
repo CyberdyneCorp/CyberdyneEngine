@@ -31,6 +31,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -330,6 +331,25 @@ usize differing_pixels(Span<const u32> before, Span<const u32> after) noexcept {
     return count;
 }
 
+// Pixels whose largest channel difference exceeds `tolerance`. For TAA frames past the first: the
+// jitter moves the sample positions off the pixel centres, where a graph's shader offset and the
+// same offset baked into the model matrix round differently along a shadow edge (measured at up to
+// 3 levels with nothing moving), and the history clamp widens that on an edge that moved.
+usize differing_beyond(Span<const u32> before, Span<const u32> after, u32 tolerance) noexcept {
+    usize count = 0;
+    for (usize pixel = 0; pixel < before.size(); ++pixel) {
+        for (u32 shift = 0; shift < 32; shift += 8) {
+            const u32 lhs = (before[pixel] >> shift) & 0xFFU;
+            const u32 rhs = (after[pixel] >> shift) & 0xFFU;
+            if ((lhs > rhs ? lhs - rhs : rhs - lhs) > tolerance) {
+                ++count;
+                break;
+            }
+        }
+    }
+    return count;
+}
+
 enum class Occurrence : u8 { First, Last };
 
 // The authored text with one line changed, as the editor would write it after one edit. The line
@@ -574,9 +594,48 @@ std::string time_vertex_graph() {
                   Occurrence::First);
 }
 
+// Two frames compared pixel for pixel, each on its own device: a device's global texture table has
+// one sampler and each frame's material table creates its own. The frames render in lockstep, so
+// they share TAA's free-running jitter index and their history.
+struct FramePair {
+    rhi::Device* graph_device = nullptr;
+    rhi::Device* cpu_device = nullptr;
+    std::optional<AuthoredFrame> graph;
+    std::optional<AuthoredFrame> cpu;
+
+    FramePair() {
+        rhi::DeviceDescription description;
+        description.application_name = kSuite;
+        description.enable_validation = true;
+        rhi::BackendSelection selection;
+        auto created_graph = rhi::create_device(allocator(), kBackend, description, selection);
+        auto created_cpu = rhi::create_device(allocator(), kBackend, description, selection);
+        CY_REQUIRE(created_graph.has_value());
+        CY_REQUIRE(created_cpu.has_value());
+        graph_device = *created_graph;
+        cpu_device = *created_cpu;
+        graph.emplace(allocator(), *graph_device);
+        cpu.emplace(allocator(), *cpu_device);
+        CY_REQUIRE(graph->initialize(192, 128, CY_TEST_PROJECT, true, true));
+        CY_REQUIRE(cpu->initialize(192, 128, CY_TEST_PROJECT, true, true));
+    }
+    FramePair(const FramePair&) = delete;
+    FramePair& operator=(const FramePair&) = delete;
+    ~FramePair() {
+        graph.reset();
+        cpu.reset();
+        if (cpu_device != nullptr) {
+            rhi::destroy_device(allocator(), cpu_device);
+        }
+        if (graph_device != nullptr) {
+            rhi::destroy_device(allocator(), graph_device);
+        }
+    }
+};
+
 // The graph's vertical offset must make the same visible mesh and shadow as moving the source
 // mesh on the CPU. Previewing a zero offset keeps the surface graph and material settings equal.
-void check_graph_displacement_matches_cpu(AuthoredFrame& frame, const ser::AuthoringSchema& schema,
+void check_graph_displacement_matches_cpu(const ser::AuthoringSchema& schema,
                                           const first_light::Camera& view) {
     const std::string reference = "samples/05b-editor-window/project/materials/copper_clay.cygraph";
     const std::string assigned = assigned_vertex_shadow_scene();
@@ -587,24 +646,27 @@ void check_graph_displacement_matches_cpu(AuthoredFrame& frame, const ser::Autho
     read_resolved(assigned, schema, source);
     read_resolved(raised, schema, cpu_displaced);
 
-    CY_REQUIRE(frame.preview(reference, kSurfaceVertexGraph));
-    CY_REQUIRE(frame.render(source, view));
-    Array<u32> graph_pixels(allocator());
-    CY_REQUIRE(graph_pixels.append(frame.pixels()));
-
+    FramePair frames;
     const std::string zero_offset =
         edited(kSurfaceVertexGraph, "(0, 0.25, 0, 0, 0)", "(0, 0, 0, 0, 0)", Occurrence::First);
-    CY_REQUIRE(frame.preview(reference, zero_offset));
-    CY_REQUIRE(frame.render(source, view));
-    CY_CHECK_GT(differing_pixels(graph_pixels.span(), frame.pixels()), 100U);
-    CY_REQUIRE(frame.render(cpu_displaced, view));
-    CY_CHECK_LE(differing_pixels(graph_pixels.span(), frame.pixels()), 32U);
+    // Each frame's first render has no history, so the comparison is of the shading alone.
+    CY_REQUIRE(frames.graph->preview(reference, kSurfaceVertexGraph));
+    CY_REQUIRE(frames.cpu->preview(reference, zero_offset));
+    CY_REQUIRE(frames.graph->render(source, view));
+    CY_REQUIRE(frames.cpu->render(cpu_displaced, view));
+    CY_CHECK_LE(differing_pixels(frames.graph->pixels(), frames.cpu->pixels()), 32U);
+    // A preview change starts a new history, so the zero offset is again a first frame.
+    Array<u32> displaced(allocator());
+    CY_REQUIRE(displaced.append(frames.graph->pixels()));
+    CY_REQUIRE(frames.graph->preview(reference, zero_offset));
+    CY_REQUIRE(frames.graph->render(source, view));
+    CY_CHECK_GT(differing_pixels(displaced.span(), frames.graph->pixels()), 100U);
 }
 
 // The second frame's sine displacement equals the CPU's scene translation. TAA consumes the depth
 // pass's motion target, so matching the temporal image also checks the shader's previous-time
 // evaluation against the CPU reference.
-void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSchema& schema,
+void check_graph_motion_matches_cpu(const ser::AuthoringSchema& schema,
                                     const first_light::Camera& view) {
     constexpr std::string_view reference =
         "samples/05b-editor-window/project/materials/copper_clay.cygraph";
@@ -624,10 +686,9 @@ void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSch
     read_resolved(graph_moved, schema, graph_after);
     read_resolved(cpu_moved, schema, cpu_after);
 
-    AuthoredFrame graph_frame(allocator(), device);
-    AuthoredFrame cpu_frame(allocator(), device);
-    CY_REQUIRE(graph_frame.initialize(192, 128, CY_TEST_PROJECT, true, true));
-    CY_REQUIRE(cpu_frame.initialize(192, 128, CY_TEST_PROJECT, true, true));
+    FramePair frames;
+    AuthoredFrame& graph_frame = *frames.graph;
+    AuthoredFrame& cpu_frame = *frames.cpu;
     const std::string sine_graph = time_vertex_graph();
     CY_REQUIRE(graph_frame.preview(reference, sine_graph));
     const std::string zero_offset =
@@ -644,7 +705,7 @@ void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSch
     CY_REQUIRE(graph_frame.render(graph_after, view, true, nullptr, second_time));
     CY_REQUIRE(cpu_frame.render(cpu_after, view, true, nullptr, second_time));
     CY_CHECK_GT(differing_pixels(graph_first.span(), graph_frame.pixels()), 100U);
-    CY_CHECK_LE(differing_pixels(graph_frame.pixels(), cpu_frame.pixels()), 32U);
+    CY_CHECK_LE(differing_beyond(graph_frame.pixels(), cpu_frame.pixels(), 24U), 32U);
     CY_REQUIRE_EQ(graph_frame.motion_texels().size(), graph_frame.pixels().size());
     CY_REQUIRE_EQ(cpu_frame.motion_texels().size(), cpu_frame.pixels().size());
     usize moving = 0;
@@ -652,7 +713,9 @@ void check_graph_motion_matches_cpu(rhi::Device& device, const ser::AuthoringSch
         moving += static_cast<usize>(texel != 0);
     }
     CY_CHECK_GT(moving, 20U);
-    CY_CHECK_LE(differing_pixels(graph_frame.motion_texels(), cpu_frame.motion_texels()), 32U);
+    // The motion target is not jittered, so the shader's previous-time evaluation must reproduce
+    // the CPU's previous transform exactly.
+    CY_CHECK_EQ(differing_pixels(graph_frame.motion_texels(), cpu_frame.motion_texels()), 0U);
 }
 #endif
 
@@ -1157,8 +1220,8 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_shadows(frame, schema, view);
         check_graph_material(frame, view);
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
-        check_graph_displacement_matches_cpu(frame, schema, view);
-        check_graph_motion_matches_cpu(**device, schema, view);
+        check_graph_displacement_matches_cpu(schema, view);
+        check_graph_motion_matches_cpu(schema, view);
 #endif
     }
     rhi::destroy_device(allocator(), *device);

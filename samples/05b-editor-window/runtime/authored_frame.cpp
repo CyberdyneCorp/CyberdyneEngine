@@ -6,6 +6,7 @@
 #include <cy/core/assets/cooked.h>
 #include <cy/core/assets/file.h>
 #include <cy/core/math/projection.h>
+#include <cy/core/memory/hash.h>
 #include <cy/graph/material/lower_material.h>
 #include <cy/graph/text.h>
 #include <cy/import/mesh.h>
@@ -888,6 +889,12 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
             colour->value = Vec4{override->lanes[0], override->lanes[1], override->lanes[2], 1.0F};
         }
     }
+    sign_shading(key.data(), key.size());
+    sign_shading(active.data(), active.size());
+    sign_shading(colour->value.x);
+    sign_shading(colour->value.y);
+    sign_shading(colour->value.z);
+    sign_shading(colour->value.w);
     const StandardParameters ids;
     if (Status status = assembly_.materials().set_color(material_program_, slot,
                                                         ids.base_color_factor, colour->value);
@@ -1468,6 +1475,8 @@ Status AuthoredFrame::upload_geometry() noexcept {
 
 Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
                                       bool editor_lighting) noexcept {
+    shading_signature_ = 0;
+    sign_shading(editor_lighting);
     index_.reset();
     instances_.clear();
     current_models_.clear();
@@ -1617,7 +1626,18 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
             transformed.tint[channel] = tint->lanes[channel];
         }
     }
+    const Instance& placed = instances_.back();
+    sign_shading(placed.identity);
+    sign_shading(placed.mesh);
+    sign_shading(placed.materials.data(), placed.materials.size() * sizeof(u32));
+    for (u32 channel = 0; channel < 3; ++channel) {
+        sign_shading(transformed.tint[channel]);
+    }
     return transforms_.push_back(transformed);
+}
+
+void AuthoredFrame::sign_shading(const void* data, usize size) noexcept {
+    shading_signature_ = hash_combine(shading_signature_, hash_bytes(data, size));
 }
 
 Status AuthoredFrame::update_previous_transform(u64 identity, const Mat4& matrix, Vec3 eye,
@@ -1793,6 +1813,26 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (Status status = build_instances(world, eye, editor_lighting); !status) {
         return status;
     }
+    for (const render::LightDescription& light : lights_) {
+        sign_shading(light.kind);
+        sign_shading(light.transform.rotation.x);
+        sign_shading(light.transform.rotation.y);
+        sign_shading(light.transform.rotation.z);
+        sign_shading(light.transform.rotation.w);
+        sign_shading(light.transform.translation.x);
+        sign_shading(light.transform.translation.y);
+        sign_shading(light.transform.translation.z);
+        sign_shading(light.color);
+        sign_shading(light.intensity);
+        sign_shading(light.range);
+        sign_shading(light.inner_cone_radians);
+        sign_shading(light.outer_cone_radians);
+        sign_shading(light.casts_shadow);
+        sign_shading(light.stable_id);
+    }
+    if (shading_signature_ != previous_shading_signature_) {
+        history_cut_ = true;
+    }
     if (!wind_buffer_.is_null()) {
         const EnvironmentFieldSlot field{0, wind_buffer_};
         if (Status bound = bindings_.set_environment_fields({&field, 1}); !bound) {
@@ -1849,6 +1889,7 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     }
     previous_models_ = current_models_;
     previous_eye_ = eye;
+    previous_shading_signature_ = shading_signature_;
     has_previous_frame_ = true;
     history_cut_ = false;
     return ok();
