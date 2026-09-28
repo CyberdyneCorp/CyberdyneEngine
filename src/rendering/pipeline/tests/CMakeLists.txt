@@ -61,6 +61,22 @@ function(cy_pipeline_declare_tests)
         DEPENDENCIES cy::rendering-pipeline cy::rendering-particles cy::rhi-null)
     target_include_directories(cy_test_integration_render_pipeline PRIVATE "${tests_dir}")
 
+    # THE MSL EMBEDDER, THROUGH THE COMPILER THAT BUILDS THE ENGINE. A module longer than a string
+    # literal may be must still compile under the engine's warnings and come back byte for byte:
+    # the forward fragment passed 65,536 bytes and Apple clang refused frame_msl.h. The flags are
+    # GCC/Clang spellings, so the suite is not declared for MSVC.
+    if(CY_PYTHON AND NOT MSVC)
+        set(embed_flags "")
+        if(CMAKE_OSX_SYSROOT)
+            list(APPEND embed_flags "--cxx-flag=-isysroot${CMAKE_OSX_SYSROOT}")
+        endif()
+        add_test(NAME integration.render_embed_msl
+                 COMMAND "${CY_PYTHON}" "${tests_dir}/test_embed_msl.py"
+                         --cxx "${CMAKE_CXX_COMPILER}" ${embed_flags})
+        set_tests_properties(integration.render_embed_msl PROPERTIES
+                             TIMEOUT 300 LABELS integration)
+    endif()
+
     function(cy_pipeline_device_suite name backend define)
         cy_add_test(
             NAME ${name}

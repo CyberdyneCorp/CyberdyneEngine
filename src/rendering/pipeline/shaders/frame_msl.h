@@ -4,7 +4,32 @@
 
 #include <cy/core/base/types.h>
 
+#include <cstddef>
+#include <initializer_list>
+
 namespace cy::rendering::pipeline {
+
+namespace detail {
+
+/// One MSL module assembled from several raw-string chunks. See embed_msl.py for why.
+template <std::size_t Size>
+struct MslText {
+    char text[Size];
+};
+
+template <std::size_t... Sizes>
+consteval MslText<(Sizes + ...) - sizeof...(Sizes) + 1> join_msl(const char (&... chunks)[Sizes]) {
+    MslText<(Sizes + ...) - sizeof...(Sizes) + 1> joined{};
+    std::size_t at = 0;
+    for (const char* chunk : {static_cast<const char*>(chunks)...}) {
+        for (; *chunk != '\0'; ++chunk) {
+            joined.text[at++] = *chunk;
+        }
+    }
+    return joined;
+}
+
+}  // namespace detail
 
 /// DepthVertex.metal, 7603 bytes.
 inline constexpr char kFrameDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
@@ -994,7 +1019,8 @@ struct CyForwardVertex_0
 )cy_msl";
 
 /// ForwardFragment.metal, 66597 bytes.
-inline constexpr char kFrameForwardFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
+inline constexpr auto kFrameForwardFragmentMslText = detail::join_msl(
+    R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
@@ -1686,7 +1712,8 @@ float3 cyApplyFog_0(const CyFrameFogVolume_0 thread* source_4, float3 radiance_0
 {
 
 #line 151
-    CyFogAtPoint_0 _S59 = cyFogAt_0(source_4, relativePosition_1, kernelContext_12);
+)cy_msl",
+    R"cy_msl(    CyFogAtPoint_0 _S59 = cyFogAt_0(source_4, relativePosition_1, kernelContext_12);
 
 
     return radiance_0 * _S59.transmittance_0 + _S59.inScattering_0;
@@ -2410,7 +2437,8 @@ Surface_0 defaultSurface_0()
 float3 readMaterialFloat3_0(uint material_1, uint wordOffset_0, KernelContext_0 thread* kernelContext_21)
 {
     uint _S159 = material_1 * kernelContext_21->cyFrameView_0->frame_0->counts_0.y + wordOffset_0;
-    return float3((as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159]))), (as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159 + 1U]))), (as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159 + 2U]))));
+)cy_msl",
+    R"cy_msl(    return float3((as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159]))), (as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159 + 1U]))), (as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159 + 2U]))));
 }
 
 
@@ -3116,7 +3144,8 @@ float distributionGgx_0(float normalDotHalf_0, float roughness_2)
 }
 
 
-float visibilitySmithGgxCorrelated_0(float normalDotView_0, float normalDotLight_0, float roughness_3)
+)cy_msl",
+    R"cy_msl(float visibilitySmithGgxCorrelated_0(float normalDotView_0, float normalDotLight_0, float roughness_3)
 {
 
     float _S210 = roughness_3 * roughness_3;
@@ -3792,7 +3821,8 @@ struct pixelInput_0
     thread Surface_0 _S297 = surface_7;
 
 #line 1015
-    float3 _S298 = accumulateLights_0(&_S297, _S292.relativePosition_7, normal_10, _S295, _S296, _S293.flags_0, &kernelContext_40);
+)cy_msl",
+    R"cy_msl(    float3 _S298 = accumulateLights_0(&_S297, _S292.relativePosition_7, normal_10, _S295, _S296, _S293.flags_0, &kernelContext_40);
 
 #line 1029
     float3 ambientRadiance_0 = (&kernelContext_40)->cyFrameView_0->frame_0->ambientAndOcclusion_0.xyz;
@@ -3944,7 +3974,8 @@ struct pixelInput_0
     return _S305;
 }
 
-)cy_msl";
+)cy_msl");
+inline constexpr const auto& kFrameForwardFragmentMsl = kFrameForwardFragmentMslText.text;
 
 /// ResolveVertex.metal, 936 bytes.
 inline constexpr char kFrameResolveVertexMsl[] = R"cy_msl(#include <metal_stdlib>
