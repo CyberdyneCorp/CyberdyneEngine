@@ -585,6 +585,19 @@ struct Froxel {
     return true;
 }
 
+/// Whether `point` is inside a box of the scene, the floor slab included. The shadow pass culls
+/// front faces, so the map holds each solid's far side and calls its inside lit; fog inside a solid
+/// is never in front of a surface, so no frame can show it either way.
+[[nodiscard]] bool inside_solid(FrameScene& scene, Vec3 point) noexcept {
+    for (const Aabb& box : scene.boxes()) {
+        if (point.x > box.min.x && point.x < box.max.x && point.y > box.min.y &&
+            point.y < box.max.y && point.z > box.min.z && point.z < box.max.z) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Whether the map covers `point` at all: inside its square and its depth range. Outside, the
 /// march calls a point lit whatever the geometry says, as both frames' surface lookups do.
 [[nodiscard]] bool map_covers(const Mat4& relative_to_uv, Vec3 point) noexcept {
@@ -695,8 +708,8 @@ CY_TEST_CASE("froxels in an occluder's shadow scatter no sunlight and the open o
                 const f32 full = luminance(source) *
                                  (before.transmittance.x - froxel.transmittance.x) / extinction;
                 // The geometry's answer at eight points along the froxel's stretch of the ray, and
-                // the froxels either wholly in shadow or wholly in the open, with the map covering
-                // them, are the ones counted.
+                // the froxels in open air either wholly in shadow or wholly in the sun, with the
+                // map covering them, are the ones counted.
                 u32 reached = 0;
                 bool covered = true;
                 constexpr u32 kProbes = 8;
@@ -704,7 +717,8 @@ CY_TEST_CASE("froxels in an occluder's shadow scatter no sunlight and the open o
                     const f32 along = previous + ((static_cast<f32>(probe) + 0.5F) *
                                                   (distance - previous) / kProbes);
                     const Vec3 point = direction * along;
-                    covered = covered && map_covers(to_uv, point);
+                    covered =
+                        covered && map_covers(to_uv, point) && !inside_solid(run.scene(), point);
                     reached += sun_reaches(run.scene(), point) ? 1U : 0U;
                 }
                 if (covered && full > 0.0F) {
