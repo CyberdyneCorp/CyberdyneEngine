@@ -40,6 +40,7 @@
 #include <cy/rendering/arbiter/subsystem.h>
 #include <cy/rendering/sky/budget.h>
 
+#include <chrono>
 #include <cstring>
 
 namespace {
@@ -62,6 +63,16 @@ using cy::rendering::sky::SkyWorkload;
 /// worth, which puts the milliseconds this case reports in the range the arbiter's own constants
 /// were tuned for rather than three orders below `reserved_minimum_ms`.
 inline constexpr u64 kRays = 20000;
+
+/// Stand in for the frame's work on the real clock: return once `steady_clock` — the clock
+/// `SkyBudget` times with — has visibly advanced. Two adjacent calls can read the same instant on a
+/// fast host, and a zero interval prices nothing, so the timer case failed on Windows three runs in
+/// six (#52). This asserts nothing about how long it took; it only makes the interval non-zero.
+void work_until_the_clock_ticks() noexcept {
+    const auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() == start) {
+    }
+}
 
 /// One frame of sky work at a given size, as the counters would come back from the march.
 [[nodiscard]] SkyWorkload workload_of(u64 rays, u32 steps) {
@@ -252,9 +263,14 @@ CY_TEST_CASE("the arbiter is fed measured costs taken from a clock rather than f
     CY_REQUIRE(sky.declare(arbiter));
 
     sky.begin_frame();
+    work_until_the_clock_ticks();
     sky.end_frame(workload_of(1000, 32));
+    CY_CHECK_GT(sky.stats().last_elapsed_ms, 0.0F);
     sky.begin_frame();
+    work_until_the_clock_ticks();
     sky.end_frame(workload_of(1000, 64));
+    CY_CHECK_GT(sky.stats().last_elapsed_ms, 0.0F);
+    CY_CHECK_EQ(sky.stats().unpriced, 0U);
 
     CY_TEST_MESSAGE("from the clock: unit ", sky.stats().unit_cost_ns, " ns/sample over ",
                     sky.stats().last_samples, " samples, last frame ", sky.stats().last_elapsed_ms,
