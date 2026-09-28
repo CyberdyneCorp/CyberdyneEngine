@@ -84,6 +84,13 @@
 # `just quality-lint` runs this over the compile database. Findings are errors — WarningsAsErrors
 # below is the whole enabled set — which is what the specification requires. A finding that is wrong
 # is silenced at its line with a NOLINT comment carrying the reason, so the exception is reviewable.
+#
+# `clang-diagnostic-unused-const-variable` is a compiler warning, not a tidy check. GCC does not
+# issue it for C++ and AppleClang does under -Wall -Werror, so an unused namespace-scope constant
+# built clean on Linux and broke the macOS leg (probe_volume_texture.cpp). Enabling it here makes the
+# Linux lint gate see what the macOS compiler sees. `clang-diagnostic-string-concatenation` is the
+# same case: AppleClang's -Wextra rejects two adjacent literals inside an array initialiser, which
+# GCC accepts silently (test_lut.cpp broke the macOS leg that way).
 
 Checks: >
   -*,
@@ -99,6 +106,8 @@ Checks: >
   misc-unused-alias-decls,
   misc-unused-parameters,
   misc-unused-using-decls,
+  clang-diagnostic-unused-const-variable,
+  clang-diagnostic-string-concatenation,
   cppcoreguidelines-pro-type-static-cast-downcast,
   cppcoreguidelines-slicing,
   cppcoreguidelines-pro-type-member-init,

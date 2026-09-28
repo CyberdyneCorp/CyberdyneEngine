@@ -97,6 +97,14 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE SAME CHECK AS `m11d:lint`, byte for byte, so its declared mutation is copied word for word and
+# the one proof carries here (tools/roadmap/falsify.py, `_carry_to_identical_declarations`).
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with the editor layer occupied for the first time — and the editor is not in this check at all, because it reaches the engine ONLY over the C ABI and links no engine target. That is enforced by the editor workspace containing no path to one, and by its own layering test, not by this recipe"

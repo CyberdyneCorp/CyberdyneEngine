@@ -302,6 +302,14 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE SAME CHECK AS `m11d:lint`, byte for byte, so its declared mutation is copied word for word and
+# the one proof carries here (tools/roadmap/falsify.py, `_carry_to_identical_declarations`).
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "THE ENGINE'S LAYER ORDER HOLDS WITH SEVEN NEW MODULES IN IT, AND THAT IS THIS MILESTONE'S ARCHITECTURAL CLAIM RATHER THAN A FORMALITY. `cy::weather` does not link `cy::water`; `cy::water` does not link `cy::terrain`; `cy::pcg` links neither `cy::foliage` nor `cy::ecs`; none of them links the renderer, and `cy::vfx` does not link a device — `cy::vfx-gpu` in src/vfx/gpu/ is where the device is, which is what keeps `integration.vfx` headless. Those absences are what 'one substrate, and the producers that are not allowed to fork it' MEANS, and this is the check that makes them a link-graph fact rather than a paragraph in a README"

@@ -188,7 +188,7 @@ CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks 
     rendering::assembly::AssemblyReport report;
     CY_REQUIRE(scene.render(RecordMode::None, report).has_value());
     // Six stages: Prepare, DepthPrepass, Opaque, Transparent, Temporal, PostProcess.
-    auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
+    auto& recorder = scene.recorder();
     CY_CHECK_EQ(attached_callbacks(recorder.sinks()), 6U);
 }
 

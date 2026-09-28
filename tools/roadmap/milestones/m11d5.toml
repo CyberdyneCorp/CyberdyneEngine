@@ -101,6 +101,14 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE SAME CHECK AS `m11d:lint`, byte for byte, so its declared mutation is copied word for word and
+# the one proof carries here (tools/roadmap/falsify.py, `_carry_to_identical_declarations`).
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with three graphics backends in it — no platform `#ifdef` inside a backend, and no backend type above `src/backends/`"
@@ -137,6 +145,11 @@ kind = "command"
 run = "just generate-check && just generate-test && just maintenance-deps-check"
 timeout_s = 3600
 ci_job = "generated-code"
+
+[criterion.falsifies]
+mutate = "truncate"
+target = "src/core/reflect/generated/cy_reflect_generated.cpp"
+note   = "the reflection metadata is COMMITTED, so its currency check is a comparison between the committed file and what the generator produces from the annotated headers. Emptying it is the staleness this gate exists to catch — an annotated header edited without the generator being run — and `reflect_gen --check` names the file. The headers half of the recipe writes into the build tree and cannot be mutated from the source, so the committed half is the one a source mutation reaches."
 
 [[criterion]]
 id = "roadmap-record"
@@ -273,6 +286,14 @@ test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.rhi any
 '''
 ci_job = "milestone-m11d5"
 
+# The spike's own adapter name, taken out of the engine's table. With it gone the name-only case
+# (vendor 0) reads `Microsoft Basic Render Driver` as unknown, and the software label is lost.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/backends/rhi/src/device_identity.cpp"
+token  = "Microsoft Basic Render Driver"
+note   = "the classifier no longer recognises the hosted Windows adapter by name; `a software device is labelled from its identity even when its flag lies` fails its name-only check and the criterion exits red."
+
 [[criterion]]
 id = "renderer-options-off-is-clean"
 describe = "M8.c's rule applied to the two options this rung delivers: the engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12` OFF as well as ON. A Linux host is the RIGHT place to check it rather than a limitation — off is the configuration every machine that is not a Mac or a Windows box builds, and a backend that has quietly become mandatory shows up here first. Its `just test-all` is MEASURED ON A QUIET HOST, through `just test-quiet-host` as `m0:test`'s is, and a host that is not quiet FAILS it with a `host too busy:` reason, never a pass and never a skip"
@@ -311,6 +332,12 @@ kind = "command"
 run = "just quality-requirements rhi-and-render-graph"
 ci_job = "milestone-m11d5"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tests/render/test_golden_backends.cpp"
+token  = "every enabled backend is judged, and the answer names it"
+note   = "the case `Backend roadmap` names disappears from `render.golden_backends`, so the requirement is answered by something that is not there and the row is no longer mapped."
+
 # --- Section 3: the artefact ----------------------------------------------------------------------
 
 [[criterion]]
@@ -323,17 +350,29 @@ set -eo pipefail
 missing=0
 for backend in vulkan metal d3d12; do
     found=$(ls docs/design/images/m11d5-three-backends-"$backend"*.png 2>/dev/null | head -1 || true)
-    if [ -n "$found" ]; then
-        echo "  $backend: $found"
-    else
+    manifest="docs/design/images/m11d5-three-backends-$backend.manifest"
+    if [ -z "$found" ]; then
         echo "  $backend: no docs/design/images/m11d5-three-backends-$backend*.png"
         missing=$((missing + 1))
+    elif ! grep -Eq "^row backend=$backend .*device=\"[^\"]+\".* class=(hardware|software|paravirtual) " "$manifest" 2>/dev/null; then
+        echo "  $backend: $found, but $manifest has no row naming the device that produced it"
+        missing=$((missing + 1))
+    else
+        echo "  $backend: $found, $(grep -Eo "^row backend=$backend .*device=\"[^\"]+\"" "$manifest" | grep -Eo 'device="[^"]+"')"
     fi
 done
-echo "$missing of 3 backend images missing"
+echo "$missing of 3 backend images missing or unlabelled"
 test "$missing" -eq 0
 '''
 ci_job = "milestone-m11d5"
+
+# TASK 7.4: a picture is labelled by the manifest committed beside it, so the check reads that row
+# rather than accepting a PNG on its own. Taking the row away is an unlabelled picture.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "docs/design/images/m11d5-three-backends-metal.manifest"
+token  = "row backend=metal "
+note   = "the Metal capture is still committed but no longer names the device that produced it, so the loop counts it as unlabelled and exits red."
 
 # --- Section 4: the record, and the next rung -----------------------------------------------------
 

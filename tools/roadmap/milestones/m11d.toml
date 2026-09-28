@@ -76,6 +76,17 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+# THE NATIVE PLATFORM BACKEND IS THIS RUNG'S OWN CODE, so the mutation is there rather than carried
+# from M11.c's allocator. `X11DisplayServer::create_surface` passes a Vulkan handle and an X11 window
+# number through `NativeSurface::handle` as a `void*`, and each of the two casts carries an earned
+# `performance-no-int-to-ptr` suppression. Renaming the marker makes both real findings fire on
+# shipping lines, and `WarningsAsErrors: '*'` turns them into the recipe's exit status.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "platform/linux-native/src/x11_display_server.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the two suppressions in the X11 surface path stop suppressing, and clang-tidy reports `performance-no-int-to-ptr` on both casts through `NativeSurface::handle` as errors"
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with two platform implementations in it — including the platform/SDL rule, which is the rule this rung's whole claim is about: the engine layers may not know which platform backend they are on"
@@ -1158,7 +1169,17 @@ set -eo pipefail
 # asks for — `just run-ship` — and this runs it through both legs with `--require-draw`, so a leg
 # that presented nothing fails rather than reporting NOT EVALUATED, and exit 3 (it drew and tripped
 # validation, which ship.py records as a GAP) is red as well: the artefact is not shipped over it.
-just run-ship --platform both --require-draw --frames 30
+#
+# THE CAPTURE GOES TO A DIRECTORY THIS RUN OWNS, AND IS COMPARED WITH THE COMMITTED STILLS. The
+# recipe used to recompress both pictures under docs/design/images on every run, so this criterion
+# left the tree modified and the prover could never record it (M11.d's fourth close verdict). Each
+# leg's frame is now read back to `$shots` and must equal `docs/design/images/m11d-ship-<leg>.png`
+# pixel for pixel; the last line holds the two tracked stills to it.
+shots="$(mktemp -d)"
+trap 'rm -rf "$shots"' EXIT
+just run-ship --platform both --require-draw --frames 30 \
+    --shot "$shots/m11d-ship.png" --reference-dir docs/design/images
+git diff --quiet -- docs/design/images/m11d-ship-sdl3.png docs/design/images/m11d-ship-native.png
 '''
 requires = "display"
 reason = "both legs open a window and present to it; `smoke.ship` runs the same recipe's headless leg — build, cook, package, install, verify, launch — on every machine"

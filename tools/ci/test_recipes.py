@@ -1234,6 +1234,53 @@ def a_refusing_recipe_names_an_open_rung(root: pathlib.Path) -> list[str]:
     return failures
 
 
+SHIP_STILLS = ("m11d-ship-sdl3.png", "m11d-ship-native.png")
+
+
+def run_ship_leaves_the_committed_stills_alone(root: pathlib.Path) -> list[str]:
+    """`just run-ship` recompresses the stills IT wrote, and never one it did not.
+
+    Found by M11.d's close: the recipe recompressed whichever of the two committed pictures under
+    docs/design/images existed, so every run — `m11d:ship-sample-on-desktop`, which never asks for
+    a shot there, included — rewrote both tracked files. The tree was dirty after the criterion's
+    own unmutated run, and the prover could never record it. `_ship-stills` is the recipe's tail;
+    this drives it over copies in a scratch directory so the case cannot dirty the tree either.
+    """
+    failures: list[str] = []
+    body = next((lines for name, lines in _recipe_bodies((root / "just" / "run.just").read_text())
+                 if name == "run-ship"), None)
+    if body is None:
+        return ["just/run.just has no run-ship recipe"]
+    text = "\n".join(line for line in body if line[:1].isspace())
+    if "just _ship-stills" not in text or "collect_ship.py" in text:
+        failures.append("run-ship recompresses stills itself rather than through `_ship-stills`, "
+                        "which only touches the ones this run wrote")
+
+    images = root / "docs" / "design" / "images"
+    with tempfile.TemporaryDirectory() as scratch:
+        directory = pathlib.Path(scratch)
+        since = directory / "started"
+        since.touch()
+        started = since.stat().st_mtime
+        for index, name in enumerate(SHIP_STILLS):
+            shutil.copyfile(images / name, directory / name)
+            # The first was there before the run started; the second, the run wrote.
+            moment = started - 60 if index == 0 else started + 60
+            os.utime(directory / name, (moment, moment))
+        before = {name: (directory / name).read_bytes() for name in SHIP_STILLS}
+
+        result = subprocess.run(["just", "_ship-stills", str(since), str(directory)], cwd=root,
+                                capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            return failures + [f"`just _ship-stills` exited {result.returncode}: "
+                               f"{(result.stderr or result.stdout).strip()[-300:]}"]
+        if (directory / SHIP_STILLS[0]).read_bytes() != before[SHIP_STILLS[0]]:
+            failures.append(f"{SHIP_STILLS[0]} predates the run and was rewritten anyway")
+        if (directory / SHIP_STILLS[1]).read_bytes() == before[SHIP_STILLS[1]]:
+            failures.append(f"{SHIP_STILLS[1]} was written by the run and was not recompressed")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1299,6 +1346,7 @@ def main() -> int:
         "a refusing recipe names a rung that exists and is open": (
             a_refusing_recipe_names_an_open_rung
         ),
+        "run-ship leaves the committed stills alone": run_ship_leaves_the_committed_stills_alone,
     }
 
     failed = 0

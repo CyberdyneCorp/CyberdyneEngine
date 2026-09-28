@@ -48,6 +48,33 @@ bool available(const BackendRegistration& entry) noexcept {
     return entry.is_available == nullptr || entry.is_available();
 }
 
+/// Why a requested backend is absent from the table. The three real backends are build options,
+/// so a request for one this build left out is answered with the option that would put it in —
+/// "asked for metal, ran vulkan" is then a configuration answer rather than a mystery.
+const char* not_registered_reason(const char* requested) noexcept {
+    struct Known {
+        const char* name;
+        const char* reason;
+    };
+    static constexpr Known kKnown[] = {
+        {"vulkan",
+         "the requested backend 'vulkan' is not in this build: it is compiled only when "
+         "CY_RENDERER_VULKAN is on"},
+        {"metal",
+         "the requested backend 'metal' is not in this build: it is compiled only on Apple "
+         "platforms and only when CY_RENDERER_METAL is on"},
+        {"d3d12",
+         "the requested backend 'd3d12' is not in this build: it is compiled only on Windows "
+         "and only when CY_RENDERER_D3D12 is on"},
+    };
+    for (const Known& known : kKnown) {
+        if (same_name(known.name, requested)) {
+            return known.reason;
+        }
+    }
+    return "the requested backend is not registered in this build";
+}
+
 }  // namespace
 
 Status register_backend(const BackendRegistration& registration) noexcept {
@@ -120,7 +147,7 @@ Expected<Device*, Error> create_device(Allocator& allocator, const char* request
                 break;
             }
             if (chosen == nullptr && reason[0] == '\0') {
-                reason = "the requested backend is not registered in this build";
+                reason = not_registered_reason(selection.requested);
             }
         }
 

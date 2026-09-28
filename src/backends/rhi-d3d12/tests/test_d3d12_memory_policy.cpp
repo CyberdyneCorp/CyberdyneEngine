@@ -19,3 +19,20 @@ CY_TEST_CASE("D3D12 Resource Heap Tier 1 partitions incompatible resources witho
         memory_pool_class(2, HeapResourceClass::RenderTarget);
     CY_CHECK_FALSE(meet(tier2_buffer, tier2_target).empty());
 }
+
+CY_TEST_CASE(
+    "the D3D12 adapter selector labels a software adapter from its identity, not its flag") {
+    using cy::rhi::d3d12::AdapterClass;
+    using cy::rhi::d3d12::classify_adapter;
+    // Every hosted Windows image presents adapter 0 as "Microsoft Basic Render Driver" WITHOUT
+    // DXGI_ADAPTER_FLAG_SOFTWARE. The classifier never sees the flag, so the name and vendor
+    // decide.
+    CY_CHECK_EQ(classify_adapter("Microsoft Basic Render Driver", 0x1414U), AdapterClass::Software);
+    CY_CHECK_EQ(classify_adapter("Microsoft Basic Render Driver", 0), AdapterClass::Software);
+    CY_CHECK_EQ(classify_adapter("Microsoft Basic Render Driver", 0x10DEU), AdapterClass::Software);
+    CY_CHECK_EQ(classify_adapter("AMD Radeon RX 6900 XT", 0x1002U), AdapterClass::Hardware);
+    // An adapter it cannot place is unknown, never promoted to hardware by a missing flag.
+    CY_CHECK_EQ(classify_adapter("Some Future Adapter", 0xFFFFU), AdapterClass::Unknown);
+    CY_CHECK_EQ(classify_adapter("NVIDIA GeForce RTX 5060", 0), AdapterClass::Unknown);
+    CY_CHECK_EQ(classify_adapter("", 0x10DEU), AdapterClass::Unknown);
+}

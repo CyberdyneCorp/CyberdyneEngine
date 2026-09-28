@@ -134,24 +134,58 @@ def read_manifest(path: Path, backend: str) -> dict[str, str]:
     raise ValueError(f"{path}: no row for backend={backend}")
 
 
+#: The classes a manifest row may carry for a backend that drew. `unknown` and `null-backend` name
+#: no device that could have produced a picture.
+DEVICE_CLASSES = ("hardware", "software", "paravirtual")
+
+#: Identities that are never hardware, whatever a manifest says. The engine's classifier
+#: (`src/backends/rhi/src/device_identity.cpp`) derives the class from the device; this is the
+#: comparison's own check that a committed row did not claim hardware over one of them.
+NOT_HARDWARE_NAMES = ("Microsoft Basic Render Driver", "WARP", "llvmpipe", "lavapipe",
+                      "SwiftShader", "Software Rasterizer", "Paravirtual", "Virtio-GPU", "SVGA3D",
+                      "Parallels")
+NOT_HARDWARE_VENDORS = ("0x1414",)
+
+
 def validate_evidence(backend: str, evidence: dict[str, str]) -> None:
     if evidence.get("outcome") != "matched":
         raise ValueError(f"{backend}: ledger outcome is {evidence.get('outcome', 'missing')}")
-    if evidence.get("class") in (None, "unknown") or not evidence.get("device"):
-        raise ValueError(f"{backend}: ledger does not identify the answering device")
+    device = evidence.get("device", "")
+    if not device:
+        raise ValueError(f"{backend}: ledger does not name the device that answered")
+    if evidence.get("class") not in DEVICE_CLASSES:
+        raise ValueError(
+            f"{backend}: ledger class {evidence.get('class', 'missing')!r} does not identify "
+            f'the answering device "{device}"'
+        )
+    if evidence["class"] == "hardware" and (
+        any(marker in device for marker in NOT_HARDWARE_NAMES)
+        or evidence.get("vendor_id", "").lower() in NOT_HARDWARE_VENDORS
+    ):
+        raise ValueError(f'{backend}: ledger claims hardware for "{device}", which is not')
 
 
 def validate(root: Path, backends: list[str]) -> int:
     if len(backends) < 2 or len(set(backends)) != len(backends):
         raise ValueError("name at least two distinct backends")
+    stems = {backend: root / f"docs/design/images/m11d5-three-backends-{backend}"
+             for backend in backends}
+    # A leg with no committed evidence is NOT EVALUATED, and the comparison over the rest is not a
+    # pass: agreement between two backends says nothing about the third.
+    missing = [backend for backend, stem in stems.items()
+               if not stem.with_suffix(".png").is_file()
+               or not stem.with_suffix(".manifest").is_file()]
+    if missing:
+        raise ValueError(
+            f"NOT EVALUATED: {', '.join(missing)} has no committed capture and manifest, so "
+            f"{len(backends) - len(missing)} of {len(backends)} backends cannot be called a match"
+        )
     reference = read_png(root / "tests/render/references/first_light.png")
     captures: dict[str, Image] = {}
     for backend in backends:
-        stem = root / f"docs/design/images/m11d5-three-backends-{backend}"
+        stem = stems[backend]
         image_path = stem.with_suffix(".png")
         manifest_path = stem.with_suffix(".manifest")
-        if not image_path.is_file() or not manifest_path.is_file():
-            raise ValueError(f"{backend}: image and manifest must both be committed")
         evidence = read_manifest(manifest_path, backend)
         validate_evidence(backend, evidence)
         capture = read_png(image_path)
@@ -183,17 +217,46 @@ def selftest() -> int:
     changed = Image(2, 1, bytes((10, 20, 30, 40, 50, 64)))
     assert compare(clean, clean) == (0, 0, 0, 0)
     assert compare(clean, changed) == (1, 1, 0, 4)
+    # Each row breaks exactly one rule, so no rule can be deleted while another covers for it.
+    refused = {
+        "an unnamed device": 'class=hardware device=""',
+        "a row with no device": "class=hardware",
+        "an unknown class": 'class=unknown device="Some Future Adapter"',
+        "a null-backend class": 'class=null-backend device="null device"',
+        "hardware over a software name": 'class=hardware device="Microsoft Basic Render Driver"',
+        "hardware over a paravirtual name": 'class=hardware device="Apple Paravirtual device"',
+        "hardware over Microsoft's vendor": 'class=hardware device="Adapter" vendor_id=0x1414',
+    }
+    accepted = 'class=software device="Microsoft Basic Render Driver" vendor_id=0x1414'
     with tempfile.TemporaryDirectory() as directory:
-        bad = Path(directory) / "bad.manifest"
-        bad.write_text('cygolden 1\nrow backend=metal outcome=matched class=unknown device=""\n')
-        evidence = read_manifest(bad, "metal")
+        manifest = Path(directory) / "row.manifest"
+        for case, fields in {**refused, "accepted": accepted}.items():
+            manifest.write_text(f"cygolden 1\nrow backend=metal outcome=matched {fields}\n")
+            evidence = read_manifest(manifest, "metal")
+            try:
+                validate_evidence("metal", evidence)
+            except ValueError:
+                if case == "accepted":
+                    raise AssertionError(f"a labelled software device was refused: {fields}")
+            else:
+                if case != "accepted":
+                    raise AssertionError(f"{case} was accepted: {fields}")
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        images = root / "docs/design/images"
+        images.mkdir(parents=True)
+        for backend in ("vulkan", "metal"):
+            (images / f"m11d5-three-backends-{backend}.png").write_bytes(b"")
+            (images / f"m11d5-three-backends-{backend}.manifest").write_text("cygolden 1\n")
         try:
-            validate_evidence("metal", evidence)
-        except ValueError:
-            pass
+            validate(root, ["vulkan", "metal", "d3d12"])
+        except ValueError as error:
+            if not str(error).startswith("NOT EVALUATED: d3d12"):
+                raise AssertionError(f"a missing leg was refused for another reason: {error}")
         else:
-            raise AssertionError("an unidentified device was accepted")
-    print("compare_backend_goldens.py selftest: comparison changes and missing identity go red")
+            raise AssertionError("two of three backends were accepted as a match")
+    print("compare_backend_goldens.py selftest: comparison changes, missing identity and a "
+          "missing leg go red")
     return 0
 
 

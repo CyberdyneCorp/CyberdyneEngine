@@ -40,7 +40,10 @@ DeviceIdentity classify_device_identity(const char* name, u32 vendor_id,
     if (backend == BackendKind::Null) {
         identity.vendor = "Cyberdyne";
         identity.classification = DeviceClass::NullBackend;
-    } else if (has(name, "Apple Paravirtual") || has(name, "Paravirtual")) {
+    } else if (has(name, "Paravirtual") || has(name, "Virtio-GPU") || has(name, "SVGA3D") ||
+               has(name, "Parallels")) {
+        // Checked before the vendor table: Mesa's Venus names itself "Virtio-GPU Venus (<host
+        // GPU>)" and forwards the host's vendor ID, so the vendor alone would call it hardware.
         identity.classification = DeviceClass::Paravirtual;
     } else if (vendor_id == 0x1414U || has(name, "Microsoft Basic Render Driver") ||
                has(name, "WARP") || has(name, "llvmpipe") || has(name, "lavapipe") ||

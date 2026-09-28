@@ -60,7 +60,9 @@ struct BackendSelection {
     const char* selected = "";
     BackendKind kind = BackendKind::Null;
     bool fell_back = false;
-    /// Why the requested backend was not used. Empty when it was.
+    /// Why the requested backend was not used. Empty when it was. A request for "vulkan",
+    /// "metal" or "d3d12" that this build left out names the CY_RENDERER_* option that would
+    /// have compiled it.
     const char* reason = "";
 };
 
