@@ -301,11 +301,15 @@ struct Picture {
     return cy::math::max(value.x, cy::math::max(value.y, value.z));
 }
 
+[[nodiscard]] bool texel_differs(const Picture& a, const Picture& b, u32 texel) noexcept {
+    const usize base = static_cast<usize>(texel) * 4;
+    return std::memcmp(&a.bits[base], &b.bits[base], 4 * sizeof(u16)) != 0;
+}
+
 [[nodiscard]] u32 differing(const Picture& a, const Picture& b) noexcept {
     u32 count = 0;
     for (u32 texel = 0; texel < kTexels; ++texel) {
-        const usize base = static_cast<usize>(texel) * 4;
-        count += std::memcmp(&a.bits[base], &b.bits[base], 4 * sizeof(u16)) != 0 ? 1U : 0U;
+        count += texel_differs(a, b, texel) ? 1U : 0U;
     }
     return count;
 }
@@ -1305,10 +1309,16 @@ CY_TEST_CASE("world water aerial perspective: off, the frame is the frame before
         const Shot shot{kHighEye, nullptr, lit, true};
         CY_REQUIRE(device.shoot(take.scene, take.air, shot, before));
         off_differing += differing(lit ? take.frames.lit_off : take.frames.dark_off, before);
-        on_differing += differing(lit ? take.frames.lit_on : take.frames.dark_on, before);
+        // The land moves with the table on too, through world.slang; count only the water, so
+        // that a water shader which ignored the table would fail here.
+        const Picture& on = lit ? take.frames.lit_on : take.frames.dark_on;
+        for (u32 texel = 0; texel < kTexels; ++texel) {
+            on_differing +=
+                hit_of(texel, kHighEye).water && texel_differs(on, before, texel) ? 1U : 0U;
+        }
     }
     CY_TEST_MESSAGE("texels differing from the water's shaders before this change: ", off_differing,
-                    " with the table off, ", on_differing, " with it on");
+                    " with the table off, ", on_differing, " water texels with it on");
     CY_CHECK(off_differing == 0U);
     CY_CHECK(on_differing > 2000U);
     CY_CHECK(suite.fixture.validation_errors() == 0U);
