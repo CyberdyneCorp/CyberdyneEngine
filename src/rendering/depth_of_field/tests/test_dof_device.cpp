@@ -5,22 +5,19 @@
 // `rendering-post-processing`'s "Depth of field" and its first scenario, and the properties a
 // defocus has to have before it is allowed near a frame:
 //
-//   the in-focus plane is unchanged           a plane at the focus distance — and one a
-//                                             half-pixel circle away from it — comes out bit for
-//                                             bit
-//   a far edge blurs by the lens's radius     the step's profile is a disc's of the radius
-//                                             `circle_of_confusion` gives, fitted to a pixel
-//   near-field bleeding                        a defocused foreground's blur extends over the
-//   focused
-//                                             plane beside it by its own radius, covering it by the
-//                                             share of the discs that reach each pixel
-//   the far field stays behind                 a focused object in front of a blurred background
-//                                             is not touched by it, and gives it none of its light
-//   the aperture's shape                       six blades draw a hexagon, not a disc
-//   a pinhole is no stage                      f/infinity through the assembled frame is the frame
-//                                             without the stage, byte for byte
-//   off is the frame before                    the frame without the stage against a reference
-//                                             drawn with the shaders from before this module
+//   - the in-focus plane is unchanged: a plane at the focus distance, and one a half-pixel
+//     circle away from it, comes out bit for bit;
+//   - a far edge blurs by the lens's radius: the step's profile is a disc's of the radius
+//     `circle_of_confusion` gives, fitted to a pixel;
+//   - near-field bleeding: a defocused foreground's blur extends over the focused plane beside it
+//     by its own radius, covering it by the share of the discs that reach each pixel;
+//   - the far field stays behind: a focused object in front of a blurred background is not
+//     touched by it, and gives it none of its light;
+//   - the aperture's shape: six blades draw a hexagon, not a disc;
+//   - a pinhole is no stage: f/infinity through the assembled frame is the frame without the
+//     stage, byte for byte;
+//   - off is the frame before: the frame without the stage against a reference drawn with the
+//     shaders from before this module.
 //
 // THE PASSES ARE THE FRAME'S. The bench declares them with `DepthOfFieldPass::declare` — what
 // `ForwardFrame` calls through the stage seam — over colour and depth it uploads, so what is
