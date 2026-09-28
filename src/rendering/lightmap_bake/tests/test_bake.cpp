@@ -888,8 +888,8 @@ struct ShadowRoom {
     }
 
     /// A floor point: under the blocker, or out in the open on the +x side.
-    [[nodiscard]] Vec2 shadowed_uv() const { return Vec2{0.35F, 0.5F}; }
-    [[nodiscard]] Vec2 lit_uv() const { return Vec2{0.8F, 0.5F}; }
+    [[nodiscard]] static Vec2 shadowed_uv() { return Vec2{0.35F, 0.5F}; }
+    [[nodiscard]] static Vec2 lit_uv() { return Vec2{0.8F, 0.5F}; }
     [[nodiscard]] Vec3 floor_point(Vec2 uv) const {
         return quad_point(room.instances[kFloor].transform, uv);
     }
@@ -949,8 +949,8 @@ CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not
 
     CY_REQUIRE_EQ(baked.lightmap.shadow_lights.size(), 1U);
     CY_CHECK_EQ(baked.lightmap.shadow_lights[0], light);
-    const f32 in_shadow = mask_at(baked, light, stationary.shadowed_uv());
-    const f32 in_light = mask_at(baked, light, stationary.lit_uv());
+    const f32 in_shadow = mask_at(baked, light, ShadowRoom::shadowed_uv());
+    const f32 in_light = mask_at(baked, light, ShadowRoom::lit_uv());
     CY_TEST_MESSAGE("shadow mask: " << in_shadow << " under the blocker, " << in_light
                                     << " in the open");
     CY_CHECK_LT(in_shadow, 0.1F);
@@ -976,7 +976,7 @@ CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not
     // answer at the lit point, and a Static bake of the same room — which adds the direct term —
     // is far brighter there.
     const Vec3 normal{0.0F, 1.0F, 0.0F};
-    const Vec2 lit = stationary.lit_uv();
+    const Vec2 lit = ShadowRoom::lit_uv();
     const Vec3 texel =
         sample_lightmap(baked.lightmap, baked.lightmap.addresses[kFloor], lit, normal);
     const std::vector<Vec3> truth =
@@ -1012,7 +1012,7 @@ CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not
         const cy::Span<const gi::GiLight> one(&runtime, 1);
         MeshSceneTracer tracer;
         CY_REQUIRE(tracer.build(scene).has_value());
-        for (const Vec2 uv : {stationary.shadowed_uv(), stationary.lit_uv()}) {
+        for (const Vec2 uv : {ShadowRoom::shadowed_uv(), ShadowRoom::lit_uv()}) {
             const Vec3 point = stationary.floor_point(uv);
             const Vec3 open = gi::shaded_direct(one, point, normal, nullptr);
             const Vec3 shadowed = gi::shaded_direct(one, point, normal, &tracer);
@@ -1059,7 +1059,7 @@ CY_TEST_CASE("a static light bakes exactly what DirectAndIndirect baked before m
 CY_TEST_CASE("a fifth stationary light is refused by name") {
     Room room;
     for (u32 index = 0; index < kMaxShadowMaskLights + 1U; ++index) {
-        room.point_light(Vec3{-1.5F + static_cast<f32>(index) * 0.7F, 1.0F, 0.0F}, 10.0F);
+        room.point_light(Vec3{-1.5F + (static_cast<f32>(index) * 0.7F), 1.0F, 0.0F}, 10.0F);
     }
     BakedLightmap out;
     LightmapBakeReport report;
@@ -1222,8 +1222,7 @@ CY_TEST_CASE("a rebake with nothing moved traces nothing and changes nothing") {
     CY_CHECK_EQ(report.objects_rebaked, 0U);
     CY_CHECK_EQ(report.rays, 0U);
     CY_CHECK(same_texels(after.texels, before.lightmap.texels));
-    CY_CHECK(std::equal(after.coverage.begin(), after.coverage.end(),
-                        before.lightmap.coverage.begin(), before.lightmap.coverage.end()));
+    CY_CHECK(std::ranges::equal(after.coverage, before.lightmap.coverage));
 }
 
 CY_TEST_CASE("a rebake whose level no longer packs the same falls back to a full bake") {
