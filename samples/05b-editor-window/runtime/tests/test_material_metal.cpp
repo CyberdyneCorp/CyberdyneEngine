@@ -65,7 +65,23 @@ struct Device {
     }
 
     [[nodiscard]] bool native_metal() const noexcept {
-        return handle != nullptr && handle->capabilities().backend() == rhi::BackendKind::Metal;
+        return handle != nullptr && handle->capabilities().backend() == rhi::BackendKind::Metal &&
+               !compatibility_path();
+    }
+    /// Why `native_metal()` is false, for the skip message.
+    [[nodiscard]] const char* unavailable_reason() const noexcept {
+        if (handle == nullptr) {
+            return creation_error.message;
+        }
+        return compatibility_path()
+                   ? "the device is on the compatibility path, with no global texture table"
+                   : selection.reason;
+    }
+    /// A Metal device without a global texture table (a paravirtual GPU, argument-buffer tier 1):
+    /// the hosted material mesh samples through that table, so these cases skip on it.
+    [[nodiscard]] bool compatibility_path() const noexcept {
+        return handle != nullptr && handle->capabilities().backend() == rhi::BackendKind::Metal &&
+               handle->global_texture_table().is_null();
     }
 };
 
@@ -153,12 +169,10 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
         "vertex_offset = (0.0, 2.0, 0.0); }";
     Device device;
     if (!device.native_metal()) {
-        std::fprintf(
-            stderr, "no Metal device: %s\n",
-            device.handle == nullptr ? device.creation_error.message : device.selection.reason);
-        const bool expected_unavailable = device.handle == nullptr
-                                              ? device.creation_error.code == ErrorCode::Unavailable
-                                              : device.selection.fell_back;
+        std::fprintf(stderr, "no Metal device: %s\n", device.unavailable_reason());
+        const bool expected_unavailable =
+            device.handle == nullptr ? device.creation_error.code == ErrorCode::Unavailable
+                                     : device.selection.fell_back || device.compatibility_path();
         CY_CHECK(expected_unavailable);
         return;
     }
@@ -222,7 +236,8 @@ CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
 CY_TEST_CASE("native Metal refuses a weather wind material until its field table is bound") {
     Device device;
     if (!device.native_metal()) {
-        const bool unavailable = device.handle == nullptr || device.selection.fell_back;
+        const bool unavailable =
+            device.handle == nullptr || device.selection.fell_back || device.compatibility_path();
         CY_CHECK(unavailable);
         return;
     }
@@ -266,12 +281,10 @@ CY_TEST_CASE("native Metal refuses a weather wind material until its field table
 CY_TEST_CASE("a compiled vertex colour shades the hosted Metal material mesh") {
     Device device;
     if (!device.native_metal()) {
-        std::fprintf(
-            stderr, "no Metal device: %s\n",
-            device.handle == nullptr ? device.creation_error.message : device.selection.reason);
-        const bool expected_unavailable = device.handle == nullptr
-                                              ? device.creation_error.code == ErrorCode::Unavailable
-                                              : device.selection.fell_back;
+        std::fprintf(stderr, "no Metal device: %s\n", device.unavailable_reason());
+        const bool expected_unavailable =
+            device.handle == nullptr ? device.creation_error.code == ErrorCode::Unavailable
+                                     : device.selection.fell_back || device.compatibility_path();
         CY_CHECK(expected_unavailable);
         return;
     }
@@ -531,12 +544,10 @@ CY_TEST_CASE("the hosted wind preview compiles Engine field sampling before devi
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
     if (!device.native_metal()) {
-        std::fprintf(
-            stderr, "no Metal device: %s\n",
-            device.handle == nullptr ? device.creation_error.message : device.selection.reason);
-        const bool expected_unavailable = device.handle == nullptr
-                                              ? device.creation_error.code == ErrorCode::Unavailable
-                                              : device.selection.fell_back;
+        std::fprintf(stderr, "no Metal device: %s\n", device.unavailable_reason());
+        const bool expected_unavailable =
+            device.handle == nullptr ? device.creation_error.code == ErrorCode::Unavailable
+                                     : device.selection.fell_back || device.compatibility_path();
         CY_CHECK(expected_unavailable);
         return;
     }

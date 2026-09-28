@@ -593,6 +593,40 @@ std::string time_vertex_graph() {
                   Occurrence::First);
 }
 
+/// A native device the authored frame can run on, or null after saying why there is none. These are
+/// skips, not failures: a runner with no driver for this backend, a selection that fell back to
+/// another backend, and a device on the compatibility path (a paravirtual Metal GPU has no global
+/// texture table), which `AuthoredFrame::initialize` refuses by design. A test that went on after
+/// such a device would index an empty frame, because CY_REQUIRE does not stop a test built without
+/// exceptions.
+rhi::Device* native_frame_device(const char* application) {
+    rhi::DeviceDescription description;
+    description.application_name = application;
+    description.enable_validation = true;
+    rhi::BackendSelection selection;
+    auto created = rhi::create_device(allocator(), kBackend, description, selection);
+    if (!created) {
+        std::fprintf(stderr, "no %s device: %s\n", kBackend, created.error().message);
+        CY_CHECK_EQ(created.error().code, ErrorCode::Unavailable);
+        return nullptr;
+    }
+    rhi::Device* device = *created;
+    const char* reason = nullptr;
+    if (device->capabilities().backend() != kNativeBackend) {
+        CY_CHECK(selection.fell_back);
+        reason = selection.reason;
+    } else if (device->global_texture_table().is_null()) {
+        reason = "the device is on the compatibility path, with no global texture table";
+    }
+    if (reason != nullptr) {
+        std::fprintf(stderr, "no usable %s device: selected '%s' because %s\n", kBackend,
+                     selection.selected, reason);
+        rhi::destroy_device(allocator(), device);
+        return nullptr;
+    }
+    return device;
+}
+
 // Two frames compared pixel for pixel, each on its own device: a device's global texture table has
 // one sampler and each frame's material table creates its own. The frames render in lockstep, so
 // they share TAA's free-running jitter index and their history.
@@ -1119,17 +1153,8 @@ CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph mat
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
 CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native pixels") {
     register_backend();
-    rhi::DeviceDescription description;
-    description.application_name = "committed editor sine sway scene";
-    description.enable_validation = true;
-    rhi::BackendSelection selection;
-    auto device = rhi::create_device(allocator(), kBackend, description, selection);
-    CY_REQUIRE(device.has_value());
-    if ((*device)->capabilities().backend() != kNativeBackend) {
-        std::fprintf(stderr, "no %s device: selected '%s' because %s\n", kBackend,
-                     selection.selected, selection.reason);
-        CY_CHECK(selection.fell_back);
-        rhi::destroy_device(allocator(), *device);
+    rhi::Device* native = native_frame_device("committed editor sine sway scene");
+    if (native == nullptr) {
         return;
     }
 
@@ -1139,7 +1164,7 @@ CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native
     ser::AuthoringSchema schema(allocator());
     CY_REQUIRE(ser::build_authoring_schema(types, schema));
     {
-        AuthoredFrame frame(allocator(), **device);
+        AuthoredFrame frame(allocator(), *native);
         CY_REQUIRE(frame.initialize(192, 128, project.c_str()));
         constexpr std::string_view reference = "worlds/issue15-sway.cyworld";
         Array<u8> bytes(allocator());
@@ -1173,7 +1198,7 @@ CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native
         CY_CHECK_GT(visible, 100U);
         CY_CHECK_GT(coloured, 100U);
     }
-    rhi::destroy_device(allocator(), *device);
+    rhi::destroy_device(allocator(), native);
 }
 #endif
 
@@ -1181,22 +1206,13 @@ CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native
 // so each one also shows the frame carries nothing over from the scene before it.
 CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed bounds") {
     register_backend();
-    rhi::DeviceDescription description;
-    description.application_name = kSuite;
-    description.enable_validation = true;
-    rhi::BackendSelection selection;
-    auto device = rhi::create_device(allocator(), kBackend, description, selection);
-    CY_REQUIRE(device.has_value());
-    if ((*device)->capabilities().backend() != kNativeBackend) {
-        std::fprintf(stderr, "no %s device: selected '%s' because %s\n", kBackend,
-                     selection.selected, selection.reason);
-        CY_CHECK(selection.fell_back);
-        rhi::destroy_device(allocator(), *device);
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
         return;
     }
 
     {
-        AuthoredFrame frame(allocator(), **device);
+        AuthoredFrame frame(allocator(), *native);
         const auto initialized = frame.initialize(192, 128, CY_TEST_PROJECT);
         if (!initialized) {
             std::fprintf(stderr, "AuthoredFrame initialize: %s\n", initialized.error().message);
@@ -1222,7 +1238,7 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_graph_motion_matches_cpu(schema, view);
 #endif
     }
-    rhi::destroy_device(allocator(), *device);
+    rhi::destroy_device(allocator(), native);
 }
 
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
@@ -1238,6 +1254,13 @@ CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
         std::fprintf(stderr, "no Metal device: selected '%s' because %s\n", selection.selected,
                      selection.reason);
         CY_CHECK(selection.fell_back);
+        rhi::destroy_device(allocator(), *device);
+        return;
+    }
+    if ((*device)->global_texture_table().is_null()) {
+        std::fprintf(stderr,
+                     "no usable Metal device: it is on the compatibility path, with no "
+                     "global texture table\n");
         rhi::destroy_device(allocator(), *device);
         return;
     }
