@@ -269,19 +269,30 @@ def macos_ci_recipes_use_system_bash_syntax(root: pathlib.Path) -> list[str]:
     build_commands = "\n".join(
         line for line in build_body if not line.lstrip().startswith("#")
     )
-    if "command -v lockf" not in build_commands:
-        failures.append(
-            f"{build_file.name}: `build-engine` has no lockf path; macOS does not ship flock"
-        )
+    # THE LOCK MUST NEED NOTHING THE HOST MAY NOT HAVE. Hosted macOS ships neither `flock` nor a
+    # `lockf` executable; Git Bash, which `just` runs a shebang recipe under on Windows, ships
+    # neither and cannot create a symlink either. `mkdir` is the one primitive present everywhere,
+    # and it is atomic on every filesystem this project builds on.
     for token, purpose in (
-        ('ln -s "$$" "${fallback_lock}"', "an atomic fallback lock"),
+        ('mkdir "${lock}"', "a mkdir lock, which every host can take"),
         ('kill -0 "${owner}"', "stale-owner detection"),
-        ("trap release_fallback_lock EXIT", "fallback-lock cleanup"),
+        ("trap release_lock EXIT", "lock cleanup"),
     ):
         if token not in build_commands:
             failures.append(
-                f"{build_file.name}: `build-engine` has no {purpose}; hosted macOS ships neither "
-                "the flock nor lockf command"
+                f"{build_file.name}: `build-engine` has no {purpose}; a lock built on flock, "
+                "lockf or a symlink cannot be taken on hosted macOS or on Windows"
+            )
+    # And it must not go back to one that does. `ln -s "$$"` in particular cost run 36332309125 six
+    # hours: under MSYS it can never succeed, so the waiter looped until GitHub cancelled the job.
+    for token, why in (
+        ("command -v flock", "hosted macOS and Git Bash have no flock"),
+        ("command -v lockf", "Git Bash has no lockf executable"),
+        ('ln -s "$$"', "MSYS cannot create that symlink, so the waiter never acquires"),
+    ):
+        if token in build_commands:
+            failures.append(
+                f"{build_file.name}: `build-engine` takes the lock with `{token}`; {why}"
             )
     return failures
 
@@ -617,6 +628,164 @@ def overlapping_builds_share_one_pool(root: pathlib.Path) -> list[str]:
         if "a" not in first_half or "b" not in first_half:
             failures.append(f"one build finished half of all jobs alone ({''.join(order)}): the "
                             "pool let it monopolise the slots while the other waited")
+    return failures
+
+
+def _build_lock_preamble(root: pathlib.Path) -> str:
+    """The lock section of `build-engine`, lifted verbatim from just/build.just.
+
+    Lifted rather than reimplemented: a copy of the lock in this file would go on passing after the
+    real one broke, which is exactly what happened to the arrangement this replaced.
+    """
+    text = (root / "just/build.just").read_text(encoding="utf-8")
+    lines = text.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.strip().startswith('lock_dir="${CY_BUILD_DIR')]
+    ends = [i for i, line in enumerate(lines) if '==> configure' in line]
+    if not starts or not ends:
+        raise AssertionError("just/build.just: cannot find the build lock between lock_dir and "
+                             "the configure banner; this test needs updating with the recipe")
+    body = [line[4:] if line.startswith("    ") else line for line in lines[starts[0]:ends[0]]]
+    return "\n".join(body)
+
+
+def _bash() -> str:
+    """A POSIX shell that can open the Windows paths this test writes.
+
+    `bash` on a Windows PATH is usually System32's, which is WSL — it reads `C:/...` as a relative
+    path under its own root and reports the script as missing. Git for Windows' bash, which is what
+    `just` itself runs recipes under there, can open it. CY_BASH overrides the choice.
+    """
+    override = os.environ.get("CY_BASH")
+    if override:
+        return override
+    found = shutil.which("bash")
+    if os.name != "nt":
+        return found or "bash"
+    if found and "system32" not in found.lower():
+        return found
+    for candidate in (r"C:\Program Files\Git\bin\bash.exe",
+                      r"C:\Program Files\Git\usr\bin\bash.exe"):
+        if pathlib.Path(candidate).is_file():
+            return candidate
+    return found or "bash"
+
+
+def _locked_build(root: pathlib.Path, tree: pathlib.Path, log: pathlib.Path, label: str,
+                  seconds: float, scratch: pathlib.Path) -> subprocess.Popen:
+    """A fake build that takes the real lock, records when it held it, and releases it.
+
+    Through a file rather than `bash -c`: Windows has no argv array, so a multi-line script handed
+    to `-c` is mangled by command-line quoting before bash ever sees it.
+    """
+    script = "\n".join([
+        "set -euo pipefail",
+        "profile=dev",
+        f'CY_BUILD_DIR="{tree.as_posix()}"',
+        _build_lock_preamble(root),
+        f'echo "start {label} $(date +%s.%N)" >> "{log.as_posix()}"',
+        f"sleep {seconds}",
+        f'echo "end {label} $(date +%s.%N)" >> "{log.as_posix()}"',
+        "",
+    ])
+    path = scratch / f"build-{label}.sh"
+    path.write_text(script, encoding="utf-8", newline="\n")
+    # as_posix(), because a Windows path handed to Git Bash loses its backslashes.
+    return subprocess.Popen([_bash(), path.as_posix()],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def two_builds_on_one_tree_take_turns(root: pathlib.Path) -> list[str]:
+    """Two concurrent builds of one tree serialise, and BOTH of them finish.
+
+    The second half is the regression. Until this test existed the lock fell through to
+    `ln -s "$$"`, which cannot succeed under MSYS — the environment `just` runs a shebang recipe
+    under on Windows — so the waiter looped forever instead of ever acquiring. Nothing failed; the
+    job simply span at ~0% CPU until GitHub cancelled it at the six-hour default (run
+    36332309125), and every Windows and macOS test job sat behind it. A lock that never grants is
+    indistinguishable from a slow build unless something waits on it with a timeout, so this case
+    does exactly that.
+    """
+    failures = []
+    hold = 0.6
+    with tempfile.TemporaryDirectory(prefix="cy-lock-") as scratch:
+        # resolve(), because Windows hands out 8.3 short names ("ANDERS~1") for a temporary
+        # directory under a long user name, and Git Bash cannot open one.
+        work = pathlib.Path(scratch).resolve()
+        tree = work / "tree"
+        tree.mkdir()
+        log = work / "log"
+        log.touch()
+        first = _locked_build(root, tree, log, "a", hold, work)
+        second = _locked_build(root, tree, log, "b", hold, work)
+        for name, job in (("a", first), ("b", second)):
+            try:
+                code = job.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                job.kill()
+                failures.append(f"build {name} never acquired the lock on an uncontended tree "
+                                "within 60s: the lock does not grant on this platform")
+                continue
+            if code != 0:
+                failures.append(f"build {name} exited {code}: {job.stderr.read().strip()[:200]}")
+        if failures:
+            return failures
+
+        events = sorted((float(stamp), kind, label) for kind, label, stamp in
+                        (line.split() for line in log.read_text(encoding="utf-8").splitlines()))
+        if len(events) != 4:
+            return [f"expected two builds to record a start and an end each, got {events}"]
+        running = 0
+        for _stamp, kind, _label in events:
+            running += 1 if kind == "start" else -1
+            if running > 1:
+                failures.append("both builds held the tree at once; the lock does not exclude")
+                break
+
+        # A lock left by a dead owner is reaped rather than wedging the tree forever.
+        lock = tree / ".cy-build.lock.d"
+        lock.mkdir()
+        (lock / "pid").write_text("999999999\n", encoding="utf-8")
+        stale_log = work / "stale"
+        stale_log.touch()
+        reaper = _locked_build(root, tree, stale_log, "c", 0.05, work)
+        try:
+            if reaper.wait(timeout=60) != 0:
+                failures.append(f"the build that met a dead owner's lock failed: "
+                                f"{reaper.stderr.read().strip()[:200]}")
+        except subprocess.TimeoutExpired:
+            reaper.kill()
+            failures.append("a lock left by a dead owner was never reaped; the tree stays wedged")
+
+        # A LIVE owner's lock is neither reaped nor deleted by the waiter. The owner has to be a
+        # real shell, not a PID this process invents: under MSYS `kill -0` reads the shell's own
+        # process table, in which a native Windows PID does not appear and would look dead.
+        held_log = work / "held"
+        held_log.touch()
+        owner = _locked_build(root, tree, held_log, "e", 2.0, work)
+        deadline = time.time() + 20
+        while not (lock / "pid").is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        if not (lock / "pid").is_file():
+            owner.kill()
+            failures.append("the holding build never recorded its PID in the lock")
+            return failures
+        holder = (lock / "pid").read_text(encoding="utf-8").strip()
+        waiter_log = work / "waiter"
+        waiter_log.touch()
+        waiter = _locked_build(root, tree, waiter_log, "f", 0.05, work)
+        time.sleep(0.6)
+        still = (lock / "pid").read_text(encoding="utf-8").strip() if (lock / "pid").is_file() else ""
+        if still != holder:
+            failures.append(f"a waiter removed or replaced a live owner's lock "
+                            f"(owner {holder!r}, now {still!r})")
+        for name, job in (("e", owner), ("f", waiter)):
+            try:
+                if job.wait(timeout=60) != 0:
+                    failures.append(f"build {name} exited non-zero: "
+                                    f"{job.stderr.read().strip()[:200]}")
+            except subprocess.TimeoutExpired:
+                job.kill()
+                failures.append(f"build {name} never finished")
     return failures
 
 
@@ -1220,6 +1389,7 @@ def main() -> int:
         "a build leaves two cores free by default": a_build_leaves_two_cores_free_by_default,
         "no recipe asks for every core": no_recipe_asks_for_every_core,
         "overlapping builds share one machine-wide pool": overlapping_builds_share_one_pool,
+        "two builds on one tree take turns, and both finish": two_builds_on_one_tree_take_turns,
         "a link gets no jobserver and a fixed LTO parallelism": (
             a_link_gets_no_jobserver_and_a_fixed_lto_parallelism
         ),
