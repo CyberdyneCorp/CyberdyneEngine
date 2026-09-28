@@ -11,6 +11,7 @@
 > just capture-beauty-bloom                         # the same shot with and without bloom
 > just capture-soft-shadows                         # the shot with soft and contact shadows off and on
 > just capture-beauty-grading                       # the shot ungraded, warm and cool
+> just capture-beauty-depth-of-field                # the shot focused on the sphere and on a column
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -171,3 +172,25 @@ published, and `just capture-beauty-grading` fails unless `grading-beauty-none.p
 `docs/design/images/grading-beauty-{warm,cool}.manifest` are the graded frames' provenance; their
 post-stage lists name `ColourGrading` at step 12, after `Tonemap`.
 
+## Depth of field, on the sphere and on a far column
+
+`--depth-of-field <target>` puts depth of field into the frame's post chain at step 7, before bloom,
+through `depth_of_field::DepthOfFieldPass`, focused on one of the targets the shot file names:
+`sphere`, the copper orb 8 m out, and `column`, the colonnade's last pillar on the right of the frame,
+33 m out. The lens is the camera's own — the focal length the shot's 42-degree horizontal field of
+view implies on a 36 mm full-frame sensor, cropped to this image's aspect — at the shot's f/1.4, and
+the focus distance is the target's distance along the view axis. Nothing else is chosen: the blur
+of every pixel is the thin-lens circle of confusion at its depth. Without the flag the stage is
+absent and the frame is the one M11.c published; `just capture-beauty-depth-of-field` fails unless
+`depth-of-field-beauty-off.png` is `m11c-beauty-shot.png`'s pixels exactly, and unless each focused
+frame keeps its target's detail and loses the other's (`tools/docs/compare_depth_of_field.py`).
+
+| Focused on the sphere | Focused on the far column |
+|---|---|
+| ![](../../docs/design/images/depth-of-field-beauty-sphere.png) | ![](../../docs/design/images/depth-of-field-beauty-column.png) |
+
+![The sphere and the column, each without the stage, focused on the sphere and focused on the column](../../docs/design/images/depth-of-field-beauty-detail.png)
+
+`docs/design/images/depth-of-field-beauty-{sphere,column}.manifest` are the focused frames'
+provenance; their post-stage lists name `DepthOfField` at step 7, before `Tonemap`. The embers are
+drawn without depth, so the stage blurs each by the surface behind it.

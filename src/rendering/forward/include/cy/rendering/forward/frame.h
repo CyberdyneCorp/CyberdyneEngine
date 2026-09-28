@@ -89,6 +89,10 @@ struct FrameFeatures {
     /// is a declared pass and the read is a declared read.
     bool transparent_refraction = false;
     bool post_process = true;
+    /// Depth of field: a gather driven by the physical circle of confusion, between the temporal
+    /// stage and bloom — `FramePassKind::DepthOfField`, declared by its producer
+    /// (`src/rendering/depth_of_field/`). Off by default, and absent rather than skipped when off.
+    bool depth_of_field = false;
     /// Bloom's downsample and upsample chain, between the temporal stage and the post-process that
     /// applies exposure — `bloom_chain.h`. Off by default, and absent rather than skipped when off.
     bool bloom = false;
@@ -143,6 +147,12 @@ enum class FramePassKind : u8 {
     Transparent,
     Resolve,
     Temporal,
+    /// Step 7 of `rendering-post-processing`: depth of field, on linear HDR after the temporal
+    /// resolve and before bloom and exposure. Declared by its producer
+    /// (`src/rendering/depth_of_field/`) through `FrameStageDeclaration`, which reads the colour
+    /// the chain has reached (`ScreenSpaceStageInputs::source`) and the depth, and whose last pass
+    /// writes `FrameResources::depth_of_field`, the colour every later stage reads.
+    DepthOfField,
     /// Step 9 of `rendering-post-processing`: bloom, on linear HDR before exposure. Several graph
     /// passes, one callback — `ForwardFrame::bloom()` says which step a pass is.
     Bloom,
@@ -213,6 +223,10 @@ struct ScreenSpaceStageInputs {
     /// again — the selection mask — and must declare the read. Invalid when the frame has none.
     /// Appended, so a brace-initialised caller written before it keeps its meaning.
     ResourceId draw_instances = kInvalidResource;
+    /// The colour a post-chain stage reads — the scene-referred colour the chain has reached, for
+    /// a stage that writes a new one into `target`. Invalid for every stage that is not one.
+    /// Appended, like `draw_instances`.
+    ResourceId source = kInvalidResource;
 };
 
 /// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
@@ -248,6 +262,9 @@ struct FrameResources {
     ResourceId reflections = kInvalidResource;
     ResourceId temporal_previous = kInvalidResource;
     ResourceId temporal_history = kInvalidResource;
+    /// The colour depth of field wrote: full resolution, the scene colour's format. Only with
+    /// `FrameFeatures::depth_of_field`.
+    ResourceId depth_of_field = kInvalidResource;
     ResourceId post_color = kInvalidResource;
     /// The scene-referred colour the post-process reads: `color`, the temporal history, or the
     /// bloomed colour, whichever stage ran last before exposure.
@@ -319,6 +336,10 @@ struct FrameDescription {
     /// post chain ended in — the output, when post-processing tonemapped into it — which its last
     /// pass reads and writes. Like the contact shadows, there is no single-pass fallback.
     FrameStageDeclaration selection_outlines_stage;
+    /// The producer that declares the depth of field stage: handed the colour the chain has
+    /// reached as `source` and `FrameResources::depth_of_field` as `target`, which its last pass
+    /// must write. No single-pass fallback, as for the outlines.
+    FrameStageDeclaration depth_of_field_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;
@@ -376,7 +397,8 @@ private:
     /// Hand a stage to the producer that declares its passes, and record the first of them.
     void declare_produced_stage(RenderGraph& graph, const BuildState& state,
                                 const FrameStageDeclaration& producer, FramePassKind kind,
-                                const char* name, ResourceId target) noexcept;
+                                const char* name, ResourceId target,
+                                ResourceId source = kInvalidResource) noexcept;
 
     Array<FramePass> passes_;
     FrameResources resources_{};

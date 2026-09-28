@@ -941,6 +941,62 @@ capture-beauty-bloom *args:
     python3 tools/docs/collect_beauty_shot.py docs/design/images/bloom-beauty-off.png \
         docs/design/images/bloom-beauty-on.png
 
+# THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
+# embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far
+# column — the two focus targets `content/beauty/shot.cyshot` names. Depth of field runs at step 7,
+# before bloom. tools/docs/compare_depth_of_field.py fails the recipe unless the frame without the
+# stage is M11.c's still byte for byte, and unless each focused frame is sharper than the other where
+# it is focused and softer where it is not; it writes the two side by side and a crop of each target.
+# Needs a graphics device, and says so and writes nothing without one.
+# Photograph the beauty shot focused on the sphere and on a far column. Usage: just capture-beauty-depth-of-field [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-depth-of-field *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-depth-of-field: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-depth-of-field"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    echo "==> capture     without depth of field"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+        --still docs/design/images/depth-of-field-beauty-off.png ${rest}
+    for target in sphere column; do
+        echo "==> capture     focused on the ${target}"
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --depth-of-field "${target}" \
+            --still "docs/design/images/depth-of-field-beauty-${target}.png" \
+            --manifest "docs/design/images/depth-of-field-beauty-${target}.manifest" ${rest}
+    done
+
+    echo "==> compare     off against M11.c's still, and each focus against the other"
+    python3 tools/docs/compare_depth_of_field.py \
+        --off docs/design/images/depth-of-field-beauty-off.png \
+        --sphere docs/design/images/depth-of-field-beauty-sphere.png \
+        --column docs/design/images/depth-of-field-beauty-column.png \
+        --reference docs/design/images/m11c-beauty-shot.png \
+        --pair docs/design/images/depth-of-field-beauty-pair.png \
+        --detail docs/design/images/depth-of-field-beauty-detail.png
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/depth-of-field-beauty-off.png \
+        docs/design/images/depth-of-field-beauty-sphere.png \
+        docs/design/images/depth-of-field-beauty-column.png
+
 # THE BEAUTY SHOT UNGRADED AND UNDER ITS TWO LOOKS: the same scene, the same compiled programs and the
 # same settled embers, photographed without a look and with `content/beauty/looks/warm.cygrade`
 # (the parametric controls alone) and `cool.cygrade` (a white balance and an exported-style `.cube`,

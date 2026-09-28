@@ -14,6 +14,7 @@
 //                    [--width 1920] [--height 1080] [--supersample 2]
 //                    [--bloom]                      the shot's bloom grade in the post chain
 //                    [--look <file.cygrade>]        a committed look, graded after the tone curve
+//                    [--depth-of-field <target>]    focused on a target the shot names
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -231,6 +232,9 @@ int main(int argc, char** argv) {
     // No look unless one is named: the published still is ungraded, and `just
     // capture-beauty-grading` photographs it beside the warm and the cool look.
     const std::string look = option(argc, argv, "--look", "");
+    // No depth of field unless a focus target is named: the published still has none, and `just
+    // capture-beauty-depth-of-field` photographs it focused on the sphere and on a far column.
+    const std::string focus = option(argc, argv, "--depth-of-field", "");
 
     std::string problem;
     auto parsed = Shot::read(shot_path.c_str(), problem);
@@ -298,6 +302,18 @@ int main(int argc, char** argv) {
     }
     if (!look.empty()) {
         stage.enable_grading(look.c_str());
+    }
+    if (!focus.empty()) {
+        const Vec3* target = shot.focus_target(focus);
+        if (target == nullptr) {
+            std::fprintf(stderr, "cy_sample_beauty: the shot names no focus target `%s`\n",
+                         focus.c_str());
+            return 1;
+        }
+        stage.enable_depth_of_field(shot, *target);
+        std::printf("depth of field focused on %s at (%.2f, %.2f, %.2f), f/%.1f\n", focus.c_str(),
+                    static_cast<double>(target->x), static_cast<double>(target->y),
+                    static_cast<double>(target->z), static_cast<double>(shot.dof_f_number));
     }
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);

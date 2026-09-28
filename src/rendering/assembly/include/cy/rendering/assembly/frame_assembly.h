@@ -270,6 +270,10 @@ struct FrameSinks {
     /// The producer that declares the selection outline stage. Required when the description asks
     /// for selection outlines; the frame refuses to build without it.
     FrameStageDeclaration selection_outlines;
+    /// The producer that declares the depth of field stage — `depth_of_field::DepthOfFieldPass`.
+    /// Required when `post.depth_of_field` puts the stage in the chain; the frame refuses to build
+    /// without it.
+    FrameStageDeclaration depth_of_field;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
