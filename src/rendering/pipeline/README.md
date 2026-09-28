@@ -111,6 +111,14 @@ push constant to buffer 3. The captured geometry is committed as
 `docs/design/images/pipeline-frame-metal-recorded.png`. Metal still shades material constants: its
 bounded material texture argument buffer remains separate work.
 
+**A module longer than a string literal is joined at compile time.** Decals, fog, motion blur and
+lightmaps grew the forward fragment's MSL to 66,597 bytes, and Apple clang refuses a literal over
+65,536 even when it is split into adjacent pieces (`-Woverlength-strings`, an error under `-Werror`).
+`shaders/embed_msl.py` emits any module over 16,000 bytes as line-aligned chunks that a `consteval`
+function copies into one array. The name and type stay the same, so `sizeof(k) - 1` at the call
+sites is unchanged. `integration.render_embed_msl` compiles a 70 KB module with the engine's
+compiler and warnings and checks it comes back byte for byte.
+
 ## The ambient occlusion term — `FrameViewData::occlusion_control`
 
 Appended to the view block, defaulted to "none", so every caller that predates it uploads the frame

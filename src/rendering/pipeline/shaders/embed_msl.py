@@ -1,10 +1,69 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Embed checked-in MSL source modules for the frame pipeline."""
+"""Embed checked-in MSL source modules for the frame pipeline.
+
+A string literal has a length limit, concatenation included: clang rejects one over 65,536 bytes
+(-Woverlength-strings, an error under -Werror) and MSVC one over 65,535, or a single piece over
+16,380. The forward fragment outgrew that. A module longer than CHUNK_BYTES is therefore emitted as
+line-aligned chunks that a consteval function copies into one array, which is not a literal and has
+no such limit. It keeps its name and type (a reference to a char array), so `sizeof(k) - 1` and the
+decay to `const char*` at the call sites are unchanged. Shorter modules stay one literal.
+"""
 
 import pathlib
 import re
 import sys
+
+CHUNK_BYTES = 16000
+
+JOIN_HELPER = """\
+namespace detail {
+
+/// One MSL module assembled from several raw-string chunks. See embed_msl.py for why.
+template <std::size_t Size>
+struct MslText {
+    char text[Size];
+};
+
+template <std::size_t... Sizes>
+consteval MslText<(Sizes + ...) - sizeof...(Sizes) + 1> join_msl(const char (&... chunks)[Sizes]) {
+    MslText<(Sizes + ...) - sizeof...(Sizes) + 1> joined{};
+    std::size_t at = 0;
+    for (const char* chunk : {static_cast<const char*>(chunks)...}) {
+        for (; *chunk != '\\0'; ++chunk) {
+            joined.text[at++] = *chunk;
+        }
+    }
+    return joined;
+}
+
+}  // namespace detail
+
+"""
+
+
+def chunks(source: str) -> list[str]:
+    """Split at line ends into pieces of at most CHUNK_BYTES UTF-8 bytes."""
+    pieces, current, size = [], [], 0
+    for line in source.splitlines(keepends=True):
+        length = len(line.encode("utf-8"))
+        if length > CHUNK_BYTES:
+            raise ValueError(f"a {length}-byte line cannot be embedded in {CHUNK_BYTES}-byte chunks")
+        if size + length > CHUNK_BYTES:
+            pieces.append("".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += length
+    pieces.append("".join(current))
+    return pieces
+
+
+def embed(name: str, source: str) -> str:
+    if len(source.encode("utf-8")) <= CHUNK_BYTES:
+        return f'inline constexpr char {name}[] = R"cy_msl({source})cy_msl";\n\n'
+    joined = ",\n    ".join(f'R"cy_msl({piece})cy_msl"' for piece in chunks(source))
+    return (f"inline constexpr auto {name}Text = detail::join_msl(\n    {joined});\n"
+            f"inline constexpr const auto& {name} = {name}Text.text;\n\n")
 
 
 def frame_argument_buffers(source: str, name: str) -> str:
@@ -60,10 +119,6 @@ def frame_argument_buffers(source: str, name: str) -> str:
     return source
 
 
-#: The longest string literal every compiler this header meets accepts: MSVC's, in bytes.
-MAX_STRING_LITERAL = 16380
-
-
 def main() -> int:
     if len(sys.argv) < 3:
         print(f"usage: {sys.argv[0]} <output.h> <name>=<module.metal> ...", file=sys.stderr)
@@ -73,28 +128,23 @@ def main() -> int:
         "// SPDX-License-Identifier: MIT\n",
         "// Compiled MSL for the rendering frame. GENERATED — do not edit by hand.\n\n",
         "#include <cy/core/base/types.h>\n\n",
-        "namespace cy::rendering::pipeline {\n\n",
     ]
+    modules = []
     for item in sys.argv[2:]:
         name, raw_path = item.split("=", 1)
         path = pathlib.Path(raw_path)
         source = frame_argument_buffers(path.read_text(encoding="utf-8"), name)
         if ")cy_msl\"" in source:
             raise ValueError(f"{path}: source contains the raw-string delimiter")
-        encoded = source.encode("utf-8")
-        lines.append(f"/// {path.name}, {len(encoded)} bytes.\n")
-        if len(encoded) < MAX_STRING_LITERAL:
-            lines.append(f'inline constexpr char {name}[] = R"cy_msl({source})cy_msl";\n\n')
-            continue
-        # A module this long is a NUL-terminated byte array, not a string literal: clang's
-        # -Woverlength-strings refuses a literal over 65536 bytes and MSVC one over 16380, and
-        # callers read `sizeof(name) - 1` either way.
-        lines.append(f"inline constexpr char {name}[] = {{\n")
-        data = list(encoded) + [0]
-        for start in range(0, len(data), 16):
-            row = ", ".join(f"0x{byte:02X}" for byte in data[start:start + 16])
-            lines.append(f"    {row},\n")
-        lines.append("};\n\n")
+        modules.append(f"/// {path.name}, {len(source.encode('utf-8'))} bytes.\n")
+        modules.append(embed(name, source))
+    chunked = any("detail::join_msl" in module for module in modules)
+    if chunked:
+        lines.append("#include <cstddef>\n#include <initializer_list>\n\n")
+    lines.append("namespace cy::rendering::pipeline {\n\n")
+    if chunked:
+        lines.append(JOIN_HELPER)
+    lines.extend(modules)
     lines.append("}  // namespace cy::rendering::pipeline\n")
     pathlib.Path(sys.argv[1]).write_text("".join(lines), encoding="utf-8")
     return 0

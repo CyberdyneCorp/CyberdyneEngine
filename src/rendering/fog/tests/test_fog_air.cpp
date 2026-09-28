@@ -64,7 +64,7 @@ struct Air {
     }
 };
 
-FogLight fog_daylight() noexcept {
+FogLight daylight_light() noexcept {
     FogLight light;
     light.to_sun = normalize(Vec3{0.4F, 0.3F, -0.6F});
     light.sun_illuminance = Vec3{1.0F, 0.95F, 0.85F};
@@ -88,7 +88,7 @@ CY_TEST_CASE("an empty fog marched with the atmosphere's table reproduces the ta
     f32 worst_s = 0.0F;
     for (u32 y = 0; y < volume.height; y += 3) {
         for (u32 x = 0; x < volume.width; x += 5) {
-            CY_REQUIRE(integrate_fog_column(air.settings, air.view, fog_daylight(), FogShadow{},
+            CY_REQUIRE(integrate_fog_column(air.settings, air.view, daylight_light(), FogShadow{},
                                             HostShadowMap{}, FogMedium{}, x, y, cy::Span<Vec3>(t),
                                             cy::Span<Vec3>(s), &air.table)
                            .has_value());
@@ -127,11 +127,11 @@ CY_TEST_CASE("a switched-off atmosphere leaves the fog exactly as it was") {
     sky::AerialPerspectiveTable off;
     CY_REQUIRE(off.configure(volume).has_value());
     for (const u32 column : {0U, 7U, 11U}) {
-        CY_REQUIRE(integrate_fog_column(air.settings, air.view, fog_daylight(), FogShadow{},
+        CY_REQUIRE(integrate_fog_column(air.settings, air.view, daylight_light(), FogShadow{},
                                         HostShadowMap{}, medium, column, 4, cy::Span<Vec3>(alone_t),
                                         cy::Span<Vec3>(alone_s))
                        .has_value());
-        CY_REQUIRE(integrate_fog_column(air.settings, air.view, fog_daylight(), FogShadow{},
+        CY_REQUIRE(integrate_fog_column(air.settings, air.view, daylight_light(), FogShadow{},
                                         HostShadowMap{}, medium, column, 4, cy::Span<Vec3>(with_t),
                                         cy::Span<Vec3>(with_s), &off)
                        .has_value());
@@ -156,15 +156,15 @@ CY_TEST_CASE("fog and air together transmit the product and add less than the su
     std::vector<Vec3> both_t(volume.depth);
     std::vector<Vec3> both_s(volume.depth);
     for (const u32 column : {1U, 6U, 10U}) {
-        CY_REQUIRE(integrate_fog_column(air.settings, air.view, fog_daylight(), FogShadow{},
+        CY_REQUIRE(integrate_fog_column(air.settings, air.view, daylight_light(), FogShadow{},
                                         HostShadowMap{}, medium, column, 3, cy::Span<Vec3>(fog_t),
                                         cy::Span<Vec3>(fog_s))
                        .has_value());
-        CY_REQUIRE(integrate_fog_column(air.settings, air.view, fog_daylight(), FogShadow{},
+        CY_REQUIRE(integrate_fog_column(air.settings, air.view, daylight_light(), FogShadow{},
                                         HostShadowMap{}, FogMedium{}, column, 3,
                                         cy::Span<Vec3>(air_t), cy::Span<Vec3>(air_s), &air.table)
                        .has_value());
-        CY_REQUIRE(integrate_fog_column(air.settings, air.view, fog_daylight(), FogShadow{},
+        CY_REQUIRE(integrate_fog_column(air.settings, air.view, daylight_light(), FogShadow{},
                                         HostShadowMap{}, medium, column, 3, cy::Span<Vec3>(both_t),
                                         cy::Span<Vec3>(both_s), &air.table)
                        .has_value());
