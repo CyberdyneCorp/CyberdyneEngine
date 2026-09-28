@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <numbers>
 #include <string_view>
 #include <vector>
@@ -1090,11 +1091,14 @@ CY_TEST_CASE("the cooked lightmap carries the shadow mask, and a version 1 paylo
     const ShadowRoom movable(gi::LightMobility::Movable);
     const Baked plain = bake(movable.room.scene(), small_settings(LightmapMode::Irradiance));
     CY_REQUIRE(encode_lightmap_asset(plain.lightmap, payload).has_value());
-    std::vector<u8> old(payload.begin(), payload.end() - 4);  // drop "0 shadow channels"
-    old[4] = 1;
-    old[5] = old[6] = old[7] = 0;
+    CY_REQUIRE(payload.size() > 12U);
+    cy::Array<u8> old;
+    CY_REQUIRE(old.resize(payload.size() - 4U).has_value());  // drop "0 shadow channels"
+    std::memcpy(old.data(), payload.data(), old.size());
+    const u8 version_one[4] = {1, 0, 0, 0};
+    std::memcpy(old.data() + 4, version_one, sizeof(version_one));
     BakedLightmap from_old;
-    CY_REQUIRE(decode_lightmap_asset({old.data(), old.size()}, from_old).has_value());
+    CY_REQUIRE(decode_lightmap_asset(old.span(), from_old).has_value());
     CY_CHECK(same_texels(from_old.texels, plain.lightmap.texels));
     CY_CHECK(from_old.shadow_lights.empty());
 }
