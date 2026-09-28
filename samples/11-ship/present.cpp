@@ -599,7 +599,11 @@ PresentReport present_card(Platform& platform, Image& image,
             }
         }
 
-        report.validation_errors = gpu.statistics().validation_errors;
+        // The device counts these in u64 and the report summarises them in u32, which MSVC warns
+        // about (C4244) and /WX makes an error. Narrowed deliberately rather than widened: the
+        // field is a human-facing count that main.cpp prints with %u and tests against zero, and a
+        // run that produced four billion validation errors has been failing since the first one.
+        report.validation_errors = static_cast<u32>(gpu.statistics().validation_errors);
 
         executor.release();
     }  // the executor is destroyed HERE, while the device it holds is still alive
