@@ -838,6 +838,82 @@ CY_TEST_CASE("a pinhole through the assembled frame is the frame without the sta
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
+CY_TEST_CASE("after the stage's compute dispatches, every draw's sets are bound for the draw") {
+    // Regression: the post-process bound the frame's sets BEFORE its graphics pipeline, and a
+    // backend binds sets at the LAST BOUND PIPELINE'S point (vulkan_command_buffer.cpp). Straight
+    // after the stage's compute composite that is the compute point, so the resolve drew with the
+    // pass set of an earlier pass: the beauty sample drew with the particles' set 2 bound, a
+    // validation error and then a crash inside the layer. Read off the null backend's command log,
+    // modelled on that rule, so it needs no device and is judged on any machine.
+    (void)rhi::null::register_null_backend();
+    Allocator& gpu = system_allocator(MemoryDomain::Gpu);
+    rhi::DeviceDescription description;
+    description.application_name = "cy_test_render_depth_of_field_null";
+    rhi::BackendSelection selection;
+    Expected<rhi::Device*, Error> made = rhi::create_device(gpu, "null", description, selection);
+    CY_REQUIRE(made.has_value());
+    rhi::Device& device = *made.value();
+    {
+        DepthOfFieldPass pass;
+        CY_REQUIRE(pass.create(device, DepthOfFieldPassDescription{kWidth, kHeight}).has_value());
+        FrameScene scene(allocator());
+        FrameCase frame{&scene, &pass, frame_settings(1.0F)};
+        FrameSceneHooks hooks;
+        hooks.user = &frame;
+        hooks.configure = &configure;
+        hooks.before_assemble = &before_assemble;
+        scene.set_hooks(hooks);
+        CY_REQUIRE(scene.build(device).has_value());
+        rhi::null::clear_command_log(device);
+        rendering::assembly::AssemblyReport report;
+        CY_REQUIRE(scene.render(RecordMode::CallbacksAndParticles, report).has_value());
+        CY_REQUIRE_EQ(pass.report().dispatches, 5U);
+
+        // Sets bound while the compute point is current go to the compute point. Any such bind
+        // that a draw follows before the next dispatch was meant for that draw and never reached
+        // it.
+        using rhi::null::CommandKind;
+        bool compute = false;
+        u32 pending = 0;
+        u32 misbound = 0;
+        u32 draws_after_compute = 0;
+        bool seen_compute = false;
+        for (const rhi::null::RecordedCommand& command : rhi::null::command_log(device)) {
+            switch (command.kind) {
+                case CommandKind::BindGraphicsPipeline:
+                    compute = false;
+                    break;
+                case CommandKind::BindComputePipeline:
+                    compute = true;
+                    seen_compute = true;
+                    break;
+                case CommandKind::BindDescriptorSets:
+                    pending += compute ? 1U : 0U;
+                    break;
+                case CommandKind::Dispatch:
+                case CommandKind::DispatchIndirect:
+                    pending = 0;
+                    break;
+                case CommandKind::Draw:
+                case CommandKind::DrawIndexed:
+                case CommandKind::DrawIndexedIndirect:
+                    misbound += pending;
+                    pending = 0;
+                    draws_after_compute += seen_compute ? 1U : 0U;
+                    break;
+                default:
+                    break;
+            }
+        }
+        // The resolve is drawn after the stage's dispatches; without it the walk proves nothing.
+        CY_CHECK_GE(draws_after_compute, 1U);
+        CY_CHECK_EQ(misbound, 0U);
+        (void)device.wait_idle();
+        pass.destroy();
+    }
+    rhi::destroy_device(gpu, &device);
+}
+
 CY_TEST_CASE("with depth of field off the frame is the one drawn before the stage existed") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {

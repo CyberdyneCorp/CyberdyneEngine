@@ -357,9 +357,11 @@ void record_temporal(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
+    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and a
+    // compute stage before this one (depth of field, bloom) would take them otherwise.
     context.commands->bind_graphics_pipeline(
         recorder.pipelines()->pipeline(FramePipelineKind::Temporal));
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
     context.commands->draw(3, 1, 0, 0);
     record_extensions(recorder, context, FramePassKind::Temporal, description.width,
                       description.height, true);
@@ -391,9 +393,11 @@ void record_post_process(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     context.commands->begin_rendering(info);
     set_full_viewport(*context.commands, description.width, description.height);
-    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
+    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and a
+    // compute stage before this one (depth of field, bloom) would take them otherwise.
     context.commands->bind_graphics_pipeline(
         recorder.pipelines()->pipeline(FramePipelineKind::Resolve));
+    bind_frame_sets(*context.commands, *recorder.pipelines(), bindings);
     // One oversized triangle, its positions derived from `SV_VertexID`. No vertex buffer, which is
     // why this pipeline has no vertex bindings at all.
     context.commands->draw(3, 1, 0, 0);

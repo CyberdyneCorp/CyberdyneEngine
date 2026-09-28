@@ -1678,9 +1678,10 @@ void record_shadow(const PassContext& context, void* user) noexcept {
                                                  static_cast<f32>(kShadowExtent), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, kShadowExtent, kShadowExtent});
     const rhi::DescriptorSetHandle sets[3] = {state->table, state->shadow, state->view};
+    // The pipeline first, so the sets go to the graphics bind point after any compute pass.
+    context.commands->bind_graphics_pipeline(state->pipeline);
     context.commands->bind_descriptor_sets(state->layout, 0,
                                            Span<const rhi::DescriptorSetHandle>(sets, 3));
-    context.commands->bind_graphics_pipeline(state->pipeline);
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
                                           Span<const u64>(&offset, 1));
@@ -1723,9 +1724,11 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
+    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and depth
+    // of field's compute dispatches run just before this pass.
     context.commands->bind_graphics_pipeline(
         state->pipelines->pipeline(FramePipelineKind::Resolve));
+    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
     context.commands->draw(3, 1, 0, 0);
     context.commands->end_rendering();
 }
