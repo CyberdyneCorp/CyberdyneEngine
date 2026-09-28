@@ -66,6 +66,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/math/matrix.h>
 #include <cy/core/math/vec.h>
+#include <cy/core/memory/array.h>
 
 namespace cy::rendering::motion_blur {
 

@@ -335,6 +335,7 @@ private:
     MotionBlurPass pass_;
     RunState state_{};
     rendering::assembly::AssemblyReport report_{};
+    bool ready_ = false;
     std::vector<u32> pixels_;
     std::vector<Vec4> input_;
     std::vector<Vec4> output_;
@@ -631,9 +632,11 @@ CY_TEST_CASE("(b) temporal antialiasing ghosts less than with camera motion only
         for (u32 x = first; x < last; ++x) {
             const usize at = (static_cast<usize>(y) * kWidth) + x;
             const f32 truth_luminance = luminance_of(truth.input()[at]);
-            object_error += std::fabs(luminance_of(object.input()[at]) - truth_luminance);
-            camera_error += std::fabs(luminance_of(camera_only.input()[at]) - truth_luminance);
-            energy += truth_luminance;
+            object_error +=
+                static_cast<f64>(std::fabs(luminance_of(object.input()[at]) - truth_luminance));
+            camera_error += static_cast<f64>(
+                std::fabs(luminance_of(camera_only.input()[at]) - truth_luminance));
+            energy += static_cast<f64>(truth_luminance);
         }
     }
     save("taa-object-motion.png", object.pixels());

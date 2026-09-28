@@ -3,8 +3,8 @@
 """Turn the compiled motion blur dispatches into the checked-in C++ header.
 
 The pass must exist in a build with no shader compiler — `CY_SHADER_SLANG` is off in Profile and
-Shipping — so the three motion_blur_*.slang dispatches are compiled once and embedded; this script is how that is done
-reproducibly rather than by pasting numbers. It is src/rendering/skinning/shaders/embed_spirv.py
+Shipping — so the three motion_blur_*.slang dispatches are compiled once and embedded; this script
+is how that is done reproducibly rather than by pasting numbers. It is src/rendering/skinning/shaders/embed_spirv.py
 with this module's namespace, kept separate for the reason that one gives.
 
 The output is checked in and is subject to the formatting gate: run clang-format -i on it afterwards.
@@ -22,8 +22,8 @@ HEADER = """// SPDX-License-Identifier: MIT
 #pragma once
 // Compiled SPIR-V for the motion blur dispatches. GENERATED — do not edit by hand.
 //
-// Produced by src/rendering/motion_blur/shaders/embed_spirv.py from the motion_blur_*.slang files, whose
-// regenerate.py carries the slangc invocations. Checked in rather than compiled by the build
+// Produced by src/rendering/motion_blur/shaders/embed_spirv.py from the motion_blur_*.slang files,
+// whose regenerate.py carries the slangc invocations. Checked in rather than compiled by the build
 // because the passes must exist in a build with NO shader compiler at all.
 
 #include <cy/core/base/types.h>
