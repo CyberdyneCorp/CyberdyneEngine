@@ -104,6 +104,10 @@ add_subdirectory(denoise)
 # consumes raytracing/ as one tier and denoise/ as its reconstruction.
 add_subdirectory(gi)
 
+# CyberGI on the device (issue #35): the field and the surface cards uploaded, and the card
+# lighting in compute. Straight after gi/ and graph/, the two modules it depends on.
+add_subdirectory(gi_gpu)
+
 # CyberTemporal: ONE temporal framework — jitter, derived motion vectors, history, invalidation and
 # reprojection — consumed by everything stochastic rather than reimplemented per effect. Task 8.3.
 # Before post/ because the post chain's antialiasing and upscaling stages are two of its consumers.
@@ -189,9 +193,6 @@ add_subdirectory(light_probes)
 # pass reads, ranked and clustered by the assembly beside the lights, applied to the surface before
 # it is lit. It joins cy::rendering-lighting and cy::rendering-pipeline, so it is read after both.
 add_subdirectory(decals)
-
-# Issue #35: CyberGI on the device. After gi and graph, which it depends on.
-add_subdirectory(gi_gpu)
 
 # EXPOSURE AND COLOUR GRADING ON THE DEVICE. `rendering-post-processing`'s steps 6, 10, 11 and 12:
 # the luminance histogram and its adaptation as compute dispatches, and the graded resolve — exposure,
