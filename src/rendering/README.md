@@ -17,6 +17,8 @@ and `rendering-culling-and-lod`.
 | `occlusion/` | `cy::rendering-occlusion` | ground-truth ambient occlusion on the device: the horizon search, the shared denoiser's cascade, and the target the forward pass samples through `FrameStageDeclaration` |
 | `light_probes/` | `cy::rendering-light-probes` | an irradiance volume in the frame: `gi::IrradianceVolume`'s probes as a texture the forward pass samples in place of the flat ambient, and the view-block words that place it |
 | `decals/` | `cy::rendering-decals` | decals in the frame: a view's ranked decals and the assembly's decal lists as a word table in the frame's texture table, applied by `cy/decal.slang` to the surface before the light loop |
+| `lightmap_bake/` | `cy::rendering-lightmap-bake` | the lightmap bake: shared atlas pages, every texel path traced by `gi::PathTracer`, denoised, dilated and stitched, the caches' seeds from the same run, and the cooked payload |
+| `lightmaps/` | `cy::rendering-lightmaps` | a baked lightmap in the frame: the atlas planes as textures, the view-block words, and the ambient-source rule read off `gi::exclusion_for()` |
 | `assembly/` | `cy::rendering-assembly` | **the frame**: one view of one world, culled, sorted, clustered, declared as passes and executed. M8.b task 11.2 — the module that links the eight M7's closing gate found were linked by nothing but their own tests |
 
 ## Why layer 4 and not layer 2

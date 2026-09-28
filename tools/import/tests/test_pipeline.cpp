@@ -13,7 +13,9 @@
 #include <cy/core/memory/allocator.h>
 
 #include <cy/core/jobs/job_system.h>
+#include <cy/import/gltf.h>
 #include <cy/import/live_import.h>
+#include <cy/import/mesh.h>
 #include <cy/import/pipeline.h>
 #include <cy/import/texture.h>
 #include <cy/test/test.h>
@@ -487,6 +489,98 @@ CY_TEST_CASE("key: the three model formats share one cache and never serve each 
     const std::string_view rendered(text.data());
     CY_CHECK(rendered.find("steps not reached") != std::string_view::npos);
     CY_CHECK(rendered.find("obj: ") != std::string_view::npos);
+}
+
+namespace {
+
+/// Every cooked file in a directory, by name, so two runs can be compared file for file.
+std::vector<std::pair<std::string, std::string>> cooked_files(const std::string& directory) {
+    struct Walk {
+        const std::string* root = nullptr;
+        std::vector<std::pair<std::string, std::string>> files;
+    } walk;
+    walk.root = &directory;
+    CY_REQUIRE(cy::assets::fs::enumerate(
+                   directory.c_str(), false,
+                   [](void* user, const cy::assets::DirectoryEntry& entry) noexcept {
+                       auto* state = static_cast<Walk*>(user);
+                       if (!entry.is_directory) {
+                           state->files.emplace_back(entry.name, std::string());
+                       }
+                       return true;
+                   },
+                   &walk)
+                   .has_value());
+    for (auto& [name, bytes] : walk.files) {
+        std::string path = directory;
+        path += '/';
+        path += name;
+        bytes = read_text(path);
+    }
+    return walk.files;
+}
+
+}  // namespace
+
+CY_TEST_CASE("unwrap: an unchanged reimport runs no unwrap, nor does one that moved no geometry") {
+    // `rendering-global-illumination` — "UV2 and chart packing", "Unwrap is cached": "WHEN a mesh
+    // is reimported without geometry changes THEN the cached UV2 unwrap SHALL be reused." Two ways
+    // a reimport can leave the geometry alone, and each is asserted by the unwrap counter rather
+    // than by timing.
+    Harness harness("unwrap_cached");
+    const std::string document = harness.project + "/models/quad.gltf";
+    write_text(document, gltf_with_external_buffer("quad.bin"));
+    write_file(harness.project + "/models/quad.bin", quad_buffer(1.0f));
+    ImportOptions options;
+    const OptionsSchema schema = gltf_options();
+    CY_REQUIRE(
+        options.set(schema, "generate-lightmap-uvs", OptionValue::of_bool(true)).has_value());
+    ImportSettings settings;
+    settings.options = &options;
+    Uv2Cache::process().clear();
+
+    const cy::u64 before = uv2_unwrap_count();
+    ImportPipeline cold(harness.registry, harness.cache);
+    harness.configure(cold);
+    auto first = cold.import_file(Harness::path("models/quad.gltf"), settings);
+    CY_REQUIRE(first.has_value());
+    CY_CHECK(first.value().cache == cy::assets::CacheOutcome::Miss);
+    CY_REQUIRE(uv2_unwrap_count() == before + 1);
+    const auto cooked = cooked_files(harness.output);
+    CY_REQUIRE(!cooked.empty());
+
+    // 1. UNCHANGED: the source's derivation key hits, so no importer runs and no unwrap runs.
+    ImportPipeline warm(harness.registry, harness.cache);
+    harness.configure(warm);
+    auto second = warm.import_file(Harness::path("models/quad.gltf"), settings);
+    CY_REQUIRE(second.has_value());
+    CY_CHECK(second.value().cache == cy::assets::CacheOutcome::Hit);
+    CY_CHECK(uv2_unwrap_count() == before + 1);
+
+    // 2. THE SOURCE CHANGED AND THE GEOMETRY DID NOT: a generator string in the document. The key
+    // misses and the importer runs — and the unwrap is the cached one, so xatlas does not, and
+    // every cooked file is the same, UV2 included.
+    std::string edited = gltf_with_external_buffer("quad.bin");
+    const std::string marker = R"("version":"2.0")";
+    edited.replace(edited.find(marker), marker.size(),
+                   R"("version":"2.0","generator":"a different exporter")");
+    write_text(document, edited);
+    ImportPipeline touched(harness.registry, harness.cache);
+    harness.configure(touched);
+    auto third = touched.import_file(Harness::path("models/quad.gltf"), settings);
+    CY_REQUIRE(third.has_value());
+    CY_CHECK(third.value().cache != cy::assets::CacheOutcome::Hit);
+    CY_CHECK(uv2_unwrap_count() == before + 1);
+    CY_CHECK(Uv2Cache::process().hits() >= 1U);
+    CY_CHECK(cooked_files(harness.output) == cooked);
+
+    // 3. THE CONTROL: moved geometry is a new unwrap.
+    write_file(harness.project + "/models/quad.bin", quad_buffer(2.0f));
+    ImportPipeline moved(harness.registry, harness.cache);
+    harness.configure(moved);
+    auto fourth = moved.import_file(Harness::path("models/quad.gltf"), settings);
+    CY_REQUIRE(fourth.has_value());
+    CY_CHECK(uv2_unwrap_count() == before + 2);
 }
 
 CY_TEST_CASE("pipeline: a source nothing claims is reported rather than ignored") {

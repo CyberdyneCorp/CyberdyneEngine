@@ -215,3 +215,15 @@ add_subdirectory(selection)
 # shape — a compute dispatch checked against a layer-2 CPU reference — and is placed after pipeline/
 # because its suite draws the vertices it skins through that layer's conventions.
 add_subdirectory(skinning)
+
+# THE LIGHTMAP BAKE. `rendering-global-illumination`'s "Lightmap baking" and "UV2 and chart
+# packing": shared atlas pages, a triangle tracer behind gi::SceneTracer so gi::PathTracer bakes
+# every texel, the denoiser, dilation, seams, the caches' seeds from the same run and the cooked
+# payload. Headless like gi/, which it consumes, so it is read after gi/ and denoise/.
+add_subdirectory(lightmap_bake)
+
+# LIGHTMAPS IN THE FRAME. The baked atlas as textures the forward pass samples at its ambient term,
+# addressed by each draw's `gi_address`. It joins cy::rendering-lightmap-bake and
+# cy::rendering-pipeline, so it is read after both — and after light_probes/, whose volume its
+# device suite binds beside it.
+add_subdirectory(lightmaps)

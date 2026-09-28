@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <iterator>
 
 namespace cy::rendering::pipeline {
 namespace {
@@ -353,11 +354,13 @@ Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipel
         {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
         {kNormalStream, kNormalStreamStride, rhi::VertexInputRate::PerVertex},
         {kUvStream, kUvStreamStride, rhi::VertexInputRate::PerVertex},
+        {kLightmapUvStream, kLightmapUvStreamStride, rhi::VertexInputRate::PerVertex},
     };
     const rhi::VertexAttribute forward_attributes[] = {
         {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
+        {3, kLightmapUvStream, rhi::Format::Rg32Sfloat, 0},
     };
     // The depth pipeline's third attribute is LAST FRAME'S POSITION, which `cyDepthVertex` derives
     // per-object motion from — see `kPreviousPositionStream`.
@@ -371,6 +374,8 @@ Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipel
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kPreviousPositionStream, rhi::Format::Rgb32Sfloat, 0},
     };
+    static_assert(std::size(forward_bindings) == kForwardPassStreamCount);
+    static_assert(std::size(depth_bindings) == kDepthPassStreamCount);
     // A GRAPH VERTEX VARIANT'S PREPASS TAKES THE FORWARD STREAMS: its graph may read the UVs, and
     // it derives the previous position by evaluating the graph at the previous time, not from a
     // stream.
@@ -489,16 +494,21 @@ Status FramePipelines::create_shadow_pipeline(rhi::Device& device) noexcept {
 Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_shadow_pipeline(
     rhi::Device& device, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
     bool graph_vertex) const noexcept {
+    // A graph vertex variant takes the forward streams, which the recorder binds for it; the
+    // standard shadow pipeline reads the position alone.
     const rhi::VertexBinding bindings[] = {
         {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
         {kNormalStream, kNormalStreamStride, rhi::VertexInputRate::PerVertex},
         {kUvStream, kUvStreamStride, rhi::VertexInputRate::PerVertex},
+        {kLightmapUvStream, kLightmapUvStreamStride, rhi::VertexInputRate::PerVertex},
     };
     const rhi::VertexAttribute attributes[] = {
         {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
         {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
         {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
+        {3, kLightmapUvStream, rhi::Format::Rg32Sfloat, 0},
     };
+    static_assert(std::size(bindings) == kForwardPassStreamCount);
     const usize stream_count = graph_vertex ? kForwardPassStreamCount : 1;
     rhi::ColorAttachmentState color;
     color.format = rhi::Format::R32Sfloat;

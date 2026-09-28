@@ -62,6 +62,13 @@ u32 exclusion_for(GiMode mode, bool surface_has_lightmap,
             return kDynamicDiffuseSources | source_bit(RadianceSource::Lightmap) |
                    source_bit(RadianceSource::IrradianceVolume);
         case GiMode::Baked:
+            // Lightmaps for static surfaces and probes for the rest — and a lightmapped surface
+            // takes its lightmap ALONE. Before M11.e this row excluded only the dynamic sources, so
+            // a lightmapped surface inside a volume resolved to the MEAN of its lightmap and the
+            // coarser volume: the one mode built on baked light blurred the lightmap it had baked.
+            if (surface_has_lightmap) {
+                return kDynamicDiffuseSources | source_bit(RadianceSource::IrradianceVolume);
+            }
             return kDynamicDiffuseSources;
         case GiMode::Probe:
             // Baked probes for dynamic objects, no lightmaps.

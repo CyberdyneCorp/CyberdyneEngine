@@ -59,8 +59,12 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/content_producers.cpp
+        src/lightmap_producer.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::build-graph cy::import cy::cook-pipeline)
+    PUBLIC_DEPENDENCIES cy::build-graph cy::import cy::cook-pipeline
+    # The lightmap producer's bake. Layer 4 under a layer-7 tool, which may link anything; the
+    # runtime never links this target.
+    PRIVATE_DEPENDENCIES cy::rendering-lightmap-bake)
 
 # The `vfx` producer (issue #19) cooks `.cyvfxdoc` systems and discovers their `.cyvfxmodule`s.
 # It links the VFX COMPILER only — never `cy::vfx`, the runtime — and exists only where CY_VFX does.

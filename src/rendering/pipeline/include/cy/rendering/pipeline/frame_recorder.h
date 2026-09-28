@@ -31,7 +31,8 @@
 // WHAT IT DOES NOT OWN, AND THE SEAM EACH ABSENCE LEAVES
 // ================================================================================================
 //
-// **Geometry.** `GeometrySource` below is what a caller fills: three stream buffers, an index
+// **Geometry.** `GeometrySource` below is what a caller fills: three stream buffers (and the
+// lightmap coordinates when it has them), an index
 // buffer and a per-draw lookup. The mesh table is the render server's, and this module holds no
 // copy of it for the same reason `FrameAssembly` holds none.
 //
@@ -101,6 +102,10 @@ struct GeometrySource {
     /// Indexed by `kPositionStream`, `kNormalStream`, `kUvStream`. The depth pass binds the first
     /// alone; the forward passes bind all three.
     rhi::BufferHandle streams[3];
+    /// The cooked `TexCoords2` stream, laid out like `streams[kUvStream]` — one `Vec2` per vertex
+    /// at the same vertex offsets. Null for a source with no lightmapped mesh, in which case the
+    /// forward passes bind the UV0 buffer in its place and no draw reads it.
+    rhi::BufferHandle lightmap_uvs;
     DrawGeometryFn geometry = nullptr;
     void* user = nullptr;
 

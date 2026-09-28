@@ -156,6 +156,64 @@ CY_TEST_CASE("unwrap: unwrapping twice produces the same atlas, byte for byte") 
     }
 }
 
+CY_TEST_CASE("unwrap: the same geometry through the cache is the same unwrap and no second run") {
+    // The cache's half of "Unwrap is cached": what `finish_mesh` does on a reimport whose source
+    // changed and whose geometry did not. REGRESSION-SHAPED: the copy it hands back must be the
+    // unwrap, byte for byte, or a cache hit would cook different bytes from a miss.
+    Uv2Cache cache;
+    const Uv2Options options;
+    MeshData fresh = grid(5, 3.0f);
+    MeshData reused = grid(5, 3.0f);
+    const cy::u64 before = uv2_unwrap_count();
+    const auto first = generate_uv2_cached(fresh, options, &cache);
+    CY_REQUIRE(first.has_value());
+    CY_CHECK(uv2_unwrap_count() == before + 1);
+    const auto second = generate_uv2_cached(reused, options, &cache);
+    CY_REQUIRE(second.has_value());
+    CY_CHECK(uv2_unwrap_count() == before + 1);
+    CY_CHECK(cache.hits() == 1U);
+    CY_CHECK(second.value().charts == first.value().charts);
+    CY_CHECK(second.value().width == first.value().width);
+    CY_REQUIRE(reused.vertex_count() == fresh.vertex_count());
+    for (usize index = 0; index < fresh.vertex_count(); ++index) {
+        CY_REQUIRE(reused.uv2[index].x == fresh.uv2[index].x);
+        CY_REQUIRE(reused.uv2[index].y == fresh.uv2[index].y);
+        CY_REQUIRE(reused.positions[index].z == fresh.positions[index].z);
+    }
+    CY_REQUIRE(reused.indices.size() == fresh.indices.size());
+    CY_CHECK(reused.sections.size() == fresh.sections.size());
+
+    // Moved geometry and a changed option are both new unwraps.
+    MeshData moved = grid(5, 3.5f);
+    CY_REQUIRE(generate_uv2_cached(moved, options, &cache).has_value());
+    CY_CHECK(uv2_unwrap_count() == before + 2);
+    Uv2Options denser;
+    denser.texel_density = 32.0f;
+    MeshData again = grid(5, 3.0f);
+    CY_REQUIRE(generate_uv2_cached(again, denser, &cache).has_value());
+    CY_CHECK(uv2_unwrap_count() == before + 3);
+    CY_CHECK(cache.size() == 3U);
+}
+
+CY_TEST_CASE("unwrap: the geometry key sees every attribute and every option") {
+    const Uv2Options options;
+    const MeshData mesh = grid(3, 1.0f);
+    const cy::assets::ContentHash key = uv2_geometry_key(mesh, options);
+    CY_CHECK(uv2_geometry_key(grid(3, 1.0f), options) == key);
+    MeshData other_uv = grid(3, 1.0f);
+    other_uv.uvs[0].x += 0.25f;
+    CY_CHECK(uv2_geometry_key(other_uv, options) != key);
+    MeshData other_normal = grid(3, 1.0f);
+    other_normal.normals[1].y = -1.0f;
+    CY_CHECK(uv2_geometry_key(other_normal, options) != key);
+    Uv2Options padded;
+    padded.padding = 4;
+    CY_CHECK(uv2_geometry_key(mesh, padded) != key);
+    Uv2Options stretched;
+    stretched.max_distortion = 3.0f;
+    CY_CHECK(uv2_geometry_key(mesh, stretched) != key);
+}
+
 CY_TEST_CASE("unwrap: a higher texel density asks for a larger atlas") {
     MeshData sparse = grid(4, 4.0f);
     MeshData dense = grid(4, 4.0f);

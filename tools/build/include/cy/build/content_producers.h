@@ -70,6 +70,9 @@ inline constexpr u32 kCookProducerVersion = 1;
 /// `NodeContext::discover` — so editing a module re-cooks every system that uses it.
 inline constexpr u32 kVfxProducerVersion = 1;
 
+/// The `lightmap` producer: a level's bake description and its meshes in, a cooked lightmap out.
+inline constexpr u32 kLightmapProducerVersion = 1;
+
 }  // namespace cy::build
 
 #endif  // CY_BUILD_CONTENT_PRODUCERS_H
