@@ -60,5 +60,7 @@ unlightmapped cube to take the volume.
 
 ## What is not here
 
-A shadow-mask plane and stationary lights; mip levels (the atlas's gutter is laid out for them, the
-upload is one level); a streamed atlas.
+The shadow mask: the bake writes it for every stationary light (`lightmap_bake/README.md`), but
+this module neither uploads it nor has the frame read it, so a stationary light's direct term is
+still shaded unshadowed by the lightmap path. Mip levels (the atlas's gutter is laid out for them,
+the upload is one level); a streamed atlas.

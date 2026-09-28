@@ -73,10 +73,70 @@ build-engine *args:
         build=(--build "${CY_BUILD_DIR}")
     fi
 
-    # ONE BUILD AT A TIME PER TREE: a second build waits for the first. tools/workflow/build_lock.sh
-    # argues why, and holds the platform differences in how the lock is taken.
-    source tools/workflow/build_lock.sh
-    cy_build_lock "${CY_BUILD_DIR:-build/${profile}}"
+    # ONE BUILD AT A TIME PER TREE. Two CMake configures in one directory do not merely race, they
+    # corrupt: a half-populated FetchContent checkout looks exactly like a broken dependency, and the
+    # error it produces names SDL rather than the concurrency that caused it. This project lost an
+    # hour to that twice — once to orphaned processes from an interrupted gate, and once to a
+    # milestone ledger running while a developer built by hand — and both times the symptom was
+    # blamed on the code before the cause was found.
+    #
+    # A second build WAITS rather than failing: it is a legitimate thing to do, it just cannot happen
+    # at the same time. The wait is announced, because a build that silently blocks looks like a
+    # build that hung.
+    # ONE PRIMITIVE, NOT THREE. `mkdir` either creates the directory or it does not, atomically, on
+    # every filesystem this project builds on; it needs no privilege and it exists everywhere. The
+    # three-way flock / lockf / symlink arrangement this replaces did not:
+    #
+    #   * `flock` is absent from macOS and from Git Bash;
+    #   * `lockf` is absent from Git Bash, and is an API rather than an executable on macOS;
+    #   * `ln -s "$$"` — the fallback both of those fell through to — CANNOT SUCCEED under MSYS,
+    #     which is what `just` runs a shebang recipe under on Windows. Without
+    #     `winsymlinks:nativestrict` MSYS gives `ln -s` copy semantics and there is no file named
+    #     after the PID to copy ("No such file or directory"); with it, making a symlink needs
+    #     Developer Mode or admin ("Operation not permitted"). The loop therefore never terminated,
+    #     and the Windows CI leg span at ~0% CPU until GitHub cancelled it at the six-hour default.
+    #     That is CI run 36332309125, and every Windows and macOS test job was gated behind it.
+    #
+    # The owner's PID goes in a file inside the directory, so a crashed build leaves a lock the next
+    # process can identify and reap rather than wedging the tree forever.
+    lock_dir="${CY_BUILD_DIR:-build/${profile}}"
+    mkdir -p "${lock_dir}"
+    lock="${lock_dir}/.cy-build.lock.d"
+    # On CI, `actions/cache` restores `build/dev` verbatim — including a lock a prior job left on
+    # that job's runner. The reaping below tests `kill -0 <owner>` against the local process table,
+    # and on a fresh runner a foreign PID occasionally matches a live local process (short PIDs
+    # collide often), so the loop would wait for a process that has nothing to do with this build.
+    # GITHUB_ACTIONS is `true` on every hosted runner; there, forget a stashed lock before we try.
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        rm -rf "${lock}" "${lock_dir}/.cy-build.lock" "${lock_dir}/.cy-build.lock.pid"
+    fi
+    announced=0
+    while ! mkdir "${lock}" 2>/dev/null; do
+        # An empty or absent pid file is a lock whose owner has not written its PID yet, which is a
+        # live owner mid-acquisition: wait rather than reap.
+        owner="$(cat "${lock}/pid" 2>/dev/null || true)"
+        if [[ "${owner}" =~ ^[0-9]+$ ]] && ! kill -0 "${owner}" 2>/dev/null; then
+            # Re-read before removing: between the read above and here another waiter may have
+            # reaped this lock and taken it, and deleting it then would hand the tree to two
+            # builds at once. Only remove a lock that still names the dead owner we found.
+            if [ "$(cat "${lock}/pid" 2>/dev/null || true)" = "${owner}" ]; then
+                rm -rf "${lock}"
+            fi
+            continue
+        fi
+        if [ "${announced}" -eq 0 ]; then
+            echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
+            announced=1
+        fi
+        sleep 0.1
+    done
+    echo "$$" > "${lock}/pid"
+    # The ownership check prevents one build from deleting a lock another has acquired — on the
+    # ordinary exit path, and on the reap path above.
+    release_lock() {
+        [ "$(cat "${lock}/pid" 2>/dev/null || true)" != "$$" ] || rm -rf "${lock}"
+    }
+    trap release_lock EXIT
 
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"
     cmake "${configure[@]}" ${cmake_args[@]+"${cmake_args[@]}"}
@@ -452,11 +512,21 @@ _jobs:
 _job-slots:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ -n "${CI:-}" ] || [ "${CY_JOB_POOL:-ON}" = "OFF" ] || ! command -v python3 >/dev/null 2>&1 \
-        || [ "$(uname -s)" = "Windows_NT" ] || [[ "$(uname -s)" == MINGW* ]]; then
+    # Windows answers `uname -s` in more than one spelling, and the pool is wired on none of them.
+    # Git Bash says MINGW64_NT-*, but a `just` shebang recipe runs through MSYS's env and says
+    # MSYS_NT-* — which the MINGW-only test missed, so every Windows caller was handed a slot prefix
+    # and then failed trying to run it.
+    case "$(uname -s)" in
+        Windows_NT | MINGW* | MSYS* | CYGWIN*) exit 0 ;;
+    esac
+    if [ -n "${CI:-}" ] || [ "${CY_JOB_POOL:-ON}" = "OFF" ] || ! command -v python3 >/dev/null 2>&1; then
         exit 0
     fi
-    echo "python3 -I -S {{root}}/tools/workflow/job_slot.py --slots $(bash "{{root}}/tools/workflow/jobs.sh" machine) --"
+    # ONE ARGUMENT PER LINE, because the repository path may contain a space: a caller splitting a
+    # single-line answer on whitespace tears the script path in half and runs python3 against its
+    # first fragment. The callers read this back a line at a time.
+    printf '%s\n' python3 -I -S "{{root}}/tools/workflow/job_slot.py" \
+        --slots "$(bash "{{root}}/tools/workflow/jobs.sh" machine)" --
 
 # The environment that puts every rustc Cargo starts into the same pool, printed as `export` lines
 # for `eval`. Cargo's RUSTC_WRAPPER names one program and passes it no options, so job_slot.py reads

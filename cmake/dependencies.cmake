@@ -327,36 +327,35 @@ endfunction()
 # each target works because a target's own options come after the directory's on the command line
 # and the compiler takes the last of a contradictory pair — which is also why this cannot silently
 # half-apply: either the flag is on the line after -fno-exceptions or the build fails as before.
+#
+# AND WHY IT SPELLS THEM TWICE. The paragraph above is true of GCC and Clang, where `-fno-exceptions`
+# makes a `throw` a COMPILE error — so a missing counter-flag cannot reach a binary. MSVC does not
+# work that way: with `/EHs-c-` it compiles the `throw` and fast-fails at the moment it runs. Until
+# this function grew an MSVC branch it emitted only the GCC spellings, which MSVC ignores, so Slang
+# was built on Windows under the engine's no-exception contract and `slang-fiddle` died the first
+# time it threw — `fatal error 999999: internal error in 'fiddle' tool`, exit 0xC0000409
+# (STATUS_STACK_BUFFER_OVERRUN), from the `catch (...)` in its own main. That is exactly the silent
+# half-application the paragraph above says cannot happen, and it is why no Windows build of this
+# tree has ever got past `[500/5393]`. `_HAS_EXCEPTIONS` is a definition rather than a flag, so it
+# is contradicted as one.
 function(cy__slang_allow_exceptions directory)
+    if(MSVC)
+        set(allow_options $<$<COMPILE_LANGUAGE:CXX>:/EHsc> $<$<COMPILE_LANGUAGE:CXX>:/GR>)
+        set(allow_definitions $<$<COMPILE_LANGUAGE:CXX>:_HAS_EXCEPTIONS=1>)
+    else()
+        set(allow_options
+            $<$<COMPILE_LANGUAGE:CXX>:-fexceptions> $<$<COMPILE_LANGUAGE:CXX>:-frtti>)
+        set(allow_definitions "")
+    endif()
     get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
     foreach(target IN LISTS targets)
         get_target_property(type ${target} TYPE)
         if(type STREQUAL "INTERFACE_LIBRARY" OR type STREQUAL "UTILITY")
             continue()
         endif()
-        if(MSVC)
-            # MSVC WARNS rather than taking the last of /EHs-c- and /EHsc (D9025), and a second
-            # _HAS_EXCEPTIONS definition is a redefinition, so on MSVC the engine's items are REMOVED
-            # from the target's own copy of the directory properties and the defaults put back.
-            # Without this every Slang target compiled with /EHs-c-: the compiler said so (C4530),
-            # and the first exception slang-fiddle threw ended the process with 0xC0000409, which
-            # stopped every Windows build that enabled CY_SHADER_SLANG.
-            get_target_property(options ${target} COMPILE_OPTIONS)
-            if(options)
-                list(REMOVE_ITEM options
-                    "$<$<COMPILE_LANGUAGE:CXX>:/EHs-c->" "$<$<COMPILE_LANGUAGE:CXX>:/GR->")
-                set_property(TARGET ${target} PROPERTY COMPILE_OPTIONS "${options}")
-            endif()
-            get_target_property(definitions ${target} COMPILE_DEFINITIONS)
-            if(definitions)
-                list(REMOVE_ITEM definitions "$<$<COMPILE_LANGUAGE:CXX>:_HAS_EXCEPTIONS=0>")
-                set_property(TARGET ${target} PROPERTY COMPILE_DEFINITIONS "${definitions}")
-            endif()
-            target_compile_options(${target} PRIVATE
-                $<$<COMPILE_LANGUAGE:CXX>:/EHsc> $<$<COMPILE_LANGUAGE:CXX>:/GR>)
-        else()
-            target_compile_options(${target} PRIVATE
-                $<$<COMPILE_LANGUAGE:CXX>:-fexceptions> $<$<COMPILE_LANGUAGE:CXX>:-frtti>)
+        target_compile_options(${target} PRIVATE ${allow_options})
+        if(allow_definitions)
+            target_compile_definitions(${target} PRIVATE ${allow_definitions})
         endif()
     endforeach()
     get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
@@ -405,6 +404,12 @@ function(cy__slang_place_dxc)
 endfunction()
 
 function(cy__finalise_slang target)
+    # MSVC IS NOT EXEMPT, THOUGH IT WAS. This read `if(NOT MSVC AND slang_SOURCE_DIR)`, so on Windows
+    # Slang was built under the engine's `/EHs-c- /GR- /D_HAS_EXCEPTIONS=0` and nothing cleared them.
+    # GCC and Clang make a `throw` under -fno-exceptions a compile error, so the omission was loud
+    # everywhere it did not apply and silent on the one platform it did: `slang-fiddle` compiled, ran,
+    # threw, and fast-failed with 0xC0000409 at `[500/5393]` — every Windows build of this tree, until
+    # the six-hour lock hang in front of it hid the fact that it never got further.
     if(slang_SOURCE_DIR)
         cy__slang_allow_exceptions("${slang_SOURCE_DIR}")
     endif()

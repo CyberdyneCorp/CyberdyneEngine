@@ -1,0 +1,98 @@
+Mutations that turn integration.render_lightmap_bake red, Development build, macOS (Apple M2 Max,
+Apple clang, Xcode 27.0). Everything in this change is host-side, so every claim is proved on the
+host. Each mutation was applied, the suite rebuilt and run, the file restored and md5-verified.
+Listed under each: the cases that failed. "skipped" counts cases a failed REQUIRE's abort left
+unrun (the harness compiles doctest without exceptions, so a REQUIRE ends the process).
+
+m04 SURVIVED its first run, when the case sampled the mask at the blocker chart's corner: the
+conservative rasteriser covers the texel ring around a chart, so a base-level tap never reached a
+texel the dilation fills. The case now checks every texel of the blocker's rectangle, which is what a
+coarser mip level averages, and m04 is red.
+
+THE TEXEL PLANES ARE UNCHANGED FOR A BAKE THAT SETS NO MOBILITY. Proved separately: an FNV-1a hash of
+every texel plane of the ground-truth room, baked in each mode, was taken with main's
+src/ stashed and again with this change applied. Identical:
+
+    PLANES irradiance 16384 8afe058e6bcf2383
+    PLANES directional 32768 7fe4d819439ba383
+    PLANES sh-l1 49152 e62fed5fcc984383
+
+== m01_stationary_bakes_direct: src/rendering/lightmap_bake/src/trace.cpp
+<   return content == LightmapContent::DirectAndIndirect;
+>   return content == LightmapContent::DirectAndIndirect || true;
+TEST CASE:  a stationary light bakes its indirect light and a shadow mask, not its direct term
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m02_movable_bounce_kept: src/rendering/lightmap_bake/src/bake.cpp
+<   if (light.mobility == gi::LightMobility::Movable) {
+>   if (light.mobility == gi::LightMobility::Movable && false) {
+TEST CASE:  a movable light bakes nothing, not even its bounce
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m03_mask_sees_through_everything: src/rendering/lightmap_bake/src/trace.cpp
+<   if (!tracer.occluded(origin, light_sample_point(light, origin, reach, sequence))) {
+>   if (!tracer.occluded(origin, origin + (light_sample_point(light, origin, reach, sequence) * 0.0F))) {
+TEST CASE:  a stationary light bakes its indirect light and a shadow mask, not its direct term
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m04_mask_not_dilated: src/rendering/lightmap_bake/src/postprocess.cpp
+<   canvas.shadow[fill.texel] = fill.shadow;
+>   (void)fill.shadow;
+TEST CASE:  a stationary light bakes its indirect light and a shadow mask, not its direct term
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m05_fifth_light_admitted: src/rendering/lightmap_bake/src/bake.cpp
+<   if (out.size() == kMaxShadowMaskLights) {
+>   if (out.size() == kMaxShadowMaskLights + 1U) {
+TEST CASE:  a fifth stationary light is refused by name
+test cases:  14 |  13 passed | 1 failed | 5 skipped
+RESTORED md5 ok
+
+== m06_asset_drops_mask: src/rendering/lightmap_bake/src/asset.cpp
+<   const auto channels = static_cast<u32>(lightmap.shadow_lights.size());
+>   const auto channels = static_cast<u32>(lightmap.shadow_lights.size() * 0U);
+TEST CASE:  the cooked lightmap round-trips, and an unchanged level bakes to the same bytes
+TEST CASE:  the cooked lightmap carries the shadow mask, and a version 1 payload still decodes
+test cases:  15 |  13 passed | 2 failed | 4 skipped
+RESTORED md5 ok
+
+== m07_region_is_everything: src/rendering/lightmap_bake/src/bake.cpp
+<   if (std::any_of(dirty.begin(), dirty.end(),
+>   if (true || std::any_of(dirty.begin(), dirty.end(),
+TEST CASE:  moving one object re-solves its region and keeps every other texel byte for byte
+TEST CASE:  a rebake with nothing moved traces nothing and changes nothing
+test cases:  19 |  17 passed | 2 failed | 0 skipped
+RESTORED md5 ok
+
+== m08_kept_texels_not_copied: src/rendering/lightmap_bake/src/bake.cpp
+<   const usize texels = canvas.surfaces.size();
+>   return;
+TEST CASE:  moving one object re-solves its region and keeps every other texel byte for byte
+TEST CASE:  a rebake with nothing moved traces nothing and changes nothing
+test cases:  19 |  17 passed | 2 failed | 0 skipped
+RESTORED md5 ok
+
+== m09_layout_change_undetected: src/rendering/lightmap_bake/src/bake.cpp
+<   return "the level no longer packs to the same rectangles";
+>   (void)0;
+TEST CASE:  a rebake whose level no longer packs the same falls back to a full bake
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m10_padding_never_short: src/rendering/lightmap_bake/src/postprocess.cpp
+<   if (has_surface(other) && other.owner == texel.owner && other.chart != texel.chart) {
+>   if (has_surface(other) && other.owner == texel.owner && other.chart != texel.chart && false) {
+TEST CASE:  an unwrap's chart padding is checked against the rectangle the atlas gives it
+test cases:  19 |  18 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== m11_misspelt_mobility_defaults: tools/build/src/lightmap_producer.cpp  (integration.build_content)
+<   return fail(ErrorCode::InvalidArgument, "a lightmap light's mobility is not static, stationary or movable");
+>   out = gi::LightMobility::Stationary;
+TEST CASE:  a lightmap light line takes a mobility, and a misspelt one fails the node
+test cases:   8 |   7 passed | 1 failed | 0 skipped
+RESTORED md5 ok

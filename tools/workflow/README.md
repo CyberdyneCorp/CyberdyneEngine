@@ -171,14 +171,3 @@ slots it holds; a real GCC LTO link started inside a saturated pool completing (
 `c7ff54b`); two LTO links overlapping eight compiles never running more than the pool's jobs at
 once; a probe project that configures AND builds through the launchers (and installs none when `CI`
 is set); and `build-reap --apply` keeping a marked tree and the matrix.
-
-## One build at a time per tree — `build_lock.sh`
-
-`just build-engine` sources `build_lock.sh` and calls `cy_build_lock <tree>` before it configures:
-a second build of the same tree waits, and says so, rather than corrupting the first's FetchContent
-checkouts. The lock is `flock` where the host has it, `lockf` where it has that, and otherwise an
-atomic `mkdir` with the owner's PID inside, so a crashed build's lock is reaped. GitHub's macOS
-image and Git Bash on Windows take that last path. It was `ln -s <pid> <lock>` until Git Bash, which
-cannot create a symlink to a target that does not exist, left every Windows CI build waiting on
-nobody until the six-hour job limit cancelled it; `tools/ci/test_recipes.py` now runs the fallback
-with no `flock`, no `lockf` and a refusing `ln`.

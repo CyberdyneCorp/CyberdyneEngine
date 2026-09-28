@@ -56,7 +56,14 @@ using ::slang::ISession;
 // -Wnon-virtual-dtor cannot see that contract, so it is switched off for the two implementations
 // below and nowhere else. This is not a case of the warning being wrong about C++; it is the
 // warning being right about a rule this interface deliberately does not play by.
-#if defined(__GNUC__) || defined(__clang__)
+//
+// Guarded, in the shape vulkan_memory.cpp uses: MSVC does not know `#pragma GCC`, reports C4068 for
+// each one, and /WX makes that an error. Nothing is suppressed there because nothing needs to be —
+// MSVC's equivalent, C4265, is off by default at /W4.
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wnon-virtual-dtor"
+#elif defined(__GNUC__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 #endif
@@ -189,7 +196,9 @@ private:
     SourceResolver resolver_;
 };
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#elif defined(__GNUC__)
 #    pragma GCC diagnostic pop
 #endif
 

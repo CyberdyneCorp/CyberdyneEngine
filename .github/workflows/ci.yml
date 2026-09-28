@@ -166,6 +166,12 @@ jobs:
   build:
     name: build ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # A BUDGET, SO THAT A WEDGED LEG COSTS MINUTES RATHER THAN A RUNNER-DAY. Without this a job
+    # takes GitHub's 360-minute default, and run 36332309125 spent all six hours of it spinning in
+    # the build lock (see just/build.just) before being cancelled — with every Windows and macOS
+    # test job waiting on it, because `test` needs this whole matrix. A cold Windows build is the
+    # slowest leg at well under an hour, so ninety minutes is generous and still fails the same day.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -253,6 +259,10 @@ jobs:
     name: test ${{ matrix.label }}
     needs: build
     runs-on: ${{ matrix.os }}
+    # The suites carry wall-clock budgets of their own and the whole set runs in minutes; this bound
+    # is here so a hang in a test — or in the build lock, which this job also takes — is reported
+    # rather than left to the 360-minute default. See the twin comment on `build`.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

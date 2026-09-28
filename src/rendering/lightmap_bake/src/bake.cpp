@@ -3,6 +3,7 @@
 
 #include "internal.h"
 
+#include <cy/rendering/lightmap_bake/asset.h>
 #include <cy/rendering/lightmap_bake/bake.h>
 
 #include <algorithm>
@@ -102,15 +103,47 @@ using detail::TexelSurface;
     report.objects = static_cast<u32>(owners.size());
     report.pages = out.pages;
     report.atlas_occupancy = layout.occupancy;
+    // Two texels of the coarsest protected mip level between two charts: one on each side, so a
+    // bilinear tap at either chart's edge, at any of those levels, reads only its own chart.
+    report.required_chart_gap = 2U << layout.mip_levels;
     return ok();
 }
 
-/// The lights the path tracer is built with: the caller's, divided by pi. See bake.h.
+/// The lights the path tracer is built with: the caller's, divided by pi (see bake.h), and without
+/// the `Movable` ones, whose bounce the dynamic GI owns.
 [[nodiscard]] Status frame_lights(Span<const gi::GiLight> lights,
                                   Array<gi::GiLight>& out) noexcept {
     out.clear();
     for (gi::GiLight light : lights) {
+        if (light.mobility == gi::LightMobility::Movable) {
+            continue;
+        }
         light.intensity /= std::numbers::pi_v<f32>;
+        if (Status pushed = out.push_back(light); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
+
+/// The lights that get a shadow-mask channel: every `Stationary` one, unless the content bakes
+/// their direct term anyway. More than the plane has channels is refused by name.
+[[nodiscard]] Status stationary_lights(Span<const gi::GiLight> lights,
+                                       const LightmapBakeSettings& settings,
+                                       Array<gi::GiLight>& out) noexcept {
+    out.clear();
+    if (settings.content == LightmapContent::DirectAndIndirect) {
+        return ok();
+    }
+    for (const gi::GiLight& light : lights) {
+        if (light.mobility != gi::LightMobility::Stationary) {
+            continue;
+        }
+        if (out.size() == kMaxShadowMaskLights) {
+            return fail(ErrorCode::OutOfRange,
+                        "a level has more stationary lights than the shadow mask has channels "
+                        "(four); make the rest Static or Movable");
+        }
         if (Status pushed = out.push_back(light); !pushed) {
             return pushed;
         }
@@ -123,6 +156,8 @@ struct TraceWorld {
     MeshSceneTracer tracer;
     gi::GiScene surfels;
     Array<gi::GiLight> lights;
+    /// The shadow mask's lights, in channel order, as the caller gave them.
+    Array<gi::GiLight> stationary;
 
     [[nodiscard]] Status build(const LightmapScene& scene,
                                const LightmapBakeSettings& settings) noexcept {
@@ -133,12 +168,16 @@ struct TraceWorld {
             !built) {
             return built;
         }
-        return frame_lights(scene.lights, lights);
+        if (Status framed = frame_lights(scene.lights, lights); !framed) {
+            return framed;
+        }
+        return stationary_lights(scene.lights, settings, stationary);
     }
 };
 
 void trace_canvas(const detail::TraceContext& context, const LightmapBakeSettings& settings,
                   Canvas& canvas, LightmapBakeReport& report) noexcept {
+    const bool masked = !canvas.shadow.empty();
     for (usize index = 0; index < canvas.surfaces.size(); ++index) {
         TexelSurface& texel = canvas.surfaces[index];
         if (texel.state != TexelState::Surface) {
@@ -152,8 +191,54 @@ void trace_canvas(const detail::TraceContext& context, const LightmapBakeSetting
         }
         canvas.moments[index] = detail::trace_moments(context, texel.position, texel.normal,
                                                       sequence, settings.trace.samples);
+        if (masked) {
+            canvas.shadow[index] = detail::trace_shadow_mask(context, texel.position, texel.normal,
+                                                             sequence ^ 0x2C1B3C6DU);
+        }
         report.texels_covered += 1U;
     }
+}
+
+/// Every surface texel of an owner not in `active` becomes empty for the post-process: the
+/// denoiser neither filters nor borrows from it, and the dilation, bounded by owner, cannot either.
+/// A rebake copies those texels from the previous bake afterwards.
+void keep_only(Canvas& canvas, const Array<u8>& active) noexcept {
+    for (TexelSurface& texel : canvas.surfaces) {
+        if (texel.owner != detail::kNoOwner && active[texel.owner] == 0U) {
+            texel.state = TexelState::Empty;
+        }
+    }
+}
+
+/// The owner of the texel under an atlas coordinate.
+[[nodiscard]] u32 owner_at(const Canvas& canvas, Vec2 coordinate) noexcept {
+    const auto x =
+        static_cast<u32>(std::clamp(coordinate.x, 0.0F, static_cast<f32>(canvas.width - 1U)));
+    const auto y =
+        static_cast<u32>(std::clamp(coordinate.y, 0.0F, static_cast<f32>(canvas.height - 1U)));
+    return canvas.surfaces[canvas.index(x, y)].owner;
+}
+
+/// The seams both of whose sides are re-solved; the rest are counted and left as they were.
+[[nodiscard]] Status seams_inside(const Canvas& canvas, const Array<u8>& active,
+                                  const Array<detail::SeamEdge>& seams,
+                                  Array<detail::SeamEdge>& out, u32& boundary) noexcept {
+    out.clear();
+    boundary = 0;
+    for (const detail::SeamEdge& seam : seams) {
+        const u32 a = owner_at(canvas, (seam.a0 + seam.a1) * 0.5F);
+        const u32 b = owner_at(canvas, (seam.b0 + seam.b1) * 0.5F);
+        const bool a_in = a != detail::kNoOwner && active[a] != 0U;
+        const bool b_in = b != detail::kNoOwner && active[b] != 0U;
+        if (a_in && b_in) {
+            if (Status pushed = out.push_back(seam); !pushed) {
+                return pushed;
+            }
+        } else if (a_in || b_in) {
+            boundary += 1U;
+        }
+    }
+    return ok();
 }
 
 /// Passes until every texel that can be filled is: the dilation stops on the first pass that fills
@@ -213,52 +298,85 @@ u32 lightmap_planes(LightmapMode mode) noexcept {
     return 1;
 }
 
-Status bake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& settings,
-                      const CacheSeedTargets* seeds, BakedLightmap& out,
-                      LightmapBakeReport& report) noexcept {
-    report = LightmapBakeReport{};
-    if (settings.mode >= LightmapMode::Count) {
-        return fail(ErrorCode::InvalidArgument, "an unknown lightmap mode");
-    }
-    if (Status valid = validate(scene); !valid) {
-        return valid;
-    }
-    if (Status packed = pack(scene, settings, out, report); !packed) {
-        return packed;
-    }
+namespace {
 
+/// One run's working state: the tracer and cards, the canvas, and its seams.
+struct BakeRun {
     TraceWorld world;
-    if (Status built = world.build(scene, settings); !built) {
-        return built;
-    }
-    const gi::PathTracer path(world.tracer, world.surfels, world.lights.span(), scene.sky,
-                              &world.tracer);
-
     Canvas canvas;
     Array<detail::SeamEdge> seams;
-    if (Status drawn = detail::rasterise(scene, out, canvas, seams); !drawn) {
+};
+
+/// Everything after the packing and before the tracing: the tracer, the raster, the shadow mask's
+/// canvas and the chart-padding check.
+[[nodiscard]] Status prepare(const LightmapScene& scene, const LightmapBakeSettings& settings,
+                             const BakedLightmap& layout, BakeRun& run,
+                             LightmapBakeReport& report) noexcept {
+    if (Status built = run.world.build(scene, settings); !built) {
+        return built;
+    }
+    if (Status drawn = detail::rasterise(scene, layout, run.canvas, run.seams); !drawn) {
         return drawn;
     }
+    if (!run.world.stationary.empty()) {
+        if (Status sized = run.canvas.shadow.resize(run.canvas.surfaces.size()); !sized) {
+            return sized;
+        }
+        for (Vec4& texel : run.canvas.shadow) {
+            texel = Vec4{1.0F, 1.0F, 1.0F, 1.0F};
+        }
+    }
+    if (Status measured =
+            detail::short_padding(run.canvas, report.required_chart_gap, report.padding_short);
+        !measured) {
+        return measured;
+    }
+    if (settings.refuse_short_padding && !report.padding_short.empty()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "an object's charts land closer together in its lightmap rectangle than "
+                    "bilinear filtering and the protected mip levels need (report.padding_short "
+                    "names them); unwrap with more padding or bake at a higher density");
+    }
+    return ok();
+}
+
+/// Trace, denoise, dilate and stitch the canvas over `seams`.
+[[nodiscard]] Status solve(const LightmapScene& scene, const LightmapBakeSettings& settings,
+                           BakeRun& run, Span<const detail::SeamEdge> seams,
+                           const BakedLightmap& layout, LightmapBakeReport& report) noexcept {
+    const gi::PathTracer path(run.world.tracer, run.world.surfels, run.world.lights.span(),
+                              scene.sky, &run.world.tracer);
     detail::TraceContext context;
     context.path = &path;
-    context.tracer = &world.tracer;
-    context.lights = world.lights.span();
+    context.tracer = &run.world.tracer;
+    context.lights = run.world.lights.span();
+    context.stationary = run.world.stationary.span();
     context.settings = &settings;
-    trace_canvas(context, settings, canvas, report);
+    trace_canvas(context, settings, run.canvas, report);
 
     if (settings.denoise) {
         if (Status denoised =
-                detail::denoise_moments(canvas, settings.mode, settings.denoise_passes);
+                detail::denoise_moments(run.canvas, settings.mode, settings.denoise_passes);
             !denoised) {
             return denoised;
         }
     }
-    report.texels_dilated = detail::dilate(canvas, dilation_passes(settings, out));
+    report.texels_dilated = detail::dilate(run.canvas, dilation_passes(settings, layout));
     report.seam_edges = static_cast<u32>(seams.size());
     report.seam_samples = detail::reconcile_seams(
-        canvas, seams.span(), settings.seam_iterations, settings.reconcile_seams,
+        run.canvas, seams, settings.seam_iterations, settings.reconcile_seams,
         report.seam_error_before, report.seam_error_after);
+    return ok();
+}
 
+[[nodiscard]] f32 half_rounded(f32 value) noexcept {
+    return float_from_half(half_from_float(value));
+}
+
+/// The canvas into `out`'s planes, coverage and shadow mask.
+[[nodiscard]] Status encode(const BakeRun& run, const LightmapBakeSettings& settings,
+                            BakedLightmap& out) noexcept {
+    const Canvas& canvas = run.canvas;
     out.texels.width = canvas.width;
     out.texels.height = canvas.height;
     out.texels.planes = lightmap_planes(settings.mode);
@@ -274,18 +392,271 @@ Status bake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& se
     for (usize index = 0; index < canvas.surfaces.size(); ++index) {
         out.coverage[index] = canvas.surfaces[index].state == TexelState::Surface ? 1U : 0U;
     }
-
-    // THE SEEDS, FROM THIS RUN'S TRACER AND CARDS. With the caller's own lights rather than the
-    // frame's: the dynamic caches keep the surface cache's convention (see bake.h).
-    if (seeds != nullptr) {
-        const gi::PathTracer seeding(world.tracer, world.surfels, scene.lights, scene.sky,
-                                     &world.tracer);
-        if (Status seeded = seed(seeding, world, scene, *seeds, report); !seeded) {
-            return seeded;
+    out.shadow_mask = LightmapTexels();
+    out.shadow_lights.clear();
+    if (canvas.shadow.empty()) {
+        return ok();
+    }
+    out.shadow_mask.width = canvas.width;
+    out.shadow_mask.height = canvas.height;
+    out.shadow_mask.planes = 1;
+    if (Status sized = out.shadow_mask.texels.resize(canvas.shadow.size()); !sized) {
+        return sized;
+    }
+    for (usize index = 0; index < canvas.shadow.size(); ++index) {
+        const Vec4 value = canvas.shadow[index];
+        out.shadow_mask.texels[index] = Vec4{half_rounded(value.x), half_rounded(value.y),
+                                             half_rounded(value.z), half_rounded(value.w)};
+    }
+    for (const gi::GiLight& light : run.world.stationary) {
+        if (Status pushed = out.shadow_lights.push_back(light.id); !pushed) {
+            return pushed;
         }
     }
-    report.rays = world.tracer.rays();
     return ok();
+}
+
+[[nodiscard]] Status seed_from(const BakeRun& run, const LightmapScene& scene,
+                               const CacheSeedTargets* seeds, LightmapBakeReport& report) noexcept {
+    // THE SEEDS, FROM THIS RUN'S TRACER AND CARDS. With the caller's own lights rather than the
+    // frame's — every light, movable ones too: the dynamic caches keep the surface cache's
+    // convention (see bake.h) and own a movable light's GI.
+    if (seeds == nullptr) {
+        return ok();
+    }
+    const gi::PathTracer seeding(run.world.tracer, run.world.surfels, scene.lights, scene.sky,
+                                 &run.world.tracer);
+    return seed(seeding, run.world, scene, *seeds, report);
+}
+
+}  // namespace
+
+Status bake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& settings,
+                      const CacheSeedTargets* seeds, BakedLightmap& out,
+                      LightmapBakeReport& report) noexcept {
+    report = LightmapBakeReport();
+    if (settings.mode >= LightmapMode::Count) {
+        return fail(ErrorCode::InvalidArgument, "an unknown lightmap mode");
+    }
+    if (Status valid = validate(scene); !valid) {
+        return valid;
+    }
+    if (Status packed = pack(scene, settings, out, report); !packed) {
+        return packed;
+    }
+    BakeRun run;
+    if (Status prepared = prepare(scene, settings, out, run, report); !prepared) {
+        return prepared;
+    }
+    if (Status solved = solve(scene, settings, run, run.seams.span(), out, report); !solved) {
+        return solved;
+    }
+    if (Status encoded = encode(run, settings, out); !encoded) {
+        return encoded;
+    }
+    if (Status seeded = seed_from(run, scene, seeds, report); !seeded) {
+        return seeded;
+    }
+    report.rays = run.world.tracer.rays();
+    return ok();
+}
+
+namespace {
+
+// --- Incremental rebake -------------------------------------------------------------------------
+
+/// Why `previous` cannot be reused, or null when it can.
+[[nodiscard]] const char* layout_change(const BakedLightmap& previous, const BakedLightmap& now,
+                                        const LightmapBakeSettings& settings,
+                                        const TraceWorld& world) noexcept {
+    if (previous.mode != settings.mode || previous.page_size != now.page_size ||
+        previous.pages != now.pages || previous.gutter_texels != now.gutter_texels) {
+        return "the mode or the page layout changed";
+    }
+    if (previous.addresses.size() != now.addresses.size() ||
+        !std::equal(previous.addresses.begin(), previous.addresses.end(), now.addresses.begin())) {
+        return "the level no longer packs to the same rectangles";
+    }
+    const bool same_lights =
+        previous.shadow_lights.size() == world.stationary.size() &&
+        std::equal(world.stationary.begin(), world.stationary.end(), previous.shadow_lights.begin(),
+                   [](const gi::GiLight& light, u64 id) { return light.id == id; });
+    if (!same_lights) {
+        return "the stationary lights changed";
+    }
+    const usize texels = usize{now.page_size} * now.page_size * now.pages;
+    if (previous.texels.texels.size() != texels * lightmap_planes(settings.mode)) {
+        return "the previous bake's texels do not match its layout";
+    }
+    return nullptr;
+}
+
+[[nodiscard]] Aabb instance_bounds(const LightmapScene& scene,
+                                   const BakeInstance& instance) noexcept {
+    Aabb box = Aabb::empty();
+    for (const Vec3 position : scene.meshes[instance.mesh].positions) {
+        const Vec3 world = transform_point(instance.transform, position);
+        box = Aabb::from_min_max(cwise_min(box.min, world), cwise_max(box.max, world));
+    }
+    return box;
+}
+
+[[nodiscard]] Aabb grown(Aabb box, f32 metres) noexcept {
+    const Vec3 margin{metres, metres, metres};
+    return Aabb::from_min_max(box.min - margin, box.max + margin);
+}
+
+[[nodiscard]] bool inside(const Aabb& box, Vec3 point) noexcept {
+    return point.x >= box.min.x && point.y >= box.min.y && point.z >= box.min.z &&
+           point.x <= box.max.x && point.y <= box.max.y && point.z <= box.max.z;
+}
+
+/// The owners a move reaches: every moved one, and every one with a surface texel inside a moved
+/// object's old or new bounds grown by the influence distance.
+[[nodiscard]] Status rebake_region(const LightmapScene& scene, const Canvas& canvas,
+                                   const LightmapRebakeRequest& request,
+                                   Array<u8>& active) noexcept {
+    if (Status sized = active.resize(scene.instances.size()); !sized) {
+        return sized;
+    }
+    std::fill(active.begin(), active.end(), u8{0});
+    Array<Aabb> dirty;
+    for (usize at = 0; at < request.moved_instances.size(); ++at) {
+        const u32 moved = request.moved_instances[at];
+        active[moved] = 1U;
+        const Aabb now = instance_bounds(scene, scene.instances[moved]);
+        for (const Aabb box : {now, request.previous_bounds[at]}) {
+            if (Status pushed = dirty.push_back(grown(box, request.influence_metres)); !pushed) {
+                return pushed;
+            }
+        }
+    }
+    for (const TexelSurface& texel : canvas.surfaces) {
+        if (texel.state != TexelState::Surface || texel.owner == detail::kNoOwner ||
+            active[texel.owner] != 0U) {
+            continue;
+        }
+        if (std::any_of(dirty.begin(), dirty.end(),
+                        [&](const Aabb& box) { return inside(box, texel.position); })) {
+            active[texel.owner] = 1U;
+        }
+    }
+    return ok();
+}
+
+/// Every texel whose owner was not re-solved, byte for byte from `previous`: planes, coverage and
+/// shadow mask. Coverage comes from the raster instead when `previous` carries none — a decoded
+/// asset does not — because a kept object rasterises to the same texels either way.
+void copy_kept(const BakedLightmap& previous, const Canvas& canvas, const Array<u8>& active,
+               BakedLightmap& out) noexcept {
+    const usize texels = canvas.surfaces.size();
+    const bool has_coverage = previous.coverage.size() == texels;
+    const bool has_mask =
+        previous.shadow_mask.texels.size() == texels && out.shadow_mask.texels.size() == texels;
+    for (usize index = 0; index < texels; ++index) {
+        const u32 owner = canvas.surfaces[index].owner;
+        if (owner != detail::kNoOwner && active[owner] != 0U) {
+            continue;
+        }
+        for (u32 plane = 0; plane < out.texels.planes; ++plane) {
+            const usize at = (usize{plane} * texels) + index;
+            out.texels.texels[at] = previous.texels.texels[at];
+        }
+        if (has_coverage) {
+            out.coverage[index] = previous.coverage[index];
+        }
+        if (has_mask) {
+            out.shadow_mask.texels[index] = previous.shadow_mask.texels[index];
+        }
+    }
+}
+
+[[nodiscard]] Status check_request(const LightmapScene& scene,
+                                   const LightmapRebakeRequest& request) noexcept {
+    if (request.moved_instances.size() != request.previous_bounds.size()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a rebake needs one previous bound per moved instance");
+    }
+    for (const u32 moved : request.moved_instances) {
+        if (moved >= scene.instances.size()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a rebake names a moved instance the scene does not have");
+        }
+    }
+    return ok();
+}
+
+/// The rebake proper, once the level is known to pack as `previous` did.
+[[nodiscard]] Status rebake_region_of(const LightmapScene& scene,
+                                      const LightmapBakeSettings& settings,
+                                      const BakedLightmap& previous,
+                                      const LightmapRebakeRequest& request, BakeRun& run,
+                                      BakedLightmap& out, LightmapBakeReport& report) noexcept {
+    Array<u8> active;
+    if (Status chosen = rebake_region(scene, run.canvas, request, active); !chosen) {
+        return chosen;
+    }
+    report.objects_rebaked = static_cast<u32>(std::count(active.begin(), active.end(), u8{1}));
+    keep_only(run.canvas, active);
+    Array<detail::SeamEdge> seams;
+    if (Status kept = seams_inside(run.canvas, active, run.seams, seams, report.boundary_seams);
+        !kept) {
+        return kept;
+    }
+    if (Status solved = solve(scene, settings, run, seams.span(), out, report); !solved) {
+        return solved;
+    }
+    if (Status encoded = encode(run, settings, out); !encoded) {
+        return encoded;
+    }
+    copy_kept(previous, run.canvas, active, out);
+    report.incremental = true;
+    report.rays = run.world.tracer.rays();
+    return ok();
+}
+
+}  // namespace
+
+Status rebake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& settings,
+                        const BakedLightmap& previous, const LightmapRebakeRequest& request,
+                        BakedLightmap& out, LightmapBakeReport& report) noexcept {
+    report = LightmapBakeReport();
+    if (settings.mode >= LightmapMode::Count) {
+        return fail(ErrorCode::InvalidArgument, "an unknown lightmap mode");
+    }
+    if (Status valid = validate(scene); !valid) {
+        return valid;
+    }
+    if (Status checked = check_request(scene, request); !checked) {
+        return checked;
+    }
+    if (Status packed = pack(scene, settings, out, report); !packed) {
+        return packed;
+    }
+    BakeRun run;
+    if (Status prepared = prepare(scene, settings, out, run, report); !prepared) {
+        return prepared;
+    }
+    if (const char* reason = layout_change(previous, out, settings, run.world); reason != nullptr) {
+        if (Status baked = bake_lightmaps(scene, settings, nullptr, out, report); !baked) {
+            return baked;
+        }
+        report.fallback = reason;
+        return ok();
+    }
+    return rebake_region_of(scene, settings, previous, request, run, out, report);
+}
+
+f32 sample_shadow_mask(const BakedLightmap& lightmap, u64 light_id, Vec2 coordinate) noexcept {
+    for (usize channel = 0; channel < lightmap.shadow_lights.size(); ++channel) {
+        if (lightmap.shadow_lights[channel] != light_id) {
+            continue;
+        }
+        const Vec4 mask = sample_plane(lightmap.shadow_mask, 0, coordinate);
+        const f32 values[4] = {mask.x, mask.y, mask.z, mask.w};
+        return channel < 4U ? values[channel] : 1.0F;
+    }
+    return 1.0F;
 }
 
 Status reference_ambient(const LightmapScene& scene, const LightmapBakeSettings& settings,

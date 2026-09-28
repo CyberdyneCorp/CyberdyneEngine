@@ -71,7 +71,7 @@ inline constexpr u32 kCookProducerVersion = 1;
 inline constexpr u32 kVfxProducerVersion = 1;
 
 /// The `lightmap` producer: a level's bake description and its meshes in, a cooked lightmap out.
-inline constexpr u32 kLightmapProducerVersion = 1;
+inline constexpr u32 kLightmapProducerVersion = 2;
 
 }  // namespace cy::build
 
