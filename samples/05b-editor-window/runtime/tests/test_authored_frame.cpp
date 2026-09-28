@@ -542,6 +542,40 @@ void check_graph_material(AuthoredFrame& frame, const first_light::Camera& view)
                                          : default_red - restored_red) < 1000U);
 }
 
+/// A native device the authored frame can run on, or null after saying why there is none. These are
+/// skips, not failures: a runner with no driver for this backend, a selection that fell back to
+/// another backend, and a device on the compatibility path (a paravirtual Metal GPU has no global
+/// texture table), which `AuthoredFrame::initialize` refuses by design. A test that went on after
+/// such a device would index an empty frame, because CY_REQUIRE does not stop a test built without
+/// exceptions.
+rhi::Device* native_frame_device(const char* application) {
+    rhi::DeviceDescription description;
+    description.application_name = application;
+    description.enable_validation = true;
+    rhi::BackendSelection selection;
+    auto created = rhi::create_device(allocator(), kBackend, description, selection);
+    if (!created) {
+        std::fprintf(stderr, "no %s device: %s\n", kBackend, created.error().message);
+        CY_CHECK_EQ(created.error().code, ErrorCode::Unavailable);
+        return nullptr;
+    }
+    rhi::Device* device = *created;
+    const char* reason = nullptr;
+    if (device->capabilities().backend() != kNativeBackend) {
+        CY_CHECK(selection.fell_back);
+        reason = selection.reason;
+    } else if (device->global_texture_table().is_null()) {
+        reason = "the device is on the compatibility path, with no global texture table";
+    }
+    if (reason != nullptr) {
+        std::fprintf(stderr, "no usable %s device: selected '%s' because %s\n", kBackend,
+                     selection.selected, reason);
+        rhi::destroy_device(allocator(), device);
+        return nullptr;
+    }
+    return device;
+}
+
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
 // Pixels whose largest channel difference exceeds `tolerance`. For TAA frames past the first: the
 // jitter moves the sample positions off the pixel centres, where a graph's shader offset and the
@@ -591,40 +625,6 @@ std::string time_vertex_graph() {
                   "link 8 \"out\" -> 10 \"b\"\n"
                   "link 10 \"out\" -> 6 \"offset\"\n",
                   Occurrence::First);
-}
-
-/// A native device the authored frame can run on, or null after saying why there is none. These are
-/// skips, not failures: a runner with no driver for this backend, a selection that fell back to
-/// another backend, and a device on the compatibility path (a paravirtual Metal GPU has no global
-/// texture table), which `AuthoredFrame::initialize` refuses by design. A test that went on after
-/// such a device would index an empty frame, because CY_REQUIRE does not stop a test built without
-/// exceptions.
-rhi::Device* native_frame_device(const char* application) {
-    rhi::DeviceDescription description;
-    description.application_name = application;
-    description.enable_validation = true;
-    rhi::BackendSelection selection;
-    auto created = rhi::create_device(allocator(), kBackend, description, selection);
-    if (!created) {
-        std::fprintf(stderr, "no %s device: %s\n", kBackend, created.error().message);
-        CY_CHECK_EQ(created.error().code, ErrorCode::Unavailable);
-        return nullptr;
-    }
-    rhi::Device* device = *created;
-    const char* reason = nullptr;
-    if (device->capabilities().backend() != kNativeBackend) {
-        CY_CHECK(selection.fell_back);
-        reason = selection.reason;
-    } else if (device->global_texture_table().is_null()) {
-        reason = "the device is on the compatibility path, with no global texture table";
-    }
-    if (reason != nullptr) {
-        std::fprintf(stderr, "no usable %s device: selected '%s' because %s\n", kBackend,
-                     selection.selected, reason);
-        rhi::destroy_device(allocator(), device);
-        return nullptr;
-    }
-    return device;
 }
 
 // Two frames compared pixel for pixel, each on its own device: a device's global texture table has
