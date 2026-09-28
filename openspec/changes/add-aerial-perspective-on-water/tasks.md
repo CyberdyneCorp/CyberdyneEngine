@@ -29,5 +29,5 @@
 ## 5. Records
 
 - [x] 5.1 Name the new cases in the `Aerial perspective` coverage note and drop the shaded sea from what is not built
-- [ ] 5.2 Update the READMEs of `samples/10-world` and `tests/render`
-- [ ] 5.3 `openspec validate add-aerial-perspective-on-water --strict`
+- [x] 5.2 Update the READMEs of `samples/10-world` and `tests/render`
+- [x] 5.3 `openspec validate add-aerial-perspective-on-water --strict`

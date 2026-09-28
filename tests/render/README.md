@@ -210,8 +210,11 @@ the water is the mirrored dome alone) and lit.
 | near water is left as it was lit | from 2 m up, every water texel within 10 m moves by under 0.001 with the table on |
 | off, the frame is the frame before | with the table's `enabled` word zero, dark and lit, every texel is bit-identical to the frame drawn with water.slang's fragment stage pinned before this change (`water_before_aerial_perspective_spirv.h`); with it on, more than 2000 texels move |
 
-Each was seen red under a shader mutation, regenerated and restored:
-`openspec/changes/add-aerial-perspective-on-water/evidence/falsification.txt`.
+**Not yet run on a device.** The tolerances above (0.004, 3%, 0.001) are derived, not measured,
+and no case has yet been seen red: the mutation driver that regenerates the shader under six
+mutations, runs the suite and restores the sources md5-verified is
+`openspec/changes/add-aerial-perspective-on-water/evidence/mutate.py`, and its record,
+`evidence/falsification.txt`, is still to be written.
 
 ## The artefact's air — `render.vfx`, whose reference lives here
 
