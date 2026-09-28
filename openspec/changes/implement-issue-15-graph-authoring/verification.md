@@ -338,8 +338,17 @@ Feature scope is frozen at this point; PR #17 does not close #15. Open tasks 3.3
   covered by `tools/ci/test_recipes.py`. The linux-arm64 legs raced two SwiftPM builds on the shared
   swift-syntax prebuilts cache; `cy_swift_module.py` now serialises Swift commands on one lock.
   `quality` gained Pillow for `_ship-stills`, and `roadmap-status` checks out full history for
-  `m11d:port-touches-no-engine-layer`. All four failed identically on main. Once Windows compiled,
-  MSVC rejected a narrowing `std::ranges::fill` in `src/rendering/material/src/compiler.cpp`
-  (fixed). Slang's `fiddle` generator crashing with 0xC0000409 during the dependency build is not
-  caused by this branch: the `ci` workflow has no successful run in its history, and no Windows
-  build had reached compilation since the lock fallback landed.
+  `m11d:port-touches-no-engine-layer`. All four failed identically on main.
+- **Windows, once it compiled.** No Windows engine build had reached compilation since the lock
+  fallback landed (the `ci` workflow has no successful run in its history), so these surfaced one
+  at a time:
+  - MSVC rejected a narrowing `std::ranges::fill` in `src/rendering/material/src/compiler.cpp`
+    (C4244 under /WX; this branch's code).
+  - `src/save/src/inspect_text.cpp` spelled its printf check `[[gnu::format]]`, which MSVC warns
+    about (C5030 under /WX); it now uses `CY_PRINTF_FORMAT` (main's code).
+  - Slang's `fiddle` generator died with 0xC0000409. `cy__finalise_slang` re-enabled exceptions and
+    RTTI for Slang's targets only when `NOT MSVC`, so on Windows every Slang target compiled with
+    the engine's `/EHs-c- /GR- _HAS_EXCEPTIONS=0` (MSVC warned C4530) and fiddle's first exception
+    failed fast. On MSVC those items are now removed from each Slang target and `/EHsc /GR` added.
+  - Main's forward-fragment MSL outgrew the string-literal limit (clang 65,536, MSVC 16,380);
+    main's #50 now joins it from chunks, and this branch regenerates with that embedder.
