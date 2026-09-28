@@ -1,0 +1,98 @@
+# Mutations applied to samples/10-world/shaders/water.slang, water_spirv.h and water_msl.h
+# regenerated with the recipe in the shader's header, cy_test_render_world_water_aerial_
+# perspective rebuilt and run, and all three files restored; md5 of each verified identical
+# after restore. Suite: render.world_water_aerial_perspective, Development, Vulkan.
+#
+# g-water-ignores-the-table skips the table in water.slang altogether. The off case's count of
+# water texels that move with the table on does NOT catch it: 7501 still move, because the
+# refraction and reflection pictures are drawn through the air by world.slang. The formula, the
+# shoreline and the far-water cases do.
+
+== a-reflection-hazed-twice: water.slang: 'let surface = (fresnel * reflected) +' -> 'let surface = (fresnel * reflected * air.transmittance) +'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.353223, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1171: ERROR: CHECK( worst_water < 0.004F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 7.77424
+tests/render/test_world_water_aerial_perspective.cpp:1205: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is -0.220079,-0.517507,-1.05012 and the land's 0.0421445,0.0821712,0.155017; worst gap 7.77424; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1252: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0.000488281 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 0 with the table off, 7680 water texels with it on
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)
+
+== b-bed-hazed-twice: water.slang: 'if (airOn && bentDepth > 0.0)' -> 'if (false && airOn && bentDepth > 0.0)'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.0303904, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1171: ERROR: CHECK( worst_water < 0.004F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 0.955325
+tests/render/test_world_water_aerial_perspective.cpp:1205: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is 0.0419323,0.0928644,0.20643 and the land's 0.0421445,0.0821712,0.155017; worst gap 0.836471; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1252: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0.000488281 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 0 with the table off, 7680 water texels with it on
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)
+
+== c-in-scattering-under-the-mirror: water.slang: '((1.0 - fresnel) * air.inScattering);' -> 'air.inScattering;'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.113356, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1171: ERROR: CHECK( worst_water < 0.004F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 7.07904
+tests/render/test_world_water_aerial_perspective.cpp:1205: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is 0.337785,0.661166,1.25239 and the land's 0.0421445,0.0821712,0.155017; worst gap 7.07904; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1252: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0.000488281 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 0 with the table off, 7680 water texels with it on
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)
+
+== d-air-at-half-the-distance: water.slang: 'let air = cyAerialPerspectiveAt(table, world - push.eye.xyz);' -> 'let air = cyAerialPerspectiveAt(table, (world - push.eye.xyz) * 0.5);'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.0188991, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1171: ERROR: CHECK( worst_water < 0.004F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 0.504823
+tests/render/test_world_water_aerial_perspective.cpp:1205: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is 0.0208897,0.0461286,0.0870586 and the land's 0.0421445,0.0821712,0.155017; worst gap 0.504823; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1252: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0.000488281 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 0 with the table off, 7680 water texels with it on
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)
+
+== e-near-surface-dimmed: water.slang: '(own * air.transmittance)' -> '(own * min(air.transmittance, float3(0.99)))'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.000852227, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 0.0282254
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is 0.0419323,0.0834684,0.156226 and the land's 0.0421445,0.0821712,0.155017; worst gap 0.0282254; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0.00170898 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1290: ERROR: CHECK( worst < 0.001F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 0 with the table off, 7680 water texels with it on
+[doctest] test cases:  5 |  4 passed | 1 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)
+
+== f-off-path-changed: water.slang: 'float3 lit = lerp(refracted, reflected, fresnel);' -> 'float3 lit = lerp(refracted, reflected, fresnel * 0.999);'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.000669897, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 0.0576503
+tests/render/test_world_water_aerial_perspective.cpp:1205: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is 0.0419323,0.0834684,0.156226 and the land's 0.0421445,0.0821712,0.155017; worst gap 0.0576503; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1252: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0.000488281 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 4745 with the table off, 7680 water texels with it on
+tests/render/test_world_water_aerial_perspective.cpp:1322: ERROR: CHECK( off_differing == 0U ) is NOT correct!
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)
+
+== g-water-ignores-the-table: water.slang: 'let airOn = cyAerialPerspectiveEnabled(table);' -> 'let airOn = false;'
+exit 8 (RED)
+tests/render/test_world_water_aerial_perspective.cpp:1165: MESSAGE: 7680 water and 7680 land texels over the dark and the lit frame; worst gap from the processor's table, display values: water 0.0086331, land 0.000663996
+tests/render/test_world_water_aerial_perspective.cpp:1171: ERROR: CHECK( worst_water < 0.004F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1201: MESSAGE: 46 shoreline rows from 661.007 m to 11195.2 m: worst gap between the water's in-scattering and the land's beside it 0.564356
+tests/render/test_world_water_aerial_perspective.cpp:1205: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1246: MESSAGE: 12 rows beyond 2000 m; at 11195.2 m the water's in-scattering is 0,0.00917775,0.0675324 and the land's 0.0421445,0.0821712,0.155017; worst gap 0.564356; the nearest row's haze 0.0118955
+tests/render/test_world_water_aerial_perspective.cpp:1252: ERROR: CHECK( worst < 0.03F ) is NOT correct!
+tests/render/test_world_water_aerial_perspective.cpp:1285: MESSAGE: 2150 water texels within 10 m of an eye 2 m up: worst change with the table on 0 (display); the table's own haze there 0.000375032
+tests/render/test_world_water_aerial_perspective.cpp:1320: MESSAGE: texels differing from the water's shaders before this change: 0 with the table off, 7501 water texels with it on
+[doctest] test cases:  5 |  2 passed | 3 failed | 0 skipped
+restored (water.slang md5 d77fd412ef48249b9f21cd87a1aa4d7d, water_spirv.h md5 ce6a6cfbdb924bee9635f654093a5a30, water_msl.h md5 9b55884d5b57b06c77c812d20c7aecb8: identical)

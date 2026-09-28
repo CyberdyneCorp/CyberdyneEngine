@@ -30,6 +30,8 @@ MUTATIONS = [
      "(own * min(air.transmittance, float3(0.99)))"),
     ("f-off-path-changed", "float3 lit = lerp(refracted, reflected, fresnel);",
      "float3 lit = lerp(refracted, reflected, fresnel * 0.999);"),
+    ("g-water-ignores-the-table", "let airOn = cyAerialPerspectiveEnabled(table);",
+     "let airOn = false;"),
 ]
 
 
@@ -87,6 +89,11 @@ def main():
         "# regenerated with the recipe in the shader's header, cy_test_render_world_water_aerial_",
         "# perspective rebuilt and run, and all three files restored; md5 of each verified identical",
         "# after restore. Suite: render.world_water_aerial_perspective, Development, Vulkan.",
+        "#",
+        "# g-water-ignores-the-table skips the table in water.slang altogether. The off case's count of",
+        "# water texels that move with the table on does NOT catch it: 7501 still move, because the",
+        "# refraction and reflection pictures are drawn through the air by world.slang. The formula, the",
+        "# shoreline and the far-water cases do.",
         "",
     ]
     selected = sys.argv[1:]
@@ -101,8 +108,10 @@ def main():
             regenerate()
             result = build_and_test()
         finally:
+            # copyfile, not copy2: the restored files must be newer than the mutated build, or
+            # ninja keeps the mutated shader in the suite after the restore.
             for path in TOUCHED:
-                shutil.copy2(SAVE / path.name, path)
+                shutil.copyfile(SAVE / path.name, path)
         kept = [l for l in (result.stdout + result.stderr).splitlines()
                 if "MESSAGE:" in l or "ERROR:" in l or "test cases:" in l]
         state = "RED" if result.returncode != 0 else "GREEN"

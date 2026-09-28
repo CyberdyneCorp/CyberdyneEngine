@@ -1309,8 +1309,8 @@ CY_TEST_CASE("world water aerial perspective: off, the frame is the frame before
         const Shot shot{kHighEye, nullptr, lit, true};
         CY_REQUIRE(device.shoot(take.scene, take.air, shot, before));
         off_differing += differing(lit ? take.frames.lit_off : take.frames.dark_off, before);
-        // The land moves with the table on too, through world.slang; count only the water, so
-        // that a water shader which ignored the table would fail here.
+        // The claim is that the water moves; the land moves with the table on too, through
+        // world.slang, so count only the water.
         const Picture& on = lit ? take.frames.lit_on : take.frames.dark_on;
         for (u32 texel = 0; texel < kTexels; ++texel) {
             on_differing +=
