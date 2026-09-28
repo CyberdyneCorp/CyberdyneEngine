@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The one counter unwrap.cpp and unwrap_cache.cpp share: how many times xatlas has run. Private to
 // the importer; `uv2_unwrap_count()` in mesh.h is its public face.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // `lightmap` as a graph node: a level's bake description and its imported meshes in, one cooked
 // lightmap out. `rendering-global-illumination` — "Lightmap baking": "Baking SHALL be incremental
 // where possible: unchanged geometry and lighting SHALL reuse previous results."

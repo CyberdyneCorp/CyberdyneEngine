@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef CY_BUILD_SRC_LIGHTMAP_PRODUCER_H
 #define CY_BUILD_SRC_LIGHTMAP_PRODUCER_H
 // The `lightmap` producer. Private to tools/build/src/; `add_content_producers` registers it.

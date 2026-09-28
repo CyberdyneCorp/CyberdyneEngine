@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The unwrap, kept by geometry key. See `Uv2Cache` in mesh.h.
 //
 // NO XATLAS HERE. The cache stores and copies what `generate_uv2` produced; unwrap.cpp is still the

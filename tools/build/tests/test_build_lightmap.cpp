@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The lightmap bake as a node in the derivation graph. `integration.build_content`.
 //
 // `rendering-global-illumination` — "Lightmap baking": a cooked, content-keyed lightmap, so that
