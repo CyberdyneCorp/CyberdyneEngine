@@ -2776,6 +2776,7 @@ void Stage::close() noexcept {
         (void)device.wait_idle();
         // THE FRAME'S OWN OBJECTS FIRST, and before the device is destroyed: both hold device
         // handles and both state the same contract every device-owning object in this tree does.
+        device_->fog.destroy();
         device_->bindings.shutdown();
         device_->pipelines.shutdown();
         if (!device_->output.is_null()) {
