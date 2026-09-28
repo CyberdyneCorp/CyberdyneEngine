@@ -325,8 +325,8 @@ public:
                 device_.destroy_shader_module(module);
             }
         }
-        for (rhi::BufferHandle buffer :
-             {vertices_, colours_, field_, placement_, placeholder_, readback_, aerial_off_}) {
+        for (rhi::BufferHandle buffer : {vertices_, colours_, field_, placement_, placeholder_,
+                                         readback_, aerial_off_, decals_off_}) {
             if (!buffer.is_null()) {
                 device_.destroy_buffer(buffer);
             }
@@ -378,6 +378,7 @@ private:
     rhi::BufferHandle placeholder_;
     rhi::BufferHandle readback_;
     rhi::BufferHandle aerial_off_;
+    rhi::BufferHandle decals_off_;
     u64 field_bytes_ = 0;
 };
 
@@ -435,7 +436,7 @@ cy::Expected<rhi::BufferHandle, cy::Error> WorldPass::buffer(const char* name, u
 }
 
 cy::Status WorldPass::bind(rhi::BufferHandle field) noexcept {
-    rhi::DescriptorWrite writes[3] = {};
+    rhi::DescriptorWrite writes[4] = {};
     writes[0].binding = 0;
     writes[0].kind = rhi::DescriptorKind::StorageBuffer;
     writes[0].buffer = field;
@@ -445,7 +446,10 @@ cy::Status WorldPass::bind(rhi::BufferHandle field) noexcept {
     writes[2].binding = 2;
     writes[2].kind = rhi::DescriptorKind::StorageBuffer;
     writes[2].buffer = aerial_off_;
-    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 3));
+    writes[3].binding = 3;
+    writes[3].kind = rhi::DescriptorKind::StorageBuffer;
+    writes[3].buffer = decals_off_;
+    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 4));
 }
 
 cy::Expected<rhi::ShaderModuleHandle, cy::Error> WorldPass::module(
@@ -513,8 +517,8 @@ cy::Status WorldPass::prepare(const ShadowField& widest) noexcept {
     // perspective table for the fragment stage, and the 128-byte push block for both stages. A
     // layout that disagreed with the shader is a validation error the fixture counts. The table is
     // bound switched off throughout: this suite is about the cloud shadow alone.
-    rhi::DescriptorBinding bindings[3] = {};
-    for (u32 index = 0; index < 3; ++index) {
+    rhi::DescriptorBinding bindings[4] = {};
+    for (u32 index = 0; index < 4; ++index) {
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
@@ -522,7 +526,7 @@ cy::Status WorldPass::prepare(const ShadowField& widest) noexcept {
     }
     rhi::DescriptorSetLayoutDescription set_description;
     set_description.name = "world cloud shadow";
-    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 3);
+    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 4);
     auto set_layout = device_.create_descriptor_set_layout(set_description);
     if (!set_layout) {
         return cy::make_unexpected(set_layout.error());
@@ -569,7 +573,12 @@ cy::Status WorldPass::prepare(const ShadowField& widest) noexcept {
     // `sky::pack_aerial_perspective()`'s header with its `enabled` word zero: five float4s.
     auto aerial_off = buffer("aerial perspective off", sizeof(f32) * 5 * 4,
                              rhi::BufferUsage::Storage, rhi::MemoryUse::Upload);
-    if (!vertices || !colours || !field || !placement || !placeholder || !readback || !aerial_off) {
+    // Binding 3: the decal table, empty — zeroes are no table, and the lit path leaves every
+    // surface as it was. The sample binds the same until a frame with its ground marker writes one.
+    auto decals_off = buffer("decal table off", sizeof(u32) * 24, rhi::BufferUsage::Storage,
+                             rhi::MemoryUse::Upload);
+    if (!vertices || !colours || !field || !placement || !placeholder || !readback || !aerial_off ||
+        !decals_off) {
         return cy::fail(cy::ErrorCode::OutOfMemory, "a world pass buffer did not allocate");
     }
     vertices_ = *vertices;
@@ -579,6 +588,8 @@ cy::Status WorldPass::prepare(const ShadowField& widest) noexcept {
     placeholder_ = *placeholder;
     readback_ = *readback;
     aerial_off_ = *aerial_off;
+    decals_off_ = *decals_off;
+    std::memset(device_.buffer_mapped_pointer(decals_off_), 0, sizeof(u32) * 24);
     field_bytes_ = widest.image.words.size() * sizeof(u32);
     std::memset(device_.buffer_mapped_pointer(placeholder_), 0, 16 * sizeof(u32));
     std::memset(device_.buffer_mapped_pointer(aerial_off_), 0, sizeof(f32) * 5 * 4);

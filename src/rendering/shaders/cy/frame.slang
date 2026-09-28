@@ -100,6 +100,7 @@ module frame;
 
 import cy.brdf;
 import cy.cluster;
+import cy.decal;
 import cy.globals;
 import cy.light;
 import cy.material;
@@ -199,12 +200,22 @@ public struct CyFrameData
     /// x: the scale the stored coefficients were divided by. y: the normal offset of a query, and
     /// z: the visibility test's slack, both in metres. w: reserved.
     public float4 probeVolumeParams;
+    /// The decal table, appended for the reason `materialTextures` gives. x: the frame texture slot
+    /// of `decals::DecalTableTexture`, or `kCyNoMaterialTexture` — the default, which draws no
+    /// decals and is the frame as it was. y: the texture's rows. z: `kCyDecalListsInTable` and
+    /// `kCyDecalWalkAll`. w: reserved.
+    public uint4 decalControl;
 };
 
 /// `softShadowControl.x`'s bits. `cy::rendering::pipeline::kSoftShadowPcss` and
 /// `kSoftShadowContact` are the same numbers.
 public static const uint kCySoftShadowPcss = 1u;
 public static const uint kCySoftShadowContact = 2u;
+
+/// `decalControl.z`'s bits. `cy::rendering::decals::kDecalListsInTable` and `kDecalWalkAll` are the
+/// same numbers.
+public static const uint kCyDecalListsInTable = 1u;
+public static const uint kCyDecalWalkAll = 2u;
 
 /// "This material has no texture in this slot", and also "this frame reads no such slot".
 ///
@@ -764,14 +775,100 @@ float3 probeVolumeAmbient(float3 position, float3 normal, float3 flat)
     return lerp(flat, volume, coverage);
 }
 
+// --- Decals -------------------------------------------------------------------------------------
+//
+// `cy.decal` does the work; what is here is where the table and the lists come from. The table is a
+// texture in the frame's own texture table, one word per texel, and a decal's rank is found in the
+// cluster lists the light loop reads — the header of type 1, `ClusterElementType::Decal` — because
+// the assembly assigns decals in the same pass as lights, as their own element type.
+
+/// The table, read out of the frame's texture table at the slot `decalControl.x` names.
+struct CyFrameDecalSource : ICyDecalSource
+{
+    uint word(uint index)
+    {
+        let uv = cyDecalWordUv(index, cyFrame.decalControl.y);
+        return cyDecalWordFromTexel(cyMaterialSampleTextureLevel(cyFrame.decalControl.x, uv, 0.0));
+    }
+    float mask(uint slot, float2 uv)
+    {
+        return cyMaterialSampleTextureLevel(slot, uv, 0.0).a;
+    }
+};
+
+/// Apply the decals that reach this pixel to its surface and its shading normal, BEFORE the light
+/// loop sees either.
+void applyFrameDecals(inout Surface surface, inout float3 normal, float3 relativePosition,
+                      float2 fragmentCentre, uint receiverChannels)
+{
+    CyFrameDecalSource source;
+    CyDecalReceiver receiver;
+    receiver.relativePosition = relativePosition;
+    receiver.geometricNormal = normal;
+    receiver.eyeDistance = length(relativePosition);
+    receiver.channels = receiverChannels;
+    CyDecalSurface decalled;
+    decalled.albedo = surface.albedo;
+    decalled.roughness = surface.roughness;
+    decalled.metallic = surface.metallic;
+    decalled.emission = surface.emission;
+    decalled.normal = normal;
+
+    let flags = cyFrame.decalControl.z;
+    if ((flags & kCyDecalWalkAll) != 0u)
+    {
+        cyApplyAllDecals(source, receiver, decalled);
+    }
+    else if ((flags & kCyDecalListsInTable) != 0u)
+    {
+        cyApplyTableDecals(source, receiver, fragmentCentre, decalled);
+    }
+    else if (cyFrame.counts.w != 0 && cyFrame.clusterGrid.dimensions.z != 0)
+    {
+        let count = cyDecalCount(source);
+        let extent = uint2(cyFrame.extentAndInverse.xy);
+        let coord = clusterCoordOf(cyFrame.clusterGrid, uint2(fragmentCentre), extent,
+                                   viewDepthOf(relativePosition));
+        let cluster = clusterIndexOf(cyFrame.clusterGrid, coord);
+        let header = cyClusterHeaders[cluster * cyFrame.counts.z + 1u];
+        for (uint slot = 0; slot < header.y; ++slot)
+        {
+            let rank = cyClusterIndices[header.x + slot];
+            if (rank < count)
+            {
+                cyApplyDecal(source, rank, receiver, decalled);
+            }
+        }
+    }
+    else
+    {
+        // No grid: the declared fallback the light loop takes, for the same reason.
+        cyApplyAllDecals(source, receiver, decalled);
+    }
+
+    surface.albedo = decalled.albedo;
+    surface.roughness = clamp(decalled.roughness, 0.02, 1.0);
+    surface.metallic = saturate(decalled.metallic);
+    surface.emission = decalled.emission;
+    normal = decalled.normal;
+}
+
 [shader("fragment")]
 public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
     let draw = cyDrawInstances[input.drawIndex];
     let instance = cyInstances[draw.instanceSlot];
-    let surface = surfaceOf(draw.material, instance.tint.rgb, input.uv);
+    var surface = surfaceOf(draw.material, instance.tint.rgb, input.uv);
 
-    let normal = normalize(input.normal);
+    var normal = normalize(input.normal);
+    // DECALS CHANGE THE SURFACE BEFORE IT IS LIT, so the light loop, the shadow and the ambient
+    // occlusion below all see the decal as part of the receiver. No slot, the default, and nothing
+    // here runs.
+    if (cyFrame.decalControl.x != kCyNoMaterialTexture)
+    {
+        applyFrameDecals(surface, normal, input.relativePosition, input.position.xy,
+                         draw.layerMask);
+    }
     // Camera-relative, so the camera is at the origin and the direction to it is the negated
     // position. There is nowhere in this file to put a world-space camera, which is the point.
     let viewDir = normalize(-input.relativePosition);

@@ -174,6 +174,11 @@ add_subdirectory(particles)
 # is read after both.
 add_subdirectory(light_probes)
 
+# DECALS IN THE FRAME. `rendering-lighting-and-shadows`' projected box decals as a table the forward
+# pass reads, ranked and clustered by the assembly beside the lights, applied to the surface before
+# it is lit. It joins cy::rendering-lighting and cy::rendering-pipeline, so it is read after both.
+add_subdirectory(decals)
+
 # EXPOSURE AND COLOUR GRADING ON THE DEVICE. `rendering-post-processing`'s steps 6, 10, 11 and 12:
 # the luminance histogram and its adaptation as compute dispatches, and the graded resolve — exposure,
 # the tone curve and one lookup into a baked grading table — as the frame's post-process callback.
