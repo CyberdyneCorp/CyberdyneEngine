@@ -31,6 +31,7 @@
 - [x] 3.2 Compile vertex expressions and report geometry-source variants; refuse unsupported paths in editor and cook with tests.
 - [ ] 3.3 Apply offset consistently to visible geometry, shadows, and motion vectors; compare with CPU-displaced reference geometry.
 - [ ] 3.4 Preview vertex graphs on the material mesh and scene, and add transaction/MCP parity tests.
+- [ ] 3.5 Bind the environment-field table on native Metal (the `CyFrameGlobalSet` and editor material-texture argument buffers) and restore the wind-field image comparison in `smoke.editor_material_metal`, which currently asserts the refusal.
 
 ## 4. Acceptance evidence
 
