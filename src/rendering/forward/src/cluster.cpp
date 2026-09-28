@@ -45,6 +45,9 @@ namespace {
     if (distance_squared_to(bounds, element.view_position) > element.radius * element.radius) {
         return false;
     }
+    if (element.oriented_box) {
+        return oriented_box_touches(element.view_position, element.box_axes, bounds);
+    }
     if (element.cone_cos >= 1.0F) {
         return true;
     }
@@ -201,6 +204,41 @@ Aabb cluster_bounds(const ClusterGrid& grid, u32 x, u32 y, u32 slice, f32 tan_ha
     // produces an empty box and a frame with no lights, which is why it is written out.
     return Aabb::from_min_max(Vec3{math::min(min_x, max_x), math::min(min_y, max_y), -far_depth},
                               Vec3{math::max(min_x, max_x), math::max(min_y, max_y), -near_depth});
+}
+
+bool oriented_box_touches(Vec3 center, const Vec3 (&half_axes)[3], const Aabb& bounds) noexcept {
+    const Vec3 box_center = bounds.center();
+    const Vec3 half = bounds.half_extents();
+    const Vec3 offset = center - box_center;
+    // The AABB's own three axes: the oriented box's extent along world axis i is the sum of its
+    // half-axes' absolute components on it.
+    const f32 offsets[3] = {offset.x, offset.y, offset.z};
+    const f32 halves[3] = {half.x, half.y, half.z};
+    for (u32 axis = 0; axis < 3U; ++axis) {
+        const auto component = [axis](Vec3 v) noexcept {
+            return axis == 0U ? v.x : (axis == 1U ? v.y : v.z);
+        };
+        const f32 reach = std::fabs(component(half_axes[0])) + std::fabs(component(half_axes[1])) +
+                          std::fabs(component(half_axes[2]));
+        if (std::fabs(offsets[axis]) > reach + halves[axis]) {
+            return false;
+        }
+    }
+    // The oriented box's three axes: its own extent along one is that half-axis' length, and the
+    // AABB's is its half-extents projected onto the unit axis.
+    for (const Vec3 axis : half_axes) {
+        const f32 extent = length(axis);
+        if (extent <= 0.0F) {
+            continue;
+        }
+        const Vec3 unit = axis * (1.0F / extent);
+        const f32 aabb_reach = (half.x * std::fabs(unit.x)) + (half.y * std::fabs(unit.y)) +
+                               (half.z * std::fabs(unit.z));
+        if (std::fabs(dot(offset, unit)) > extent + aabb_reach) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool element_is_cone(f32 outer_half_angle_radians) noexcept {

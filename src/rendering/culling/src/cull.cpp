@@ -93,6 +93,7 @@ struct CullContext {
                        : screen_coverage(entry.radius, out.view_depth, view.fov_y_radians);
     out.importance = entry.importance;
     out.flags = flags;
+    out.layer_mask = index.layer_masks()[slot];
     return true;
 }
 

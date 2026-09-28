@@ -2,6 +2,7 @@
 
 #include <cy/core/math/math.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cy::rendering {
@@ -204,35 +205,32 @@ void DecalBudget::report_screen_coverage(u64 id, f32 coverage) noexcept {
     }
 }
 
-u32 DecalBudget::application_order(Span<u32> out) const noexcept {
-    const auto count = static_cast<u32>(decals_.size());
-    if (out.size() < decals_.size()) {
+u32 decal_application_order(Span<const DecalInstance> decals, Span<u32> out) noexcept {
+    const auto count = static_cast<u32>(decals.size());
+    if (out.size() < decals.size()) {
         return 0;
     }
     for (u32 index = 0; index < count; ++index) {
         out[index] = index;
     }
-    // Insertion sort on (sort_order, id). Both are the decal's own, so the order is total and two
-    // runs of one frame apply the decals identically — which is what "a later decal can cover an
-    // earlier one" needs in order to be a statement about content rather than about luck.
-    for (u32 index = 1; index < count; ++index) {
-        const u32 candidate = out[index];
-        u32 slot = index;
-        while (slot > 0) {
-            const DecalInstance& previous = decals_[out[slot - 1U]];
-            const DecalInstance& current = decals_[candidate];
-            const bool after =
-                previous.sort_order > current.sort_order ||
-                (previous.sort_order == current.sort_order && previous.id > current.id);
-            if (!after) {
-                break;
-            }
-            out[slot] = out[slot - 1U];
-            --slot;
+    // Sorted on (sort_order, id). Both are the decal's own and `id` is unique, so the comparison is
+    // a TOTAL order and any correct sort produces the one permutation — two runs of one frame apply
+    // the decals identically, which is what "a later decal can cover an earlier one" needs in order
+    // to be a statement about content rather than about luck. `std::sort` rather than the insertion
+    // sort this was, because the requirement's own scale is tens of thousands of impact decals.
+    std::sort(out.begin(), out.begin() + count, [decals](u32 left, u32 right) noexcept {
+        const DecalInstance& a = decals[left];
+        const DecalInstance& b = decals[right];
+        if (a.sort_order != b.sort_order) {
+            return a.sort_order < b.sort_order;
         }
-        out[slot] = candidate;
-    }
+        return a.id < b.id;
+    });
     return count;
+}
+
+u32 DecalBudget::application_order(Span<u32> out) const noexcept {
+    return decal_application_order(decals_.span(), out);
 }
 
 }  // namespace cy::rendering

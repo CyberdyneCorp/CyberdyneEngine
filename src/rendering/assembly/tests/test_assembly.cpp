@@ -928,3 +928,73 @@ CY_TEST_CASE("a frame lent a job system integrates its sky on it, and gets the s
     lent.set_jobs(nullptr);
     jobs.shutdown();
 }
+
+CY_TEST_CASE(
+    "decals are assigned beside the lights as their own element type, in their own order") {
+    // `rendering-lighting-and-shadows` — "Decals SHALL participate in cluster assignment as a
+    // distinct element type". Before decals reached the frame the Decal header of every cluster was
+    // empty whatever the view held, because nothing handed the assembly a decal.
+    FrameAssembly assembly(allocator());
+    CY_REQUIRE(assembly.initialize(make_description()).has_value());
+    SpatialIndex index(allocator());
+
+    cy::rendering::DecalInstance decals[3];
+    const Vec3 centres[3] = {Vec3{0.0F, -1.0F, -6.0F}, Vec3{1.5F, -1.0F, -8.0F},
+                             Vec3{-1.0F, -1.0F, -5.0F}};
+    const cy::i32 orders[3] = {4, -2, 4};
+    for (u32 which = 0; which < 3U; ++which) {
+        decals[which].id = 10U - which;
+        decals[which].center = centres[which];
+        decals[which].half_extent = Vec3{0.5F, 0.5F, 0.1F};
+        decals[which].axis_x = Vec3{1.0F, 0.0F, 0.0F};
+        decals[which].axis_y = Vec3{0.0F, 0.0F, -1.0F};
+        decals[which].axis_z = Vec3{0.0F, 1.0F, 0.0F};
+        decals[which].sort_order = orders[which];
+    }
+    // Decal 2 is in no channel: counted, and in no list.
+    decals[2].channels = 0;
+
+    const cy::render::LightDescription lights[] = {point_light(Vec3{0.0F, 0.0F, -6.0F}, 2)};
+    AssemblyView view = make_view({lights, 1});
+    view.decals = cy::Span<const cy::rendering::DecalInstance>(decals, 3);
+    RenderGraph graph(allocator());
+    AssemblyReport report;
+    CY_REQUIRE(assembly.assemble(index, view, FrameSinks{}, graph, report).has_value());
+
+    CY_CHECK_EQ(report.decals, 3U);
+    // Ascending sort order, ties on id: decal 1 (order -2), then decal 2 (order 4, id 8), then
+    // decal 0 (order 4, id 10).
+    const cy::Span<const u32> order = assembly.decal_order();
+    CY_REQUIRE_EQ(order.size(), 3U);
+    CY_CHECK_EQ(order[0], 1U);
+    CY_CHECK_EQ(order[1], 2U);
+    CY_CHECK_EQ(order[2], 0U);
+
+    // Every decal list names ranks 0 and 2 — the two decals with a channel — ascending, and never
+    // rank 1; the light lists name the light and nothing else.
+    const cy::rendering::ClusterAssignment& clusters = assembly.clusters();
+    u32 decal_entries = 0;
+    bool saw[3] = {false, false, false};
+    for (u32 cluster = 0; cluster < report.clusters.clusters; ++cluster) {
+        const cy::rendering::ClusterHeader& light =
+            clusters.headers[(cluster * cy::rendering::kClusterElementTypeCount) + 0U];
+        const cy::rendering::ClusterHeader& decal =
+            clusters.headers[(cluster * cy::rendering::kClusterElementTypeCount) + 1U];
+        for (u32 entry = 0; entry < light.count; ++entry) {
+            CY_CHECK_EQ(clusters.indices[light.offset + entry], 0U);
+        }
+        for (u32 entry = 0; entry < decal.count; ++entry) {
+            const u32 rank = clusters.indices[decal.offset + entry];
+            CY_REQUIRE(rank < 3U);
+            saw[rank] = true;
+            if (entry > 0U) {
+                CY_CHECK_LT(clusters.indices[decal.offset + entry - 1U], rank);
+            }
+        }
+        decal_entries += decal.count;
+    }
+    CY_CHECK_EQ(report.decal_assignments, decal_entries);
+    CY_CHECK(saw[0]);
+    CY_CHECK_FALSE(saw[1]);
+    CY_CHECK(saw[2]);
+}

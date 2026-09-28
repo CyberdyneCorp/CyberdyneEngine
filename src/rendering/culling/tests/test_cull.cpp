@@ -10,6 +10,7 @@
 #include <cy/core/memory/frame_memory.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/culling/cull.h>
+#include <cy/rendering/culling/gpu_bridge.h>
 
 namespace {
 
@@ -387,4 +388,41 @@ CY_TEST_CASE("the result lists are the frame arena's, and resetting it releases 
     // The frame ends. Not one destructor is what releases this — the reset is.
     cy::reset_frame_arena();
     CY_CHECK_EQ(cy::frame_arena().used(), 0U);
+}
+
+CY_TEST_CASE("both cull paths carry a survivor's flags and layer mask, and agree about them") {
+    // `apply_gpu_cull` ROUTED on the spatial flags and then dropped them: every survivor of a
+    // device cull reached `build_draw_list` with a flags word of zero — not skinned, not a shadow
+    // receiver — and an all-ones layer mask, while `cull_view` carried the flags. The header calls
+    // the two paths interchangeable, so the comparison is the check: one instance through both.
+    SpatialIndex index(allocator());
+    SpatialEntry character = make_entry({0, 0, -5}, 1);
+    character.layer_mask = 1U << 1U;
+    character.flags |= cy::rendering::kSpatialSkinned;
+    const cy::Expected<cy::u32, cy::Error> slot = index.insert(character);
+    CY_REQUIRE(slot.has_value());
+
+    CullWorkspace workspace(allocator());
+    CullResults cpu(allocator());
+    CY_REQUIRE(cull_view(index, make_view(), CullOptions{}, workspace, cpu).has_value());
+    CY_REQUIRE_EQ(cpu.opaque.size(), 1U);
+    CY_CHECK_EQ(cpu.opaque[0].flags, index.flags()[*slot]);
+    CY_CHECK((cpu.opaque[0].flags & cy::rendering::kSpatialSkinned) != 0U);
+    CY_CHECK_EQ(cpu.opaque[0].layer_mask, 1U << 1U);
+
+    cy::rendering::GpuCullPublication published(allocator());
+    CY_REQUIRE(cy::rendering::publish_gpu_cull_scene(index, published).has_value());
+    cy::render::culling::GpuDrawPayload payload;
+    payload.instance_slot = character.gpu_slot;
+    payload.lod_fade_to = cy::render::culling::kNoLodFade;
+    payload.view_depth = 5.0F;
+    const cy::render::culling::GpuCullCounters counters{};
+    CullResults gpu(allocator());
+    CY_REQUIRE(cy::rendering::apply_gpu_cull(
+                   index, published,
+                   cy::Span<const cy::render::culling::GpuDrawPayload>(&payload, 1), counters, gpu)
+                   .has_value());
+    CY_REQUIRE_EQ(gpu.opaque.size(), 1U);
+    CY_CHECK_EQ(gpu.opaque[0].flags, cpu.opaque[0].flags);
+    CY_CHECK_EQ(gpu.opaque[0].layer_mask, cpu.opaque[0].layer_mask);
 }
