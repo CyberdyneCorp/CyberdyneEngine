@@ -55,10 +55,9 @@
 namespace cy {
 namespace {
 
-// What the three undefined macros stood for. Named rather than inlined so that a reader who greps
-// for `XNone` finds this comment and not a bare 0.
+// What `None` stood for, the one undefined macro this file still needs. Named rather than inlined
+// so that a reader who greps for `XNone` finds this comment and not a bare 0.
 constexpr unsigned long kXNone = 0UL;
-constexpr int kXSuccess = 0;
 
 Display* as_display(void* handle) {
     return static_cast<Display*>(handle);
