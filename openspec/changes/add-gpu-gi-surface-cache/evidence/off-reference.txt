@@ -1,0 +1,33 @@
+The frame with the device GI off. Development build (build/gpugi), Vulkan on the RTX 5060.
+
+This slice changes no frame shader: `git diff origin/main --stat -- '*.slang'` lists only
+src/rendering/gi_gpu/shaders/, which nothing in the forward frame compiles or binds, and
+cy::rendering-gi-gpu is linked by render.gi_gpu alone. So the frame "with the feature off" is the
+frame main draws, and the suites that hold it to references drawn from main's shaders all pass in
+both profiles (build/gpugi and build/gpugi-debug):
+
+  render.pipeline, render.golden, render.golden_backends, render.frames, render.sky_times_of_day,
+  render.light_probes, unit.render_forward, integration.render_pipeline,
+  integration.render_sky_light, integration.rendering_gi_sky, unit.render_gi,
+  integration.render_gi_pipeline, integration.render_gi_fallback, integration.render_gi_signals,
+  integration.render_gi_volume, render.gi_gpu — 16 of 16 passed.
+
+What the slice does change on the host is cy::rendering-gi: the field's journal, the page revision,
+`SurfaceCache::select` lifted out of `service`, the shading seam, and the lookup's tie rule. With no
+shading backend installed the host GI must compute exactly what main computed. That was checked by
+compiling one probe twice — once against main's src/rendering/gi (git archive of origin/main) and
+once against this branch's — both linked to the same core libraries of build/gpugi, -O2:
+
+  twelve frames of IlluminationSystem::update over the host suites' room (gi_support), with an
+  invalidation at frame six; twenty budgeted SurfaceCache::update frames (budget 37, max age 5)
+  over a half-metre room with an invalidation at frame nine; then 512 sphere traces of the field
+  and a SurfaceCache::radiance_at at every hit. FNV-1a over every page's position, direct,
+  accumulated, error, last update frame and flags after every frame, every update report, and every
+  trace and lookup answer.
+
+  main    pages 1229d4ef11b1f433  all b21d468d86484091  pages=342
+  branch  pages 1229d4ef11b1f433  all b21d468d86484091  pages=342
+
+Byte-identical. The one intended host behaviour change — a lookup exactly on two coincident cards
+now goes to the better-aligned one instead of the first the index visits — is a bug fix with its own
+regression case, and no lookup in this workload lands on such a tie.

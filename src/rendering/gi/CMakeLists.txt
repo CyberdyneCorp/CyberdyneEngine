@@ -26,6 +26,7 @@ cy_add_module(
     SOURCES
         src/bake.cpp
         src/budget.cpp
+        src/card_lighting.cpp
         src/distance_field.cpp
         src/irradiance_volume.cpp
         src/proxy_scene.cpp

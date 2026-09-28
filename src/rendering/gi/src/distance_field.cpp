@@ -50,9 +50,11 @@ namespace {
     return math::lerp(math::lerp(c00, c10, ty), math::lerp(c01, c11, ty), tz);
 }
 
+}  // namespace
+
 /// A deterministic cosine-weighted hemisphere sequence. Deterministic because a sky visibility term
 /// that changes when nothing changed makes a golden image a coin toss.
-[[nodiscard]] Vec3 hemisphere_direction(Vec3 normal, u32 index, u32 count) noexcept {
+Vec3 hemisphere_direction(Vec3 normal, u32 index, u32 count) noexcept {
     // The golden-ratio spiral: uniform in the projected disc, and stable under any count.
     constexpr f32 kGolden = 2.39996323F;
     const f32 offset = (static_cast<f32>(index) + 0.5F) / static_cast<f32>(count);
@@ -69,8 +71,6 @@ namespace {
     return normalized_or((tangent * x) + (bitangent * y) + (normal * z), normal);
 }
 
-}  // namespace
-
 f32 box_distance(Vec3 point, Vec3 half_extents) noexcept {
     const Vec3 q{std::abs(point.x) - half_extents.x, std::abs(point.y) - half_extents.y,
                  std::abs(point.z) - half_extents.z};
@@ -80,6 +80,38 @@ f32 box_distance(Vec3 point, Vec3 half_extents) noexcept {
 }
 
 DistanceField::DistanceField() noexcept = default;
+
+void DistanceField::decode_brick_key(u64 key, i32 (&brick)[3]) noexcept {
+    brick[0] = static_cast<i32>((key >> 42U) & 0x1FFFFFU) - (1 << 20);
+    brick[1] = static_cast<i32>((key >> 21U) & 0x1FFFFFU) - (1 << 20);
+    brick[2] = static_cast<i32>(key & 0x1FFFFFU) - (1 << 20);
+}
+
+void DistanceField::record_change(const Level& level, i32 bx, i32 by, i32 bz,
+                                  const Brick& brick) noexcept {
+    FieldBrickChange change;
+    change.level = static_cast<u32>(&level - levels_.data());
+    change.brick[0] = bx;
+    change.brick[1] = by;
+    change.brick[2] = bz;
+    change.slot = brick.empty ? kEmptySlot : brick.slot;
+    (void)changes_.push_back(change);
+}
+
+FieldLevelView DistanceField::level_view(u32 level) const noexcept {
+    FieldLevelView view;
+    if (level >= levels_.size()) {
+        return view;
+    }
+    const Level& source = levels_[level];
+    view.voxel_size = source.voxel_size;
+    view.brick_size = source.brick_size;
+    view.far_distance = source.far_distance;
+    view.origin_brick[0] = source.origin_brick[0];
+    view.origin_brick[1] = source.origin_brick[1];
+    view.origin_brick[2] = source.origin_brick[2];
+    return view;
+}
 
 Status DistanceField::configure(const ClipmapSettings& settings) noexcept {
     if (settings.levels == 0 || settings.resolution < kBrickEdge ||
@@ -371,9 +403,11 @@ void DistanceField::retire_departed(Level& level, i32 half, ScrollReport& report
     Array<u64> departed;
     for (const auto& entry : level.bricks) {
         const u64 key = entry.key;
-        const i32 kx = static_cast<i32>((key >> 42U) & 0x1FFFFFU) - (1 << 20);
-        const i32 ky = static_cast<i32>((key >> 21U) & 0x1FFFFFU) - (1 << 20);
-        const i32 kz = static_cast<i32>(key & 0x1FFFFFU) - (1 << 20);
+        i32 brick[3] = {0, 0, 0};
+        decode_brick_key(key, brick);
+        const i32 kx = brick[0];
+        const i32 ky = brick[1];
+        const i32 kz = brick[2];
         const bool inside =
             kx >= level.origin_brick[0] && kx < level.origin_brick[0] + (half * 2) &&
             ky >= level.origin_brick[1] && ky < level.origin_brick[1] + (half * 2) &&
@@ -418,6 +452,7 @@ void DistanceField::visit_brick(Level& level, i32 bx, i32 by, i32 bz,
     if (Expected<Brick*, Error> stored = level.bricks.insert(key, brick); !stored) {
         return;
     }
+    record_change(level, bx, by, bz, brick);
     report.bricks_solved += 1;
     if (brick.empty) {
         report.bricks_empty += 1;
@@ -427,6 +462,8 @@ void DistanceField::visit_brick(Level& level, i32 bx, i32 by, i32 bz,
 ScrollReport DistanceField::scroll_to(Vec3 camera) noexcept {
     ScrollReport report;
     const i32 half = static_cast<i32>(settings_.resolution / kBrickEdge) / 2;
+    changes_.clear();
+    generation_ += 1;
 
     for (Level& level : levels_) {
         level.origin_brick[0] = floor_div(camera.x, level.brick_size) - half;

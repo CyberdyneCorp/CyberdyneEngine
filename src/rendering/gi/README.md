@@ -13,7 +13,8 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `scene.h` | `GiMode`, `RadianceSource`, `RadianceSample`, `Surfel`, the error targets, `select_detail_level`, and `GiScene` — cell-scoped ingestion, eviction and attributable invalidation |
 | `lighting.h` | the three seams the subsystems reach each other through — `Occluder`, `IndirectSource`, `RadianceLookup` — plus `SceneTracer`, `SceneHit`, `GiLight` and the analytic `SkyTerm` |
 | `distance_field.h` | camera-centred sparse clipmaps of bricks, per-asset fields composited by transform, sphere tracing and sky visibility |
-| `surface_cache.h` | shaded radiance per surface card, the budgeted prioritised update, and the one line the multi-bounce approximation is |
+| `surface_cache.h` | shaded radiance per surface card, the budgeted prioritised update (`SurfaceCache::select`), the one line the multi-bounce approximation is, and `SurfaceShadingBackend` — the seam a device shades the selected pages behind |
+| `card_lighting.h` | the host oracle of the device surface cache: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot` and `CardGather` (issue #35) |
 | `irradiance_volume.h` | a regular grid of SH L1 probes captured through the three seams, trilinear sampling weighted by validity, backface and a per-axis free-distance test, the update policy, and the texel layout `cy/frame.slang` reads |
 | `proxy_scene.h` | `BoxProxyScene`: axis-aligned proxy boxes as a `SceneTracer`, `Occluder` and `RadianceLookup`, so a volume can be captured from blockout geometry |
 | `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, and the scheduler that guarantees progress |
@@ -105,6 +106,22 @@ truncation and not sampling), colour bleeding near a red wall and not 14 m from 
 visibility term stops, and the update policy. It is not dynamic GI: see `irradiance_volume.h` for
 what is not covered.
 
+## On the device: the first slice (issue #35, stages 1 and 2)
+
+`src/rendering/gi_gpu/` (`cy::rendering-gi-gpu`) holds the distance field and the surface cards on
+a device and shades the cards in compute. This module stays device-free and gained only what that
+needs from the host side: the field's change journal (`generation`, `last_changes`, `visit_bricks`),
+a `revision` per surface page, the scheduler as a shared function (`SurfaceCache::select`), the
+`SurfaceShadingBackend` seam `IlluminationSystem::set_surface_shading` installs, and
+`card_lighting.h` — the host functions the dispatches transcribe, which `render.gi_gpu` holds them
+to. Nothing is composited into the frame yet; see that module's README for what is measured.
+
+Two host changes came out of running it. `CardGather` lifts each ray's origin one voxel off the card
+before leaving at `t_min`, so a grazing ray cannot be answered by the surface it leaves. And every
+card lookup — `SurfaceCache::radiance_at`, `CardSnapshot::find` and the shader — ranks candidates
+with `card_lookup_prefers`: score, then alignment, then handle. Before it, a hit exactly on two
+coincident cards (an edge) scored zero against both and went to whichever the index visited first.
+
 ## What is here at Working, and what is not
 
 **Lightmap atlases are built, one module up** (M11.e, #36): `src/rendering/lightmap_bake/` packs a
@@ -121,6 +138,7 @@ The **hardware tier executes on the CPU** for the reason above.
 
 ## What it does not depend on
 
-No device, no render graph, no shader. Every tier is arithmetic over the GI scene, the field and the
+No device, no render graph, no shader — the device half is `src/rendering/gi_gpu/`, which depends on
+this module and not the other way round. Every tier is arithmetic over the GI scene, the field and the
 caches; the hardware tier reaches a device through `cy::rendering-raytracing`, which does not name
 one either. That is what lets every case in `tests/` run headless.

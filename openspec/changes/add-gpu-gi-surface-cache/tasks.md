@@ -1,0 +1,22 @@
+# Tasks
+
+- [x] Give `DistanceField` a change journal (`generation`, `last_changes`, `visit_bricks`) and a mirror's view of its levels and brick pool.
+- [x] Give `SurfacePage` a revision bumped by allocation, release and invalidation.
+- [x] Lift the prioritised, budgeted selection out of `SurfaceCache::service` into `SurfaceCache::select`, unchanged.
+- [x] Add `gi::SurfaceShadingBackend`, `SurfaceCache::set_shading_backend` / `collect`, and `IlluminationSystem::set_surface_shading`.
+- [x] Add `gi/card_lighting.h`: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot`, `CardGather`.
+- [x] Add the headless cases to `integration.render_gi_pipeline`: the journal, the snapshot against the cache's lookup, the shadow map against the field, the seam in the composed system.
+- [x] Add `cy::rendering-gi-gpu`: `GpuGiScene` (the page table, the brick pool, the cards, the grid, the trace batch) and `GpuSurfaceShading` (the shade and commit dispatches).
+- [x] Add the shaders and `shaders/regenerate.py`.
+- [x] Skip the module at configure time while either generated header is missing, so the default build does not stop on it.
+- [x] Compile them, commit `src/gi_gpu_spirv.h` and `src/gi_gpu_msl.h` through `regenerate.py`, and check `just build-shaders --strict src samples` reports `target_refusals=0`.
+- [x] Build `cy::rendering-gi-gpu` and its suite in the debug and dev profiles; clang-tidy the new C++.
+- [x] Write `render.gi_gpu`: the trace, the incremental upload, the card radiance in the room and under the shadow-mapped sun, the budget, and the side-by-side image.
+- [x] Run `render.gi_gpu` on the RTX 5060, fill the measured table in the module README, prove each case red by the mutation its header names (md5-verified restore), and record the mutations in `evidence/falsification.txt` (the tree's per-change record; `falsifiability.toml` is generated for ledger criteria).
+- [x] Update the module READMEs and the requirements map, and validate this change with `--strict`.
+- [x] Publish the side-by-side image at `docs/design/images/gi-gpu-surface-cache.png`.
+- [x] Fix what the first device run found: lift `CardGather`'s origin a voxel off its card (a grazing ray hit its own surface at exactly the hit threshold), run the pair at a lookup radius off the scenes' lattice, and break coincident-card lookup ties by alignment then handle (`card_lookup_prefers`) — a host bug with its own regression case.
+- [x] Check the host GI with no backend is byte-identical to main (`evidence/off-reference.txt`) and that the frame suites pass in both profiles.
+- [ ] Stage 3: the radiance cache and the tracing tiers on the device (issue #35).
+- [ ] Stage 4: the per-pixel resolve, the denoiser transcription, per-frame staging, the frame's shadow cascade, and the composite at `probeVolumeAmbient` (issue #35).
+- [ ] Stage 5: the device cost in `GiBudget` and the arbiter's lever ladders (issue #35).
