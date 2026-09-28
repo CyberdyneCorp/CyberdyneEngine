@@ -56,8 +56,10 @@ using ::slang::ISession;
 // -Wnon-virtual-dtor cannot see that contract, so it is switched off for the two implementations
 // below and nowhere else. This is not a case of the warning being wrong about C++; it is the
 // warning being right about a rule this interface deliberately does not play by.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#if defined(__GNUC__) || defined(__clang__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 
 /// A blob over bytes the caller owns for the call's duration.
 ///
@@ -187,7 +189,9 @@ private:
     SourceResolver resolver_;
 };
 
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#    pragma GCC diagnostic pop
+#endif
 
 [[nodiscard]] const char* profile_name(u32 spirv_version) noexcept {
     return spirv_version >= kSpirv1_6 ? "spirv_1_6" : "spirv_1_5";
