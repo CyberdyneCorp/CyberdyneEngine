@@ -36,11 +36,13 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/forward/cluster.h>
 #include <cy/rendering/forward/draw_list.h>
 #include <cy/rendering/lighting/lights.h>
 #include <cy/rendering/material/material.h>
 #include <cy/rendering/pipeline/frame_pipelines.h>
+#include <cy/rendering/pipeline/instance_history.h>
 
 namespace cy::rendering::pipeline {
 
@@ -75,6 +77,19 @@ struct FrameUpload {
     /// interval is a transfer optimisation over a device-local table and this ring is host-visible;
     /// the interval belongs with the transfer that uses it, which is not this one.
     Span<const u8> materials;
+    /// Per-object motion — `instance_history.h`. On by default: the bindings keep the rows they
+    /// uploaded last frame and the prepass derives each instance's motion from them, which is what
+    /// "without per-system effort" asks for. Off writes `kNoPreviousInstances` and the prepass
+    /// writes camera motion alone, which is the frame from before per-object motion existed.
+    bool object_motion = true;
+    /// Each row's stable identity, or empty. See `instance_history.h` for what it buys.
+    Span<const u64> instance_ids;
+    /// This frame's camera position minus last frame's, in world metres. `upload_for` fills it
+    /// from the temporal framework, which is where both positions already are.
+    Vec3 camera_motion{0.0F, 0.0F, 0.0F};
+    /// History means nothing this frame — a cut or a teleport. `upload_for` fills it from
+    /// `AssemblyReport::temporal_invalidated`.
+    bool motion_cut = false;
 };
 
 /// The ring of per-frame buffers, and the descriptor sets that name them.
@@ -146,6 +161,8 @@ public:
     [[nodiscard]] u64 staged_draw_bytes() const noexcept { return staged_draw_bytes_; }
     /// How many frames have been uploaded. What a many-frame case reads to know the ring turned.
     [[nodiscard]] u64 uploads() const noexcept { return uploads_; }
+    /// What the last upload derived about per-object motion.
+    [[nodiscard]] const InstanceHistoryReport& motion() const noexcept { return history_.report(); }
 
 private:
     struct Slot {
@@ -160,6 +177,10 @@ private:
     };
 
     [[nodiscard]] Status create_slot(rhi::Device& device, u32 index) noexcept;
+    /// This frame's rows, then — with per-object motion on — every row's previous placement.
+    /// Returns the index of the first previous row, or `kNoPreviousInstances`.
+    [[nodiscard]] Expected<u32, Error> write_instances(const Slot& slot,
+                                                       const FrameUpload& upload) noexcept;
     [[nodiscard]] Status write_sets(u32 frame_slot) noexcept;
     /// Take a NEW pass set out of this frame's pool, because the two calls below write theirs from
     /// inside a record callback and a set a command buffer has already bound may not be updated.
@@ -176,6 +197,9 @@ private:
     MaterialTextureSlot material_textures_[kMaterialTextureSlots];
     u32 material_texture_count_ = 0;
     u32 current_slot_ = 0;
+    /// Last frame's rows. The ring cannot hold them: with one frame in flight the slot they were
+    /// written to is the slot this frame writes.
+    InstanceHistory history_{system_allocator(MemoryDomain::Renderer)};
     u64 staged_light_bytes_ = 0;
     u64 staged_draw_bytes_ = 0;
     u64 uploads_ = 0;

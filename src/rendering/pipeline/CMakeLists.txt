@@ -35,6 +35,7 @@ cy_add_module(
         src/frame_pipelines.cpp
         src/frame_bindings.cpp
         src/frame_recorder.cpp
+        src/instance_history.cpp
         src/material_textures.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # shaders/ holds committed SPIR-V and MSL headers; it is private because a consumer binds a

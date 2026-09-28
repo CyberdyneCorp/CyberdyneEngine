@@ -349,6 +349,16 @@ public:
     /// through the shot's height fog, lit by the same sun through the same shadow map and by the
     /// same sky term the surfaces are — and every scene and sky fragment is seen through it.
     void set_fog(bool enabled, const Shot& shot) noexcept;
+    /// MOTION BLUR, before `stage_shot`. Off — the default, and the published M11.c frame — draws
+    /// exactly the frame this program always drew. On adds the depth and normal prepass with the
+    /// frame's motion vectors — `scenePrepassMotionFragment`, from this frame's and the last
+    /// render's camera — and declares the frame's `MotionBlur` stage at `shutter_degrees`, recorded
+    /// by `motion_blur::MotionBlurPass`. The first render has no last one and does not move; a
+    /// turntable frame's motion is the orbit's step.
+    void set_motion_blur(bool enabled, f32 shutter_degrees) noexcept {
+        motion_blur_ = enabled;
+        shutter_degrees_ = shutter_degrees;
+    }
 
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
@@ -419,7 +429,12 @@ private:
     [[nodiscard]] Status create_fog() noexcept;
     /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
     /// reads it.
-    [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
+    /// Whether the frame has a depth and normal prepass: ambient occlusion, the contact trace or
+    /// motion blur reads it.
+    [[nodiscard]] bool has_prepass() const noexcept {
+        return ambient_occlusion_ || soft_shadows_ || motion_blur_;
+    }
+    [[nodiscard]] Status create_motion_blur() noexcept;
     [[nodiscard]] Status create_grading(rhi::Device& device) noexcept;
     [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
                                                     const rhi::GraphicsPipelineDescription& scene,
@@ -446,6 +461,12 @@ private:
     f32 sun_angular_radius_ = 0.0F;
     f32 contact_length_ = 0.0F;
     f32 contact_thickness_ = 0.0F;
+    bool motion_blur_ = false;
+    f32 shutter_degrees_ = 180.0F;
+    /// The last render's baked-space to clip transform, which this render's motion is measured
+    /// from. Unset before the first render, which then has none and does not move.
+    Mat4 previous_world_to_clip_ = Mat4::identity();
+    bool has_previous_view_ = false;
     u32 width_ = 0;
     u32 height_ = 0;
     u32 supersample_ = 1;

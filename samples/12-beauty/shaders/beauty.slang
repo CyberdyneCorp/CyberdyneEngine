@@ -120,6 +120,14 @@ struct BeautyFrame
     /// frame — when it is not, which leaves every fragment exactly as it was. APPENDED, for the
     /// reason `softShadow` gives. yzw: unused.
     uint4 fogControl;
+    /// MOTION BLUR, read only by `scenePrepassMotionFragment`: LAST FRAME'S baked-space to clip
+    /// transform, as `viewProjection` is this frame's. The geometry is baked once and the camera is
+    /// what moves, so this and `viewProjection` are the whole of the frame's motion. APPENDED, so
+    /// every entry point that predates it reads the block it always read.
+    float4 previousViewProjection0;
+    float4 previousViewProjection1;
+    float4 previousViewProjection2;
+    float4 previousViewProjection3;
 };
 
 [[vk::binding(0, 2)]]
@@ -483,6 +491,35 @@ float4 sceneFragmentSoft(SceneVarying input) : SV_Target
 float4 scenePrepassFragment(SceneVarying input) : SV_Target
 {
     return float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
+}
+
+/// The same prepass with the frame's motion vectors, for motion blur: the normal as above, and in
+/// the second target where this surface was LAST frame, in normalised screen space pointing at the
+/// past — `temporal-rendering`'s convention and the one `cy/frame.slang`'s prepass writes. Drawn
+/// with `sceneVertex`, like the prepass above, so the depth the scene pass tests is this pass's;
+/// both positions are pushed through the interpolated baked-space position, which is exact per
+/// pixel. No jitter to remove: this frame is supersampled and runs no temporal stage.
+struct BeautyPrepassMotion
+{
+    float4 normalRoughness : SV_Target0;
+    float2 velocity : SV_Target1;
+};
+
+[shader("fragment")]
+BeautyPrepassMotion scenePrepassMotionFragment(SceneVarying input)
+{
+    let point = float4(input.relativePosition, 1.0);
+    let current = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
+                            frame.viewProjection3, point);
+    let previous = transform(frame.previousViewProjection0, frame.previousViewProjection1,
+                             frame.previousViewProjection2, frame.previousViewProjection3, point);
+    let currentNdc = current.xy / current.w;
+    let previousNdc = previous.xy / previous.w;
+    BeautyPrepassMotion output;
+    output.normalRoughness = float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
+    output.velocity = float2((previousNdc.x - currentNdc.x) * 0.5,
+                             (currentNdc.y - previousNdc.y) * 0.5);
+    return output;
 }
 
 // --- The sky --------------------------------------------------------------------------------------

@@ -48,8 +48,9 @@
 //
 // `render::VertexStream` splits a mesh into streams so "a shadow pass over an interleaved vertex
 // reads normals, UVs and colours it will not use" stops being true. The depth pipeline below binds
-// streams 0 and 1 — it writes a normal and a velocity target and reads no texture coordinate — and
-// the forward pipelines bind 0, 1 and 2, which is `render::kDepthPassStreams` made structural
+// streams 0 and 1 — it writes a normal and a velocity target and reads no texture coordinate — plus
+// the previous positions its per-object motion is derived from, and the forward pipelines bind 0, 1
+// and 2, which is `render::kDepthPassStreams` made structural
 // rather than documented. `kDepthPassStreamCount` and `kForwardPassStreamCount` below are those two
 // numbers, declared once because the pipeline and the recorder must agree about them.
 //
@@ -149,6 +150,12 @@ inline constexpr u32 kPassBindingCount = 5;
 inline constexpr u32 kPositionStream = 0;
 inline constexpr u32 kNormalStream = 1;
 inline constexpr u32 kUvStream = 2;
+/// The DEPTH pipeline's third binding: last frame's model-space positions, the stream
+/// `cyDepthVertex` derives per-object motion from. It shares binding 2 with the UVs only in number
+/// — the forward pipelines bind UVs there and the depth pipeline binds this — and it is the
+/// position stream bound a second time for a rigid mesh, or the other half of a skinned mesh's
+/// double-buffered output (`DrawGeometry::previous_vertex_offset`).
+inline constexpr u32 kPreviousPositionStream = 2;
 
 inline constexpr u32 kPositionStreamStride = 12;  // Rgb32Sfloat
 inline constexpr u32 kNormalStreamStride = 8;     // Rgba16Sfloat: octahedral normal, then tangent
@@ -161,7 +168,10 @@ inline constexpr u32 kUvStreamStride = 8;         // Rg32Sfloat
 /// declares this many vertex bindings on the pipeline and `frame_recorder.cpp` binds this many
 /// buffers before the draw; when those were two literals they disagreed for three commits, and
 /// every depth draw in that window fetched an attribute from a binding nothing was bound to.
-inline constexpr u32 kDepthPassStreamCount = 2;
+///
+/// THREE FOR THE DEPTH PASS since per-object motion: position, the packed normal, and the previous
+/// positions at `kPreviousPositionStream`. Still no UVs.
+inline constexpr u32 kDepthPassStreamCount = 3;
 inline constexpr u32 kForwardPassStreamCount = 3;
 
 /// Encode a normal and a tangent into one 8-byte normal-stream vertex.
@@ -282,16 +292,28 @@ struct alignas(16) FrameViewData {
     ///
     /// APPENDED, for the reason `material_textures` gives.
     u32 volumetric_fog_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// Per-object motion. x: the index in the instance buffer of the first PREVIOUS-frame row, or
+    /// `kNoPreviousInstances` — the default, in which the prepass writes camera motion alone, as
+    /// every frame before the field did. yzw: reserved. `FrameBindings::upload` writes it; a caller
+    /// does not, because the previous rows are the ones the bindings uploaded the frame before.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 motion_control[4] = {0xFFFFFFFFU, 0, 0, 0};
 };
+
+/// `motion_control[0]` when a frame carries no previous instance rows — `cy/frame.slang`'s
+/// `kCyNoPreviousInstances`.
+inline constexpr u32 kNoPreviousInstances = 0xFFFFFFFFU;
 
 /// `soft_shadow_control[0]`'s bits, `cy/frame.slang`'s `kCySoftShadowPcss` and
 /// `kCySoftShadowContact`.
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 544, "CyFrameData's std140 block is 544 bytes");
+static_assert(sizeof(FrameViewData) == 560, "CyFrameData's std140 block is 560 bytes");
 static_assert(offsetof(FrameViewData, decal_control) == 512);
 static_assert(offsetof(FrameViewData, volumetric_fog_control) == 528);
+static_assert(offsetof(FrameViewData, motion_control) == 544);
 static_assert(offsetof(FrameViewData, soft_shadow_control) == 432);
 static_assert(offsetof(FrameViewData, soft_shadow_shape) == 448);
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);

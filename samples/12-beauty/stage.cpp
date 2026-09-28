@@ -23,6 +23,7 @@
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/lighting/soft_shadows.h>
+#include <cy/rendering/motion_blur/motion_blur_pass.h>
 #include <cy/rendering/occlusion/occlusion_pass.h>
 #include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/particles/strip_renderer.h>
@@ -152,9 +153,11 @@ struct FrameConstants {
     /// `BeautyFrame::fogControl`. x: 1 when the fog volume is bound and every fragment is seen
     /// through it.
     u32 fog_control[4] = {};
+    /// `BeautyFrame::previousViewProjection`, read only by `scenePrepassMotionFragment`.
+    f32 previous_view_projection[4][4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 256, "BeautyFrame is sixteen 16-byte rows");
+static_assert(sizeof(FrameConstants) == 320, "BeautyFrame is twenty 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -241,6 +244,8 @@ struct Stage::Device {
     rendering::FrameResourceRead decal_read;
     /// The fog volume, created only when the run asked for fog. See `Stage::set_fog`.
     rendering::fog::FogPass fog;
+    /// Motion blur, created only when the run asked for it. See `Stage::set_motion_blur`.
+    rendering::motion_blur::MotionBlurPass motion_blur;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -1513,8 +1518,15 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     // tests with the same comparison and does not write. Same vertex stage as the prepass, so the
     // depth it compares is the depth it produces. With soft shadows on it shades through
     // `sceneFragmentSoft`, which reads the ambient occlusion term too when that setting is on.
-    auto occluded_fragment =
-        fragment(soft_shadows_ ? "sceneFragmentSoft" : "sceneFragmentOccluded");
+    // With motion blur alone the scene shades through `sceneFragment` — the published frame's own
+    // entry point — against the prepass depth.
+    const char* shading = "sceneFragment";
+    if (soft_shadows_) {
+        shading = "sceneFragmentSoft";
+    } else if (ambient_occlusion_) {
+        shading = "sceneFragmentOccluded";
+    }
+    auto occluded_fragment = fragment(shading);
     if (!occluded_fragment) {
         return make_unexpected(occluded_fragment.error());
     }
@@ -1528,17 +1540,21 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     }
     occluded = *made;
 
-    // THE PREPASS: depth, and the geometric normal into the frame's `normal + roughness` target.
-    auto prepass_fragment = fragment("scenePrepassFragment");
+    // THE PREPASS: depth, and the geometric normal into the frame's `normal + roughness` target —
+    // and, with motion blur, the motion vectors into the frame's velocity target.
+    auto prepass_fragment =
+        fragment(motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment");
     if (!prepass_fragment) {
         return make_unexpected(prepass_fragment.error());
     }
-    rhi::ColorAttachmentState normal;
-    normal.format = cy::rendering::FrameDescription{}.normal_format;
+    rhi::ColorAttachmentState targets[2];
+    targets[0].format = cy::rendering::FrameDescription{}.normal_format;
+    targets[1].format = cy::rendering::FrameDescription{}.velocity_format;
     description = scene;
     description.name = "beauty depth and normal prepass";
     description.fragment_shader = *prepass_fragment;
-    description.color_attachments = Span<const rhi::ColorAttachmentState>(&normal, 1);
+    description.color_attachments =
+        Span<const rhi::ColorAttachmentState>(targets, motion_blur_ ? 2U : 1U);
     made = device.create_graphics_pipeline(description);
     if (!made) {
         return make_unexpected(made.error());
@@ -1572,6 +1588,8 @@ struct SceneState {
     /// With ambient occlusion on: the prepass's normal target, and whether the depth the scene
     /// pass tests is the prepass's rather than its own.
     ResourceId normal = kInvalidResource;
+    /// With motion blur on: the prepass's velocity target.
+    ResourceId velocity = kInvalidResource;
     bool prepass = false;
     u32 width = 0;
     u32 height = 0;
@@ -1643,14 +1661,21 @@ void record_scene(const PassContext& context, void* user) noexcept {
 /// ambient occlusion setting is on, because the horizon search is its one reader.
 void record_prepass(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<SceneState*>(user);
-    rhi::RenderAttachment normal;
-    normal.view = state->executor->view(state->normal);
-    normal.load = rhi::LoadOp::Clear;
-    normal.store = rhi::StoreOp::Store;
+    rhi::RenderAttachment targets[2];
+    targets[0].view = state->executor->view(state->normal);
+    targets[0].load = rhi::LoadOp::Clear;
+    targets[0].store = rhi::StoreOp::Store;
+    // The velocity target, cleared to still: the sky the prepass does not draw has no motion here,
+    // and the blur reads a cleared texel as the far plane.
+    const bool velocity = state->velocity != kInvalidResource;
+    if (velocity) {
+        targets[1] = targets[0];
+        targets[1].view = state->executor->view(state->velocity);
+    }
 
     rhi::RenderingInfo info;
     info.render_area = rhi::Rect2D{0, 0, state->width, state->height};
-    info.color_attachments = Span<const rhi::RenderAttachment>(&normal, 1);
+    info.color_attachments = Span<const rhi::RenderAttachment>(targets, velocity ? 2U : 1U);
     info.depth_attachment.view = state->executor->view(state->depth);
     info.depth_attachment.load = rhi::LoadOp::Clear;
     info.depth_attachment.store = rhi::StoreOp::Store;
@@ -1789,8 +1814,9 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    // The pipeline first: the backend binds sets at the last bound pipeline's bind point, and depth
-    // of field's compute dispatches run just before this pass.
+    // The pipeline BEFORE the sets: a set binds to the bind point of the last pipeline bound, and
+    // depth of field's or motion blur's compute dispatches run just before this pass
+    // (`frame_recorder.cpp`'s `bind_frame_sets` says what that cost).
     context.commands->bind_graphics_pipeline(
         state->pipelines->pipeline(FramePipelineKind::Resolve));
     context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
@@ -2136,6 +2162,10 @@ Status Stage::create_frame() noexcept {
         // THE CONTACT TRACE IS THE SECOND READER, and its stage is the frame's own
         // `FramePassKind::ContactShadows`, declared by `contact_shadows::ContactShadowPass`.
         description.contact_shadows = soft_shadows_;
+        // MOTION BLUR at step 8, after the (absent) temporal stage and before bloom. The prepass
+        // derives its mode from it and writes the velocity target `scenePrepassMotionFragment`
+        // fills.
+        description.post.motion_blur = motion_blur_;
     }
     description.sky = cy::rendering::sky::SkyTableQuality::Low;
     // PINNED, because a capture has to be reproducible.
@@ -2242,6 +2272,11 @@ Status Stage::create_frame() noexcept {
             return made;
         }
     }
+    if (motion_blur_) {
+        if (Status made = create_motion_blur(); !made) {
+            return made;
+        }
+    }
     device_->frame_ready = true;
     return ok();
 }
@@ -2292,6 +2327,21 @@ Status Stage::stage_decals(const Mat4& camera) noexcept {
         return packed;
     }
     return device_->decal_table.stage(words.span());
+}
+
+Status Stage::create_motion_blur() noexcept {
+    rendering::motion_blur::MotionBlurPassDescription description;
+    description.width = width_;
+    description.height = height_;
+    if (Status made =
+            device_->motion_blur.create(*allocator_, *device_->handle.value(), description);
+        !made) {
+        return made;
+    }
+    rendering::motion_blur::MotionBlurSettings settings;
+    settings.shutter_angle_degrees = shutter_degrees_;
+    device_->motion_blur.set_settings(settings);
+    return ok();
 }
 
 Status Stage::create_contact() noexcept {
@@ -2438,6 +2488,10 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
 
     FrameConstants constants;
     write_rows(constants.view_projection, world_to_clip);
+    // LAST RENDER'S CAMERA, or this one's when there was none: the first frame does not move.
+    const Mat4 previous_world_to_clip =
+        has_previous_view_ ? previous_world_to_clip_ : world_to_clip;
+    write_rows(constants.previous_view_projection, previous_world_to_clip);
     // The shadow volume is centred a little ahead of the camera, along the view direction, so the
     // 26 metres of extent the shot asks for are spent on what the frame can see.
     const Vec3 forward = normalise(subtract(target, eye));
@@ -2642,6 +2696,20 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         view.volumetric_fog = device_->fog.import_target(graph);
         sinks.volumetric_fog = device_->fog.stage();
     }
+    if (motion_blur_) {
+        rendering::motion_blur::MotionBlurView blur_view;
+        blur_view.width = width_;
+        blur_view.height = height_;
+        blur_view.projection = projection;
+        blur_view.relative_to_clip = world_to_clip;
+        blur_view.previous_relative_to_clip = previous_world_to_clip;
+        if (Status set = device_->motion_blur.set_view(blur_view); !set) {
+            (void)device.end_frame();
+            return set;
+        }
+        view.motion_blur = device_->motion_blur.import_target(graph);
+        sinks.motion_blur = device_->motion_blur.stage();
+    }
     if (has_prepass()) {
         sinks.passes[static_cast<usize>(FramePassKind::DepthPrepass)] =
             cy::rendering::FramePassCallback{&record_prepass, &scene};
@@ -2714,6 +2782,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     scene.color = resources.color;
     scene.depth = resources.depth;
     scene.normal = resources.normal_roughness;
+    scene.velocity = resources.velocity;
     scene.prepass = has_prepass();
     air.color = resources.color;
     air.depth = resources.depth;
@@ -2823,6 +2892,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     if (Status ended = device.end_frame(); !ended && frame) {
         frame = ended;
     }
+    previous_world_to_clip_ = world_to_clip;
+    has_previous_view_ = true;
 
     if (frame) {
         CaptureProvenance provenance;

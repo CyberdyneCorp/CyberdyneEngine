@@ -18,6 +18,9 @@
 //                    [--depth-of-field <target>]    focused on a target the shot names
 //                    [--decals on|off]              the shot's `decal` lines, applied before
 //                    lighting
+//                    [--motion-blur <degrees>]      motion blur at that shutter angle
+//                    [--orbit-still <path> --orbit-frame <n>]  turntable frame n, drawn after
+//                                                   frame n - 1 so it has the orbit's motion
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -163,6 +166,22 @@ void read_material_line(const char* line, ShotMaterial& material) {
 }
 
 /// The stem of a material's authored graph, which is what the recipe named its outputs after.
+/// Where the turntable's camera is at frame `index` of `count`: an orbit about the shot's target,
+/// at the shot's own height and radius, starting from the shot's own camera.
+[[nodiscard]] Vec3 turntable_eye(const Shot& shot, u32 index, u32 count) noexcept {
+    const Vec3 pivot = shot.camera_target;
+    const Vec3 offset =
+        Vec3{shot.camera_position.x - pivot.x, 0.0F, shot.camera_position.z - pivot.z};
+    const f32 radius = std::sqrt((offset.x * offset.x) + (offset.z * offset.z));
+    const f32 start = std::atan2(offset.z, offset.x);
+    const f32 turn = start + ((2.0F * std::numbers::pi_v<f32> * static_cast<f32>(index)) /
+                              static_cast<f32>(count));
+    Vec3 eye = shot.camera_position;
+    eye.x = pivot.x + (std::cos(turn) * radius);
+    eye.z = pivot.z + (std::sin(turn) * radius);
+    return eye;
+}
+
 [[nodiscard]] std::string stem_of(const std::string& path) {
     const usize slash = path.find_last_of('/');
     const usize dot = path.find_last_of('.');
@@ -252,6 +271,11 @@ int main(int argc, char** argv) {
     // No depth of field unless a focus target is named: the published still has none, and `just
     // capture-beauty-depth-of-field` photographs it focused on the sphere and on a far column.
     const std::string focus = option(argc, argv, "--depth-of-field", "");
+    // MOTION BLUR, off unless a shutter angle is named: the published still is the frame without
+    // it, and `just capture-beauty-motion-blur` photographs one turntable frame both ways.
+    const std::string motion_blur = option(argc, argv, "--motion-blur", "");
+    const std::string orbit_still = option(argc, argv, "--orbit-still", "");
+    const u32 orbit_frame = option_number(argc, argv, "--orbit-frame", 1);
 
     std::string problem;
     auto parsed = Shot::read(shot_path.c_str(), problem);
@@ -341,6 +365,11 @@ int main(int argc, char** argv) {
                     static_cast<double>(target->x), static_cast<double>(target->y),
                     static_cast<double>(target->z), static_cast<double>(shot.dof_f_number));
     }
+    if (!motion_blur.empty()) {
+        const f32 degrees = std::strtof(motion_blur.c_str(), nullptr);
+        stage.set_motion_blur(true, degrees);
+        std::printf("motion blur   on, shutter %.0f degrees\n", static_cast<double>(degrees));
+    }
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
         return 1;
@@ -363,19 +392,36 @@ int main(int argc, char** argv) {
         std::printf("manifest      %s\n", manifest.c_str());
     }
 
+    if (!orbit_still.empty()) {
+        // ONE TURNTABLE FRAME WITH ITS MOTION: the frame before it drawn first and written nowhere,
+        // so the frame's camera — and, with motion blur, its motion — is the orbit's step. The air
+        // steps between the two, as the turntable's does.
+        const u32 count = option_number(argc, argv, "--frames-count", 240);
+        const u32 frame_index = orbit_frame == 0 ? 1U : orbit_frame;
+        for (u32 index = frame_index - 1U; index <= frame_index; ++index) {
+            ShotReport orbit_report;
+            const char* path = index == frame_index ? orbit_still.c_str() : nullptr;
+            if (Status drawn = stage.render_from(shot, turntable_eye(shot, index, count),
+                                                 shot.camera_target, path, nullptr, orbit_report);
+                !drawn) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
+                return 1;
+            }
+            if (index < frame_index) {
+                if (Status stepped = stage.advance_air(); !stepped) {
+                    std::fprintf(stderr, "cy_sample_beauty: %s\n", stepped.error().message);
+                    return 1;
+                }
+            }
+        }
+        std::printf("orbit still   frame %u of %u, %s\n", frame_index, count, orbit_still.c_str());
+    }
+
     if (!frames.empty()) {
         const u32 count = option_number(argc, argv, "--frames-count", 240);
         const Vec3 pivot = shot.camera_target;
-        const Vec3 offset =
-            Vec3{shot.camera_position.x - pivot.x, 0.0F, shot.camera_position.z - pivot.z};
-        const f32 radius = std::sqrt((offset.x * offset.x) + (offset.z * offset.z));
-        const f32 start = std::atan2(offset.z, offset.x);
         for (u32 index = 0; index < count; ++index) {
-            const f32 turn = start + ((2.0F * std::numbers::pi_v<f32> * static_cast<f32>(index)) /
-                                      static_cast<f32>(count));
-            Vec3 eye = shot.camera_position;
-            eye.x = pivot.x + (std::cos(turn) * radius);
-            eye.z = pivot.z + (std::sin(turn) * radius);
+            const Vec3 eye = turntable_eye(shot, index, count);
             char path[512] = {};
             (void)std::snprintf(path, sizeof(path), "%s/frame_%04u.png", frames.c_str(), index);
             ShotReport frame_report;

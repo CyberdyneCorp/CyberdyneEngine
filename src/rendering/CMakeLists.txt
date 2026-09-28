@@ -155,6 +155,11 @@ add_subdirectory(contact_shadows)
 # front to back into a texture the forward pass applies to every surface. It names the forward
 # frame's stage-declaration seam and the post chain's froxel arithmetic, so it is read after both.
 add_subdirectory(fog)
+# MOTION BLUR. `rendering-post-processing`'s "Motion blur": a tile reduction of the prepass
+# velocity, the neighbourhood's dominant direction and a depth-aware gather, after the temporal
+# resolve and before bloom. It names the forward frame's stage-declaration seam and the post chain's
+# shutter arithmetic, so it is read after forward/ and post/.
+add_subdirectory(motion_blur)
 
 # THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
 # this directory were linked by nothing but their own test binaries and nothing in the tree built a

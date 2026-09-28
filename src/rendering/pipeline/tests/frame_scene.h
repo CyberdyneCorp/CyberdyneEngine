@@ -37,6 +37,8 @@ inline constexpr u32 kHeight = 270;
 inline constexpr u32 kInstanceCount = 12;
 inline constexpr u32 kMaterialCount = 4;
 inline constexpr u32 kParticleCount = 512;
+/// The cube's vertices: four a face, so each face has its own normal.
+inline constexpr u32 kCubeVertices = 24;
 
 /// What the harness supplies to `FrameAssembly::assemble`.
 enum class RecordMode : u8 {
@@ -150,6 +152,30 @@ public:
 
     [[nodiscard]] Status render(RecordMode mode, AssemblyReport& out) noexcept;
 
+    /// Move box `which` to a new WORLD centre before the next `render`: its instance row and its
+    /// spatial index entry both follow. The floor slab, box 0, is not offered. What a suite about
+    /// per-object motion moves between two frames, so the frame sees a moving object exactly as a
+    /// game's would — its row changes and nothing else says so.
+    [[nodiscard]] Status move_box(u32 which, Vec3 centre) noexcept;
+    /// Where box `which` is, in world metres.
+    [[nodiscard]] Vec3 box_centre(u32 which) const noexcept { return centres_[which]; }
+    /// Move the camera to `eye` before the next `render`, looking down -Z as always. Every
+    /// instance row is rebased to it — the rows are camera-RELATIVE — and the view the assembly
+    /// hands the temporal framework is the world one, so the frame derives camera motion the way a
+    /// game's does. The origin, the default, is the frame this scene always rendered.
+    void set_eye(Vec3 eye) noexcept;
+    [[nodiscard]] Vec3 eye() const noexcept { return eye_; }
+    /// Draw box `which` as a mesh DEFORMED ON THE DEVICE, the way a skinned mesh is: the vertex
+    /// streams hold two copies of the cube — the two halves of a double-buffered output, which is
+    /// what `skinning::SkinnedBuffers` is — and the box's draw names its current half and, through
+    /// `DrawGeometry::previous_vertex_offset`, last frame's. Last frame's half holds the cube
+    /// displaced by `-model_offset`, so the mesh moved by `model_offset` in its own space and
+    /// nothing about its placement did. `current_second` puts this frame's vertices in the upper
+    /// half, which is the parity where last frame's lie BELOW them in the stream.
+    [[nodiscard]] Status deform_box(u32 which, Vec3 model_offset, bool current_second) noexcept;
+    [[nodiscard]] u32 deformed_box() const noexcept { return deformed_box_; }
+    [[nodiscard]] bool deformed_current_second() const noexcept { return deformed_second_; }
+
     /// Point every material's base colour at one slot of the global texture table, and declare to
     /// the frame where a material's slot word lives. M11.c task 3.7.
     ///
@@ -184,7 +210,8 @@ public:
     }
     [[nodiscard]] const Mat4& projection() const noexcept { return projection_; }
     [[nodiscard]] const Mat4& view() const noexcept { return view_; }
-    /// Each instance's box, camera-relative, in instance order: the floor slab first.
+    /// Each instance's box as it was BUILT — camera-relative at the default eye, which is the
+    /// world — in instance order: the floor slab first. `move_box` does not update it.
     [[nodiscard]] Span<const Aabb> boxes() const noexcept { return boxes_.span(); }
     /// The last frame's output, Rgba8Unorm, row-major from the top-left. Empty until a device
     /// render with `read_back` on.
@@ -202,6 +229,8 @@ private:
     [[nodiscard]] Status fill_index() noexcept;
     [[nodiscard]] Status fill_particles() noexcept;
     [[nodiscard]] Status read_pixels() noexcept;
+    /// Write box `which`'s camera-relative row from its world centre and the eye.
+    void place_row(u32 which) noexcept;
 
     Allocator* allocator_ = nullptr;
     rhi::Device* device_ = nullptr;
@@ -241,7 +270,16 @@ private:
     /// table hands out 0, 1, 2, 3.
     u32 material_slots_[kMaterialCount] = {};
     Mat4 view_ = Mat4::identity();
+    /// The view's rotation alone: what the frame's camera-relative rows are drawn through.
+    Mat4 relative_view_ = Mat4::identity();
     Mat4 projection_ = Mat4::identity();
+    Vec3 eye_{0.0F, 0.0F, 0.0F};
+    Vec3 centres_[kInstanceCount] = {};
+    f32 heights_[kInstanceCount] = {};
+    u32 index_slots_[kInstanceCount] = {};
+    /// The box `deform_box` named, or `kInstanceCount` for none.
+    u32 deformed_box_ = kInstanceCount;
+    bool deformed_second_ = false;
     bool read_back_ = false;
     bool built_ = false;
 };

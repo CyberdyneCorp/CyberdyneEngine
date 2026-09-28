@@ -145,6 +145,31 @@ the surface and the eye and adds the in-scattering, through `cy/volumetric_fog.s
 the volume texel by texel. The five `frame.slang` entries that read the block were regenerated for
 the longer one; the fullscreen resolve and temporal entries are unchanged. `render.volumetric_fog` pins the frame with the slot unset to a reference rendered by the pre-change
 SPIR-V, and with an empty volume bound to the frame with none.
+## Per-object motion — `FrameViewData::motion_control` and `instance_history.h`
+
+One word appended after `volumetric_fog_control` (the block is 560 bytes). `FrameBindings` keeps the
+instance rows it uploaded last frame and writes each row's previous placement AFTER the current rows
+in the same instance buffer — the ring is sized twice as deep, so the view set's layout is
+unchanged — and `motion_control.x` says where they begin. A kept row is rebased by the camera's
+displacement (`FrameUpload::camera_motion`, which `upload_for` takes from the temporal framework);
+a slot whose stable identity changed (`FrameUpload::instance_ids`) or any row after a history cut
+(`FrameUpload::motion_cut`) is new, and its previous row is its current one. `FrameUpload::object_motion`
+is on by default; off writes `kNoPreviousInstances` and the prepass writes camera motion alone.
+
+The depth pipeline binds THREE streams: position, the packed normal, and the previous positions at
+`kPreviousPositionStream` — the position stream again for a rigid mesh, so the value is the current
+one bit for bit. A lookup that sets `DrawGeometry::has_previous_vertices` names last frame's vertices
+in the other half of a double-buffered output with `previous_vertex_offset`; the recorder draws from
+the smaller of the two starts and offsets each binding to its own half, because a vertex-buffer
+offset cannot be negative. The five `frame.slang` entries that read the block were regenerated; the
+shadow fragment and the fullscreen resolve and temporal entries came out byte-identical.
+
+**The recorder binds each pass's pipeline before its descriptor sets** (`bind_frame_sets` takes the
+pass's `FramePipelineKind`). A Vulkan set binds to the bind point of the last pipeline bound, and a
+compute stage between two graphics passes — motion blur between the temporal resolve and the
+post-process — left it at compute: the post-process's sets went there and the resolve sampled the
+temporal pass's set, so the blur never reached the frame. `render.motion_blur` (d)'s open-shutter
+control is the regression case.
 
 ## What is measured and recorded rather than hidden
 

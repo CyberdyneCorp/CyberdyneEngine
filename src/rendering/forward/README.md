@@ -123,6 +123,16 @@ colour's format, storage-writable) and hands it to `FrameDescription::depth_of_f
 `build()` refuses the feature without a producer, and on a multisampled frame without the prepass,
 whose depth resolve is the only single-sample depth such a frame has; a single-sample frame without
 the prepass reads the depth its opaque pass wrote. `src/rendering/depth_of_field/` is the producer.
+## A fourth, in the post chain: motion blur
+
+`FramePassKind::MotionBlur` is step 8 of `rendering-post-processing`'s chain — after the temporal
+resolve, whose output it reads and whose history it never touches, and before bloom, so a streak of
+a bright light blooms as the light it is. The frame hands `ScreenSpaceStageInputs` to
+`FrameDescription::motion_blur_stage` with `velocity` set to the prepass motion vectors and `color`
+to the colour the chain has reached, and the producer's last pass writes the imported
+`motion_blur_target`, which the chain continues from. `build()` refuses the feature without a
+producer and a target. The feature derives the `DepthNormalVelocity` prepass, as it always did.
+`src/rendering/motion_blur/` is the producer.
 
 ## Why the cluster assignment exists twice
 
