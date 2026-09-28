@@ -1,4 +1,5 @@
-// Live scene VFX parameters through the generated ABI 1.3 table.
+// SPDX-License-Identifier: MIT
+// Live scene VFX parameters through the generated ABI 1.4 table.
 
 import CyberdyneABI
 import CyberdyneCore
