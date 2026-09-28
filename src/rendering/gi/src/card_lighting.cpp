@@ -198,6 +198,7 @@ Status CardSnapshot::capture(const SurfaceCache& cache, u64 frame) noexcept {
 u32 CardSnapshot::find(Vec3 position, Vec3 normal) const noexcept {
     u32 best = ~0U;
     f32 best_score = 1.0e9F;
+    f32 best_alignment = 0.0F;
     const f32 radius_squared = radius_ * radius_;
     grid_.visit(position, radius_, [&](u32 handle) {
         const CardSample& candidate = samples_[handle];
@@ -213,8 +214,9 @@ u32 CardSnapshot::find(Vec3 position, Vec3 normal) const noexcept {
             return;
         }
         const f32 score = squared / alignment;
-        if (score < best_score || (score == best_score && handle < best)) {
+        if (card_lookup_prefers(score, alignment, handle, best_score, best_alignment, best)) {
             best_score = score;
+            best_alignment = alignment;
             best = handle;
         }
     });
@@ -241,12 +243,19 @@ Vec3 CardGather::gather(Vec3 position, Vec3 normal) const noexcept {
     if (field_ == nullptr || settings_.rays == 0) {
         return Vec3{0.0F, 0.0F, 0.0F};
     }
-    // Clear the surface the ray leaves, as `SoftwareTracer::occluded` does and for its reason.
-    const f32 bias = field_->voxel_size() * 2.0F;
+    // Clear the surface the ray leaves, as `SoftwareTracer::occluded` does and for its reason —
+    // and lift the origin one voxel off it first. A card sits ON its surface, so a ray leaving it
+    // at a grazing angle is, at `t_min`, at a height of `t_min * cos` above it; for the sequence's
+    // last direction with 8 rays that is exactly the hit threshold of half a voxel, and whether the
+    // ray "hits" the card's own surface came down to the last bit of a sine. Lifted, the grazing
+    // ray starts a voxel clear and the surface it leaves can no longer answer it.
+    const f32 voxel = field_->voxel_size();
+    const f32 bias = voxel * 2.0F;
+    const Vec3 origin = position + (normal * voxel);
     Vec3 total{0.0F, 0.0F, 0.0F};
     for (u32 index = 0; index < settings_.rays; ++index) {
         Ray ray;
-        ray.origin = position;
+        ray.origin = origin;
         ray.direction = hemisphere_direction(normal, index, settings_.rays);
         const SphereTraceHit hit = field_->sphere_trace(ray, settings_.max_distance_metres, bias);
         if (!hit.hit) {

@@ -234,6 +234,8 @@ struct CourtyardScene {
 /// Two surface caches over the same cards — one shaded on the host through the oracle, one through
 /// the device — and the device scene behind the second.
 struct Pair {
+    static constexpr f32 kLookupRadius = 0.6F;
+
     SurfaceCache host;
     SurfaceCache device;
     SoftwareTracer software;
@@ -248,6 +250,17 @@ struct Pair {
     Pair(rhi::Device& gpu, const DistanceField& field, const std::vector<Surfel>& surfels,
          const ShadowMap* shadow, std::vector<GiLight> scene_lights, u32 rays)
         : lights(std::move(scene_lights)) {
+        // NOT THE DEFAULT HALF METRE. Both scenes are dyadic — cards on a half- or one-metre
+        // lattice, a quarter-metre voxel, a gather that leaves at two voxels — and at a lookup
+        // radius of exactly half a metre over a hundred of the room's gather hits land ON the
+        // lookup sphere of a card: a ceiling card's ray with direction z = 0.75 meets the wall at
+        // squared distance 0.25 from the wall card below it. Whether such a hit resolves is then
+        // the last bit of a sine, and the host and a driver round it differently (measured on the
+        // RTX 5060: 0.25000003 on the host, 0.24999997 on the device, flipping a third of the
+        // room's bounce terms). A radius off the lattice keeps this comparison about the
+        // transcription rather than about a tie.
+        host.set_lookup_radius(kLookupRadius);
+        device.set_lookup_radius(kLookupRadius);
         for (const Surfel& surfel : surfels) {
             CY_REQUIRE(host.allocate(surfel).has_value());
             CY_REQUIRE(device.allocate(surfel).has_value());
@@ -796,7 +809,7 @@ CY_TEST_CASE("the lit surface cache cards, host and device side by side") {
                  kWidth * kHeight);
     CY_CHECK_LE(differing, kWidth * kHeight / 100U);
 
-    render_test::Image image;
+    render_test::Image image(allocator());
     CY_REQUIRE(
         render_test::adopt(image, {texels.data(), texels.size()}, kStride, kHeight).has_value());
     const char* path = CY_TEST_BINARY_DIR "/gi-gpu-surface-cache.png";

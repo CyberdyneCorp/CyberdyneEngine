@@ -409,6 +409,7 @@ uint giFindCard(float3 position, float3 normal) {
                          giCell(position.z + radius, cell));
     uint best = 0xFFFFFFFFu;
     float bestScore = 1.0e9f;
+    float bestAlignment = 0.0f;
     for (int z = lo.z; z <= hi.z; ++z) {
         for (int y = lo.y; y <= hi.y; ++y) {
             for (int x = lo.x; x <= hi.x; ++x) {
@@ -430,9 +431,14 @@ uint giFindCard(float3 position, float3 normal) {
                     if (squared > radiusSquared) {
                         continue;
                     }
+                    // `card_lookup_prefers`: the score, then the alignment, then the handle.
                     const float score = squared / alignment;
-                    if (score < bestScore || (score == bestScore && handle < best)) {
+                    const bool better = score != bestScore ? score < bestScore
+                                        : alignment != bestAlignment ? alignment > bestAlignment
+                                                                     : handle < best;
+                    if (better) {
                         bestScore = score;
+                        bestAlignment = alignment;
                         best = handle;
                     }
                 }
@@ -450,11 +456,13 @@ float3 giGather(float3 position, float3 normal) {
         return float3(0.0f, 0.0f, 0.0f);
     }
     const float maxDistance = asfloat(giScene.constants[kGiGrid].w);
-    const float bias = giFinestVoxel() * 2.0f;
+    const float voxel = giFinestVoxel();
+    const float bias = voxel * 2.0f;
+    const float3 origin = position + (normal * voxel);
     float3 total = float3(0.0f, 0.0f, 0.0f);
     for (uint index = 0u; index < rays; ++index) {
         const float3 direction = giHemisphereDirection(normal, index, rays);
-        const GiTraceHit hit = giSphereTrace(position, direction, maxDistance, bias);
+        const GiTraceHit hit = giSphereTrace(origin, direction, maxDistance, bias);
         if (!hit.hit) {
             total = total + giSky(direction);
             continue;

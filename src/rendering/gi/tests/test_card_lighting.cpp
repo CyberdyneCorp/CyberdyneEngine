@@ -29,6 +29,8 @@ using cy::Span;
 using cy::u32;
 using cy::u64;
 using cy::Vec3;
+using cy::rendering::gi::CardGather;
+using cy::rendering::gi::CardGatherSettings;
 using cy::rendering::gi::CardSnapshot;
 using cy::rendering::gi::ClipmapSettings;
 using cy::rendering::gi::DistanceField;
@@ -102,8 +104,9 @@ CY_TEST_CASE("the field's change journal is the bricks a scroll solved") {
     const auto moved = field.scroll_to(Vec3{2.0F, 0.0F, 0.0F});
     CY_CHECK_EQ(field.last_changes().size(), moved.bricks_solved);
     for (const FieldBrickChange& change : field.last_changes()) {
-        CY_CHECK(change.slot == cy::rendering::gi::kEmptyBrick ||
-                 change.slot < field.brick_slot_count());
+        const bool named =
+            change.slot == cy::rendering::gi::kEmptyBrick || change.slot < field.brick_slot_count();
+        CY_CHECK(named);
     }
 
     // `visit_bricks` is the whole field: every allocated and every empty brick, once.
@@ -230,6 +233,50 @@ CY_TEST_CASE("the shadow map agrees with the field about what the sun cannot rea
     CY_CHECK(occluder.occluded(behind, lamp));
     const ShadowMapOccluder unbacked(&map, nullptr);
     CY_CHECK_FALSE(unbacked.occluded(behind, lamp));
+}
+
+// A REGRESSION. The gather left a card from its own position at `t_min` = two voxels, and with 8
+// rays the sequence's last direction leaves at cos = 0.25: at `t_min` it is a quarter of two voxels
+// above the surface — exactly the half-voxel hit threshold. Whether that ray "hit" the floor it
+// left was the last bit of a sine; on the host it hit, on the RTX 5060 it did not, and the
+// courtyard's bounce terms disagreed by a fifth. The gather now lifts its origin a voxel off the
+// card.
+CY_TEST_CASE("a gather ray is never answered by the surface it leaves") {
+    const gi_support::BoxField slab(Vec3{6.0F, 0.5F, 6.0F}, 1.0F, 17);
+    DistanceField field;
+    ClipmapSettings settings;
+    settings.levels = 1;
+    settings.resolution = 64;
+    settings.base_extent_metres = 16.0F;
+    CY_REQUIRE(field.configure(settings).has_value());
+    CY_REQUIRE(field.place(1, slab.asset(), cy::Mat4::from_translation(Vec3{0.0F, -0.5F, 0.0F}))
+                   .has_value());
+    (void)field.scroll_to(Vec3{0.0F, 1.0F, 0.0F});
+
+    // Nothing but the slab: every ray from its top face goes to the sky, at every ray count the
+    // cache is configured with, so the gather is the mean sky over the sequence's directions.
+    CardSnapshot empty;
+    const Vec3 up{0.0F, 1.0F, 0.0F};
+    for (const u32 rays : {4U, 8U, 16U}) {
+        CardGatherSettings gather_settings;
+        gather_settings.rays = rays;
+        CardGather gather;
+        gather.bind(&field, &empty, gather_settings);
+        u32 checked = 0;
+        for (int ix = -6; ix <= 6; ++ix) {
+            const Vec3 card{static_cast<f32>(ix) * 0.5F, 0.0F, 0.25F};
+            Vec3 sky{0.0F, 0.0F, 0.0F};
+            for (u32 index = 0; index < rays; ++index) {
+                sky = sky + gather_settings.sky.radiance(
+                                cy::rendering::gi::hemisphere_direction(up, index, rays));
+            }
+            sky = sky / static_cast<f32>(rays);
+            const Vec3 gathered = gather.gather(card, up);
+            CY_CHECK_LT(cy::length(gathered - sky), 1.0e-5F);
+            checked += 1;
+        }
+        CY_CHECK_EQ(checked, 13U);
+    }
 }
 
 CY_TEST_CASE("a shading backend installed on the system shades what the scheduler selects") {
