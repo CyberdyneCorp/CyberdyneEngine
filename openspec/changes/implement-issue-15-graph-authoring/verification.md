@@ -352,3 +352,27 @@ Feature scope is frozen at this point; PR #17 does not close #15. Open tasks 3.3
     failed fast. On MSVC those items are now removed from each Slang target and `/EHsc /GR` added.
   - Main's forward-fragment MSL outgrew the string-literal limit (clang 65,536, MSVC 16,380);
     main's #50 now joins it from chunks, and this branch regenerates with that embedder.
+- **The test legs, first run.** With the builds green, the `test *`, `agent` and `sanitizers` jobs
+  ran for the first time; every earlier run had them skipped behind the Windows build. This branch's
+  own failures are fixed here: 39 clang-tidy findings (`quality-lint` had never reached these
+  sources), the Vulkan authored-frame smoke not building without Slang (the sanitizer
+  configuration), and the editor's native-frame tests aborting where no usable device exists. They
+  now skip, saying why, on a runner with no Vulkan driver, after a fallback, and on a device on the
+  compatibility path (the macOS runner's paravirtual GPU has argument-buffer tier 1 and no global
+  texture table). Forcing Metal onto that path locally reproduced the abort and then the clean skip.
+  First-light's shadow and forward passes also bound vertex buffers before a pipeline, which D3D12
+  drops; `render.golden_backends` on WARP lost the small casters' shadows until they bound after it,
+  and `render.null_frame` now fails a pass that does not.
+- **Shared with main, not addressed here (the scope freeze; separate PRs).** These fail on code or
+  CI setup this branch does not touch:
+  - main's Metal suites on the paravirtual macOS runner (`integration.rhi_metal`,
+    `integration.rhi_metal_shader`, `integration.pcg_gpu_metal`, the pipeline-device, skin-pass and
+    GPU-VFX cases, `render.golden_backends`), which REQUIRE a tier-2 device instead of skipping;
+  - `integration.pcg_gpu_vulkan`, which REQUIREs a Vulkan device the Linux test legs do not have;
+  - `smoke.authoring`, `smoke.agent_authoring` and `integration.editor_session_selftest`, which need
+    the desktop editor: nothing builds it before the test legs, and the two that build it themselves
+    do so from a cold cache inside a 300 s test timeout;
+  - `smoke.shader_targets` over its 30 s CPU budget on a hosted runner (37 s), `unit.water`'s ring
+    exactness on linux-arm64 (95 disagreeing vertices), and `diagnostics.crash` on macOS;
+  - the Windows test leg's `setup-crate` step failing on an HTTP 500 from GitHub.
+
