@@ -27,8 +27,7 @@ void light_basis(Vec3 direction, Vec3& right, Vec3& up) noexcept {
 
 }  // namespace
 
-// --- ShadowMap
-// ------------------------------------------------------------------------------------
+// --- ShadowMap -----------------------------------------------------------------------------------
 
 Status ShadowMap::configure(const ShadowMapSettings& settings) noexcept {
     if (settings.resolution == 0 || settings.half_extent_metres <= 0.0F ||
@@ -123,8 +122,7 @@ bool ShadowMapOccluder::occluded(Vec3 from, Vec3 to) const noexcept {
     return fallback_ != nullptr && fallback_->occluded(from, to);
 }
 
-// --- CardGrid
-// -------------------------------------------------------------------------------------
+// --- CardGrid ------------------------------------------------------------------------------------
 
 Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept {
     cell_ = std::max(cell_metres, 1.0e-3F);
@@ -176,8 +174,7 @@ Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept 
     return ok();
 }
 
-// --- CardSnapshot
-// ---------------------------------------------------------------------------------
+// --- CardSnapshot --------------------------------------------------------------------------------
 
 Status CardSnapshot::capture(const SurfaceCache& cache, u64 frame) noexcept {
     const Span<const SurfacePage> pages = cache.pages();
@@ -238,8 +235,7 @@ bool CardSnapshot::radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
     return true;
 }
 
-// --- CardGather
-// -----------------------------------------------------------------------------------
+// --- CardGather ----------------------------------------------------------------------------------
 
 Vec3 CardGather::gather(Vec3 position, Vec3 normal) const noexcept {
     if (field_ == nullptr || settings_.rays == 0) {

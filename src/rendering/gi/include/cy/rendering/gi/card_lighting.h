@@ -46,8 +46,7 @@
 
 namespace cy::rendering::gi {
 
-// --- The shadow map
-// -------------------------------------------------------------------------------
+// --- The shadow map ------------------------------------------------------------------------------
 
 /// An orthographic depth map along one directional light. Depths are metres along `direction` from
 /// the near plane, which sits `depth_range_metres / 2` before `centre`; a texel nothing was found
@@ -123,8 +122,7 @@ private:
     const Occluder* fallback_ = nullptr;
 };
 
-// --- The card lookup
-// ------------------------------------------------------------------------------
+// --- The card lookup -----------------------------------------------------------------------------
 
 /// A hashed uniform grid over the live pages of a surface cache: the lookup a traced hit resolves
 /// through, in a form a device can index. A bucket lists the cards of every cell that hashes to
@@ -231,8 +229,7 @@ private:
     u64 frame_ = 0;
 };
 
-// --- The gather
-// -----------------------------------------------------------------------------------
+// --- The gather ----------------------------------------------------------------------------------
 
 struct CardGatherSettings {
     /// Cosine-weighted rays per card per update. Zero turns the multi-bounce term off.

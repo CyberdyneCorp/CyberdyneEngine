@@ -130,8 +130,7 @@ template <class Declare>
     return device.wait_idle().has_value() && device.end_frame().has_value();
 }
 
-// --- Scenes
-// ---------------------------------------------------------------------------------------
+// --- Scenes --------------------------------------------------------------------------------------
 
 /// The host GI suites' room, in its field: one level, a quarter-metre voxel, a 16-brick window.
 struct RoomScene {
@@ -229,8 +228,7 @@ struct CourtyardScene {
     }
 };
 
-// --- The host oracle and the device cache, side by side
-// -------------------------------------------
+// --- The host oracle and the device cache, side by side ------------------------------------------
 
 /// Two surface caches over the same cards — one shaded on the host through the oracle, one through
 /// the device — and the device scene behind the second.
@@ -423,8 +421,7 @@ struct TraceAgreement {
 
 }  // namespace
 
-// --- Stage 1
-// --------------------------------------------------------------------------------------
+// --- Stage 1 -------------------------------------------------------------------------------------
 
 CY_TEST_CASE("the uploaded field traces as the host field does") {
     Gpu gpu;
@@ -539,8 +536,7 @@ CY_TEST_CASE("a moved object re-uploads only the bricks it touched") {
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-// --- Stage 2
-// --------------------------------------------------------------------------------------
+// --- Stage 2 -------------------------------------------------------------------------------------
 
 CY_TEST_CASE("the device card radiance matches the host surface cache") {
     Gpu gpu;
@@ -701,8 +697,7 @@ CY_TEST_CASE("the device card update shades the budgeted selection and nothing e
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-// --- The published picture
-// -------------------------------------------------------------------------
+// --- The published picture -----------------------------------------------------------------------
 
 namespace {
 

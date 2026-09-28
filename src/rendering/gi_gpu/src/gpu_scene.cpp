@@ -365,8 +365,7 @@ void GpuGiScene::write_constants() noexcept {
     }
 }
 
-// --- The field
-// ------------------------------------------------------------------------------------
+// --- The field -----------------------------------------------------------------------------------
 
 void GpuGiScene::apply_brick(const gi::DistanceField& field, const gi::FieldBrickChange& change,
                              FieldUploadReport& report) noexcept {
@@ -457,8 +456,7 @@ Expected<FieldUploadReport, Error> GpuGiScene::upload_field(
     return report;
 }
 
-// --- The cards
-// ------------------------------------------------------------------------------------
+// --- The cards -----------------------------------------------------------------------------------
 
 Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::SurfacePage> pages,
                                                            f32 lookup_radius) noexcept {
@@ -577,8 +575,7 @@ void GpuGiScene::set_gather(const gi::CardGatherSettings& gather) noexcept {
     write_constants();
 }
 
-// --- Recording
-// ------------------------------------------------------------------------------------
+// --- Recording -----------------------------------------------------------------------------------
 
 ResourceId GpuGiScene::import(RenderGraph& graph, Binding binding) noexcept {
     static constexpr const char* kNames[kBufferCount] = {
@@ -612,8 +609,7 @@ void GpuGiScene::record_copy(const PassContext& context, void* user) noexcept {
                                   Span<const rhi::BufferCopy>(&region, 1));
 }
 
-// --- The trace batch
-// ------------------------------------------------------------------------------
+// --- The trace batch -----------------------------------------------------------------------------
 
 Status GpuGiScene::set_rays(Span<const GpuTraceRay> rays) noexcept {
     if (device_ == nullptr) {
