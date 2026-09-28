@@ -1,0 +1,99 @@
+# Mutations applied to the shipped shader sources, each rebuilt (SPIR-V/MSL regenerated with the
+# pinned Slang 2026.9.2: `src/rendering/fog/shaders/regenerate.py` for the march, the frame's
+# embed_spirv.py / embed_msl.py invocations for `cy/frame.slang` and `cy/volumetric_fog.slang`),
+# run, and restored; md5 of every touched file verified identical after restore. Driver: apply ->
+# regen -> cmake --build build/fog --target cy_test_render_volumetric_fog -> run -> restore ->
+# regen -> md5. Suite: render.volumetric_fog, Development profile, on a Vulkan device (RTX 5060).
+#
+# Which case each mutation is aimed at:
+#   a  (a) off is the frame before the change: the shared forward path's ambient scaled by 1.02.
+#      `compare` forgives one 8-bit step in `differing`, so this one is caught by the
+#      max_channel_delta check (worst delta 2), which is what makes the case byte for byte.
+#   b  (b) an empty medium is identity: the march starts each column at 0.999 transmittance.
+#   c  (c) shafts: the march ignores the shadow map.
+#   d  (d) single-scattering integral: each sub-step integrated as a point sample times its length.
+#   e  (e) attenuation with distance: the lookup adds the in-scattering but no longer attenuates.
+#   f  (f) table variant: the air's source term dropped from the composite.
+
+== a-shared-path-moved: src/rendering/shaders/cy/frame.slang: 'color += ambient; // THE FOG' -> 'color += ambient * 1.02; // THE FOG'
+exit 1 (RED)
+src/rendering/fog/tests/test_fog_device.cpp:225: ERROR: CHECK_EQ( comparison.max_channel_delta, 0U ) is NOT correct!
+  values: CHECK_EQ( 2, 0 )
+[doctest] test cases:   5 |   4 passed | 1 failed | 0 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 2 at (279, 102)
+(b) an empty medium against the frame with fog off: 0 differing
+(c) 3674 froxels wholly in a shadow, 3674 of them below a tenth of the sun; 59339 in the open, 59339 of them above nine tenths; longest shadowed run 10 slices in column (17, 0)
+(d) 648 froxels against the single-scattering integral: worst in-scattering 0.000815, worst transmittance 0.000412; every sampled column against the host march: worst 3.84e-05
+(e) the floor through an absorbing fog: near kept 0.636, far kept 0.320, 0 channels brighter
+(f) the table variant against the host march over the same air: 7.12e-05
+restored (frame.slang md5 86da633ddb34ca72c7989cffe3c8a835, frame_spirv.h md5 c257d870ba9666cf4ed85e2958378475, frame_msl.h md5 6a68a3ea9239b1c46911b69c35f21d8a: identical)
+== b-empty-not-identity: src/rendering/fog/shaders/volumetric_fog.slang: 'float carried = 1.0; #endif' -> 'float carried = 0.999; #endif'
+exit 1 (RED)
+src/rendering/fog/tests/test_fog_device.cpp:642: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+  values: CHECK_EQ( 12848, 0 )
+src/rendering/fog/tests/test_fog_device.cpp:656: ERROR: CHECK_EQ( exact, static_cast<usize>(settings.volume.width) * settings.volume.height * settings.volume.depth ) is NOT correct!
+  values: CHECK_EQ( 0, 81600 )
+src/rendering/fog/tests/test_fog_device.cpp:755: ERROR: CHECK_GT( static_cast<f32>(open_lit), 0.97F * static_cast<f32>(open) ) is NOT correct!
+  values: CHECK_GT( 57299, 57558.8 )
+src/rendering/fog/tests/test_fog_device.cpp:837: ERROR: CHECK_LT( worst_march, 1e-3F ) is NOT correct!
+  values: CHECK_LT( 0.00102775, 0.001 )
+[doctest] test cases:   5 |   2 passed | 3 failed | 0 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 0 at (0, 0)
+(b) an empty medium against the frame with fog off: 12848 differing
+(c) 3674 froxels wholly in a shadow, 3674 of them below a tenth of the sun; 59339 in the open, 57299 of them above nine tenths; longest shadowed run 10 slices in column (17, 0)
+(d) 648 froxels against the single-scattering integral: worst in-scattering 0.00181, worst transmittance 0.000997; every sampled column against the host march: worst 0.00103
+(e) the floor through an absorbing fog: near kept 0.634, far kept 0.319, 0 channels brighter
+(f) the table variant against the host march over the same air: 7.12e-05
+restored (volumetric_fog.slang md5 29e7da77316f8df4a411a4de55ec8b51, fog_spirv.h md5 3b27227c0c82db06535fc0eb9533e70e, fog_msl.h md5 161a0426e5fada28ae35f8b2557dda0d: identical)
+== c-shadow-ignored: src/rendering/fog/shaders/volumetric_fog.slang: 'if (fogWord(7u).w < 0.5) { return 1.0;' -> 'if (true) { return 1.0;'
+exit 1 (RED)
+src/rendering/fog/tests/test_fog_device.cpp:754: ERROR: CHECK_GT( static_cast<f32>(shadowed_dark), 0.97F * static_cast<f32>(shadowed) ) is NOT correct!
+  values: CHECK_GT( 0, 3563.78 )
+[doctest] test cases:   5 |   4 passed | 1 failed | 0 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 0 at (0, 0)
+(b) an empty medium against the frame with fog off: 0 differing
+(c) 3674 froxels wholly in a shadow, 0 of them below a tenth of the sun; 59339 in the open, 59339 of them above nine tenths; longest shadowed run 10 slices in column (17, 0)
+(d) 648 froxels against the single-scattering integral: worst in-scattering 0.000815, worst transmittance 0.000412; every sampled column against the host march: worst 3.84e-05
+(e) the floor through an absorbing fog: near kept 0.635, far kept 0.319, 0 channels brighter
+(f) the table variant against the host march over the same air: 7.12e-05
+restored (volumetric_fog.slang md5 29e7da77316f8df4a411a4de55ec8b51, fog_spirv.h md5 3b27227c0c82db06535fc0eb9533e70e, fog_msl.h md5 161a0426e5fada28ae35f8b2557dda0d: identical)
+== d-point-sampled-substep: src/rendering/fog/shaders/volumetric_fog.slang: 'const float integrated = extinction > 1e-6 ? (1.0 - sliceTransmittance) / max(medium.extinction, 1e-6) : step;' -> 'const float integrated = step;'
+exit 1 (RED)
+src/rendering/fog/tests/test_fog_device.cpp:835: ERROR: CHECK_LT( worst_reference, 1e-2F ) is NOT correct!
+  values: CHECK_LT( 0.0197217, 0.01 )
+src/rendering/fog/tests/test_fog_device.cpp:837: ERROR: CHECK_LT( worst_march, 1e-3F ) is NOT correct!
+  values: CHECK_LT( 0.0201572, 0.001 )
+[doctest] test cases:   5 |   4 passed | 1 failed | 0 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 0 at (0, 0)
+(b) an empty medium against the frame with fog off: 0 differing
+(c) 3674 froxels wholly in a shadow, 3674 of them below a tenth of the sun; 59339 in the open, 59339 of them above nine tenths; longest shadowed run 10 slices in column (17, 0)
+(d) 648 froxels against the single-scattering integral: worst in-scattering 0.0197, worst transmittance 0.000412; every sampled column against the host march: worst 0.0202
+(e) the floor through an absorbing fog: near kept 0.635, far kept 0.319, 0 channels brighter
+(f) the table variant against the host march over the same air: 7.12e-05
+restored (volumetric_fog.slang md5 29e7da77316f8df4a411a4de55ec8b51, fog_spirv.h md5 3b27227c0c82db06535fc0eb9533e70e, fog_msl.h md5 161a0426e5fada28ae35f8b2557dda0d: identical)
+== e-surface-not-attenuated: src/rendering/shaders/cy/volumetric_fog.slang: 'return radiance * fog.transmittance + fog.inScattering;' -> 'return radiance + fog.inScattering;'
+exit 1 (RED)
+src/rendering/fog/tests/test_fog_device.cpp:920: ERROR: CHECK_LT( far_ratio, near_ratio * 0.8F ) is NOT correct!
+  values: CHECK_LT( 1, 0.8 )
+src/rendering/fog/tests/test_fog_device.cpp:921: ERROR: CHECK_LT( near_ratio, 0.999F ) is NOT correct!
+  values: CHECK_LT( 1, 0.999 )
+[doctest] test cases:   5 |   4 passed | 1 failed | 0 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 0 at (0, 0)
+(b) an empty medium against the frame with fog off: 0 differing
+(c) 3674 froxels wholly in a shadow, 3674 of them below a tenth of the sun; 59339 in the open, 59339 of them above nine tenths; longest shadowed run 10 slices in column (17, 0)
+(d) 648 froxels against the single-scattering integral: worst in-scattering 0.000815, worst transmittance 0.000412; every sampled column against the host march: worst 3.84e-05
+(e) the floor through an absorbing fog: near kept 1.000, far kept 1.000, 0 channels brighter
+(f) the table variant against the host march over the same air: 7.12e-05
+restored (volumetric_fog.slang md5 219b3c9095f51afd1b349b11488ce674, frame_spirv.h md5 c257d870ba9666cf4ed85e2958378475, frame_msl.h md5 6a68a3ea9239b1c46911b69c35f21d8a: identical)
+== f-air-source-dropped: src/rendering/fog/shaders/volumetric_fog.slang: 'source = added / (length * fraction);' -> 'source = float3(0.0);'
+exit 1 (RED)
+src/rendering/fog/tests/test_fog_device.cpp:1051: ERROR: CHECK_LT( worst, 2e-3F ) is NOT correct!
+  values: CHECK_LT( 0.999986, 0.002 )
+[doctest] test cases:   5 |   4 passed | 1 failed | 0 skipped
+(a) against the frame before the change: 0 differing (0 off edge), worst delta 0 at (0, 0)
+(b) an empty medium against the frame with fog off: 0 differing
+(c) 3674 froxels wholly in a shadow, 3674 of them below a tenth of the sun; 59339 in the open, 59339 of them above nine tenths; longest shadowed run 10 slices in column (17, 0)
+(d) 648 froxels against the single-scattering integral: worst in-scattering 0.000815, worst transmittance 0.000412; every sampled column against the host march: worst 3.84e-05
+(e) the floor through an absorbing fog: near kept 0.635, far kept 0.319, 0 channels brighter
+(f) the table variant against the host march over the same air: 1
+restored (volumetric_fog.slang md5 29e7da77316f8df4a411a4de55ec8b51, fog_spirv.h md5 3b27227c0c82db06535fc0eb9533e70e, fog_msl.h md5 161a0426e5fada28ae35f8b2557dda0d: identical)
