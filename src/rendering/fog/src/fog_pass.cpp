@@ -365,8 +365,8 @@ PassId FogPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs& inputs
     }
     const bool table = desc_.target == FogTarget::AerialTable;
     march_ = March{this, shadow, inputs.target, table ? frame_.air : kInvalidResource};
-    PassBuilder builder = graph.add_pass(table ? "volumetric fog table" : "volumetric fog",
-                                         QueueKind::Graphics);
+    PassBuilder builder =
+        graph.add_pass(table ? "volumetric fog table" : "volumetric fog", QueueKind::Graphics);
     builder.read(shadow, Access::ComputeSampledRead);
     if (march_.air != kInvalidResource) {
         builder.read(march_.air, Access::ComputeStorageRead);
@@ -420,8 +420,9 @@ void FogPass::record_march(const PassContext& context, void* user) noexcept {
     writes[1].buffer_range = kConstantBytes;
     if (table) {
         writes[2] = buffer_write(2, context.executor->buffer(march->output));
-        writes[3] = buffer_write(
-            3, march->air != kInvalidResource ? context.executor->buffer(march->air) : self.no_air_);
+        writes[3] =
+            buffer_write(3, march->air != kInvalidResource ? context.executor->buffer(march->air)
+                                                           : self.no_air_);
     } else {
         writes[2].binding = 2;
         writes[2].kind = rhi::DescriptorKind::StorageTexture;
@@ -429,8 +430,8 @@ void FogPass::record_march(const PassContext& context, void* user) noexcept {
         writes[2].use = rhi::ImageUse::Storage;
     }
     const u32 count = table ? kTableBindings : kTextureBindings;
-    if (Status written =
-            self.device_->update_descriptor_set(*set, Span<const rhi::DescriptorWrite>(writes, count));
+    if (Status written = self.device_->update_descriptor_set(
+            *set, Span<const rhi::DescriptorWrite>(writes, count));
         !written) {
         return;
     }

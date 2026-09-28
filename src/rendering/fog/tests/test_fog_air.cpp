@@ -7,7 +7,8 @@
 // `sky::AerialPerspectiveTable` and marches it WITH the fog as one more homogeneous medium. Three
 // things follow, and each is a case: an empty fog reproduces the air table; a disabled air table
 // leaves the fog exactly as it was; and together the two transmit the product of what each
-// transmits and add less than the sum of what each adds, because each medium dims the other's light.
+// transmits and add less than the sum of what each adds, because each medium dims the other's
+// light.
 //
 // Integration rather than unit: the atmosphere's tables are built once, a few hundred milliseconds.
 
@@ -56,8 +57,9 @@ struct Air {
         built = tables.configure(sky::SkyTableQuality::Medium).has_value() &&
                 tables.build(atmosphere).has_value() &&
                 table.configure(settings.volume).has_value() &&
-                table.update(atmosphere, tables, sky::ground_position(atmosphere, 120.0F), basis,
-                             normalize(Vec3{0.4F, 0.3F, -0.6F}))
+                table
+                    .update(atmosphere, tables, sky::ground_position(atmosphere, 120.0F), basis,
+                            normalize(Vec3{0.4F, 0.3F, -0.6F}))
                     .has_value();
     }
 };
@@ -96,10 +98,10 @@ CY_TEST_CASE("an empty fog marched with the atmosphere's table reproduces the ta
                 const f32 distance = cy::rendering::froxel_slice_depth(volume, slice) / cosine;
                 const sky::AerialPerspective want = air.table.sample_at(direction * distance);
                 for (u32 channel = 0; channel < 3; ++channel) {
-                    worst_t = std::fmax(worst_t, relative(t[slice][channel],
-                                                          want.transmittance[channel]));
-                    worst_s = std::fmax(worst_s, relative(s[slice][channel],
-                                                          want.in_scattering[channel]));
+                    worst_t = std::fmax(worst_t,
+                                        relative(t[slice][channel], want.transmittance[channel]));
+                    worst_s = std::fmax(worst_s,
+                                        relative(s[slice][channel], want.in_scattering[channel]));
                 }
             }
         }
@@ -168,9 +170,9 @@ CY_TEST_CASE("fog and air together transmit the product and add less than the su
                        .has_value());
         for (u32 slice = 0; slice < volume.depth; ++slice) {
             for (u32 channel = 0; channel < 3; ++channel) {
-                CY_CHECK_LT(relative(both_t[slice][channel],
-                                     fog_t[slice][channel] * air_t[slice][channel]),
-                            1e-4F);
+                CY_CHECK_LT(
+                    relative(both_t[slice][channel], fog_t[slice][channel] * air_t[slice][channel]),
+                    1e-4F);
                 CY_CHECK_LE(both_s[slice][channel],
                             (fog_s[slice][channel] + air_s[slice][channel]) * 1.0001F);
                 CY_CHECK_GE(both_s[slice][channel],

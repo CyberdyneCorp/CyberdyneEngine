@@ -841,7 +841,8 @@ CY_TEST_CASE("volumetric fog is produced after the shadow map and read by the op
     description.shadow_depth = shadow_depth;
     description.features.volumetric_fog = true;
     description.volumetric_fog_target = volume;
-    description.volumetric_fog_stage = cy::rendering::FrameStageDeclaration{&declare_fog, &producer};
+    description.volumetric_fog_stage =
+        cy::rendering::FrameStageDeclaration{&declare_fog, &producer};
     ForwardFrame frame(allocator());
     CY_REQUIRE(frame.build(graph, description).has_value());
     CY_REQUIRE(declared(frame, FramePassKind::VolumetricFog));
@@ -881,7 +882,8 @@ CY_TEST_CASE("volumetric fog without its producer is refused, and so is a produc
     FogProducer producer;
     producer.refuse = true;
     description.volumetric_fog_target = refusing.create_texture(request);
-    description.volumetric_fog_stage = cy::rendering::FrameStageDeclaration{&declare_fog, &producer};
+    description.volumetric_fog_stage =
+        cy::rendering::FrameStageDeclaration{&declare_fog, &producer};
     ForwardFrame refusing_frame(allocator());
     CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
 }

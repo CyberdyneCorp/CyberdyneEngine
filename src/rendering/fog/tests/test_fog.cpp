@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Volumetric fog on the host: the medium, the constants, the march and the lookup. `unit.rendering_fog`.
+// Volumetric fog on the host: the medium, the constants, the march and the lookup.
+// `unit.rendering_fog`.
 //
 // The march `integrate_fog_column` is the device's `cyVolumetricFog` transcribed, and
 // `single_scattering_reference` is the single-scattering equation by brute-force quadrature with
@@ -260,9 +261,8 @@ CY_TEST_CASE("the march converges to the single-scattering integral") {
     f32 worst_t = 0.0F;
     const u32 columns[][2] = {{0, 0}, {5, 3}, {11, 4}, {8, 6}, {15, 8}};
     for (const auto& column : columns) {
-        CY_REQUIRE(integrate_fog_column(settings, view, light, FogShadow{}, HostShadowMap{},
-                                        medium, column[0], column[1], cy::Span<Vec3>(t),
-                                        cy::Span<Vec3>(s))
+        CY_REQUIRE(integrate_fog_column(settings, view, light, FogShadow{}, HostShadowMap{}, medium,
+                                        column[0], column[1], cy::Span<Vec3>(t), cy::Span<Vec3>(s))
                        .has_value());
         const Vec3 direction = fog_column_direction(settings, view, column[0], column[1]);
         const f32 cosine = dot(direction, view.forward);
@@ -271,13 +271,13 @@ CY_TEST_CASE("the march converges to the single-scattering integral") {
             const FogAtPoint reference = single_scattering_reference(
                 view, light, FogShadow{}, HostShadowMap{}, medium, direction, distance, 20'000);
             worst_s = cy::math::max(worst_s, relative_error(s[slice], reference.in_scattering));
-            worst_t = cy::math::max(worst_t,
-                                    std::fabs(t[slice].x - reference.transmittance.x));
+            worst_t = cy::math::max(worst_t, std::fabs(t[slice].x - reference.transmittance.x));
         }
     }
-    std::printf("march against the single-scattering integral: worst in-scattering %.3g, worst "
-                "transmittance %.3g\n",
-                static_cast<double>(worst_s), static_cast<double>(worst_t));
+    std::printf(
+        "march against the single-scattering integral: worst in-scattering %.3g, worst "
+        "transmittance %.3g\n",
+        static_cast<double>(worst_s), static_cast<double>(worst_t));
     CY_CHECK_LT(worst_s, 5e-3F);
     CY_CHECK_LT(worst_t, 1e-3F);
 
@@ -287,8 +287,8 @@ CY_TEST_CASE("the march converges to the single-scattering integral") {
     uniform.height.base_height = 1000.0F;
     uniform.height.albedo = Vec3{0.9F, 0.9F, 0.9F};
     uniform.height.anisotropy = 0.3F;
-    CY_REQUIRE(integrate_fog_column(settings, view, light, FogShadow{}, HostShadowMap{}, uniform,
-                                    7, 4, cy::Span<Vec3>(t), cy::Span<Vec3>(s))
+    CY_REQUIRE(integrate_fog_column(settings, view, light, FogShadow{}, HostShadowMap{}, uniform, 7,
+                                    4, cy::Span<Vec3>(t), cy::Span<Vec3>(s))
                    .has_value());
     const Vec3 direction = fog_column_direction(settings, view, 7, 4);
     const MediumSample point = sample_medium(uniform, Vec3{}, dot(direction, light.to_sun));

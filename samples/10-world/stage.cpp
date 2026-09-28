@@ -1198,8 +1198,8 @@ Status Stage::upload_cloud_shadow(const World& world) noexcept {
 /// the fog's march can read the air out of the table along its own rays. The frustum is symmetric,
 /// so which way `right` points does not matter as long as both are built and sampled with the same
 /// one.
-[[nodiscard]] static cy::rendering::sky::AerialPerspectiveTable::View
-volume_view(const WorldVec3d& eye, const WorldVec3d& target, u32 width, u32 height) noexcept {
+[[nodiscard]] static cy::rendering::sky::AerialPerspectiveTable::View volume_view(
+    const WorldVec3d& eye, const WorldVec3d& target, u32 width, u32 height) noexcept {
     const Vec3 forward =
         normalised(Vec3{static_cast<f32>(target.x - eye.x), static_cast<f32>(target.y - eye.y),
                         static_cast<f32>(target.z - eye.z)});
@@ -1212,7 +1212,8 @@ volume_view(const WorldVec3d& eye, const WorldVec3d& target, u32 width, u32 heig
     view.right = normalised(cross(forward, reference));
     view.up = cross(view.right, forward);
     view.tan_half_fov_y = std::tan(kFieldOfView * 0.5F);
-    view.tan_half_fov_x = view.tan_half_fov_y * (static_cast<f32>(width) / static_cast<f32>(height));
+    view.tan_half_fov_x =
+        view.tan_half_fov_y * (static_cast<f32>(width) / static_cast<f32>(height));
     return view;
 }
 

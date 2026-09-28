@@ -13,10 +13,11 @@
 // ================================================================================================
 //
 // A medium is an EXTINCTION coefficient sigma_t in 1/m, a single-scattering ALBEDO rho (so the
-// scattering coefficient is sigma_s = rho sigma_t per channel), a PHASE FUNCTION — Henyey-Greenstein
-// with its `g` — and an EMISSION in radiance per metre. There is no fog colour and no fog start and
-// end distance anywhere here: the colour a fog takes is the light that reaches it times its albedo,
-// and how far one sees through it is `extinction_for_visibility`'s Koschmieder relation.
+// scattering coefficient is sigma_s = rho sigma_t per channel), a PHASE FUNCTION —
+// Henyey-Greenstein with its `g` — and an EMISSION in radiance per metre. There is no fog colour
+// and no fog start and end distance anywhere here: the colour a fog takes is the light that reaches
+// it times its albedo, and how far one sees through it is `extinction_for_visibility`'s Koschmieder
+// relation.
 //
 // Two media at one point add their coefficients: sigma_t and sigma_s sum, and the phase function of
 // the mixture is the sigma_s-weighted mean of the two. `MediumSample::sun_scattering` is that mean

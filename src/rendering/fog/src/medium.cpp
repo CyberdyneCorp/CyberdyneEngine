@@ -17,9 +17,9 @@ namespace {
     const f32 radial = std::sqrt((local.x * local.x) + (local.z * local.z));
     switch (volume.shape) {
         case FogVolumeShape::Box:
-            return math::min(volume.size.x - std::fabs(local.x),
-                             math::min(volume.size.y - std::fabs(local.y),
-                                       volume.size.z - std::fabs(local.z)));
+            return math::min(
+                volume.size.x - std::fabs(local.x),
+                math::min(volume.size.y - std::fabs(local.y), volume.size.z - std::fabs(local.z)));
         case FogVolumeShape::Sphere:
             return volume.size.x - length(local);
         case FogVolumeShape::Cylinder:
@@ -33,8 +33,8 @@ namespace {
     return -1.0F;
 }
 
-void add_medium(MediumSample& sample, f32 extinction, Vec3 albedo, f32 anisotropy,
-                Vec3 emission, f32 cos_to_sun) noexcept {
+void add_medium(MediumSample& sample, f32 extinction, Vec3 albedo, f32 anisotropy, Vec3 emission,
+                f32 cos_to_sun) noexcept {
     sample.emission += emission;
     if (extinction <= 0.0F) {
         return;

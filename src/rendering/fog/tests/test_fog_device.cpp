@@ -364,10 +364,10 @@ Status before_upload(rendering::pipeline::FrameUpload& upload, void* user) noexc
     }
     upload.lights = Span<const rendering::GpuLight>(frame->lights.data(), frame->lights.size());
     frame->fog.light.ambient_radiance =
-        frame->fog_ambient ? Vec3{upload.view.ambient_and_occlusion[0],
-                                  upload.view.ambient_and_occlusion[1],
-                                  upload.view.ambient_and_occlusion[2]}
-                           : Vec3{0.0F, 0.0F, 0.0F};
+        frame->fog_ambient
+            ? Vec3{upload.view.ambient_and_occlusion[0], upload.view.ambient_and_occlusion[1],
+                   upload.view.ambient_and_occlusion[2]}
+            : Vec3{0.0F, 0.0F, 0.0F};
     if (frame->attached) {
         if (Status set = frame->pass->set_frame(frame->fog); !set) {
             return set;
@@ -599,7 +599,8 @@ struct Froxel {
 
 }  // namespace
 
-CY_TEST_CASE("with the fog off the frame is the frame before it, and an empty medium changes nothing") {
+CY_TEST_CASE(
+    "with the fog off the frame is the frame before it, and an empty medium changes nothing") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();
@@ -851,7 +852,9 @@ CY_TEST_CASE("a surface seen through fog is attenuated with its distance") {
     usize near_count = 0;
     usize far_count = 0;
     usize brighter = 0;
-    const auto channel = [](u32 texel, u32 shift) { return static_cast<f32>((texel >> shift) & 0xFFU); };
+    const auto channel = [](u32 texel, u32 shift) {
+        return static_cast<f32>((texel >> shift) & 0xFFU);
+    };
     for (u32 y = 0; y < kHeight; ++y) {
         for (u32 x = 0; x < kWidth; ++x) {
             const f32 ndc_x = (((static_cast<f32>(x) + 0.5F) / kWidth) * 2.0F) - 1.0F;
@@ -945,9 +948,9 @@ CY_TEST_CASE("the atmosphere-table variant composites the air the processor buil
     basis.up = view.up;
     basis.tan_half_fov_x = view.tan_half_fov_x;
     basis.tan_half_fov_y = view.tan_half_fov_y;
-    CY_REQUIRE(air.update(atmosphere, tables, sky::ground_position(atmosphere, 120.0F), basis,
-                          to_sun)
-                   .has_value());
+    CY_REQUIRE(
+        air.update(atmosphere, tables, sky::ground_position(atmosphere, 120.0F), basis, to_sun)
+            .has_value());
     cy::Array<Vec4> words(allocator());
     CY_REQUIRE(sky::pack_aerial_perspective(air, 1.0F, words).has_value());
     rhi::BufferDescription upload;
@@ -993,9 +996,9 @@ CY_TEST_CASE("the atmosphere-table variant composites the air the processor buil
         CY_REQUIRE(device.begin_frame().has_value());
         {
             rendering::GraphExecutor executor(allocator(), device);
-            CY_REQUIRE(executor.execute(graph, rendering::CompileOptions{},
-                                        rendering::ExecuteOptions{})
-                           .has_value());
+            CY_REQUIRE(
+                executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{})
+                    .has_value());
             CY_REQUIRE(device.wait_idle().has_value());
             executor.release();
         }

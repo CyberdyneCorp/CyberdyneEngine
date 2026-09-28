@@ -332,8 +332,7 @@ void Stage::set_fog(bool enabled, const Shot& shot) noexcept {
     fog_enabled_ = enabled && shot.fog_visibility_metres > 0.0F;
     fog_medium_ = rendering::fog::FogMedium{};
     fog_medium_.height.extinction =
-        fog_enabled_ ? rendering::fog::extinction_for_visibility(shot.fog_visibility_metres)
-                     : 0.0F;
+        fog_enabled_ ? rendering::fog::extinction_for_visibility(shot.fog_visibility_metres) : 0.0F;
     fog_medium_.height.base_height = shot.fog_base_height;
     fog_medium_.height.scale_height = shot.fog_scale_height;
     fog_medium_.height.albedo = Vec3{shot.fog_albedo, shot.fog_albedo, shot.fog_albedo};

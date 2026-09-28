@@ -116,8 +116,9 @@ struct Options {
     /// Draw the frame without aerial perspective and with the stand-in clear sky, as before the
     /// frame took its distance from the atmosphere. The before half of that before/after pair.
     bool no_aerial_perspective = false;
-    /// Draw the frame through a valley haze: volumetric fog with the grade file's medium, composited
-    /// with the atmosphere. Off by default, and off is the frame drawn before fog existed.
+    /// Draw the frame through a valley haze: volumetric fog with the grade file's medium,
+    /// composited with the atmosphere. Off by default, and off is the frame drawn before fog
+    /// existed.
     bool fog = false;
     /// MEASURE ON A QUIET HOST, OR FAIL SAYING THE HOST WAS NOT QUIET. A frame budget on a loaded
     /// machine measures the machine: `m11a:world-budget-on-a-device` held at 10.8 ms worst alone
@@ -259,8 +260,7 @@ private:
             cursor.flag("--no-water-shading", out.no_water_shading) ||
             cursor.flag("--ground-marker", out.ground_marker) ||
             cursor.flag("--no-aerial-perspective", out.no_aerial_perspective) ||
-            cursor.flag("--fog", out.fog) ||
-            cursor.flag("--quiet-host", out.quiet_host) ||
+            cursor.flag("--fog", out.fog) || cursor.flag("--quiet-host", out.quiet_host) ||
             cursor.number("--quiet-wait-s", out.quiet_wait_s);
         if (!recognised) {
             const std::string_view argument = cursor.current();

@@ -318,11 +318,10 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(shot.decals.size()),
                 static_cast<unsigned long long>(shot.decal_materials.size()));
     stage.set_fog(fog == "on", shot);
-    std::printf("fog           %s, visibility %.0f m at %.2f m, scale height %.1f m, g %.2f\n",
-                fog.c_str(), static_cast<double>(shot.fog_visibility_metres),
-                static_cast<double>(shot.fog_base_height),
-                static_cast<double>(shot.fog_scale_height),
-                static_cast<double>(shot.fog_anisotropy));
+    std::printf(
+        "fog           %s, visibility %.0f m at %.2f m, scale height %.1f m, g %.2f\n", fog.c_str(),
+        static_cast<double>(shot.fog_visibility_metres), static_cast<double>(shot.fog_base_height),
+        static_cast<double>(shot.fog_scale_height), static_cast<double>(shot.fog_anisotropy));
     stage.limit_albedo_levels(albedo_levels);
     if (bloom) {
         stage.enable_bloom(shot);

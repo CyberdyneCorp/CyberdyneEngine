@@ -41,8 +41,8 @@
 // ================================================================================================
 //
 // `sky::AerialPerspectiveTable::View` and the table's header: a forward, right and up basis and the
-// tangents of half the field of view, a column's ray `forward + right * ndc.x * tan_x + up * ndc.y *
-// tan_y` with ndc at the column's centre and +y UP, and slice `i`'s far edge at
+// tangents of half the field of view, a column's ray `forward + right * ndc.x * tan_x + up * ndc.y
+// * tan_y` with ndc at the column's centre and +y UP, and slice `i`'s far edge at
 // `froxel_slice_depth(volume, i)` metres ALONG FORWARD, integrated from the eye. The fog header is
 // that header word for word plus the eye, so one sampler shape reads both.
 
@@ -116,7 +116,8 @@ struct FogSettings {
 /// Float4 words of the device's constant block before the first fog volume, and per volume.
 inline constexpr u32 kFogConstantHeaderWords = 17;
 inline constexpr u32 kFogVolumeWords = 4;
-inline constexpr u32 kFogConstantWords = kFogConstantHeaderWords + (kFogVolumeWords * kMaxFogVolumes);
+inline constexpr u32 kFogConstantWords =
+    kFogConstantHeaderWords + (kFogVolumeWords * kMaxFogVolumes);
 
 /// The texels of the stored volume's first row that describe it, in order: forward and enabled,
 /// right and tan x, up and tan y, the volume's shape, its planes and sub-steps, and the eye.
@@ -202,12 +203,11 @@ struct HostShadowMap {
 /// medium that transmits and adds exactly that over the stretch, and marched with the fog, per
 /// channel. An empty fog then reproduces the table at the slices' far edges, and an air table that
 /// is off leaves the fog alone.
-[[nodiscard]] Status integrate_fog_column(const FogSettings& settings, const FogView& view,
-                                          const FogLight& light, const FogShadow& shadow,
-                                          const HostShadowMap& map, const FogMedium& medium, u32 x,
-                                          u32 y, Span<Vec3> transmittance,
-                                          Span<Vec3> in_scattering,
-                                          const sky::AerialPerspectiveTable* air = nullptr) noexcept;
+[[nodiscard]] Status integrate_fog_column(
+    const FogSettings& settings, const FogView& view, const FogLight& light,
+    const FogShadow& shadow, const HostShadowMap& map, const FogMedium& medium, u32 x, u32 y,
+    Span<Vec3> transmittance, Span<Vec3> in_scattering,
+    const sky::AerialPerspectiveTable* air = nullptr) noexcept;
 
 /// The unit ray a column marches along, from the view's eye.
 [[nodiscard]] Vec3 fog_column_direction(const FogSettings& settings, const FogView& view, u32 x,

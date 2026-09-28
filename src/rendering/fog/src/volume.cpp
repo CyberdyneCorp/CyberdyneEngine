@@ -42,18 +42,18 @@ struct DepthTap {
     const u32 last = volume.depth - 1U;
     const f32 span = math::max(volume.far_plane - volume.near_plane, 1e-6F);
     const f32 normalised = math::saturate((depth - volume.near_plane) / span);
-    const f32 continuous =
-        (std::pow(normalised, 1.0F / math::max(volume.depth_exponent, 1.0F)) *
-         static_cast<f32>(volume.depth)) -
-        1.0F;
+    const f32 continuous = (std::pow(normalised, 1.0F / math::max(volume.depth_exponent, 1.0F)) *
+                            static_cast<f32>(volume.depth)) -
+                           1.0F;
     const u32 slice = math::min(static_cast<u32>(math::max(continuous, 0.0F)), last);
     tap.near_slice = static_cast<i32>(slice);
     tap.far_slice = math::min(slice + 1U, last);
     const f32 near_edge = froxel_slice_depth(volume, slice);
     const f32 far_edge = froxel_slice_depth(volume, slice + 1U);
-    tap.fraction = slice == last
-                       ? 1.0F
-                       : math::saturate((depth - near_edge) / math::max(far_edge - near_edge, 1e-6F));
+    tap.fraction =
+        slice == last
+            ? 1.0F
+            : math::saturate((depth - near_edge) / math::max(far_edge - near_edge, 1e-6F));
     return tap;
 }
 
@@ -66,12 +66,14 @@ struct PlaneTaps {
     f32 ty = 0.0F;
 };
 
-[[nodiscard]] Vec3 fetch(Span<const Vec4> texels, FogTextureExtent extent, u32 column, u32 row) noexcept {
+[[nodiscard]] Vec3 fetch(Span<const Vec4> texels, FogTextureExtent extent, u32 column,
+                         u32 row) noexcept {
     return texels[(static_cast<usize>(row) * extent.width) + column].xyz();
 }
 
-[[nodiscard]] Vec3 plane(Span<const Vec4> texels, FogTextureExtent extent, const FroxelVolume& volume,
-                         const PlaneTaps& taps, u32 slice, u32 which) noexcept {
+[[nodiscard]] Vec3 plane(Span<const Vec4> texels, FogTextureExtent extent,
+                         const FroxelVolume& volume, const PlaneTaps& taps, u32 slice,
+                         u32 which) noexcept {
     const u32 base = which * volume.width;
     const u32 row0 = 1U + (slice * volume.height) + taps.y0;
     const u32 row1 = 1U + (slice * volume.height) + taps.y1;
@@ -193,8 +195,8 @@ Expected<FogConstants, Error> pack_fog_constants(const FogSettings& settings, co
     w[2] = word(view.up, view.tan_half_fov_y);
     w[3] = Vec4{static_cast<f32>(volume.width), static_cast<f32>(volume.height),
                 static_cast<f32>(volume.depth), math::max(volume.depth_exponent, 1.0F)};
-    w[4] = Vec4{volume.near_plane, volume.far_plane, static_cast<f32>(settings.steps_per_slice),
-                0.0F};
+    w[4] =
+        Vec4{volume.near_plane, volume.far_plane, static_cast<f32>(settings.steps_per_slice), 0.0F};
     w[5] = word(view.eye, 0.0F);
     w[6] = word(view.world_offset, static_cast<f32>(count));
     w[7] = word(normalize(light.to_sun), shadow.enabled ? 1.0F : 0.0F);
@@ -231,8 +233,8 @@ u64 fog_table_words(const FroxelVolume& volume) noexcept {
 FogAtPoint fog_at(Span<const Vec4> texels, FogTextureExtent extent,
                   Vec3 relative_position) noexcept {
     FogAtPoint result;
-    if (extent.width < 2U * 3U || texels.size() < static_cast<usize>(extent.width) * extent.height ||
-        texels[0].w < 0.5F) {
+    if (extent.width < 2U * 3U ||
+        texels.size() < static_cast<usize>(extent.width) * extent.height || texels[0].w < 0.5F) {
         return result;
     }
     const Vec3 forward = texels[0].xyz();
@@ -305,8 +307,7 @@ f32 fog_shadow_visibility(const FogShadow& shadow, const HostShadowMap& map,
     return math::lerp(top, bottom, ay);
 }
 
-Vec3 fog_column_direction(const FogSettings& settings, const FogView& view, u32 x,
-                          u32 y) noexcept {
+Vec3 fog_column_direction(const FogSettings& settings, const FogView& view, u32 x, u32 y) noexcept {
     const FroxelVolume& volume = settings.volume;
     const f32 ndc_x =
         (((static_cast<f32>(x) + 0.5F) / static_cast<f32>(math::max(volume.width, 1U))) * 2.0F) -
@@ -318,10 +319,10 @@ Vec3 fog_column_direction(const FogSettings& settings, const FogView& view, u32 
                      (view.up * (ndc_y * view.tan_half_fov_y)));
 }
 
-Status integrate_fog_column(const FogSettings& settings, const FogView& view,
-                            const FogLight& light, const FogShadow& shadow,
-                            const HostShadowMap& map, const FogMedium& medium, u32 x, u32 y,
-                            Span<Vec3> transmittance, Span<Vec3> in_scattering,
+Status integrate_fog_column(const FogSettings& settings, const FogView& view, const FogLight& light,
+                            const FogShadow& shadow, const HostShadowMap& map,
+                            const FogMedium& medium, u32 x, u32 y, Span<Vec3> transmittance,
+                            Span<Vec3> in_scattering,
                             const sky::AerialPerspectiveTable* air) noexcept {
     const FroxelVolume& volume = settings.volume;
     if (x >= volume.width || y >= volume.height || settings.steps_per_slice == 0U ||
