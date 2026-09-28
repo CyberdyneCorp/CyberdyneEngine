@@ -53,6 +53,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -426,22 +427,17 @@ public:
     FrameRun(const FrameRun&) = delete;
     FrameRun& operator=(const FrameRun&) = delete;
 
-    /// Pack and upload the table, then render. With `kDecalListsInTable` the lists are the
-    /// assembly's, so the frame is assembled once to produce them — the assembly is deterministic,
-    /// and the second assembly assigns exactly what the first did.
-    [[nodiscard]] bool render() {
+    /// Pack and upload the table, then render ONE frame. With `kDecalListsInTable` the table
+    /// carries the lists `lists` assigned — another scene's assembly of the same decals and view,
+    /// since the assembly is deterministic. Never this scene's own earlier frame: the scene always
+    /// runs temporal anti-aliasing, so a second frame is blended with the first and differs from a
+    /// first frame everywhere.
+    [[nodiscard]] bool render(const rendering::assembly::FrameAssembly* lists = nullptr) {
         if (!ready_) {
             return false;
         }
-        if (options_.bind) {
-            if (!upload_table(nullptr)) {
-                return false;
-            }
-            if ((options_.flags & rendering::decals::kDecalListsInTable) != 0U) {
-                if (!draw() || !upload_table(&scene_.assembly())) {
-                    return false;
-                }
-            }
+        if (options_.bind && !upload_table(lists)) {
+            return false;
         }
         return draw();
     }
@@ -550,8 +546,21 @@ private:
 [[nodiscard]] bool render_frame(DeviceFixture& fixture, FrameRun::Options options,
                                 std::vector<u32>& out,
                                 rendering::assembly::AssemblyReport* report = nullptr) {
+    // The lists a table carries come from a first scene that assembled the same decals: see
+    // `FrameRun::render`.
+    const bool lists_in_table = (options.flags & rendering::decals::kDecalListsInTable) != 0U;
+    std::optional<FrameRun> probe;
+    if (lists_in_table) {
+        FrameRun::Options probe_options = options;
+        probe_options.bind = false;
+        probe_options.flags = 0;
+        probe.emplace(fixture, std::move(probe_options));
+        if (!probe->render()) {
+            return false;
+        }
+    }
     FrameRun run(fixture, std::move(options));
-    if (!run.render()) {
+    if (!run.render(probe.has_value() ? &probe->scene().assembly() : nullptr)) {
         return false;
     }
     out = run.pixels();
@@ -1086,7 +1095,12 @@ CY_TEST_CASE("(h) twenty thousand impact decals draw with no draw call of their 
                  run.report().clusters.overflow, differing(empty.pixels(), run.pixels()));
     CY_CHECK_EQ(run.report().decals, 20000U);
     CY_CHECK_EQ(draws_with, draws_without);
-    CY_CHECK_GT(run.report().decal_assignments, 10000U);
+    // AT THIS DENSITY THE CLUSTER CAP DECIDES, as the module README says it does: 312 marks a
+    // square metre put far more decals in a floor cluster than the 32 the scene's grid holds, so
+    // the lists keep the nearest 32 and the rest are counted as overflow rather than drawn. The
+    // lists are still what the frame walks — thousands of assignments — and the drop is reported.
+    CY_CHECK_GT(run.report().decal_assignments, 1000U);
+    CY_CHECK_GT(run.report().clusters.overflow, 0U);
     CY_CHECK_GT(differing(empty.pixels(), run.pixels()), usize{5000});
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
