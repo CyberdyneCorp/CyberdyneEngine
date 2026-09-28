@@ -412,9 +412,10 @@ Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipel
     description.name = frame_pipeline_kind_name(kind);
     description.layout = layout;
     description.vertex_shader = vertex;
-    description.fragment_shader = depth_only           ? depth_fragment_
-                                  : fragment.is_null() ? forward_fragment_
-                                                       : fragment;
+    description.fragment_shader = fragment.is_null() ? forward_fragment_ : fragment;
+    if (depth_only) {
+        description.fragment_shader = depth_fragment_;
+    }
     description.vertex_bindings = Span<const rhi::VertexBinding>(bindings, stream_count);
     description.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, stream_count);
     usize color_count = 1U;

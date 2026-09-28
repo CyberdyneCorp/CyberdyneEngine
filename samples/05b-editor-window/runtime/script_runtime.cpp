@@ -166,6 +166,28 @@ std::string latest_module(const std::string& project) {
     return chosen;
 }
 
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+/// The vector `CyVar` type for a VFX parameter's type name; anything not vec2 or vec3 is vec4.
+[[nodiscard]] u32 vector_var_type(std::string_view type) noexcept {
+    if (type == "vec2") {
+        return CY_VAR_VEC2;
+    }
+    return type == "vec3" ? CY_VAR_VEC3 : CY_VAR_VEC4;
+}
+
+/// How many float lanes a vector `CyVar` type carries.
+[[nodiscard]] u32 vector_lane_count(u32 type) noexcept {
+    switch (type) {
+        case CY_VAR_VEC2:
+            return 2U;
+        case CY_VAR_VEC3:
+            return 3U;
+        default:
+            return 4U;
+    }
+}
+#endif
+
 }  // namespace
 
 ScriptRuntime::ScriptRuntime(Allocator& allocator, const char* project,
@@ -332,7 +354,7 @@ CyResult ScriptRuntime::get(CyEntity entity, const char* emitter, const char* pa
         out_value.type = CY_VAR_BOOL;
         out_value.payload.as_bool = current->lanes[0] != 0.0F;
     } else {
-        out_value.type = type == "vec2" ? CY_VAR_VEC2 : type == "vec3" ? CY_VAR_VEC3 : CY_VAR_VEC4;
+        out_value.type = vector_var_type(type);
         for (u32 lane = 0; lane < current->count; ++lane) {
             out_value.payload.as_f32x4[lane] = current->lanes[lane];
         }
@@ -378,7 +400,7 @@ CyResult ScriptRuntime::set(CyEntity entity, const char* emitter, const char* pa
         case CY_VAR_VEC2:
         case CY_VAR_VEC3:
         case CY_VAR_VEC4:
-            count = value.type == CY_VAR_VEC2 ? 2U : value.type == CY_VAR_VEC3 ? 3U : 4U;
+            count = vector_lane_count(value.type);
             for (u32 lane = 0; lane < count; ++lane) {
                 lanes[lane] = value.payload.as_f32x4[lane];
             }

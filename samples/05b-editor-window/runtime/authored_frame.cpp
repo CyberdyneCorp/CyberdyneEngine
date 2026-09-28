@@ -1122,10 +1122,12 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
     for (const auto& pass : {std::pair{FramePipelineKind::Depth, &variant.depth_pipeline},
                              std::pair{FramePipelineKind::Opaque, &variant.visible_pipeline},
                              std::pair{FramePipelineKind::Shadow, &variant.shadow_pipeline}}) {
-        const rhi::ShaderModuleHandle shader =
-            pass.first == FramePipelineKind::Depth    ? variant.depth_shader
-            : pass.first == FramePipelineKind::Opaque ? variant.visible_shader
-                                                      : variant.shadow_shader;
+        rhi::ShaderModuleHandle shader = variant.shadow_shader;
+        if (pass.first == FramePipelineKind::Depth) {
+            shader = variant.depth_shader;
+        } else if (pass.first == FramePipelineKind::Opaque) {
+            shader = variant.visible_shader;
+        }
         if (Status status = create_pipeline(pass.first, shader, *pass.second); !status) {
             release_graph_variant(variant);
             return status;
@@ -1782,8 +1784,8 @@ Status AuthoredFrame::copy_motion_readback(const Readback& motion) noexcept {
     }
     const auto* rows = static_cast<const u8*>(mapped);
     for (u32 row = 0; row < motion.height; ++row) {
-        std::memcpy(motion_texels_.data() + usize{row} * motion.width,
-                    rows + usize{row} * motion.row_length * sizeof(u32),
+        std::memcpy(motion_texels_.data() + (usize{row} * motion.width),
+                    rows + (usize{row} * motion.row_length * sizeof(u32)),
                     usize{motion.width} * sizeof(u32));
     }
     return ok();
@@ -2004,7 +2006,7 @@ bool AuthoredFrame::previous_material_transform(u64 identity,
         const auto* rows = static_cast<const u8*>(mapped);
         std::memcpy(out.row0, rows, sizeof(out.row0));
         std::memcpy(out.row1, rows + sizeof(Vec4), sizeof(out.row1));
-        std::memcpy(out.row2, rows + 2U * sizeof(Vec4), sizeof(out.row2));
+        std::memcpy(out.row2, rows + (2U * sizeof(Vec4)), sizeof(out.row2));
         return true;
     }
     return false;

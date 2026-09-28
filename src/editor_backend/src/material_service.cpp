@@ -346,9 +346,10 @@ u32 preview_attribute_count(cy::Span<const cy::vfx::AttributeSlot> slots) noexce
 }
 
 Status put_preview_attributes(Array<u8>& out, const VfxPreviewState& preview,
+                              const cy::vfx::CompiledSystem& system,
                               const cy::vfx::EffectInstance& instance, u32 emitter,
                               u32 particle) noexcept {
-    const auto slots = preview.system->emitters()[emitter].layout().slots();
+    const auto slots = system.emitters()[emitter].layout().slots();
     u32 count = preview_attribute_count(slots);
     if (!put_u8(out, 1) || !put_u32(out, emitter) || !put_u32(out, particle) ||
         !put_u32(out, count)) {
@@ -384,7 +385,8 @@ Status put_preview_sample(Array<u8>& out, const VfxPreviewState& preview,
             if (flags[particle] == 0) {
                 continue;
             }
-            return put_preview_attributes(out, preview, *instance, emitter, particle);
+            return put_preview_attributes(out, preview, *preview.system, *instance, emitter,
+                                          particle);
         }
     }
     return put_u8(out, 0);

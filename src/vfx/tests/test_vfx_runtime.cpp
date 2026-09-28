@@ -130,7 +130,7 @@ node 1 - "fx" "Loud"
         return *static_cast<const CompiledSystem* const*>(context);
     };
     const CompiledSystem* system = &*cooked;
-    const Status loaded = bindings.load(scene, world, resolve, &system);
+    const Status loaded = bindings.load(scene, world, resolve, static_cast<void*>(&system));
     if (!loaded) {
         std::fprintf(stderr, "scene binding refusal: %s\n", loaded.error().message);
     }
@@ -158,7 +158,7 @@ node 1 - "fx" "Loud"
     scene::serialization::World invalid(allocator());
     CY_REQUIRE(scene::serialization::read_world(unknown, "worlds/effects.cyworld", invalid));
     CY_REQUIRE(scene::serialization::resolve_against(invalid, schema));
-    CY_CHECK_FALSE(bindings.load(invalid, world, resolve, &system));
+    CY_CHECK_FALSE(bindings.load(invalid, world, resolve, static_cast<void*>(&system)));
     CY_CHECK_EQ(bindings.size(), 0U);
 }
 

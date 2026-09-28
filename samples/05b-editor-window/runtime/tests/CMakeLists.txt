@@ -75,15 +75,17 @@ function(cy_editor_window_runtime_declare_tests)
                 cy::weather
                 cy::rhi-vulkan cy::rhi-null
             DEFINITIONS
-                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
+                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\""
+                # material_runtime.cpp mounts the staged shader tree whether or not Slang is built,
+                # as cy_editor_window_runtime does.
+                "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\"")
         target_include_directories(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                    "${tests_dir}/..")
         if(CY_SHADER_SLANG)
             target_link_libraries(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                   cy::shader-slang)
             target_compile_definitions(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
-                                       CY_SHADER_SLANG=1
-                                       "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\"")
+                                       CY_SHADER_SLANG=1)
         endif()
     endif()
 

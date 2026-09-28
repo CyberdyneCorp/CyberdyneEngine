@@ -241,8 +241,9 @@ void add_world_material(CookInputs& inputs, std::string_view material,
     // MeshRenderer.mesh asset reference as a static mesh; the material compiler needs its distinct
     // path before the visibility renderer gains vertex-material evaluation.
     std::string extension = std::filesystem::path(std::string(mesh)).extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char letter) { return static_cast<char>(std::tolower(letter)); });
+    std::ranges::transform(extension, extension.begin(), [](unsigned char letter) {
+        return static_cast<char>(std::tolower(letter));
+    });
     return extension == ".cyvg" ? "VirtualGeometry" : "StaticMesh";
 }
 
@@ -359,7 +360,8 @@ void collect_world_materials(const scene::serialization::World& world, CookInput
             continue;
         }
         if (argument == "--geometry") {
-            if (++index >= argc || !add_geometry_assignment(inputs, argv[index])) {
+            ++index;
+            if (index >= argc || !add_geometry_assignment(inputs, argv[index])) {
                 return false;
             }
             continue;

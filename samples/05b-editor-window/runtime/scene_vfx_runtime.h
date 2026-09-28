@@ -38,7 +38,7 @@ private:
         std::string_view path, void* context) noexcept;
     [[nodiscard]] Expected<const vfx::CompiledSystem*, Error> system(
         std::string_view path) noexcept;
-    [[nodiscard]] Expected<std::string, Error> read(std::string_view path) const noexcept;
+    [[nodiscard]] Expected<std::string, Error> read(std::string_view reference) const noexcept;
 
     Allocator* allocator_;
     std::string project_;

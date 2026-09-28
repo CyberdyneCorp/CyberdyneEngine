@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cy/core/base/assert.h>
 #include <cy/core/base/expected.h>
 #include <cy/environment/gpu.h>
 #include <cy/weather/system.h>
@@ -22,7 +23,11 @@ public:
     [[nodiscard]] Status initialize(const world::WorldVec3d& centre) noexcept;
     [[nodiscard]] bool ready() const noexcept { return image_.has_value(); }
     [[nodiscard]] bool covers(const world::WorldVec3d& camera) const noexcept;
-    [[nodiscard]] const environment::FieldGpuImage& image() const noexcept { return *image_; }
+    /// The published image. Callers check `ready()` first; asking before then is a caller defect.
+    [[nodiscard]] const environment::FieldGpuImage& image() const noexcept {
+        CY_ASSERT_MSG(image_.has_value(), "WindFieldPreview::image() before initialize()");
+        return *image_;
+    }
     [[nodiscard]] const environment::FieldStore& store() const noexcept { return store_; }
     [[nodiscard]] environment::FieldId field() const noexcept { return wind_; }
 

@@ -197,7 +197,7 @@ CY_TEST_CASE("a prepared material pipeline can be selected for each opaque draw"
     CY_REQUIRE(fixture.ok());
     FrameScene scene(allocator());
     CY_REQUIRE(scene.build(fixture.device()).has_value());
-    auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
+    auto& recorder = scene.recorder();
     const auto variant = scene.pipelines().pipeline(FramePipelineKind::Transparent);
     CY_REQUIRE_FALSE(variant.is_null());
 
@@ -221,7 +221,7 @@ CY_TEST_CASE("a depth material variant can read the UV stream") {
     CY_REQUIRE(fixture.ok());
     FrameScene scene(allocator());
     CY_REQUIRE(scene.build(fixture.device()).has_value());
-    auto& recorder = const_cast<FrameRecorder&>(scene.recorder());
+    auto& recorder = scene.recorder();
     rendering::assembly::AssemblyReport report;
 
     rhi::null::clear_command_log(fixture.device());

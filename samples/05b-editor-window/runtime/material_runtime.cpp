@@ -525,8 +525,8 @@ float4 editorMaterialFragment(EditorVertexOutput input) : SV_Target
         writer.text("    ctx.attributes.");
         writer.text(node.symbol.text());
         const auto interpolants = program.module.vertex_interpolants();
-        const auto found = std::find_if(interpolants.begin(), interpolants.end(),
-                                        [&](const auto& root) { return root.name == node.symbol; });
+        const auto found = std::ranges::find_if(
+            interpolants, [&](const auto& root) { return root.name == node.symbol; });
         if (found != interpolants.end() && found->type == node.type) {
             writer.text(" = input.vertex_");
             writer.text(node.symbol.text());
@@ -794,6 +794,9 @@ Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
     if (Status assembled =
             assemble_scene_material_vertex_unit(program, unit, target == shader::Target::Msl);
         !assembled) {
+        // The Error's message has static storage; the analyzer follows Writer's Array pointer into
+        // `unit`, which is not part of the Error (as in `MetalMaterialRuntime::publish`).
+        // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
         return make_unexpected(assembled.error());
     }
     (void)shader::slang::register_slang_backend();
@@ -1152,7 +1155,7 @@ Status MetalMaterialRuntime::publish(
         return fail(ErrorCode::InvalidArgument,
                     "the Metal renderer rejected the compiled material pipeline or resources");
     }
-    if (Status saved = programs_.push_back(std::move(program)); !saved) {
+    if (Status saved = programs_.push_back(program); !saved) {
         return saved;
     }
     wind_requested_ |= has_wind;

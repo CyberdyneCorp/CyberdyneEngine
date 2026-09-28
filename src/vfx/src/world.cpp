@@ -23,6 +23,17 @@ constexpr f32 kDefaultHz[kImportanceCount] = {60.0F, 60.0F, 30.0F, 15.0F};
 /// not name this and every fixed-step loop needs it.
 constexpr u32 kMaxSubsteps = 4;
 
+/// The float components a parameter of this declared type occupies: vec2-4, else one scalar.
+[[nodiscard]] u32 parameter_components(std::string_view type) noexcept {
+    if (type == "vec2") {
+        return 2U;
+    }
+    if (type == "vec3") {
+        return 3U;
+    }
+    return type == "vec4" ? 4U : 1U;
+}
+
 }  // namespace
 
 // --- ParticlePool
@@ -473,10 +484,7 @@ Status SimulationWorld::set_parameter(EffectHandle handle, Name emitter, Name pa
                             "vfx: this parameter is folded and cannot change at runtime");
             }
             const std::string_view type = declared[index].type.text();
-            const usize count = type == "vec2"   ? 2U
-                                : type == "vec3" ? 3U
-                                : type == "vec4" ? 4U
-                                                 : 1U;
+            const usize count = parameter_components(type);
             if (value.size() != count) {
                 return fail(ErrorCode::InvalidArgument, "vfx: parameter value has the wrong width");
             }
@@ -517,7 +525,7 @@ Expected<EffectParameterValue, Error> SimulationWorld::get_parameter(
         EffectParameterValue value;
         value.type = candidate.type;
         const std::string_view type = candidate.type.text();
-        value.count = type == "vec2" ? 2U : type == "vec3" ? 3U : type == "vec4" ? 4U : 1U;
+        value.count = parameter_components(type);
         for (u32 component = 0; component < value.count; ++component) {
             const usize word = instance->parameter_base + (index * 4U) + component;
             if (word >= parameters_.size()) {
