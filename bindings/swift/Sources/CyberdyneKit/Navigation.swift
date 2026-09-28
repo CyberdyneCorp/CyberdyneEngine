@@ -159,6 +159,7 @@ public struct PathQuery: Hashable, Sendable {
     /// The engine's handle; never `CY_NAV_QUERY_NULL`.
     public let raw: CyNavQuery
 
+    /// Wraps a handle the engine returned from a path request.
     public init(raw: CyNavQuery) {
         self.raw = raw
     }
@@ -191,22 +192,30 @@ public struct NavAgent: Hashable, Sendable {
     /// The agent's entity.
     public let entity: Entity
 
+    /// Treats `entity` as a crowd agent; it must carry one for the agent calls to succeed.
     public init(_ entity: Entity) {
         self.entity = entity
     }
 
     /// An agent's shape and limits. Zero in any field means the engine's default.
     public struct Parameters: Equatable, Sendable {
+        /// The navigation world the agent moves in; 0 is the default one.
         public var world: UInt32
+        /// Metres from the agent's centre that avoidance keeps clear.
         public var radius: Float
+        /// Metres of clearance the agent needs overhead.
         public var height: Float
+        /// Metres per second the agent will not exceed.
         public var maxSpeed: Float
+        /// Metres per second squared the agent can change velocity by.
         public var maxAcceleration: Float
         /// How close to the target counts as there.
         public var arrivalDistance: Float
         /// Higher yields less.
         public var priority: UInt32
+        /// The area types the agent may traverse; zero is all of them.
         public var areaMask: UInt64
+        /// The off-mesh link capabilities the agent has; zero is all of them.
         public var capabilities: UInt64
 
         /// Every field defaulted unless given.
@@ -244,11 +253,15 @@ public struct NavAgent: Hashable, Sendable {
 
     /// Where an agent is on its way.
     public struct State: Equatable, Sendable {
+        /// How the agent's current path request stands.
         public var status: NavPathStatus
         /// True for the one tick after the agent arrived or failed.
         public var event: Bool
+        /// Where the agent is, in world space.
         public var position: Vec3
+        /// The agent's velocity, in metres per second.
         public var velocity: Vec3
+        /// Where the agent is heading, in world space.
         public var target: Vec3
         /// Metres along the path still to go; zero when idle.
         public var remainingDistance: Float

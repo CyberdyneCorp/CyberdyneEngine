@@ -6,6 +6,8 @@ import CyberdyneCore
 
 /// Read or change an exposed parameter on one playing scene effect entity.
 public enum VfxEffects {
+    /// Set an exposed parameter on the playing effect bound to `entity`.
+    /// Pass an emitter name for an emitter-local parameter, or leave it empty for a system parameter.
     public static func set(
         _ value: Value, on entity: Entity, parameter: String, emitter: String = ""
     ) throws {
@@ -21,6 +23,8 @@ public enum VfxEffects {
         }
     }
 
+    /// Read an exposed parameter from the playing effect bound to `entity`.
+    /// Pass an emitter name for an emitter-local parameter, or leave it empty for a system parameter.
     public static func get(
         from entity: Entity, parameter: String, emitter: String = ""
     ) throws -> Value {

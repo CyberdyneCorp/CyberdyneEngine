@@ -55,7 +55,9 @@ public enum Physics {
 
     /// `CY_QUERY_*`.
     public struct Options: OptionSet, Sendable {
+        /// The CY_QUERY_* bits, as the engine reads them.
         public let rawValue: UInt32
+        /// Options from raw CY_QUERY_* bits.
         public init(rawValue: UInt32) { self.rawValue = rawValue }
 
         /// Include sensors, which are skipped by default.
