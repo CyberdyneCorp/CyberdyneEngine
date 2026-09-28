@@ -88,7 +88,12 @@ quality-lint *args:
     # CY_JOBS, or every core but two — `_jobs` in just/build.just says why — and each clang-tidy
     # inside the machine-wide job pool the compiles use, so a lint beside a build shares its cores.
     jobs="$(just _jobs)"
-    read -r -a slot <<< "$(just _job-slots)"
+    # `_job-slots` answers one argument per line so that a repository path containing a space
+    # survives; reading it with `read -a` off a single line would split it at that space.
+    slot=()
+    while IFS= read -r argument; do
+        slot[${#slot[@]}]="${argument}"
+    done < <(just _job-slots)
 
     echo "==> clang-tidy ${#files[@]} file(s) against ${database}"
     printf '%s\n' "${files[@]}" \

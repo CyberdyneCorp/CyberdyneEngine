@@ -517,7 +517,11 @@ _job-slots:
     if [ -n "${CI:-}" ] || [ "${CY_JOB_POOL:-ON}" = "OFF" ] || ! command -v python3 >/dev/null 2>&1; then
         exit 0
     fi
-    echo "python3 -I -S {{root}}/tools/workflow/job_slot.py --slots $(bash "{{root}}/tools/workflow/jobs.sh" machine) --"
+    # ONE ARGUMENT PER LINE, because the repository path may contain a space: a caller splitting a
+    # single-line answer on whitespace tears the script path in half and runs python3 against its
+    # first fragment. The callers read this back a line at a time.
+    printf '%s\n' python3 -I -S "{{root}}/tools/workflow/job_slot.py" \
+        --slots "$(bash "{{root}}/tools/workflow/jobs.sh" machine)" --
 
 # The environment that puts every rustc Cargo starts into the same pool, printed as `export` lines
 # for `eval`. Cargo's RUSTC_WRAPPER names one program and passes it no options, so job_slot.py reads
