@@ -164,7 +164,15 @@ it; the surface's own light (the column, the glitter, the foam) is then attenuat
 between the eye and the surface; and the reflected picture, whose hills were hazed over their own
 distance and whose dome is the sky itself, is left as drawn, with only the in-scattering the mirror
 does not cover, `(1 - F) S`, added. So the sea hazes like the land beside it, with no step at the
-shoreline (`render.world_water_aerial_perspective`).
+shoreline (`render.world_water_aerial_perspective`). `--no-aerial-perspective` still draws the sea
+as it was: 192 of 192 frames compare byte-identical to main's
+(`openspec/changes/add-aerial-perspective-on-water/evidence/`). At this world's scale the change is
+small, a mean of 0.8 of an 8-bit step over the lower half of the morning frame.
+
+![the sea through the air, mid-morning](../../docs/design/images/water-aerial-perspective-day-on.png)
+![the same frame before: the land hazed, the sea not](../../docs/design/images/water-aerial-perspective-day-off.png)
+![the sea through the air at dusk](../../docs/design/images/water-aerial-perspective-dusk-on.png)
+![the same dusk before](../../docs/design/images/water-aerial-perspective-dusk-off.png)
 
 **The dome is that atmosphere too.** With aerial perspective on, the dome's clear sky is
 `sky::IncrementalSkyView::update_aerial` over the same tables, and the device cloud pass composes

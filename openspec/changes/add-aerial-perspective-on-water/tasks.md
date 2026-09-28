@@ -14,17 +14,17 @@
 
 ## 3. Tests that can fail
 
-- [ ] 3.1 `render.world_water_aerial_perspective`: every water and land texel against the processor's `sample_at()`, dark and lit
-- [ ] 3.2 The shoreline: the water's in-scattering beside the land's at equal distance, every row
-- [ ] 3.3 Far water: the same beyond 2 km, with real haze
-- [ ] 3.4 Near water within 10 m of an eye 2 m up is unchanged within 0.001
-- [ ] 3.5 Off is bit-identical to the water's fragment stage pinned before this change
-- [ ] 3.6 Prove each red by a mutation, restored and md5-verified (`evidence/falsification.txt`)
+- [x] 3.1 `render.world_water_aerial_perspective`: every water and land texel against the processor's `sample_at()`, dark and lit
+- [x] 3.2 The shoreline: the water's in-scattering beside the land's at equal distance, every row
+- [x] 3.3 Far water: the same beyond 2 km, with real haze
+- [x] 3.4 Near water within 10 m of an eye 2 m up is unchanged within 0.001
+- [x] 3.5 Off is bit-identical to the water's fragment stage pinned before this change
+- [x] 3.6 Prove each red by a mutation, restored and md5-verified (`evidence/falsification.txt`)
 
 ## 4. The picture
 
-- [ ] 4.1 Compare `--no-aerial-perspective` against a build of the base commit frame by frame (`evidence/frame-identity.txt`)
-- [ ] 4.2 Publish before/after images of samples/10-world at day and dusk under `docs/design/images/`
+- [x] 4.1 Compare `--no-aerial-perspective` against a build of the base commit frame by frame (`evidence/frame-identity.txt`)
+- [x] 4.2 Publish before/after images of samples/10-world at day and dusk under `docs/design/images/`
 
 ## 5. Records
 

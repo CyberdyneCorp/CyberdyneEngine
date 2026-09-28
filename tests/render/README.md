@@ -210,11 +210,20 @@ the water is the mirrored dome alone) and lit.
 | near water is left as it was lit | from 2 m up, every water texel within 10 m moves by under 0.001 with the table on |
 | off, the frame is the frame before | with the table's `enabled` word zero, dark and lit, every texel is bit-identical to the frame drawn with water.slang's fragment stage pinned before this change (`water_before_aerial_perspective_spirv.h`); with it on, more than 2000 texels move |
 
-**Not yet run on a device.** The tolerances above (0.004, 3%, 0.001) are derived, not measured,
-and no case has yet been seen red: the mutation driver that regenerates the shader under six
-mutations, runs the suite and restores the sources md5-verified is
-`openspec/changes/add-aerial-perspective-on-water/evidence/mutate.py`, and its record,
-`evidence/falsification.txt`, is still to be written.
+Measured on the RTX 5060, Development and Debug alike: water 0.00067 and land 0.00066 from the
+table against 0.004; 46 shoreline rows from 0.66 to 11.2 km, worst 2.8% against 3%; far haze 13
+times the nearest row's; near water moved by 0.00049 against 0.001; 0 texels off, and all 7680 water
+texels moved on. Each case is seen red under at least one of seven shader mutations, applied,
+regenerated, run and restored md5-verified by
+`openspec/changes/add-aerial-perspective-on-water/evidence/mutate.py`
+(`evidence/falsification.txt`). The shoreline tolerance has little margin: dividing the water's
+change by `1 - F` near the horizon amplifies the half-float's rounding.
+
+**What the suite does not see.** A water shader that ignores the table still moves 7501 water
+texels with it on, because its two pictures are drawn through the air; the formula and shoreline
+cases catch that. And a one-texel difference in the sample's frame with aerial perspective off
+(driver code generation, `evidence/frame-identity.txt`) did not show up in this scene. The guard for
+that is the sample's frame-by-frame comparison against main.
 
 ## The artefact's air — `render.vfx`, whose reference lives here
 
