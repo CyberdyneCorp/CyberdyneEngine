@@ -21,11 +21,21 @@ parse order.
 the source root as the working directory, so the argument vector is identical in every build
 directory and on every checkout. Diagnostics have the source-root prefix stripped before they are
 reported.
+
+**On macOS, libclang finds neither the SDK nor its own builtin headers.** Loaded into Python it has
+no driver to ask, so `<cstddef>` is missing without `-isysroot` and `<stdarg.h>` is missing without
+`-resource-dir` — with the PyPI wheel and with Homebrew's LLVM alike. `host_arguments()` supplies
+both, and `probe()` parses a real standard header, because a probe that only loaded the library
+reported a frontend that could not parse anything and the build failed instead of falling back to
+the committed metadata (#46).
 """
 
 from __future__ import annotations
 
 import os
+import shlex
+import subprocess
+import sys
 from pathlib import Path
 
 from .attrspec import AttributeError_, CustomSchema, validate
@@ -71,6 +81,8 @@ class Frontend:
             self.arguments.append(f"-D{definition}")
         for directory in relative_includes:
             self.arguments += ["-I", directory]
+        self.arguments += host_arguments()
+        self.arguments += shlex.split(os.environ.get("CY_REFLECT_CLANG_ARGS", ""))
 
     @property
     def toolchain_stamp(self) -> str:
@@ -450,10 +462,58 @@ def bind_kinds() -> None:
             _SCALARS[ulong_kind.value] = "U32"
 
 
+# The standard headers the reflected include chain reaches. <cstddef> alone is not enough: libclang
+# 18 finds the macOS 27 SDK's <cstddef> and then fails inside its <type_traits>, which uses builtins
+# newer than the library. A probe that stops short of those reports a frontend the build cannot use.
+PROBE_HEADERS = (
+    "algorithm", "atomic", "cmath", "compare", "concepts", "cstdarg", "cstddef", "cstdint",
+    "cstring", "functional", "initializer_list", "limits", "memory", "mutex", "new", "numbers",
+    "span", "string_view", "type_traits", "unordered_map", "utility", "vector",
+)
+PROBE_SOURCE = "".join(f"#include <{header}>\n" for header in PROBE_HEADERS)
+
+
 def probe() -> str:
-    """One line naming the bindings and the library, or a ParseError explaining what is missing."""
-    bind_kinds()
+    """One line naming the bindings and the library, or a ParseError explaining what is missing.
+
+    Loading the library is not enough: it must parse a standard header with the arguments every
+    header is parsed with, or the build turns generation on and then fails on the first header."""
+    frontend = Frontend(Path.cwd(), [], [])
+    unit = frontend._index.parse("cy_reflect_probe.cpp", args=frontend.arguments,
+                                 unsaved_files=[("cy_reflect_probe.cpp", PROBE_SOURCE)])
+    frontend._raise_on_errors(unit, "the probe translation unit")
     return f"clang bindings {BINDINGS_VERSION}, library {_library_used or 'found by the bindings'}"
+
+
+def host_arguments() -> list[str]:
+    """What this host's libclang cannot find by itself. Empty everywhere but macOS."""
+    if sys.platform != "darwin":
+        return []
+    arguments = []
+    sdk = os.environ.get("SDKROOT") or _command_output(["xcrun", "--show-sdk-path"])
+    if sdk:
+        arguments += ["-isysroot", sdk]
+    resource_dir = _library_resource_dir() or _command_output(
+        ["xcrun", "clang", "-print-resource-dir"])
+    if resource_dir:
+        arguments += ["-resource-dir", resource_dir]
+    return arguments
+
+
+def _library_resource_dir() -> str:
+    """The loaded library's own lib/clang/<major>, when it ships one. The PyPI wheel does not."""
+    if not _library_used:
+        return ""
+    versions = sorted((Path(_library_used).resolve().parent / "clang").glob("*/include"))
+    return str(versions[-1].parent) if versions else ""
+
+
+def _command_output(command: list[str]) -> str:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def _relative(path: Path, source_root: Path) -> str:

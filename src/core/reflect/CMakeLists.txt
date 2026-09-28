@@ -135,7 +135,8 @@ else()
         "Whether the configured reflection interpreter can run the frontend" FORCE)
     message(STATUS
         "Reflection generator unavailable; compiling the committed metadata in "
-        "src/core/reflect/generated/ instead. Editing an annotated header will not regenerate it.")
+        "src/core/reflect/generated/ instead. Editing an annotated header will not regenerate it. "
+        "`${CY_REFLECT_PYTHON} tools/gen/reflect_gen.py --probe` says why.")
 endif()
 
 option(CY_REFLECT_GENERATE "Regenerate reflection metadata as a build step"
@@ -209,7 +210,15 @@ foreach(row IN LISTS cy_reflect_module_headers)
     list(APPEND cy_reflect_module_generated "${CMAKE_SOURCE_DIR}/${module_header}")
 endforeach()
 
-if(CY_REFLECT_GENERATE)
+# The option alone is not enough: a build directory configured while the probe passed keeps ON in
+# its cache after the frontend stops parsing (#46), and a generation step that cannot parse fails
+# the whole build instead of compiling the committed metadata.
+if(CY_REFLECT_GENERATE AND NOT CY_REFLECT_FRONTEND_AVAILABLE)
+    message(WARNING "CY_REFLECT_GENERATE is ON but the reflection frontend failed its probe; "
+                    "compiling the committed metadata instead.")
+endif()
+
+if(CY_REFLECT_GENERATE AND CY_REFLECT_FRONTEND_AVAILABLE)
     set(cy_reflect_stamp "${CMAKE_CURRENT_BINARY_DIR}/reflect_generated.stamp")
 
     # The generator's own sources are dependencies: a change to the emitter changes every output,

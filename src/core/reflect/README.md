@@ -60,6 +60,12 @@ The generator still runs as a build step when the frontend is present (`CY_REFLE
 detected at configure time), so editing an annotated header regenerates within the build that
 compiles it.
 
+"Present" means `reflect_gen.py --probe` parsed the standard headers the reflected include chain
+reaches, with the same arguments every header is parsed with, not merely that the bindings loaded.
+A probe that only loaded the library passed on a Mac whose libclang could not find `<cstddef>`, and
+the build failed instead of compiling the committed metadata (#46). When the probe fails, generation
+is off even if `CY_REFLECT_GENERATE` is cached `ON` from an earlier configure, and configure warns.
+
 ## Lookup complexity is part of the contract
 
 M1 shipped a linear scan in three places and argued it was fine: this is control-plane code, the

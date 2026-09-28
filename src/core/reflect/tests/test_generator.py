@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import os
 import shutil
 import subprocess
 import sys
@@ -535,6 +536,32 @@ def test_a_module_group_writes_its_own_directory_and_its_own_aggregate(tree: Tre
 def test_a_malformed_module_argument_is_refused(tree: Tree) -> None:
     output = tree.fail("--module", "other:only-two-parts")
     check_in("three parts", output, "the failure must say what the argument's shape is")
+
+
+# --- The probe the build decides with, #46 ---------------------------------------------------------
+
+
+def _probe(tree: Tree, clang_args: str = "") -> subprocess.CompletedProcess:
+    environment = {**os.environ, "CY_REFLECT_CLANG_ARGS": clang_args}
+    return subprocess.run(
+        [sys.executable, str(tree.source_root / "tools" / "gen" / "reflect_gen.py"), "--probe"],
+        capture_output=True, text=True, check=False, env=environment, cwd=tree.root)
+
+
+def test_the_probe_passes_where_a_header_parses(tree: Tree) -> None:
+    result = _probe(tree)
+    check(result.returncode == 0,
+          f"the probe failed on a host whose frontend parses:\n{_indent(result.stderr)}")
+
+
+def test_the_probe_fails_when_the_frontend_cannot_parse_a_standard_header(tree: Tree) -> None:
+    # The build turns generation on when --probe exits 0. On macOS the probe used to only load the
+    # library, so a libclang that could not find <cstddef> passed and the build failed instead of
+    # compiling the committed metadata. Hiding the system headers reproduces that on any host.
+    result = _probe(tree, "-nostdinc -nostdinc++")
+    check(result.returncode != 0, "the probe passed with no system headers to parse against")
+    check_in("the probe translation unit", result.stderr, "the failure must say it is the probe's")
+    check_in("file not found", result.stderr, "the failure must carry the frontend's diagnostic")
 
 
 def main(argv: list[str]) -> int:
