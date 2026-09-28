@@ -31,6 +31,10 @@ gathered. `requirements-coverage.toml` recorded the requirement as exempt for ex
 - `samples/12-beauty` gains `--depth-of-field <target>` and two focus targets in the shot file,
   and `just capture-beauty-depth-of-field` publishes the shot focused on the copper sphere and on a
   far column, failing unless the frame without the stage is M11.c's pixels exactly.
+- The frame recorder's temporal resolve and post-process, and the beauty sample's resolve, bind
+  their graphics pipeline before their descriptor sets: the backend binds sets at the last bound
+  pipeline's point, and the stage's compute composite is the first compute work right before the
+  post-process.
 - Tests: `unit.render_dof` (the twins against the lens and the projection), `unit.render_forward`
   (the stage's place, its inputs and its refusals) and `render.depth_of_field` on a device.
 

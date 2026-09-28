@@ -44,7 +44,7 @@ pass.set_view({projection, width, height});   // the matrix the depth was writte
 sinks.depth_of_field = pass.stage();
 ```
 
-## Five things worth knowing before changing anything here
+## Six things worth knowing before changing anything here
 
 **The radius is the lens's, not a tuning.** `circle_of_confusion` is a diameter on the sensor as a
 fraction of its height, and the image is the sensor: the radius in pixels is half of it times the
@@ -70,6 +70,11 @@ near-field disc covers is written with the bits it was read with. The in-focus p
 (f/infinity, `K = 0`) are the stage's identity, and `render.depth_of_field` asserts both byte for
 byte — the pinhole through the assembled frame against the frame without the stage.
 
+**The taps span past the disc.** Ring `k` of `n` sits at `k R' / (n + 1/2)`; over the disc's own
+radius the outermost ring would sit half a spacing inside the rim and a polygon's corners would go
+unsampled, drawing six blades as a circle. `cyDofSpan` (host twin `gather_span`) makes the span
+`(R + 1/2)(n + 1/2)/n`, the outer edge of the reach's one-texel ramp.
+
 **The tiles are as wide as the largest radius.** So a 3x3 block of tiles holds every near-field
 texel whose disc can reach the centre tile's pixels. `max_radius_fraction` — 2 % of the image height
 by default — is therefore a cost bound and not a look: a larger circle is clamped.
@@ -92,8 +97,27 @@ one layer. Autofocus is `post/effects.h`'s `track_focus`, the caller's to run; t
 focuses on a named point's distance along the view axis. D3D12: every entry point compiles to DXIL
 (`just build-shaders`), and nothing embeds it, as for every device pass in the tree.
 
+## What the next pass must do
+
+Bind its graphics pipeline BEFORE its descriptor sets. The Vulkan backend binds sets at the last
+bound pipeline's point, and the composite is a compute dispatch, so a graphics pass straight after
+the stage that binds sets first binds them for compute and draws with an earlier pass's. The frame's
+post-process and the beauty sample's resolve do it in that order; `render.depth_of_field`'s
+`after the stage's compute dispatches, every draw's sets are bound for the draw` checks the frame's
+command stream on the null backend.
+
 ## What it looks like
 
 `just capture-beauty-depth-of-field` photographs the beauty shot focused on the copper sphere and on
 a far column at f/1.4 (`docs/design/images/depth-of-field-beauty-*.png`), and
 `render.depth_of_field` writes its own frames beside the test binary (`depth-of-field-*.png`).
+
+| Focused on the sphere | Focused on the far column |
+|---|---|
+| ![](../../../docs/design/images/depth-of-field-beauty-sphere.png) | ![](../../../docs/design/images/depth-of-field-beauty-column.png) |
+
+![The sphere and the column without the stage, focused on the sphere and focused on the column](../../../docs/design/images/depth-of-field-beauty-detail.png)
+
+Without the stage the still is `m11c-beauty-shot.png` pixel for pixel. Focused on the sphere it
+keeps 100.0 % of the sphere's detail and 1.7 % of the column's; focused on the column, 99.8 % of the
+column's and 32.5 % of the sphere's (`tools/docs/compare_depth_of_field.py`).

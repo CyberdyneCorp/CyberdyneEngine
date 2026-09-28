@@ -11,7 +11,9 @@
 #                     polygonal aperture — and then `pipeline_test::FrameScene`, the one scene the
 #                     pipeline suites render, with the stage in its chain: a pinhole identical to the
 #                     frame without it, and the frame without it against a reference drawn with the
-#                     shaders from before this module. It compiles
+#                     shaders from before this module; and, on the null backend's command log,
+#                     that no draw after the stage's dispatches has its sets bound for compute.
+#                     It compiles
 #                     src/rendering/pipeline/tests/frame_scene.cpp and tests/render/golden.cpp.
 #
 # Declared with cy_add_test(), deferred to the end of the top-level directory for the reason
