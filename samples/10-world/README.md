@@ -367,6 +367,7 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
 | `--no-cloud-shadows` | attenuate the sun once, at the viewer, as before cloud shadows existed; the frame is byte-identical to that build's |
 | `--no-aerial-perspective` | no air between the surfaces and the eye, and the stand-in clear sky, as before aerial perspective existed; the frame is byte-identical to that build's |
+| `--ground-marker` | an RTS move order's ring projected onto the terrain where the camera looks: one decal, ranked and assigned to clusters by the frame's assembly and applied to the ground's colour before the sun lights it (`src/rendering/decals/`). Without it the table in binding 3 is empty and the frame is the one before decals |
 | `--quiet-host` | measure only on a quiet host: wait for one before the take, judge it again across the take, and fail with `host too busy:` when it is not quiet (Linux) |
 | `--quiet-wait-s <s>` | how long `--quiet-host` waits for a quiet host before failing. Default 600 |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |

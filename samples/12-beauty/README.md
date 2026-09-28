@@ -12,6 +12,7 @@
 > just capture-soft-shadows                         # the shot with soft and contact shadows off and on
 > just capture-beauty-grading                       # the shot ungraded, warm and cool
 > just capture-beauty-depth-of-field                # the shot focused on the sphere and on a column
+> just capture-decals                               # the shot with its decals off and on (and the world's ground marker)
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says

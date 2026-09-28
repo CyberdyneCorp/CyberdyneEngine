@@ -269,6 +269,13 @@ struct alignas(16) FrameViewData {
     /// x: the stored coefficients' scale. y: a query's normal offset, z: the visibility slack, in
     /// metres. w: reserved.
     f32 probe_volume_params[4] = {1.0F, 0.0F, 1.0F, 0.0F};
+    /// The decal table. x: the set 0 texture slot of `decals::DecalTableTexture`, or
+    /// `kNoMaterialTexture` — the default, and a frame with no decals, arithmetic for arithmetic
+    /// the frame before them. y: the texture's rows. z: `decals::kDecalListsInTable` and
+    /// `kDecalWalkAll`. w: reserved. `decals::write_decal_frame` fills it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 decal_control[4] = {kNoMaterialTexture, 0, 0, 0};
 };
 
 /// `soft_shadow_control[0]`'s bits, `cy/frame.slang`'s `kCySoftShadowPcss` and
@@ -276,7 +283,8 @@ struct alignas(16) FrameViewData {
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 512, "CyFrameData's std140 block is 512 bytes");
+static_assert(sizeof(FrameViewData) == 528, "CyFrameData's std140 block is 528 bytes");
+static_assert(offsetof(FrameViewData, decal_control) == 512);
 static_assert(offsetof(FrameViewData, soft_shadow_control) == 432);
 static_assert(offsetof(FrameViewData, soft_shadow_shape) == 448);
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);

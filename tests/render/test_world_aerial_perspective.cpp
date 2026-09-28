@@ -407,7 +407,7 @@ public:
             }
         }
         for (rhi::BufferHandle buffer :
-             {vertices_, colours_, field_, placement_, aerial_, readback_}) {
+             {vertices_, colours_, field_, placement_, aerial_, readback_, decals_off_}) {
             if (!buffer.is_null()) {
                 device_.destroy_buffer(buffer);
             }
@@ -459,6 +459,7 @@ private:
     rhi::BufferHandle placement_;
     rhi::BufferHandle aerial_;
     rhi::BufferHandle readback_;
+    rhi::BufferHandle decals_off_;
     /// An unbuilt table's words: the header alone, switched off.
     cy::Array<Vec4> off_;
 };
@@ -589,8 +590,8 @@ cy::Status WorldPass::prepare() noexcept {
 
     // THE SAMPLE'S LAYOUT, restated: set 0 with the cloud shadow field, its placement and the
     // aerial perspective table for the fragment stage, and the 128-byte push block for both.
-    rhi::DescriptorBinding bindings[3] = {};
-    for (u32 index = 0; index < 3; ++index) {
+    rhi::DescriptorBinding bindings[4] = {};
+    for (u32 index = 0; index < 4; ++index) {
         bindings[index].binding = index;
         bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
         bindings[index].count = 1;
@@ -598,7 +599,7 @@ cy::Status WorldPass::prepare() noexcept {
     }
     rhi::DescriptorSetLayoutDescription set_description;
     set_description.name = "world set";
-    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 3);
+    set_description.bindings = cy::Span<const rhi::DescriptorBinding>(bindings, 4);
     auto set_layout = device_.create_descriptor_set_layout(set_description);
     if (!set_layout) {
         return cy::make_unexpected(set_layout.error());
@@ -642,7 +643,11 @@ cy::Status WorldPass::prepare() noexcept {
                          rhi::BufferUsage::Storage, rhi::MemoryUse::Upload);
     auto readback = buffer("world readback", static_cast<u64>(kTexels) * 4 * sizeof(u16),
                            rhi::BufferUsage::TransferDestination, rhi::MemoryUse::Readback);
-    if (!vertices || !colours || !field || !placement || !aerial || !readback) {
+    // Binding 3: the decal table, empty — zeroes are no table, and the lit path leaves every
+    // surface as it was. The sample binds the same until a frame with its ground marker writes one.
+    auto decals_off = buffer("decal table off", sizeof(u32) * 24, rhi::BufferUsage::Storage,
+                             rhi::MemoryUse::Upload);
+    if (!vertices || !colours || !field || !placement || !aerial || !readback || !decals_off) {
         return cy::fail(cy::ErrorCode::OutOfMemory, "a world pass buffer did not allocate");
     }
     vertices_ = *vertices;
@@ -651,6 +656,8 @@ cy::Status WorldPass::prepare() noexcept {
     placement_ = *placement;
     aerial_ = *aerial;
     readback_ = *readback;
+    decals_off_ = *decals_off;
+    std::memset(device_.buffer_mapped_pointer(decals_off_), 0, sizeof(u32) * 24);
     // Cloud shadows off: the placement's `enabled` word is zero and the field is never read.
     std::memset(device_.buffer_mapped_pointer(field_), 0, 16 * sizeof(u32));
     std::memset(device_.buffer_mapped_pointer(placement_), 0, 4 * sizeof(f32));
@@ -665,14 +672,14 @@ cy::Status WorldPass::prepare() noexcept {
         return cy::make_unexpected(set.error());
     }
     set_ = *set;
-    rhi::DescriptorWrite writes[3] = {};
-    const rhi::BufferHandle bound[3] = {field_, placement_, aerial_};
-    for (u32 index = 0; index < 3; ++index) {
+    rhi::DescriptorWrite writes[4] = {};
+    const rhi::BufferHandle bound[4] = {field_, placement_, aerial_, decals_off_};
+    for (u32 index = 0; index < 4; ++index) {
         writes[index].binding = index;
         writes[index].kind = rhi::DescriptorKind::StorageBuffer;
         writes[index].buffer = bound[index];
     }
-    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 3));
+    return device_.update_descriptor_set(set_, cy::Span<const rhi::DescriptorWrite>(writes, 4));
 }
 
 cy::Status WorldPass::shoot(const Scene& scene, const Shot& shot, Picture& out) noexcept {

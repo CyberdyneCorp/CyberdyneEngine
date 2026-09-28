@@ -114,6 +114,7 @@ Status build_draw_list(Span<const VisibleInstance> visible, SurfaceQueryFn surfa
             record.gi_address = surface.gi_address;
             record.lod_and_fade = pack_lod_and_fade(instance.lod_level, instance.lod_fade);
             record.surface = surface.surface;
+            record.layer_mask = instance.layer_mask;
             // WHICH INSTANCES ARE SKINNED, AND THIS LINE IS THE WHOLE OF IT. M11.c task 5.6.
             //
             // `GpuDrawInstance::flags` has said "copied so a shader that needs the two-sided or

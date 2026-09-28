@@ -111,6 +111,8 @@ struct Options {
     /// before half of the committed before/after pair, and the frame a byte-identity check
     /// compares against.
     bool no_water_shading = false;
+    /// An RTS move order's ring on the ground where the camera looks — `Stage::set_ground_marker`.
+    bool ground_marker = false;
     /// Draw the frame without aerial perspective and with the stand-in clear sky, as before the
     /// frame took its distance from the atmosphere. The before half of that before/after pair.
     bool no_aerial_perspective = false;
@@ -252,6 +254,7 @@ private:
             cursor.flag("--headless", out.headless) ||
             cursor.flag("--no-cloud-shadows", out.no_cloud_shadows) ||
             cursor.flag("--no-water-shading", out.no_water_shading) ||
+            cursor.flag("--ground-marker", out.ground_marker) ||
             cursor.flag("--no-aerial-perspective", out.no_aerial_perspective) ||
             cursor.flag("--quiet-host", out.quiet_host) ||
             cursor.number("--quiet-wait-s", out.quiet_wait_s);
@@ -691,6 +694,7 @@ struct Band {
         return ok();
     }
     stage.set_water_shading(!options.no_water_shading);
+    stage.set_ground_marker(options.ground_marker);
     // The plant proxies are written on the world's workers; the streams hold the same bits
     // whether they are or not, so a world whose job system did not start still draws.
     stage.set_jobs(world.jobs());

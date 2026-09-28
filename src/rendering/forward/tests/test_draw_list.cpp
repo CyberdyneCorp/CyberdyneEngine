@@ -265,3 +265,25 @@ CY_TEST_CASE("which instances are skinned reaches the draw's own flags word") {
     CY_CHECK_NE(static_cast<cy::u32>(cy::rendering::kSpatialSkinned),
                 static_cast<cy::u32>(cy::render::kInstanceSkinned));
 }
+
+CY_TEST_CASE("an instance's layer mask reaches the draw's own layer word") {
+    // `GpuDrawInstance::layer_mask` is the word a fragment tests a decal's channels against, and
+    // until decals reached the frame nothing wrote it: every draw carried all ones, so a decal
+    // restricted to characters would have landed on the floor too. Two instances in two layers, so
+    // a constant fails one of them.
+    SurfaceTable table;
+    table.surfaces[0].blend = cy::render::BlendMode::Opaque;
+    table.surfaces[1].blend = cy::render::BlendMode::Opaque;
+
+    VisibleInstance visible[2] = {make_visible(0, 1, 5.0F), make_visible(1, 2, 6.0F)};
+    visible[0].layer_mask = 1U << 0U;
+    visible[1].layer_mask = (1U << 1U) | (1U << 4U);
+
+    DrawList list(allocator());
+    CY_REQUIRE(cy::rendering::build_draw_list(cy::Span<const VisibleInstance>(visible, 2),
+                                              &surface_of, &table, list)
+                   .has_value());
+    CY_REQUIRE_EQ(list.instances.size(), 2U);
+    CY_CHECK_EQ(list.instances[0].layer_mask, 1U << 0U);
+    CY_CHECK_EQ(list.instances[1].layer_mask, (1U << 1U) | (1U << 4U));
+}

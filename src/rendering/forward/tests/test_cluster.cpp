@@ -286,3 +286,98 @@ CY_TEST_CASE("the grid layout is the shader's, field for field") {
         grid.slice_bias,
         -(4.0F * std::log2(grid.near_plane)) / std::log2(grid.far_plane / grid.near_plane), 1e-4F);
 }
+
+CY_TEST_CASE("a decal is bounded by its oriented box, and the box rejects what its sphere cannot") {
+    // `rendering-forward-clustered`: "oriented box for decals". A decal is a thin slab and its
+    // bounding sphere is mostly empty space, so a cluster the sphere touches and the slab does not
+    // must get no decal — and every cluster the slab really touches must still get it.
+    const cy::Aabb cluster =
+        cy::Aabb::from_min_max(cy::Vec3{-1.0F, -1.0F, -11.0F}, cy::Vec3{1.0F, 1.0F, -9.0F});
+    // A 4 m x 4 m slab, 10 cm thick, lying in the plane z = -6 and facing the camera.
+    const cy::Vec3 axes[3] = {cy::Vec3{2.0F, 0.0F, 0.0F}, cy::Vec3{0.0F, 2.0F, 0.0F},
+                              cy::Vec3{0.0F, 0.0F, 0.05F}};
+    // Its centre is 3.95 m in front of the cluster's near face and its sphere's radius is ~2.83 m:
+    // outside, both agree.
+    CY_CHECK(!cy::rendering::oriented_box_touches(cy::Vec3{0.0F, 0.0F, -6.0F}, axes, cluster));
+    // Moved to 2 m in front of the near face, the sphere (radius 2.83) reaches the cluster and the
+    // 5 cm half-thick slab does not.
+    CY_CHECK(!cy::rendering::oriented_box_touches(cy::Vec3{0.0F, 0.0F, -7.0F}, axes, cluster));
+    // Laid through the cluster, it touches.
+    CY_CHECK(cy::rendering::oriented_box_touches(cy::Vec3{0.0F, 0.0F, -10.0F}, axes, cluster));
+    // Rotated 45 degrees about y, a slab whose plane passes through the cluster's (1, y, -9) edge
+    // touches — and moved 1.5 m along its normal, away from that edge, it does not.
+    const cy::f32 c = std::sqrt(0.5F);
+    const cy::Vec3 turned[3] = {cy::Vec3{2.0F * c, 0.0F, -2.0F * c}, cy::Vec3{0.0F, 2.0F, 0.0F},
+                                cy::Vec3{0.05F * c, 0.0F, 0.05F * c}};
+    CY_CHECK(cy::rendering::oriented_box_touches(cy::Vec3{1.5F, 0.0F, -9.5F}, turned, cluster));
+    CY_CHECK(!cy::rendering::oriented_box_touches(
+        cy::Vec3{1.5F + (1.5F * c), 0.0F, -9.5F + (1.5F * c)}, turned, cluster));
+}
+
+CY_TEST_CASE("assignment uses a decal's oriented box, so a slab lands in fewer clusters") {
+    const ClusterGrid grid = small_grid(8);
+    const cy::f32 tan_half = std::tan(1.0471975512F * 0.5F);
+
+    // A floor decal: 6 m square, 5 cm thick, 1.5 m below the eye and 8 m ahead.
+    ClusterElement sphere;
+    sphere.view_position = cy::Vec3{0.0F, -1.5F, -8.0F};
+    sphere.box_axes[0] = cy::Vec3{3.0F, 0.0F, 0.0F};
+    sphere.box_axes[1] = cy::Vec3{0.0F, 0.0F, 3.0F};
+    sphere.box_axes[2] = cy::Vec3{0.0F, 0.05F, 0.0F};
+    sphere.radius = std::sqrt((3.0F * 3.0F) + (3.0F * 3.0F) + (0.05F * 0.05F));
+    sphere.payload_index = 3;
+    sphere.type = ClusterElementType::Decal;
+    ClusterElement box = sphere;
+    box.oriented_box = true;
+
+    ClusterAssignment by_sphere(allocator());
+    ClusterAssignment by_box(allocator());
+    CY_REQUIRE(cy::rendering::assign_clusters(grid, cy::Span<const ClusterElement>(&sphere, 1),
+                                              cy::render::kAllLayers, tan_half, 1.0F, by_sphere)
+                   .has_value());
+    CY_REQUIRE(cy::rendering::assign_clusters(grid, cy::Span<const ClusterElement>(&box, 1),
+                                              cy::render::kAllLayers, tan_half, 1.0F, by_box)
+                   .has_value());
+    CY_CHECK_GT(by_box.indices.size(), 0U);
+    CY_CHECK_LT(by_box.indices.size(), by_sphere.indices.size());
+    // The box's clusters are a SUBSET of the sphere's: the box never adds one.
+    for (cy::u32 cluster = 0; cluster < grid.cluster_count(); ++cluster) {
+        const cy::rendering::ClusterHeader boxed =
+            header_of(by_box, cluster, ClusterElementType::Decal);
+        const cy::rendering::ClusterHeader round =
+            header_of(by_sphere, cluster, ClusterElementType::Decal);
+        CY_CHECK_LE(boxed.count, round.count);
+    }
+}
+
+CY_TEST_CASE("tile row 0 is the top of the image, as the fragment's pixel row is") {
+    // REGRESSION. `cy/cluster.slang`'s `clusterCoordOf` takes the tile row from the fragment's
+    // pixel row, and pixel row 0 is the top: the Vulkan viewport's Y flip puts view-space up there.
+    // `cluster_bounds` counted rows from the bottom, so every list was mirrored across the image's
+    // horizontal centre line against the lookup — a decal on the floor was assigned to tiles in the
+    // sky, and the forward frame drew none of it.
+    const ClusterGrid grid = small_grid();  // 2 x 2 tiles
+    const cy::f32 tan_half = std::tan(1.0471975512F * 0.5F);
+    ClusterElement light;
+    // Above and right of the axis at three metres, where the visible half-height is 1.73 m: its
+    // normalised coordinates are (+0.46, +0.58), so its pixel is in the top-right tile, row 0.
+    light.view_position = cy::Vec3{0.8F, 1.0F, -3.0F};
+    light.radius = 0.2F;
+    light.payload_index = 5;
+    ClusterAssignment assignment(allocator());
+    CY_REQUIRE(cy::rendering::assign_clusters(grid, cy::Span<const ClusterElement>(&light, 1),
+                                              cy::render::kAllLayers, tan_half, 1.0F, assignment)
+                   .has_value());
+    cy::u32 top = 0;
+    cy::u32 bottom = 0;
+    for (cy::u32 slice = 0; slice < grid.dimensions[2]; ++slice) {
+        top += header_of(assignment, cy::rendering::cluster_index_of(grid, 1, 0, slice),
+                         ClusterElementType::Light)
+                   .count;
+        bottom += header_of(assignment, cy::rendering::cluster_index_of(grid, 1, 1, slice),
+                            ClusterElementType::Light)
+                      .count;
+    }
+    CY_CHECK_GT(top, 0U);
+    CY_CHECK_EQ(bottom, 0U);
+}

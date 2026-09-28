@@ -144,6 +144,9 @@ struct StageReport {
     /// frame has executed.
     cy::rendering::assembly::CaptureManifest manifest;
     bool manifest_valid = false;
+    /// The (cluster, decal) pairs the frame's assignment wrote for the ground marker: zero with the
+    /// marker off, and the number that says it was found through the clusters when on.
+    u32 decal_assignments = 0;
 };
 
 /// The device, the pipeline, the buffers and the picture.
@@ -208,6 +211,12 @@ public:
     /// shading existed, byte for byte.
     void set_water_shading(bool on) noexcept { water_shading_ = on; }
 
+    /// A GROUND MARKER — an RTS move order's ring — projected onto the terrain at the world's
+    /// middle, where the camera looks: a decal, ranked and clustered by the frame's assembly beside
+    /// its sun and applied to the ground's colour before the sun lights it. Off by default; off is
+    /// the frame this program drew before decals, byte for byte.
+    void set_ground_marker(bool on) noexcept { ground_marker_ = on; }
+
     void close() noexcept;
 
 private:
@@ -220,6 +229,9 @@ private:
     /// Upload this frame's cloud shadow field and where it sits, or say "off" when the world
     /// produces none.
     [[nodiscard]] Status upload_cloud_shadow(const World& world) noexcept;
+    /// Pack this frame's decal table — the marker and the assembly's lists — into binding 3, or
+    /// leave the empty table there when the marker is off.
+    [[nodiscard]] Status upload_decals(Span<const u32> words) noexcept;
     /// Integrate the world's atmosphere for this camera — the clear sky the dome is drawn with and
     /// the aerial perspective volume — and upload the volume. With aerial perspective off, nothing
     /// is integrated and the bound table stays switched off.
@@ -254,6 +266,8 @@ private:
     u32 height_ = 0;
     bool available_ = false;
     bool water_shading_ = true;
+    bool ground_marker_ = false;
+    u64 decal_bytes_ = 0;
 
     /// The static half: terrain geometry, uploaded once.
     u32 terrain_vertices_ = 0;

@@ -22,6 +22,7 @@ set(CY_SHADER_STDLIB_MODULES
     cy/cloud_shadow.slang
     cy/cluster.slang
     cy/color.slang
+    cy/decal.slang
     cy/field.slang
     cy/fullscreen.slang
     cy/globals.slang

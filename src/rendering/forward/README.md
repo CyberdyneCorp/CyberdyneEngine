@@ -120,6 +120,12 @@ one place the specification's numbers live — the 60° spot threshold, the boun
 deterministic nearest-kept dropping, the camera-inside-a-light case. The cost is that two
 implementations of one algorithm can drift; the mitigation is that this one is the reference.
 
+**Tile row 0 is the top of the image.** `cy/cluster.slang`'s `clusterCoordOf` takes a fragment's
+tile from its pixel row, and after the Vulkan viewport's Y flip pixel row 0 is view-space up, so
+`cluster_bounds` maps row 0 to normalised +Y. It used to map it to -Y, which mirrored every list
+against the lookup. `render.pipeline` and `render.golden` pass under either convention; a floor
+decal read the lists of the sky above it and drew nothing, which is how it was found. `unit.render_forward`'s "tile row 0 is the top of the image" pins it.
+
 ## Why the sort exists twice
 
 `render::sort_draws` (layer 2) is a comparison sort over the total order `(key, stable_id, surface)`

@@ -101,6 +101,11 @@ struct VisibleInstance {
     /// all, so carrying it costs nothing; without it `build_draw_list` has no way to know whether a
     /// survivor is skinned, and `GpuDrawInstance::flags` was written by nobody for five milestones.
     u32 flags = 0;
+    /// The instance's layer mask, carried out of the broad phase for the same reason as `flags`:
+    /// the layer test already loaded it, and without it `GpuDrawInstance::layer_mask` — the word a
+    /// fragment tests a DECAL's channels against — was all ones for every draw whatever layers the
+    /// instance was in.
+    u32 layer_mask = 0xFFFFFFFFU;
 };
 
 /// `rendering-culling-and-lod` — "Culling diagnostics": "instances tested, rejected by layer,

@@ -68,6 +68,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/import/mesh.h>
 #include <cy/rendering/assembly/capture_manifest.h>
+#include <cy/rendering/decals/decal_table.h>
 #include <cy/rendering/post/effects.h>
 
 #include <string>
@@ -143,6 +144,31 @@ struct Instance {
 };
 
 /// The committed scene: `content/beauty/shot.cyshot`, parsed.
+/// A decal's material: `decal-material <key> albedo r g b roughness v metallic v shape <box|splat|
+/// ring|patches> a b relief metres edge fraction`. What it WRITES into the surface before the
+/// light loop sees it — linear albedo, perceptual roughness — so every number is a surface
+/// property rather than a colour on screen. Read only by a capture that asks for decals.
+struct ShotDecalMaterial {
+    std::string key;
+    rendering::decals::DecalMaterial material;
+};
+
+/// One decal: `decal <material> at x y z facing x y z up x y z size width height depth
+/// [order n] [fade-angle degrees]`. `facing` is the projection's normal — the direction the
+/// decalled surface faces — and `up` orients the mark within it; `size` is the full extent across
+/// and up the mark, `depth` the full thickness of the projector's box along `facing`.
+struct ShotDecal {
+    std::string material;
+    Vec3 position{0.0F, 0.0F, 0.0F};
+    Vec3 facing{0.0F, 1.0F, 0.0F};
+    Vec3 up{0.0F, 0.0F, 1.0F};
+    f32 width = 1.0F;
+    f32 height = 1.0F;
+    f32 depth = 0.5F;
+    i32 order = 0;
+    f32 fade_angle_degrees = 60.0F;
+};
+
 struct Shot {
     std::string name;
     Vec3 camera_position{0.0F, 1.6F, 0.0F};
@@ -198,6 +224,8 @@ struct Shot {
     std::vector<ShotMaterial> materials;
     std::vector<std::pair<std::string, std::string>> meshes;
     std::vector<Instance> instances;
+    std::vector<ShotDecalMaterial> decal_materials;
+    std::vector<ShotDecal> decals;
 
     /// Parse the committed file. Every refusal names the line.
     [[nodiscard]] static Expected<Shot, Error> read(const char* path, std::string& problem);
@@ -294,6 +322,13 @@ public:
         contact_thickness_ = shot.contact_thickness;
     }
 
+    /// DECALS, before `stage_shot`. Off — the default, and the published M11.c frame — draws
+    /// exactly the frame this program always drew. On hands the shot's `decal` lines to the
+    /// assembly, which ranks them and assigns them to its clusters beside the lights; the table
+    /// with the assembly's lists in it is uploaded into the frame's own graph, and `beauty.slang`
+    /// applies the decals to each surface before the sun and the sky light it.
+    void set_decals(bool enabled) noexcept { decals_ = enabled; }
+
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
     /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
@@ -356,6 +391,10 @@ private:
     /// This frame's lens for the depth of field pass: the camera's, focused on the named target.
     [[nodiscard]] Status set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection,
                                             Vec3 eye_world, Vec3 target_world) noexcept;
+    /// The shot's decals, in the shot camera's space, and the table texture reserved for them.
+    [[nodiscard]] Status create_decals(const Shot& shot) noexcept;
+    /// Pack this frame's table — the assembly's ranks and lists — into the upload declared for it.
+    [[nodiscard]] Status stage_decals(const Mat4& camera) noexcept;
     /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
     /// reads it.
     [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
@@ -381,6 +420,7 @@ private:
     f32 occlusion_radius_ = 0.0F;
     f32 occlusion_power_ = 1.0F;
     bool soft_shadows_ = false;
+    bool decals_ = false;
     f32 sun_angular_radius_ = 0.0F;
     f32 contact_length_ = 0.0F;
     f32 contact_thickness_ = 0.0F;
