@@ -120,7 +120,7 @@ class Mcp:
         return text
 
     def capture(self, uri: str):
-        """Read a window address and decode it. Retries a budget refusal, which is a wait."""
+        """Read a window address, waiting for a frame when presentation is delayed."""
         from PIL import Image
 
         for _ in range(20):
@@ -131,7 +131,8 @@ class Mcp:
                 image = Image.open(io.BytesIO(base64.b64decode(entry["blob"]))).convert("RGB")
                 return image, result["contents"][1]["text"]
             text = result["content"][0]["text"]
-            expect("render" in text, f"{uri} was refused: {text}")
+            expect("render" in text or "presented no frame" in text,
+                   f"{uri} was refused: {text}")
             time.sleep(0.5)
         raise Failed(f"{uri} stayed over this connection's render budget")
 

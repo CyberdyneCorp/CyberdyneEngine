@@ -41,6 +41,76 @@ constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
 
+/// Slang compacts entry-point MSL buffers even when their Vulkan sets are fixed. The Metal RHI
+/// binds argument buffers at set indices 0-3, followed by draw push constants at index 4.
+Status remap_scene_metal_buffer(std::string& source, std::string_view from,
+                                std::string_view to) noexcept {
+    const usize position = source.find(from);
+    if (position == std::string::npos ||
+        source.find(from, position + from.size()) != std::string::npos) {
+        return fail(ErrorCode::InvalidArgument, "scene material MSL buffer layout changed");
+    }
+    source.replace(position, from.size(), to.data(), to.size());
+    return ok();
+}
+
+Status unwrap_scene_metal_textures(std::string& source) noexcept {
+    constexpr std::string_view prefix = "(&kernelContext_";
+    constexpr std::string_view suffix = "->cyFrameGlobals_0->textures_0)->data_0[";
+    usize cursor = 0;
+    u32 replaced = 0;
+    usize end = source.find(suffix, cursor);
+    while (end != std::string::npos) {
+        const usize begin = source.rfind(prefix, end);
+        if (begin == std::string::npos) {
+            return fail(ErrorCode::InvalidArgument, "scene material MSL texture access changed");
+        }
+        const std::string context = source.substr(begin + 2, end - begin - 2);
+        if (context.find_first_not_of("kernelContext_0123456789") != std::string::npos ||
+            context.substr(0, sizeof("kernelContext_") - 1) != "kernelContext_") {
+            return fail(ErrorCode::InvalidArgument, "scene material MSL texture access changed");
+        }
+        const std::string direct = context + "->cyFrameGlobals_0->textures_0[";
+        source.replace(begin, end + suffix.size() - begin, direct);
+        cursor = begin + direct.size();
+        ++replaced;
+        end = source.find(suffix, cursor);
+    }
+    return replaced != 0
+               ? ok()
+               : fail(ErrorCode::InvalidArgument, "scene material MSL texture access missing");
+}
+
+Status fix_scene_metal_global_table(std::string& source) noexcept {
+    const auto replace = [&](std::string_view from, std::string_view to) -> Status {
+        return remap_scene_metal_buffer(source, from, to);
+    };
+    if (Status status =
+            replace("_Array_default_Texture2D128_0 textures_0;",
+                    "array<texture2d<float, access::sample>, 128> textures_0 [[id(1)]];");
+        !status) {
+        return status;
+    }
+    if (Status status = replace("CyGlobalsData_0 constant* globals_0;",
+                                "CyGlobalsData_0 constant* globals_0 [[id(0)]];");
+        !status) {
+        return status;
+    }
+    if (Status status = replace("sampler sampler_0;", "sampler sampler_0 [[id(129)]];"); !status) {
+        return status;
+    }
+    if (Status status = unwrap_scene_metal_textures(source); !status) {
+        return status;
+    }
+    if (Status status =
+            replace("CyFrameGlobalSet_default_0 constant* cyFrameGlobals_1 [[buffer(0)]]",
+                    "CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]]");
+        !status) {
+        return status;
+    }
+    return replace("cyFrameGlobals_0 = cyFrameGlobals_1;", "cyFrameGlobals_0 = &cyFrameGlobals_1;");
+}
+
 /// `CyMaterialFieldBinding` in the generated Slang prelude: a scalar followed by a float3. The
 /// buffer is separate from the material's authored parameter block so field origin changes do not
 /// depend on the graph compiler's parameter layout.
@@ -937,9 +1007,50 @@ Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) n
         rhi::ShaderModuleDescription description;
         description.name = name;
         description.stage = stage;
+        std::string metal_source;
         if (format == rhi::ShaderFormat::Msl) {
             description.entry_point = entry;
-            description.native = artefact.bytes();
+            metal_source.assign(reinterpret_cast<const char*>(artefact.bytes().data()),
+                                artefact.bytes().size());
+            for (const std::string_view field :
+                 {"positionRelativeToCamera_0", "direction_0", "color_0"}) {
+                const std::string from = "float3 " + std::string(field) + ";";
+                const std::string to = "packed_float3 " + std::string(field) + ";";
+                if (Status status = remap_scene_metal_buffer(metal_source, from, to); !status) {
+                    return status;
+                }
+            }
+            if (Status status = remap_scene_metal_buffer(metal_source, "uint3 dimensions_0;",
+                                                         "packed_uint3 dimensions_0;");
+                !status) {
+                return status;
+            }
+            if (Status status =
+                    remap_scene_metal_buffer(metal_source, "cyMaterialDraw_1 [[buffer(0)]]",
+                                             "cyMaterialDraw_1 [[buffer(3)]]");
+                !status) {
+                return status;
+            }
+            if (Status status =
+                    remap_scene_metal_buffer(metal_source, "cyFrameGlobals_1 [[buffer(2)]]",
+                                             "cyFrameGlobals_1 [[buffer(0)]]");
+                !status) {
+                return status;
+            }
+            if (stage == rhi::ShaderStage::Vertex) {
+                if (Status status = remap_scene_metal_buffer(metal_source, "cyDraw_1 [[buffer(3)]]",
+                                                             "cyDraw_1 [[buffer(4)]]");
+                    !status) {
+                    return status;
+                }
+            }
+            if (stage == rhi::ShaderStage::Fragment) {
+                if (Status status = fix_scene_metal_global_table(metal_source); !status) {
+                    return status;
+                }
+            }
+            description.native = {reinterpret_cast<const u8*>(metal_source.data()),
+                                  metal_source.size()};
             description.native_format = format;
         } else {
             if (artefact.bytes().size() % sizeof(u32) != 0) {

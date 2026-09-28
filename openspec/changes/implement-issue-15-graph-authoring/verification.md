@@ -286,3 +286,13 @@ the GCC diagnostic is gone.
 ## Native black viewport investigation (2026-09-27)
 
 The editor launched on the user's Apple M3 Pro with Metal, loaded `worlds/issue15-sway.cyworld`, and attached to the hosted viewport. The viewport stayed black after framing the cube. The saved world has two MeshRenderer nodes with existing primitive assets. A native frame test reported two mesh instances and two published draws in both the material-graph control world and the issue 15 sway world. It captured 8,676 nonblack pixels for the control and zero for the sway world. A direct-open native pixel regression now checks the sway world without relying on a preceding render. That regression builds but remains unverified on Metal because this workspace selects the null renderer; its two availability assertions do not count as pixel evidence. A later diagnostic that constructed multiple frames on one device failed initialization, so its control pixel counts are inconclusive.
+
+The direct-open regression later ran on Metal and reproduced zero visible pixels. Slang compacted
+entry-point buffer indices in the generated MSL while the Metal RHI bound four descriptor sets at
+fixed indices. Correcting those indices made the plane visible. The cube remained black because
+the generated MSL used unpacked `float3` light fields and a `uint3` cluster-grid field for
+CPU-packed data. Correcting the layouts yielded two mesh instances, two draws, and 8,758 coloured
+pixels in the native regression. The editor MCP `editor:window?panel=viewport` capture then showed
+a tan cube, gray receiver plane, and cast shadow (viewport chroma 50). The MCP capture helper now
+retries the editor's bounded "presented no frame" response, covered by a regression test. The
+broader displacement and motion assertions remain separate issue #15 work.

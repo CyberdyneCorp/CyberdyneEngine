@@ -1093,12 +1093,21 @@ CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native
         CY_REQUIRE(frame.publish(view, instances, draws));
         const usize visible = std::count_if(frame.pixels().begin(), frame.pixels().end(),
                                             [](u32 pixel) { return (pixel & 0x00FF'FFFFU) != 0; });
+        const usize coloured =
+            std::count_if(frame.pixels().begin(), frame.pixels().end(), [](u32 pixel) {
+                const u32 red = pixel & 0xFFU;
+                const u32 green = (pixel >> 8U) & 0xFFU;
+                const u32 blue = (pixel >> 16U) & 0xFFU;
+                return std::max({red, green, blue}) - std::min({red, green, blue}) > 8U;
+            });
         std::fprintf(stderr,
-                     "issue15-sway: %zu mesh instance(s), %zu draw(s), %zu nonblack pixel(s)\n",
-                     instances.size(), draws.size(), visible);
+                     "issue15-sway: %zu mesh instance(s), %zu draw(s), %zu nonblack, %zu coloured "
+                     "pixel(s)\n",
+                     instances.size(), draws.size(), visible, coloured);
         CY_CHECK_GE(instances.size(), 2U);
         CY_CHECK_GE(draws.size(), 2U);
         CY_CHECK_GT(visible, 100U);
+        CY_CHECK_GT(coloured, 100U);
     }
     rhi::destroy_device(allocator(), *device);
 }

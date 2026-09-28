@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import os
 import time
@@ -44,6 +45,26 @@ class McpTimeoutTests(unittest.TestCase):
             b'{"jsonrpc":"2.0","id":1,"result":{"ready":true}}\n',
         )
         self.assertEqual(self.mcp.call("resources/read", seconds=0.5), {"ready": True})
+
+    def test_capture_retries_a_window_waiting_for_its_first_frame(self) -> None:
+        from PIL import Image
+        from unittest.mock import patch
+
+        pixels = io.BytesIO()
+        Image.new("RGB", (1, 1), (255, 0, 0)).save(pixels, format="PNG")
+        replies = iter([
+            {"content": [{"text": "the editor window presented no frame within 2000 ms"}]},
+            {"contents": [
+                {"mimeType": "image/png", "blob": base64.b64encode(pixels.getvalue()).decode()},
+                {"text": "first frame"},
+            ]},
+        ])
+        self.mcp.call = lambda method, params: next(replies)
+        with patch("mcp_window.time.sleep") as pause:
+            image, description = self.mcp.capture("editor:window")
+        self.assertEqual(image.getpixel((0, 0)), (255, 0, 0))
+        self.assertEqual(description, "first frame")
+        pause.assert_called_once()
 
 
 if __name__ == "__main__":
