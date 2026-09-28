@@ -103,7 +103,9 @@ float4 cyMotionBlurReconstruct(uint2 pixel)
         let offset = dominant * t;
         let position = clamp(floor(float2(pixel) + 0.5 + offset), float2(0.0, 0.0), lastPixel);
         let tap = uint2(position);
-        let distance = length(offset);
+        // The distance between the two texels, not the offset's length: an offset under half a
+        // pixel rounds onto the neighbour. motion_blur.cpp says what that cost.
+        let distance = length(float2(tap) - float2(pixel));
         let tapDepth = cyMotionBlurViewDepth(cyMotionBlurGatherSet.depth.Load(int3(int2(tap), 0)));
         let tapRadius = cyMotionBlurRadiusAt(tap);
         let front = cyMotionBlurSoftDepthCompare(ownDepth, tapDepth);

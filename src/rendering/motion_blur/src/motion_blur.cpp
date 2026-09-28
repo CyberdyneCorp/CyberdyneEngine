@@ -299,7 +299,13 @@ Vec4 motion_blur_reference_at(const MotionBlurInputs& inputs, const MotionBlurCo
         const u32 sx = static_cast<u32>(math::clamp(fx, 0.0F, static_cast<f32>(inputs.width - 1U)));
         const u32 sy =
             static_cast<u32>(math::clamp(fy, 0.0F, static_cast<f32>(inputs.height - 1U)));
-        const f32 distance = magnitude(offset);
+        // THE DISTANCE BETWEEN THE TWO TEXELS, not the length of the offset that found the tap:
+        // an offset shorter than half a pixel rounds onto the NEIGHBOUR, and measured by the offset
+        // that neighbour would count as the pixel itself and bleed into a still pixel beside an
+        // edge — `render.motion_blur` (c) saw a 2 % change in a background texel far outside the
+        // streak before this.
+        const f32 distance = magnitude(Vec2{static_cast<f32>(sx) - static_cast<f32>(x),
+                                            static_cast<f32>(sy) - static_cast<f32>(y)});
         const f32 sample_depth = view_depth(constants, inputs.depth[texel(inputs, sx, sy)]);
         const f32 sample_radius =
             math::max(magnitude(blur_vector_at(inputs, constants, sx, sy)), 0.5F);

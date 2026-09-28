@@ -550,7 +550,7 @@ struct KernelContext_0
 
 )cy_msl";
 
-/// motion_blur_gather.metal, 8884 bytes.
+/// motion_blur_gather.metal, 8900 bytes.
 inline constexpr char kMotionBlurGatherMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -835,37 +835,38 @@ float4 cyMotionBlurReconstruct_0(uint2 pixel_4, KernelContext_0 thread* kernelCo
             continue;
         }
 
-#line 103
-        float2 _S32 = _S24 * float2((-1.0 + 2.0 * (float(index_0) + _S29 + 1.0) / (float(_S30) + 1.0))) ;
+#line 104
+        float2 _S32 = float2(pixel_4);
+        uint2 _S33 = uint2(clamp(floor(_S32 + float2(0.5)  + _S24 * float2((-1.0 + 2.0 * (float(index_0) + _S29 + 1.0) / (float(_S30) + 1.0))) ), float2(0.0, 0.0), _S27));
 
-        uint2 _S33 = uint2(clamp(floor(float2(pixel_4) + float2(0.5)  + _S32), float2(0.0, 0.0), _S27));
-        float _S34 = length(_S32);
+
+        float _S34 = length(float2(_S33) - _S32);
         int3 _S35 = int3(int2(_S33), int(0));
 
-#line 107
+#line 109
         float _S36 = cyMotionBlurViewDepth_0(((kernelContext_5->cyMotionBlurGatherSet_0->depth_1).read(vec<uint,2>(((_S35)).xy), uint(((_S35)).z))), kernelContext_5);
 
-#line 107
+#line 109
         float _S37 = cyMotionBlurRadiusAt_0(_S33, kernelContext_5);
 
-#line 107
+#line 109
         float _S38 = cyMotionBlurSoftDepthCompare_0(_S26, _S36, kernelContext_5);
 
-#line 107
+#line 109
         float _S39 = cyMotionBlurSoftDepthCompare_0(_S36, _S26, kernelContext_5);
 
 )cy_msl"
-    R"cy_msl(#line 112
+    R"cy_msl(#line 114
         float _S40 = _S38 * cyMotionBlurCone_0(_S34, _S37) + _S39 * cyMotionBlurCone_0(_S34, _S25) + cyMotionBlurCylinder_0(_S34, _S37) * cyMotionBlurCylinder_0(_S34, _S25) * 2.0;
 
 
 
         float3 sum_1 = sum_0 + ((kernelContext_5->cyMotionBlurGatherSet_0->color_0).read(vec<uint,2>(((_S35)).xy), uint(((_S35)).z))).xyz * float3(_S40) ;
 
-#line 116
+#line 118
         weight_1 = weight_1 + _S40;
 
-#line 116
+#line 118
         sum_0 = sum_1;
 
 #line 96
@@ -874,7 +875,7 @@ float4 cyMotionBlurReconstruct_0(uint2 pixel_4, KernelContext_0 thread* kernelCo
 #line 96
     }
 
-#line 118
+#line 120
     return float4(sum_0 / float3(weight_1) , _S20.w);
 }
 
@@ -883,51 +884,138 @@ float4 cyMotionBlurReconstruct_0(uint2 pixel_4, KernelContext_0 thread* kernelCo
 [[kernel]] void cyMotionBlurGather(uint3 thread_0 [[thread_position_in_grid]], CyMotionBlurConstants_0 constant* cyMotionBlur_1 [[buffer(0)]], CyMotionBlurGatherSet_default_0 constant* cyMotionBlurGatherSet_1 [[buffer(1)]])
 {
 
-#line 123
+#line 125
     thread KernelContext_0 kernelContext_6;
 
-#line 123
+#line 125
     (&kernelContext_6)->cyMotionBlur_0 = cyMotionBlur_1;
 
-#line 123
+#line 125
     (&kernelContext_6)->cyMotionBlurGatherSet_0 = cyMotionBlurGatherSet_1;
 
     uint2 _S41 = uint2(cyMotionBlur_1->extent_0.xy);
 
-#line 125
+#line 127
     bool _S42;
     if((thread_0.x) >= (_S41.x))
     {
 
-#line 126
+#line 128
         _S42 = true;
 
-#line 126
+#line 128
     }
     else
     {
 
-#line 126
+#line 128
         _S42 = (thread_0.y) >= (_S41.y);
 
-#line 126
+#line 128
     }
 
-#line 126
+#line 128
     if(_S42)
     {
         return;
     }
     uint2 _S43 = thread_0.xy;
 
-#line 130
+#line 132
     uint2 _S44 = uint2(int2(_S43));
 
-#line 130
+#line 132
     float4 _S45 = cyMotionBlurReconstruct_0(_S43, &kernelContext_6);
 
-#line 130
+#line 132
     (&kernelContext_6)->cyMotionBlurGatherSet_0->output_0.write(_S45,_S44);
+    return;
+}
+
+)cy_msl";
+
+/// motion_blur_copy.metal, 1798 bytes.
+inline constexpr char kMotionBlurCopyMsl[] =
+    R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 11 "src/rendering/motion_blur/shaders/motion_blur_common.slang"
+struct CyMotionBlurConstants_0
+{
+    float4 currentToPrevious0_0;
+    float4 currentToPrevious1_0;
+    float4 currentToPrevious2_0;
+    float4 currentToPrevious3_0;
+    float4 extent_0;
+    float4 scales_0;
+    float4 depth_0;
+    uint4 control_0;
+};
+
+
+#line 5163 "hlsl.meta.slang"
+struct CyMotionBlurCopySet_default_0
+{
+    texture2d<float, access::sample> color_0;
+    texture2d<float, access::read_write> copy_0;
+};
+
+
+#line 5163
+struct KernelContext_0
+{
+    CyMotionBlurConstants_0 constant* cyMotionBlur_0;
+    CyMotionBlurCopySet_default_0 constant* cyMotionBlurCopySet_0;
+};
+
+
+#line 27 "src/rendering/motion_blur/shaders/motion_blur_copy.slang"
+[[kernel]] void cyMotionBlurCopy(uint3 thread_0 [[thread_position_in_grid]], CyMotionBlurConstants_0 constant* cyMotionBlur_1 [[buffer(0)]], CyMotionBlurCopySet_default_0 constant* cyMotionBlurCopySet_1 [[buffer(1)]])
+{
+
+#line 27
+    thread KernelContext_0 kernelContext_0;
+
+#line 27
+    (&kernelContext_0)->cyMotionBlur_0 = cyMotionBlur_1;
+
+#line 27
+    (&kernelContext_0)->cyMotionBlurCopySet_0 = cyMotionBlurCopySet_1;
+
+    uint2 _S1 = uint2(cyMotionBlur_1->extent_0.xy);
+
+#line 29
+    bool _S2;
+    if((thread_0.x) >= (_S1.x))
+    {
+
+#line 30
+        _S2 = true;
+
+#line 30
+    }
+    else
+    {
+
+#line 30
+        _S2 = (thread_0.y) >= (_S1.y);
+
+#line 30
+    }
+
+#line 30
+    if(_S2)
+    {
+        return;
+    }
+    int2 _S3 = int2(thread_0.xy);
+    int3 _S4 = int3(_S3, int(0));
+
+#line 34
+    (&kernelContext_0)->cyMotionBlurCopySet_0->copy_0.write((((&kernelContext_0)->cyMotionBlurCopySet_0->color_0).read(vec<uint,2>(((_S4)).xy), uint(((_S4)).z))),uint2(_S3));
+
     return;
 }
 
